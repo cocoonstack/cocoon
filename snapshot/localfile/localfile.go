@@ -51,13 +51,13 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	}
 
 	dataDir := lf.conf.SnapshotDataDir(id)
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return "", fmt.Errorf("create data dir: %w", err)
 	}
 
 	// Extract tar.gz stream into the data directory.
 	if err := utils.ExtractTarGz(dataDir, stream); err != nil {
-		os.RemoveAll(dataDir)
+		os.RemoveAll(dataDir) //nolint:errcheck,gosec
 		return "", fmt.Errorf("extract snapshot data: %w", err)
 	}
 
@@ -86,7 +86,7 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 		}
 		return nil
 	}); err != nil {
-		os.RemoveAll(dataDir)
+		os.RemoveAll(dataDir) //nolint:errcheck,gosec
 		return "", err
 	}
 

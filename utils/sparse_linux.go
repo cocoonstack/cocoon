@@ -58,11 +58,11 @@ func scanDataSegments(fd int, size int64) ([]dataSegment, error) {
 // SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA.
 // dst is created as a new file (truncated to src size, then only data segments written).
 func SparseCopy(dst, src string) error {
-	srcFile, err := os.Open(src)
+	srcFile, err := os.Open(src) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("open src: %w", err)
 	}
-	defer srcFile.Close()
+	defer srcFile.Close() //nolint:errcheck
 
 	fi, err := srcFile.Stat()
 	if err != nil {
@@ -70,22 +70,22 @@ func SparseCopy(dst, src string) error {
 	}
 	size := fi.Size()
 
-	dstFile, err := os.Create(dst)
+	dstFile, err := os.Create(dst) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("create dst: %w", err)
 	}
 	cleanup := true
 	defer func() {
 		if cleanup {
-			dstFile.Close()
-			os.Remove(dst)
+			dstFile.Close() //nolint:errcheck,gosec
+			os.Remove(dst)  //nolint:errcheck,gosec
 		}
 	}()
 
 	// Pre-allocate the full logical size (all holes).
 	if size > 0 {
-		if err := dstFile.Truncate(size); err != nil {
-			return fmt.Errorf("truncate dst: %w", err)
+		if truncErr := dstFile.Truncate(size); truncErr != nil {
+			return fmt.Errorf("truncate dst: %w", truncErr)
 		}
 	}
 

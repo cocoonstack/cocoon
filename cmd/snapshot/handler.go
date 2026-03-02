@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -46,10 +47,19 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("snapshot VM %s: %w", vmRef, err)
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
+
+	// Close stream on context cancellation to unblock the pipe immediately,
+	// so Ctrl+C doesn't hang while streaming large snapshot data.
+	stop := context.AfterFunc(ctx, func() {
+		stream.Close() //nolint:errcheck,gosec
+	})
+	defer stop()
 
 	cfg.Name = name
 	cfg.Description = description
+
+	logger.Infof(ctx, "saving snapshot data ...")
 
 	snapID, err := snapBackend.Create(ctx, cfg, stream)
 	if err != nil {

@@ -78,7 +78,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 		}
 		return nil
 	}); err != nil {
-		os.RemoveAll(tmpDir)
+		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
 		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 
@@ -92,13 +92,13 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 	// Stream tmpDir as tar.gz via io.Pipe. Goroutine cleans up tmpDir when done.
 	pr, pw := io.Pipe()
 	go func() {
-		defer os.RemoveAll(tmpDir)
+		defer os.RemoveAll(tmpDir) //nolint:errcheck
 		var streamErr error
 		defer func() {
 			if streamErr != nil {
-				pw.CloseWithError(streamErr)
+				pw.CloseWithError(streamErr) //nolint:errcheck,gosec
 			} else {
-				pw.Close()
+				pw.Close() //nolint:errcheck,gosec
 			}
 		}()
 
@@ -116,4 +116,3 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 
 	return cfg, pr, nil
 }
-

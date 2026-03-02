@@ -29,11 +29,11 @@ func TarDir(tw *tar.Writer, dir string) error {
 
 // TarFile writes a single file into tw with the given name.
 func TarFile(tw *tar.Writer, path, nameInTar string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -64,7 +64,7 @@ func ExtractTarGz(dir string, r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("gzip reader: %w", err)
 	}
-	defer gr.Close()
+	defer gr.Close() //nolint:errcheck
 
 	tr := tar.NewReader(gr)
 	for {
@@ -93,11 +93,11 @@ func ExtractTarGz(dir string, r io.Reader) error {
 
 // extractFile creates a file at path and copies content from r.
 func extractFile(path string, r io.Reader, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm) //nolint:gosec
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	if _, err := io.Copy(f, r); err != nil {
 		return err
