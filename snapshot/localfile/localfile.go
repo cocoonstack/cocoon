@@ -23,7 +23,7 @@ var _ snapshot.Snapshot = (*LocalFile)(nil)
 
 // LocalFile implements snapshot.Snapshot using the local filesystem.
 type LocalFile struct {
-	conf   *snapshot.Config
+	conf   *Config
 	store  storage.Store[snapshot.SnapshotIndex]
 	locker lock.Locker
 }
@@ -33,7 +33,7 @@ func New(conf *config.Config) (*LocalFile, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
-	cfg := snapshot.NewConfig(conf)
+	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
@@ -176,5 +176,5 @@ func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error
 
 // RegisterGC registers the snapshot GC module with the orchestrator.
 func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, snapshot.GCModule(lf.conf, lf.store, lf.locker))
+	gc.Register(orch, gcModule(lf.conf, lf.store, lf.locker))
 }

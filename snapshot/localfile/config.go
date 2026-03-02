@@ -1,4 +1,4 @@
-package snapshot
+package localfile
 
 import (
 	"path/filepath"
@@ -7,7 +7,7 @@ import (
 	"github.com/projecteru2/cocoon/utils"
 )
 
-// Config holds snapshot module specific configuration, embedding the global config.
+// Config holds localfile snapshot backend configuration, embedding the global config.
 type Config struct {
 	config.Config
 }
@@ -20,7 +20,7 @@ func NewConfig(conf *config.Config) *Config {
 	return &Config{Config: *conf}
 }
 
-// EnsureDirs creates all required directories for the snapshot module.
+// EnsureDirs creates all required directories for the localfile backend.
 func (c *Config) EnsureDirs() error {
 	return utils.EnsureDirs(
 		c.dbDir(),
@@ -32,7 +32,7 @@ func (c *Config) dir() string   { return filepath.Join(c.RootDir, "snapshot") }
 func (c *Config) dbDir() string { return filepath.Join(c.dir(), "db") }
 
 // DataDir returns the top-level directory for snapshot data.
-func (c *Config) DataDir() string { return filepath.Join(c.dir(), "data") }
+func (c *Config) DataDir() string { return filepath.Join(c.dir(), "localfile") }
 
 // SnapshotDataDir returns the per-snapshot data directory.
 func (c *Config) SnapshotDataDir(id string) string { return filepath.Join(c.DataDir(), id) }

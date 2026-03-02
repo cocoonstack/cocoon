@@ -1,4 +1,4 @@
-package snapshot
+package localfile
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/projecteru2/cocoon/gc"
 	"github.com/projecteru2/cocoon/lock"
+	"github.com/projecteru2/cocoon/snapshot"
 	"github.com/projecteru2/cocoon/storage"
 	"github.com/projecteru2/cocoon/utils"
 )
@@ -21,14 +22,14 @@ type snapshotGCSnapshot struct {
 // UsedBlobIDs implements the gc.usedBlobIDs protocol.
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
-// GCModule returns the GC module for the snapshot module.
-func GCModule(conf *Config, store storage.Store[SnapshotIndex], locker lock.Locker) gc.Module[snapshotGCSnapshot] {
+// gcModule returns the GC module for the localfile snapshot backend.
+func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker lock.Locker) gc.Module[snapshotGCSnapshot] {
 	return gc.Module[snapshotGCSnapshot]{
 		Name:   "snapshot",
 		Locker: locker,
 		ReadDB: func(_ context.Context) (snapshotGCSnapshot, error) {
 			var snap snapshotGCSnapshot
-			if err := store.Read(func(idx *SnapshotIndex) error {
+			if err := store.Read(func(idx *snapshot.SnapshotIndex) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				for id, rec := range idx.Snapshots {

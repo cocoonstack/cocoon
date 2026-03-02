@@ -91,7 +91,12 @@ func ExtractTarGz(dir string, r io.Reader) error {
 	}
 }
 
+// sparseBlockSize is the block size used for zero-detection during extraction.
+// Matching the typical filesystem block size ensures seeks create actual holes.
+const sparseBlockSize = 4096
+
 // extractFile creates a file at path and copies content from r.
+// Zero-filled blocks are written as holes (seek instead of write) to preserve sparsity.
 func extractFile(path string, r io.Reader, perm os.FileMode) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm) //nolint:gosec
 	if err != nil {
@@ -99,8 +104,56 @@ func extractFile(path string, r io.Reader, perm os.FileMode) error {
 	}
 	defer f.Close() //nolint:errcheck
 
-	if _, err := io.Copy(f, r); err != nil {
-		return err
+	buf := make([]byte, sparseBlockSize)
+	var total int64
+	endsWithHole := false
+
+	for {
+		n, readErr := io.ReadFull(r, buf)
+		if n > 0 {
+			var writeErr error
+			endsWithHole, writeErr = writeBlockSparse(f, buf[:n])
+			if writeErr != nil {
+				return writeErr
+			}
+			total += int64(n)
+		}
+		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
 	}
+
+	// If the file ends with a hole, the OS file size won't reflect the seek.
+	// Truncate sets the correct logical size.
+	if endsWithHole {
+		if err := f.Truncate(total); err != nil {
+			return err
+		}
+	}
+
 	return f.Sync()
+}
+
+// writeBlockSparse writes chunk to f. If chunk is all zeros, it seeks forward
+// (creating a hole) instead. Returns whether the block was a hole.
+func writeBlockSparse(f *os.File, chunk []byte) (hole bool, err error) {
+	if isAllZero(chunk) {
+		_, err = f.Seek(int64(len(chunk)), io.SeekCurrent)
+		return true, err
+	}
+	_, err = f.Write(chunk)
+	return false, err
+}
+
+// isAllZero reports whether every byte in b is zero.
+func isAllZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
