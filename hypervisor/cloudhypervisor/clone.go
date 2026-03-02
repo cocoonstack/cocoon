@@ -75,11 +75,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	blobIDs := extractBlobIDs(storageConfigs, bootCfg)
 	directBoot := isDirectBoot(bootCfg)
 
-	// Verify base layer files exist.
-	if err := verifyBaseFiles(storageConfigs, bootCfg); err != nil {
-		return nil, fmt.Errorf("verify base files: %w", err)
-	}
-
 	// Update COW disk path to the new runDir.
 	var cowPath string
 	if directBoot {
@@ -88,6 +83,21 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		cowPath = ch.conf.OverlayPath(vmID)
 	}
 	updateCOWPath(storageConfigs, cowPath, directBoot)
+
+	// For cloudimg, update cidata path to the new runDir.
+	// cidata.img is included in the snapshot tar and was extracted to runDir.
+	if !directBoot {
+		for _, sc := range storageConfigs {
+			if sc.RO && isCidataDisk(sc) {
+				sc.Path = filepath.Join(runDir, "cidata.img")
+			}
+		}
+	}
+
+	// Verify base layer files exist.
+	if err := verifyBaseFiles(storageConfigs, bootCfg); err != nil {
+		return nil, fmt.Errorf("verify base files: %w", err)
+	}
 
 	// Resize COW disk if user specified a larger --storage.
 	if vmCfg.Storage > 0 {
