@@ -35,11 +35,11 @@ func buildVMConfig(ctx context.Context, rec *hypervisor.VMRecord, consoleSockPat
 	}
 
 	if isDirectBoot(rec.BootConfig) {
-		cfg.Serial = chRuntimeFile{Mode: "Off"}
-		cfg.Console = chRuntimeFile{Mode: "Pty"}
+		cfg.Serial = &chRuntimeFile{Mode: "Off"}
+		cfg.Console = &chRuntimeFile{Mode: "Pty"}
 	} else {
-		cfg.Serial = chRuntimeFile{Mode: "Socket", Socket: consoleSockPath}
-		cfg.Console = chRuntimeFile{Mode: "Off"}
+		cfg.Serial = &chRuntimeFile{Mode: "Socket", Socket: consoleSockPath}
+		cfg.Console = &chRuntimeFile{Mode: "Off"}
 	}
 
 	// Balloon: 25% of memory, only when memory >= 256 MiB.
@@ -186,8 +186,12 @@ func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 		args = append(args, "--balloon", balloonToCLIArg(b))
 	}
 
-	args = append(args, "--serial", runtimeFiletoCLIArg(cfg.Serial))
-	args = append(args, "--console", runtimeFiletoCLIArg(cfg.Console))
+	if cfg.Serial != nil {
+		args = append(args, "--serial", runtimeFiletoCLIArg(cfg.Serial))
+	}
+	if cfg.Console != nil {
+		args = append(args, "--console", runtimeFiletoCLIArg(cfg.Console))
+	}
 
 	return args
 }
@@ -255,7 +259,7 @@ func balloonToCLIArg(b *chBalloon) string {
 	return strings.Join(parts, ",")
 }
 
-func runtimeFiletoCLIArg(c chRuntimeFile) string {
+func runtimeFiletoCLIArg(c *chRuntimeFile) string {
 	switch strings.ToLower(c.Mode) {
 	case "file":
 		return "file=" + c.File

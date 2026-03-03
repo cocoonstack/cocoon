@@ -289,12 +289,6 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 		defer cleanup()
 	}
 
-	// Inject Ctrl+L to trigger a full screen redraw in the guest.
-	// After vm.restore, TUI apps (htop, top, vim) resume mid-frame with
-	// stale cursor positions; Ctrl+L causes most apps to repaint cleanly.
-	// At a shell prompt this just clears the screen — harmless.
-	_, _ = rw.Write([]byte{'\x0c'})
-
 	escapeKeys := []byte{escapeChar, '.'}
 	if err := console.Relay(rw, escapeKeys); err != nil {
 		return fmt.Errorf("relay: %w", err)

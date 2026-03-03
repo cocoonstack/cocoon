@@ -6,18 +6,18 @@ const minBalloonMemory = 256 << 20
 
 type chVMConfig struct {
 	// Optional — pointer + omitempty (nil → omitted from JSON).
-	Payload *chPayload `json:"payload,omitempty"`
-	Balloon *chBalloon `json:"balloon,omitempty"`
+	Payload *chPayload     `json:"payload,omitempty"`
+	Balloon *chBalloon     `json:"balloon,omitempty"`
+	Serial  *chRuntimeFile `json:"serial,omitempty"`
+	Console *chRuntimeFile `json:"console,omitempty"`
 
 	// Required — value (always present).
-	CPUs     chCPUs        `json:"cpus"`
-	Memory   chMemory      `json:"memory"`
-	Disks    []chDisk      `json:"disks,omitempty"`
-	Nets     []chNet       `json:"net,omitempty"`
-	RNG      chRNG         `json:"rng"`
-	Watchdog bool          `json:"watchdog"`
-	Serial   chRuntimeFile `json:"serial"`
-	Console  chRuntimeFile `json:"console"`
+	CPUs     chCPUs   `json:"cpus"`
+	Memory   chMemory `json:"memory"`
+	Disks    []chDisk `json:"disks,omitempty"`
+	Nets     []chNet  `json:"net,omitempty"`
+	RNG      chRNG    `json:"rng"`
+	Watchdog bool     `json:"watchdog"`
 }
 
 type chNet struct {

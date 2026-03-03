@@ -358,9 +358,14 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		chCfg.Nets = nil
 	}
 
-	// Patch console socket for UEFI boot (serial socket mode).
-	if chCfg.Serial.Mode == "Socket" && opts.consoleSock != "" {
-		chCfg.Serial.Socket = opts.consoleSock
+	// Strip stale runtime console/serial endpoints from the snapshot.
+	// CH allocates a fresh PTY on restore (OCI) or we set the socket (UEFI).
+	isSerialSocket := chCfg.Serial != nil && strings.EqualFold(chCfg.Serial.Mode, "Socket")
+	chCfg.Serial = nil
+	chCfg.Console = nil
+
+	if isSerialSocket && opts.consoleSock != "" {
+		chCfg.Serial = &chRuntimeFile{Mode: "Socket", Socket: opts.consoleSock}
 	}
 
 	// Patch CPU and memory.
