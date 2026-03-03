@@ -164,6 +164,74 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	}, nil
 }
 
+// CloneVMConfigFromFlags builds VMConfig for clone commands.
+// Zero-value flags inherit from the snapshot config; explicit values are validated
+// against the snapshot minimums (clone resources must be >= snapshot's).
+func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (*types.VMConfig, error) {
+	vmName, _ := cmd.Flags().GetString("name")
+	cpu, _ := cmd.Flags().GetInt("cpu")
+	memStr, _ := cmd.Flags().GetString("memory")
+	storStr, _ := cmd.Flags().GetString("storage")
+
+	if cpu == 0 {
+		cpu = snapCfg.CPU
+	}
+
+	var memBytes int64
+	if memStr == "" {
+		memBytes = snapCfg.Memory
+	} else {
+		var err error
+		memBytes, err = units.RAMInBytes(memStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
+		}
+	}
+
+	var storBytes int64
+	if storStr == "" {
+		storBytes = snapCfg.Storage
+	} else {
+		var err error
+		storBytes, err = units.RAMInBytes(storStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+		}
+	}
+
+	if cpu < snapCfg.CPU {
+		return nil, fmt.Errorf("--cpu %d below snapshot minimum %d", cpu, snapCfg.CPU)
+	}
+	if memBytes < snapCfg.Memory {
+		return nil, fmt.Errorf("--memory %s below snapshot minimum %s", FormatSize(memBytes), FormatSize(snapCfg.Memory))
+	}
+	if storBytes < snapCfg.Storage {
+		return nil, fmt.Errorf("--storage %s below snapshot minimum %s", FormatSize(storBytes), FormatSize(snapCfg.Storage))
+	}
+
+	return &types.VMConfig{
+		Name:    vmName,
+		CPU:     cpu,
+		Memory:  memBytes,
+		Storage: storBytes,
+		Image:   snapCfg.Image,
+	}, nil
+}
+
+// CloneNICsFromFlags returns the NIC count for clone.
+// 0 (default) inherits from the snapshot; an explicit different value is rejected
+// because the NIC count must match the snapshot's device tree.
+func CloneNICsFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (int, error) {
+	nics, _ := cmd.Flags().GetInt("nics")
+	if nics == 0 {
+		return snapCfg.NICs, nil
+	}
+	if nics != snapCfg.NICs {
+		return 0, fmt.Errorf("--nics %d differs from snapshot's %d (device tree must match)", nics, snapCfg.NICs)
+	}
+	return nics, nil
+}
+
 // EnsureFirmwarePath sets default firmware path for cloudimg boot.
 func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
 	if bootCfg != nil && bootCfg.KernelPath == "" && bootCfg.FirmwarePath == "" {

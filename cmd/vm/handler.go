@@ -81,14 +81,13 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	}
 	defer stream.Close() //nolint:errcheck
 
-	// Close stream on context cancellation so Ctrl+C doesn't hang.
 	stop := context.AfterFunc(ctx, func() {
 		stream.Close() //nolint:errcheck,gosec
 	})
 	defer stop()
 
-	// Build VMConfig from flags (same flags as create/run).
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, "")
+	// Build VMConfig with inheritance from snapshot and validation.
+	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
 	if err != nil {
 		return err
 	}
@@ -101,12 +100,16 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		vmCfg.Name = "cocoon-clone-" + vmID[:8]
 	}
 
-	// Create network (same pattern as createVM).
+	// NIC count: inherit from snapshot, reject mismatch.
+	nics, err := cmdcore.CloneNICsFromFlags(cmd, cfg)
+	if err != nil {
+		return err
+	}
+
 	var (
 		networkConfigs []*types.NetworkConfig
 		netProvider    network.Network
 	)
-	nics, _ := cmd.Flags().GetInt("nics")
 	if nics > 0 {
 		var initErr error
 		netProvider, initErr = cmdcore.InitNetwork(conf)
@@ -132,6 +135,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	}
 
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
+	printPostCloneHints(vm, networkConfigs)
 	return nil
 }
 
@@ -463,6 +467,42 @@ func batchVMCmd(ctx context.Context, name, pastTense string, fn func(context.Con
 		logger.Infof(ctx, "no VMs %s", strings.ToLower(pastTense))
 	}
 	return nil
+}
+
+// printPostCloneHints outputs commands the user should run inside the guest
+// after a clone to reconfigure network and release balloon memory.
+func printPostCloneHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
+	isCloudimg := slices.ContainsFunc(vm.StorageConfigs, func(sc *types.StorageConfig) bool {
+		return strings.HasSuffix(sc.Path, ".qcow2")
+	})
+
+	fmt.Println()
+	fmt.Println("Run inside the guest to finish setup:")
+	fmt.Println()
+	fmt.Println("  # Release memory for balloon")
+	fmt.Println("  echo 3 > /proc/sys/vm/drop_caches")
+
+	if isCloudimg {
+		fmt.Println()
+		fmt.Println("  # Reconfigure network via cloud-init")
+		fmt.Println("  cloud-init clean --logs && cloud-init init --local && cloud-init init")
+	} else {
+		for i, nc := range networkConfigs {
+			if nc == nil || nc.Network == nil || nc.Network.IP == "" {
+				continue
+			}
+			dev := fmt.Sprintf("eth%d", i)
+			fmt.Println()
+			fmt.Printf("  # Reconfigure network (%s)\n", dev)
+			fmt.Printf("  ip addr flush dev %s\n", dev)
+			fmt.Printf("  ip addr add %s/%d dev %s\n", nc.Network.IP, nc.Network.Prefix, dev)
+			fmt.Printf("  ip link set %s up\n", dev)
+			if nc.Network.Gateway != "" {
+				fmt.Printf("  ip route add default via %s\n", nc.Network.Gateway)
+			}
+		}
+	}
+	fmt.Println()
 }
 
 func printRunOCI(configs []*types.StorageConfig, boot *types.BootConfig, vmName, image, cowPath, chBin string, cpu, maxCPU, memory, balloon, cowSize int) {

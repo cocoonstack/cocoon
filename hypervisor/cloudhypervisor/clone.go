@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,20 +19,11 @@ import (
 	"github.com/projecteru2/cocoon/utils"
 )
 
-// Clone creates a new VM from a snapshot tar stream.
-// The snapshot's CH config.json is parsed to rebuild StorageConfigs, BootConfig,
-// and ImageBlobIDs. The config is then patched with the new VM's paths, network,
-// and resource settings before launching CH with vm.restore.
-//
-// Uses the same three-phase pattern as Create:
-//
-//	Phase 1: placeholder record (so GC won't orphan dirs)
-//	Phase 2: extract + prepare files (parse, verify, patch, resize)
-//	Phase 3: launch CH, restore, finalize record → Running
+// Clone creates a new VM from a snapshot tar stream via vm.restore.
+// Three phases: placeholder record → extract+prepare → launch+finalize.
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotCfg *types.SnapshotConfig, networkConfigs []*types.NetworkConfig, snapshot io.Reader) (*types.VM, error) {
 	logger := log.WithFunc("cloudhypervisor.Clone")
 
-	// Inherit image reference from the snapshot when the clone command doesn't specify one.
 	if vmCfg.Image == "" && snapshotCfg.Image != "" {
 		vmCfg.Image = snapshotCfg.Image
 	}
@@ -41,8 +32,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	runDir := ch.conf.VMRunDir(vmID)
 	logDir := ch.conf.VMLogDir(vmID)
 
-	// Rollback on any failure after the placeholder is written.
-	// All cleanup ops are idempotent — safe even if dirs/records don't exist yet.
 	success := false
 	defer func() {
 		if !success {
@@ -51,25 +40,19 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		}
 	}()
 
-	// Phase 1: write placeholder record so GC won't treat our dirs as orphans.
-	// Uses snapshotCfg.ImageBlobIDs for GC pinning; full metadata is filled in
-	// during finalize after parsing the snapshot's CH config.json.
+	// Phase 1: placeholder record so GC won't orphan dirs.
 	if err := ch.reserveVM(ctx, vmID, vmCfg, snapshotCfg.ImageBlobIDs, runDir, logDir); err != nil {
 		return nil, fmt.Errorf("reserve VM record: %w", err)
 	}
 
-	// Phase 2: create directories and prepare snapshot files.
+	// Phase 2: extract + prepare.
 	if err := utils.EnsureDirs(runDir, logDir); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
-
-	// Extract snapshot tar into runDir.
-	// Produces: config.json, state.json, memory-ranges, cow.raw or overlay.qcow2
 	if err := utils.ExtractTar(runDir, snapshot); err != nil {
 		return nil, fmt.Errorf("extract snapshot: %w", err)
 	}
 
-	// Parse CH config.json to rebuild VM metadata.
 	chConfigPath := filepath.Join(runDir, "config.json")
 	chCfg, err := parseCHConfig(chConfigPath)
 	if err != nil {
@@ -81,7 +64,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	blobIDs := extractBlobIDs(storageConfigs, bootCfg)
 	directBoot := isDirectBoot(bootCfg)
 
-	// Update COW disk path to the new runDir.
 	var cowPath string
 	if directBoot {
 		cowPath = ch.conf.COWRawPath(vmID)
@@ -90,22 +72,19 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	}
 	updateCOWPath(storageConfigs, cowPath, directBoot)
 
-	// For cloudimg, update cidata path to the new runDir.
-	// cidata.img is included in the snapshot tar and was extracted to runDir.
+	// Update cidata path (cloudimg only; may be absent if snapshot was taken after restart).
+	cidataPath := ch.conf.CidataPath(vmID)
 	if !directBoot {
 		for _, sc := range storageConfigs {
-			if sc.RO && isCidataDisk(sc) {
-				sc.Path = filepath.Join(runDir, "cidata.img")
+			if isCidataDisk(sc) {
+				sc.Path = cidataPath
 			}
 		}
 	}
 
-	// Verify base layer files exist.
 	if err = verifyBaseFiles(storageConfigs, bootCfg); err != nil {
 		return nil, fmt.Errorf("verify base files: %w", err)
 	}
-
-	// Resize COW disk if user specified a larger --storage.
 	if vmCfg.Storage > 0 {
 		if err = resizeCOW(ctx, cowPath, vmCfg.Storage, directBoot); err != nil {
 			return nil, fmt.Errorf("resize COW: %w", err)
@@ -120,7 +99,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		}
 	}
 
-	// Patch CH config.json with new paths, network, and resources.
 	consoleSock := filepath.Join(runDir, "console.sock")
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: storageConfigs,
@@ -135,22 +113,34 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
 
-	// Patch state.json: update stale disk_path values in virtio-blk device states.
-	// disk_path is informational (CH opens disks via config.json), but keeping
-	// it accurate prevents debugging confusion.
+	// Patch state.json disk_path (informational only, prevents debugging confusion).
 	stateJSONPath := filepath.Join(runDir, "state.json")
 	if err = patchStateJSON(stateJSONPath, diskPathMap); err != nil {
 		return nil, fmt.Errorf("patch state.json: %w", err)
 	}
 
-	// Update bootCfg.Cmdline so that restarts (not just the initial restore)
-	// use the clone's cmdline (new VM name, IP, DNS).
+	// Update bootCfg.Cmdline for restarts (new VM name, IP, DNS).
 	if directBoot && bootCfg != nil {
 		bootCfg.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, ch.conf.DNSServers())
 	}
 
-	// Phase 3: launch CH, restore snapshot, finalize record.
-	// Launch CH process with only --api-socket.
+	// Cloudimg: regenerate cidata with clone's identity and network config.
+	if !directBoot {
+		if err = ch.generateCidata(vmID, vmCfg, networkConfigs); err != nil {
+			return nil, fmt.Errorf("generate cidata: %w", err)
+		}
+		// Ensure cidata is in storageConfigs (may be absent from snapshot).
+		if !slices.ContainsFunc(storageConfigs, func(sc *types.StorageConfig) bool {
+			return isCidataDisk(sc)
+		}) {
+			storageConfigs = append(storageConfigs, &types.StorageConfig{
+				Path: cidataPath,
+				RO:   true,
+			})
+		}
+	}
+
+	// Phase 3: launch CH, restore, finalize.
 	sockPath := socketPath(runDir)
 	args := []string{"--api-socket", sockPath}
 	ch.saveCmdline(ctx, &hypervisor.VMRecord{RunDir: runDir}, args)
@@ -167,8 +157,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	}
 
 	hc := utils.NewSocketHTTPClient(sockPath)
-
-	// vm.restore + vm.resume
 	if err := restoreVM(ctx, hc, runDir); err != nil {
 		ch.abortLaunch(ctx, pid, sockPath, runDir)
 		return nil, fmt.Errorf("vm.restore: %w", err)
@@ -178,8 +166,7 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		return nil, fmt.Errorf("vm.resume: %w", err)
 	}
 
-	// Finalize VMRecord → Running.
-	// Console path is resolved lazily by Console() on first access.
+	// Finalize record → Running.
 	info := types.VM{
 		ID:             vmID,
 		State:          types.VMStateRunning,
@@ -198,7 +185,8 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		r.VM = info
 		r.BootConfig = bootCfg
 		r.ImageBlobIDs = blobIDs
-		r.FirstBooted = true
+		// Cloudimg: FirstBooted=false → first restart attaches cidata → cloud-init re-runs.
+		r.FirstBooted = directBoot
 		return nil
 	}); err != nil {
 		ch.abortLaunch(ctx, pid, sockPath, runDir)
@@ -210,7 +198,6 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 	return &info, nil
 }
 
-// parseCHConfig reads and deserializes the CH config.json from a snapshot directory.
 func parseCHConfig(path string) (*chVMConfig, error) {
 	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
@@ -223,7 +210,6 @@ func parseCHConfig(path string) (*chVMConfig, error) {
 	return &cfg, nil
 }
 
-// rebuildStorageConfigs reconstructs StorageConfigs from the CH config's disk list.
 func rebuildStorageConfigs(cfg *chVMConfig) []*types.StorageConfig {
 	var configs []*types.StorageConfig
 	for _, d := range cfg.Disks {
@@ -236,7 +222,6 @@ func rebuildStorageConfigs(cfg *chVMConfig) []*types.StorageConfig {
 	return configs
 }
 
-// rebuildBootConfig reconstructs BootConfig from the CH config's payload.
 func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {
 	if cfg.Payload == nil {
 		return nil
@@ -253,7 +238,6 @@ func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {
 	}
 }
 
-// verifyBaseFiles checks that all read-only base layer files and boot files exist.
 func verifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
 	for _, sc := range storageConfigs {
 		if !sc.RO {
@@ -284,25 +268,21 @@ func verifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// updateCOWPath replaces the COW disk path in storageConfigs to point to the new runDir.
 func updateCOWPath(configs []*types.StorageConfig, newCOWPath string, directBoot bool) {
 	for _, sc := range configs {
 		if sc.RO {
 			continue
 		}
 		if directBoot {
-			// OCI: the writable disk with serial "cocoon-cow"
 			if sc.Serial == CowSerial {
 				sc.Path = newCOWPath
 			}
 		} else {
-			// cloudimg: the writable qcow2 overlay (no serial)
 			sc.Path = newCOWPath
 		}
 	}
 }
 
-// resizeCOW enlarges the COW disk if the requested size exceeds its current logical size.
 func resizeCOW(ctx context.Context, cowPath string, targetSize int64, directBoot bool) error {
 	fi, err := os.Stat(cowPath)
 	if err != nil {
@@ -313,12 +293,10 @@ func resizeCOW(ctx context.Context, cowPath string, targetSize int64, directBoot
 	}
 
 	if directBoot {
-		// OCI raw: extend sparse file
 		if err := os.Truncate(cowPath, targetSize); err != nil {
 			return fmt.Errorf("truncate %s to %d: %w", cowPath, targetSize, err)
 		}
 	} else {
-		// cloudimg qcow2: qemu-img resize
 		sizeStr := fmt.Sprintf("%d", targetSize)
 		if out, err := exec.CommandContext(ctx, //nolint:gosec
 			"qemu-img", "resize", cowPath, sizeStr,
@@ -329,7 +307,6 @@ func resizeCOW(ctx context.Context, cowPath string, targetSize int64, directBoot
 	return nil
 }
 
-// patchOptions holds the parameters for patching a snapshot's CH config.json.
 type patchOptions struct {
 	storageConfigs []*types.StorageConfig
 	networkConfigs []*types.NetworkConfig
@@ -341,15 +318,13 @@ type patchOptions struct {
 	dnsServers     []string
 }
 
-// patchCHConfig reads the CH config.json, patches disk paths, network, console,
-// CPU, and memory, then writes it back.
 func patchCHConfig(path string, opts *patchOptions) error {
 	chCfg, err := parseCHConfig(path)
 	if err != nil {
 		return err
 	}
 
-	// Patch disks: update paths from new storageConfigs (matched by index).
+	// Disk paths.
 	if len(opts.storageConfigs) != len(chCfg.Disks) {
 		return fmt.Errorf("disk count mismatch: storageConfigs=%d, CH config=%d",
 			len(opts.storageConfigs), len(chCfg.Disks))
@@ -358,9 +333,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		chCfg.Disks[i].Path = sc.Path
 	}
 
-	// Patch network: update in-place to preserve device IDs from the snapshot.
-	// Rebuilding the slice would lose the CH-assigned id (e.g. "_net3"),
-	// causing device-tree mismatch between state.json and config.json.
+	// Network: in-place update to preserve CH-assigned device IDs.
 	if len(opts.networkConfigs) != len(chCfg.Nets) {
 		return fmt.Errorf("net count mismatch: networkConfigs=%d, CH config=%d",
 			len(opts.networkConfigs), len(chCfg.Nets))
@@ -373,17 +346,9 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		chCfg.Nets[i].OffloadTSO = true
 		chCfg.Nets[i].OffloadUFO = true
 		chCfg.Nets[i].OffloadCsum = true
-		if nc.Network != nil {
-			ip := nc.Network.IP
-			mask := prefixToMask(nc.Network.Prefix)
-			chCfg.Nets[i].IP = &ip
-			chCfg.Nets[i].Mask = &mask
-		}
 	}
 
-	// Replace serial/console with fresh config (same logic as create).
-	// Snapshot config carries stale runtime paths (e.g. /dev/pts/N)
-	// that are invalid for the clone.
+	// Serial/console: fresh config (snapshot carries stale /dev/pts/N paths).
 	if opts.directBoot {
 		chCfg.Serial = &chRuntimeFile{Mode: "Off"}
 		chCfg.Console = &chRuntimeFile{Mode: "Pty"}
@@ -392,19 +357,18 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		chCfg.Console = &chRuntimeFile{Mode: "Off"}
 	}
 
-	// Regenerate kernel cmdline for direct-boot clones with the new VM's
-	// name, network, and DNS (same logic as prepareOCI in create.go).
+	// Kernel cmdline (OCI direct-boot only).
 	if opts.directBoot && chCfg.Payload != nil {
 		chCfg.Payload.Cmdline = buildCmdline(opts.storageConfigs, opts.networkConfigs, opts.vmName, opts.dnsServers)
 	}
 
-	// Patch CPU and memory.
+	// CPU and memory.
 	if opts.cpu > 0 {
 		chCfg.CPUs.BootVCPUs = opts.cpu
 	}
 	if opts.memory > 0 {
 		chCfg.Memory.Size = opts.memory
-		// Recalculate balloon size but preserve its device ID from the snapshot.
+		// Recalculate balloon but preserve device ID.
 		if opts.memory >= minBalloonMemory {
 			if chCfg.Balloon != nil {
 				chCfg.Balloon.Size = opts.memory / 4 //nolint:mnd
@@ -420,7 +384,6 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		}
 	}
 
-	// Write back.
 	data, err := json.Marshal(chCfg)
 	if err != nil {
 		return fmt.Errorf("marshal patched config: %w", err)
@@ -431,8 +394,6 @@ func patchCHConfig(path string, opts *patchOptions) error {
 	return nil
 }
 
-// buildCmdline generates the kernel cmdline for a direct-boot (OCI) clone.
-// Same format as prepareOCI in create.go.
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var cmdline strings.Builder
 	fmt.Fprintf(&cmdline,
@@ -456,15 +417,8 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	return cmdline.String()
 }
 
-// patchStateJSON updates stale disk_path values in state.json.
-//
-// CH's state.json stores virtio-blk device state with a disk_path field.
-// This field is informational — CH uses config.json paths to open disks
-// during vm.restore — but stale paths cause debugging confusion.
-//
-// Uses raw string replacement since the paths (containing VM IDs) are unique
-// enough to avoid false positives. The paths appear inside a double-encoded
-// JSON string (state.json → snapshot_data.state → inner JSON object).
+// patchStateJSON updates stale disk_path in state.json (informational only;
+// CH opens disks via config.json, but stale paths cause debugging confusion).
 func patchStateJSON(path string, diskPathMap map[string]string) error {
 	if len(diskPathMap) == 0 {
 		return nil
@@ -478,11 +432,4 @@ func patchStateJSON(path string, diskPathMap map[string]string) error {
 		content = strings.ReplaceAll(content, oldPath, newPath)
 	}
 	return os.WriteFile(path, []byte(content), 0o600) //nolint:gosec
-}
-
-// prefixToMask converts a CIDR prefix length to a dotted-decimal subnet mask.
-// e.g. 24 → "255.255.255.0"
-func prefixToMask(prefix int) string {
-	mask := net.CIDRMask(prefix, 32) //nolint:mnd
-	return net.IP(mask).String()
 }

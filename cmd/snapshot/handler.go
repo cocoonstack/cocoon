@@ -110,11 +110,13 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tNAME\tDESCRIPTION\tCREATED")
+	_, _ = fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDESCRIPTION\tCREATED")
 	for _, s := range snapshots {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
 			s.ID,
 			s.Name,
+			s.CPU,
+			cmdcore.FormatSize(s.Memory),
 			s.Description,
 			s.CreatedAt.Local().Format(time.DateTime),
 		)

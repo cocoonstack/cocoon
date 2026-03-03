@@ -184,42 +184,12 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	}
 
 	// Generate cloud-init cidata disk.
-	metaCfg := &metadata.Config{
-		InstanceID:   vmID,
-		Hostname:     vmCfg.Name,
-		RootPassword: ch.conf.DefaultRootPassword,
-		DNS:          ch.conf.DNSServers(),
-	}
-	// Index i matches CH --net order → guest eth{i}. See prepareOCI comment.
-	for i, n := range networkConfigs {
-		if n.Network != nil && n.Network.IP != "" {
-			ni := metadata.NetworkInfo{
-				IP:     n.Network.IP,
-				Prefix: n.Network.Prefix,
-				Device: fmt.Sprintf("eth%d", i),
-				Mac:    n.Mac,
-			}
-			if n.Network.Gateway != "" {
-				ni.Gateway = n.Network.Gateway
-			}
-			metaCfg.Networks = append(metaCfg.Networks, ni)
-		}
-	}
-
-	cidataPath := ch.conf.CidataPath(vmID)
-	f, err := os.OpenFile(cidataPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
-	if err != nil {
-		return nil, fmt.Errorf("create cidata: %w", err)
-	}
-	if err := metadata.Generate(f, metaCfg); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("generate cidata: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("close cidata: %w", err)
+	if err := ch.generateCidata(vmID, vmCfg, networkConfigs); err != nil {
+		return nil, err
 	}
 
 	// Replace StorageConfigs with the overlay + cidata (base is accessed via backing file chain).
+	cidataPath := ch.conf.CidataPath(vmID)
 	return []*types.StorageConfig{
 		{Path: overlayPath, RO: false},
 		{Path: cidataPath, RO: true},
@@ -265,4 +235,43 @@ func dnsFromConfig(servers []string) (string, string) {
 		dns1 = servers[1]
 	}
 	return dns0, dns1
+}
+
+// generateCidata creates a fresh cloud-init NoCloud cidata disk image (FAT12)
+// at the VM's canonical cidata path. Contains instance-id, hostname,
+// root password, and network-config for cloud-init initialization.
+// Used by both Create (prepareCloudimg) and Clone.
+func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig) error {
+	metaCfg := &metadata.Config{
+		InstanceID:   vmID,
+		Hostname:     vmCfg.Name,
+		RootPassword: ch.conf.DefaultRootPassword,
+		DNS:          ch.conf.DNSServers(),
+	}
+	// Index i matches CH --net order → guest eth{i}.
+	for i, n := range networkConfigs {
+		if n.Network != nil && n.Network.IP != "" {
+			ni := metadata.NetworkInfo{
+				IP:     n.Network.IP,
+				Prefix: n.Network.Prefix,
+				Device: fmt.Sprintf("eth%d", i),
+				Mac:    n.Mac,
+			}
+			if n.Network.Gateway != "" {
+				ni.Gateway = n.Network.Gateway
+			}
+			metaCfg.Networks = append(metaCfg.Networks, ni)
+		}
+	}
+
+	cidataPath := ch.conf.CidataPath(vmID)
+	f, err := os.OpenFile(cidataPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("create cidata: %w", err)
+	}
+	if err := metadata.Generate(f, metaCfg); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("generate cidata: %w", err)
+	}
+	return f.Close()
 }
