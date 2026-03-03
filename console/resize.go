@@ -19,7 +19,18 @@ func HandleResize(localFd, remoteFd uintptr) func() {
 			_ = term.SetWinsize(remoteFd, ws)
 		}
 	}
-	syncSize()
+
+	// Force SIGWINCH on initial connect: nudge the remote PTY to a
+	// different size, then set the correct one. TIOCSWINSZ only sends
+	// SIGWINCH when the dimensions actually change, so after vm.restore
+	// the PTY may already have matching size and a plain SetWinsize
+	// would be a no-op. The nudge guarantees a redraw.
+	if ws, err := term.GetWinsize(localFd); err == nil {
+		nudge := *ws
+		nudge.Width++
+		_ = term.SetWinsize(remoteFd, &nudge)
+		_ = term.SetWinsize(remoteFd, ws)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGWINCH)
