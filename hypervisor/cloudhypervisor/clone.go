@@ -118,6 +118,7 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 		storageConfigs: storageConfigs,
 		networkConfigs: networkConfigs,
 		consoleSock:    consoleSock,
+		directBoot:     directBoot,
 		cpu:            vmCfg.CPU,
 		memory:         vmCfg.Memory,
 	}); err != nil {
@@ -309,6 +310,7 @@ type patchOptions struct {
 	storageConfigs []*types.StorageConfig
 	networkConfigs []*types.NetworkConfig
 	consoleSock    string
+	directBoot     bool
 	cpu            int
 	memory         int64
 }
@@ -358,14 +360,15 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		chCfg.Nets = nil
 	}
 
-	// Strip stale runtime console/serial endpoints from the snapshot.
-	// CH allocates a fresh PTY on restore (OCI) or we set the socket (UEFI).
-	isSerialSocket := chCfg.Serial != nil && strings.EqualFold(chCfg.Serial.Mode, "Socket")
-	chCfg.Serial = nil
-	chCfg.Console = nil
-
-	if isSerialSocket && opts.consoleSock != "" {
+	// Replace serial/console with fresh config (same logic as create).
+	// Snapshot config carries stale runtime paths (e.g. /dev/pts/N)
+	// that are invalid for the clone.
+	if opts.directBoot {
+		chCfg.Serial = &chRuntimeFile{Mode: "Off"}
+		chCfg.Console = &chRuntimeFile{Mode: "Pty"}
+	} else {
 		chCfg.Serial = &chRuntimeFile{Mode: "Socket", Socket: opts.consoleSock}
+		chCfg.Console = &chRuntimeFile{Mode: "Off"}
 	}
 
 	// Patch CPU and memory.
