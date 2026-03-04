@@ -196,7 +196,7 @@ func extractBlobIDs(storageConfigs []*types.StorageConfig, boot *types.BootConfi
 
 // generateCidata creates a fresh cloud-init NoCloud cidata disk image (FAT12)
 // at the VM's canonical cidata path. Contains instance-id, hostname,
-// root password, and bootcmd networking for cloud-init initialization.
+// root password, network-config, and write_files for cloud-init initialization.
 // Used by both Create (prepareCloudimg) and Clone.
 func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig) error {
 	metaCfg := &metadata.Config{

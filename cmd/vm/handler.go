@@ -545,7 +545,7 @@ func printCloudimgNetworkHints(networkConfigs []*types.NetworkConfig) {
 			first = false
 		}
 		fmt.Println(")")
-		fmt.Println("  mapfile -t nics < <(for d in /sys/class/net/*; do n=${d##*/}; [ \"$n\" = lo ] && continue; [ -e \"$d/device\" ] || continue; echo \"$n\"; done | sort)")
+		fmt.Println("  mapfile -t nics < <(for d in /sys/class/net/*; do n=${d##*/}; [ \"$n\" = lo ] && continue; [ -e \"$d/device\" ] || continue; echo \"$n\"; done | sort -V)")
 		fmt.Println("  for i in \"${!target_macs[@]}\"; do dev=\"${nics[$i]}\"; [ -n \"$dev\" ] || break; ip link set dev \"$dev\" down; ip link set dev \"$dev\" address \"${target_macs[$i]}\"; ip link set dev \"$dev\" up; done")
 		fmt.Println()
 	}

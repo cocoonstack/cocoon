@@ -125,5 +125,16 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	}
 
 	logger.Infof(ctx, "VM %s restored from snapshot", vmID)
-	return toVM(&rec), nil
+
+	// Build return value reflecting the persisted state.
+	// rec was loaded before the DB update, so construct a fresh VM
+	// with the updated fields (Config, timestamps) to avoid returning stale data.
+	info := rec.VM
+	info.Config = *vmCfg
+	info.State = types.VMStateRunning
+	info.PID = pid
+	info.SocketPath = socketPath(rec.RunDir)
+	info.StartedAt = &now
+	info.UpdatedAt = now
+	return &info, nil
 }
