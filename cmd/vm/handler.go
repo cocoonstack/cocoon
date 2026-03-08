@@ -607,31 +607,37 @@ func printPostCloneHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 
 func printCloudimgNetworkHints(_ []*types.NetworkConfig) {
 	// Cloudimg: NIC MACs are handled by hot-swap during clone (vm.remove-device +
-	// vm.add-net while paused). Only cloud-init reinit is needed for IP reconfiguration.
+	// vm.add-net while paused). Clean old network configs from snapshot COW first,
+	// then cloud-init reinit writes correct MAC-based configs from the new cidata.
 	fmt.Println()
-	fmt.Println("  # Reconfigure network via cloud-init")
+	fmt.Println("  # Clean old network configs from snapshot and reconfigure via cloud-init")
+	fmt.Println("  rm -f /etc/systemd/network/10-*.network")
 	fmt.Println("  cloud-init clean --logs --seed --configs network && cloud-init init --local && cloud-init init")
 	fmt.Println("  cloud-init modules --mode=config && systemctl restart systemd-networkd")
 }
 
 type nicHint struct {
-	dev, ip, gw string
+	mac, ip, gw string
 	prefix      int
 }
 
 func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
-	// OCI: no cloud-init, set hostname + IP manually via loop.
-	// NIC MACs are handled by hot-swap during clone (vm.remove-device + vm.add-net).
+	// OCI: no cloud-init, set hostname + write MAC-based systemd-networkd configs.
+	// Two goals: immediate effect (systemctl restart) + reboot persistence.
+	// MAC-based [Match] is essential because:
+	//  1. After hot-swap, device names are unpredictable (eth2, eth3, ...).
+	//  2. 10-<mac>.network takes priority over network.sh's 10-<mac>.network,
+	//     so correct IPs survive guest reboots even if kernel ip= has stale values.
 	fmt.Println()
 	fmt.Printf("  # Set hostname\n")
 	fmt.Printf("  hostnamectl set-hostname %s\n", vm.Config.Name)
 	var nics []nicHint
-	for i, nc := range networkConfigs {
+	for _, nc := range networkConfigs {
 		if nc == nil || nc.Network == nil || nc.Network.IP == "" {
 			continue
 		}
 		nics = append(nics, nicHint{
-			dev:    fmt.Sprintf("eth%d", i),
+			mac:    nc.Mac,
 			ip:     nc.Network.IP,
 			prefix: nc.Network.Prefix,
 			gw:     nc.Network.Gateway,
@@ -641,10 +647,11 @@ func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 		return
 	}
 
-	// Emit parallel bash arrays + single loop.
+	// Clean old snapshot network configs, then write MAC-based ones.
 	fmt.Println()
-	fmt.Println("  # Reconfigure network (all NICs)")
-	printBashArray("devs", nics, func(n nicHint) string { return n.dev })
+	fmt.Println("  # Clean old network configs from snapshot and write new ones (MAC-based)")
+	fmt.Println("  rm -f /etc/systemd/network/10-*.network")
+	printBashArray("macs", nics, func(n nicHint) string { return n.mac })
 	printBashArray("addrs", nics, func(n nicHint) string { return fmt.Sprintf("%s/%d", n.ip, n.prefix) })
 
 	hasGW := slices.ContainsFunc(nics, func(n nicHint) bool { return n.gw != "" })
@@ -652,14 +659,16 @@ func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 		printBashArray("gws", nics, func(n nicHint) string { return n.gw })
 	}
 
-	fmt.Println("  for i in \"${!devs[@]}\"; do")
-	fmt.Println("    ip addr flush dev \"${devs[$i]}\"")
-	fmt.Println("    ip addr add \"${addrs[$i]}\" dev \"${devs[$i]}\"")
-	fmt.Println("    ip link set \"${devs[$i]}\" up")
+	fmt.Println("  for i in \"${!macs[@]}\"; do")
+	fmt.Println("    f=\"/etc/systemd/network/10-${macs[$i]//:/}.network\"")
+	writeNet := `    printf '[Match]\nMACAddress=` + `%s\n\n[Network]\nAddress=%s\n' "${macs[$i]}" "${addrs[$i]}" > "$f"`
+	fmt.Println(writeNet)
 	if hasGW {
-		fmt.Println("    [ -n \"${gws[$i]}\" ] && ip route replace default via \"${gws[$i]}\"")
+		writeGW := `    [ -n "${gws[$i]}" ] && printf 'Gateway=` + `%s\n' "${gws[$i]}" >> "$f"`
+		fmt.Println(writeGW)
 	}
 	fmt.Println("  done")
+	fmt.Println("  systemctl restart systemd-networkd")
 }
 
 func printBashArray(name string, nics []nicHint, field func(nicHint) string) {
