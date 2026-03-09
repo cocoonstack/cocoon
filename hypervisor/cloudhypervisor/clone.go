@@ -379,25 +379,37 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 
 	if len(networkConfigs) > 0 {
 		cmdline.WriteString(" net.ifnames=0")
-		dns0, dns1 := dnsFromConfig(dnsServers)
-		for i, n := range networkConfigs {
-			if n.Network == nil || n.Network.IP == "" {
-				continue
-			}
-			param := fmt.Sprintf("ip=%s::%s:%s:%s:eth%d:off",
-				n.Network.IP, n.Network.Gateway,
-				prefixToNetmask(n.Network.Prefix), vmName, i)
-			if dns0 != "" {
-				param += ":" + dns0
-				if dns1 != "" {
-					param += ":" + dns1
-				}
-			}
-			cmdline.WriteString(" " + param)
-		}
+		cmdline.WriteString(buildIPParams(networkConfigs, vmName, dnsServers))
 	}
 
 	return cmdline.String()
+}
+
+// buildIPParams generates kernel ip= parameters for all NICs with static IPs.
+// If no NIC has a static IP (DHCP mode), emits a hostname-only ip= param so
+// the initramfs still sets /etc/hostname via /run/net-*.conf.
+func buildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
+	dns0, dns1 := dnsFromConfig(dnsServers)
+	var params strings.Builder
+	for i, n := range networkConfigs {
+		if n.Network == nil || n.Network.IP == "" {
+			continue
+		}
+		param := fmt.Sprintf(" ip=%s::%s:%s:%s:eth%d:off",
+			n.Network.IP, n.Network.Gateway,
+			prefixToNetmask(n.Network.Prefix), vmName, i)
+		if dns0 != "" {
+			param += ":" + dns0
+			if dns1 != "" {
+				param += ":" + dns1
+			}
+		}
+		params.WriteString(param)
+	}
+	if params.Len() == 0 {
+		fmt.Fprintf(&params, " ip=::::%s::off", vmName)
+	}
+	return params.String()
 }
 
 // buildStateReplacements builds old→new string mappings for state.json patching.

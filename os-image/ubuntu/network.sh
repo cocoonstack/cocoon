@@ -25,7 +25,15 @@ for conf_file in /run/net-*.conf; do
 
     unset DEVICE IPV4ADDR IPV4NETMASK IPV4GATEWAY IPV4DNS0 IPV4DNS1 HOSTNAME HWADDR
     . "$conf_file"
-    [ -z "$DEVICE" ] || [ -z "$IPV4ADDR" ] && continue
+    [ -z "$DEVICE" ] && continue
+
+    # Set hostname even if no IP (DHCP mode with ip=::::hostname:dev:off).
+    if [ -n "$HOSTNAME" ] && [ ! -f "${rootmnt}/etc/cocoon-hostname-set" ]; then
+        echo "$HOSTNAME" > "${rootmnt}/etc/hostname"
+        : > "${rootmnt}/etc/cocoon-hostname-set"
+    fi
+
+    [ -z "$IPV4ADDR" ] && continue
 
     # Read MAC from sysfs if HWADDR not in conf (older klibc).
     [ -z "$HWADDR" ] && [ -e "/sys/class/net/${DEVICE}/address" ] && HWADDR=$(cat "/sys/class/net/${DEVICE}/address")
@@ -71,11 +79,6 @@ EOF
     [ -n "$IPV4DNS0" ] && [ "$IPV4DNS0" != "0.0.0.0" ] && _dns_servers="${_dns_servers} ${IPV4DNS0}"
     [ -n "$IPV4DNS1" ] && [ "$IPV4DNS1" != "0.0.0.0" ] && _dns_servers="${_dns_servers} ${IPV4DNS1}"
 
-    # Set hostname from the first interface that has one.
-    if [ -n "$HOSTNAME" ] && [ ! -f "${rootmnt}/etc/cocoon-hostname-set" ]; then
-        echo "$HOSTNAME" > "${rootmnt}/etc/hostname"
-        : > "${rootmnt}/etc/cocoon-hostname-set"
-    fi
 done
 
 # Fallback: no kernel ip= configured — write DHCP config per NIC matched by MAC.
