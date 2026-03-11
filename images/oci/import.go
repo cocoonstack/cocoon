@@ -153,22 +153,40 @@ func processLocalTar(ctx context.Context, conf *Config, idx, total int, tarPath,
 	}
 
 	// Rename boot file temps to use the real digest hex.
-	if kernelPath != "" && result.kernelPath == "" {
-		dst := filepath.Join(layerDir, digestHex+".vmlinuz")
-		if err := os.Rename(kernelPath, dst); err != nil {
-			return fmt.Errorf("rename kernel: %w", err)
-		}
-		result.kernelPath = dst
-	}
-	if initrdPath != "" && result.initrdPath == "" {
-		dst := filepath.Join(layerDir, digestHex+".initrd.img")
-		if err := os.Rename(initrdPath, dst); err != nil {
-			return fmt.Errorf("rename initrd: %w", err)
-		}
-		result.initrdPath = dst
+	if err := renameBootFiles(layerDir, digestHex, kernelPath, initrdPath, result); err != nil {
+		return err
 	}
 
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseLayer, Index: idx, Total: total, Digest: digestHex[:12]})
+	return nil
+}
+
+// renameBootFiles renames extracted kernel/initrd temps into baseDir with digest-based names,
+// updating result in place. Skips files that are empty or already set on result.
+// Returns an error if any source path escapes baseDir.
+func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *pullLayerResult) error {
+	type bootFile struct {
+		src  string
+		dst  *string
+		name string
+	}
+	for _, bf := range []bootFile{
+		{kernelPath, &result.kernelPath, digestHex + ".vmlinuz"},
+		{initrdPath, &result.initrdPath, digestHex + ".initrd.img"},
+	} {
+		if bf.src == "" || *bf.dst != "" {
+			continue
+		}
+		clean := filepath.Clean(bf.src)
+		if !filepath.IsAbs(clean) || filepath.Dir(clean) != filepath.Clean(baseDir) {
+			return fmt.Errorf("path %q escapes base dir", bf.src)
+		}
+		dst := filepath.Join(baseDir, bf.name)
+		if err := os.Rename(clean, dst); err != nil { //nolint:gosec // path validated above
+			return fmt.Errorf("rename %s: %w", bf.name, err)
+		}
+		*bf.dst = dst
+	}
 	return nil
 }
 
