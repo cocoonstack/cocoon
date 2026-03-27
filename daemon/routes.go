@@ -13,6 +13,7 @@ func (d *Daemon) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/vms/{ref}", d.handleInspectVM)
 	mux.HandleFunc("DELETE /api/v1/vms", d.handleRemoveVM)
 	mux.HandleFunc("POST /api/v1/vms/restore", d.handleRestoreVM)
+	mux.HandleFunc("GET /api/v1/vms/{ref}/console", d.handleConsoleVM) // WebSocket
 
 	// Image endpoints
 	mux.HandleFunc("GET /api/v1/images", d.handleListImages)

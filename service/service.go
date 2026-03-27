@@ -62,7 +62,7 @@ func New(ctx context.Context, conf *config.Config) (*Service, error) {
 }
 
 // NewWithBackends creates a Service with pre-initialized backends.
-// Used by tests to inject mock implementations.
+// Test-only: used by tests to inject mock implementations.
 func NewWithBackends(
 	conf *config.Config,
 	hyper hypervisor.Hypervisor,

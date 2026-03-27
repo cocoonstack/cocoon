@@ -6,6 +6,28 @@ import (
 	"github.com/projecteru2/cocoon/service"
 )
 
+const (
+	defaultCPU     = 2
+	defaultMemory  = 1 << 30        // 1G
+	defaultStorage = 10 * (1 << 30) // 10G
+	defaultNICs    = 1
+)
+
+func applyCreateDefaults(p *service.VMCreateParams) {
+	if p.CPU == 0 {
+		p.CPU = defaultCPU
+	}
+	if p.Memory == 0 {
+		p.Memory = defaultMemory
+	}
+	if p.Storage == 0 {
+		p.Storage = defaultStorage
+	}
+	if p.NICs == 0 {
+		p.NICs = defaultNICs
+	}
+}
+
 func (d *Daemon) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	var p service.VMCreateParams
 	if err := decodeBody(r, &p); err != nil {
@@ -13,6 +35,7 @@ func (d *Daemon) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	applyCreateDefaults(&p)
 	vm, err := d.svc.CreateVM(r.Context(), &p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -29,6 +52,7 @@ func (d *Daemon) handleRunVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	applyCreateDefaults(&p)
 	vm, err := d.svc.RunVM(r.Context(), &p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

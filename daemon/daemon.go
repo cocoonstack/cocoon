@@ -57,9 +57,15 @@ func (d *Daemon) Start(ctx context.Context) error {
 	logger.Infof(ctx, "daemon listening on %s", d.addr)
 
 	// Shutdown when context is canceled.
-	go func() {
+	go func() { //nolint:gosec // intentional: request ctx is already canceled, need fresh context for graceful shutdown
 		<-ctx.Done()
-		d.server.Shutdown(context.Background()) //nolint:errcheck,gosec
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		if err := d.server.Shutdown(shutdownCtx); err != nil {
+			logger.Errorf(ctx, err, "graceful shutdown failed")
+		}
 	}()
 
 	if err := d.server.Serve(d.listener); err != nil && err != http.ErrServerClosed {
@@ -69,17 +75,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the daemon.
-func (d *Daemon) Stop(ctx context.Context) error {
-	return d.server.Shutdown(ctx)
-}
-
-// Addr returns the listen address.
-func (d *Daemon) Addr() string { return d.addr }
-
 // ListenAddr returns the actual address the listener is bound to.
-// Useful when the original addr used port 0 (auto-assign).
-func (d *Daemon) ListenAddr() net.Addr { return d.listener.Addr() }
+// Test-only: useful when the original addr used port 0 (auto-assign).
+func (d *Daemon) ListenAddr() net.Addr {
+	return d.listener.Addr()
+}
 
 // listen creates a net.Listener based on the address format.
 // Contains ":" → TCP, otherwise → unix socket.

@@ -3,6 +3,7 @@ module github.com/projecteru2/cocoon
 go 1.25.6
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
 	github.com/docker/go-units v0.5.0
