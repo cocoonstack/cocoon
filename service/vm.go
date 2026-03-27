@@ -204,20 +204,8 @@ func (s *Service) RestoreVM(ctx context.Context, p *VMRestoreParams) (*types.VM,
 	}
 
 	// Try direct fast path.
-	if da, ok := s.snapshot.(snapshot.Direct); ok {
-		if dcr, ok := s.hypervisor.(hypervisor.Direct); ok {
-			dataDir, _, dirErr := da.DataDir(ctx, p.SnapshotRef)
-			if dirErr != nil {
-				return nil, fmt.Errorf("open snapshot: %w", dirErr)
-			}
-
-			result, restoreErr := dcr.DirectRestore(ctx, p.VMRef, vmCfg, dataDir)
-			if restoreErr != nil {
-				return nil, fmt.Errorf("restore: %w", restoreErr)
-			}
-
-			return result, nil
-		}
+	if result, ok, directErr := s.restoreDirect(ctx, p, vmCfg); ok {
+		return result, directErr
 	}
 
 	// Stream fallback.
@@ -249,7 +237,7 @@ type DebugInfo struct {
 
 // DebugVM resolves image and returns data for building a debug CH command.
 func (s *Service) DebugVM(ctx context.Context, p *DebugParams) (*DebugInfo, error) {
-	vmCfg := p.VMCreateParams.toVMConfig()
+	vmCfg := p.toVMConfig()
 
 	storageConfigs, bootCfg, err := resolveImage(ctx, s.images, vmCfg)
 	if err != nil {
@@ -347,6 +335,32 @@ func (s *Service) cloneDirect(ctx context.Context, p *VMCloneParams, dcr hypervi
 	}
 
 	return vm, networkConfigs, nil
+}
+
+// restoreDirect attempts the direct restore path. Returns (nil, false, nil) if
+// the backends don't support it, so the caller falls through to the stream path.
+func (s *Service) restoreDirect(ctx context.Context, p *VMRestoreParams, vmCfg *types.VMConfig) (*types.VM, bool, error) {
+	da, ok := s.snapshot.(snapshot.Direct)
+	if !ok {
+		return nil, false, nil
+	}
+
+	dcr, ok := s.hypervisor.(hypervisor.Direct)
+	if !ok {
+		return nil, false, nil
+	}
+
+	dataDir, _, err := da.DataDir(ctx, p.SnapshotRef)
+	if err != nil {
+		return nil, true, fmt.Errorf("open snapshot: %w", err)
+	}
+
+	result, err := dcr.DirectRestore(ctx, p.VMRef, vmCfg, dataDir)
+	if err != nil {
+		return nil, true, fmt.Errorf("restore: %w", err)
+	}
+
+	return result, true, nil
 }
 
 func (s *Service) prepareClone(ctx context.Context, p *VMCloneParams, cfg *types.SnapshotConfig) (*types.VMConfig, string, []*types.NetworkConfig, error) {
