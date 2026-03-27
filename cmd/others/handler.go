@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/projecteru2/cocoon/cmd/core"
-	"github.com/projecteru2/cocoon/gc"
 	"github.com/projecteru2/cocoon/version"
 )
 
@@ -20,29 +19,16 @@ func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
-	if err != nil {
-		return err
-	}
-	netProvider, err := cmdcore.InitNetwork(conf)
-	if err != nil {
-		return err
-	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	o := gc.New()
-	for _, b := range backends {
-		b.RegisterGC(o)
-	}
-	hyper.RegisterGC(o)
-	netProvider.RegisterGC(o)
-	snapBackend.RegisterGC(o)
-	if err := o.Run(ctx); err != nil {
+	if err := svc.RunGC(ctx); err != nil {
 		return err
 	}
+
 	log.WithFunc("cmd.gc").Info(ctx, "GC completed")
 	return nil
 }

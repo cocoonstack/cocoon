@@ -1,10 +1,7 @@
 package snapshot
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"slices"
 	"text/tabwriter"
 	"time"
 
@@ -12,8 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/projecteru2/cocoon/cmd/core"
-	"github.com/projecteru2/cocoon/snapshot"
-	"github.com/projecteru2/cocoon/types"
+	"github.com/projecteru2/cocoon/service"
 )
 
 // Handler implements Actions.
@@ -26,53 +22,26 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
 	logger := log.WithFunc("cmd.snapshot.save")
-
-	hyper, err := cmdcore.InitHypervisor(conf)
-	if err != nil {
-		return err
-	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
-	if err != nil {
-		return err
-	}
-
 	vmRef := args[0]
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 
-	// Pre-check: reject if the snapshot name is already taken.
-	if name != "" {
-		if _, inspectErr := snapBackend.Inspect(ctx, name); inspectErr == nil {
-			return fmt.Errorf("snapshot name %q already exists", name)
-		} else if !errors.Is(inspectErr, snapshot.ErrNotFound) {
-			return fmt.Errorf("check snapshot name: %w", inspectErr)
-		}
-	}
-
 	logger.Infof(ctx, "snapshotting VM %s ...", vmRef)
 
-	cfg, stream, err := hyper.Snapshot(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("snapshot VM %s: %w", vmRef, err)
-	}
-	defer stream.Close() //nolint:errcheck
-
-	// Close stream on context cancellation to unblock the pipe immediately,
-	// so Ctrl+C doesn't hang while streaming large snapshot data.
-	stop := context.AfterFunc(ctx, func() {
-		stream.Close() //nolint:errcheck,gosec
+	snapID, err := svc.SaveSnapshot(ctx, &service.SnapshotSaveParams{
+		VMRef:       vmRef,
+		Name:        name,
+		Description: description,
 	})
-	defer stop()
-
-	cfg.Name = name
-	cfg.Description = description
-
-	logger.Info(ctx, "saving snapshot data ...")
-
-	snapID, err := snapBackend.Create(ctx, cfg, stream)
 	if err != nil {
-		return fmt.Errorf("save snapshot: %w", err)
+		return err
 	}
 
 	logger.Infof(ctx, "snapshot saved: %s", snapID)
@@ -84,52 +53,27 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	// Optional: filter by VM ownership.
 	vmRef, _ := cmd.Flags().GetString("vm")
-	var filterIDs map[string]struct{}
-	if vmRef != "" {
-		hyper, hyperErr := cmdcore.InitHypervisor(conf)
-		if hyperErr != nil {
-			return hyperErr
-		}
-		vm, inspectErr := hyper.Inspect(ctx, vmRef)
-		if inspectErr != nil {
-			return fmt.Errorf("inspect VM %s: %w", vmRef, inspectErr)
-		}
-		filterIDs = vm.SnapshotIDs
-		if len(filterIDs) == 0 {
-			fmt.Println("No snapshots found for VM.")
-			return nil
-		}
-	}
 
-	snapshots, err := snapBackend.List(ctx)
+	snapshots, err := svc.ListSnapshots(ctx, vmRef)
 	if err != nil {
-		return fmt.Errorf("list: %w", err)
-	}
-
-	// Apply VM filter if specified.
-	if filterIDs != nil {
-		filtered := snapshots[:0]
-		for _, s := range snapshots {
-			if _, ok := filterIDs[s.ID]; ok {
-				filtered = append(filtered, s)
-			}
-		}
-		snapshots = filtered
+		return err
 	}
 
 	if len(snapshots) == 0 {
-		fmt.Println("No snapshots found.")
+		if vmRef != "" {
+			fmt.Println("No snapshots found for VM.")
+		} else {
+			fmt.Println("No snapshots found.")
+		}
 		return nil
 	}
-
-	slices.SortFunc(snapshots, func(a, b *types.Snapshot) int { return a.CreatedAt.Compare(b.CreatedAt) })
 
 	return cmdcore.OutputFormatted(cmd, snapshots, func(w *tabwriter.Writer) {
 		fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDESCRIPTION\tCREATED") //nolint:errcheck
@@ -147,15 +91,17 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	s, err := snapBackend.Inspect(ctx, args[0])
+	s, err := svc.InspectSnapshot(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("inspect: %w", err)
+		return err
 	}
+
 	return cmdcore.OutputJSON(s)
 }
 
@@ -164,21 +110,26 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.snapshot.rm")
-	snapBackend, err := cmdcore.InitSnapshot(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	deleted, err := snapBackend.Delete(ctx, args)
+	logger := log.WithFunc("cmd.snapshot.rm")
+
+	deleted, err := svc.RemoveSnapshots(ctx, args)
 	for _, id := range deleted {
 		logger.Infof(ctx, "deleted: %s", id)
 	}
+
 	if err != nil {
-		return fmt.Errorf("rm: %w", err)
+		return err
 	}
+
 	if len(deleted) == 0 {
 		logger.Info(ctx, "no snapshots deleted")
 	}
+
 	return nil
 }

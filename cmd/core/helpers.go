@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/projecteru2/cocoon/config"
+	"github.com/projecteru2/cocoon/service"
 	"github.com/projecteru2/cocoon/hypervisor"
 	"github.com/projecteru2/cocoon/hypervisor/cloudhypervisor"
 	imagebackend "github.com/projecteru2/cocoon/images"
@@ -333,6 +334,141 @@ func FormatSize(bytes int64) string {
 
 func IsURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+}
+
+// --- Service integration ---
+
+// InitService creates a Service from the command context and config.
+func InitService(cmd *cobra.Command, conf *config.Config) (*service.Service, error) {
+	return service.New(CommandContext(cmd), conf)
+}
+
+// --- Params-from-flags functions (CLI → service params) ---
+
+// VMCreateParamsFromFlags builds VMCreateParams from cobra flags.
+func VMCreateParamsFromFlags(cmd *cobra.Command, image string) (*service.VMCreateParams, error) {
+	vmName, _ := cmd.Flags().GetString("name")
+	cpu, _ := cmd.Flags().GetInt("cpu")
+	memStr, _ := cmd.Flags().GetString("memory")
+	storStr, _ := cmd.Flags().GetString("storage")
+	nics, _ := cmd.Flags().GetInt("nics")
+	network, _ := cmd.Flags().GetString("network")
+
+	if vmName == "" {
+		vmName = sanitizeVMName(image)
+	}
+
+	memBytes, err := units.RAMInBytes(memStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
+	}
+
+	storBytes, err := units.RAMInBytes(storStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+	}
+
+	return &service.VMCreateParams{
+		Image:   image,
+		Name:    vmName,
+		CPU:     cpu,
+		Memory:  memBytes,
+		Storage: storBytes,
+		NICs:    nics,
+		Network: network,
+	}, nil
+}
+
+// VMCloneParamsFromFlags builds VMCloneParams from cobra flags.
+func VMCloneParamsFromFlags(cmd *cobra.Command, snapshotRef string) (*service.VMCloneParams, error) {
+	vmName, _ := cmd.Flags().GetString("name")
+	cpu, _ := cmd.Flags().GetInt("cpu")
+	memStr, _ := cmd.Flags().GetString("memory")
+	storStr, _ := cmd.Flags().GetString("storage")
+	nics, _ := cmd.Flags().GetInt("nics")
+	network, _ := cmd.Flags().GetString("network")
+
+	var memBytes int64
+	if memStr != "" {
+		var err error
+		memBytes, err = units.RAMInBytes(memStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
+		}
+	}
+
+	var storBytes int64
+	if storStr != "" {
+		var err error
+		storBytes, err = units.RAMInBytes(storStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+		}
+	}
+
+	return &service.VMCloneParams{
+		SnapshotRef: snapshotRef,
+		Name:        vmName,
+		CPU:         cpu,
+		Memory:      memBytes,
+		Storage:     storBytes,
+		NICs:        nics,
+		Network:     network,
+	}, nil
+}
+
+// VMRestoreParamsFromFlags builds VMRestoreParams from cobra flags.
+func VMRestoreParamsFromFlags(cmd *cobra.Command, vmRef, snapRef string) (*service.VMRestoreParams, error) {
+	cpu, _ := cmd.Flags().GetInt("cpu")
+	memStr, _ := cmd.Flags().GetString("memory")
+	storStr, _ := cmd.Flags().GetString("storage")
+
+	var memBytes int64
+	if memStr != "" {
+		var err error
+		memBytes, err = units.RAMInBytes(memStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
+		}
+	}
+
+	var storBytes int64
+	if storStr != "" {
+		var err error
+		storBytes, err = units.RAMInBytes(storStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+		}
+	}
+
+	return &service.VMRestoreParams{
+		VMRef:       vmRef,
+		SnapshotRef: snapRef,
+		CPU:         cpu,
+		Memory:      memBytes,
+		Storage:     storBytes,
+	}, nil
+}
+
+// DebugParamsFromFlags builds DebugParams from cobra flags.
+func DebugParamsFromFlags(cmd *cobra.Command, image string) (*service.DebugParams, error) {
+	createParams, err := VMCreateParamsFromFlags(cmd, image)
+	if err != nil {
+		return nil, err
+	}
+
+	maxCPU, _ := cmd.Flags().GetInt("max-cpu")
+	balloon, _ := cmd.Flags().GetInt("balloon")
+	cowPath, _ := cmd.Flags().GetString("cow")
+	chBin, _ := cmd.Flags().GetString("ch")
+
+	return &service.DebugParams{
+		VMCreateParams: *createParams,
+		MaxCPU:         maxCPU,
+		Balloon:        balloon,
+		COWPath:        cowPath,
+		CHBin:          chBin,
+	}, nil
 }
 
 // sanitizeVMName derives a safe VM name from an image reference using

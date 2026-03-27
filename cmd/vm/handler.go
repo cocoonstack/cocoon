@@ -16,14 +16,10 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/projecteru2/cocoon/cmd/core"
-	"github.com/projecteru2/cocoon/config"
 	"github.com/projecteru2/cocoon/console"
-	"github.com/projecteru2/cocoon/hypervisor"
 	"github.com/projecteru2/cocoon/hypervisor/cloudhypervisor"
-	"github.com/projecteru2/cocoon/network"
-	"github.com/projecteru2/cocoon/snapshot"
+	"github.com/projecteru2/cocoon/service"
 	"github.com/projecteru2/cocoon/types"
-	"github.com/projecteru2/cocoon/utils"
 )
 
 type Handler struct {
@@ -31,10 +27,26 @@ type Handler struct {
 }
 
 func (h Handler) Create(cmd *cobra.Command, args []string) error {
-	ctx, vm, _, err := h.createVM(cmd, args[0])
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	params, err := cmdcore.VMCreateParamsFromFlags(cmd, args[0])
+	if err != nil {
+		return err
+	}
+
+	vm, err := svc.CreateVM(ctx, params)
+	if err != nil {
+		return err
+	}
+
 	logger := log.WithFunc("cmd.create")
 	logger.Infof(ctx, "VM created: %s (name: %s, state: %s)", vm.ID, vm.Config.Name, vm.State)
 	logger.Infof(ctx, "start with: cocoon vm start %s", vm.ID)
@@ -42,20 +54,29 @@ func (h Handler) Create(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Run(cmd *cobra.Command, args []string) error {
-	ctx, vm, hyper, err := h.createVM(cmd, args[0])
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	params, err := cmdcore.VMCreateParamsFromFlags(cmd, args[0])
+	if err != nil {
+		return err
+	}
+
+	vm, err := svc.RunVM(ctx, params)
+	if err != nil {
+		return err
+	}
+
 	logger := log.WithFunc("cmd.run")
 	logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
-
-	started, err := hyper.Start(ctx, []string{vm.ID})
-	if err != nil {
-		return fmt.Errorf("start VM %s: %w", vm.ID, err)
-	}
-	for _, id := range started {
-		logger.Infof(ctx, "started: %s", id)
-	}
+	logger.Infof(ctx, "started: %s", vm.ID)
 	return nil
 }
 
@@ -64,135 +85,28 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	params, err := cmdcore.VMCloneParamsFromFlags(cmd, args[0])
+	if err != nil {
+		return err
+	}
+
 	logger := log.WithFunc("cmd.clone")
+	logger.Infof(ctx, "cloning VM from snapshot %s ...", args[0])
 
-	hyper, err := cmdcore.InitHypervisor(conf)
+	vm, networkConfigs, err := svc.CloneVM(ctx, params)
 	if err != nil {
 		return err
-	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
-	if err != nil {
-		return err
-	}
-
-	snapRef := args[0]
-
-	// Try local fast path: skip tar encode/decode entirely.
-	if da, ok := snapBackend.(snapshot.Direct); ok {
-		if dcr, ok := hyper.(hypervisor.Direct); ok {
-			return h.cloneDirect(ctx, cmd, conf, dcr, da, snapRef, logger)
-		}
-	}
-
-	// Fallback: stream path.
-	cfg, stream, err := snapBackend.Restore(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
-	}
-	defer stream.Close() //nolint:errcheck
-
-	stop := context.AfterFunc(ctx, func() {
-		stream.Close() //nolint:errcheck,gosec
-	})
-	defer stop()
-
-	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(cmd, ctx, conf, cfg)
-	if err != nil {
-		return err
-	}
-
-	logger.Infof(ctx, "cloning VM from snapshot %s ...", snapRef)
-
-	vm, cloneErr := hyper.Clone(ctx, vmID, vmCfg, networkConfigs, cfg, stream)
-	if cloneErr != nil {
-		rollbackNetwork(ctx, netProvider, vmID)
-		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm, networkConfigs)
 	return nil
-}
-
-func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, dcr hypervisor.Direct, da snapshot.Direct, snapRef string, logger *log.Fields) error {
-	dataDir, cfg, err := da.DataDir(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
-	}
-
-	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(cmd, ctx, conf, cfg)
-	if err != nil {
-		return err
-	}
-
-	logger.Infof(ctx, "cloning VM from snapshot %s (direct) ...", snapRef)
-
-	vm, cloneErr := dcr.DirectClone(ctx, vmID, vmCfg, networkConfigs, cfg, dataDir)
-	if cloneErr != nil {
-		rollbackNetwork(ctx, netProvider, vmID)
-		return fmt.Errorf("clone VM: %w", cloneErr)
-	}
-
-	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
-	printPostCloneHints(vm, networkConfigs)
-	return nil
-}
-
-func (h Handler) prepareClone(cmd *cobra.Command, ctx context.Context, conf *config.Config, cfg *types.SnapshotConfig) (*types.VMConfig, string, network.Network, []*types.NetworkConfig, error) {
-	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-
-	vmID, err := utils.GenerateID()
-	if err != nil {
-		return nil, "", nil, nil, fmt.Errorf("generate VM ID: %w", err)
-	}
-	if vmCfg.Name == "" {
-		vmCfg.Name = "cocoon-clone-" + vmID[:8]
-	}
-
-	nics, _ := cmd.Flags().GetInt("nics")
-	if nics == 0 {
-		nics = cfg.NICs
-	}
-	if nics < cfg.NICs {
-		return nil, "", nil, nil, fmt.Errorf("--nics %d below snapshot minimum %d", nics, cfg.NICs)
-	}
-
-	netProvider, networkConfigs, err := initNetwork(ctx, conf, vmID, nics, vmCfg)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-
-	return vmCfg, vmID, netProvider, networkConfigs, nil
-}
-
-// restoreDirect attempts the direct restore path. Returns (false, nil) if
-// the backends don't support it, so the caller falls through to the stream path.
-func (h Handler) restoreDirect(ctx context.Context, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
-	da, ok := snapBackend.(snapshot.Direct)
-	if !ok {
-		return false, nil
-	}
-	dcr, ok := hyper.(hypervisor.Direct)
-	if !ok {
-		return false, nil
-	}
-
-	dataDir, _, err := da.DataDir(ctx, snapRef)
-	if err != nil {
-		return true, fmt.Errorf("open snapshot: %w", err)
-	}
-
-	logger.Infof(ctx, "restoring VM %s from snapshot %s (direct) ...", vmRef, snapRef)
-	result, err := dcr.DirectRestore(ctx, vmRef, vmCfg, dataDir)
-	if err != nil {
-		return true, fmt.Errorf("restore: %w", err)
-	}
-
-	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
-	return true, nil
 }
 
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
@@ -200,57 +114,49 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	hyper, err := cmdcore.InitHypervisor(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	// Pre-start: recover missing netns (e.g. after host reboot).
-	if netProvider, netErr := cmdcore.InitNetwork(conf); netErr == nil {
-		h.recoverNetwork(ctx, hyper, netProvider, args)
-	}
-
-	return batchVMCmd(ctx, "start", "started", hyper.Start, args)
-}
-
-// recoverNetwork recreates the network namespace and TC redirect for VMs
-// whose netns was lost (e.g. after host reboot). Best-effort: failures are
-// logged but do not block start — hyper.Start will report the real error.
-func (h Handler) recoverNetwork(ctx context.Context, hyper hypervisor.Hypervisor, net network.Network, refs []string) {
-	logger := log.WithFunc("cmd.recoverNetwork")
-	for _, ref := range refs {
-		vm, err := hyper.Inspect(ctx, ref)
-		if err != nil || vm == nil || len(vm.NetworkConfigs) == 0 {
-			continue
-		}
-		if net.Verify(ctx, vm.ID) == nil {
-			continue // netns exists, no recovery needed
-		}
-		logger.Warnf(ctx, "netns missing for VM %s, recovering network", vm.ID)
-		if _, recoverErr := net.Config(ctx, vm.ID, len(vm.NetworkConfigs), &vm.Config, vm.NetworkConfigs...); recoverErr != nil {
-			logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
-		}
-	}
+	return batchVMCmd(ctx, "start", "started", func(refs []string) ([]string, error) {
+		return svc.StartVM(ctx, refs)
+	}, args)
 }
 
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
-	ctx, hyper, err := h.initHyper(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
-	return batchVMCmd(ctx, "stop", "stopped", hyper.Stop, args)
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	return batchVMCmd(ctx, "stop", "stopped", func(refs []string) ([]string, error) {
+		return svc.StopVM(ctx, refs)
+	}, args)
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	ctx, hyper, err := h.initHyper(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
 
-	vms, err := hyper.List(ctx)
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	vms, err := svc.ListVM(ctx)
 	if err != nil {
 		return fmt.Errorf("list: %w", err)
 	}
+
 	if len(vms) == 0 {
 		fmt.Println("No VMs found.")
 		return nil
@@ -262,7 +168,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(w, "ID\tNAME\tSTATE\tCPU\tMEMORY\tSTORAGE\tIP\tIMAGE\tCREATED") //nolint:errcheck
 		for _, vm := range vms {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
-				vm.ID, vm.Config.Name, cmdcore.ReconcileState(vm),
+				vm.ID, vm.Config.Name, vm.State,
 				vm.Config.CPU, units.BytesSize(float64(vm.Config.Memory)),
 				units.BytesSize(float64(vm.Config.Storage)),
 				vmIPs(vm), vm.Config.Image,
@@ -272,27 +178,38 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
-	ctx, hyper, err := h.initHyper(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
 
-	info, err := hyper.Inspect(ctx, args[0])
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	info, err := svc.InspectVM(ctx, args[0])
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}
-	info.State = types.VMState(cmdcore.ReconcileState(info))
+
 	return cmdcore.OutputJSON(info)
 }
 
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
-	ctx, hyper, err := h.initHyper(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
 	ref := args[0]
 
-	conn, err := hyper.Console(ctx, ref)
+	conn, err := svc.ConsoleVM(ctx, ref)
 	if err != nil {
 		return fmt.Errorf("console: %w", err)
 	}
@@ -336,46 +253,37 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	if err := console.Relay(rw, escapeKeys); err != nil {
 		return fmt.Errorf("relay: %w", err)
 	}
+
 	return nil
 }
 
-// RM deletes VMs. hyper.Delete uses best-effort semantics: it logs successfully
-// deleted VMs in the returned slice even when later deletions fail, so we always
-// report the partial results before checking the error.
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
-	hyper, err := cmdcore.InitHypervisor(conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.rm")
 
 	force, _ := cmd.Flags().GetBool("force")
+	logger := log.WithFunc("cmd.rm")
 
-	deleted, deleteErr := hyper.Delete(ctx, args, force)
+	deleted, deleteErr := svc.RemoveVM(ctx, &service.VMRMParams{Refs: args, Force: force})
 	for _, id := range deleted {
 		logger.Infof(ctx, "deleted VM: %s", id)
 	}
 
-	// Clean up network resources for successfully deleted VMs first,
-	// even if hyper.Delete returned a partial error.
-	if len(deleted) > 0 {
-		if netProvider, initErr := cmdcore.InitNetwork(conf); initErr == nil {
-			if _, delErr := netProvider.Delete(ctx, deleted); delErr != nil {
-				return fmt.Errorf("VM(s) deleted but network cleanup failed: %w", delErr)
-			}
-		}
+	if deleteErr != nil {
+		return deleteErr
 	}
 
-	if deleteErr != nil {
-		return fmt.Errorf("rm: %w", deleteErr)
-	}
 	if len(deleted) == 0 {
 		logger.Info(ctx, "no VMs deleted")
 	}
+
 	return nil
 }
 
@@ -384,68 +292,23 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	svc, err := cmdcore.InitService(cmd, conf)
+	if err != nil {
+		return err
+	}
+
+	params, err := cmdcore.VMRestoreParamsFromFlags(cmd, args[0], args[1])
+	if err != nil {
+		return err
+	}
+
 	logger := log.WithFunc("cmd.restore")
+	logger.Infof(ctx, "restoring VM %s from snapshot %s ...", args[0], args[1])
 
-	hyper, err := cmdcore.InitHypervisor(conf)
+	result, err := svc.RestoreVM(ctx, params)
 	if err != nil {
 		return err
-	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
-	if err != nil {
-		return err
-	}
-
-	vmRef := args[0]
-	snapRef := args[1]
-
-	// Verify the snapshot belongs to this VM.
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM: %w", err)
-	}
-	snapInfo, err := snapBackend.Inspect(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("inspect snapshot: %w", err)
-	}
-	if _, ok := vm.SnapshotIDs[snapInfo.ID]; !ok {
-		return fmt.Errorf("snapshot %s does not belong to VM %s", snapRef, vmRef)
-	}
-
-	// Validate NIC count matches.
-	if snapInfo.NICs != len(vm.NetworkConfigs) {
-		return fmt.Errorf("NIC count mismatch: VM has %d, snapshot has %d",
-			len(vm.NetworkConfigs), snapInfo.NICs)
-	}
-
-	// Merge resource params: keep VM's current values, override with flags, validate >= snapshot.
-	vmCfg, err := cmdcore.RestoreVMConfigFromFlags(cmd, vm, &snapInfo.SnapshotConfig)
-	if err != nil {
-		return err
-	}
-
-	// Try local fast path: skip tar encode/decode entirely.
-	done, directErr := h.restoreDirect(ctx, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
-	if done {
-		return directErr
-	}
-
-	// Fallback: stream path.
-	_, stream, err := snapBackend.Restore(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("open snapshot: %w", err)
-	}
-	defer stream.Close() //nolint:errcheck
-
-	stop := context.AfterFunc(ctx, func() {
-		stream.Close() //nolint:errcheck,gosec
-	})
-	defer stop()
-
-	logger.Infof(ctx, "restoring VM %s from snapshot %s ...", vmRef, snapRef)
-
-	result, err := hyper.Restore(ctx, vmRef, vmCfg, stream)
-	if err != nil {
-		return fmt.Errorf("restore: %w", err)
 	}
 
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
@@ -457,132 +320,56 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	backends, err := cmdcore.InitImageBackends(ctx, conf)
+
+	svc, err := cmdcore.InitService(cmd, conf)
 	if err != nil {
 		return err
 	}
 
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, args[0])
+	params, err := cmdcore.DebugParamsFromFlags(cmd, args[0])
 	if err != nil {
 		return err
 	}
 
-	maxCPU, _ := cmd.Flags().GetInt("max-cpu")
-	balloon, _ := cmd.Flags().GetInt("balloon")
-	cowPath, _ := cmd.Flags().GetString("cow")
-	chBin, _ := cmd.Flags().GetString("ch")
-
-	storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
+	info, err := svc.DebugVM(ctx, params)
 	if err != nil {
 		return err
 	}
 
-	memoryMB := int(vmCfg.Memory >> 20)   //nolint:mnd
-	cowSizeGB := int(vmCfg.Storage >> 30) //nolint:mnd
+	memoryMB := int(params.Memory >> 20)  //nolint:mnd
+	cowSizeGB := int(params.Storage >> 30) //nolint:mnd
+	balloon := params.Balloon
 	if balloon == 0 {
 		balloon = memoryMB / 2 //nolint:mnd
 	}
 
-	if boot.KernelPath != "" {
-		printRunOCI(storageConfigs, boot, vmCfg.Name, vmCfg.Image, cowPath, chBin, vmCfg.CPU, maxCPU, memoryMB, balloon, cowSizeGB)
+	if info.BootConfig.KernelPath != "" {
+		printRunOCI(info.StorageConfigs, info.BootConfig, params.Name, params.Image, params.COWPath, params.CHBin, params.CPU, params.MaxCPU, memoryMB, balloon, cowSizeGB)
 	} else {
-		printRunCloudimg(storageConfigs, boot, vmCfg.Name, vmCfg.Image, cowPath, chBin, vmCfg.CPU, maxCPU, memoryMB, balloon, cowSizeGB)
+		printRunCloudimg(info.StorageConfigs, info.BootConfig, params.Name, params.Image, params.COWPath, params.CHBin, params.CPU, params.MaxCPU, memoryMB, balloon, cowSizeGB)
 	}
+
 	return nil
 }
 
-// initHyper is the shared init for methods that only need the hypervisor.
-func (h Handler) initHyper(cmd *cobra.Command) (context.Context, hypervisor.Hypervisor, error) {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return nil, nil, err
-	}
-	hyper, err := cmdcore.InitHypervisor(conf)
-	if err != nil {
-		return nil, nil, err
-	}
-	return ctx, hyper, nil
-}
+// --- helpers (presentation only) ---
 
-// createVM is the shared logic for Create and Run: resolve image, create VM.
-func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	storageConfigs, bootCfg, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	cmdcore.EnsureFirmwarePath(conf, bootCfg)
-
-	vmID, err := utils.GenerateID()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("generate VM ID: %w", err)
-	}
-
-	nics, _ := cmd.Flags().GetInt("nics")
-	netProvider, networkConfigs, err := initNetwork(ctx, conf, vmID, nics, vmCfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	info, createErr := hyper.Create(ctx, vmID, vmCfg, storageConfigs, networkConfigs, bootCfg)
-	if createErr != nil {
-		rollbackNetwork(ctx, netProvider, vmID)
-		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
-	}
-	return ctx, info, hyper, nil
-}
-
-// initNetwork sets up network for a new VM. Returns nil provider and configs when nics == 0.
-func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig) (network.Network, []*types.NetworkConfig, error) {
-	if nics <= 0 {
-		return nil, nil, nil
-	}
-	netProvider, err := cmdcore.InitNetwork(conf)
-	if err != nil {
-		return nil, nil, fmt.Errorf("init network: %w", err)
-	}
-	configs, err := netProvider.Config(ctx, vmID, nics, vmCfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("configure network: %w", err)
-	}
-	return netProvider, configs, nil
-}
-
-// rollbackNetwork cleans up network resources on VM creation/clone failure.
-func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID string) {
-	if netProvider == nil {
-		return
-	}
-	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
-		log.WithFunc("cmd.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
-	}
-}
-
-func batchVMCmd(ctx context.Context, name, pastTense string, fn func(context.Context, []string) ([]string, error), refs []string) error {
+func batchVMCmd(ctx context.Context, name, pastTense string, fn func([]string) ([]string, error), refs []string) error {
 	logger := log.WithFunc("cmd." + name)
-	done, err := fn(ctx, refs)
+
+	done, err := fn(refs)
 	for _, id := range done {
 		logger.Infof(ctx, "%s: %s", pastTense, id)
 	}
+
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
+
 	if len(done) == 0 {
 		logger.Infof(ctx, "no VMs %s", strings.ToLower(pastTense))
 	}
+
 	return nil
 }
 
@@ -604,13 +391,11 @@ func printPostCloneHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 	} else {
 		printOCINetworkHints(vm, networkConfigs)
 	}
+
 	fmt.Println()
 }
 
 func printCloudimgNetworkHints(_ []*types.NetworkConfig) {
-	// Cloudimg: NIC MACs are handled by hot-swap during clone (vm.remove-device +
-	// vm.add-net while paused). Clean old network configs from snapshot COW first,
-	// then cloud-init reinit writes correct MAC-based configs from the new cidata.
 	fmt.Println()
 	fmt.Println("  # Clean old network configs from snapshot and reconfigure via cloud-init")
 	fmt.Println("  rm -f /etc/systemd/network/10-*.network")
@@ -624,23 +409,18 @@ type nicHint struct {
 }
 
 func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
-	// OCI: no cloud-init, set hostname + write MAC-based systemd-networkd configs.
-	// Two goals: immediate effect (systemctl restart) + reboot persistence.
-	// MAC-based [Match] is essential because:
-	//  1. After hot-swap, device names are unpredictable (eth2, eth3, ...).
-	//  2. 10-<mac>.network takes priority over network.sh's 10-<mac>.network,
-	//     so correct IPs survive guest reboots even if kernel ip= has stale values.
 	fmt.Println()
 	fmt.Printf("  # Set hostname\n")
 	fmt.Printf("  hostnamectl set-hostname %s\n", vm.Config.Name)
 
-	// Collect MACs from all NICs. Separate static (has IP) from DHCP (no IP).
 	var staticNICs []nicHint
 	var dhcpMACs []string
+
 	for _, nc := range networkConfigs {
 		if nc == nil || nc.Mac == "" {
 			continue
 		}
+
 		if nc.Network != nil && nc.Network.IP != "" {
 			staticNICs = append(staticNICs, nicHint{
 				mac:    nc.Mac,
@@ -657,7 +437,6 @@ func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 		return
 	}
 
-	// Clean old snapshot network configs, then write MAC-based ones.
 	fmt.Println()
 	fmt.Println("  # Clean old network configs from snapshot and write new ones (MAC-based)")
 	fmt.Println("  rm -f /etc/systemd/network/10-*.network")
@@ -675,10 +454,12 @@ func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 		fmt.Println("    f=\"/etc/systemd/network/10-${macs[$i]//:/}.network\"")
 		writeNet := `    printf '[Match]\nMACAddress=` + `%s\n\n[Network]\nAddress=%s\n' "${macs[$i]}" "${addrs[$i]}" > "$f"`
 		fmt.Println(writeNet)
+
 		if hasGW {
 			writeGW := `    [ -n "${gws[$i]}" ] && printf 'Gateway=` + `%s\n' "${gws[$i]}" >> "$f"`
 			fmt.Println(writeGW)
 		}
+
 		fmt.Println("  done")
 	}
 
@@ -713,7 +494,6 @@ func printRunOCI(configs []*types.StorageConfig, boot *types.BootConfig, vmName,
 	debugConfigs := append(append([]*types.StorageConfig(nil), configs...),
 		&types.StorageConfig{Path: cowPath, RO: false, Serial: cloudhypervisor.CowSerial})
 	diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu)
-
 	cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(configs), ",")
 
 	cmdline := fmt.Sprintf(
@@ -761,7 +541,6 @@ func printRunCloudimg(configs []*types.StorageConfig, boot *types.BootConfig, vm
 	printCommonCHArgs(cpu, maxCPU, memory, balloon)
 }
 
-// vmIPs extracts a comma-separated IP string from a VM's NetworkConfigs.
 func vmIPs(vm *types.VM) string {
 	var ips []string
 	for _, nc := range vm.NetworkConfigs {
@@ -769,15 +548,14 @@ func vmIPs(vm *types.VM) string {
 			ips = append(ips, nc.Network.IP)
 		}
 	}
+
 	if len(ips) == 0 {
 		return "-"
 	}
+
 	return strings.Join(ips, ",")
 }
 
-// printCommonCHArgs outputs CH args for manual debugging.
-// --serial tty outputs to the current terminal for interactive debugging,
-// which intentionally differs from the automated path (Console: Pty / Serial: Socket).
 func printCommonCHArgs(cpu, maxCPU, memory, balloon int) {
 	fmt.Printf("  --cpus boot=%d,max=%d \\\n", cpu, maxCPU)
 	fmt.Printf("  --memory size=%dM \\\n", memory)
