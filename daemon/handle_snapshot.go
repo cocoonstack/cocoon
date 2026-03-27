@@ -47,10 +47,7 @@ func (d *Daemon) handleInspectSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleRemoveSnapshots(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Refs []string `json:"refs"`
-	}
-
+	var req refsRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

@@ -81,12 +81,8 @@ func (d *Daemon) handleCloneVM(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type startStopRequest struct {
-	Refs []string `json:"refs"`
-}
-
 func (d *Daemon) handleStartVM(w http.ResponseWriter, r *http.Request) {
-	var req startStopRequest
+	var req refsRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -102,7 +98,7 @@ func (d *Daemon) handleStartVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleStopVM(w http.ResponseWriter, r *http.Request) {
-	var req startStopRequest
+	var req refsRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

@@ -113,6 +113,11 @@ func listen(addr string) (net.Listener, error) {
 
 // --- helpers ---
 
+// refsRequest is a shared request body for endpoints that accept a list of refs.
+type refsRequest struct {
+	Refs []string `json:"refs"`
+}
+
 // writeJSON encodes v as JSON and writes it to the response.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

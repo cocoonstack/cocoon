@@ -199,8 +199,16 @@ func TestDaemon_TCPListen(t *testing.T) {
 		errCh <- d.Start(ctx)
 	}()
 
-	// Give the server goroutine a moment to start serving.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the server to start accepting connections.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, dialErr := net.Dial("tcp", addr)
+		if dialErr == nil {
+			conn.Close() //nolint:errcheck,gosec
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	resp, err := http.Get(fmt.Sprintf("http://%s/api/v1/vms", addr))
 	if err != nil {
