@@ -42,7 +42,7 @@ func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
 	stopTimeout := time.Duration(ch.conf.StopTimeoutSeconds) * time.Second
 
 	shutdownErr := ch.withRunningVM(ctx, &rec, func(pid int) error {
-		if isDirectBoot(rec.BootConfig) {
+		if isDirectBoot(rec.BootConfig) || stopTimeout < 0 {
 			return ch.forceTerminate(ctx, hc, id, sockPath, pid)
 		}
 		return ch.shutdownUEFI(ctx, hc, id, sockPath, pid, stopTimeout)

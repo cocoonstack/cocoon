@@ -234,7 +234,22 @@ func (h Handler) recoverNetwork(ctx context.Context, hyper hypervisor.Hypervisor
 }
 
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
-	ctx, hyper, err := h.initHyper(cmd)
+	ctx, conf, err := h.Init(cmd)
+	if err != nil {
+		return err
+	}
+
+	force, _ := cmd.Flags().GetBool("force")
+	timeout, _ := cmd.Flags().GetInt("timeout")
+
+	// --force: skip ACPI, immediate kill. --timeout: override config default.
+	if force {
+		conf.StopTimeoutSeconds = -1
+	} else if timeout > 0 {
+		conf.StopTimeoutSeconds = timeout
+	}
+
+	hyper, err := cmdcore.InitHypervisor(conf)
 	if err != nil {
 		return err
 	}

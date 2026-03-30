@@ -65,6 +65,8 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.Stop,
 	}
+	stopCmd.Flags().Bool("force", false, "force stop (skip graceful shutdown, immediate SIGTERM/SIGKILL)")
+	stopCmd.Flags().Int("timeout", 0, "ACPI shutdown timeout in seconds (0 = use config default)")
 
 	listCmd := &cobra.Command{
 		Use:     "list",

@@ -106,7 +106,55 @@ ssh -p 2222 cocoon@localhost
 # - virtio-win guest tools installed
 ```
 
-### 7. Shut down and import to Cocoon
+### 7. Post-install verification checklist
+
+After the first boot completes, verify every autounattend.xml configuration persisted correctly.
+**Reboot the VM 2-3 times** and re-check after each reboot to confirm persistence.
+
+```powershell
+# --- Services ---
+Get-Service sshd | Select-Object Status, StartType           # Running, Automatic
+Get-Service TermService | Select-Object Status, StartType     # Running, Automatic
+
+# --- RDP ---
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections  # 0
+
+# --- SSH ---
+Test-NetConnection -ComputerName localhost -Port 22           # TcpTestSucceeded: True
+
+# --- WinRM ---
+winrm get winrm/config/service | Select-String "AllowUnencrypted"  # true
+winrm get winrm/config/service/auth | Select-String "Basic"        # true
+Test-NetConnection -ComputerName localhost -Port 5985               # TcpTestSucceeded: True
+
+# --- SAC / EMS ---
+bcdedit /enum | Select-String "ems"                           # Yes for both ems and bootems
+
+# --- Firewall (should be off for dev/test) ---
+Get-NetFirewallProfile | Select-Object Name, Enabled          # All: False
+
+# --- Hibernate (should be off) ---
+powercfg /a | Select-String "Hibernate"                       # "Hibernation has not been enabled"
+
+# --- Shutdown optimization ---
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control').WaitToKillServiceTimeout      # 5000
+(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System').DisableShutdownNamedPipeCheck  # 1
+
+# --- Hostname ---
+hostname                                                       # COCOON-VM
+
+# --- VirtIO drivers ---
+Get-WmiObject Win32_PnPSignedDriver | Where-Object { $_.DeviceName -match 'VirtIO' } | Select-Object DeviceName, DriverVersion
+# Expected: VirtIO Balloon Driver, VirtIO SCSI controller, VirtIO Ethernet Adapter (NetKVM)
+
+# --- virtio-win guest tools ---
+Get-WmiObject Win32_Product | Where-Object { $_.Name -match 'Virtio-win' } | Select-Object Name, Version
+```
+
+If any check fails after reboot, the corresponding autounattend.xml command may not have
+executed. Fix manually and re-verify before proceeding.
+
+### 8. Shut down and import to Cocoon
 
 ```bash
 # Shut down the VM, then import as cloudimg
@@ -163,6 +211,7 @@ The included [`autounattend.xml`](autounattend.xml) automates the entire Windows
 | 14-17 | **WinRM** | Enable PS Remoting, allow unencrypted + Basic auth, firewall on port 5985 |
 | 18    | **Hostname** | Force rename (specialize `ComputerName` unreliable on 25H2) |
 | 19    | **virtio-win guest tools** | Silent install `virtio-win-gt-x64.msi` from CD-ROM (D: or E:) -- installs complete driver suite + balloon service |
+| 20-21 | **ACPI shutdown optimization** | Reduce `WaitToKillServiceTimeout` to 5s, disable shutdown named pipe check -- speeds up `cocoon vm stop` response to ACPI power-button |
 
 ## Post-Clone Networking
 

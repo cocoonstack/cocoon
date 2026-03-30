@@ -85,6 +85,9 @@
         <SynchronousCommand wcm:action="add"><Order>18</Order><CommandLine>powershell -Command "Rename-Computer -NewName 'COCOON-VM' -Force"</CommandLine></SynchronousCommand>
         <!-- V10: Silent install virtio-win guest tools (all drivers + balloon service) -->
         <SynchronousCommand wcm:action="add"><Order>19</Order><CommandLine>cmd /c "if exist D:\virtio-win-gt-x64.msi (msiexec /i D:\virtio-win-gt-x64.msi /qn /norestart) else if exist E:\virtio-win-gt-x64.msi (msiexec /i E:\virtio-win-gt-x64.msi /qn /norestart)"</CommandLine></SynchronousCommand>
+        <!-- V10: Speed up ACPI shutdown for Cocoon stop (reduce service kill timeout to 5s) -->
+        <SynchronousCommand wcm:action="add"><Order>20</Order><CommandLine>reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v WaitToKillServiceTimeout /t REG_SZ /d 5000 /f</CommandLine></SynchronousCommand>
+        <SynchronousCommand wcm:action="add"><Order>21</Order><CommandLine>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableShutdownNamedPipeCheck /t REG_DWORD /d 1 /f</CommandLine></SynchronousCommand>
       </FirstLogonCommands>
     </component>
   </settings>
