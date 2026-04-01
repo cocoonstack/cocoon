@@ -14,7 +14,6 @@ Multi-arch (`linux/amd64`, `linux/arm64`).
 | Ubuntu 24.04 (Noble) | `24.04` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04` |
 | Ubuntu 24.04 + Chrome | `24.04-chrome` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-chrome` |
 | Ubuntu 24.04 + Xfce | `24.04-xface` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-xface` |
-| Ubuntu 24.04 + ZeroClaw | `24.04-zeroclaw` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-zeroclaw` |
 | Ubuntu 24.04 + PicoClaw | `24.04-picoclaw` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-picoclaw` |
 
 ### Android (Redroid)
