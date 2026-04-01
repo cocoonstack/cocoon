@@ -73,13 +73,19 @@ Cocoon detects when CNI returns no IP allocation and automatically configures th
 
 ## Windows VM requires Cloud Hypervisor v50.2
 
-Cloud Hypervisor v51.x has a regression ([#7849](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7849)) that causes Windows to BSOD (`DRIVER_IRQL_NOT_LESS_OR_EQUAL` in `viostor.sys`) when DISCARD/WRITE_ZEROES features are advertised with default-zero config values, violating virtio spec v1.2. The fix (PR #7852) is merged but not yet included in any release.
+**Status: FIXED** in our fork and upstream.
 
-**Recommendation**: use Cloud Hypervisor **v50.2** for Windows VMs.
+Cloud Hypervisor v51.x had a regression ([#7849](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7849)) that caused Windows to BSOD (`DRIVER_IRQL_NOT_LESS_OR_EQUAL` in `viostor.sys`) when DISCARD/WRITE_ZEROES features were advertised with default-zero config values, violating virtio spec v1.2.
+
+**Fix**: the DISCARD fix is included in our Cloud Hypervisor fork ([CMGS/cloud-hypervisor `dev` branch](https://github.com/CMGS/cloud-hypervisor/tree/dev)). Upstream has also merged it ([PR #7936](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7936)). Cloud Hypervisor **v51** now works correctly with Windows VMs.
+
+**Previous recommendation** (no longer needed): use Cloud Hypervisor v50.2 for Windows VMs.
 
 ## Windows VM requires virtio-win 0.1.240
 
-virtio-win 0.1.271+ network drivers are incompatible with Cloud Hypervisor due to incomplete virtio-net control queue implementation ([#7925](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7925)). CH only handles `CTRL_MQ` and `CTRL_GUEST_OFFLOADS`; all other commands (`CTRL_RX`, `CTRL_MAC`, `CTRL_VLAN`, `CTRL_ANNOUNCE`) return `VIRTIO_NET_ERR`.
+**Status: FIXED** in our fork.
+
+virtio-win 0.1.271+ network drivers were incompatible with Cloud Hypervisor due to incomplete virtio-net control queue implementation ([#7925](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7925)). CH only handled `CTRL_MQ` and `CTRL_GUEST_OFFLOADS`; all other commands (`CTRL_RX`, `CTRL_MAC`, `CTRL_VLAN`, `CTRL_ANNOUNCE`) returned `VIRTIO_NET_ERR`.
 
 | Version  | Behavior on VIRTIO_NET_ERR                               |
 |----------|----------------------------------------------------------|
@@ -87,19 +93,25 @@ virtio-win 0.1.271+ network drivers are incompatible with Cloud Hypervisor due t
 | 0.1.271  | May silently fail, NIC unusable                          |
 | 0.1.285+ | Fail-fast: NdisMRemoveMiniport(), Problem Code 43        |
 
-0.1.285 introduced commit `50e7db9` ("indicate driver error on unexpected CX behavior") with zero-tolerance on control queue errors. Root cause is a CH bug — correct fix is to return `VIRTIO_NET_OK` for unsupported commands instead of `VIRTIO_NET_ERR`. No upstream PR exists yet.
+0.1.285 introduced commit `50e7db9` ("indicate driver error on unexpected CX behavior") with zero-tolerance on control queue errors. Root cause was a CH bug — the correct fix is to return `VIRTIO_NET_OK` for unsupported commands and to report the correct `used_len`.
 
-**Recommendation**: use virtio-win **0.1.240** for Windows VMs on Cloud Hypervisor.
+**Fix**: our Cloud Hypervisor fork includes ctrl_queue command tolerance (from [@liuw](https://github.com/liuw)) plus the `used_len` fix. See [CMGS/cloud-hypervisor `fix/virtio-net-ctrl-queue` branch](https://github.com/CMGS/cloud-hypervisor/tree/fix/virtio-net-ctrl-queue) (also merged into the [`dev` branch](https://github.com/CMGS/cloud-hypervisor/tree/dev)). virtio-win **0.1.285** now works. No upstream PR exists yet.
+
+**Previous recommendation** (no longer needed): use virtio-win 0.1.240 for Windows VMs on Cloud Hypervisor.
 
 ## Windows VM does not respond to ACPI power-button
 
-Cloud Hypervisor uses a GED (Generic Event Device, `ACPI0013`) to deliver power-button notifications on its hardware-reduced ACPI platform. While this mechanism works correctly for Linux guests, Windows guests do not respond to the `vm.power-button` API call — no power-button event appears in the Windows event log (`Event ID 109`).
+**Status: FIXED** in our firmware fork.
 
-Architecturally, the signal chain (`GED interrupt → _EVT() AML → Notify(\_SB_.PWRB, 0x80)`) should work — Windows has supported hardware-reduced ACPI since Windows 8, and the `PNP0C0C` power button device has an inbox driver. The root cause of the failure is under investigation.
+Cloud Hypervisor uses a GED (Generic Event Device, `ACPI0013`) to deliver power-button notifications on its hardware-reduced ACPI platform. While this mechanism works correctly for Linux guests, Windows guests did not respond to the `vm.power-button` API call — no power-button event appeared in the Windows event log (`Event ID 109`).
 
-**Consequence**: `cocoon vm stop` always times out on Windows VMs (default 30s), then falls back to `vm.shutdown` → SIGTERM → SIGKILL.
+**Root cause**: the EFI `ResetSystem` runtime service in [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) was a no-op. When Windows attempted a graceful shutdown via the UEFI reset path, nothing happened. Tracked in [cloud-hypervisor/rust-hypervisor-firmware#422](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/422) and [cloud-hypervisor/cloud-hypervisor#7929](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7929).
 
-**Workaround**: shut down Windows guests via SSH or WinRM before stopping:
+**Fix**: our firmware fork ([CMGS/rust-hypervisor-firmware `dev` branch](https://github.com/CMGS/rust-hypervisor-firmware/tree/dev), also [`fix/reset-system` branch](https://github.com/CMGS/rust-hypervisor-firmware/tree/fix/reset-system)) implements `ResetSystem` properly. Upstream PR: [cloud-hypervisor/rust-hypervisor-firmware#423](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/pull/423). With this fix, the ACPI power-button works for Windows guests, and `cocoon vm stop` completes in ~13.5 seconds.
+
+**Previous consequence** (no longer applies with our firmware fork): `cocoon vm stop` always timed out on Windows VMs (default 30s), then fell back to `vm.shutdown` → SIGTERM → SIGKILL.
+
+**Previous workaround** (no longer needed with our firmware fork): shut down Windows guests via SSH or WinRM before stopping:
 
 ```bash
 ssh cocoon@<vm-ip> "shutdown /s /t 0"
@@ -108,4 +120,4 @@ cocoon vm stop <vm>
 
 Or use `cocoon vm stop --force` to skip the ACPI timeout and immediately kill the process.
 
-The Windows image's `autounattend.xml` includes defensive power-button configuration (`PBUTTONACTION=3`) and shutdown optimization (`WaitToKillServiceTimeout=5000`, `shutdownwithoutlogon=1`) in case future CH versions fix the GED delivery issue.
+The Windows image's `autounattend.xml` includes defensive power-button configuration (`PBUTTONACTION=3`) and shutdown optimization (`WaitToKillServiceTimeout=5000`, `shutdownwithoutlogon=1`) which remain useful for environments not using our firmware fork.

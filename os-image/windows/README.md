@@ -4,13 +4,26 @@ Build guide for Windows 11 25H2 on Cloud Hypervisor. Unlike the [Cloud Hyperviso
 
 ## Version Requirements
 
-| Component        | Version     | Reason                                                                  |
-|------------------|-------------|-------------------------------------------------------------------------|
-| Cloud Hypervisor | **v50.2**   | v51.x BSOD regression ([#7849][ch-7849])                               |
-| virtio-win       | **0.1.240** | 0.1.271+ incompatible with CH virtio-net ctrl_queue ([#7925][ch-7925]) |
+| Component        | Version      | Notes                                                                    |
+|------------------|--------------|--------------------------------------------------------------------------|
+| Cloud Hypervisor | **v51+**     | Use [CMGS/cloud-hypervisor `dev`][ch-fork] for full Windows support      |
+| Firmware         | **patched**  | Use [CMGS/rust-hypervisor-firmware `dev`][fw-fork] for ACPI shutdown     |
+| virtio-win       | **0.1.285**  | Latest stable; 0.1.240 also works on upstream CH without patches         |
 
+With our [CH fork][ch-fork] and [firmware fork][fw-fork], all previously known Windows issues are resolved:
+- v51 BSOD fixed ([#7849][ch-7849], [PR #7936][ch-7936])
+- virtio-win 0.1.285 works ([#7925][ch-7925], ctrl_queue + used_len fix)
+- ACPI power-button shutdown works ([firmware#422][fw-422], [firmware PR #423][fw-423])
+
+If using **upstream** (unpatched) Cloud Hypervisor, use v50.2 + virtio-win 0.1.240 + SSH shutdown workaround. See [KNOWN_ISSUES.md](../../KNOWN_ISSUES.md).
+
+[ch-fork]: https://github.com/CMGS/cloud-hypervisor/tree/dev
+[fw-fork]: https://github.com/CMGS/rust-hypervisor-firmware/tree/dev
 [ch-7849]: https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7849
 [ch-7925]: https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7925
+[ch-7936]: https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7936
+[fw-422]: https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/422
+[fw-423]: https://github.com/cloud-hypervisor/rust-hypervisor-firmware/pull/423
 
 ## Why No CI Build?
 
@@ -23,7 +36,7 @@ For internal use with proper licensing, you can automate builds with [Packer + Q
 - Linux host with KVM
 - QEMU (installation phase only -- production runs on Cloud Hypervisor)
 - Windows 11 25H2 ISO
-- [virtio-win-0.1.240.iso](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.240-1/)
+- [virtio-win-0.1.285.iso](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.285-1/) (or 0.1.240 for upstream CH)
 - OVMF firmware (`OVMF_CODE_4M.secboot.fd`)
 - [swtpm](https://github.com/stefanberger/swtpm) (TPM 2.0 emulator -- required by Windows 11)
 
@@ -74,7 +87,7 @@ qemu-system-x86_64 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd \
   -drive if=pflash,format=raw,file=OVMF_VARS.fd \
   -cdrom win11_25h2.iso \
-  -drive file=virtio-win-0.1.240.iso,index=1,media=cdrom \
+  -drive file=virtio-win-0.1.285.iso,index=1,media=cdrom \
   -drive if=none,id=root,file=windows-11-25h2.qcow2,format=qcow2 \
   -device virtio-blk-pci,drive=root,disable-legacy=on \
   -device virtio-net-pci,netdev=mynet0,disable-legacy=on \
@@ -215,7 +228,7 @@ The included [`autounattend.xml`](autounattend.xml) automates the entire Windows
 | 14-17 | **WinRM** | Enable PS Remoting, allow unencrypted + Basic auth, firewall on port 5985 |
 | 18    | **Hostname** | Force rename (specialize `ComputerName` unreliable on 25H2) |
 | 19    | **virtio-win guest tools** | Silent install `virtio-win-gt-x64.msi` from CD-ROM (D: or E:) -- installs complete driver suite + balloon service |
-| 20-22 | **ACPI power button = shut down** | Set power button action to "Shut down" for AC/DC power schemes -- defensive config in case future CH versions fix GED delivery (currently ACPI power-button does not reach Windows, see [KNOWN_ISSUES.md](../../KNOWN_ISSUES.md)) |
+| 20-22 | **ACPI power button = shut down** | Set power button action to "Shut down" for AC/DC power schemes -- works with our [firmware fork][fw-fork]; defensive config for upstream firmware |
 | 23-24 | **Shutdown optimization** | Reduce `WaitToKillServiceTimeout` to 5s, disable shutdown named pipe check -- speeds up `shutdown /s /t 0` via SSH/WinRM |
 | 25    | **Shutdown without logon** | Allow remote shutdown when no user is logged in (required for SSH/WinRM `shutdown /s /t 0`) |
 

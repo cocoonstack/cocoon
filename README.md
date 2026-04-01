@@ -29,7 +29,7 @@ Lightweight MicroVM engine built on [Cloud Hypervisor](https://github.com/cloud-
 
 - Linux with KVM (x86_64 or aarch64)
 - Root access (sudo)
-- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0+ (v50.2 for Windows VMs — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
+- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0+ (for Windows VMs, use our [CH fork](https://github.com/CMGS/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/CMGS/rust-hypervisor-firmware/tree/dev) for full compatibility — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
 - `qemu-img` (from qemu-utils, for cloud images)
 - UEFI firmware (`CLOUDHV.fd`, for cloud images)
 - CNI plugins (`bridge`, `host-local`, `loopback`)
@@ -292,8 +292,9 @@ The `--windows` flag:
 
 ### Requirements
 
-- Cloud Hypervisor **v50.2** (v51.x has a Windows regression — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
-- virtio-win **0.1.240** drivers pre-installed in the image (see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
+- Cloud Hypervisor **v51+** with our [CH fork](https://github.com/CMGS/cloud-hypervisor/tree/dev) (includes DISCARD fix, virtio-net ctrl_queue fix, and upstream patches — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
+- UEFI firmware from our [firmware fork](https://github.com/CMGS/rust-hypervisor-firmware/tree/dev) (includes ResetSystem fix for ACPI power-button — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
+- virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works; newer versions are supported with our CH fork)
 
 ### Image Preparation
 
@@ -319,7 +320,7 @@ For more details, see the [Cloud Hypervisor Windows documentation](https://githu
 ### Shutdown Behavior
 
 - **UEFI VMs (cloudimg)**: ACPI power-button → poll for graceful exit → timeout (default 30s, configurable via `stop_timeout_seconds` in config or `--timeout` flag) → SIGTERM → 5s → SIGKILL
-- **Windows VMs**: ACPI power-button is not recognized by the guest (see [KNOWN_ISSUES.md](KNOWN_ISSUES.md)); use `ssh shutdown /s /t 0` before stopping, or `--force` to skip the ACPI timeout
+- **Windows VMs**: ACPI power-button works with our [firmware fork](https://github.com/CMGS/rust-hypervisor-firmware/tree/dev) (~13.5s shutdown); with upstream firmware, use `ssh shutdown /s /t 0` before stopping, or `--force` to skip the ACPI timeout (see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
 - **Direct-boot VMs (OCI)**: `vm.shutdown` API → SIGTERM → 5s → SIGKILL (no ACPI support)
 - **Force stop** (`--force`): skip ACPI, immediate `vm.shutdown` → SIGTERM → SIGKILL
 - PID ownership is verified before sending signals to prevent killing unrelated processes
