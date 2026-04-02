@@ -15,7 +15,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/projecteru2/core/log"
 
@@ -36,7 +35,7 @@ type pullLayerResult struct {
 }
 
 // pull downloads an OCI image, extracts boot files, and converts each layer
-// to EROFS concurrently using errgroup.
+// to EROFS concurrently.
 func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], imageRef string, tracker progress.Tracker) error {
 	logger := log.WithFunc("oci.pull")
 
@@ -67,21 +66,13 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], im
 		defer os.RemoveAll(workDir) //nolint:errcheck
 
 		// Process layers concurrently with bounded parallelism.
-		results := make([]pullLayerResult, len(layers))
-		g, gctx := errgroup.WithContext(ctx)
-		limit := conf.Root.PoolSize
-		if limit <= 0 {
-			limit = runtime.NumCPU()
-		}
-		g.SetLimit(limit)
-
 		totalLayers := len(layers)
-		for i, layer := range layers {
-			g.Go(func() error {
-				return processLayer(gctx, conf, i, totalLayers, layer, workDir, knownBootHexes, tracker, &results[i])
-			})
-		}
-		if waitErr := g.Wait(); waitErr != nil {
+		results, waitErr := utils.Map(ctx, layers, func(ctx context.Context, i int, layer v1.Layer) (pullLayerResult, error) {
+			var r pullLayerResult
+			err := processLayer(ctx, conf, i, totalLayers, layer, workDir, knownBootHexes, tracker, &r)
+			return r, err
+		}, conf.Root.EffectivePoolSize())
+		if waitErr != nil {
 			return fmt.Errorf("process layers: %w", waitErr)
 		}
 

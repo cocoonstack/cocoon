@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 
 	coretypes "github.com/projecteru2/core/types"
@@ -51,6 +52,14 @@ type Config struct {
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds,omitempty" mapstructure:"terminate_grace_period_seconds"`
 	// Log configuration, uses eru core's ServerLogConfig.
 	Log *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
+}
+
+// EffectivePoolSize returns PoolSize if set, otherwise runtime.NumCPU().
+func (c *Config) EffectivePoolSize() int {
+	if c.PoolSize <= 0 {
+		return runtime.NumCPU()
+	}
+	return c.PoolSize
 }
 
 // Validate checks that all config fields are within acceptable ranges.

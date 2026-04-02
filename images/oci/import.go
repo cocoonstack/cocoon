@@ -9,9 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/projecteru2/core/log"
 
@@ -47,22 +44,14 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 		defer os.RemoveAll(workDir) //nolint:errcheck
 
 		// Process layers concurrently.
-		results := make([]pullLayerResult, len(file))
-		g, gctx := errgroup.WithContext(ctx)
-		limit := conf.Root.PoolSize
-		if limit <= 0 {
-			limit = runtime.NumCPU()
-		}
-		g.SetLimit(limit)
-
 		totalLayers := len(file)
-		for i, filePath := range file {
-			g.Go(func() error {
-				return processLocalTar(gctx, conf, i, totalLayers, filePath, workDir, tracker, &results[i])
-			})
-		}
-		if err := g.Wait(); err != nil {
-			return fmt.Errorf("process layers: %w", err)
+		results, mapErr := utils.Map(ctx, file, func(ctx context.Context, i int, filePath string) (pullLayerResult, error) {
+			var r pullLayerResult
+			err := processLocalTar(ctx, conf, i, totalLayers, filePath, workDir, tracker, &r)
+			return r, err
+		}, conf.Root.EffectivePoolSize())
+		if mapErr != nil {
+			return fmt.Errorf("process layers: %w", mapErr)
 		}
 
 		// Compute manifest digest from layer digests.
