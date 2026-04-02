@@ -18,7 +18,9 @@ Lightweight MicroVM engine built on [Cloud Hypervisor](https://github.com/cloud-
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation
 - **Snapshot & clone** — `cocoon snapshot save` captures a running VM's full state (memory, disks, config); `cocoon vm clone` restores it as a new VM with fresh network and identity, resource inheritance with validation
-- **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `rm`, `debug`, `clone`
+- **Snapshot export & import** — `cocoon snapshot export` packages a snapshot into a portable `.tar.gz` archive (with sparse-aware pax headers); `cocoon snapshot import` restores it on another host or cluster
+- **Live status monitoring** — `cocoon vm status` watches VM state changes in real time via fsnotify, with refresh mode (top-like) and event-stream mode (append-only, for scripting and vk-cocoon integration)
+- **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `rm`, `debug`, `clone`, `status`
 - **Structured logging** — configurable log level (`--log-level`), log rotation (max size / age / backups)
 - **Debug command** — `cocoon vm debug` generates a copy-pasteable `cloud-hypervisor` command for manual debugging
 - **Zero-daemon architecture** — one Cloud Hypervisor process per VM, no long-running daemon
@@ -131,12 +133,15 @@ cocoon
 │   ├── console [flags] VM         Attach interactive console
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force to stop first)
 │   ├── restore [flags] VM SNAP   Restore a running VM to a snapshot
+│   ├── status [VM...]             Watch VM status in real time
 │   └── debug [flags] IMAGE        Generate CH launch command (dry run)
 ├── snapshot
 │   ├── save [flags] VM            Create a snapshot from a running VM
 │   ├── list (alias: ls)           List all snapshots
 │   ├── inspect SNAPSHOT           Show detailed snapshot info (JSON)
-│   └── rm SNAPSHOT [SNAPSHOT...]  Delete snapshot(s)
+│   ├── rm SNAPSHOT [SNAPSHOT...]  Delete snapshot(s)
+│   ├── export [flags] SNAPSHOT    Export snapshot to portable archive
+│   └── import [flags] FILE        Import snapshot from portable archive
 ├── gc                             Remove unreferenced blobs and VM dirs
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]
@@ -191,6 +196,32 @@ Applies to `cocoon snapshot save`:
 | --------------- | ------- | -------------------- |
 | `--name`        |         | Snapshot name        |
 | `--description` |         | Snapshot description |
+
+### Export Flags
+
+Applies to `cocoon snapshot export`:
+
+| Flag            | Default                    | Description                         |
+| --------------- | -------------------------- | ----------------------------------- |
+| `--output`, `-o` |  `<name-or-id>.tar.gz`    | Output file path                    |
+
+### Import Flags
+
+Applies to `cocoon snapshot import`:
+
+| Flag            | Default | Description                    |
+| --------------- | ------- | ------------------------------ |
+| `--name`        |         | Override snapshot name          |
+| `--description` |         | Override snapshot description   |
+
+### Status Flags
+
+Applies to `cocoon vm status`:
+
+| Flag               | Default | Description                                             |
+| ------------------ | ------- | ------------------------------------------------------- |
+| `--interval`, `-n` | `5`     | Poll interval in seconds                                |
+| `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
 
 ### Debug-only Flags
 
@@ -415,6 +446,23 @@ systemctl restart systemd-networkd
 
 The `cocoon vm clone` command prints these hints with the actual values after a successful clone.
 
+### Export & Import
+
+Snapshots can be exported to portable `.tar.gz` archives for transfer between hosts or clusters, and imported back:
+
+```bash
+# Export a snapshot to a file
+cocoon snapshot export my-snap -o my-snap.tar.gz
+
+# Import on another host
+cocoon snapshot import my-snap.tar.gz --name imported-snap
+
+# Clone from the imported snapshot
+cocoon vm clone imported-snap
+```
+
+The archive contains the snapshot config, VM config, COW disk (with sparse-aware pax headers for efficient compression), memory ranges, and device state — everything needed to reconstruct the snapshot on a different machine.
+
 ### Restore
 
 Restore reverts a **running** VM to a previous snapshot's state in-place:
@@ -435,6 +483,23 @@ Cocoon internally restarts the Cloud Hypervisor process with the snapshot's memo
 - **Snapshot must belong to the VM.** Only snapshots created from the same VM (tracked in `snapshot_ids`) are accepted. Cross-VM restore is not supported; use `cocoon vm clone` for that.
 - **NIC count must match.** The VM's current NIC count must equal the snapshot's (restore reuses the VM's existing network, unlike clone which creates fresh NICs and hot-swaps).
 - **Resources can be increased, not decreased.** CPU, memory, and storage must be >= the snapshot's original values. Omitting a flag keeps the VM's current value.
+
+## Status Monitoring
+
+`cocoon vm status` provides real-time VM state monitoring with two modes:
+
+```bash
+# Refresh mode (default) — clears and redraws like `watch`
+cocoon vm status
+
+# Event stream mode — appends state changes (for scripting / vk-cocoon)
+cocoon vm status --event
+
+# Filter specific VMs, custom poll interval
+cocoon vm status --event -n 2 my-vm other-vm
+```
+
+State changes are detected via **fsnotify** on the VM index file (sub-second latency), with a configurable poll interval as fallback. Event mode emits `ADDED`, `MODIFIED`, and `REMOVED` lines suitable for machine consumption.
 
 ## Garbage Collection
 
