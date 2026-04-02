@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
