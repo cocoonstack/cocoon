@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -154,7 +155,11 @@ func blobHexFromPath(path string) string {
 // The returned succeeded slice is always valid, even when err != nil.
 func (ch *CloudHypervisor) forEachVM(ctx context.Context, ids []string, op string, fn func(context.Context, string) error) ([]string, error) {
 	logger := log.WithFunc("cloudhypervisor." + op)
-	result := utils.ForEach(ctx, ids, fn, ch.conf.PoolSize)
+	poolSize := ch.conf.PoolSize
+	if poolSize <= 0 {
+		poolSize = runtime.NumCPU()
+	}
+	result := utils.ForEach(ctx, ids, fn, poolSize)
 	for _, err := range result.Errors {
 		logger.Warnf(ctx, "%s: %v", op, err)
 	}
