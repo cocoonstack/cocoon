@@ -162,7 +162,6 @@ func TestMap_AllSucceed(t *testing.T) {
 	results, err := Map(context.Background(), []int{1, 2, 3}, func(_ context.Context, _ int, n int) (string, error) {
 		return fmt.Sprintf("v%d", n), nil
 	})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +197,6 @@ func TestMap_Empty(t *testing.T) {
 		t.Fatal("should not be called")
 		return "", nil
 	})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +210,6 @@ func TestMap_PreservesOrder(t *testing.T) {
 		time.Sleep(time.Duration(50-n) * time.Millisecond) // reverse completion order
 		return n * 2, nil
 	})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -240,7 +237,6 @@ func TestMap_WithConcurrencyLimit(t *testing.T) {
 		cur.Add(-1)
 		return n * 10, nil
 	}, 2)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +253,6 @@ func TestMap_IndexPassedCorrectly(t *testing.T) {
 	results, err := Map(context.Background(), items, func(_ context.Context, idx int, item string) (string, error) {
 		return fmt.Sprintf("%d:%s", idx, item), nil
 	})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
