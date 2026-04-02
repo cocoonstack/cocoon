@@ -32,6 +32,12 @@ type Hypervisor interface {
 	RegisterGC(*gc.Orchestrator)
 }
 
+// Watchable is optionally implemented by hypervisors that support
+// file-based state watching.
+type Watchable interface {
+	WatchPath() string
+}
+
 // Direct is an optional interface for hypervisors that support
 // clone/restore from a local snapshot directory.
 type Direct interface {

@@ -19,6 +19,7 @@ type Actions interface {
 	RM(cmd *cobra.Command, args []string) error
 	Restore(cmd *cobra.Command, args []string) error
 	Debug(cmd *cobra.Command, args []string) error
+	Status(cmd *cobra.Command, args []string) error
 }
 
 // Command builds the "vm" parent command with all subcommands.
@@ -121,6 +122,14 @@ func Command(h Actions) *cobra.Command {
 	debugCmd.Flags().String("cow", "", "COW disk path")
 	debugCmd.Flags().String("ch", "cloud-hypervisor", "cloud-hypervisor binary path")
 
+	statusCmd := &cobra.Command{
+		Use:   "status [VM...]",
+		Short: "Watch VM status in real time",
+		RunE:  h.Status,
+	}
+	statusCmd.Flags().IntP("interval", "n", 5, "poll interval in seconds") //nolint:mnd
+	statusCmd.Flags().Bool("event", false, "event stream mode (append changes instead of refreshing)")
+
 	vmCmd.AddCommand(
 		createCmd,
 		runCmd,
@@ -133,6 +142,7 @@ func Command(h Actions) *cobra.Command {
 		rmCmd,
 		restoreCmd,
 		debugCmd,
+		statusCmd,
 	)
 	return vmCmd
 }
