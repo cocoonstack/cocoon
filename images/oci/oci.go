@@ -18,6 +18,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// compile-time interface check.
+var _ images.Images = (*OCI)(nil)
+
 const (
 	typ          = "oci"
 	serialPrefix = "cocoon-layer"

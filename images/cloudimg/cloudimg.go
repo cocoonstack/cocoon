@@ -17,6 +17,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// compile-time interface check.
+var _ images.Images = (*CloudImg)(nil)
+
 const typ = "cloudimg"
 
 // CloudImg implements the images.Images interface using cloud images (qcow2/raw)

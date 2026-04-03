@@ -25,8 +25,22 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// digestDisplayLen = len("sha256:") + 12 hex digits for compact display.
-const digestDisplayLen = 19
+// imageType identifies the content type detected from a stream.
+type imageType int
+
+type importSourceKind int
+
+const (
+	// digestDisplayLen = len("sha256:") + 12 hex digits for compact display.
+	digestDisplayLen = 19
+
+	imageTypeQcow2 imageType = 0
+	imageTypeTar   imageType = 1
+
+	importSourceQcow2  importSourceKind = 0
+	importSourceTar    importSourceKind = 1
+	importSourceStream importSourceKind = 2
+)
 
 type Handler struct {
 	cmdcore.BaseHandler
@@ -377,22 +391,6 @@ func (h Handler) pullCloudimg(ctx context.Context, store *cloudimg.CloudImg, url
 	}
 	return nil
 }
-
-// imageType identifies the content type detected from a stream.
-type imageType int
-
-const (
-	imageTypeQcow2 imageType = iota
-	imageTypeTar
-)
-
-type importSourceKind int
-
-const (
-	importSourceQcow2 importSourceKind = iota
-	importSourceTar
-	importSourceStream
-)
 
 type importLocalPlan struct {
 	kind  importSourceKind

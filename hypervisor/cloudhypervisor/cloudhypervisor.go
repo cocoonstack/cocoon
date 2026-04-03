@@ -14,6 +14,13 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+// compile-time interface checks.
+var (
+	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
+	_ hypervisor.Direct     = (*CloudHypervisor)(nil)
+	_ hypervisor.Watchable  = (*CloudHypervisor)(nil)
+)
+
 const typ = "cloud-hypervisor"
 
 // CloudHypervisor implements hypervisor.Hypervisor.
