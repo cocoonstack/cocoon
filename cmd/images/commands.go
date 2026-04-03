@@ -30,20 +30,19 @@ func Command(h Actions) *cobra.Command {
 	cmdcore.AddFormatFlag(listCmd)
 
 	importCmd := &cobra.Command{
-		Use:   "import NAME",
-		Short: "Import local tar(s) as OCI image or qcow2(s) as cloud image",
-		Long: `Import local files as a cocoon image.
+		Use:   "import NAME [FILE]",
+		Short: "Import an image from a file or stdin",
+		Long: `Import a local file or stdin stream as a cocoon image.
 
-File type is auto-detected from the first file:
-  - qcow2 (QFI magic): files are concatenated (split reassembly) and stored as a cloud image
-  - tar: each file becomes an EROFS layer in an OCI image
+Type is auto-detected from magic bytes (supports gzip-wrapped input):
+  - qcow2 (QFI magic): converted to qcow2 v3 and stored as a cloud image
+  - tar: converted to an EROFS layer in an OCI image
 
-Mixing tar and qcow2 files is not allowed.`,
-		Args: cobra.ExactArgs(1),
+When FILE is omitted, data is read from stdin.
+A raw qcow2 file on disk uses an optimized path that avoids a temp copy.`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: h.Import,
 	}
-	importCmd.Flags().StringArray("file", nil, "file(s) to import (required, repeatable)")
-	_ = importCmd.MarkFlagRequired("file")
 
 	imageCmd.AddCommand(
 		&cobra.Command{

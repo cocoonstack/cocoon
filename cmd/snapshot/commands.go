@@ -64,9 +64,9 @@ func Command(h Actions) *cobra.Command {
 	exportCmd.Flags().StringP("output", "o", "", "output file path (default: <name-or-id>.tar.gz)")
 
 	importCmd := &cobra.Command{
-		Use:   "import FILE",
-		Short: "Import a snapshot from a portable archive file",
-		Args:  cobra.ExactArgs(1),
+		Use:   "import [FILE]",
+		Short: "Import a snapshot from a portable archive (file or stdin)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  h.Import,
 	}
 	importCmd.Flags().String("name", "", "override snapshot name")

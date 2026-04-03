@@ -175,6 +175,25 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 	ref := args[0]
 	output, _ := cmd.Flags().GetString("output")
 
+	stream, err := snapBackend.Export(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("export: %w", err)
+	}
+	defer stream.Close() //nolint:errcheck
+
+	stop := context.AfterFunc(ctx, func() {
+		stream.Close() //nolint:errcheck,gosec
+	})
+	defer stop()
+
+	// Stream to stdout when output is "-".
+	if output == "-" {
+		if _, err = io.Copy(os.Stdout, stream); err != nil {
+			return fmt.Errorf("write archive: %w", err)
+		}
+		return nil
+	}
+
 	// Derive default output filename from snapshot name or ID.
 	if output == "" {
 		snap, inspectErr := snapBackend.Inspect(ctx, ref)
@@ -187,17 +206,6 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 		}
 		output = base + ".tar.gz"
 	}
-
-	stream, err := snapBackend.Export(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("export: %w", err)
-	}
-	defer stream.Close() //nolint:errcheck
-
-	stop := context.AfterFunc(ctx, func() {
-		stream.Close() //nolint:errcheck,gosec
-	})
-	defer stop()
 
 	f, err := os.Create(output) //nolint:gosec
 	if err != nil {
@@ -231,19 +239,24 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	filePath := args[0]
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 
-	f, err := os.Open(filePath) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("open archive: %w", err)
+	var r io.Reader
+	if len(args) > 0 {
+		f, openErr := os.Open(args[0]) //nolint:gosec
+		if openErr != nil {
+			return fmt.Errorf("open archive: %w", openErr)
+		}
+		defer f.Close() //nolint:errcheck
+		r = f
+		logger.Infof(ctx, "importing from %s ...", args[0])
+	} else {
+		r = os.Stdin
+		logger.Info(ctx, "importing from stdin ...")
 	}
-	defer f.Close() //nolint:errcheck
 
-	logger.Infof(ctx, "importing from %s ...", filePath)
-
-	snapID, err := snapBackend.Import(ctx, f, name, description)
+	snapID, err := snapBackend.Import(ctx, r, name, description)
 	if err != nil {
 		return fmt.Errorf("import: %w", err)
 	}

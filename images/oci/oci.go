@@ -3,6 +3,7 @@ package oci
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/projecteru2/core/log"
@@ -75,6 +76,11 @@ func (o *OCI) Pull(ctx context.Context, image string, tracker progress.Tracker) 
 // Each tar file becomes one EROFS layer (ordered by the files slice).
 func (o *OCI) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
 	return importTarLayers(ctx, o.conf, o.store, name, tracker, file...)
+}
+
+// ImportFromReader imports a single tar layer from a reader (stdin, gzip stream, etc.).
+func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
+	return importTarFromReader(ctx, o.conf, o.store, name, tracker, r)
 }
 
 // Inspect returns the record for a single image. Returns (nil, nil) if not found.

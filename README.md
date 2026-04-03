@@ -6,6 +6,7 @@ Lightweight MicroVM engine built on [Cloud Hypervisor](https://github.com/cloud-
 
 - **OCI VM images** — pull OCI images with kernel + rootfs layers, content-addressed blob cache with SHA-256 deduplication
 - **Cloud image support** — pull from HTTP/HTTPS URLs (e.g. Ubuntu cloud images), automatic qcow2 conversion
+- **Image import** — import local qcow2 or tar files (also from stdin or gzip-wrapped streams), auto-detected by magic bytes
 - **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected)
 - **COW overlays** — copy-on-write disks backed by shared base images (raw for OCI, qcow2 for cloud images)
 - **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation
@@ -18,7 +19,7 @@ Lightweight MicroVM engine built on [Cloud Hypervisor](https://github.com/cloud-
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation
 - **Snapshot & clone** — `cocoon snapshot save` captures a running VM's full state (memory, disks, config); `cocoon vm clone` restores it as a new VM with fresh network and identity, resource inheritance with validation
-- **Snapshot export & import** — `cocoon snapshot export` packages a snapshot into a portable `.tar.gz` archive (with sparse-aware pax headers); `cocoon snapshot import` restores it on another host or cluster
+- **Snapshot export & import** — `cocoon snapshot export` packages a snapshot into a portable `.tar.gz` archive (with sparse-aware pax headers); `cocoon snapshot import` restores it on another host or cluster; supports piping via stdout/stdin for direct host-to-host transfer
 - **Live status monitoring** — `cocoon vm status` watches VM state changes in real time via fsnotify, with refresh mode (top-like) and event-stream mode (append-only, for scripting and vk-cocoon integration)
 - **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `rm`, `debug`, `clone`, `status`
 - **Structured logging** — configurable log level (`--log-level`), log rotation (max size / age / backups)
@@ -45,7 +46,7 @@ Download pre-built binaries from [GitHub Releases](https://github.com/cocoonstac
 
 ```bash
 # Linux amd64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.2.6/cocoon_0.2.6_Linux_x86_64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.2.7/cocoon_0.2.7_Linux_x86_64.tar.gz
 tar -xzf cocoon.tar.gz
 install -m 0755 cocoon /usr/local/bin/
 
@@ -121,6 +122,7 @@ cocoon
 │   ├── pull IMAGE [IMAGE...]      Pull OCI image(s) or cloud image URL(s)
 │   ├── list (alias: ls)           List locally stored images
 │   ├── rm ID [ID...]              Delete locally stored image(s)
+│   ├── import NAME [FILE]         Import image from file or stdin
 │   └── inspect IMAGE              Show detailed image info (JSON)
 ├── vm
 │   ├── create [flags] IMAGE       Create a VM from an image
@@ -140,8 +142,8 @@ cocoon
 │   ├── list (alias: ls)           List all snapshots
 │   ├── inspect SNAPSHOT           Show detailed snapshot info (JSON)
 │   ├── rm SNAPSHOT [SNAPSHOT...]  Delete snapshot(s)
-│   ├── export [flags] SNAPSHOT    Export snapshot to portable archive
-│   └── import [flags] FILE        Import snapshot from portable archive
+│   ├── export [flags] SNAPSHOT    Export snapshot to portable archive (or stdout)
+│   └── import [flags] [FILE]      Import snapshot from archive (or stdin)
 ├── gc                             Remove unreferenced blobs and VM dirs
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]
@@ -201,9 +203,9 @@ Applies to `cocoon snapshot save`:
 
 Applies to `cocoon snapshot export`:
 
-| Flag            | Default                    | Description                         |
-| --------------- | -------------------------- | ----------------------------------- |
-| `--output`, `-o` |  `<name-or-id>.tar.gz`    | Output file path                    |
+| Flag            | Default                    | Description                                       |
+| --------------- | -------------------------- | ------------------------------------------------- |
+| `--output`, `-o` |  `<name-or-id>.tar.gz`    | Output file path (`-` for stdout)                 |
 
 ### Import Flags
 
@@ -213,6 +215,8 @@ Applies to `cocoon snapshot import`:
 | --------------- | ------- | ------------------------------ |
 | `--name`        |         | Override snapshot name          |
 | `--description` |         | Override snapshot description   |
+
+When FILE is omitted, data is read from stdin. This enables piping: `cocoon snapshot export snap1 -o - | ssh host2 cocoon snapshot import --name snap1`.
 
 ### Status Flags
 
@@ -459,6 +463,9 @@ cocoon snapshot import my-snap.tar.gz --name imported-snap
 
 # Clone from the imported snapshot
 cocoon vm clone imported-snap
+
+# Or pipe directly between hosts (no intermediate file)
+cocoon snapshot export my-snap -o - | ssh host2 cocoon snapshot import --name my-snap
 ```
 
 The archive contains the snapshot config, VM config, COW disk (with sparse-aware pax headers for efficient compression), memory ranges, and device state — everything needed to reconstruct the snapshot on a different machine.

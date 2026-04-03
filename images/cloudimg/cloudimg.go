@@ -3,6 +3,7 @@ package cloudimg
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sync/singleflight"
@@ -65,10 +66,18 @@ func (c *CloudImg) Pull(ctx context.Context, url string, tracker progress.Tracke
 }
 
 // Import imports local qcow2 file(s) as a cloud image.
-// Multiple files are concatenated in order (split file reassembly),
-// then converted to qcow2 v3 for consistency.
+// A single file uses an optimized path that hashes in place and avoids a temp copy.
+// Multiple files are concatenated via the reader path (split file reassembly).
 func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
-	return importQcow2(ctx, c.conf, c.store, name, tracker, file...)
+	if len(file) == 1 {
+		return importQcow2File(ctx, c.conf, c.store, name, tracker, file[0])
+	}
+	return importQcow2Concat(ctx, c.conf, c.store, name, tracker, file...)
+}
+
+// ImportFromReader imports a qcow2 image from a reader (stdin, gzip stream, etc.).
+func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
+	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
 }
 
 // Inspect returns the record for a single image. Returns (nil, nil) if not found.

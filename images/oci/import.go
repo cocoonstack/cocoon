@@ -68,10 +68,53 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 	})
 }
 
+// importTarFromReader imports a single tar layer from a reader (stdin, gzip stream, etc.).
+func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
+	logger := log.WithFunc("oci.import")
+
+	return store.Update(ctx, func(idx *imageIndex) error {
+		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
+
+		workDir, err := os.MkdirTemp(conf.TempDir(), "import-*")
+		if err != nil {
+			return fmt.Errorf("create work dir: %w", err)
+		}
+		defer os.RemoveAll(workDir) //nolint:errcheck
+
+		var result pullLayerResult
+		if err := processTarReader(ctx, conf, 0, 1, r, name, workDir, tracker, &result); err != nil {
+			return fmt.Errorf("process layer: %w", err)
+		}
+
+		manifestDigest := computeManifestDigest([]pullLayerResult{result})
+
+		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: 1})
+		if err := commitAndRecord(conf, idx, name, manifestDigest, []pullLayerResult{result}); err != nil {
+			return err
+		}
+
+		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: 1})
+		logger.Infof(ctx, "Imported: %s (digest: %s, layers: 1)", name, manifestDigest)
+		return nil
+	})
+}
+
 // processLocalTar processes a single local tar file: computes its digest,
 // converts it to EROFS, and extracts boot files — all in a single pass.
 func processLocalTar(ctx context.Context, conf *Config, idx, total int, tarPath, workDir string, tracker progress.Tracker, result *pullLayerResult) error {
-	logger := log.WithFunc("oci.processLocalTar")
+	f, err := os.Open(tarPath) //nolint:gosec // user-provided import file
+	if err != nil {
+		return fmt.Errorf("open %s: %w", tarPath, err)
+	}
+	defer f.Close() //nolint:errcheck
+
+	return processTarReader(ctx, conf, idx, total, f, tarPath, workDir, tracker, result)
+}
+
+// processTarReader is the reader-based core for processing a single tar stream:
+// computes its digest, converts it to EROFS, and extracts boot files in one pass.
+func processTarReader(ctx context.Context, conf *Config, idx, total int, r io.Reader, label, workDir string, tracker progress.Tracker, result *pullLayerResult) error {
+	logger := log.WithFunc("oci.processTarReader")
 
 	result.index = idx
 
@@ -81,28 +124,21 @@ func processLocalTar(ctx context.Context, conf *Config, idx, total int, tarPath,
 		return fmt.Errorf("create layer work dir: %w", err)
 	}
 
-	// Open the tar file.
-	f, err := os.Open(tarPath) //nolint:gosec // user-provided import file
-	if err != nil {
-		return fmt.Errorf("open %s: %w", tarPath, err)
-	}
-	defer f.Close() //nolint:errcheck
-
 	// Compute SHA-256 while streaming through to erofs + boot scan.
 	hasher := sha256.New()
-	teeForHash := io.TeeReader(f, hasher)
+	teeForHash := io.TeeReader(r, hasher)
 
 	// We need to: 1) hash all bytes, 2) feed tar to erofs, 3) scan for boot files.
 	// Use a temp erofs path first, rename after we know the digest.
 	tmpErofsPath := filepath.Join(layerDir, fmt.Sprintf("layer-%d.erofs", idx))
-	tmpUUID := utils.UUIDv5(fmt.Sprintf("import-%s-%d", tarPath, idx))
+	tmpUUID := utils.UUIDv5(fmt.Sprintf("import-%s-%d", label, idx))
 
 	cmd, erofsStdin, output, err := startErofsConversion(ctx, tmpUUID, tmpErofsPath)
 	if err != nil {
 		return fmt.Errorf("start erofs conversion: %w", err)
 	}
 
-	// TeeReader chain: file → hasher → (tee to erofs stdin) → boot scan
+	// TeeReader chain: reader → hasher → (tee to erofs stdin) → boot scan
 	teeForErofs := io.TeeReader(teeForHash, erofsStdin)
 
 	// Scan boot files from the tar stream (also feeds erofs via tee chain).

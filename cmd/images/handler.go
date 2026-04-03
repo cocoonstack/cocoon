@@ -1,8 +1,12 @@
 package images
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -55,48 +59,51 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := log.WithFunc("cmd.image.import")
 
 	name := args[0]
-	files, _ := cmd.Flags().GetStringArray("file")
 
-	// Detect file type from the first file's magic bytes.
-	isQcow2 := cloudimg.IsQcow2File(files[0])
-
-	if !isQcow2 && !oci.IsTarFile(files[0]) {
-		return fmt.Errorf("cannot detect file type for %s (expected qcow2 or tar)", files[0])
-	}
-
-	if isQcow2 {
-		return h.importCloudimg(ctx, conf, name, files)
-	}
-	return h.importOCI(ctx, conf, name, files)
-}
-
-func (h Handler) importOCI(ctx context.Context, conf *config.Config, name string, files []string) error {
-	logger := log.WithFunc("cmd.importOCI")
-	ociStore, err := oci.New(ctx, conf)
-	if err != nil {
-		return fmt.Errorf("init oci backend: %w", err)
-	}
-	tracker := progress.NewTracker(func(e ociProgress.Event) {
-		switch e.Phase {
-		case ociProgress.PhasePull:
-			logger.Infof(ctx, "importing %s (%d layers)", name, e.Total)
-		case ociProgress.PhaseLayer:
-			logger.Infof(ctx, "[%d/%d] %s done", e.Index+1, e.Total, e.Digest)
-		case ociProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case ociProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", name)
+	// Raw qcow2 file on disk → optimized path (no temp copy).
+	if len(args) > 1 {
+		filePath := args[1]
+		if !isGzipFile(filePath) && cloudimg.IsQcow2File(filePath) {
+			logger.Infof(ctx, "importing qcow2 file %s ...", filePath)
+			return h.importCloudimgFile(ctx, conf, name, filePath)
 		}
-	})
-	if err := ociStore.Import(ctx, name, tracker, files...); err != nil {
-		return fmt.Errorf("import %s: %w", name, err)
+		// Other file types → reader path.
+		f, openErr := os.Open(filePath) //nolint:gosec
+		if openErr != nil {
+			return fmt.Errorf("open %s: %w", filePath, openErr)
+		}
+		defer f.Close() //nolint:errcheck
+		logger.Infof(ctx, "importing from %s ...", filePath)
+		return h.importFromReader(ctx, conf, name, f)
 	}
-	return nil
+
+	// No file arg → stdin.
+	logger.Info(ctx, "importing from stdin ...")
+	return h.importFromReader(ctx, conf, name, os.Stdin)
 }
 
-func (h Handler) importCloudimg(ctx context.Context, conf *config.Config, name string, files []string) error {
+// importFromReader auto-detects gzip and content type, then routes to the appropriate backend.
+func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
+	reader, typ, cleanup, err := detectReader(r)
+	if err != nil {
+		return fmt.Errorf("detect image type: %w", err)
+	}
+	defer cleanup()
+
+	switch typ {
+	case imageTypeQcow2:
+		return h.importCloudimgReader(ctx, conf, name, reader)
+	case imageTypeTar:
+		return h.importOCIReader(ctx, conf, name, reader)
+	default:
+		return fmt.Errorf("unsupported image type")
+	}
+}
+
+func (h Handler) importCloudimgFile(ctx context.Context, conf *config.Config, name, filePath string) error {
 	logger := log.WithFunc("cmd.importCloudimg")
 	cloudimgStore, err := cloudimg.New(ctx, conf)
 	if err != nil {
@@ -105,7 +112,7 @@ func (h Handler) importCloudimg(ctx context.Context, conf *config.Config, name s
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {
 		case cloudimgProgress.PhaseDownload:
-			logger.Infof(ctx, "reading %d file(s) for %s", len(files), name)
+			logger.Infof(ctx, "hashing %s", filePath)
 		case cloudimgProgress.PhaseConvert:
 			logger.Info(ctx, "converting to qcow2...")
 		case cloudimgProgress.PhaseCommit:
@@ -114,7 +121,55 @@ func (h Handler) importCloudimg(ctx context.Context, conf *config.Config, name s
 			logger.Infof(ctx, "done: %s", name)
 		}
 	})
-	if err := cloudimgStore.Import(ctx, name, tracker, files...); err != nil {
+	if err := cloudimgStore.Import(ctx, name, tracker, filePath); err != nil {
+		return fmt.Errorf("import %s: %w", name, err)
+	}
+	return nil
+}
+
+func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
+	logger := log.WithFunc("cmd.importCloudimg")
+	cloudimgStore, err := cloudimg.New(ctx, conf)
+	if err != nil {
+		return fmt.Errorf("init cloudimg backend: %w", err)
+	}
+	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
+		switch e.Phase {
+		case cloudimgProgress.PhaseDownload:
+			logger.Infof(ctx, "reading stream for %s", name)
+		case cloudimgProgress.PhaseConvert:
+			logger.Info(ctx, "converting to qcow2...")
+		case cloudimgProgress.PhaseCommit:
+			logger.Info(ctx, "committing...")
+		case cloudimgProgress.PhaseDone:
+			logger.Infof(ctx, "done: %s", name)
+		}
+	})
+	if err := cloudimgStore.ImportFromReader(ctx, name, tracker, r); err != nil {
+		return fmt.Errorf("import %s: %w", name, err)
+	}
+	return nil
+}
+
+func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
+	logger := log.WithFunc("cmd.importOCI")
+	ociStore, err := oci.New(ctx, conf)
+	if err != nil {
+		return fmt.Errorf("init oci backend: %w", err)
+	}
+	tracker := progress.NewTracker(func(e ociProgress.Event) {
+		switch e.Phase {
+		case ociProgress.PhasePull:
+			logger.Infof(ctx, "importing %s (1 layer from stream)", name)
+		case ociProgress.PhaseLayer:
+			logger.Infof(ctx, "[1/1] %s done", e.Digest)
+		case ociProgress.PhaseCommit:
+			logger.Info(ctx, "committing...")
+		case ociProgress.PhaseDone:
+			logger.Infof(ctx, "done: %s", name)
+		}
+	})
+	if err := ociStore.ImportFromReader(ctx, name, tracker, r); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil
@@ -259,4 +314,68 @@ func (h Handler) pullCloudimg(ctx context.Context, store *cloudimg.CloudImg, url
 		return fmt.Errorf("pull %s: %w", url, err)
 	}
 	return nil
+}
+
+// imageType identifies the content type detected from a stream.
+type imageType int
+
+const (
+	imageTypeQcow2 imageType = iota
+	imageTypeTar
+)
+
+// detectReader peeks into a reader to detect gzip wrapping and content type.
+// If gzip is detected, the returned reader is unwrapped.
+// The returned cleanup function must be called to release gzip resources.
+func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
+	br := bufio.NewReaderSize(r, 8192)
+
+	cleanup := func() {}
+
+	// Check for gzip magic (0x1f 0x8b).
+	peek, err := br.Peek(2)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("peek: %w", err)
+	}
+
+	var inner *bufio.Reader
+	if peek[0] == 0x1f && peek[1] == 0x8b {
+		gr, gzErr := gzip.NewReader(br)
+		if gzErr != nil {
+			return nil, 0, nil, fmt.Errorf("gzip: %w", gzErr)
+		}
+		cleanup = func() { _ = gr.Close() }
+		inner = bufio.NewReaderSize(gr, 8192)
+	} else {
+		inner = br
+	}
+
+	// Check for qcow2 magic (QFI\xfb).
+	cpeek, err := inner.Peek(4)
+	if err != nil {
+		cleanup()
+		return nil, 0, nil, fmt.Errorf("peek content: %w", err)
+	}
+
+	if cpeek[0] == 'Q' && cpeek[1] == 'F' && cpeek[2] == 'I' && cpeek[3] == 0xfb {
+		return inner, imageTypeQcow2, cleanup, nil
+	}
+
+	// Default to tar.
+	return inner, imageTypeTar, cleanup, nil
+}
+
+// isGzipFile checks if a file starts with the gzip magic bytes (0x1f 0x8b).
+func isGzipFile(path string) bool {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck
+
+	var magic [2]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0x1f && magic[1] == 0x8b //nolint:gosec // fixed-size array, ReadFull error checked above
 }
