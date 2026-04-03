@@ -19,6 +19,19 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// IsTarFile checks if a file is a tar archive by reading its first header.
+func IsTarFile(path string) bool {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck
+
+	tr := tar.NewReader(f)
+	_, err = tr.Next()
+	return err == nil
+}
+
 // importTarLayers imports local tar files as OCI image layers.
 // Each tar file becomes one EROFS layer; boot files (vmlinuz/initrd.img)
 // are extracted using the same scanBootFiles logic as pull.
@@ -222,17 +235,4 @@ func computeManifestDigest(results []pullLayerResult) images.Digest {
 		h.Write([]byte(r.digest.Hex()))
 	}
 	return images.NewDigest(hex.EncodeToString(h.Sum(nil)))
-}
-
-// IsTarFile checks if a file is a tar archive by reading its magic bytes.
-func IsTarFile(path string) bool {
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		return false
-	}
-	defer f.Close() //nolint:errcheck
-
-	tr := tar.NewReader(f)
-	_, err = tr.Next()
-	return err == nil
 }

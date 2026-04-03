@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// qcow2Magic is the 4-byte magic header for qcow2 files.
 var qcow2Magic = []byte{'Q', 'F', 'I', 0xfb}
 
 func gzipWrap(t *testing.T, data []byte) []byte {
@@ -23,99 +22,62 @@ func gzipWrap(t *testing.T, data []byte) []byte {
 	return buf.Bytes()
 }
 
-func TestDetectReader_RawQcow2(t *testing.T) {
-	// QFI magic followed by some data.
-	data := append(qcow2Magic, make([]byte, 100)...)
-	r, typ, cleanup, err := detectReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("detectReader: %v", err)
-	}
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if typ != imageTypeQcow2 {
-		t.Errorf("type: got %d, want imageTypeQcow2", typ)
+func TestDetectReader(t *testing.T) {
+	qcow2Data := append(qcow2Magic, make([]byte, 100)...)
+	tarData := []byte("this is a tar-like stream of data, not really tar but not qcow2 either")
+
+	tests := []struct {
+		name     string
+		input    []byte
+		wantType imageType
+		wantData []byte
+	}{
+		{
+			name:     "raw qcow2",
+			input:    qcow2Data,
+			wantType: imageTypeQcow2,
+			wantData: qcow2Data,
+		},
+		{
+			name:     "gzip qcow2",
+			input:    gzipWrap(t, qcow2Data),
+			wantType: imageTypeQcow2,
+			wantData: qcow2Data,
+		},
+		{
+			name:     "raw tar",
+			input:    tarData,
+			wantType: imageTypeTar,
+			wantData: tarData,
+		},
+		{
+			name:     "gzip tar",
+			input:    gzipWrap(t, tarData),
+			wantType: imageTypeTar,
+			wantData: tarData,
+		},
 	}
 
-	// Reader should still be consumable (peek doesn't consume).
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("data mismatch: got %d bytes, want %d", len(got), len(data))
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, typ, cleanup, err := detectReader(bytes.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("detectReader: %v", err)
+			}
+			defer cleanup()
 
-func TestDetectReader_GzipQcow2(t *testing.T) {
-	data := append(qcow2Magic, make([]byte, 100)...)
-	gz := gzipWrap(t, data)
+			if typ != tt.wantType {
+				t.Errorf("type: got %d, want %d", typ, tt.wantType)
+			}
 
-	r, typ, cleanup, err := detectReader(bytes.NewReader(gz))
-	if err != nil {
-		t.Fatalf("detectReader: %v", err)
-	}
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if typ != imageTypeQcow2 {
-		t.Errorf("type: got %d, want imageTypeQcow2", typ)
-	}
-
-	// Reader should return the uncompressed qcow2 data.
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("data mismatch: got %d bytes, want %d", len(got), len(data))
-	}
-}
-
-func TestDetectReader_RawTar(t *testing.T) {
-	// Anything that doesn't start with QFI or gzip magic.
-	data := []byte("this is a tar-like stream of data, not really tar but not qcow2 either")
-	r, typ, cleanup, err := detectReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("detectReader: %v", err)
-	}
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if typ != imageTypeTar {
-		t.Errorf("type: got %d, want imageTypeTar", typ)
-	}
-
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("data mismatch")
-	}
-}
-
-func TestDetectReader_GzipTar(t *testing.T) {
-	data := []byte("tar content without qcow2 magic prefix padding here for length")
-	gz := gzipWrap(t, data)
-
-	r, typ, cleanup, err := detectReader(bytes.NewReader(gz))
-	if err != nil {
-		t.Fatalf("detectReader: %v", err)
-	}
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if typ != imageTypeTar {
-		t.Errorf("type: got %d, want imageTypeTar", typ)
-	}
-
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("data mismatch: got %q, want %q", got, data)
+			got, err := io.ReadAll(r)
+			if err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			if !bytes.Equal(got, tt.wantData) {
+				t.Errorf("data mismatch: got %d bytes, want %d", len(got), len(tt.wantData))
+			}
+		})
 	}
 }
 
@@ -134,11 +96,9 @@ func TestDetectReader_Empty(t *testing.T) {
 }
 
 func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
-	// Verify that after gzip detection + unwrap, the full content is readable
-	// and matches the original (no bytes lost to peeking).
-	original := make([]byte, 16384) // larger than bufio default
+	original := make([]byte, 16384)
 	for i := range original {
-		original[i] = byte(i % 251) // non-trivial pattern
+		original[i] = byte(i % 251)
 	}
 
 	gz := gzipWrap(t, original)
@@ -146,11 +106,10 @@ func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detectReader: %v", err)
 	}
-	if cleanup != nil {
-		defer cleanup()
-	}
+	defer cleanup()
+
 	if typ != imageTypeTar {
-		t.Errorf("type: got %d, want imageTypeTar (non-qcow2 content)", typ)
+		t.Errorf("type: got %d, want imageTypeTar", typ)
 	}
 
 	got, err := io.ReadAll(r)

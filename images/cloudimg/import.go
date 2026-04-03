@@ -20,13 +20,24 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// importQcow2File imports a single local qcow2 file as a cloud image.
-// The file is hashed in place and qemu-img reads from the original,
-// avoiding an unnecessary temp copy.
+// IsQcow2File checks if a file starts with the qcow2 magic bytes "QFI\xfb".
+func IsQcow2File(path string) bool {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck
+
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 'Q' && magic[1] == 'F' && magic[2] == 'I' && magic[3] == 0xfb //nolint:gosec
+}
+
 func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, filePath string) error {
 	logger := log.WithFunc("cloudimg.import")
 
-	// Phase 1: hash the file in place (no copy).
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
 	digestHex, err := hashFile(filePath)
@@ -38,12 +49,9 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 	return convertAndCommit(ctx, conf, store, name, tracker, digestHex, filePath)
 }
 
-// importQcow2Reader imports a qcow2 image from a reader (stdin, gzip stream, etc.).
-// The data is written to a temp file (required for qemu-img) while computing the hash.
 func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
 	logger := log.WithFunc("cloudimg.import")
 
-	// Phase 1: write reader to temp + hash.
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
 	tmpFile, err := os.CreateTemp(conf.TempDir(), "import-*.img")
@@ -63,13 +71,11 @@ func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[im
 	}
 
 	digestHex := hex.EncodeToString(h.Sum(nil))
-	logger.Debugf(ctx, "buffered stdin -> sha256:%s", digestHex[:12])
+	logger.Debugf(ctx, "buffered stream -> sha256:%s", digestHex[:12])
 
 	return convertAndCommit(ctx, conf, store, name, tracker, digestHex, tmpPath)
 }
 
-// convertAndCommit is the shared tail of importQcow2File and importQcow2Reader:
-// cache check → qemu-img convert → commit to index.
 func convertAndCommit(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, digestHex, sourcePath string) error {
 	logger := log.WithFunc("cloudimg.import")
 
@@ -77,7 +83,6 @@ func convertAndCommit(ctx context.Context, conf *Config, store storage.Store[ima
 	var tmpBlobPath string
 
 	if !utils.ValidFile(blobPath) {
-		// Phase 2: convert to qcow2 v3.
 		tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseConvert})
 
 		format, detectErr := detectImageFormat(ctx, sourcePath)
@@ -103,7 +108,6 @@ func convertAndCommit(ctx context.Context, conf *Config, store storage.Store[ima
 		defer os.Remove(tmpBlobPath) //nolint:errcheck
 	}
 
-	// Phase 3: commit under flock.
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
 	if err := store.Update(ctx, func(idx *imageIndex) error {
@@ -137,8 +141,6 @@ func convertAndCommit(ctx context.Context, conf *Config, store storage.Store[ima
 	return nil
 }
 
-// importQcow2Concat imports multiple local qcow2 files by concatenating them
-// (split file reassembly), then converting to qcow2 v3.
 func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
 	logger := log.WithFunc("cloudimg.import")
 
@@ -151,7 +153,6 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 		}
 	}
 
-	// Phase 1: concatenate parts and compute SHA-256.
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
 	tmpFile, err := os.CreateTemp(conf.TempDir(), "import-*.img")
@@ -187,7 +188,6 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 	return convertAndCommit(ctx, conf, store, name, tracker, digestHex, tmpPath)
 }
 
-// hashFile computes the SHA-256 digest of a file.
 func hashFile(path string) (string, error) {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
@@ -200,19 +200,4 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// IsQcow2File checks if a file starts with the qcow2 magic bytes "QFI\xfb".
-func IsQcow2File(path string) bool {
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		return false
-	}
-	defer f.Close() //nolint:errcheck
-
-	var magic [4]byte
-	if _, err := io.ReadFull(f, magic[:]); err != nil {
-		return false
-	}
-	return magic[0] == 'Q' && magic[1] == 'F' && magic[2] == 'I' && magic[3] == 0xfb //nolint:gosec
 }
