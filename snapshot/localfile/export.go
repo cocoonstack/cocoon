@@ -44,7 +44,11 @@ func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, err
 			done <- streamErr
 		}()
 
-		gw, _ := gzip.NewWriterLevel(pw, gzip.BestSpeed)
+		gw, err := gzip.NewWriterLevel(pw, gzip.BestSpeed)
+		if err != nil {
+			streamErr = fmt.Errorf("create gzip writer: %w", err)
+			return
+		}
 		tw := tar.NewWriter(gw)
 
 		// First entry: snapshot.json metadata.

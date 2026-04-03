@@ -30,7 +30,7 @@ func Command(h Actions) *cobra.Command {
 	cmdcore.AddFormatFlag(listCmd)
 
 	importCmd := &cobra.Command{
-		Use:   "import NAME [FILE]",
+		Use:   "import NAME [FILE...]",
 		Short: "Import an image from a file or stdin",
 		Long: `Import a local file or stdin stream as a cocoon image.
 
@@ -39,8 +39,9 @@ Type is auto-detected from magic bytes (supports gzip-wrapped input):
   - tar: converted to an EROFS layer in an OCI image
 
 When FILE is omitted, data is read from stdin.
-A raw qcow2 file on disk uses an optimized path that avoids a temp copy.`,
-		Args: cobra.RangeArgs(1, 2),
+A raw qcow2 file on disk uses an optimized path that avoids a temp copy.
+Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers.`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: h.Import,
 	}
 

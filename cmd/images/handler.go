@@ -1,7 +1,9 @@
 package images
 
 import (
+	"archive/tar"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -62,39 +64,59 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	logger := log.WithFunc("cmd.image.import")
 
 	name := args[0]
+	files := args[1:]
 
-	if len(args) > 1 {
-		filePath := args[1]
-		// Open once, peek 4 bytes to detect type.
-		f, openErr := os.Open(filePath) //nolint:gosec
-		if openErr != nil {
-			return fmt.Errorf("open %s: %w", filePath, openErr)
-		}
-		defer f.Close() //nolint:errcheck
-
-		var magic [4]byte
-		n, _ := io.ReadFull(f, magic[:])
-		isGzip := n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b                                       //nolint:gosec // bounds checked by n >= 2
-		isQcow2 := n >= 4 && magic[0] == 'Q' && magic[1] == 'F' && magic[2] == 'I' && magic[3] == 0xfb //nolint:gosec // bounds checked by n >= 4
-
-		// Raw qcow2 file on disk → optimized path (no temp copy).
-		if !isGzip && isQcow2 {
-			_ = f.Close()
-			logger.Infof(ctx, "importing qcow2 file %s ...", filePath)
-			return h.importCloudimgFile(ctx, conf, name, filePath)
-		}
-
-		// Other file types → reader path (seek back to start).
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return fmt.Errorf("seek %s: %w", filePath, err)
-		}
-		logger.Infof(ctx, "importing from %s ...", filePath)
-		return h.importFromReader(ctx, conf, name, f)
+	if len(files) > 0 {
+		return h.importLocalFiles(ctx, conf, name, files...)
 	}
 
 	// No file arg → stdin.
 	logger.Info(ctx, "importing from stdin ...")
 	return h.importFromReader(ctx, conf, name, os.Stdin)
+}
+
+func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
+	logger := log.WithFunc("cmd.image.import")
+
+	plan, err := planLocalImport(files)
+	if err != nil {
+		return err
+	}
+
+	switch plan.kind {
+	case importSourceQcow2:
+		if len(plan.files) == 1 {
+			logger.Infof(ctx, "importing qcow2 file %s ...", plan.files[0])
+		} else {
+			logger.Infof(ctx, "importing split qcow2 parts (%d files) ...", len(plan.files))
+		}
+		return h.importCloudimgFiles(ctx, conf, name, plan.files...)
+	case importSourceTar:
+		if len(plan.files) == 1 {
+			logger.Infof(ctx, "importing tar file %s ...", plan.files[0])
+		} else {
+			logger.Infof(ctx, "importing tar layers (%d files) ...", len(plan.files))
+		}
+		return h.importOCIFiles(ctx, conf, name, plan.files...)
+	case importSourceStream:
+		return h.importLocalStream(ctx, conf, name, plan.files[0])
+	default:
+		return fmt.Errorf("unsupported local import source")
+	}
+}
+
+func (h Handler) importLocalStream(ctx context.Context, conf *config.Config, name, filePath string) error {
+	f, openErr := os.Open(filePath) //nolint:gosec
+	if openErr != nil {
+		return fmt.Errorf("open %s: %w", filePath, openErr)
+	}
+	defer f.Close() //nolint:errcheck
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek %s: %w", filePath, err)
+	}
+	log.WithFunc("cmd.image.import").Infof(ctx, "importing from %s ...", filePath)
+	return h.importFromReader(ctx, conf, name, f)
 }
 
 // importFromReader auto-detects gzip and content type, then routes to the appropriate backend.
@@ -115,7 +137,7 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 	}
 }
 
-func (h Handler) importCloudimgFile(ctx context.Context, conf *config.Config, name, filePath string) error {
+func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.importCloudimg")
 	cloudimgStore, err := cloudimg.New(ctx, conf)
 	if err != nil {
@@ -124,7 +146,11 @@ func (h Handler) importCloudimgFile(ctx context.Context, conf *config.Config, na
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {
 		case cloudimgProgress.PhaseDownload:
-			logger.Infof(ctx, "hashing %s", filePath)
+			if len(files) == 1 {
+				logger.Infof(ctx, "hashing %s", files[0])
+			} else {
+				logger.Infof(ctx, "hashing split qcow2 parts (%d files)", len(files))
+			}
 		case cloudimgProgress.PhaseConvert:
 			logger.Info(ctx, "converting to qcow2...")
 		case cloudimgProgress.PhaseCommit:
@@ -133,7 +159,31 @@ func (h Handler) importCloudimgFile(ctx context.Context, conf *config.Config, na
 			logger.Infof(ctx, "done: %s", name)
 		}
 	})
-	if err := cloudimgStore.Import(ctx, name, tracker, filePath); err != nil {
+	if err := cloudimgStore.Import(ctx, name, tracker, files...); err != nil {
+		return fmt.Errorf("import %s: %w", name, err)
+	}
+	return nil
+}
+
+func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
+	logger := log.WithFunc("cmd.importOCI")
+	ociStore, err := oci.New(ctx, conf)
+	if err != nil {
+		return fmt.Errorf("init oci backend: %w", err)
+	}
+	tracker := progress.NewTracker(func(e ociProgress.Event) {
+		switch e.Phase {
+		case ociProgress.PhasePull:
+			logger.Infof(ctx, "importing %s (%d layer(s))", name, e.Total)
+		case ociProgress.PhaseLayer:
+			logger.Infof(ctx, "[%d/%d] %s done", e.Index+1, e.Total, e.Digest)
+		case ociProgress.PhaseCommit:
+			logger.Info(ctx, "committing...")
+		case ociProgress.PhaseDone:
+			logger.Infof(ctx, "done: %s", name)
+		}
+	})
+	if err := ociStore.Import(ctx, name, tracker, files...); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil
@@ -335,6 +385,62 @@ const (
 	imageTypeQcow2 imageType = iota
 	imageTypeTar
 )
+
+type importSourceKind int
+
+const (
+	importSourceQcow2 importSourceKind = iota
+	importSourceTar
+	importSourceStream
+)
+
+type importLocalPlan struct {
+	kind  importSourceKind
+	files []string
+}
+
+func planLocalImport(files []string) (importLocalPlan, error) {
+	if len(files) == 0 {
+		return importLocalPlan{}, fmt.Errorf("no local files provided")
+	}
+	kind, err := detectLocalImportSource(files[0])
+	if err != nil {
+		return importLocalPlan{}, err
+	}
+	if kind == importSourceStream && len(files) > 1 {
+		return importLocalPlan{}, fmt.Errorf("stream imports accept exactly one file, got %d", len(files))
+	}
+	return importLocalPlan{kind: kind, files: files}, nil
+}
+
+func detectLocalImportSource(filePath string) (importSourceKind, error) {
+	f, err := os.Open(filePath) //nolint:gosec
+	if err != nil {
+		return 0, fmt.Errorf("open %s: %w", filePath, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	var magic [4]byte
+	n, readErr := io.ReadFull(f, magic[:])
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return 0, fmt.Errorf("peek %s: %w", filePath, readErr)
+	}
+
+	if n >= 2 && bytes.Equal(magic[:2], []byte{0x1f, 0x8b}) {
+		return importSourceStream, nil
+	}
+	if n >= 4 && bytes.Equal(magic[:4], []byte{'Q', 'F', 'I', 0xfb}) {
+		return importSourceQcow2, nil
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("seek %s: %w", filePath, err)
+	}
+	if _, err := tar.NewReader(f).Next(); err != nil {
+		return 0, fmt.Errorf("cannot detect file type for %s (expected qcow2 or tar)", filePath)
+	}
+	return importSourceTar, nil
+}
 
 // detectReader peeks into a reader to detect gzip wrapping and content type.
 // If gzip is detected, the returned reader is unwrapped.
