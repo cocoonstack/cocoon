@@ -14,6 +14,12 @@ type Direct interface {
 	DataDir(ctx context.Context, ref string) (string, *types.SnapshotConfig, error)
 }
 
+// CompressedExporter is an optional interface for backends that support
+// exporting with compression (e.g. gzip). The default Export produces raw tar.
+type CompressedExporter interface {
+	ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error)
+}
+
 // Snapshot manages snapshot lifecycle and storage.
 type Snapshot interface {
 	Type() string
@@ -29,11 +35,11 @@ type Snapshot interface {
 	// Restore restores a snapshot by ID or name, returning the snapshot config and a data stream.
 	Restore(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error)
 
-	// Export streams the snapshot as a gzip-compressed tar archive.
+	// Export streams the snapshot as a raw tar archive.
 	// The archive includes a snapshot.json metadata entry followed by data files.
 	Export(ctx context.Context, ref string) (io.ReadCloser, error)
-	// Import reads a gzip-compressed tar archive (with snapshot.json metadata),
-	// stores the snapshot, and returns the new snapshot ID.
+	// Import reads a tar archive (gzip or raw, auto-detected) with snapshot.json
+	// metadata, stores the snapshot, and returns the new snapshot ID.
 	// Name and description override values from snapshot.json if non-empty.
 	Import(ctx context.Context, r io.Reader, name, description string) (string, error)
 

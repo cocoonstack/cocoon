@@ -174,8 +174,18 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 
 	ref := args[0]
 	output, _ := cmd.Flags().GetString("output")
+	useGzip, _ := cmd.Flags().GetBool("gzip")
 
-	stream, err := snapBackend.Export(ctx, ref)
+	var stream io.ReadCloser
+	if useGzip {
+		compressor, ok := snapBackend.(snapshot.CompressedExporter)
+		if !ok {
+			return fmt.Errorf("backend does not support compressed export")
+		}
+		stream, err = compressor.ExportCompressed(ctx, ref)
+	} else {
+		stream, err = snapBackend.Export(ctx, ref)
+	}
 	if err != nil {
 		return fmt.Errorf("export: %w", err)
 	}
@@ -204,7 +214,11 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 		if base == "" {
 			base = snap.ID
 		}
-		output = base + ".tar.gz"
+		ext := ".tar"
+		if useGzip {
+			ext = ".tar.gz"
+		}
+		output = base + ext
 	}
 
 	f, err := os.Create(output) //nolint:gosec

@@ -1,6 +1,7 @@
 package localfile
 
 import (
+	"bufio"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -15,15 +16,15 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Import reads a gzip-compressed tar archive containing snapshot.json metadata
-// and data files, stores the snapshot, and returns the new snapshot ID.
+// Import reads a tar archive (optionally gzip-compressed) containing snapshot.json
+// metadata and data files, stores the snapshot, and returns the new snapshot ID.
+// Gzip wrapping is auto-detected from magic bytes; raw tar is accepted directly.
 // Non-empty name and description override values from snapshot.json.
 func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description string) (_ string, err error) {
-	gr, err := gzip.NewReader(r)
+	tarReader, gzCloser, err := unwrapGzip(r)
 	if err != nil {
-		return "", fmt.Errorf("decompress: %w", err)
+		return "", err
 	}
-	defer gr.Close() //nolint:errcheck
 
 	id, err := utils.GenerateID()
 	if err != nil {
@@ -40,12 +41,14 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 		}
 	}()
 
-	if err = utils.ExtractTar(dataDir, gr); err != nil {
+	if err = utils.ExtractTar(dataDir, tarReader); err != nil {
 		return "", fmt.Errorf("extract archive: %w", err)
 	}
-	// Verify gzip checksum (CRC32 + size) to detect truncated/corrupt archives.
-	if err = gr.Close(); err != nil {
-		return "", fmt.Errorf("gzip integrity check: %w", err)
+	// Verify gzip checksum (CRC32 + size) when the input was gzip-wrapped.
+	if gzCloser != nil {
+		if err = gzCloser.Close(); err != nil {
+			return "", fmt.Errorf("gzip integrity check: %w", err)
+		}
 	}
 
 	cfg, err := readAndRemoveSnapshotJSON(dataDir)
@@ -83,6 +86,24 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	}
 
 	return id, nil
+}
+
+// unwrapGzip peeks at the first 2 bytes to detect gzip magic (0x1f 0x8b).
+// Returns the underlying tar reader and an optional gzip closer.
+func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
+	br := bufio.NewReaderSize(r, 4096)
+	peek, err := br.Peek(2)
+	if err != nil {
+		return nil, nil, fmt.Errorf("peek archive header: %w", err)
+	}
+	if peek[0] == 0x1f && peek[1] == 0x8b {
+		gr, gzErr := gzip.NewReader(br)
+		if gzErr != nil {
+			return nil, nil, fmt.Errorf("decompress: %w", gzErr)
+		}
+		return gr, gr, nil
+	}
+	return br, nil, nil
 }
 
 // readAndRemoveSnapshotJSON reads snapshot.json from the data directory,

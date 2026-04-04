@@ -61,7 +61,8 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.Export,
 	}
-	exportCmd.Flags().StringP("output", "o", "", "output file path (default: <name-or-id>.tar.gz)")
+	exportCmd.Flags().StringP("output", "o", "", "output file path (default: <name-or-id>.tar)")
+	exportCmd.Flags().Bool("gzip", false, "compress output with gzip")
 
 	importCmd := &cobra.Command{
 		Use:   "import [FILE]",

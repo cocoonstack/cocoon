@@ -25,8 +25,9 @@ const typ = "localfile"
 
 // compile-time interface checks.
 var (
-	_ snapshot.Snapshot = (*LocalFile)(nil)
-	_ snapshot.Direct   = (*LocalFile)(nil)
+	_ snapshot.Snapshot           = (*LocalFile)(nil)
+	_ snapshot.Direct             = (*LocalFile)(nil)
+	_ snapshot.CompressedExporter = (*LocalFile)(nil)
 )
 
 // LocalFile implements snapshot.Snapshot using the local filesystem.

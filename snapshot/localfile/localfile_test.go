@@ -777,18 +777,16 @@ func TestExportImport_Roundtrip(t *testing.T) {
 	}
 	origID := makeExportableSnapshot(t, lf, "export-src", origFiles)
 
-	// Export to a stream.
 	exportStream, err := lf.Export(ctx, origID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
+	defer exportStream.Close()
 
-	// Import from that stream (simulates pipe).
 	importedID, err := lf.Import(ctx, exportStream, "imported-snap", "")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	exportStream.Close()
 
 	if importedID == origID {
 		t.Error("imported snapshot should get a new ID")
@@ -936,13 +934,165 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 	}
 }
 
+func TestImport_FromRawTarReader(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+
+	// Build a raw (uncompressed) tar archive with snapshot.json + data files.
+	wantCfg := types.SnapshotExport{
+		Version: 1,
+		Config: types.SnapshotConfig{
+			Name: "raw-snap",
+			CPU:  8,
+		},
+	}
+	jsonData, err := json.Marshal(wantCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(jsonData); err != nil {
+		t.Fatal(err)
+	}
+
+	dataContent := []byte("raw disk data")
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "cow.raw", Size: int64(len(dataContent)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(dataContent); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close()
+
+	importedID, err := lf.Import(ctx, &buf, "", "")
+	if err != nil {
+		t.Fatalf("Import raw tar: %v", err)
+	}
+
+	s, err := lf.Inspect(ctx, importedID)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if s.Name != "raw-snap" {
+		t.Errorf("Name: got %q, want %q", s.Name, "raw-snap")
+	}
+	if s.CPU != 8 {
+		t.Errorf("CPU: got %d, want 8", s.CPU)
+	}
+
+	dataDir := lf.conf.SnapshotDataDir(importedID)
+	got, err := os.ReadFile(filepath.Join(dataDir, "cow.raw"))
+	if err != nil {
+		t.Fatalf("read cow.raw: %v", err)
+	}
+	if !bytes.Equal(got, dataContent) {
+		t.Errorf("cow.raw: got %q, want %q", got, dataContent)
+	}
+}
+
+func TestExportCompressed_ImportRoundtrip(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+
+	origFiles := map[string][]byte{"cow.raw": []byte("compressed roundtrip")}
+	makeExportableSnapshot(t, lf, "gz-src", origFiles)
+
+	stream, err := lf.ExportCompressed(ctx, "gz-src")
+	if err != nil {
+		t.Fatalf("ExportCompressed: %v", err)
+	}
+	defer stream.Close()
+
+	importedID, err := lf.Import(ctx, stream, "gz-imported", "")
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	s, err := lf.Inspect(ctx, importedID)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if s.Name != "gz-imported" {
+		t.Errorf("Name: got %q, want %q", s.Name, "gz-imported")
+	}
+
+	dataDir := lf.conf.SnapshotDataDir(importedID)
+	for name, want := range origFiles {
+		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
+		if readErr != nil {
+			t.Errorf("read %s: %v", name, readErr)
+			continue
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("file %s: got %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestExport_ImportRoundtrip(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+
+	origFiles := map[string][]byte{
+		"cow.raw":    []byte("disk data"),
+		"state.json": []byte(`{"ok":true}`),
+	}
+	makeExportableSnapshot(t, lf, "raw-export-src", origFiles)
+
+	stream, err := lf.Export(ctx, "raw-export-src")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	defer stream.Close()
+
+	importedID, err := lf.Import(ctx, stream, "raw-imported", "")
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	s, err := lf.Inspect(ctx, importedID)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if s.Name != "raw-imported" {
+		t.Errorf("Name: got %q, want %q", s.Name, "raw-imported")
+	}
+
+	dataDir := lf.conf.SnapshotDataDir(importedID)
+	for name, wantContent := range origFiles {
+		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
+		if readErr != nil {
+			t.Errorf("read %s: %v", name, readErr)
+			continue
+		}
+		if !bytes.Equal(got, wantContent) {
+			t.Errorf("file %s: got %q, want %q", name, got, wantContent)
+		}
+	}
+}
+
 func TestImport_InvalidStream(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	_, err := lf.Import(ctx, strings.NewReader("not gzip data"), "", "")
-	if err == nil {
-		t.Fatal("expected error for non-gzip reader")
+	// Too short to peek.
+	if _, err := lf.Import(ctx, strings.NewReader("x"), "", ""); err == nil {
+		t.Fatal("expected error for 1-byte input")
+	}
+
+	// Peekable but not a valid tar.
+	if _, err := lf.Import(ctx, strings.NewReader("this is not a tar archive"), "", ""); err == nil {
+		t.Fatal("expected error for non-tar input")
 	}
 }
 

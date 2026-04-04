@@ -15,10 +15,19 @@ import (
 
 const snapshotJSONName = "snapshot.json"
 
-// Export streams the snapshot as a gzip-compressed tar archive.
+// Export streams the snapshot as a raw tar archive.
 // The first tar entry is snapshot.json containing the SnapshotConfig metadata;
 // the remaining entries are the data files from the snapshot directory.
 func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, error) {
+	return lf.export(ctx, ref, false)
+}
+
+// ExportCompressed streams the snapshot as a gzip-compressed tar archive.
+func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error) {
+	return lf.export(ctx, ref, true)
+}
+
+func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.ReadCloser, error) {
 	dataDir, cfg, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -44,12 +53,18 @@ func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, err
 			done <- streamErr
 		}()
 
-		gw, err := gzip.NewWriterLevel(pw, gzip.BestSpeed)
-		if err != nil {
-			streamErr = fmt.Errorf("create gzip writer: %w", err)
-			return
+		var w io.Writer = pw
+		var gw *gzip.Writer
+		if compress {
+			var gzErr error
+			gw, gzErr = gzip.NewWriterLevel(pw, gzip.BestSpeed)
+			if gzErr != nil {
+				streamErr = fmt.Errorf("create gzip writer: %w", gzErr)
+				return
+			}
+			w = gw
 		}
-		tw := tar.NewWriter(gw)
+		tw := tar.NewWriter(w)
 
 		// First entry: snapshot.json metadata.
 		streamErr = tw.WriteHeader(&tar.Header{
@@ -73,7 +88,9 @@ func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, err
 		if streamErr = tw.Close(); streamErr != nil {
 			return
 		}
-		streamErr = gw.Close()
+		if gw != nil {
+			streamErr = gw.Close()
+		}
 	}()
 
 	return utils.NewPipeStreamReader(pr, done, nil), nil
