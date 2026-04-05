@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -138,11 +137,12 @@ func rawArrayLen(raw json.RawMessage) int {
 	return len(arr)
 }
 
-// patchStateJSON does string replacement in state.json for stale values.
+// patchStateJSON patches disk path values in state.json using structured JSON
+// traversal. Only string values under keys "disk_path" or "path" are replaced,
+// and only when the entire value exactly matches a key in replacements.
 //
-// Disk paths: CH's vm.restore uses config.json (not state.json) to open disk files.
-// The disk_path in serialized DiskConfig is informational — patching prevents
-// debugging confusion from stale paths.
+// CH's vm.restore uses config.json (not state.json) to open disk files.
+// Patching state.json prevents debugging confusion from stale paths.
 func patchStateJSON(path string, replacements map[string]string) error {
 	if len(replacements) == 0 {
 		return nil
@@ -151,12 +151,46 @@ func patchStateJSON(path string, replacements map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	oldnew := make([]string, 0, len(replacements)*2)
-	for oldVal, newVal := range replacements {
-		oldnew = append(oldnew, oldVal, newVal)
+	var root any
+	if e := json.Unmarshal(data, &root); e != nil {
+		return fmt.Errorf("decode %s: %w", path, e)
 	}
-	content := strings.NewReplacer(oldnew...).Replace(string(data))
-	return os.WriteFile(path, []byte(content), 0o600) //nolint:gosec
+	root = walkAndReplace(root, "", replacements)
+	out, err := json.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("marshal patched state: %w", err)
+	}
+	return os.WriteFile(path, out, 0o600) //nolint:gosec
+}
+
+func isDiskPathKey(key string) bool {
+	return key == "disk_path" || key == "path"
+}
+
+// walkAndReplace recursively traverses a parsed JSON value and replaces string
+// values that are under a disk-path key and exactly match a replacement entry.
+func walkAndReplace(v any, key string, replacements map[string]string) any {
+	switch val := v.(type) {
+	case map[string]any:
+		for k, child := range val {
+			val[k] = walkAndReplace(child, k, replacements)
+		}
+		return val
+	case []any:
+		for i, child := range val {
+			val[i] = walkAndReplace(child, "", replacements)
+		}
+		return val
+	case string:
+		if isDiskPathKey(key) {
+			if newVal, ok := replacements[val]; ok {
+				return newVal
+			}
+		}
+		return val
+	default:
+		return val
+	}
 }
 
 // --- Raw JSON helpers ---

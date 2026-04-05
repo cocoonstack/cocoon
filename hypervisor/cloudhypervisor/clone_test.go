@@ -521,56 +521,122 @@ func TestPatchStateJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, _ := os.ReadFile(path)
-	content := string(data)
-	if strings.Contains(content, "/old/vm1/") {
-		t.Errorf("old paths still present: %s", content)
+	result := readRawJSON(t, path)
+	// disk_path key: replaced.
+	if result["disk_path"] != "/new/vm2/cow.raw" {
+		t.Errorf("disk_path not replaced: %v", result["disk_path"])
 	}
-	if !strings.Contains(content, "/new/vm2/cow.raw") {
-		t.Errorf("new cow path missing: %s", content)
+	// "other" key: NOT a disk path key, must be unchanged.
+	if result["other"] != "/old/vm1/layer.erofs" {
+		t.Errorf("non-disk-path key 'other' should not be changed: %v", result["other"])
 	}
-	if !strings.Contains(content, "/new/vm2/layer.erofs") {
-		t.Errorf("new layer path missing: %s", content)
+	// nested.path: replaced.
+	nested := result["nested"].(map[string]any)
+	if nested["path"] != "/new/vm2/cow.raw" {
+		t.Errorf("nested path not replaced: %v", nested["path"])
 	}
 }
 
-func TestPatchStateJSON_MACAddresses(t *testing.T) {
+func TestPatchStateJSON_NonTargetKeysUntouched(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
-	// CH's serde serializes MAC as decimal byte array: aa:bb:cc:dd:ee:f0 → 170,187,204,221,238,240
-	original := `{"disk_path":"/old/vm1/cow.raw","virtio_net":{"mac":[170,187,204,221,238,240],"queues":4}}`
+	// MAC bytes and non-disk-path string values must not be modified.
+	original := `{"disk_path":"/old/vm1/cow.raw","virtio_net":{"mac":[170,187,204,221,238,240],"queues":4},"socket":"/old/vm1/cow.raw"}`
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// patchStateJSON does generic string replacement; test with both disk paths and
-	// arbitrary byte sequences to verify correctness.
 	replacements := map[string]string{
-		"/old/vm1/cow.raw":        "/new/vm2/cow.raw",
-		"170,187,204,221,238,240": "17,34,51,68,85,102",
+		"/old/vm1/cow.raw": "/new/vm2/cow.raw",
 	}
 	if err := patchStateJSON(path, replacements); err != nil {
 		t.Fatal(err)
 	}
 
-	data, _ := os.ReadFile(path)
-	content := string(data)
+	result := readRawJSON(t, path)
+	// disk_path: replaced.
+	if result["disk_path"] != "/new/vm2/cow.raw" {
+		t.Errorf("disk_path not replaced: %v", result["disk_path"])
+	}
+	// "socket" has same value but wrong key: must be unchanged.
+	if result["socket"] != "/old/vm1/cow.raw" {
+		t.Errorf("non-target key 'socket' should not be changed: %v", result["socket"])
+	}
+	// MAC array untouched.
+	virtioNet := result["virtio_net"].(map[string]any)
+	mac := virtioNet["mac"].([]any)
+	if len(mac) != 6 || mac[0] != float64(170) || mac[5] != float64(240) {
+		t.Errorf("MAC array should be untouched: %v", mac)
+	}
+}
 
-	// Old MAC bytes should be gone.
-	if strings.Contains(content, "170,187,204,221,238,240") {
-		t.Errorf("old MAC bytes still present: %s", content)
+func TestPatchStateJSON_PrefixCollision(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	// /old/vm1 must not match /old/vm10 — exact match only.
+	original := `{"disk_path":"/old/vm10/cow.raw","path":"/old/vm1/cow.raw"}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	// New MAC bytes should appear.
-	if !strings.Contains(content, "17,34,51,68,85,102") {
-		t.Errorf("new MAC bytes missing: %s", content)
+
+	replacements := map[string]string{
+		"/old/vm1/cow.raw": "/new/vm2/cow.raw",
 	}
-	// Disk path also replaced.
-	if strings.Contains(content, "/old/vm1/") {
-		t.Errorf("old disk path still present: %s", content)
+	if err := patchStateJSON(path, replacements); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(content, "/new/vm2/cow.raw") {
-		t.Errorf("new disk path missing: %s", content)
+
+	result := readRawJSON(t, path)
+	// disk_path has /old/vm10/... — no match, must be unchanged.
+	if result["disk_path"] != "/old/vm10/cow.raw" {
+		t.Errorf("prefix collision: disk_path changed to %v", result["disk_path"])
+	}
+	// path has exact match, must be replaced.
+	if result["path"] != "/new/vm2/cow.raw" {
+		t.Errorf("path not replaced: %v", result["path"])
+	}
+}
+
+func TestPatchStateJSON_NestedArray(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	original := `{"disks":[{"disk_path":"/old/a.raw","readonly":true},{"disk_path":"/old/b.raw"}]}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	replacements := map[string]string{
+		"/old/a.raw": "/new/a.raw",
+		"/old/b.raw": "/new/b.raw",
+	}
+	if err := patchStateJSON(path, replacements); err != nil {
+		t.Fatal(err)
+	}
+
+	result := readRawJSON(t, path)
+	disks := result["disks"].([]any)
+	d0 := disks[0].(map[string]any)
+	d1 := disks[1].(map[string]any)
+	if d0["disk_path"] != "/new/a.raw" {
+		t.Errorf("disk[0] not replaced: %v", d0["disk_path"])
+	}
+	if d1["disk_path"] != "/new/b.raw" {
+		t.Errorf("disk[1] not replaced: %v", d1["disk_path"])
+	}
+}
+
+func TestPatchStateJSON_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(path, []byte(`{not valid json`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := patchStateJSON(path, map[string]string{"/old": "/new"})
+	if err == nil {
+		t.Error("expected error for invalid JSON")
 	}
 }
 
@@ -613,7 +679,10 @@ func TestPatchStateJSON_EmptyMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(data) != original {
 		t.Errorf("file changed with empty map: %s", data)
 	}

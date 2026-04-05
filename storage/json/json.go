@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/projecteru2/core/log"
 
@@ -19,10 +18,6 @@ var _ storage.Store[struct{}] = (*Store[struct{}])(nil)
 type Store[T any] struct {
 	filePath string
 	locker   lock.Locker
-
-	mu    sync.Mutex
-	cache *T
-	valid bool
 }
 
 func New[T any](filePath string, locker lock.Locker) *Store[T] {
@@ -30,20 +25,11 @@ func New[T any](filePath string, locker lock.Locker) *Store[T] {
 }
 
 func (s *Store[T]) load() (*T, error) {
-	s.mu.Lock()
-	if s.valid {
-		data := s.cache
-		s.mu.Unlock()
-		return data, nil
-	}
-	s.mu.Unlock()
-
 	var data T
 	raw, err := os.ReadFile(s.filePath) //nolint:gosec
 	if err != nil {
 		if os.IsNotExist(err) {
 			initData(&data)
-			s.setCache(&data)
 			return &data, nil
 		}
 		return nil, fmt.Errorf("read %s: %w", s.filePath, err)
@@ -52,22 +38,7 @@ func (s *Store[T]) load() (*T, error) {
 		return nil, fmt.Errorf("parse %s: %w", s.filePath, err)
 	}
 	initData(&data)
-	s.setCache(&data)
 	return &data, nil
-}
-
-func (s *Store[T]) setCache(data *T) {
-	s.mu.Lock()
-	s.cache = data
-	s.valid = true
-	s.mu.Unlock()
-}
-
-func (s *Store[T]) invalidateCache() {
-	s.mu.Lock()
-	s.cache = nil
-	s.valid = false
-	s.mu.Unlock()
 }
 
 func (s *Store[T]) ReadRaw(fn func(*T) error) error {
@@ -87,7 +58,6 @@ func (s *Store[T]) WriteRaw(fn func(*T) error) error {
 		return err
 	}
 	if err := utils.AtomicWriteJSON(s.filePath, data); err != nil {
-		s.invalidateCache()
 		return err
 	}
 	return nil

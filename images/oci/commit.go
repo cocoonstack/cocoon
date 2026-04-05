@@ -6,8 +6,20 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/images"
-	"github.com/cocoonstack/cocoon/utils"
 )
+
+// validFileSize returns the file size or an error if the file is missing,
+// not a regular file, or empty. Combines validation and size in one stat call.
+func validFileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return 0, fmt.Errorf("invalid file: %s", path)
+	}
+	return info.Size(), nil
+}
 
 func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	if src == "" || src == dst {
@@ -75,29 +87,23 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 		return fmt.Errorf("image %s missing boot files (vmlinuz/initrd.img)", ref)
 	}
 
-	for _, le := range layerEntries {
-		if !utils.ValidFile(conf.BlobPath(le.Digest.Hex())) {
-			return fmt.Errorf("blob missing for layer %s (concurrent GC?)", le.Digest)
-		}
-	}
-	if !utils.ValidFile(conf.KernelPath(kernelLayer.Hex())) {
-		return fmt.Errorf("kernel missing for %s (concurrent GC?)", kernelLayer)
-	}
-	if !utils.ValidFile(conf.InitrdPath(initrdLayer.Hex())) {
-		return fmt.Errorf("initrd missing for %s (concurrent GC?)", initrdLayer)
-	}
-
 	var totalSize int64
 	for _, le := range layerEntries {
-		if info, err := os.Stat(conf.BlobPath(le.Digest.Hex())); err == nil {
-			totalSize += info.Size()
+		size, err := validFileSize(conf.BlobPath(le.Digest.Hex()))
+		if err != nil {
+			return fmt.Errorf("blob missing for layer %s (concurrent GC?)", le.Digest)
 		}
+		totalSize += size
 	}
-	if info, err := os.Stat(conf.KernelPath(kernelLayer.Hex())); err == nil {
-		totalSize += info.Size()
+	if size, err := validFileSize(conf.KernelPath(kernelLayer.Hex())); err != nil {
+		return fmt.Errorf("kernel missing for %s (concurrent GC?)", kernelLayer)
+	} else {
+		totalSize += size
 	}
-	if info, err := os.Stat(conf.InitrdPath(initrdLayer.Hex())); err == nil {
-		totalSize += info.Size()
+	if size, err := validFileSize(conf.InitrdPath(initrdLayer.Hex())); err != nil {
+		return fmt.Errorf("initrd missing for %s (concurrent GC?)", initrdLayer)
+	} else {
+		totalSize += size
 	}
 
 	idx.Images[ref] = &imageEntry{
