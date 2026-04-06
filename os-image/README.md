@@ -26,6 +26,34 @@ Multi-arch (`linux/amd64`, `linux/arm64`).
 
 Access via `adb connect <vm-ip>:5555` or `scrcpy -s <vm-ip>:5555 --no-audio`.
 
+### Windows
+
+`linux/amd64` only. Build automation and pre-built images are maintained in [cocoonstack/windows](https://github.com/cocoonstack/windows).
+
+Pre-built images are published to GHCR as split qcow2 parts (each part ≤ 1.9 GiB to stay within the GHCR per-layer limit):
+
+```
+ghcr.io/cocoonstack/windows:win11-25h2              # moving alias, latest good build
+ghcr.io/cocoonstack/windows:win11-25h2-<YYYYMMDD>   # dated immutable tag
+```
+
+Pull and import into Cocoon:
+
+```bash
+# 1. Pull split parts via oras (https://oras.land)
+oras pull ghcr.io/cocoonstack/windows:win11-25h2
+
+# 2. Reassemble and verify
+cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2
+sha256sum -c SHA256SUMS
+
+# 3. Import into Cocoon
+cocoon image import win11-25h2 windows-11-25h2.qcow2
+cocoon vm run --windows --name win11 --cpu 4 --memory 4G win11-25h2
+```
+
+See [cocoonstack/windows](https://github.com/cocoonstack/windows) for build steps and version requirements.
+
 ## Quick Start
 
 ### Ubuntu

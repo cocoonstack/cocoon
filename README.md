@@ -318,7 +318,7 @@ The cidata disk is **automatically excluded on subsequent boots** — after the 
 Cocoon supports Windows guests via the `--windows` flag:
 
 ```bash
-cocoon vm run --windows --name win11 --cpu 2 --memory 4G --storage 40G <cloudimg-url>
+cocoon vm run --windows --name win11 --cpu 2 --memory 4G --storage 15G <cloudimg-url>
 ```
 
 The `--windows` flag:
@@ -330,11 +330,24 @@ The `--windows` flag:
 
 - Cloud Hypervisor **v51+** with our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) (includes DISCARD fix, virtio-net ctrl_queue fix, and upstream patches — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
 - UEFI firmware from our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) (includes ResetSystem fix for ACPI power-button — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
-- virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works; newer versions are supported with our CH fork)
+- virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works for any version of Cloud Hypervisor; newer versions are supported with our CH fork)
 
-### Image Preparation
+### Image
 
-Windows images must be prepared manually — Microsoft licensing prohibits automated distribution of Windows disk images. See [`os-image/windows/`](os-image/windows/) for the complete build guide and `autounattend.xml` for unattended installation.
+Pre-built images and build automation are maintained in [cocoonstack/windows](https://github.com/cocoonstack/windows).
+
+```bash
+# 1. Pull split parts via oras (https://oras.land)
+oras pull ghcr.io/cocoonstack/windows:win11-25h2
+
+# 2. Reassemble and verify
+cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2
+sha256sum -c SHA256SUMS
+
+# 3. Import into Cocoon
+cocoon image import win11-25h2 windows-11-25h2.qcow2
+```
+
 
 ### Post-Clone Networking
 
