@@ -71,11 +71,11 @@ func InitBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Imag
 	if err != nil {
 		return nil, nil, err
 	}
-	ch, err := cloudhypervisor.New(conf)
+	hyper, err := InitHypervisor(conf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("init hypervisor: %w", err)
+		return nil, nil, err
 	}
-	return backends, ch, nil
+	return backends, hyper, nil
 }
 
 // InitImageBackends initializes only image backends (no hypervisor needed).
@@ -100,8 +100,12 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	return ociStore, cloudimgStore, nil
 }
 
-// InitHypervisor initializes only the hypervisor.
+// InitHypervisor initializes the selected hypervisor backend.
+// Uses Firecracker when conf.UseFirecracker is true, Cloud Hypervisor otherwise.
 func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
+	if conf.UseFirecracker {
+		return nil, fmt.Errorf("firecracker backend not yet implemented")
+	}
 	ch, err := cloudhypervisor.New(conf)
 	if err != nil {
 		return nil, fmt.Errorf("init hypervisor: %w", err)

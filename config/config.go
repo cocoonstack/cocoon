@@ -24,6 +24,12 @@ type Config struct {
 	// CHBinary is the path or name of the cloud-hypervisor executable.
 	// Default: "cloud-hypervisor".
 	CHBinary string `json:"ch_binary" mapstructure:"ch_binary"`
+	// FCBinary is the path or name of the firecracker executable.
+	// Default: "firecracker".
+	FCBinary string `json:"fc_binary" mapstructure:"fc_binary"`
+	// UseFirecracker selects Firecracker as the hypervisor backend.
+	// Set via --fc flag. Default: false (use Cloud Hypervisor).
+	UseFirecracker bool `json:"use_firecracker,omitempty" mapstructure:"use_firecracker"`
 	// StopTimeoutSeconds is how long to wait for a guest to respond to an
 	// ACPI power-button before falling back to SIGTERM/SIGKILL.
 	// Default: 30.

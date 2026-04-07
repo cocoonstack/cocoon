@@ -43,6 +43,7 @@ var (
 		cmd.PersistentFlags().String("root-password", "", "default root password for cloudimg VMs")
 		cmd.PersistentFlags().String("dns", "", `DNS servers for VMs, comma or semicolon separated (default: "8.8.8.8,1.1.1.1")`)
 		cmd.PersistentFlags().String("log-level", "", `log level: debug, info, warn, error (default: "info")`)
+		cmd.PersistentFlags().Bool("fc", false, "use Firecracker backend instead of Cloud Hypervisor (OCI images only)")
 
 		_ = viper.BindPFlag("root_dir", cmd.PersistentFlags().Lookup("root-dir"))
 		_ = viper.BindPFlag("run_dir", cmd.PersistentFlags().Lookup("run-dir"))
@@ -52,6 +53,7 @@ var (
 		_ = viper.BindPFlag("default_root_password", cmd.PersistentFlags().Lookup("root-password"))
 		_ = viper.BindPFlag("dns", cmd.PersistentFlags().Lookup("dns"))
 		_ = viper.BindPFlag("log.level", cmd.PersistentFlags().Lookup("log-level"))
+		_ = viper.BindPFlag("use_firecracker", cmd.PersistentFlags().Lookup("fc"))
 
 		viper.SetEnvPrefix("COCOON")
 		viper.AutomaticEnv()
@@ -59,6 +61,7 @@ var (
 		viper.SetDefault("run_dir", "/var/lib/cocoon/run")
 		viper.SetDefault("log_dir", "/var/log/cocoon")
 		viper.SetDefault("ch_binary", "cloud-hypervisor")
+		viper.SetDefault("fc_binary", "firecracker")
 		viper.SetDefault("cni_conf_dir", "/etc/cni/net.d")
 		viper.SetDefault("cni_bin_dir", "/opt/cni/bin")
 		viper.SetDefault("dns", "8.8.8.8,1.1.1.1")

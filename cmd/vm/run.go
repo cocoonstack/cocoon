@@ -252,12 +252,18 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
+
+	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
+	// Validate backend/boot-mode constraints before initializing backends.
+	if conf.UseFirecracker && vmCfg.Windows {
+		return nil, nil, nil, fmt.Errorf("--fc and --windows are mutually exclusive: Firecracker does not support Windows guests")
+	}
+
+	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -268,6 +274,9 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	}
 	if vmCfg.Windows && bootCfg.KernelPath != "" {
 		return nil, nil, nil, fmt.Errorf("--windows requires cloudimg (UEFI boot), got OCI direct boot image")
+	}
+	if conf.UseFirecracker && bootCfg.KernelPath == "" {
+		return nil, nil, nil, fmt.Errorf("--fc requires OCI images (direct kernel boot): Firecracker does not support UEFI/cloudimg boot")
 	}
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
