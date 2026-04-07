@@ -475,6 +475,18 @@ if $UPGRADE; then
         fail "failed to download firmware from ${fw_url}"
     fi
 
+    # -- zstd (for FC kernel decompression) -----------------------------------
+    if ! command -v zstd &>/dev/null; then
+        header "Install zstd"
+        if command -v apt-get &>/dev/null; then
+            apt-get install -y -qq zstd &>/dev/null && fixed "zstd installed via apt-get" || warn "failed to install zstd"
+        elif command -v yum &>/dev/null; then
+            yum install -y -q zstd &>/dev/null && fixed "zstd installed via yum" || warn "failed to install zstd"
+        else
+            warn "zstd not installed (install manually for --fc kernel decompression)"
+        fi
+    fi
+
     # -- CNI plugins --------------------------------------------------------
     header "Install CNI plugins ${CNI_VERSION}"
 

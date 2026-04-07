@@ -140,6 +140,15 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, err
 	}
 
+	// FC cannot update CPU/memory after snapshot/load (no PATCH /machine-config
+	// on a restored VM). Use the snapshot's original values.
+	if meta.CPU > 0 {
+		vmCfg.CPU = meta.CPU
+	}
+	if meta.Memory > 0 {
+		vmCfg.Memory = meta.Memory
+	}
+
 	info := types.VM{
 		ID: vmID, State: types.VMStateRunning,
 		Config: *vmCfg, StorageConfigs: storageConfigs, NetworkConfigs: networkConfigs,

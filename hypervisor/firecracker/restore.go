@@ -129,6 +129,12 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 		return nil, fmt.Errorf("resume: %w", err)
 	}
 
+	// FC cannot update CPU/memory after snapshot/load (no PATCH /machine-config
+	// on a restored VM). Use the record's original values regardless of overrides.
+	// Storage expansion (raw truncate) was already applied above.
+	vmCfg.CPU = rec.Config.CPU
+	vmCfg.Memory = rec.Config.Memory
+
 	now := time.Now()
 	if err = fc.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
 		r := idx.VMs[vmID]

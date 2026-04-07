@@ -99,7 +99,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 
 	// Save snapshot metadata so clones can reconstruct storage/boot config
 	// without depending on live VM records.
-	if metaErr := saveSnapshotMeta(tmpDir, fc.conf.RootDir, rec.StorageConfigs, rec.BootConfig); metaErr != nil {
+	if metaErr := saveSnapshotMeta(tmpDir, fc.conf.RootDir, rec.StorageConfigs, rec.BootConfig, rec.Config.CPU, rec.Config.Memory); metaErr != nil {
 		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
 		return nil, nil, fmt.Errorf("save snapshot metadata: %w", metaErr)
 	}
@@ -156,6 +156,8 @@ type snapshotMeta struct {
 	SourceRootDir  string                 `json:"source_root_dir"`
 	StorageConfigs []*types.StorageConfig `json:"storage_configs"`       // resolved to local absolute paths after load
 	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"` // resolved to local absolute paths after load
+	CPU            int                    `json:"cpu,omitempty"`         // snapshot's original vCPU count
+	Memory         int64                  `json:"memory,omitempty"`      // snapshot's original memory (bytes)
 
 	// rawRelPaths preserves the original relative paths from cocoon.json
 	// so vmstatePaths() can reconstruct source-host absolute paths.
@@ -165,8 +167,8 @@ type snapshotMeta struct {
 // saveSnapshotMeta stores paths relative to rootDir so snapshots are portable
 // across hosts with different root_dir settings. Also normalizes vmlinux → vmlinuz
 // for the kernel path since vmlinux is a host-local FC cache.
-func saveSnapshotMeta(dir, rootDir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
-	meta := snapshotMeta{SourceRootDir: rootDir}
+func saveSnapshotMeta(dir, rootDir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig, cpu int, memory int64) error {
+	meta := snapshotMeta{SourceRootDir: rootDir, CPU: cpu, Memory: memory}
 	// Store ALL drive entries (RO layers + RW COW) so clones can:
 	// 1. Reconstruct layer paths on the target host (RO entries)
 	// 2. Know the source COW path for drive redirect/symlink (RW entry)
