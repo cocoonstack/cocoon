@@ -150,12 +150,13 @@ type snapshotMeta struct {
 // for the kernel path since vmlinux is a host-local FC cache.
 func saveSnapshotMeta(dir, rootDir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
 	meta := snapshotMeta{}
+	// Store ALL drive entries (RO layers + RW COW) so clones can:
+	// 1. Reconstruct layer paths on the target host (RO entries)
+	// 2. Know the source COW path for drive redirect/symlink (RW entry)
 	for _, sc := range storageConfigs {
-		if sc.RO {
-			meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{
-				Path: makeRelative(sc.Path, rootDir), RO: true, Serial: sc.Serial,
-			})
-		}
+		meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{
+			Path: makeRelative(sc.Path, rootDir), RO: sc.RO, Serial: sc.Serial,
+		})
 	}
 	if boot != nil {
 		b := *boot
