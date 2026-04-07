@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -76,14 +77,39 @@ func (fc *Firecracker) List(ctx context.Context) ([]*types.VM, error) {
 
 // Delete removes VMs. Running VMs require force=true (stops them first).
 func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
-	return nil, fmt.Errorf("firecracker Delete not yet implemented")
+	ids, err := fc.resolveRefs(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+	return fc.forEachVM(ctx, ids, "Delete", func(ctx context.Context, id string) error {
+		rec, loadErr := fc.loadRecord(ctx, id)
+		if loadErr != nil {
+			return loadErr
+		}
+		if err := fc.withRunningVM(ctx, &rec, func(_ int) error {
+			if !force {
+				return fmt.Errorf("running (force required)")
+			}
+			return fc.stopOne(ctx, id)
+		}); err != nil && !errors.Is(err, hypervisor.ErrNotRunning) {
+			return fmt.Errorf("stop before delete: %w", err)
+		}
+		if err := removeVMDirs(rec.RunDir, rec.LogDir); err != nil {
+			return fmt.Errorf("cleanup VM dirs: %w", err)
+		}
+		return fc.store.Update(ctx, func(idx *hypervisor.VMIndex) error {
+			r := idx.VMs[id]
+			if r == nil {
+				return hypervisor.ErrNotFound
+			}
+			delete(idx.Names, r.Config.Name)
+			delete(idx.VMs, id)
+			return nil
+		})
+	})
 }
 
 // --- Stubs: implemented in subsequent commits ---
-
-func (fc *Firecracker) Stop(_ context.Context, _ []string) ([]string, error) {
-	return nil, fmt.Errorf("firecracker Stop not yet implemented")
-}
 
 func (fc *Firecracker) Console(_ context.Context, _ string) (io.ReadWriteCloser, error) {
 	return nil, fmt.Errorf("firecracker Console not yet implemented")

@@ -104,3 +104,11 @@ func instanceStart(ctx context.Context, hc *http.Client) error {
 	}
 	return fcAPI(ctx, hc, http.MethodPut, "/actions", body, http.StatusNoContent, http.StatusOK)
 }
+
+func sendCtrlAltDel(ctx context.Context, hc *http.Client) error {
+	body, err := json.Marshal(fcAction{ActionType: "SendCtrlAltDel"})
+	if err != nil {
+		return fmt.Errorf("marshal action: %w", err)
+	}
+	return fcAPI(ctx, hc, http.MethodPut, "/actions", body)
+}
