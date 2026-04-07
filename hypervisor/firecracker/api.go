@@ -66,7 +66,7 @@ type fcBalloon struct {
 }
 
 // fcAPI sends a request to the Firecracker REST API via Unix socket.
-func fcAPI(ctx context.Context, hc *http.Client, method, endpoint string, body []byte, successCodes ...int) error { //nolint:unparam
+func fcAPI(ctx context.Context, hc *http.Client, method, endpoint string, body []byte, successCodes ...int) error {
 	if len(successCodes) == 0 {
 		successCodes = []int{http.StatusNoContent}
 	}

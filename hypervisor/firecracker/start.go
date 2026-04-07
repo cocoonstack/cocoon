@@ -121,7 +121,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	const minBalloonMemory = 256 << 20 //nolint:mnd
 	const defaultBalloonDiv = 4        //nolint:mnd
 	if rec.Config.Memory >= minBalloonMemory {
-		balloonMiB := int(rec.Config.Memory>>20) / defaultBalloonDiv //nolint:mnd
+		balloonMiB := memMiB / defaultBalloonDiv
 		if err := putBalloon(ctx, hc, fcBalloon{
 			AmountMiB:         balloonMiB,
 			DeflateOnOOM:      true,
