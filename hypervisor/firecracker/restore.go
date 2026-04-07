@@ -127,7 +127,7 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 	}
 
 	// Re-configure drives after snapshot load.
-	if err = fc.reconfigureDrives(ctx, hc, rec.StorageConfigs); err != nil {
+	if err = reconfigureDrives(ctx, hc, rec.StorageConfigs); err != nil {
 		return nil, fmt.Errorf("reconfigure drives: %w", err)
 	}
 

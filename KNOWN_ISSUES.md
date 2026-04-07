@@ -125,3 +125,14 @@ The Windows image's `autounattend.xml` includes defensive power-button configura
 ## Installing patched binaries for Windows
 
 See [`os-image/windows/`](os-image/windows/) for download and installation instructions.
+
+
+## Firecracker snapshot portability
+
+Firecracker snapshots store absolute host paths in the vmstate binary (Rust serde format, not patchable). This means:
+
+- **Same-host clone/restore**: works without restrictions
+- **Cross-host export/import**: requires the target host to use **identical `root_dir` and `run_dir`** (default: `/var/lib/cocoon` and `/var/lib/cocoon/run`) and have the **same OCI image pulled**
+- **CPU/memory overrides**: not supported on clone/restore — Firecracker cannot change machine config after snapshot/load; `--cpu` and `--memory` flags are rejected if they differ from the snapshot values
+
+This is a fundamental Firecracker design limitation. Cloud Hypervisor snapshots do not have this restriction because CH stores device config in a patchable JSON format (`config.json`).

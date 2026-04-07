@@ -396,6 +396,8 @@ cocoon --fc vm stop fast-vm
 - **Raw disks only**: Firecracker uses raw virtio-blk without serial support; disks are referenced by device path (`/dev/vdX`)
 - **Single-queue networking**: `NetworkConfig.NumQueues` is ignored
 - **No balloon**: memory reclaim is not available
+- **No CPU/memory override on clone/restore**: Firecracker cannot change machine config after snapshot/load
+- **Snapshot portability requires same directory layout**: FC snapshots store absolute paths in the vmstate binary (not patchable); cross-host export/import requires the target host to use the same `root_dir`/`run_dir` and have the same OCI image pulled
 - **Console via PTY relay**: a background relay process bridges FC's serial (stdin/stdout) to `console.sock`
 
 ### OCI Image Compatibility
