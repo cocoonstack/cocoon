@@ -228,8 +228,10 @@ func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, maste
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", consoleSock, err)
 	}
-	listenerFile, err := listener.(*net.UnixListener).File()
-	_ = listener.Close()
+	ul := listener.(*net.UnixListener)
+	ul.SetUnlinkOnClose(false) // keep socket file on disk after Close
+	listenerFile, err := ul.File()
+	_ = ul.Close() // close Go's copy; the dup in listenerFile survives
 	if err != nil {
 		return fmt.Errorf("listener fd: %w", err)
 	}
