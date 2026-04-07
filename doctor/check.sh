@@ -438,11 +438,13 @@ if $UPGRADE; then
     # -- firecracker --------------------------------------------------------
     header "Install firecracker ${FC_VERSION}"
 
-    fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-${ARCH}"
+    fc_tgz="firecracker-${FC_VERSION}-${ARCH}.tgz"
+    fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/${fc_tgz}"
     fc_dest="/usr/local/bin/firecracker"
     info "downloading ${fc_url}"
-    if curl -fsSL -o "${tmpdir}/firecracker" "$fc_url"; then
-        install -m 0755 "${tmpdir}/firecracker" "$fc_dest"
+    if curl -fsSL -o "${tmpdir}/${fc_tgz}" "$fc_url"; then
+        tar -xzf "${tmpdir}/${fc_tgz}" -C "${tmpdir}"
+        install -m 0755 "${tmpdir}/release-${FC_VERSION}-${ARCH}/firecracker-${FC_VERSION}-${ARCH}" "$fc_dest"
         setcap cap_net_admin+ep "$fc_dest" 2>/dev/null || true
         fixed "firecracker ${FC_VERSION} -> ${fc_dest}"
     else

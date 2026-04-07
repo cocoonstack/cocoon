@@ -242,7 +242,7 @@ func (fc *Firecracker) rebuildFromSnapshot(ctx context.Context, _ string, vmCfg 
 // FC does not preserve drive configuration across snapshot/load boundaries.
 func (fc *Firecracker) reconfigureDrives(ctx context.Context, hc *http.Client, storageConfigs []*types.StorageConfig) error {
 	for i, sc := range storageConfigs {
-		driveID := fmt.Sprintf("drive-%d", i)
+		driveID := fmt.Sprintf("drive_%d", i)
 		if err := putDrive(ctx, hc, fcDrive{
 			DriveID:      driveID,
 			PathOnHost:   sc.Path,

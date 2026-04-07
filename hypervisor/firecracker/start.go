@@ -98,7 +98,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	}
 
 	for i, sc := range rec.StorageConfigs {
-		driveID := fmt.Sprintf("drive-%d", i)
+		driveID := fmt.Sprintf("drive_%d", i)
 		if err := putDrive(ctx, hc, fcDrive{
 			DriveID:      driveID,
 			PathOnHost:   sc.Path,
@@ -152,6 +152,10 @@ func (fc *Firecracker) batchMarkStarted(ctx context.Context, ids []string) error
 // for the API socket.
 func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, withNetwork bool) (int, error) {
 	fcLog := filepath.Join(rec.LogDir, "firecracker.log")
+	// FC requires the log file to exist before startup (opens O_WRONLY|O_APPEND, no O_CREATE).
+	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
+		_ = f.Close()
+	}
 
 	// Create PTY pair: slave → FC stdin/stdout, master → console relay.
 	master, slave, err := pty.Open()
