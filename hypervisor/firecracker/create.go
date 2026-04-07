@@ -284,6 +284,11 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 }
 
 // devPath returns the virtio block device path for the i-th drive.
+// Follows Linux naming: vda..vdz, vdaa..vdaz, vdba..vdbz, ...
 func devPath(idx int) string {
-	return fmt.Sprintf("/dev/vd%c", 'a'+idx)
+	const letters = 26
+	if idx < letters {
+		return fmt.Sprintf("/dev/vd%c", 'a'+idx)
+	}
+	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
 }
