@@ -239,15 +239,12 @@ func rebuildCloneStorage(meta *snapshotMeta, cowPath string) []*types.StorageCon
 	return configs
 }
 
-// validateVMStateROPaths validates the read-only vmstate redirect targets.
-// RW COW entries are skipped (source-host-specific, always replaced locally).
-// For same-host clones, RO paths are checked against local managed roots.
-// For cross-host, RO paths are shared OCI blobs that must match the local
-// blob store — if they don't, verifyBaseFiles will catch them later.
-func validateVMStateROPaths(vmstateSC []*types.StorageConfig, sameHost bool, roots managedRoots) error {
-	if !sameHost {
-		return nil // cross-host: local RO paths already validated in loadSnapshotMeta
-	}
+// validateVMStateROPaths validates the read-only vmstate redirect targets
+// against local managed roots. RW COW entries are skipped because they are
+// source-host-specific and always replaced locally by rebuildCloneStorage.
+// Both same-host and cross-host paths are checked — RO blob paths should
+// exist under local managed roots on any host that has pulled the image.
+func validateVMStateROPaths(vmstateSC []*types.StorageConfig, _ bool, roots managedRoots) error {
 	for _, sc := range vmstateSC {
 		if !sc.RO {
 			continue // skip RW COW — may be outside rootDir on custom run_dir

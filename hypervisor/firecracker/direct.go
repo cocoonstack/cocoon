@@ -37,10 +37,22 @@ func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *type
 // Files are handled per-type: hardlink for mem, reflink/copy for
 // the COW disk, plain copy for small metadata (vmstate).
 func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir string) (*types.VM, error) {
+	// Validate CPU/memory overrides before killing the running VM.
+	if checkErr := fc.validateRestoreOverrides(ctx, vmRef, vmCfg); checkErr != nil {
+		return nil, checkErr
+	}
+
 	vmID, rec, cowPath, err := fc.prepareRestore(ctx, vmRef)
 	if err != nil {
 		return nil, err
 	}
+
+	// Serialize with concurrent clone redirects that may symlink cowPath.
+	cowUnlock, cowLockErr := lockCOWPath(cowPath)
+	if cowLockErr != nil {
+		return nil, fmt.Errorf("lock COW: %w", cowLockErr)
+	}
+	defer cowUnlock()
 
 	// Clean old snapshot files from runDir before linking/copying new ones.
 	if cleanErr := cleanSnapshotFiles(rec.RunDir); cleanErr != nil {
