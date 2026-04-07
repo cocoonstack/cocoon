@@ -92,7 +92,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 
 	// Save snapshot metadata so clones can reconstruct storage/boot config
 	// without depending on live VM records.
-	if metaErr := saveSnapshotMeta(tmpDir, rec.StorageConfigs, rec.BootConfig); metaErr != nil {
+	if metaErr := saveSnapshotMeta(tmpDir, fc.conf.RootDir, rec.StorageConfigs, rec.BootConfig); metaErr != nil {
 		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
 		return nil, nil, fmt.Errorf("save snapshot metadata: %w", metaErr)
 	}
@@ -144,18 +144,29 @@ type snapshotMeta struct {
 	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
 }
 
-func saveSnapshotMeta(dir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
-	// Store the portable vmlinuz path, not the FC-specific vmlinux cache.
-	// On import, the clone host runs ensureVmlinux to (re)create vmlinux.
-	meta := snapshotMeta{StorageConfigs: storageConfigs}
+// saveSnapshotMeta stores paths relative to rootDir so snapshots are portable
+// across hosts with different root_dir settings. Also normalizes vmlinux → vmlinuz
+// for the kernel path since vmlinux is a host-local FC cache.
+func saveSnapshotMeta(dir, rootDir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
+	meta := snapshotMeta{}
+	for _, sc := range storageConfigs {
+		if sc.RO {
+			meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{
+				Path: makeRelative(sc.Path, rootDir), RO: true, Serial: sc.Serial,
+			})
+		}
+	}
 	if boot != nil {
 		b := *boot
+		// Store vmlinuz (portable), not vmlinux (FC-specific cache).
 		if filepath.Base(b.KernelPath) == "vmlinux" {
-			vmlinuz := filepath.Join(filepath.Dir(b.KernelPath), "vmlinuz")
-			if _, err := os.Stat(vmlinuz); err == nil {
-				b.KernelPath = vmlinuz
-			}
+			b.KernelPath = filepath.Join(filepath.Dir(b.KernelPath), "vmlinuz")
 		}
+		b.KernelPath = makeRelative(b.KernelPath, rootDir)
+		if b.InitrdPath != "" {
+			b.InitrdPath = makeRelative(b.InitrdPath, rootDir)
+		}
+		b.Cmdline = "" // cmdline is rebuilt on clone with new VM name/IP
 		meta.BootConfig = &b
 	}
 	data, err := json.Marshal(meta)
@@ -165,7 +176,18 @@ func saveSnapshotMeta(dir string, storageConfigs []*types.StorageConfig, boot *t
 	return os.WriteFile(filepath.Join(dir, snapshotMetaFile), data, 0o600)
 }
 
-func loadSnapshotMeta(dir string) (*snapshotMeta, error) {
+// makeRelative strips the rootDir prefix from an absolute path.
+// Returns the path unchanged if it doesn't start with rootDir.
+func makeRelative(absPath, rootDir string) string {
+	rel, err := filepath.Rel(rootDir, absPath)
+	if err != nil {
+		return absPath
+	}
+	return rel
+}
+
+// loadSnapshotMeta reads cocoon.json and resolves relative paths against rootDir.
+func loadSnapshotMeta(dir, rootDir string) (*snapshotMeta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, snapshotMetaFile)) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", snapshotMetaFile, err)
@@ -173,6 +195,20 @@ func loadSnapshotMeta(dir string) (*snapshotMeta, error) {
 	var meta snapshotMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", snapshotMetaFile, err)
+	}
+	// Resolve relative paths against the local rootDir.
+	for _, sc := range meta.StorageConfigs {
+		if !filepath.IsAbs(sc.Path) {
+			sc.Path = filepath.Join(rootDir, sc.Path)
+		}
+	}
+	if b := meta.BootConfig; b != nil {
+		if b.KernelPath != "" && !filepath.IsAbs(b.KernelPath) {
+			b.KernelPath = filepath.Join(rootDir, b.KernelPath)
+		}
+		if b.InitrdPath != "" && !filepath.IsAbs(b.InitrdPath) {
+			b.InitrdPath = filepath.Join(rootDir, b.InitrdPath)
+		}
 	}
 	return &meta, nil
 }

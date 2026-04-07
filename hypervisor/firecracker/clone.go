@@ -67,7 +67,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 
 	// Read snapshot metadata (cocoon.json) to reconstruct storage/boot config.
 	// This makes the clone self-contained — no dependency on live VM records.
-	meta, err := loadSnapshotMeta(runDir)
+	meta, err := loadSnapshotMeta(runDir, fc.conf.RootDir)
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
@@ -113,7 +113,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	// Read-only layers are shared blobs (same path). COW changed path.
 	// Redirect the source COW path → clone COW via symlink so load succeeds.
 	// If the source VM is still running, its file is renamed aside temporarily.
-	redirects := createDriveRedirects(meta.StorageConfigs, storageConfigs)
+	redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
+	if redirectErr != nil {
+		return nil, fmt.Errorf("drive redirect: %w", redirectErr)
+	}
 	defer cleanupDriveRedirects(redirects)
 
 	sockPath := hypervisor.SocketPath(runDir)
@@ -211,9 +214,10 @@ type driveRedirect struct {
 // createDriveRedirects ensures FC snapshot/load opens the clone's drive files
 // instead of the source VM's. For each drive path that changed (COW disk),
 // it renames any existing file at the source path out of the way, then creates
-// a symlink from source path → clone path. This is safe even when the source
-// VM is still running: the source process keeps its open fd, unaffected by rename.
-func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) []driveRedirect {
+// a symlink from source path → clone path. Returns error if a redirect cannot
+// be installed (e.g., symlink fails after backup rename), to prevent clone from
+// proceeding with corrupted source VM state.
+func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driveRedirect, error) {
 	var redirects []driveRedirect
 	for i, src := range srcConfigs {
 		if i >= len(dstConfigs) || src.Path == dstConfigs[i].Path {
@@ -225,23 +229,33 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) []drive
 		// to a temporary backup so we can place a symlink at that path.
 		if _, err := os.Stat(src.Path); err == nil {
 			backup := src.Path + ".cocoon-clone-backup"
-			if os.Rename(src.Path, backup) == nil {
-				r.backupPath = backup
+			if renameErr := os.Rename(src.Path, backup); renameErr != nil {
+				cleanupDriveRedirects(redirects)
+				return nil, fmt.Errorf("backup source drive %s: %w", src.Path, renameErr)
 			}
+			r.backupPath = backup
 		}
 
 		// Ensure parent directory exists (source VM may have been deleted).
 		if _, err := os.Stat(filepath.Dir(src.Path)); err != nil {
-			if os.MkdirAll(filepath.Dir(src.Path), 0o700) == nil {
-				r.createdDir = true
+			if mkErr := os.MkdirAll(filepath.Dir(src.Path), 0o700); mkErr != nil {
+				cleanupDriveRedirects(redirects)
+				return nil, fmt.Errorf("create dir for drive redirect %s: %w", src.Path, mkErr)
 			}
+			r.createdDir = true
 		}
 
-		if os.Symlink(dstConfigs[i].Path, src.Path) == nil {
-			redirects = append(redirects, r)
+		if linkErr := os.Symlink(dstConfigs[i].Path, src.Path); linkErr != nil {
+			// Restore backup before aborting so the source VM is not damaged.
+			if r.backupPath != "" {
+				_ = os.Rename(r.backupPath, src.Path)
+			}
+			cleanupDriveRedirects(redirects)
+			return nil, fmt.Errorf("symlink drive redirect %s → %s: %w", src.Path, dstConfigs[i].Path, linkErr)
 		}
+		redirects = append(redirects, r)
 	}
-	return redirects
+	return redirects, nil
 }
 
 // cleanupDriveRedirects removes the temporary symlinks and restores any
