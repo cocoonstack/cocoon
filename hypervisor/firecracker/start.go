@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netns"
 
@@ -145,49 +147,108 @@ func (fc *Firecracker) batchMarkStarted(ctx context.Context, ids []string) error
 }
 
 // launchProcess starts the firecracker binary with --api-sock,
-// writes the PID file, waits for the API socket to be ready, then
-// releases the process handle.
+// creates a PTY pair for the serial console, starts a background
+// relay process for console.sock, writes the PID file, and waits
+// for the API socket.
 func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, withNetwork bool) (int, error) {
 	fcLog := filepath.Join(rec.LogDir, "firecracker.log")
 
-	cmd := exec.Command(fc.conf.FCBinary, //nolint:gosec
+	// Create PTY pair: slave → FC stdin/stdout, master → console relay.
+	master, slave, err := pty.Open()
+	if err != nil {
+		return 0, fmt.Errorf("open pty: %w", err)
+	}
+	defer slave.Close() //nolint:errcheck
+
+	fcCmd := exec.Command(fc.conf.FCBinary, //nolint:gosec
 		"--api-sock", sockPath,
 		"--log-path", fcLog,
 		"--level", "Warning",
 		"--id", rec.ID,
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// Serial console (stdin/stdout) is not connected until Console adds PTY.
+	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	fcCmd.Stdin = slave
+	fcCmd.Stdout = slave
 
 	if withNetwork {
 		restore, enterErr := enterNetns(rec.NetworkConfigs[0].NetnsPath)
 		if enterErr != nil {
+			_ = master.Close()
 			return 0, fmt.Errorf("enter netns: %w", enterErr)
 		}
 		defer restore()
 	}
 
-	if startErr := cmd.Start(); startErr != nil {
+	if startErr := fcCmd.Start(); startErr != nil {
+		_ = master.Close()
 		return 0, fmt.Errorf("exec firecracker: %w", startErr)
 	}
-	pid := cmd.Process.Pid
+	pid := fcCmd.Process.Pid
 
 	pidPath := pidFile(rec.RunDir)
 	if err := utils.WritePIDFile(pidPath, pid); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = master.Close()
+		_ = fcCmd.Process.Kill()
+		_ = fcCmd.Wait()
 		return 0, fmt.Errorf("write PID file: %w", err)
 	}
 
 	if err := waitForSocket(ctx, sockPath, pid, fc.conf.SocketWaitTimeout()); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = master.Close()
+		_ = fcCmd.Process.Kill()
+		_ = fcCmd.Wait()
 		_ = os.Remove(pidPath)
 		return 0, err
 	}
 
-	go cmd.Wait() //nolint:errcheck
+	// Start console relay as a background process (self-exec).
+	// The relay holds the PTY master and listens on console.sock.
+	if relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid); relayErr != nil {
+		log.WithFunc("firecracker.launchProcess").Warnf(ctx, "start console relay: %v (console unavailable)", relayErr)
+	}
+	// Master fd ownership transferred to relay; close parent's copy.
+	_ = master.Close()
+
+	go fcCmd.Wait() //nolint:errcheck
 	return pid, nil
+}
+
+// startConsoleRelay launches a background relay process that holds the PTY
+// master and listens on console.sock for interactive console connections.
+// The relay auto-exits when the FC process (fcPID) dies.
+func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, master *os.File, fcPID int) error {
+	consoleSock := consoleSockPath(runDir)
+
+	// Create Unix listener for console.sock.
+	listener, err := net.Listen("unix", consoleSock)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", consoleSock, err)
+	}
+	listenerFile, err := listener.(*net.UnixListener).File()
+	_ = listener.Close()
+	if err != nil {
+		return fmt.Errorf("listener fd: %w", err)
+	}
+	defer listenerFile.Close() //nolint:errcheck
+
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("os.Executable: %w", err)
+	}
+
+	relayCmd := exec.Command(self) //nolint:gosec
+	relayCmd.Env = []string{
+		relayEnvKey + "=1",
+		relayPIDEnvKey + "=" + fmt.Sprintf("%d", fcPID),
+	}
+	relayCmd.ExtraFiles = []*os.File{master, listenerFile}
+	relayCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if startErr := relayCmd.Start(); startErr != nil {
+		return fmt.Errorf("start relay: %w", startErr)
+	}
+	go relayCmd.Wait() //nolint:errcheck
+	return nil
 }
 
 // waitForSocket polls until socketPath is connectable, the process exits, or

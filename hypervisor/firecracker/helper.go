@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	apiSockName = "api.sock"
-	pidFileName = "fc.pid"
+	apiSockName     = "api.sock"
+	pidFileName     = "fc.pid"
+	consoleSockName = "console.sock"
 )
 
-var runtimeFiles = []string{apiSockName, pidFileName}
+var runtimeFiles = []string{apiSockName, pidFileName, consoleSockName}
 
 func toVM(rec *hypervisor.VMRecord) *types.VM {
 	info := rec.VM // value copy — detached from the DB record
@@ -36,6 +37,18 @@ func socketPath(runDir string) string { return filepath.Join(runDir, apiSockName
 
 // pidFile returns the PID file path under a VM's run directory.
 func pidFile(runDir string) string { return filepath.Join(runDir, pidFileName) }
+
+// consoleSockPath returns the console socket path under a VM's run directory.
+func consoleSockPath(runDir string) string { return filepath.Join(runDir, consoleSockName) }
+
+func (fc *Firecracker) resolveRef(ctx context.Context, ref string) (string, error) {
+	var id string
+	return id, fc.store.With(ctx, func(idx *hypervisor.VMIndex) error {
+		var err error
+		id, err = idx.Resolve(ref)
+		return err
+	})
+}
 
 func (fc *Firecracker) resolveRefs(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string

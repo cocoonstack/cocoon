@@ -111,10 +111,6 @@ func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([
 
 // --- Stubs: implemented in subsequent commits ---
 
-func (fc *Firecracker) Console(_ context.Context, _ string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("firecracker Console not yet implemented")
-}
-
 func (fc *Firecracker) Snapshot(_ context.Context, _ string) (*types.SnapshotConfig, io.ReadCloser, error) {
 	return nil, nil, fmt.Errorf("firecracker Snapshot not yet implemented")
 }
