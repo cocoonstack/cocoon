@@ -15,6 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
+	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
@@ -104,7 +105,11 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 // Uses Firecracker when conf.UseFirecracker is true, Cloud Hypervisor otherwise.
 func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
 	if conf.UseFirecracker {
-		return nil, fmt.Errorf("firecracker backend not yet implemented")
+		fc, err := firecracker.New(conf)
+		if err != nil {
+			return nil, fmt.Errorf("init hypervisor: %w", err)
+		}
+		return fc, nil
 	}
 	ch, err := cloudhypervisor.New(conf)
 	if err != nil {
