@@ -382,8 +382,9 @@ cocoon --fc vm stop fast-vm
 | Cloud images (UEFI boot) | Y | N |
 | Windows guests | Y | N |
 | Snapshot / Clone / Restore | Y | Y |
+| CPU/memory override on clone/restore | Y | N |
 | Multi-queue networking | Y | N |
-| Memory balloon | Y | N |
+| Memory balloon | Y | Y |
 | qcow2 storage | Y | N |
 | Interactive console | Y | Y |
 | HugePages | Y | Y |
@@ -395,7 +396,6 @@ cocoon --fc vm stop fast-vm
 - **OCI images only**: `--fc` is mutually exclusive with `--windows` and rejects cloudimg (UEFI boot) images
 - **Raw disks only**: Firecracker uses raw virtio-blk without serial support; disks are referenced by device path (`/dev/vdX`)
 - **Single-queue networking**: `NetworkConfig.NumQueues` is ignored
-- **No balloon**: memory reclaim is not available
 - **No CPU/memory override on clone/restore**: Firecracker cannot change machine config after snapshot/load
 - **Snapshot portability requires same directory layout**: FC snapshots store absolute paths in the vmstate binary (not patchable); cross-host export/import requires the target host to use the same `root_dir`/`run_dir` and have the same OCI image pulled
 - **Console via PTY relay**: a background relay process bridges FC's serial (stdin/stdout) to `console.sock`

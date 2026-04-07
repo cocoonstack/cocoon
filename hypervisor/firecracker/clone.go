@@ -115,6 +115,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	// FC snapshot/load requires drives at the same absolute paths as the source.
 	// RO layers are shared blobs (same path). Only the COW path changed.
 	// Redirect the source COW path → clone COW via temporary symlink.
+	// TODO: Replace symlink redirect with drive_overrides when FC PR #5774
+	// (github.com/firecracker-microvm/firecracker/pull/5774) is merged.
+	// That adds a drive_overrides parameter to PUT /snapshot/load, eliminating
+	// the need for temporary symlinks and COW locking entirely.
 	unlock, lockErr := acquireCOWLock(meta.StorageConfigs)
 	if lockErr != nil {
 		return nil, fmt.Errorf("lock source COW: %w", lockErr)

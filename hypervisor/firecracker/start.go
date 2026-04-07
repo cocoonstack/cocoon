@@ -116,6 +116,21 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		}
 	}
 
+	// Balloon: 25% of memory returned, only when memory >= 256 MiB.
+	// Matches Cloud Hypervisor's balloon behavior.
+	const minBalloonMemory = 256 << 20 //nolint:mnd
+	const defaultBalloonDiv = 4        //nolint:mnd
+	if rec.Config.Memory >= minBalloonMemory {
+		balloonMiB := int(rec.Config.Memory>>20) / defaultBalloonDiv //nolint:mnd
+		if err := putBalloon(ctx, hc, fcBalloon{
+			AmountMiB:         balloonMiB,
+			DeflateOnOOM:      true,
+			FreePageReporting: true,
+		}); err != nil {
+			return fmt.Errorf("balloon: %w", err)
+		}
+	}
+
 	if err := instanceStart(ctx, hc); err != nil {
 		return fmt.Errorf("instance-start: %w", err)
 	}

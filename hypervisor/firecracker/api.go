@@ -59,6 +59,12 @@ type fcAction struct {
 	ActionType string `json:"action_type"`
 }
 
+type fcBalloon struct {
+	AmountMiB         int  `json:"amount_mib"`
+	DeflateOnOOM      bool `json:"deflate_on_oom,omitempty"`
+	FreePageReporting bool `json:"free_page_reporting,omitempty"`
+}
+
 // fcAPI sends a request to the Firecracker REST API via Unix socket.
 func fcAPI(ctx context.Context, hc *http.Client, method, endpoint string, body []byte, successCodes ...int) error { //nolint:unparam
 	if len(successCodes) == 0 {
@@ -102,6 +108,14 @@ func putDrive(ctx context.Context, hc *http.Client, drive fcDrive) error {
 		return fmt.Errorf("marshal drive: %w", err)
 	}
 	return fcAPI(ctx, hc, http.MethodPut, "/drives/"+drive.DriveID, body)
+}
+
+func putBalloon(ctx context.Context, hc *http.Client, balloon fcBalloon) error {
+	body, err := json.Marshal(balloon)
+	if err != nil {
+		return fmt.Errorf("marshal balloon: %w", err)
+	}
+	return fcAPI(ctx, hc, http.MethodPut, "/balloon", body)
 }
 
 func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkInterface) error {

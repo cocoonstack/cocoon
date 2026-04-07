@@ -134,5 +134,12 @@ Firecracker snapshots store absolute host paths in the vmstate binary (Rust serd
 - **Same-host clone/restore**: works without restrictions
 - **Cross-host export/import**: requires the target host to use **identical `root_dir` and `run_dir`** (default: `/var/lib/cocoon` and `/var/lib/cocoon/run`) and have the **same OCI image pulled**
 - **CPU/memory overrides**: not supported on clone/restore — Firecracker cannot change machine config after snapshot/load; `--cpu` and `--memory` flags are rejected if they differ from the snapshot values
+- **Drive path redirect**: Cocoon uses a temporary symlink to redirect the source COW path to the clone's COW during `snapshot/load`. This requires a COW flock to serialize with concurrent operations
 
 This is a fundamental Firecracker design limitation. Cloud Hypervisor snapshots do not have this restriction because CH stores device config in a patchable JSON format (`config.json`).
+
+**Upstream fix in progress**: Firecracker [PR #5774](https://github.com/firecracker-microvm/firecracker/pull/5774) adds `drive_overrides` to the `PUT /snapshot/load` API, which would eliminate the symlink redirect and make FC snapshots natively portable. Track this PR for future simplification.
+
+## Firecracker virtio-blk serial numbers
+
+Firecracker does not support virtio-blk serial numbers. Cocoon's OCI init script (`overlay.sh`) uses device paths (`/dev/vdX`) instead of serial names to identify disks when booting under Firecracker. OCI images built from `os-image/ubuntu/overlay.sh` (v0.3+) support both formats automatically. Older images must be rebuilt to work with `--fc`.
