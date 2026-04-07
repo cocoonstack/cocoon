@@ -17,11 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// CowSerial is the well-known virtio serial for the COW disk.
-// FC doesn't expose serial to the guest, but this is kept in the DB record
-// for consistency with CH and snapshot/clone operations.
-const CowSerial = "cocoon-cow"
-
 // Create registers a new VM, prepares the COW disk, and persists the record.
 // The VM is left in Created state — call Start to launch it.
 // FC only supports OCI images (direct kernel boot).
@@ -105,7 +100,7 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	storageConfigs = append(storageConfigs, &types.StorageConfig{
 		Path:   cowPath,
 		RO:     false,
-		Serial: CowSerial,
+		Serial: hypervisor.CowSerial,
 	})
 
 	// FC requires uncompressed ELF kernel (vmlinux), not compressed vmlinuz.

@@ -16,10 +16,17 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Well-known file names shared by all backends.
+// Shared constants for all hypervisor backends.
 const (
 	APISocketName   = "api.sock"
 	ConsoleSockName = "console.sock"
+
+	// CowSerial is the well-known virtio serial for the COW disk attached to OCI VMs.
+	CowSerial = "cocoon-cow"
+
+	// CreatingStateGCGrace is how long a VM can stay in "creating" state
+	// before GC treats it as a crash remnant and cleans it up.
+	CreatingStateGCGrace = 24 * time.Hour
 )
 
 // BackendConfig provides backend-specific values needed by shared Backend methods.
@@ -213,6 +220,45 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn fun
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+}
+
+// BatchMarkStarted updates a batch of VMs to Running state with FirstBooted=true.
+func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now()
+	return b.DB.Update(ctx, func(idx *VMIndex) error {
+		for _, id := range ids {
+			r := idx.VMs[id]
+			if r == nil {
+				continue
+			}
+			r.State = types.VMStateRunning
+			r.StartedAt = &now
+			r.UpdatedAt = now
+			r.FirstBooted = true
+		}
+		return nil
+	})
+}
+
+// CleanStalePlaceholders removes DB records stuck in "creating" state
+// past the GC grace period. Used by GC Collect phase.
+func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	return b.DB.WriteRaw(func(idx *VMIndex) error {
+		utils.CleanStaleRecords(idx.VMs, idx.Names, ids,
+			func(r *VMRecord) string { return r.Config.Name },
+			func(r *VMRecord) bool {
+				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
+			},
+		)
+		return nil
+	})
 }
 
 // SocketPath returns the API socket path under a VM's run directory.

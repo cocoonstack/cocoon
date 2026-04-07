@@ -12,8 +12,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const creatingStateGCGrace = 24 * time.Hour
-
 type fcSnapshot struct {
 	blobIDs     map[string]struct{}
 	vmIDs       map[string]struct{}
@@ -32,7 +30,7 @@ func (fc *Firecracker) GCModule() gc.Module[fcSnapshot] {
 		Locker: fc.Locker,
 		ReadDB: func(_ context.Context) (fcSnapshot, error) {
 			var snap fcSnapshot
-			cutoff := time.Now().Add(-creatingStateGCGrace)
+			cutoff := time.Now().Add(-hypervisor.CreatingStateGCGrace)
 			if err := fc.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
@@ -80,7 +78,7 @@ func (fc *Firecracker) GCModule() gc.Module[fcSnapshot] {
 					errs = append(errs, err)
 				}
 			}
-			if err := fc.cleanStalePlaceholders(ctx, ids); err != nil {
+			if err := fc.CleanStalePlaceholders(ctx, ids); err != nil {
 				errs = append(errs, err)
 			}
 			return errors.Join(errs...)
@@ -91,20 +89,4 @@ func (fc *Firecracker) GCModule() gc.Module[fcSnapshot] {
 // RegisterGC registers the Firecracker GC module with the given Orchestrator.
 func (fc *Firecracker) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, fc.GCModule())
-}
-
-func (fc *Firecracker) cleanStalePlaceholders(_ context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	cutoff := time.Now().Add(-creatingStateGCGrace)
-	return fc.DB.WriteRaw(func(idx *hypervisor.VMIndex) error {
-		utils.CleanStaleRecords(idx.VMs, idx.Names, ids,
-			func(r *hypervisor.VMRecord) string { return r.Config.Name },
-			func(r *hypervisor.VMRecord) bool {
-				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
-			},
-		)
-		return nil
-	})
 }

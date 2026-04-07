@@ -8,12 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -25,7 +23,7 @@ func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, 
 		return nil, err
 	}
 	succeeded, forEachErr := ch.ForEachVM(ctx, ids, "Start", ch.startOne)
-	if batchErr := ch.batchMarkStarted(ctx, succeeded); batchErr != nil {
+	if batchErr := ch.BatchMarkStarted(ctx, succeeded); batchErr != nil {
 		log.WithFunc("cloudhypervisor.Start").Warnf(ctx, "batch state update: %v", batchErr)
 	}
 	return succeeded, forEachErr
@@ -65,26 +63,6 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 		return fmt.Errorf("launch VM: %w", err)
 	}
 	return nil
-}
-
-func (ch *CloudHypervisor) batchMarkStarted(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	now := time.Now()
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		for _, id := range ids {
-			r := idx.VMs[id]
-			if r == nil {
-				continue
-			}
-			r.State = types.VMStateRunning
-			r.StartedAt = &now
-			r.UpdatedAt = now
-			r.FirstBooted = true
-		}
-		return nil
-	})
 }
 
 // launchProcess starts the cloud-hypervisor binary with the given args,

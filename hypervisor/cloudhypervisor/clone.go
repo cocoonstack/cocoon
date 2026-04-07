@@ -87,7 +87,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	// Update cidata path (cloudimg only; may be absent if snapshot was taken after restart).
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
 
-	if err = verifyBaseFiles(storageConfigs, bootCfg); err != nil {
+	if err = hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); err != nil {
 		return nil, fmt.Errorf("verify base files: %w", err)
 	}
 	if vmCfg.Storage > 0 {
@@ -308,33 +308,6 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 		return storageConfigs
 	}
 	return storageConfigs[:len(storageConfigs)-1]
-}
-
-func verifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
-	for _, sc := range storageConfigs {
-		if !sc.RO {
-			continue
-		}
-		if _, err := os.Stat(sc.Path); err != nil {
-			return fmt.Errorf("base layer %s: %w", sc.Path, err)
-		}
-	}
-	if boot == nil {
-		return nil
-	}
-	for _, check := range []struct{ name, path string }{
-		{"kernel", boot.KernelPath},
-		{"initrd", boot.InitrdPath},
-		{"firmware", boot.FirmwarePath},
-	} {
-		if check.path == "" {
-			continue
-		}
-		if _, err := os.Stat(check.path); err != nil {
-			return fmt.Errorf("%s %s: %w", check.name, check.path, err)
-		}
-	}
-	return nil
 }
 
 func updateCOWPath(configs []*types.StorageConfig, newCOWPath string, directBoot bool) error {

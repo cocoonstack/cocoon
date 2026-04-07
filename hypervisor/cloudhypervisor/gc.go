@@ -12,8 +12,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const creatingStateGCGrace = 24 * time.Hour
-
 type chSnapshot struct {
 	blobIDs     map[string]struct{} // union of all VMs' ImageBlobIDs
 	vmIDs       map[string]struct{} // all VM IDs in the DB
@@ -32,7 +30,7 @@ func (ch *CloudHypervisor) GCModule() gc.Module[chSnapshot] {
 		Locker: ch.Locker,
 		ReadDB: func(_ context.Context) (chSnapshot, error) {
 			var snap chSnapshot
-			cutoff := time.Now().Add(-creatingStateGCGrace)
+			cutoff := time.Now().Add(-hypervisor.CreatingStateGCGrace)
 			if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
@@ -86,7 +84,7 @@ func (ch *CloudHypervisor) GCModule() gc.Module[chSnapshot] {
 				}
 			}
 			// Clean up stale "creating" DB records from this GC snapshot.
-			if err := ch.cleanStalePlaceholders(ctx, ids); err != nil {
+			if err := ch.CleanStalePlaceholders(ctx, ids); err != nil {
 				errs = append(errs, err)
 			}
 			return errors.Join(errs...)
@@ -97,22 +95,4 @@ func (ch *CloudHypervisor) GCModule() gc.Module[chSnapshot] {
 // RegisterGC registers the Cloud Hypervisor GC module with the given Orchestrator.
 func (ch *CloudHypervisor) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, ch.GCModule())
-}
-
-// cleanStalePlaceholders removes selected DB records stuck in stale "creating"
-// state. IDs not found (or no longer stale) are skipped.
-func (ch *CloudHypervisor) cleanStalePlaceholders(_ context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	cutoff := time.Now().Add(-creatingStateGCGrace)
-	return ch.DB.WriteRaw(func(idx *hypervisor.VMIndex) error {
-		utils.CleanStaleRecords(idx.VMs, idx.Names, ids,
-			func(r *hypervisor.VMRecord) string { return r.Config.Name },
-			func(r *hypervisor.VMRecord) bool {
-				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
-			},
-		)
-		return nil
-	})
 }

@@ -14,8 +14,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// CowSerial is the well-known virtio serial for the COW disk attached to OCI VMs.
-const CowSerial = "cocoon-cow"
+// CowSerial is re-exported for backward compatibility with cmd/vm/debug.go.
+const CowSerial = hypervisor.CowSerial
 
 // Create registers a new VM, prepares the COW disk, and persists the record.
 // The VM is left in Created state — call Start to launch it.

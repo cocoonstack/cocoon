@@ -96,7 +96,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 
-	if verifyErr := verifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
+	if verifyErr := hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
 		return nil, fmt.Errorf("verify base files: %w", verifyErr)
 	}
 	if vmCfg.Storage > 0 {
@@ -202,7 +202,7 @@ func rebuildCloneStorage(meta *snapshotMeta, cowPath string) []*types.StorageCon
 			configs = append(configs, &types.StorageConfig{Path: sc.Path, RO: true, Serial: sc.Serial})
 		}
 	}
-	configs = append(configs, &types.StorageConfig{Path: cowPath, RO: false, Serial: CowSerial})
+	configs = append(configs, &types.StorageConfig{Path: cowPath, RO: false, Serial: hypervisor.CowSerial})
 	return configs
 }
 
@@ -299,32 +299,6 @@ func reconfigureNetworks(ctx context.Context, hc *http.Client, networkConfigs []
 			GuestMAC:    nc.Mac,
 		}); err != nil {
 			return fmt.Errorf("network-interface %s: %w", ifaceID, err)
-		}
-	}
-	return nil
-}
-
-func verifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
-	for _, sc := range storageConfigs {
-		if !sc.RO {
-			continue
-		}
-		if _, err := os.Stat(sc.Path); err != nil {
-			return fmt.Errorf("base layer %s: %w", sc.Path, err)
-		}
-	}
-	if boot == nil {
-		return nil
-	}
-	for _, check := range []struct{ name, path string }{
-		{"kernel", boot.KernelPath},
-		{"initrd", boot.InitrdPath},
-	} {
-		if check.path == "" {
-			continue
-		}
-		if _, err := os.Stat(check.path); err != nil {
-			return fmt.Errorf("%s %s: %w", check.name, check.path, err)
 		}
 	}
 	return nil

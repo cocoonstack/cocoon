@@ -122,6 +122,34 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
+// VerifyBaseFiles checks that all read-only layer files and boot files exist.
+func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
+	for _, sc := range storageConfigs {
+		if !sc.RO {
+			continue
+		}
+		if _, err := os.Stat(sc.Path); err != nil {
+			return fmt.Errorf("base layer %s: %w", sc.Path, err)
+		}
+	}
+	if boot == nil {
+		return nil
+	}
+	for _, check := range []struct{ name, path string }{
+		{"kernel", boot.KernelPath},
+		{"initrd", boot.InitrdPath},
+		{"firmware", boot.FirmwarePath},
+	} {
+		if check.path == "" {
+			continue
+		}
+		if _, err := os.Stat(check.path); err != nil {
+			return fmt.Errorf("%s %s: %w", check.name, check.path, err)
+		}
+	}
+	return nil
+}
+
 // WaitForSocket polls until socketPath is connectable, the process exits, or
 // the timeout/context fires.
 func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time.Duration, processName string) error {

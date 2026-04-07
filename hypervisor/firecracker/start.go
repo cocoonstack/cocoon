@@ -10,13 +10,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/creack/pty"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -28,7 +26,7 @@ func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, erro
 		return nil, err
 	}
 	succeeded, forEachErr := fc.ForEachVM(ctx, ids, "Start", fc.startOne)
-	if batchErr := fc.batchMarkStarted(ctx, succeeded); batchErr != nil {
+	if batchErr := fc.BatchMarkStarted(ctx, succeeded); batchErr != nil {
 		log.WithFunc("firecracker.Start").Warnf(ctx, "batch state update: %v", batchErr)
 	}
 	return succeeded, forEachErr
@@ -122,26 +120,6 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		return fmt.Errorf("instance-start: %w", err)
 	}
 	return nil
-}
-
-func (fc *Firecracker) batchMarkStarted(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	now := time.Now()
-	return fc.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		for _, id := range ids {
-			r := idx.VMs[id]
-			if r == nil {
-				continue
-			}
-			r.State = types.VMStateRunning
-			r.StartedAt = &now
-			r.UpdatedAt = now
-			r.FirstBooted = true
-		}
-		return nil
-	})
 }
 
 // launchProcess starts the firecracker binary with --api-sock,
