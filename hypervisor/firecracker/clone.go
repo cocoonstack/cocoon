@@ -110,24 +110,33 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	// FC snapshot/load requires drives at the same paths baked into vmstate.
-	// Use vmstatePaths (original absolute paths from source host) as symlink targets.
-	// Serialize with other operations on the source COW via flock.
+	// Drive redirects (symlinks) are only needed when the vmstate paths differ
+	// from the local paths — i.e., same-host clones where only the COW moved.
+	// Cross-host clones (different rootDir) require the same rootDir layout;
+	// redirecting into a foreign path tree would be incorrect.
 	vmstateSC := meta.vmstatePaths()
-	unlock, lockErr := acquireCOWLock(vmstateSC)
-	if lockErr != nil {
-		return nil, fmt.Errorf("lock source COW: %w", lockErr)
+	sameHost := meta.SourceRootDir == "" || meta.SourceRootDir == fc.conf.RootDir
+	var redirectCleanup func()
+	if sameHost {
+		unlock, lockErr := acquireCOWLock(vmstateSC)
+		if lockErr != nil {
+			return nil, fmt.Errorf("lock source COW: %w", lockErr)
+		}
+		defer unlock()
+		redirects, redirectErr := createDriveRedirects(vmstateSC, storageConfigs)
+		if redirectErr != nil {
+			return nil, fmt.Errorf("drive redirect: %w", redirectErr)
+		}
+		redirectCleanup = func() { cleanupDriveRedirects(redirects) }
+	} else {
+		redirectCleanup = func() {}
 	}
-	defer unlock()
-	redirects, redirectErr := createDriveRedirects(vmstateSC, storageConfigs)
-	if redirectErr != nil {
-		return nil, fmt.Errorf("drive redirect: %w", redirectErr)
-	}
-	defer cleanupDriveRedirects(redirects)
+	defer redirectCleanup()
 
 	sockPath := hypervisor.SocketPath(runDir)
 	withNetwork := len(networkConfigs) > 0
 	pid, err := fc.launchProcess(ctx, &hypervisor.VMRecord{
-		VM:     types.VM{NetworkConfigs: networkConfigs},
+		VM:     types.VM{ID: vmID, NetworkConfigs: networkConfigs},
 		RunDir: runDir,
 		LogDir: logDir,
 	}, sockPath, withNetwork)
