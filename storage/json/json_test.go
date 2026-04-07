@@ -1,7 +1,6 @@
 package json
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -75,7 +74,7 @@ func TestLoadFreshFromDisk(t *testing.T) {
 
 func TestCrossInstanceVisibility(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Two Store instances sharing the same data file and lock file.
 	a := newTestStore(t, dir, "shared")
@@ -106,7 +105,7 @@ func TestCrossInstanceVisibility(t *testing.T) {
 
 func TestTryLockThenReadRaw(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	a := newTestStore(t, dir, "trylock")
 	b := newTestStore(t, dir, "trylock")

@@ -39,7 +39,7 @@ func IsRelayMode() bool {
 // lifetime of the relay. Each console session receives output via a
 // broadcast mechanism — no per-session goroutine reads the PTY, so
 // disconnecting a session never leaves stale readers competing for data.
-func RunRelay() {
+func RunRelay(ctx context.Context) {
 	master := os.NewFile(relayMasterFD, "pty-master")
 	defer master.Close() //nolint:errcheck
 
@@ -56,7 +56,7 @@ func RunRelay() {
 		return // invalid PID, nothing to relay
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Monitor FC process — close listener when FC exits.

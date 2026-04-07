@@ -86,8 +86,8 @@ var (
 )
 
 // Execute is the main entry point called from main.go.
-func Execute() error {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+func Execute(ctx context.Context) error {
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	return rootCmd.ExecuteContext(ctx)
 }
