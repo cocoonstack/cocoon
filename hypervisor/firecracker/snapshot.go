@@ -43,6 +43,13 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 
 	cowPath := fc.conf.COWRawPath(vmID)
 
+	// Serialize with concurrent clone redirects that may symlink cowPath.
+	cowUnlock, cowLockErr := lockCOWPath(cowPath)
+	if cowLockErr != nil {
+		return nil, nil, fmt.Errorf("lock COW: %w", cowLockErr)
+	}
+	defer cowUnlock()
+
 	// Create a temporary directory for the snapshot data.
 	tmpDir, err := os.MkdirTemp(fc.conf.VMRunDir(vmID), "snapshot-")
 	if err != nil {
@@ -141,15 +148,19 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 // It makes the snapshot self-contained: clones can reconstruct storage/boot
 // config without depending on live VM records or image backends.
 type snapshotMeta struct {
-	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
-	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
+	// SourceRootDir is the root_dir of the host that created the snapshot.
+	// Needed to reconstruct the absolute paths baked into FC's vmstate binary,
+	// which cannot be patched. Clone creates symlinks at those original paths.
+	SourceRootDir  string                 `json:"source_root_dir"`
+	StorageConfigs []*types.StorageConfig `json:"storage_configs"`       // relative to SourceRootDir
+	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"` // relative to SourceRootDir
 }
 
 // saveSnapshotMeta stores paths relative to rootDir so snapshots are portable
 // across hosts with different root_dir settings. Also normalizes vmlinux → vmlinuz
 // for the kernel path since vmlinux is a host-local FC cache.
 func saveSnapshotMeta(dir, rootDir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
-	meta := snapshotMeta{}
+	meta := snapshotMeta{SourceRootDir: rootDir}
 	// Store ALL drive entries (RO layers + RW COW) so clones can:
 	// 1. Reconstruct layer paths on the target host (RO entries)
 	// 2. Know the source COW path for drive redirect/symlink (RW entry)
@@ -188,8 +199,11 @@ func makeRelative(absPath, rootDir string) string {
 	return rel
 }
 
-// loadSnapshotMeta reads cocoon.json and resolves relative paths against rootDir.
-func loadSnapshotMeta(dir, rootDir string) (*snapshotMeta, error) {
+// loadSnapshotMeta reads cocoon.json. StorageConfigs and BootConfig paths
+// are resolved against localRootDir for actual file access. The original
+// vmstate paths (resolved against SourceRootDir) are available via
+// vmstatePaths() for creating drive redirects.
+func loadSnapshotMeta(dir, localRootDir string) (*snapshotMeta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, snapshotMetaFile)) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", snapshotMetaFile, err)
@@ -198,19 +212,37 @@ func loadSnapshotMeta(dir, rootDir string) (*snapshotMeta, error) {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", snapshotMetaFile, err)
 	}
-	// Resolve relative paths against the local rootDir.
+	// Resolve relative paths against the LOCAL rootDir for file access.
 	for _, sc := range meta.StorageConfigs {
 		if !filepath.IsAbs(sc.Path) {
-			sc.Path = filepath.Join(rootDir, sc.Path)
+			sc.Path = filepath.Join(localRootDir, sc.Path)
 		}
 	}
 	if b := meta.BootConfig; b != nil {
 		if b.KernelPath != "" && !filepath.IsAbs(b.KernelPath) {
-			b.KernelPath = filepath.Join(rootDir, b.KernelPath)
+			b.KernelPath = filepath.Join(localRootDir, b.KernelPath)
 		}
 		if b.InitrdPath != "" && !filepath.IsAbs(b.InitrdPath) {
-			b.InitrdPath = filepath.Join(rootDir, b.InitrdPath)
+			b.InitrdPath = filepath.Join(localRootDir, b.InitrdPath)
 		}
 	}
 	return &meta, nil
+}
+
+// vmstatePaths reconstructs the absolute paths that FC's vmstate binary
+// has baked in (source host paths). These are where symlinks must be placed
+// so snapshot/load can find the drives.
+func (m *snapshotMeta) vmstatePaths() []*types.StorageConfig {
+	if m.SourceRootDir == "" {
+		return m.StorageConfigs // legacy: no source info, use as-is
+	}
+	var configs []*types.StorageConfig
+	for _, sc := range m.StorageConfigs {
+		path := sc.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(m.SourceRootDir, path)
+		}
+		configs = append(configs, &types.StorageConfig{Path: path, RO: sc.RO, Serial: sc.Serial})
+	}
+	return configs
 }

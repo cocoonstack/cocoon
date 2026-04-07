@@ -27,6 +27,13 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		return nil, err
 	}
 
+	// Serialize with concurrent clone redirects that may symlink cowPath.
+	cowUnlock, cowLockErr := lockCOWPath(cowPath)
+	if cowLockErr != nil {
+		return nil, fmt.Errorf("lock COW: %w", cowLockErr)
+	}
+	defer cowUnlock()
+
 	_ = os.Remove(cowPath) // best-effort; extractTar overwrites
 
 	if extractErr := utils.ExtractTar(rec.RunDir, snapshot); extractErr != nil {
