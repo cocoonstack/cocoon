@@ -209,10 +209,18 @@ func makeRelative(absPath, rootDir string) string {
 }
 
 // loadSnapshotMeta reads cocoon.json. StorageConfigs and BootConfig paths
-// are resolved against localRootDir for actual file access. The original
+// are resolved against roots.rootDir for actual file access. The original
 // vmstate paths (resolved against SourceRootDir) are available via
 // vmstatePaths() for creating drive redirects.
-func loadSnapshotMeta(dir, localRootDir string) (*snapshotMeta, error) {
+// managedRoots are the top-level directories that Cocoon manages.
+// Paths from imported snapshot metadata must resolve under one of these.
+type managedRoots struct {
+	rootDir string
+	runDir  string
+	logDir  string
+}
+
+func loadSnapshotMeta(dir string, roots managedRoots) (*snapshotMeta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, snapshotMetaFile)) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", snapshotMetaFile, err)
@@ -232,49 +240,55 @@ func loadSnapshotMeta(dir, localRootDir string) (*snapshotMeta, error) {
 	// to prevent path traversal from tampered snapshot archives.
 	for _, sc := range meta.StorageConfigs {
 		if !filepath.IsAbs(sc.Path) {
-			sc.Path = filepath.Join(localRootDir, sc.Path)
+			sc.Path = filepath.Join(roots.rootDir, sc.Path)
 		}
-		if err := validateManagedPath(sc.Path, localRootDir); err != nil {
+		if err := validateManagedPath(sc.Path, roots); err != nil {
 			return nil, fmt.Errorf("storage path %s: %w", sc.Path, err)
 		}
 	}
 	if b := meta.BootConfig; b != nil {
-		if resolveErr := resolveAndValidateBootPaths(b, localRootDir); resolveErr != nil {
+		if resolveErr := resolveAndValidateBootPaths(b, roots); resolveErr != nil {
 			return nil, resolveErr
 		}
 	}
 	return &meta, nil
 }
 
-func resolveAndValidateBootPaths(b *types.BootConfig, rootDir string) error {
+func resolveAndValidateBootPaths(b *types.BootConfig, roots managedRoots) error {
 	if b.KernelPath != "" && !filepath.IsAbs(b.KernelPath) {
-		b.KernelPath = filepath.Join(rootDir, b.KernelPath)
+		b.KernelPath = filepath.Join(roots.rootDir, b.KernelPath)
 	}
 	if b.InitrdPath != "" && !filepath.IsAbs(b.InitrdPath) {
-		b.InitrdPath = filepath.Join(rootDir, b.InitrdPath)
+		b.InitrdPath = filepath.Join(roots.rootDir, b.InitrdPath)
 	}
 	if b.KernelPath != "" {
-		if err := validateManagedPath(b.KernelPath, rootDir); err != nil {
+		if err := validateManagedPath(b.KernelPath, roots); err != nil {
 			return fmt.Errorf("kernel path %s: %w", b.KernelPath, err)
 		}
 	}
 	if b.InitrdPath != "" {
-		if err := validateManagedPath(b.InitrdPath, rootDir); err != nil {
+		if err := validateManagedPath(b.InitrdPath, roots); err != nil {
 			return fmt.Errorf("initrd path %s: %w", b.InitrdPath, err)
 		}
 	}
 	return nil
 }
 
-// validateManagedPath ensures a resolved path is under the Cocoon rootDir.
-// Prevents path traversal attacks from tampered snapshot metadata.
-func validateManagedPath(absPath, rootDir string) error {
+// validateManagedPath ensures a resolved path is under one of the Cocoon-managed
+// directories (rootDir, runDir, logDir). Prevents path traversal from tampered
+// snapshot metadata.
+func validateManagedPath(absPath string, roots managedRoots) error {
 	cleaned := filepath.Clean(absPath)
-	root := filepath.Clean(rootDir)
-	if !strings.HasPrefix(cleaned, root+string(filepath.Separator)) && cleaned != root {
-		return fmt.Errorf("path escapes Cocoon root dir %s", rootDir)
+	for _, dir := range []string{roots.rootDir, roots.runDir, roots.logDir} {
+		if dir == "" {
+			continue
+		}
+		root := filepath.Clean(dir)
+		if strings.HasPrefix(cleaned, root+string(filepath.Separator)) || cleaned == root {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("path escapes Cocoon managed directories")
 }
 
 // vmstatePaths reconstructs the absolute paths that FC's vmstate binary

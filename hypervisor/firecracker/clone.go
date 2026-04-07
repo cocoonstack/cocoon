@@ -67,7 +67,11 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 
 	// Read snapshot metadata (cocoon.json) to reconstruct storage/boot config.
 	// This makes the clone self-contained — no dependency on live VM records.
-	meta, err := loadSnapshotMeta(runDir, fc.conf.RootDir)
+	meta, err := loadSnapshotMeta(runDir, managedRoots{
+		rootDir: fc.conf.RootDir,
+		runDir:  fc.conf.Config.RunDir,
+		logDir:  fc.conf.Config.LogDir,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
