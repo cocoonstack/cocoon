@@ -120,13 +120,14 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 
 	// Build SnapshotConfig from the VM record.
 	cfg := &types.SnapshotConfig{
-		ID:      snapID,
-		Image:   rec.Config.Image,
-		CPU:     rec.Config.CPU,
-		Memory:  rec.Config.Memory,
-		Storage: rec.Config.Storage,
-		NICs:    len(rec.NetworkConfigs),
-		Network: rec.Config.Network,
+		ID:         snapID,
+		Image:      rec.Config.Image,
+		Hypervisor: typ,
+		CPU:        rec.Config.CPU,
+		Memory:     rec.Config.Memory,
+		Storage:    rec.Config.Storage,
+		NICs:       len(rec.NetworkConfigs),
+		Network:    rec.Config.Network,
 	}
 	if rec.ImageBlobIDs != nil {
 		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))

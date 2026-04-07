@@ -65,6 +65,13 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 
 	snapRef := args[0]
 
+	// Validate snapshot backend matches the selected hypervisor before cloning.
+	if snapInfo, inspectErr := snapBackend.Inspect(ctx, snapRef); inspectErr == nil {
+		if backendErr := validateSnapshotBackend(snapInfo.Hypervisor, hyper.Type()); backendErr != nil {
+			return backendErr
+		}
+	}
+
 	if da, ok := snapBackend.(snapshot.Direct); ok {
 		if dcr, ok := hyper.(hypervisor.Direct); ok {
 			return h.cloneDirect(ctx, cmd, conf, dcr, da, snapRef, logger)
@@ -452,4 +459,25 @@ func printBashArray(name string, nics []nicHint, field func(nicHint) string) {
 		fmt.Printf("'%s'", field(n))
 	}
 	fmt.Println(")")
+}
+
+// validateSnapshotBackend checks that the snapshot's originating hypervisor
+// matches the currently selected backend. Returns error on mismatch.
+// Empty snapshotHypervisor (pre-v0.3 snapshots) is allowed for backward compat.
+func validateSnapshotBackend(snapshotHypervisor, activeBackend string) error {
+	if snapshotHypervisor == "" {
+		return nil // legacy snapshot, no backend tag
+	}
+	if snapshotHypervisor != activeBackend {
+		return fmt.Errorf("snapshot was created by %s backend but current backend is %s; use --%s to match",
+			snapshotHypervisor, activeBackend, backendFlag(snapshotHypervisor))
+	}
+	return nil
+}
+
+func backendFlag(hypervisorType string) string {
+	if hypervisorType == "firecracker" {
+		return "fc"
+	}
+	return "no flag (default)"
 }

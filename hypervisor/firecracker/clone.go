@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -113,6 +114,17 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	// Read-only layers are shared blobs (same path). COW changed path.
 	// Redirect the source COW path → clone COW via symlink so load succeeds.
 	// If the source VM is still running, its file is renamed aside temporarily.
+	//
+	// Take a flock on the source COW path to serialize with concurrent
+	// snapshot/restore/clone operations on the source VM.
+	srcCOWLock := sourceCOWLockPath(meta.StorageConfigs)
+	if srcCOWLock != "" {
+		fl := flock.New(srcCOWLock)
+		if lockErr := fl.Lock(); lockErr != nil {
+			return nil, fmt.Errorf("lock source COW: %w", lockErr)
+		}
+		defer fl.Unlock() //nolint:errcheck
+	}
 	redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 	if redirectErr != nil {
 		return nil, fmt.Errorf("drive redirect: %w", redirectErr)
@@ -260,6 +272,17 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driv
 
 // cleanupDriveRedirects removes the temporary symlinks and restores any
 // backed-up source files.
+// sourceCOWLockPath returns a lock file path derived from the source VM's
+// writable COW disk. Used to serialize redirect operations.
+func sourceCOWLockPath(srcConfigs []*types.StorageConfig) string {
+	for _, sc := range srcConfigs {
+		if !sc.RO {
+			return sc.Path + ".clone.lock"
+		}
+	}
+	return ""
+}
+
 func cleanupDriveRedirects(redirects []driveRedirect) {
 	for _, r := range redirects {
 		_ = os.Remove(r.symlinkPath)

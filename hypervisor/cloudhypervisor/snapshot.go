@@ -124,14 +124,15 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 
 	// Build SnapshotConfig from the VM record.
 	cfg := &types.SnapshotConfig{
-		ID:      snapID,
-		Image:   rec.Config.Image,
-		CPU:     rec.Config.CPU,
-		Memory:  rec.Config.Memory,
-		Storage: rec.Config.Storage,
-		NICs:    len(rec.NetworkConfigs),
-		Network: rec.Config.Network,
-		Windows: rec.Config.Windows,
+		ID:         snapID,
+		Image:      rec.Config.Image,
+		Hypervisor: typ,
+		CPU:        rec.Config.CPU,
+		Memory:     rec.Config.Memory,
+		Storage:    rec.Config.Storage,
+		NICs:       len(rec.NetworkConfigs),
+		Network:    rec.Config.Network,
+		Windows:    rec.Config.Windows,
 	}
 	if rec.ImageBlobIDs != nil {
 		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))
