@@ -70,7 +70,7 @@ func (c *Config) TerminateGracePeriod() time.Duration {
 func (c *Config) BinaryName() string { return filepath.Base(c.FCBinary) }
 
 // PIDFileName returns the PID file name for the Firecracker backend.
-func (c *Config) PIDFileName() string { return "fc.pid" }
+func (c *Config) PIDFileName() string { return pidFileName }
 
 func (c *Config) dir() string   { return filepath.Join(c.RootDir, "firecracker") }
 func (c *Config) dbDir() string { return filepath.Join(c.dir(), "db") }

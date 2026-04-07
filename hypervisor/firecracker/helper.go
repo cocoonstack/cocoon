@@ -2,4 +2,6 @@ package firecracker
 
 import "github.com/cocoonstack/cocoon/hypervisor"
 
-var runtimeFiles = []string{hypervisor.APISocketName, "fc.pid", hypervisor.ConsoleSockName}
+const pidFileName = "fc.pid"
+
+var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName}

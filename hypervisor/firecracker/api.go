@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"slices"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -166,8 +167,8 @@ type fcSnapshotMemBE struct {
 // createSnapshotFC creates a full VM snapshot (vmstate + memory file) in destDir.
 func createSnapshotFC(ctx context.Context, hc *http.Client, destDir string) error {
 	body, err := json.Marshal(fcSnapshotCreate{
-		SnapshotPath: destDir + "/" + snapshotVMStateFile,
-		MemFilePath:  destDir + "/" + snapshotMemFile,
+		SnapshotPath: filepath.Join(destDir, snapshotVMStateFile),
+		MemFilePath:  filepath.Join(destDir, snapshotMemFile),
 	})
 	if err != nil {
 		return fmt.Errorf("marshal snapshot/create request: %w", err)
@@ -178,9 +179,9 @@ func createSnapshotFC(ctx context.Context, hc *http.Client, destDir string) erro
 // loadSnapshotFC loads a VM snapshot from sourceDir into a freshly started FC process.
 func loadSnapshotFC(ctx context.Context, hc *http.Client, sourceDir string) error {
 	body, err := json.Marshal(fcSnapshotLoad{
-		SnapshotPath: sourceDir + "/" + snapshotVMStateFile,
+		SnapshotPath: filepath.Join(sourceDir, snapshotVMStateFile),
 		MemBackend: fcSnapshotMemBE{
-			BackendPath: sourceDir + "/" + snapshotMemFile,
+			BackendPath: filepath.Join(sourceDir, snapshotMemFile),
 			BackendType: memBackendTypeFile,
 		},
 	})

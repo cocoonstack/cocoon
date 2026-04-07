@@ -52,6 +52,9 @@ func RunRelay() {
 	defer listener.Close() //nolint:errcheck
 
 	fcPid, _ := strconv.Atoi(os.Getenv(relayPIDEnvKey))
+	if fcPid <= 0 {
+		return // invalid PID, nothing to relay
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

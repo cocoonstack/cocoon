@@ -43,7 +43,7 @@ func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
 	shutdownErr := fc.WithRunningVM(ctx, &rec, func(pid int) error {
 		// --force (StopTimeoutSeconds < 0): skip SendCtrlAltDel, immediate kill.
 		if stopTimeout < 0 {
-			return fc.forceTerminate(ctx, hc, id, sockPath, pid)
+			return fc.forceTerminate(ctx, sockPath, pid)
 		}
 		return fc.gracefulStop(ctx, hc, id, sockPath, pid, stopTimeout)
 	})
@@ -66,7 +66,7 @@ func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
 func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, sockPath string, pid int, timeout time.Duration) error {
 	if err := sendCtrlAltDel(ctx, hc); err != nil {
 		log.WithFunc("firecracker.gracefulStop").Warnf(ctx, "SendCtrlAltDel %s: %v — escalating", vmID, err)
-		return fc.forceTerminate(ctx, hc, vmID, sockPath, pid)
+		return fc.forceTerminate(ctx, sockPath, pid)
 	}
 
 	// Poll until the process exits or timeout.
@@ -81,10 +81,10 @@ func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, 
 	}
 
 	log.WithFunc("firecracker.gracefulStop").Warnf(ctx, "VM %s did not respond to SendCtrlAltDel within %s, escalating", vmID, timeout)
-	return fc.forceTerminate(ctx, hc, vmID, sockPath, pid)
+	return fc.forceTerminate(ctx, sockPath, pid)
 }
 
 // forceTerminate skips graceful shutdown, going straight to SIGTERM → SIGKILL.
-func (fc *Firecracker) forceTerminate(ctx context.Context, _ *http.Client, _ string, sockPath string, pid int) error {
+func (fc *Firecracker) forceTerminate(ctx context.Context, sockPath string, pid int) error {
 	return utils.TerminateProcess(ctx, pid, fc.conf.BinaryName(), sockPath, fc.conf.TerminateGracePeriod())
 }

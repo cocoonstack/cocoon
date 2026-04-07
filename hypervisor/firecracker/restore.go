@@ -69,7 +69,7 @@ func (fc *Firecracker) prepareRestore(ctx context.Context, vmRef string) (string
 
 	sockPath := hypervisor.SocketPath(rec.RunDir)
 	killErr := fc.WithRunningVM(ctx, &rec, func(pid int) error {
-		return fc.forceTerminate(ctx, utils.NewSocketHTTPClient(sockPath), vmID, sockPath, pid)
+		return fc.forceTerminate(ctx, sockPath, pid)
 	})
 	if killErr != nil && !errors.Is(killErr, hypervisor.ErrNotRunning) {
 		return "", nil, "", fmt.Errorf("stop running VM: %w", killErr)

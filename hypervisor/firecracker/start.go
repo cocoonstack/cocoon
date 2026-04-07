@@ -205,17 +205,22 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 
 	// Start console relay as a background process (self-exec).
 	// The relay holds the PTY master and listens on console.sock.
-	if relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid); relayErr != nil {
-		log.WithFunc("firecracker.launchProcess").Warnf(ctx, "start console relay: %v (console unavailable)", relayErr)
-		// Keep the PTY master open (intentional fd leak) so the slave wired
-		// to FC's stdin/stdout stays alive. Closing it would hang up ttyS0
-		// and crash the guest's serial console output during boot.
-	} else {
+	relayOK := fc.startConsoleRelay(ctx, rec.RunDir, master, pid) == nil
+	if relayOK {
 		// Master fd ownership transferred to relay; close parent's copy.
 		_ = master.Close()
+	} else {
+		log.WithFunc("firecracker.launchProcess").Warn(ctx, "console relay failed (console unavailable)")
 	}
 
-	go fcCmd.Wait() //nolint:errcheck
+	go func() {
+		_ = fcCmd.Wait()
+		// If relay failed, master fd was kept open to preserve ttyS0.
+		// Close it now that FC has exited to avoid permanent fd leak.
+		if !relayOK {
+			_ = master.Close()
+		}
+	}()
 	return pid, nil
 }
 

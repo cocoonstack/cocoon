@@ -16,6 +16,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// Well-known file names shared by all backends.
+const (
+	APISocketName   = "api.sock"
+	ConsoleSockName = "console.sock"
+)
+
 // BackendConfig provides backend-specific values needed by shared Backend methods.
 type BackendConfig interface {
 	BinaryName() string
@@ -208,12 +214,6 @@ func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir str
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
-
-// Well-known file names shared by all backends.
-const (
-	APISocketName   = "api.sock"
-	ConsoleSockName = "console.sock"
-)
 
 // SocketPath returns the API socket path under a VM's run directory.
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
