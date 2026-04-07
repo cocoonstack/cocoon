@@ -100,7 +100,7 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 }
 
 // CopyFile copies a single file preserving permissions.
-func CopyFile(dst, src string) error {
+func CopyFile(dst, src string) (err error) {
 	srcFile, err := os.Open(src) //nolint:gosec
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func CopyFile(dst, src string) error {
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close() //nolint:errcheck
+	defer func() { err = errors.Join(err, dstFile.Close()) }()
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
