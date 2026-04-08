@@ -54,9 +54,11 @@ ip link set "$IFACE" up 2>/dev/null || true
 
 # No kernel ip= — run DHCP via busybox udhcpc.
 # This covers dhcp-noipam CNI networks where the guest must obtain its own IP.
+# The udhcpc script writes the gateway to a temp file so we can read it after
+# udhcpc exits — netd may delete routes from the main table before we get to
+# the policy table sync below.
 if [ -z "$CMDLINE_IP" ] && [ -x /sbin/busybox ]; then
     log -t cocoon-network "no ip= cmdline, running udhcpc on $IFACE"
-    # Write a minimal udhcpc script that configures the interface.
     UDHCPC_SCRIPT="/tmp/udhcpc.sh"
     cat > "$UDHCPC_SCRIPT" << 'DHCPSCRIPT'
 #!/bin/sh
@@ -64,14 +66,20 @@ case "$1" in
     bound|renew)
         ip addr flush dev "$interface" 2>/dev/null
         ip addr add "$ip/$mask" dev "$interface"
-        [ -n "$router" ] && ip route add default via "$router" dev "$interface"
-        [ -n "$dns" ] && for d in $dns; do setprop net.dns1 "$d"; break; done
+        [ -n "$router" ] && ip route replace default via "$router" dev "$interface" 2>/dev/null
+        echo "$router" > /tmp/udhcpc_gw
+        echo "$dns" > /tmp/udhcpc_dns
         ;;
 esac
 DHCPSCRIPT
     chmod 0755 "$UDHCPC_SCRIPT"
     /sbin/busybox udhcpc -i "$IFACE" -n -q -f -s "$UDHCPC_SCRIPT" 2>/dev/null
-    CMDLINE_DNS1=""  # DNS set by udhcpc script, skip manual setprop below
+    # Read gateway/DNS saved by the udhcpc script before netd clears the route.
+    [ -f /tmp/udhcpc_gw ] && CMDLINE_GW="$(cat /tmp/udhcpc_gw)"
+    if [ -f /tmp/udhcpc_dns ]; then
+        CMDLINE_DNS1="$(cat /tmp/udhcpc_dns | awk '{print $1}')"
+        CMDLINE_DNS2="$(cat /tmp/udhcpc_dns | awk '{print $2}')"
+    fi
 fi
 
 # Wait for netd to finish setting up its ip rules (policy tables + 32000 unreachable).
