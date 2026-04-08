@@ -27,7 +27,7 @@ type VMConfig struct {
 	Image          string `json:"image"`
 	Network        string `json:"network,omitempty"`          // CNI conflist name; empty = default
 	Windows        bool   `json:"windows,omitempty"`          // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
-	SingleQueueNet bool   `json:"single_queue_net,omitempty"` // FC: single-queue TAP (no multi-queue support)
+	SingleQueueNet bool   `json:"single_queue_net,omitempty"` // single-queue TAP with IFF_NO_PI (required by some hypervisors)
 }
 
 // Validate checks that VMConfig fields are within acceptable ranges.

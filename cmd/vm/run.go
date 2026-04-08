@@ -268,7 +268,6 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, err
 	}
 
-	// FC only supports single-queue virtio-net.
 	if conf.UseFirecracker {
 		vmCfg.SingleQueueNet = true
 	}
