@@ -85,7 +85,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	cowDev := fmt.Sprintf("/dev/vd%c", 'a'+nLayers)
 
 	cmdline := fmt.Sprintf(
-		"console=ttyS0 loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
+		"console=ttyS0 reboot=k loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
 		strings.Join(layerDevs, ","), cowDev)
 
 	fmt.Println("# Prepare COW disk")

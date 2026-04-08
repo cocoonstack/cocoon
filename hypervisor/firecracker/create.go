@@ -264,9 +264,11 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	cowDev := devPath(nLayers)
 
 	var cmdline strings.Builder
-	// FC serial console is ttyS0 (not hvc0 like CH's virtio-console)
+	// FC serial console is ttyS0 (not hvc0 like CH's virtio-console).
+	// reboot=k: FC has no ACPI PM — use i8042 keyboard controller reset so
+	// guest reboot/shutdown triggers FC process exit instead of hanging.
 	fmt.Fprintf(&cmdline,
-		"console=ttyS0 loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
+		"console=ttyS0 reboot=k loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
 		strings.Join(layerDevs, ","), cowDev,
 	)
 
