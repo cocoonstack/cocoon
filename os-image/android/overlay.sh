@@ -8,6 +8,19 @@ resolve_disk() {
     local serial="$1" timeout="${COCOON_TIMEOUT:-10}" i=0
     case "$timeout" in ''|*[!0-9]*) timeout=10 ;; esac
 
+    # Direct device path (Firecracker uses /dev/vdX, no virtio serial support)
+    case "$serial" in
+        /dev/*)
+            while [ $i -lt $timeout ]; do
+                [ -b "$serial" ] && echo "$serial" && return 0
+                sleep 1
+                i=$((i + 1))
+            done
+            return 1
+            ;;
+    esac
+
+    # Serial name lookup (Cloud Hypervisor virtio-blk serial)
     while [ $i -lt $timeout ]; do
         for sysdev in /sys/block/vd*; do
             [ -d "$sysdev" ] || continue
@@ -33,11 +46,13 @@ mountroot() {
     log_begin_msg "Cocoon: mounting stealth overlay rootfs"
 
     # Process kernel ip= parameters if present (creates /run/net-*.conf).
-    # Ubuntu 22.04 only calls configure_networking for BOOT=local (in local-top),
-    # not for custom boot scripts. Call it explicitly so ipconfig always runs.
-    # The function is idempotent — skips if networking is already configured.
+    # Only call configure_networking when ip= is on the cmdline — without it,
+    # the function probes for devices and waits for udev, adding delay on
+    # VMs with no NICs.
     if ! ls /run/net-*.conf >/dev/null 2>&1; then
-        configure_networking
+        for _x in $(cat /proc/cmdline); do
+            case $_x in ip=*) configure_networking; break ;; esac
+        done
     fi
 
     # Native environment: modprobe automatically resolves all underlying dependencies.
