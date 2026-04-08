@@ -101,37 +101,38 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	return ociStore, cloudimgStore, nil
 }
 
-// InitAllHypervisors initializes both CH and FC backends for GC.
-// Returns error if any backend fails to init — GC must not proceed
-// without full blob pinning or it risks deleting referenced layers.
-func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
-	ch, err := cloudhypervisor.New(conf)
-	if err != nil {
-		return nil, fmt.Errorf("init cloud-hypervisor for GC: %w", err)
-	}
-	fc, fcErr := firecracker.New(conf)
-	if fcErr != nil {
-		return nil, fmt.Errorf("init firecracker for GC: %w", fcErr)
-	}
-	return []hypervisor.Hypervisor{ch, fc}, nil
+// hypervisorConstructors maps backend type to its constructor.
+var hypervisorConstructors = map[config.HypervisorType]func(*config.Config) (hypervisor.Hypervisor, error){
+	config.HypervisorCH:          func(c *config.Config) (hypervisor.Hypervisor, error) { return cloudhypervisor.New(c) },
+	config.HypervisorFirecracker: func(c *config.Config) (hypervisor.Hypervisor, error) { return firecracker.New(c) },
 }
 
 // InitHypervisor initializes the selected hypervisor backend.
 func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
-	var (
-		h   hypervisor.Hypervisor
-		err error
-	)
-	switch conf.Hypervisor() {
-	case config.HypervisorFirecracker:
-		h, err = firecracker.New(conf)
-	default:
-		h, err = cloudhypervisor.New(conf)
+	ctor, ok := hypervisorConstructors[conf.Hypervisor()]
+	if !ok {
+		return nil, fmt.Errorf("unknown hypervisor type: %s", conf.Hypervisor())
 	}
+	h, err := ctor(conf)
 	if err != nil {
 		return nil, fmt.Errorf("init hypervisor: %w", err)
 	}
 	return h, nil
+}
+
+// InitAllHypervisors initializes all registered backends for GC.
+// Returns error if any backend fails — GC must not proceed without
+// full blob pinning or it risks deleting referenced layers.
+func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
+	result := make([]hypervisor.Hypervisor, 0, len(hypervisorConstructors))
+	for typ, ctor := range hypervisorConstructors {
+		h, err := ctor(conf)
+		if err != nil {
+			return nil, fmt.Errorf("init %s for GC: %w", typ, err)
+		}
+		result = append(result, h)
+	}
+	return result, nil
 }
 
 // InitNetwork creates the CNI network provider.
