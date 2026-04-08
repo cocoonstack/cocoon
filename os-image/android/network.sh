@@ -14,6 +14,13 @@
 IFACE=eth0
 NETID=100
 
+# Guard against repeated invocations — cocoon-network.rc triggers on every
+# netd start/restart. Only run once; subsequent calls are no-ops.
+GUARD="/tmp/.cocoon-network-done"
+if [ -f "$GUARD" ]; then
+    exit 0
+fi
+
 cmdline_ip() {
     for x in $(cat /proc/cmdline); do
         case "$x" in
@@ -101,6 +108,7 @@ else
     ndc network route add "$NETID" "$IFACE" 0.0.0.0/0 "$GW" 2>/dev/null
     ndc network default set "$NETID" 2>/dev/null
     ndc network permission user set NETWORK "$NETID" 2>/dev/null
+    touch "$GUARD"
 fi
 
 # Set DNS (no ConnectivityService to configure resolvers).
