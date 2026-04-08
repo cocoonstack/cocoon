@@ -163,7 +163,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// 5. Bidirectional redirect: eth0 ingress → tap0, tap0 ingress → eth0.
+	// 5. Bidirectional redirect: guest-facing NIC ingress ↔ its paired tap.
 	if err := addTCRedirect(link, tapLink); err != nil {
 		return "", fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
 	}

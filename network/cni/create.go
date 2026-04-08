@@ -22,8 +22,8 @@ const defaultQueueSize = 256
 // Flow per NIC:
 //  1. Create named netns cocoon-{vmID}
 //  2. CNI ADD (containerID=vmID, netns path, ifName=eth{i})
-//  3. Inside netns: flush eth{i} IP, create tap{i}, wire via TC ingress mirred
-//  4. Return NetworkConfig{Tap: "tap{i}", Mac: generated, Network: CNI result}
+//  3. Inside netns: flush eth{i} IP, create a per-VM tap, wire via TC ingress mirred
+//  4. Return NetworkConfig{Tap: stable per-VM tap, Mac: generated, Network: CNI result}
 func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types.VMConfig, existing ...*types.NetworkConfig) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
 		return nil, fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
@@ -70,7 +70,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 
 	for i := range numNICs {
 		ifName := fmt.Sprintf("eth%d", i)
-		tapName := fmt.Sprintf("tap%d", i)
+		tapName := tapNameForVM(vmID, i)
 
 		// Step 2: CNI ADD — creates veth pair, assigns IP via IPAM.
 		rt := &libcni.RuntimeConf{
@@ -162,6 +162,14 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		}
 		return nil
 	})
+}
+
+func tapNameForVM(vmID string, nic int) string {
+	const vmIDPrefixLen = 8
+	if len(vmID) > vmIDPrefixLen {
+		vmID = vmID[:vmIDPrefixLen]
+	}
+	return fmt.Sprintf("tap%s-%d", vmID, nic)
 }
 
 // netNumQueues returns the virtio-net num_queues for a given CPU count.
