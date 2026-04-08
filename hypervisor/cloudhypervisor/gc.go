@@ -70,20 +70,23 @@ func (ch *CloudHypervisor) GCModule() gc.Module[chSnapshot] {
 			slices.Sort(candidates)
 			return slices.Compact(candidates)
 		},
+		// Collect runs while the GC orchestrator holds the module's flock.
+		// Use lock-free DB access (ReadRaw/WriteRaw) to avoid self-deadlock,
+		// since the flock is shared between Backend.Locker and DB.locker.
 		Collect: func(ctx context.Context, ids []string) error {
 			var errs []error
 			for _, id := range ids {
-				// Try loading the DB record so we use stored RunDir/LogDir;
-				// for true orphans (no record) fall back to config-derived paths.
 				runDir, logDir := ch.conf.VMRunDir(id), ch.conf.VMLogDir(id)
-				if rec, loadErr := ch.LoadRecord(ctx, id); loadErr == nil {
-					runDir, logDir = rec.RunDir, rec.LogDir
-				}
+				_ = ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
+					if rec := idx.VMs[id]; rec != nil {
+						runDir, logDir = rec.RunDir, rec.LogDir
+					}
+					return nil
+				})
 				if err := hypervisor.RemoveVMDirs(runDir, logDir); err != nil {
 					errs = append(errs, err)
 				}
 			}
-			// Clean up stale "creating" DB records from this GC snapshot.
 			if err := ch.CleanStalePlaceholders(ctx, ids); err != nil {
 				errs = append(errs, err)
 			}

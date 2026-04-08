@@ -67,13 +67,19 @@ func (fc *Firecracker) GCModule() gc.Module[fcSnapshot] {
 			slices.Sort(candidates)
 			return slices.Compact(candidates)
 		},
+		// Collect runs while the GC orchestrator holds the module's flock.
+		// Use lock-free DB access (ReadRaw/WriteRaw) to avoid self-deadlock,
+		// since the flock is shared between Backend.Locker and DB.locker.
 		Collect: func(ctx context.Context, ids []string) error {
 			var errs []error
 			for _, id := range ids {
 				runDir, logDir := fc.conf.VMRunDir(id), fc.conf.VMLogDir(id)
-				if rec, loadErr := fc.LoadRecord(ctx, id); loadErr == nil {
-					runDir, logDir = rec.RunDir, rec.LogDir
-				}
+				_ = fc.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
+					if rec := idx.VMs[id]; rec != nil {
+						runDir, logDir = rec.RunDir, rec.LogDir
+					}
+					return nil
+				})
 				if err := hypervisor.RemoveVMDirs(runDir, logDir); err != nil {
 					errs = append(errs, err)
 				}
