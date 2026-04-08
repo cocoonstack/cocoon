@@ -7,8 +7,9 @@
 # Solution: copy default routes into netd-managed policy tables so traffic
 # doesn't hit the 32000 unreachable fallback.
 #
-# Static IP: kernel ip= already configured routes in main table.
-# DHCP: busybox udhcpc obtains a lease, then same route-copy logic applies.
+# Requires kernel ip= parameter (static IP from CNI). DHCP networks are not
+# supported for Android VMs — netd blocks external route modifications after
+# boot, and ipconfigstore cannot read the gateway without a pre-existing route.
 
 IFACE=eth0
 TABLES="legacy_system legacy_network local_network"
@@ -43,31 +44,6 @@ fi
 
 ip link set "$IFACE" up 2>/dev/null || true
 
-# No kernel ip= — run DHCP via busybox udhcpc.
-if [ -z "$CMDLINE_IP" ] && [ -x /sbin/busybox ]; then
-    log -t cocoon-network "no ip= cmdline, running udhcpc on $IFACE"
-    UDHCPC_SCRIPT="/data/local/tmp/udhcpc.sh"
-    cat > "$UDHCPC_SCRIPT" << 'DHCPSCRIPT'
-#!/bin/sh
-case "$1" in
-    bound|renew)
-        ip addr flush dev "$interface" 2>/dev/null
-        ip addr add "$ip/$mask" dev "$interface"
-        [ -n "$router" ] && ip route replace default via "$router" dev "$interface" 2>/dev/null
-        echo "$router" > /data/local/tmp/udhcpc_gw
-        echo "$dns" > /data/local/tmp/udhcpc_dns
-        ;;
-esac
-DHCPSCRIPT
-    chmod 0755 "$UDHCPC_SCRIPT"
-    /sbin/busybox udhcpc -i "$IFACE" -n -q -f -s "$UDHCPC_SCRIPT" 2>/dev/null
-    [ -f /data/local/tmp/udhcpc_gw ] && CMDLINE_GW="$(cat /data/local/tmp/udhcpc_gw)"
-    if [ -f /data/local/tmp/udhcpc_dns ]; then
-        CMDLINE_DNS1="$(cat /data/local/tmp/udhcpc_dns | awk '{print $1}')"
-        CMDLINE_DNS2="$(cat /data/local/tmp/udhcpc_dns | awk '{print $2}')"
-    fi
-fi
-
 # Wait for netd to finish initializing ip rules.
 try=0
 while [ $try -lt 10 ]; do
@@ -76,7 +52,7 @@ while [ $try -lt 10 ]; do
     try=$((try + 1))
 done
 
-# Discover gateway: main table first, then cmdline/udhcpc result.
+# Discover gateway: main table first, then kernel cmdline.
 GW=""
 try=0
 while [ $try -lt 10 ]; do
