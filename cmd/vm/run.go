@@ -67,7 +67,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("inspect snapshot %s: %w", snapRef, err)
 	}
 	if snapInfo.Hypervisor != "" {
-		conf.UseFirecracker = snapInfo.Hypervisor == "firecracker"
+		conf.UseFirecracker = snapInfo.Hypervisor == string(config.HypervisorFirecracker)
 	}
 
 	hyper, err := cmdcore.InitHypervisor(conf)
@@ -382,7 +382,7 @@ func printPostCloneHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 
 	// FC clone: guest MAC is baked in vmstate (source VM's MAC).
 	// Must change guest MAC before networkd config takes effect.
-	if vm.Hypervisor == "firecracker" {
+	if vm.Hypervisor == string(config.HypervisorFirecracker) {
 		printFCMACHints(networkConfigs)
 	}
 
