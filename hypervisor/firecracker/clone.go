@@ -138,6 +138,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 
 		return fc.restoreAndResumeClone(ctx, pid, sockPath, runDir, networkConfigs)
 	}); cloneErr != nil {
+		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
 	}
 
