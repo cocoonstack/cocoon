@@ -132,7 +132,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 			LogDir: logDir,
 		}, sockPath, withNetwork)
 		if launchErr != nil {
-			fc.MarkError(ctx, vmID)
 			return fmt.Errorf("launch FC: %w", launchErr)
 		}
 
