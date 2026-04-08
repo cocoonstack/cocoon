@@ -24,8 +24,10 @@ RUN --mount=type=secret,id=cocoon_overlay \
     # [Kernel Config]
     printf "erofs\noverlay\next4\nvirtio_blk\nvirtio_pci\nvirtio_ring\nvirtio_net\n" >> /etc/initramfs-tools/modules && \
     sed -i 's/^COMPRESS=.*/COMPRESS=gzip/' /etc/initramfs-tools/initramfs.conf && \
-    # [Networking] Force initramfs to include ipconfig so kernel ip= is processed
-    echo 'IP=dhcp' >> /etc/initramfs-tools/initramfs.conf && \
+    # [Networking] IP=off prevents initramfs from running DHCP during boot.
+    # Kernel ip= parameters (when present) override this and still trigger ipconfig.
+    sed -i '/^IP=/d' /etc/initramfs-tools/initramfs.conf && \
+    echo 'IP=off' >> /etc/initramfs-tools/initramfs.conf && \
     # [Generate Initramfs] The secret is mounted and used here
     update-initramfs -u -k all && \
     # [Shift-Left System Hacks]

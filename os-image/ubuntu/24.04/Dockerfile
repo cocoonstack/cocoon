@@ -25,8 +25,12 @@ RUN --mount=type=secret,id=cocoon_overlay \
     # [Kernel Setup] Force critical modules and set gzip compression
     printf "erofs\noverlay\next4\nvirtio_blk\nvirtio_pci\nvirtio_ring\nvirtio_net\n" >> /etc/initramfs-tools/modules && \
     sed -i 's/^COMPRESS=.*/COMPRESS=gzip/' /etc/initramfs-tools/initramfs.conf && \
-    # [Networking] Force initramfs to include ipconfig so kernel ip= is processed
-    echo 'IP=dhcp' >> /etc/initramfs-tools/initramfs.conf && \
+    # [Networking] IP=off prevents initramfs from running DHCP during boot.
+    # Kernel ip= parameters (when present) override this and still trigger ipconfig.
+    # Without this, IP="" (default) causes dhcpcd to run unconditionally, which
+    # blocks boot on --nics 0 VMs and persists DHCP leases as static configs.
+    sed -i '/^IP=/d' /etc/initramfs-tools/initramfs.conf && \
+    echo 'IP=off' >> /etc/initramfs-tools/initramfs.conf && \
     # Regenerate initramfs inside this layer (consumes the secret script)
     update-initramfs -u -k all && \
     # [Shift-Left Hacks] Neuter systemd to avoid boot-time filesystem checks

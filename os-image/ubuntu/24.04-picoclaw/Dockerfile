@@ -59,7 +59,8 @@ RUN --mount=type=secret,id=cocoon_overlay \
     chmod 0755 /etc/initramfs-tools/scripts/init-bottom/cocoon-network && \
     printf "erofs\nlz4\nlz4_compress\nzstd\nzstd_compress\noverlay\next4\nvirtio_blk\nvirtio_pci\nvirtio_ring\nvirtio_net\nvirtio_gpu\n" >> /etc/initramfs-tools/modules && \
     sed -i 's/^COMPRESS=.*/COMPRESS=gzip/' /etc/initramfs-tools/initramfs.conf && \
-    echo 'IP=dhcp' >> /etc/initramfs-tools/initramfs.conf && \
+    sed -i '/^IP=/d' /etc/initramfs-tools/initramfs.conf && \
+    echo 'IP=off' >> /etc/initramfs-tools/initramfs.conf && \
     update-initramfs -u -k all && \
     # Systemd tweaks
     truncate -s 0 /etc/fstab && \
