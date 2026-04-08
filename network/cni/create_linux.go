@@ -95,6 +95,13 @@ func tcRedirectInNS(ifName, tapName string, queues int, noPIFlag bool, overrideM
 		}
 	}
 
+	// Re-read MAC after potential override (link.Attrs() is stale after LinkSetHardwareAddr).
+	if overrideMAC != "" {
+		link, err = netlink.LinkByName(ifName)
+		if err != nil {
+			return "", fmt.Errorf("re-read link %s: %w", ifName, err)
+		}
+	}
 	mac := link.Attrs().HardwareAddr.String()
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)

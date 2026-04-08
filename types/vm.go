@@ -66,7 +66,7 @@ type VM struct {
 
 	// FirstBooted is true after the VM has been started at least once.
 	// Used to skip cidata attachment on subsequent starts (cloudimg only).
-	FirstBooted bool `json:"first_booted"`
+	FirstBooted bool `json:"first_booted,omitempty"`
 
 	// SnapshotIDs tracks snapshots created from this VM.
 	// Populated at runtime by toVM() from VMRecord.SnapshotIDs.

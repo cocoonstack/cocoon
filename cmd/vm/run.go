@@ -89,7 +89,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	})
 	defer stop()
 
-	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(cmd, ctx, conf, cfg)
+	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(ctx, cmd, conf, cfg)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
 
-	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(cmd, ctx, conf, cfg)
+	vmCfg, vmID, netProvider, networkConfigs, err := h.prepareClone(ctx, cmd, conf, cfg)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 	return nil
 }
 
-func (h Handler) prepareClone(cmd *cobra.Command, ctx context.Context, conf *config.Config, cfg *types.SnapshotConfig) (*types.VMConfig, string, network.Network, []*types.NetworkConfig, error) {
+func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, cfg *types.SnapshotConfig) (*types.VMConfig, string, network.Network, []*types.NetworkConfig, error) {
 	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
 	if err != nil {
 		return nil, "", nil, nil, err
