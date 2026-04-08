@@ -52,6 +52,28 @@ fi
 
 ip link set "$IFACE" up 2>/dev/null || true
 
+# No kernel ip= — run DHCP via busybox udhcpc.
+# This covers dhcp-noipam CNI networks where the guest must obtain its own IP.
+if [ -z "$CMDLINE_IP" ] && [ -x /sbin/busybox ]; then
+    log -t cocoon-network "no ip= cmdline, running udhcpc on $IFACE"
+    # Write a minimal udhcpc script that configures the interface.
+    UDHCPC_SCRIPT="/tmp/udhcpc.sh"
+    cat > "$UDHCPC_SCRIPT" << 'DHCPSCRIPT'
+#!/bin/sh
+case "$1" in
+    bound|renew)
+        ip addr flush dev "$interface" 2>/dev/null
+        ip addr add "$ip/$mask" dev "$interface"
+        [ -n "$router" ] && ip route add default via "$router" dev "$interface"
+        [ -n "$dns" ] && for d in $dns; do setprop net.dns1 "$d"; break; done
+        ;;
+esac
+DHCPSCRIPT
+    chmod 0755 "$UDHCPC_SCRIPT"
+    /sbin/busybox udhcpc -i "$IFACE" -n -q -f -s "$UDHCPC_SCRIPT" 2>/dev/null
+    CMDLINE_DNS1=""  # DNS set by udhcpc script, skip manual setprop below
+fi
+
 # Wait for netd to finish setting up its ip rules (policy tables + 32000 unreachable).
 # Triggered by init.svc.netd=running, but netd needs a moment to initialize rules.
 try=0
