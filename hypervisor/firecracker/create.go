@@ -267,8 +267,11 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	// FC serial console is ttyS0 (not hvc0 like CH's virtio-console).
 	// reboot=k: FC has no ACPI PM — use i8042 keyboard controller reset so
 	// guest reboot/shutdown triggers FC process exit instead of hanging.
+	// pci=off: FC has no PCI bus, skip probing (~50-100ms saved)
+	// i8042.noaux: no PS/2 mouse, skip auxiliary device probe timeout
+	// 8250.nr_uarts=1: FC exposes one serial port, skip probing for 3 others
 	fmt.Fprintf(&cmdline,
-		"console=ttyS0 reboot=k loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
+		"console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
 		strings.Join(layerDevs, ","), cowDev,
 	)
 

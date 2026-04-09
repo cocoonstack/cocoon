@@ -75,10 +75,14 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 // then issues InstanceStart to boot the guest.
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
+	hugePages := hugePagesNone
+	if utils.DetectHugePages() {
+		hugePages = hugePages2M
+	}
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
 		VCPUCount:  rec.Config.CPU,
 		MemSizeMiB: memMiB,
-		HugePages:  utils.DetectHugePages(),
+		HugePages:  hugePages,
 	}); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
@@ -95,12 +99,16 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 
 	for i, sc := range rec.StorageConfigs {
 		driveID := fmt.Sprintf(driveIDFmt, i)
-		if err := putDrive(ctx, hc, fcDrive{
+		d := fcDrive{
 			DriveID:      driveID,
 			PathOnHost:   sc.Path,
 			IsRootDevice: false,
 			IsReadOnly:   sc.RO,
-		}); err != nil {
+		}
+		if !sc.RO {
+			d.IoEngine = ioEngineAsync
+		}
+		if err := putDrive(ctx, hc, d); err != nil {
 			return fmt.Errorf("drive %s: %w", driveID, err)
 		}
 	}
@@ -129,6 +137,10 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		}); err != nil {
 			return fmt.Errorf("balloon: %w", err)
 		}
+	}
+
+	if err := putEntropy(ctx, hc); err != nil {
+		return fmt.Errorf("entropy: %w", err)
 	}
 
 	if err := instanceStart(ctx, hc); err != nil {

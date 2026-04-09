@@ -24,6 +24,10 @@ const (
 	ifaceIDFmt = "eth%d"
 
 	cowFileName = "cow.raw"
+
+	hugePagesNone = "None"
+	hugePages2M   = "2M"
+	ioEngineAsync = "Async" // io_uring
 )
 
 // Firecracker REST API request types.
@@ -31,9 +35,9 @@ const (
 // configure via HTTP PUT/PATCH, then issue InstanceStart.
 
 type fcMachineConfig struct {
-	VCPUCount  int  `json:"vcpu_count"`
-	MemSizeMiB int  `json:"mem_size_mib"`
-	HugePages  bool `json:"hugepages,omitempty"`
+	VCPUCount  int    `json:"vcpu_count"`
+	MemSizeMiB int    `json:"mem_size_mib"`
+	HugePages  string `json:"huge_pages,omitempty"`
 }
 
 type fcBootSource struct {
@@ -47,6 +51,7 @@ type fcDrive struct {
 	PathOnHost   string `json:"path_on_host"`
 	IsRootDevice bool   `json:"is_root_device"`
 	IsReadOnly   bool   `json:"is_read_only"`
+	IoEngine     string `json:"io_engine,omitempty"`
 }
 
 type fcNetworkInterface struct {
@@ -124,6 +129,10 @@ func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkIn
 		return fmt.Errorf("marshal network-interface: %w", err)
 	}
 	return fcAPI(ctx, hc, http.MethodPut, "/network-interfaces/"+iface.IfaceID, body)
+}
+
+func putEntropy(ctx context.Context, hc *http.Client) error {
+	return fcAPI(ctx, hc, http.MethodPut, "/entropy", []byte("{}"))
 }
 
 func instanceStart(ctx context.Context, hc *http.Client) error {
