@@ -124,6 +124,20 @@ Or use `cocoon vm stop --force` to skip the ACPI timeout and immediately kill th
 
 The Windows image's `autounattend.xml` includes defensive power-button configuration (`PBUTTONACTION=3`) and shutdown optimization (`WaitToKillServiceTimeout=5000`, `shutdownwithoutlogon=1`) which remain useful for environments not using our firmware fork.
 
+## Windows VM balloon disabled
+
+**Status: WONTFIX** — disabled by design.
+
+Cocoon does not attach a virtio-balloon device to Windows VMs (`--windows`). The virtio-win balloon driver >= 0.1.262 ([PR #1157](https://github.com/virtio-win/kvm-guest-drivers-windows/pull/1157), "cope with the unresponsive host") changed balloon deflation behavior: when the host does not ACK a balloon page-batch within 1 second, the driver now **retries indefinitely** instead of giving up. This causes two problems during ACPI power-button shutdown:
+
+1. **Deflation CPU storm**: Windows begins tearing down virtio devices during shutdown. The balloon driver attempts to deflate (return all reclaimed pages to the guest) one 512-page batch at a time, retrying on every host timeout. This pins all vCPUs at 100% for 2–3 minutes ([virtio-win #1148](https://github.com/virtio-win/kvm-guest-drivers-windows/issues/1148), open, unresolved upstream).
+
+2. **Watchdog reboot**: Cloud Hypervisor's virtio-watchdog has a 20-second timeout. Windows stops petting the watchdog during shutdown, and the balloon deflation outlasts the timeout — the watchdog triggers a VM reset before Windows can call UEFI `ResetSystem` to write to the ACPI shutdown port (0x600). The VM reboots instead of powering off.
+
+virtio-win 0.1.240 did not have this problem because its balloon driver gave up on the first host timeout, allowing Windows to proceed to `ResetSystem` quickly (~14 seconds total shutdown).
+
+**Workaround if balloon is needed**: increase `stop_timeout_seconds` to 180+ and apply the watchdog-pause patch to Cloud Hypervisor (pause the watchdog timer when `vm.power-button` is received).
+
 ## Installing patched binaries for Windows
 
 See [`os-image/windows/`](os-image/windows/) for download and installation instructions.

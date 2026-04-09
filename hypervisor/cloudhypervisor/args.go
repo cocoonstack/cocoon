@@ -54,7 +54,11 @@ func buildVMConfig(ctx context.Context, rec *hypervisor.VMRecord, consoleSockPat
 	}
 
 	// Balloon: 25% of memory, only when memory >= 256 MiB.
-	if mem >= minBalloonMemory {
+	// Disabled for Windows: virtio-win balloon driver >= 0.1.262 retries
+	// deflation on host timeout (PR #1157) instead of giving up, causing
+	// 100% CPU for minutes during shutdown and preventing ResetSystem from
+	// reaching Cloud Hypervisor's ACPI shutdown port.
+	if mem >= minBalloonMemory && !rec.Config.Windows {
 		cfg.Balloon = &chBalloon{
 			Size:              mem / defaultBalloon, //nolint:mnd
 			DeflateOnOOM:      true,
