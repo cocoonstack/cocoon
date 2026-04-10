@@ -342,7 +342,7 @@ Pre-built images and build automation are maintained in [cocoonstack/windows](ht
 
 ```bash
 # 1. Pull split parts via oras (https://oras.land)
-oras pull ghcr.io/cocoonstack/windows:win11-25h2
+oras pull ghcr.io/cocoonstack/windows/win11:25h2
 
 # 2. Reassemble and verify
 cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2

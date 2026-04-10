@@ -33,15 +33,15 @@ Access via `adb connect <vm-ip>:5555` or `scrcpy -s <vm-ip>:5555 --no-audio`.
 Pre-built images are published to GHCR as split qcow2 parts (each part ≤ 1.9 GiB to stay within the GHCR per-layer limit):
 
 ```
-ghcr.io/cocoonstack/windows:win11-25h2              # moving alias, latest good build
-ghcr.io/cocoonstack/windows:win11-25h2-<YYYYMMDD>   # dated immutable tag
+ghcr.io/cocoonstack/windows/win11:25h2              # moving alias, latest good build
+ghcr.io/cocoonstack/windows/win11:25h2-<YYYYMMDD>   # dated immutable tag
 ```
 
 Pull and import into Cocoon:
 
 ```bash
 # 1. Pull split parts via oras (https://oras.land)
-oras pull ghcr.io/cocoonstack/windows:win11-25h2
+oras pull ghcr.io/cocoonstack/windows/win11:25h2
 
 # 2. Reassemble and verify
 cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2

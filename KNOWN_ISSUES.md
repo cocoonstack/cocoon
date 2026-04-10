@@ -140,7 +140,7 @@ virtio-win 0.1.240 did not have this problem because its balloon driver gave up 
 
 ## Installing patched binaries for Windows
 
-See [`os-image/windows/`](os-image/windows/) for download and installation instructions.
+See [cocoonstack/windows](https://github.com/cocoonstack/windows) for download and installation instructions.
 
 
 ## Firecracker snapshot portability
