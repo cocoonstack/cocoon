@@ -28,6 +28,16 @@ const (
 	// CreatingStateGCGrace is how long a VM can stay in "creating" state
 	// before GC treats it as a crash remnant and cleans it up.
 	CreatingStateGCGrace = 24 * time.Hour
+
+	// VMMemTransferTimeout is the per-call HTTP timeout for hypervisor API
+	// endpoints that move the entire guest memory (snapshot/restore). The
+	// default utils.HTTPTimeout (30s) is marginal for multi-GiB transfers
+	// on slow storage, and these operations have no useful retry semantics:
+	// they are non-idempotent (a partial snapshot overwrites files; a
+	// partial restore leaves the hypervisor in an undefined state), so
+	// callers must bypass the per-backend retry wrapper and issue a single
+	// call with this deadline.
+	VMMemTransferTimeout = 10 * time.Minute
 )
 
 // BackendConfig provides backend-specific values needed by shared Backend methods.

@@ -27,8 +27,16 @@ func (e *APIError) Error() string { return e.Message }
 
 // NewSocketHTTPClient creates an HTTP client that dials a Unix socket.
 func NewSocketHTTPClient(socketPath string) *http.Client {
+	return NewSocketHTTPClientWithTimeout(socketPath, HTTPTimeout)
+}
+
+// NewSocketHTTPClientWithTimeout is like NewSocketHTTPClient but with a custom
+// per-call Timeout. Use this for endpoints where the default HTTPTimeout is too
+// tight (e.g. hypervisor snapshot/restore which transfer the entire guest memory
+// synchronously and can take minutes on multi-GiB VMs or slow storage).
+func NewSocketHTTPClientWithTimeout(socketPath string, timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout: HTTPTimeout,
+		Timeout: timeout,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				var d net.Dialer

@@ -177,7 +177,6 @@ func (fc *Firecracker) restoreAndResumeClone(
 		}
 	}()
 
-	hc := utils.NewSocketHTTPClient(sockPath)
 	// Use network_overrides to provide clone's TAP devices during snapshot/load.
 	// FC re-creates network devices from vmstate — overrides replace the
 	// source TAP with the clone's TAP so FC opens the right device.
@@ -185,9 +184,10 @@ func (fc *Firecracker) restoreAndResumeClone(
 	// FC opens drive files during snapshot/load and holds the fds.
 	// The symlink redirect ensures FC opens the clone's COW, not the source's.
 	// No drive reconfiguration needed — fds survive symlink cleanup.
-	if err = loadSnapshotFC(ctx, hc, runDir, netOverrides); err != nil {
+	if err = loadSnapshotFC(ctx, sockPath, runDir, netOverrides); err != nil {
 		return fmt.Errorf("snapshot/load: %w", err)
 	}
+	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)
 	}

@@ -66,24 +66,31 @@ func resumeVM(ctx context.Context, hc *http.Client) error {
 	return vmAPI(ctx, hc, "vm.resume", nil)
 }
 
-func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
+// snapshotVM and restoreVM bypass vmAPI's retry layer — see hypervisor.VMMemTransferTimeout.
+func snapshotVM(ctx context.Context, sockPath, destDir string) error {
 	body, err := json.Marshal(map[string]string{
 		"destination_url": "file://" + destDir,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal snapshot request: %w", err)
 	}
-	return vmAPI(ctx, hc, "vm.snapshot", body)
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	_, err = utils.DoAPI(ctx, hc, http.MethodPut,
+		"http://localhost/api/v1/vm.snapshot", body, http.StatusNoContent)
+	return err
 }
 
-func restoreVM(ctx context.Context, hc *http.Client, sourceDir string) error {
+func restoreVM(ctx context.Context, sockPath, sourceDir string) error {
 	body, err := json.Marshal(map[string]string{
 		"source_url": "file://" + sourceDir,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal restore request: %w", err)
 	}
-	return vmAPI(ctx, hc, "vm.restore", body)
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	_, err = utils.DoAPI(ctx, hc, http.MethodPut,
+		"http://localhost/api/v1/vm.restore", body, http.StatusNoContent)
+	return err
 }
 
 func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {

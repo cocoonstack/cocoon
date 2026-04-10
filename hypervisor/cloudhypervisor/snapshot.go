@@ -69,7 +69,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 		}
 		defer doResume()
 
-		if err := snapshotVM(ctx, hc, tmpDir); err != nil {
+		if err := snapshotVM(ctx, sockPath, tmpDir); err != nil {
 			return fmt.Errorf("snapshot: %w", err)
 		}
 

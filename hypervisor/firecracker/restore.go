@@ -120,13 +120,13 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 		}
 	}()
 
-	hc := utils.NewSocketHTTPClient(sockPath)
 	// Restore uses the same VM — TAP and drives are unchanged.
 	// No network_overrides or drive reconfiguration needed.
-	if err = loadSnapshotFC(ctx, hc, rec.RunDir, nil); err != nil {
+	if err = loadSnapshotFC(ctx, sockPath, rec.RunDir, nil); err != nil {
 		return nil, fmt.Errorf("snapshot/load: %w", err)
 	}
 
+	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("resume: %w", err)
 	}

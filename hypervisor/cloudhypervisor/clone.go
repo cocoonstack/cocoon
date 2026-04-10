@@ -206,10 +206,10 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 		}
 	}()
 
-	hc := utils.NewSocketHTTPClient(sockPath)
-	if err = restoreVM(ctx, hc, runDir); err != nil {
+	if err = restoreVM(ctx, sockPath, runDir); err != nil {
 		return fmt.Errorf("vm.restore: %w", err)
 	}
+	hc := utils.NewSocketHTTPClient(sockPath)
 
 	// Hot-swap NICs while paused: remove snapshot's virtio-net devices (which carry
 	// the old MAC baked in binary device state), then add fresh ones with correct MAC.

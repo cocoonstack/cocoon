@@ -113,10 +113,10 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 		}
 	}()
 
-	hc := utils.NewSocketHTTPClient(sockPath)
-	if err = restoreVM(ctx, hc, rec.RunDir); err != nil {
+	if err = restoreVM(ctx, sockPath, rec.RunDir); err != nil {
 		return nil, fmt.Errorf("vm.restore: %w", err)
 	}
+	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("vm.resume: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -196,7 +197,8 @@ type fcSnapshotMemBE struct {
 }
 
 // createSnapshotFC creates a full VM snapshot (vmstate + memory file) in destDir.
-func createSnapshotFC(ctx context.Context, hc *http.Client, destDir string) error {
+// Bypasses fcAPI's retry layer — see hypervisor.VMMemTransferTimeout.
+func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
 	body, err := json.Marshal(fcSnapshotCreate{
 		SnapshotPath: filepath.Join(destDir, snapshotVMStateFile),
 		MemFilePath:  filepath.Join(destDir, snapshotMemFile),
@@ -204,12 +206,16 @@ func createSnapshotFC(ctx context.Context, hc *http.Client, destDir string) erro
 	if err != nil {
 		return fmt.Errorf("marshal snapshot/create request: %w", err)
 	}
-	return fcAPI(ctx, hc, http.MethodPut, "/snapshot/create", body)
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	_, err = utils.DoAPI(ctx, hc, http.MethodPut,
+		"http://localhost/snapshot/create", body, http.StatusNoContent)
+	return err
 }
 
 // loadSnapshotFC loads a VM snapshot from sourceDir into a freshly started FC process.
 // networkOverrides replaces TAP devices from the snapshot with new ones.
-func loadSnapshotFC(ctx context.Context, hc *http.Client, sourceDir string, networkOverrides []fcNetworkOverride) error {
+// Bypasses fcAPI's retry layer — see hypervisor.VMMemTransferTimeout.
+func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOverrides []fcNetworkOverride) error {
 	body, err := json.Marshal(fcSnapshotLoad{
 		SnapshotPath: filepath.Join(sourceDir, snapshotVMStateFile),
 		MemBackend: fcSnapshotMemBE{
@@ -221,5 +227,8 @@ func loadSnapshotFC(ctx context.Context, hc *http.Client, sourceDir string, netw
 	if err != nil {
 		return fmt.Errorf("marshal snapshot/load request: %w", err)
 	}
-	return fcAPI(ctx, hc, http.MethodPut, "/snapshot/load", body)
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	_, err = utils.DoAPI(ctx, hc, http.MethodPut,
+		"http://localhost/snapshot/load", body, http.StatusNoContent)
+	return err
 }
