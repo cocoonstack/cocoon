@@ -142,10 +142,20 @@ func listImages[E Entry](images map[string]*E, typ string, sizer func(*E) int64)
 
 // GCStaleTemp removes temp entries older than StaleTempAge.
 // Set dirOnly=true to only remove directories (OCI uses dirs, cloudimg uses files).
+//
+// Regular files whose name ends in ".lock" are preserved regardless of
+// age — they are flock rendezvous files, and removing one while another
+// process is holding the lock would break cross-process mutual
+// exclusion (flock synchronizes on inode, not pathname: a subsequent
+// flock.New on the same path would create a new inode and race with
+// the lock holder). They are 0-byte files so the leak is negligible.
 func GCStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
 		if dirOnly && !e.IsDir() {
+			return false
+		}
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".lock") {
 			return false
 		}
 		info, err := e.Info()

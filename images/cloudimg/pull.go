@@ -81,7 +81,7 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], ur
 		if err := sniffImageSource(f); err != nil {
 			return fmt.Errorf("download %s: %w", url, err)
 		}
-		if err := commit(ctx, conf, store, url, tracker, tmpPath, digestHex, true); err != nil {
+		if err := commit(ctx, conf, store, url, tracker, tmpPath, digestHex); err != nil {
 			return err
 		}
 		logger.Infof(ctx, "pull complete: %s -> sha256:%s", url, digestHex)
