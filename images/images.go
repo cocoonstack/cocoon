@@ -2,11 +2,18 @@ package images
 
 import (
 	"context"
+	"errors"
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/types"
 )
+
+// ErrAmbiguous is returned by resolution helpers when an image ref
+// matches entries in more than one backend (e.g., a name that exists
+// in both OCI and cloudimg stores). Callers must disambiguate — the
+// package layer will not pick one silently.
+var ErrAmbiguous = errors.New("image ref resolves to multiple backends")
 
 type Images interface {
 	Type() string

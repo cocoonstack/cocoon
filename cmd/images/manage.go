@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -61,11 +62,25 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Resolve each ref to its owning backend BEFORE issuing deletes.
+	// Without this, iterating all backends and calling Delete on each
+	// with the full ref list would remove every same-named entry from
+	// every backend — an OCI image and a cloudimg image with the same
+	// name would both be destroyed by a single `image rm <name>`.
+	refsByBackend := map[imagebackend.Images][]string{}
+	for _, ref := range args {
+		owner, resolveErr := cmdcore.ResolveImageOwner(ctx, backends, ref)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		refsByBackend[owner] = append(refsByBackend[owner], ref)
+	}
+
 	var allDeleted []string
-	for _, b := range backends {
-		deleted, err := b.Delete(ctx, args)
+	for backend, refs := range refsByBackend {
+		deleted, err := backend.Delete(ctx, refs)
 		if err != nil {
-			return fmt.Errorf("delete %s: %w", b.Type(), err)
+			return fmt.Errorf("delete %s: %w", backend.Type(), err)
 		}
 		allDeleted = append(allDeleted, deleted...)
 	}

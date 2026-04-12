@@ -253,8 +253,12 @@ func InitSnapshot(conf *config.Config) (snapshot.Snapshot, error) {
 }
 
 // ResolveImage resolves an image reference to StorageConfigs + BootConfig.
+// If the ref resolves in more than one backend, returns ErrAmbiguous —
+// the caller must rename one of the conflicting entries rather than
+// accept a silent pick from a fixed backend order.
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	vms := []*types.VMConfig{vmCfg}
+	var owner imagebackend.Images
 	var storageConfigs []*types.StorageConfig
 	var bootCfg *types.BootConfig
 	var backendErrs []string
@@ -264,14 +268,46 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 			backendErrs = append(backendErrs, fmt.Sprintf("%s: %v", b.Type(), err))
 			continue
 		}
+		if owner != nil {
+			return nil, nil, fmt.Errorf("image %s: %w (matched both %s and %s)",
+				vmCfg.Image, imagebackend.ErrAmbiguous, owner.Type(), b.Type())
+		}
+		owner = b
 		storageConfigs = confs[0]
 		bootCfg = boots[0]
-		break
 	}
-	if bootCfg == nil {
+	if owner == nil {
 		return nil, nil, fmt.Errorf("image %q not resolved: %s", vmCfg.Image, strings.Join(backendErrs, "; "))
 	}
 	return storageConfigs, bootCfg, nil
+}
+
+// ResolveImageOwner probes backends and returns the single backend that
+// has the given image ref, or an error. Used by image rm / inspect to
+// avoid the "iterate and delete from all" foot-gun.
+func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, error) {
+	var matches []imagebackend.Images
+	for _, b := range backends {
+		img, err := b.Inspect(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("inspect %s in %s: %w", ref, b.Type(), err)
+		}
+		if img != nil {
+			matches = append(matches, b)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("image %q: not found in any backend", ref)
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, len(matches))
+		for i, b := range matches {
+			names[i] = b.Type()
+		}
+		return nil, fmt.Errorf("image %s: %w (backends: %s)", ref, imagebackend.ErrAmbiguous, strings.Join(names, ", "))
+	}
 }
 
 // VMConfigFromFlags builds VMConfig for create/run commands.
