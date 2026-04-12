@@ -12,15 +12,12 @@ import (
 	"sync"
 )
 
-// PAX record keys for our custom sparse format.
-// The tar entry Size equals the sum of data segment lengths (not the logical
-// file size), so only actual data is stored and compressed.
+// PAX record keys for Cocoon's sparse tar format.
 const (
 	paxSparseMap  = "COCOON.sparse.map"
 	paxSparseSize = "COCOON.sparse.size"
 
-	// sparseBlockSize is the block size used for zero-detection during extraction.
-	// Matching the typical filesystem block size ensures seeks create actual holes.
+	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
 )
 
@@ -30,8 +27,7 @@ type sparseSegment struct {
 	Length int64 `json:"l"`
 }
 
-// TarDir writes all regular files in dir into tw as flat tar entries (no directory nesting).
-// On Linux, sparse files are detected and only their data segments are stored.
+// TarDir writes regular files in dir into tw as flat tar entries.
 func TarDir(tw *tar.Writer, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -67,12 +63,7 @@ func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) e
 	return nil
 }
 
-// ExtractTar extracts tar entries as flat files into dir.
-// Only regular files are extracted; the base name is used to prevent path traversal.
-//
-// Entries with COCOON.sparse PAX records are extracted using the embedded
-// sparse map, writing data segments to their original offsets and leaving
-// holes untouched. This preserves sparsity without scanning for zero blocks.
+// ExtractTar extracts flat tar entries into dir.
 func ExtractTar(dir string, r io.Reader) error {
 	tr := tar.NewReader(r)
 	for {
@@ -111,9 +102,7 @@ func ExtractTar(dir string, r io.Reader) error {
 	}
 }
 
-// extractFileSparse creates a sparse file at path.
-// It truncates the file to realSize (all holes), then writes each data
-// segment from r to the correct offset.
+// extractFileSparse restores a sparse file from its segment map.
 func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string) error {
 	var segments []sparseSegment
 	if err := json.Unmarshal([]byte(mapJSON), &segments); err != nil {
@@ -126,13 +115,10 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 	}
 	defer f.Close() //nolint:errcheck
 
-	// Set full logical size — the entire file starts as a hole.
 	if err := f.Truncate(realSize); err != nil {
 		return err
 	}
 
-	// Write each data segment to its correct offset.
-	// The tar entry contains concatenated segment data in order.
 	for _, seg := range segments {
 		if _, err := f.Seek(seg.Offset, io.SeekStart); err != nil {
 			return err
@@ -183,8 +169,7 @@ func extractFile(path string, r io.Reader, perm os.FileMode) error {
 		}
 	}
 
-	// If the file ends with a hole, the OS file size won't reflect the seek.
-	// Truncate sets the correct logical size.
+	// Seeked holes at EOF do not extend file size, so fix it with Truncate.
 	if endsWithHole {
 		if err := f.Truncate(total); err != nil {
 			return err
@@ -194,8 +179,7 @@ func extractFile(path string, r io.Reader, perm os.FileMode) error {
 	return f.Sync()
 }
 
-// writeBlockSparse writes chunk to f. If chunk is all zeros, it seeks forward
-// (creating a hole) instead. Returns whether the block was a hole.
+// writeBlockSparse seeks over all-zero chunks instead of writing them.
 func writeBlockSparse(f *os.File, chunk []byte) (hole bool, err error) {
 	if isAllZero(chunk) {
 		_, err = f.Seek(int64(len(chunk)), io.SeekCurrent)

@@ -28,11 +28,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// hypervisorFactory binds a hypervisor type to its constructor. The
-// ordered slice below is the single source of truth for iteration
-// (InitAllHypervisors) AND keyed lookup (InitHypervisor) — a map would
-// introduce non-deterministic resolution when the same VM name exists
-// in multiple backends.
+// hypervisorFactory keeps backend lookup and iteration order together.
 type hypervisorFactory struct {
 	typ  config.HypervisorType
 	ctor func(*config.Config) (hypervisor.Hypervisor, error)
@@ -140,10 +136,7 @@ func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
 	return h, nil
 }
 
-// InitAllHypervisors initializes all registered backends for GC.
-// Iteration order is deterministic (follows hypervisorFactories).
-// Returns error if any backend fails — GC must not proceed without
-// full blob pinning or it risks deleting referenced layers.
+// InitAllHypervisors initializes every backend in deterministic order.
 func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
 	result := make([]hypervisor.Hypervisor, 0, len(hypervisorFactories))
 	for _, f := range hypervisorFactories {
@@ -156,9 +149,7 @@ func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
 	return result, nil
 }
 
-// FindHypervisor returns the backend that owns the given VM ref.
-// Errors: ErrNotFound (no match), ErrAmbiguous (>1 match), or a
-// propagated backend read error.
+// FindHypervisor returns the unique backend that owns ref.
 func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, error) {
 	hypers, err := InitAllHypervisors(conf)
 	if err != nil {
@@ -167,10 +158,7 @@ func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hyper
 	return resolveVMOwner(ctx, hypers, ref)
 }
 
-// ListAllVMs returns VMs from all registered backends, merged.
-// A backend read error is returned immediately; partial results are
-// not silently accepted — a corrupt or transient-failing backend must
-// be visible to the user instead of hiding half the fleet.
+// ListAllVMs returns merged VM lists from all backends.
 func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.VM, error) {
 	var all []*types.VM
 	for _, h := range hypers {
@@ -183,9 +171,7 @@ func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.V
 	return all, nil
 }
 
-// RouteRefs groups VM refs by their owning backend.
-// Errors: ErrNotFound (a ref has no owner), ErrAmbiguous (a ref has
-// multiple owners), or a propagated backend read error.
+// RouteRefs groups VM refs by owning backend.
 func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []string) (map[hypervisor.Hypervisor][]string, error) {
 	result := map[hypervisor.Hypervisor][]string{}
 	for _, ref := range refs {
@@ -198,15 +184,7 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
-// resolveVMOwner probes every backend for ref and returns:
-//   - the sole owning backend on single match
-//   - hypervisor.ErrNotFound wrapped if no backend has it
-//   - hypervisor.ErrAmbiguous wrapped if >1 backend has it
-//
-// Real read errors (corrupted DB, transient I/O) are propagated rather
-// than swallowed as misses. Shared helper for FindHypervisor and
-// RouteRefs; stays private because it does not make sense outside the
-// cmd-layer multi-backend dispatch.
+// resolveVMOwner returns the single backend that owns ref.
 func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, error) {
 	var matches []hypervisor.Hypervisor
 	for _, h := range hypers {
@@ -252,10 +230,7 @@ func InitSnapshot(conf *config.Config) (snapshot.Snapshot, error) {
 	return s, nil
 }
 
-// ResolveImage resolves an image reference to StorageConfigs + BootConfig.
-// If the ref resolves in more than one backend, returns ErrAmbiguous —
-// the caller must rename one of the conflicting entries rather than
-// accept a silent pick from a fixed backend order.
+// ResolveImage resolves vmCfg.Image across image backends.
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	vms := []*types.VMConfig{vmCfg}
 	var owner imagebackend.Images
@@ -282,9 +257,7 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 	return storageConfigs, bootCfg, nil
 }
 
-// ResolveImageOwner probes backends and returns the single backend that
-// has the given image ref, or an error. Used by image rm / inspect to
-// avoid the "iterate and delete from all" foot-gun.
+// ResolveImageOwner returns the single backend that owns ref.
 func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, error) {
 	var matches []imagebackend.Images
 	for _, b := range backends {

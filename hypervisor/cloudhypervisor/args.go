@@ -13,19 +13,13 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// validateHostCPU is a local alias for hypervisor.ValidateHostCPU so
-// CH entry points (Create, cloneSetup, Restore, DirectRestore) can
-// call it without importing the parent package under a new name.
+// Local alias for shared CPU validation.
 var validateHostCPU = hypervisor.ValidateHostCPU
 
 const (
 	// defaultDiskQueueSize is the virtio-blk queue depth per device.
-	// 512 doubles the CH default (256) to allow more in-flight I/O,
-	// improving random write throughput with moderate memory overhead.
 	defaultDiskQueueSize = 512
-	// defaultBalloon is the memory divisor for balloon sizing: mem/defaultBalloon
-	// gives the initial balloon size (25% of total memory). The balloon starts
-	// inflated to 75%, allowing OOM deflation headroom.
+	// defaultBalloon sizes the initial balloon as mem/defaultBalloon.
 	defaultBalloon = 4
 	cidataFile     = "cidata.img"
 )
@@ -34,8 +28,6 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
-	// CPU was validated against runtime.NumCPU() at create/restore/clone
-	// time (see ValidateHostCPU). buildVMConfig trusts rec.Config.CPU.
 	maxVCPUs := runtime.NumCPU()
 
 	cfg := &chVMConfig{
@@ -53,11 +45,7 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 		cfg.Console = &chRuntimeFile{Mode: "Off"}
 	}
 
-	// Balloon: 25% of memory, only when memory >= 256 MiB.
-	// Disabled for Windows: virtio-win balloon driver >= 0.1.262 retries
-	// deflation on host timeout (PR #1157) instead of giving up, causing
-	// 100% CPU for minutes during shutdown and preventing ResetSystem from
-	// reaching Cloud Hypervisor's ACPI shutdown port.
+	// Disable balloon on Windows; the driver can spin during shutdown.
 	if mem >= minBalloonMemory && !rec.Config.Windows {
 		cfg.Balloon = &chBalloon{
 			Size:              mem / defaultBalloon, //nolint:mnd
@@ -111,28 +99,21 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount int) chDis
 		QueueSize: defaultDiskQueueSize,
 	}
 
-	// Writable disks use O_DIRECT to bypass host page cache, avoiding
-	// fdatasync storms on guest flush. Readonly disks keep page cache
-	// for shared base image benefit (DirectIO defaults to false).
+	// Cache readonly bases, use O_DIRECT for writable disks.
 	d.DirectIO = !storageConfig.RO
 
 	switch {
 	case filepath.Ext(storageConfig.Path) == ".qcow2":
-		// cloudimg qcow2 overlay: CH has its own L2/refcount LRU cache.
 		d.ImageType = "Qcow2"
 		d.BackingFiles = !storageConfig.RO
 	case storageConfig.RO:
-		// OCI EROFS layer: readonly, host page cache shared across VMs.
 		d.ImageType = "Raw"
 	default:
-		// OCI COW raw: writable sparse disk.
 		d.ImageType = "Raw"
 		d.Sparse = true
 	}
 
-	// Bind each virtio-blk queue to its corresponding vCPU to reduce
-	// cross-core cache bouncing on writable disks. Skip for readonly
-	// disks where IO is low and fully served by page cache.
+	// Pin writable blk queues to vCPUs.
 	if cpuCount > 1 && !storageConfig.RO {
 		d.QueueAffinity = make([]chQueueAffinity, cpuCount)
 		for i := range d.QueueAffinity {
@@ -142,8 +123,7 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount int) chDis
 	return d
 }
 
-// DebugDiskCLIArgs returns user-facing CH disk CLI args using the same
-// storage-to-disk mapping as the runtime launch path.
+// DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
 func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount int) []string {
 	args := make([]string, 0, len(storageConfigs))
 	for _, storageConfig := range storageConfigs {
@@ -153,8 +133,6 @@ func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount int) []str
 }
 
 // buildCLIArgs converts a chVMConfig into cloud-hypervisor CLI arguments.
-// The resulting args include --api-socket so the socket remains available
-// for later control operations (stop, shutdown, power-button).
 func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	args := []string{"--api-socket", socketPath}
 
@@ -219,7 +197,7 @@ func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	return args
 }
 
-// kvBuilder accumulates key=value pairs for CH CLI arguments.
+// kvBuilder accumulates key=value CLI fragments.
 type kvBuilder []string
 
 func (b *kvBuilder) add(kv string) { *b = append(*b, kv) }
@@ -280,8 +258,7 @@ func runtimeFiletoCLIArg(c *chRuntimeFile) string {
 	}
 }
 
-// queueAffinityToCLI converts structured queue affinity to CH CLI format.
-// e.g. []chQueueAffinity{{0,[0]},{1,[1]}} → "[0@[0],1@[1]]"
+// queueAffinityToCLI converts queue affinity to CH CLI format.
 func queueAffinityToCLI(qa []chQueueAffinity) string {
 	parts := make([]string, len(qa))
 	for i, a := range qa {
@@ -294,23 +271,12 @@ func queueAffinityToCLI(qa []chQueueAffinity) string {
 	return "[" + strings.Join(parts, ",") + "]"
 }
 
-// isCidataDisk reports whether a storage config is the cloud-init cidata disk.
+// isCidataDisk reports whether sc is the cloud-init disk.
 func isCidataDisk(sc *types.StorageConfig) bool {
 	return filepath.Base(sc.Path) == cidataFile
 }
 
-// activeDisks returns the storage configs currently attached to the
-// running VM. cloudimg VMs that have already booted once drop their
-// cidata disk on subsequent starts (cloud-init has already consumed
-// it), so both the launch path (buildVMConfig) and the restore path
-// (patchCHConfig) must use this filtered view — otherwise the record's
-// StorageConfigs (which still carries cidata) disagrees with the
-// live config.json and patchCHConfig hard-fails on disk-count mismatch.
-//
-// NOTE: the returned slice holds pointers that alias rec.StorageConfigs.
-// Callers must treat elements as read-only; mutating a returned entry
-// mutates the underlying VMRecord. All current callers (buildVMConfig,
-// restoreAfterExtract) only read.
+// activeDisks filters cidata out of post-first-boot cloudimg VMs.
 func activeDisks(rec *hypervisor.VMRecord) []*types.StorageConfig {
 	skipCidata := rec.FirstBooted && !isDirectBoot(rec.BootConfig)
 	out := make([]*types.StorageConfig, 0, len(rec.StorageConfigs))

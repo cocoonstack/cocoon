@@ -122,23 +122,7 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
-// MergeDirInto moves every file under src into the corresponding
-// path under dst, overwriting existing entries. Used by the restore
-// path to stage a snapshot extraction to a scratch dir first, then
-// swap staged files into the live runDir only after the extraction
-// has been proven usable — without this, a truncated or corrupt
-// snapshot stream would destroy the running VM's state before the
-// replacement was in a usable form.
-//
-// Parent directories are created as needed. Files are moved via
-// os.Rename (same-filesystem assumption, which holds because the
-// staging dir lives next to the destination). Directories in src
-// that already exist in dst are merged recursively; the staging dir
-// itself is left empty on success and should be removed by the
-// caller. filepath.Walk visits each directory before its children,
-// so by the time a file is processed its parent already exists in
-// dst from the previous directory-visit step — no per-file MkdirAll
-// is needed.
+// MergeDirInto renames every entry under src into the matching path under dst.
 func MergeDirInto(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -162,14 +146,7 @@ func MergeDirInto(src, dst string) error {
 	})
 }
 
-// ValidateHostCPU rejects VM configs that request more vCPUs than the
-// host has cores. Called at every entry point that accepts a new
-// VMConfig (Create, Restore, Clone, DirectClone, DirectRestore) so
-// backends can trust rec.Config.CPU == runtime vCPU count. Without
-// this, the CH backend used to silently clamp in buildVMConfig, which
-// left network queue counts (derived from the unclamped vmCfg.CPU)
-// and persisted VM records (kept the original request) out of sync
-// with the actual runtime boot_vcpus value.
+// ValidateHostCPU rejects VM configs that exceed host cores.
 func ValidateHostCPU(cpu int) error {
 	maxCPU := runtime.NumCPU()
 	if cpu > maxCPU {
@@ -206,8 +183,7 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// WaitForSocket polls until socketPath is connectable, the process exits, or
-// the timeout/context fires.
+// WaitForSocket polls until socketPath is connectable or the process exits.
 func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time.Duration, processName string) error {
 	return utils.WaitFor(ctx, timeout, 100*time.Millisecond, func() (bool, error) { //nolint:mnd
 		if utils.CheckSocket(socketPath) == nil {
@@ -220,9 +196,7 @@ func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time
 	})
 }
 
-// EnterNetns locks the OS thread, saves the current netns, and switches
-// to the target netns. The forked child process inherits the new netns.
-// Returns a restore function that must be deferred by the caller.
+// EnterNetns switches the current thread into nsPath and returns a restore func.
 func EnterNetns(nsPath string) (restore func(), err error) {
 	runtime.LockOSThread()
 

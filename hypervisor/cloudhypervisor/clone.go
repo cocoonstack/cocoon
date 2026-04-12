@@ -19,8 +19,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Clone creates a new VM from a snapshot tar stream via vm.restore.
-// Three phases: placeholder record → extract+prepare → launch+finalize.
+// Clone creates a new VM from a snapshot tar stream.
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (_ *types.VM, err error) {
 	runDir, logDir, now, cleanup, err := ch.cloneSetup(ctx, vmID, vmCfg, snapshotConfig)
 	if err != nil {
@@ -40,9 +39,7 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 }
 
 func (ch *CloudHypervisor) cloneSetup(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotConfig *types.SnapshotConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
-	// Validate CPU at the shared entry so both Clone (stream) and
-	// DirectClone (local dir) reject over-core requests before
-	// touching the DB.
+	// Shared validation for stream and direct clone.
 	if err = validateHostCPU(vmCfg.CPU); err != nil {
 		return "", "", time.Time{}, nil, err
 	}
@@ -70,8 +67,7 @@ func (ch *CloudHypervisor) cloneSetup(ctx context.Context, vmID string, vmCfg *t
 	return runDir, logDir, now, cleanup, nil
 }
 
-// cloneAfterExtract contains all clone logic after snapshot data is in runDir.
-// Shared by Clone (tar stream) and DirectClone (direct file copy).
+// cloneAfterExtract resumes from snapshot data already placed in runDir.
 func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, runDir, logDir string, now time.Time) (*types.VM, error) {
 	logger := log.WithFunc("cloudhypervisor.Clone")
 
@@ -90,7 +86,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("update COW path: %w", err)
 	}
 
-	// Update cidata path (cloudimg only; may be absent if snapshot was taken after restart).
+	// Snapshot may omit cidata if taken after restart.
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
 
 	if err = hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); err != nil {
@@ -104,15 +100,13 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 
 	stateReplacements := buildStateReplacements(chCfg, storageConfigs)
 
-	// Cloudimg: regenerate cidata with clone's identity and network config.
+	// Regenerate cidata for the clone's identity and network config.
 	storageConfigs, err = ch.ensureCloneCidata(vmID, vmCfg, networkConfigs, storageConfigs, directBoot)
 	if err != nil {
 		return nil, err
 	}
 
-	// vm.restore requires config/state device tree equality.
-	// If snapshot had no cidata disk, patch only snapshot disks and hotplug cidata later.
-	// Windows VMs never have cidata, so skip the trim entirely.
+	// If the snapshot lacked cidata, patch only snapshot disks and hotplug cidata later.
 	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows || hadCidataInSnapshot)
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
@@ -127,13 +121,13 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
 
-	// Patch state.json: disk paths (informational, prevents debugging confusion).
+	// Keep state.json disk paths readable after cloning.
 	stateJSONPath := filepath.Join(runDir, "state.json")
 	if err = patchStateJSON(stateJSONPath, stateReplacements); err != nil {
 		return nil, fmt.Errorf("patch state.json: %w", err)
 	}
 
-	// Update bootCfg.Cmdline for restarts (new VM name, IP, DNS).
+	// Refresh direct-boot cmdline for later restarts.
 	if directBoot && bootCfg != nil {
 		dns, dnsErr := ch.conf.DNSServers()
 		if dnsErr != nil {
@@ -142,7 +136,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		bootCfg.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
 	}
 
-	// Launch CH, restore, finalize.
 	sockPath := hypervisor.SocketPath(runDir)
 	args := []string{"--api-socket", sockPath}
 	ch.saveCmdline(ctx, &hypervisor.VMRecord{RunDir: runDir}, args)
@@ -162,7 +155,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, err
 	}
 
-	// Finalize record → Running.
 	info := types.VM{
 		ID:             vmID,
 		Hypervisor:     typ,
@@ -181,17 +173,8 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		}
 		r.VM = info
 		r.BootConfig = bootCfg
-		// NOTE: do NOT overwrite r.ImageBlobIDs with values derived from
-		// rebuilt storageConfigs. On the cloudimg path those configs hold
-		// the clone's overlay path (not the base blob path), so
-		// ExtractBlobIDs would compute a garbage digest and GC would
-		// eventually delete the real base image the clone depends on.
-		// ReserveVM already pinned snapshotConfig.ImageBlobIDs during
-		// cloneSetup — trust the snapshot's view.
-		//
-		// Clone VM is already running with cidata attached; cloud-init reinit
-		// is done via post-clone hints. Mark as first-booted so the next
-		// cold boot (stop+start) skips cidata — no need for a second cloud-init run.
+		// Preserve the snapshot's blob pin set; rebuilt storage holds overlay paths.
+		// Mark the clone first-booted so later cold boots skip cidata.
 		r.FirstBooted = true
 		return nil
 	}); err != nil {
@@ -224,9 +207,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 	}
 	hc := utils.NewSocketHTTPClient(sockPath)
 
-	// Hot-swap NICs while paused: remove snapshot's virtio-net devices (which carry
-	// the old MAC baked in binary device state), then add fresh ones with correct MAC.
-	// The guest will discover the new devices via ACPI GED notification on resume.
+	// Replace snapshot NICs so the guest resumes with the clone's MACs.
 	if err = hotSwapNets(ctx, hc, snapshotCfg.Nets, networkConfigs); err != nil {
 		return fmt.Errorf("hot-swap NICs: %w", err)
 	}
@@ -254,7 +235,7 @@ func (ch *CloudHypervisor) ensureCloneCidata(vmID string, vmCfg *types.VMConfig,
 		return nil, fmt.Errorf("generate cidata: %w", err)
 	}
 	cidataPath := ch.conf.CidataPath(vmID)
-	// Keep cidata in VM record for future starts; snapshot may not carry it.
+	// Keep cidata in the record for later cold boots even if the snapshot omitted it.
 	if !slices.ContainsFunc(storageConfigs, isCidataDisk) {
 		storageConfigs = append(storageConfigs, &types.StorageConfig{
 			Path: cidataPath,

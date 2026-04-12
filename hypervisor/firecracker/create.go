@@ -17,9 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Create registers a new VM, prepares the COW disk, and persists the record.
-// The VM is left in Created state — call Start to launch it.
-// FC only supports OCI images (direct kernel boot).
+// Create reserves a VM record, prepares disks, and leaves the VM in Created state.
 func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, bootCfg *types.BootConfig) (_ *types.VM, err error) {
 	if err = hypervisor.ValidateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
@@ -79,8 +77,7 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 	return &info, nil
 }
 
-// prepareOCI creates a raw COW disk, appends the COW StorageConfig, and builds
-// the kernel cmdline with device-path mappings (FC lacks virtio serial support).
+// prepareOCI creates the raw COW disk and final kernel cmdline.
 func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, boot *types.BootConfig) ([]*types.StorageConfig, error) {
 	cowPath := fc.conf.COWRawPath(vmID)
 
@@ -107,8 +104,7 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 		Serial: hypervisor.CowSerial,
 	})
 
-	// FC requires uncompressed ELF kernel (vmlinux), not compressed vmlinuz.
-	// Extract and cache vmlinux alongside vmlinuz if needed.
+	// FC needs an uncompressed ELF kernel.
 	if boot != nil && boot.KernelPath != "" {
 		vmlinuxPath, extractErr := EnsureVmlinux(boot.KernelPath)
 		if extractErr != nil {
@@ -127,14 +123,10 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	return storageConfigs, nil
 }
 
-// EnsureVmlinux returns the path to an uncompressed ELF kernel.
-// If the kernel at path is already ELF, returns path as-is.
-// Otherwise, extracts the uncompressed kernel from the compressed vmlinuz
-// and caches it as "vmlinux" in the same directory.
+// EnsureVmlinux returns an uncompressed ELF kernel path.
 func EnsureVmlinux(kernelPath string) (string, error) {
 	elfMagic := []byte{0x7f, 'E', 'L', 'F'}
 
-	// Quick check: read just the magic bytes to detect ELF without loading the full file.
 	f, err := os.Open(kernelPath) //nolint:gosec
 	if err != nil {
 		return "", fmt.Errorf("open kernel: %w", err)
@@ -146,29 +138,25 @@ func EnsureVmlinux(kernelPath string) (string, error) {
 		return "", fmt.Errorf("read kernel magic: %w", err)
 	}
 	if bytes.Equal(magic[:], elfMagic) {
-		return kernelPath, nil // already uncompressed
+		return kernelPath, nil
 	}
 
-	// Check cache before doing expensive decompression.
 	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
 	if _, statErr := os.Stat(vmlinuxPath); statErr == nil {
-		return vmlinuxPath, nil // already cached
+		return vmlinuxPath, nil
 	}
 
-	// Full read only when decompression is needed.
 	data, err := os.ReadFile(kernelPath) //nolint:gosec
 	if err != nil {
 		return "", fmt.Errorf("read kernel: %w", err)
 	}
 
-	// Try known compression formats: zstd (Ubuntu 24.04+), then gzip.
 	decompressed, decompErr := decompressKernel(data)
 	if decompErr != nil {
 		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
 	}
 
-	// Write atomically via temp file + rename to prevent concurrent readers
-	// from observing a partially written kernel.
+	// Write atomically so readers never see a partial kernel.
 	tmpFile, tmpErr := os.CreateTemp(filepath.Dir(vmlinuxPath), ".vmlinux-*")
 	if tmpErr != nil {
 		return "", fmt.Errorf("create temp vmlinux: %w", tmpErr)
@@ -190,8 +178,7 @@ func EnsureVmlinux(kernelPath string) (string, error) {
 	return vmlinuxPath, nil
 }
 
-// decompressKernel scans a bzImage for known compression formats and
-// returns the decompressed ELF kernel.
+// decompressKernel scans a bzImage for supported compressed payloads.
 func decompressKernel(data []byte) ([]byte, error) {
 	type kernelCodec struct {
 		name  string
@@ -226,14 +213,12 @@ func decompressKernel(data []byte) ([]byte, error) {
 }
 
 func decompressZstd(data []byte) ([]byte, error) {
-	// Use zstd CLI: the Go library's decoder may not handle the kernel's
-	// zstd stream correctly, and the bzImage has trailing data after the
-	// zstd frame which causes errors even with valid decompression.
+	// Use the zstd CLI because bzImage payloads may have trailing data.
 	cmd := exec.Command("zstd", "-d", "-c", "--no-check") //nolint:gosec
 	cmd.Stdin = bytes.NewReader(data)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	_ = cmd.Run() // ignore exit code — trailing data after frame causes non-zero exit
+	_ = cmd.Run() // trailing data after the frame may yield a non-zero exit
 	if stdout.Len() == 0 {
 		return nil, fmt.Errorf("zstd produced no output (is zstd installed?)")
 	}
@@ -250,8 +235,6 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 // buildCmdline generates the kernel cmdline for FC VMs.
-// FC doesn't support virtio serial, so disks are referenced by device path
-// (/dev/vda, /dev/vdb, ...) based on the order drives are attached.
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	nLayers := 0
 	for _, s := range storageConfigs {

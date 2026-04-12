@@ -17,17 +17,9 @@ import (
 // CowSerial is re-exported for backward compatibility with cmd/vm/debug.go.
 const CowSerial = hypervisor.CowSerial
 
-// Create registers a new VM, prepares the COW disk, and persists the record.
-// The VM is left in Created state — call Start to launch it.
-//
-// To avoid a race with GC (which scans directories and removes those not in
-// the DB), we write a placeholder record first, then create directories and
-// prepare disks, and finally update the record to Created state.
+// Create reserves a VM record, prepares disks, and leaves the VM in Created state.
 func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, bootCfg *types.BootConfig) (_ *types.VM, err error) {
-	// Fail fast on CPU requests that exceed host cores. The old silent
-	// clamp in buildVMConfig desynchronized rec.Config.CPU (kept user
-	// value), network queue counts (derived from user value), and the
-	// CH boot_vcpus (clamped).
+	// Reject over-core requests before any on-disk work.
 	if err = validateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
 	}
@@ -38,8 +30,7 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 
-	// Rollback on any failure after the placeholder is written.
-	// All cleanup ops are idempotent — safe even if dirs/records don't exist yet.
+	// Cleanup is idempotent, so defer it once.
 	defer func() {
 		if err != nil {
 			_ = hypervisor.RemoveVMDirs(runDir, logDir)
@@ -47,12 +38,10 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 		}
 	}()
 
-	// Step 1: write a placeholder record so GC won't treat our dirs as orphans.
 	if err = ch.ReserveVM(ctx, id, vmCfg, blobIDs, runDir, logDir); err != nil {
 		return nil, fmt.Errorf("reserve VM record: %w", err)
 	}
 
-	// Step 2: create directories and prepare disks.
 	if err = utils.EnsureDirs(runDir, logDir); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
@@ -73,7 +62,6 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 		return nil, err
 	}
 
-	// Step 3: finalize the record with full data and Created state.
 	info := types.VM{
 		ID: id, Hypervisor: typ, State: types.VMStateCreated,
 		Config:         *vmCfg,
@@ -98,14 +86,11 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 	return &info, nil
 }
 
-// prepareOCI creates a raw COW disk, appends the COW StorageConfig, and builds
-// the kernel cmdline with layer/cow serial mappings.
-// Returns the updated StorageConfig slice.
+// prepareOCI creates the raw COW disk and final kernel cmdline.
 func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, boot *types.BootConfig) ([]*types.StorageConfig, error) {
 	cowPath := ch.conf.COWRawPath(vmID)
 
-	// Create sparse COW file
-	// os.Truncate requires the file to exist; create it first.
+	// Create the sparse COW file before truncating it.
 	f, err := os.OpenFile(cowPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("create COW: %w", err)
@@ -124,7 +109,6 @@ func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *t
 		return nil, fmt.Errorf("mkfs.ext4 COW: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	// Append COW StorageConfig.
 	storageConfigs = append(storageConfigs, &types.StorageConfig{
 		Path:   cowPath,
 		RO:     false,
@@ -139,8 +123,7 @@ func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *t
 	return storageConfigs, nil
 }
 
-// prepareCloudimg creates a qcow2 COW overlay backed by the base image blob.
-// Returns the updated StorageConfig slice (replaced with the overlay).
+// prepareCloudimg creates the overlay and optional cidata disk.
 func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig) ([]*types.StorageConfig, error) {
 	if len(storageConfigs) == 0 {
 		return nil, fmt.Errorf("cloudimg: no base image StorageConfig")
@@ -148,7 +131,6 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	basePath := storageConfigs[0].Path
 	overlayPath := ch.conf.OverlayPath(vmID)
 
-	// qemu-img create -f qcow2 -F qcow2 -b <base> <overlay>
 	if out, err := exec.CommandContext(ctx, //nolint:gosec
 		"qemu-img", "create", "-f", "qcow2", "-F", "qcow2",
 		"-b", basePath, overlayPath,
@@ -156,26 +138,22 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 		return nil, fmt.Errorf("qemu-img create overlay: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	// Expand overlay if requested size exceeds the base image's virtual size.
 	if vmCfg.Storage > 0 {
 		if err := qemuExpandImage(ctx, overlayPath, vmCfg.Storage, false); err != nil {
 			return nil, fmt.Errorf("expand overlay: %w", err)
 		}
 	}
 
-	// Windows: no cloud-init cidata disk.
 	if vmCfg.Windows {
 		return []*types.StorageConfig{
 			{Path: overlayPath, RO: false},
 		}, nil
 	}
 
-	// Generate cloud-init cidata disk.
 	if err := ch.generateCidata(vmID, vmCfg, networkConfigs); err != nil {
 		return nil, err
 	}
 
-	// Replace StorageConfigs with the overlay + cidata (base is accessed via backing file chain).
 	cidataPath := ch.conf.CidataPath(vmID)
 	return []*types.StorageConfig{
 		{Path: overlayPath, RO: false},
@@ -183,10 +161,7 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	}, nil
 }
 
-// generateCidata creates a fresh cloud-init NoCloud cidata disk image (FAT12)
-// at the VM's canonical cidata path. Contains instance-id, hostname,
-// root password, network-config, and write_files for cloud-init initialization.
-// Used by both Create (prepareCloudimg) and Clone.
+// generateCidata writes the NoCloud cidata image used by Create and Clone.
 func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig) error {
 	dns, err := ch.conf.DNSServers()
 	if err != nil {

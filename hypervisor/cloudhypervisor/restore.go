@@ -16,16 +16,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Restore reverts a running VM to a previous snapshot's state.
-//
-// The CH process is killed and restarted with the snapshot's memory and disk state.
-// Network is preserved — same netns, same tap, same MAC/IP.
-// vmCfg carries the final resource config (already validated >= snapshot values).
-//
-// The incoming snapshot is extracted into a scratch staging directory
-// BEFORE the running VM is killed. A truncated or corrupt snapshot
-// stream therefore errors out with the previous runnable state still
-// intact; only a fully extracted snapshot is swapped into rec.RunDir.
+// Restore stages a snapshot tar before replacing the running VM state.
 func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader) (*types.VM, error) {
 	if err := validateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
@@ -36,16 +27,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		return nil, err
 	}
 
-	// Stage: extract into a sibling scratch dir while the VM is still
-	// running. If extraction fails, clean up and return — the VM is
-	// untouched and the caller can retry.
-	//
-	// Clear any remnants of a previously interrupted restore: an
-	// abrupt exit (SIGKILL, panic, power loss) may have left files
-	// behind that the deferred RemoveAll never ran, and ExtractTar
-	// only overwrites entries present in the new tar. Without the
-	// pre-clear, MergeDirInto would later drag those orphan files
-	// into rec.RunDir and poison the restored VM state.
+	// Use a clean sibling staging dir before touching the live runDir.
 	stagingDir := rec.RunDir + ".restore-staging"
 	if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
 		return nil, fmt.Errorf("clear staging dir: %w", rmErr)
@@ -58,13 +40,10 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		return nil, fmt.Errorf("extract snapshot: %w", extractErr)
 	}
 
-	// Commit: kill the running VM, then swap staged files into runDir.
-	// killForRestore already marked-error on partial kill failures.
+	// Once staging succeeds, stop the current VM and swap files into place.
 	if killErr := ch.killForRestore(ctx, vmID, rec); killErr != nil {
 		return nil, killErr
 	}
-	// MergeDirInto uses os.Rename which atomically replaces an
-	// existing destination, so a pre-remove of cowPath is redundant.
 	if mergeErr := hypervisor.MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
 		ch.MarkError(ctx, vmID)
 		return nil, fmt.Errorf("apply staged snapshot: %w", mergeErr)
@@ -73,12 +52,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot, cowPath)
 }
 
-// resolveForRestore loads the VM record and validates the state is
-// runnable. Does NOT kill the running VM — that's deferred to
-// killForRestore, which runs only after the snapshot has been
-// successfully staged. DirectRestore still uses prepareRestore
-// (below) which does the old combined flow because it consumes a
-// pre-extracted local directory, not a streamable tar.
+// resolveForRestore loads the record without stopping the running VM.
 func (ch *CloudHypervisor) resolveForRestore(ctx context.Context, vmRef string) (string, *hypervisor.VMRecord, bool, string, error) {
 	vmID, err := ch.ResolveRef(ctx, vmRef)
 	if err != nil {
@@ -96,11 +70,7 @@ func (ch *CloudHypervisor) resolveForRestore(ctx context.Context, vmRef string) 
 	return vmID, &rec, directBoot, cowPath, nil
 }
 
-// killForRestore terminates the running CH process and cleans up
-// runtime files. Called after a snapshot has been staged successfully.
-// On partial termination failure the VM record is marked with Error
-// state so `vm ls` surfaces the broken state rather than leaving a
-// stale "running" record.
+// killForRestore stops the running CH process and cleans up runtime files.
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
 	sockPath := hypervisor.SocketPath(rec.RunDir)
 	killErr := ch.WithRunningVM(ctx, rec, func(pid int) error {
@@ -114,11 +84,7 @@ func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec 
 	return nil
 }
 
-// prepareRestore is used by DirectRestore (local-dir-based restore
-// that doesn't go through tar streaming) and retains the legacy
-// "resolve + kill in one call" flow. Stream Restore uses
-// resolveForRestore + killForRestore so extraction runs before
-// destructive work.
+// prepareRestore is the direct-restore helper that keeps the legacy resolve+kill flow.
 func (ch *CloudHypervisor) prepareRestore(ctx context.Context, vmRef string) (string, *hypervisor.VMRecord, bool, string, error) {
 	vmID, rec, directBoot, cowPath, err := ch.resolveForRestore(ctx, vmRef)
 	if err != nil {
@@ -130,8 +96,7 @@ func (ch *CloudHypervisor) prepareRestore(ctx context.Context, vmRef string) (st
 	return vmID, rec, directBoot, cowPath, nil
 }
 
-// restoreAfterExtract contains all restore logic after snapshot data is in runDir.
-// Shared by Restore (tar stream) and DirectRestore (direct file copy).
+// restoreAfterExtract resumes from snapshot data already placed in runDir.
 func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, directBoot bool, cowPath string) (_ *types.VM, err error) {
 	logger := log.WithFunc("cloudhypervisor.Restore")
 
@@ -142,12 +107,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	}()
 
 	chConfigPath := filepath.Join(rec.RunDir, "config.json")
-	// Use activeDisks to match the filtered view that buildVMConfig
-	// produced on the snapshotted start — a post-first-boot cloudimg
-	// snapshot has [overlay] only, while rec.StorageConfigs still
-	// carries [overlay, cidata]. patchCHConfig's disk-count guard
-	// would otherwise hard-fail after prepareRestore has already
-	// torn down the running VM.
+	// activeDisks keeps post-first-boot cloudimg restore aligned with config.json.
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: activeDisks(rec),
 		consoleSock:    hypervisor.ConsoleSockPath(rec.RunDir),

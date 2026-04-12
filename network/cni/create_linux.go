@@ -17,13 +17,10 @@ import (
 )
 
 // createNetns creates a named network namespace at /run/netns/{name}.
-// netns.NewNamed is NOT thread-safe (no LockOSThread, no netns restore),
-// so we handle that here.
 func createNetns(name string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	// Save current netns to restore after NewNamed pollutes the thread.
 	origNS, err := netns.Get()
 	if err != nil {
 		return fmt.Errorf("get current netns: %w", err)
@@ -36,16 +33,13 @@ func createNetns(name string) error {
 	}
 	_ = ns.Close()
 
-	// Restore: NewNamed leaves the thread in the new netns.
 	if err := netns.Set(origNS); err != nil {
 		return fmt.Errorf("restore netns: %w", err)
 	}
 	return nil
 }
 
-// deleteNetns removes a named network namespace.
-// Retries briefly because the kernel may still hold a reference to the netns
-// right after the CH process is killed (fd cleanup is asynchronous).
+// deleteNetns removes a named network namespace, retrying briefly after VM exit.
 func deleteNetns(ctx context.Context, name string) error {
 	return utils.WaitFor(ctx, time.Second, 100*time.Millisecond, func() (bool, error) { //nolint:mnd
 		err := netns.DeleteNamed(name)
@@ -53,13 +47,7 @@ func deleteNetns(ctx context.Context, name string) error {
 	})
 }
 
-// setupTCRedirect enters the target netns, wires ifName ↔ tapName using
-// TC ingress + mirred redirect, and returns ifName's MAC address.
-// The caller should pass this MAC to CH so the guest's virtio-net MAC
-// matches the CNI veth — required for anti-spoofing CNI plugins.
-// When overrideMAC is non-empty (recovery), the veth's hardware address is
-// set to the given value before proceeding, so the returned MAC matches
-// the persisted CH --net mac= value.
+// setupTCRedirect wires ifName <-> tapName inside the target netns and returns ifName's MAC.
 func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, error) {
 	var mac string
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
@@ -71,20 +59,13 @@ func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC str
 }
 
 // tcRedirectInNS runs inside the target netns.
-//  1. Flush IP from ifName (guest owns it, not the netns).
-//  2. Create tap device.
-//  3. Bring both interfaces up.
-//  4. Attach ingress qdisc to both.
-//  5. Add U32+mirred filters for bidirectional redirect.
 func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, error) {
-	// 1. Find CNI veth, optionally restore its MAC (recovery), then flush IP addresses.
 	link, err := netlink.LinkByName(ifName)
 	if err != nil {
 		return "", fmt.Errorf("find %s: %w", ifName, err)
 	}
 
-	// Recovery: set veth MAC back to persisted value so anti-spoofing
-	// plugins (Cilium, Calico eBPF) see the same MAC as CH --net mac=.
+	// Recovery restores the persisted MAC before traffic flows again.
 	if overrideMAC != "" {
 		hwAddr, parseErr := net.ParseMAC(overrideMAC)
 		if parseErr != nil {
@@ -95,7 +76,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// Re-read MAC after potential override (link.Attrs() is stale after LinkSetHardwareAddr).
+	// Link attrs are stale after LinkSetHardwareAddr.
 	if overrideMAC != "" {
 		link, err = netlink.LinkByName(ifName)
 		if err != nil {
@@ -114,12 +95,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// 2. Create tap device.
-	// VNET_HDR: allows kernel to parse virtio_net headers for checksum/GSO offload.
-	// Multi-queue: match CH num_queues so each vCPU gets its own TX/RX ring.
-	// Single-queue: ONE_QUEUE prevents packet drops on older kernels.
-	// IFF_NO_PI: both CH and FC open TAPs with IFF_NO_PI; the flag must
-	// match at attach time or TUNSETIFF returns EINVAL.
+	// Match hypervisor attach flags and queue layout.
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queues <= 1 {
 		queues = 1
@@ -144,22 +120,19 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		return "", fmt.Errorf("find tap %s: %w", tapName, err)
 	}
 
-	// Sync MTU: tap must match veth to avoid silent large-packet drops
-	// when CNI uses non-default MTU (e.g. 1450 for overlay, 9000 for jumbo).
+	// Keep tap MTU aligned with the veth.
 	if mtu := link.Attrs().MTU; mtu > 0 {
 		if mtuErr := netlink.LinkSetMTU(tapLink, mtu); mtuErr != nil {
 			return "", fmt.Errorf("set tap %s mtu %d: %w", tapName, mtu, mtuErr)
 		}
 	}
 
-	// 3. Bring both interfaces up.
 	for _, l := range []netlink.Link{link, tapLink} {
 		if upErr := netlink.LinkSetUp(l); upErr != nil {
 			return "", fmt.Errorf("set %s up: %w", l.Attrs().Name, upErr)
 		}
 	}
 
-	// 4. Attach ingress qdisc to both interfaces.
 	for _, l := range []netlink.Link{link, tapLink} {
 		qdisc := &netlink.Ingress{
 			QdiscAttrs: netlink.QdiscAttrs{
@@ -172,7 +145,6 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// 5. Bidirectional redirect: guest-facing NIC ingress ↔ its paired tap.
 	if err := addTCRedirect(link, tapLink); err != nil {
 		return "", fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
 	}
@@ -182,9 +154,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 	return mac, nil
 }
 
-// addTCRedirect adds a U32 catch-all filter on from's ingress that redirects
-// all packets to to's egress via mirred. TC_ACT_STOLEN ensures the packet is
-// consumed and never reaches the netns host stack.
+// addTCRedirect redirects all ingress packets from one link to another.
 func addTCRedirect(from, to netlink.Link) error {
 	filter := &netlink.U32{
 		FilterAttrs: netlink.FilterAttrs{

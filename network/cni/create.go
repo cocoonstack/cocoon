@@ -16,14 +16,7 @@ import (
 
 const defaultQueueSize = 256
 
-// Config creates the network namespace, runs CNI ADD for each NIC, sets up
-// TC redirect (eth↔tap) inside the netns, and returns NetworkConfigs ready for CH --net.
-//
-// Flow per NIC:
-//  1. Create named netns cocoon-{vmID}
-//  2. CNI ADD (containerID=vmID, netns path, ifName=eth{i})
-//  3. Inside netns: flush eth{i} IP, create a per-VM tap, wire via TC ingress mirred
-//  4. Return NetworkConfig{Tap: stable per-VM tap, Mac: generated, Network: CNI result}
+// Config creates the netns, runs CNI ADD, and wires each NIC to a tap via TC.
 func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types.VMConfig, existing ...*types.NetworkConfig) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
 		return nil, fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
@@ -32,29 +25,23 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 	if err != nil {
 		return nil, err
 	}
-	// Record the resolved name so it's persisted in the VM record.
-	// Ensures recovery uses the exact same conflist even if the default changes.
-	// This intentionally mutates the caller's VMConfig (documented on the interface).
+	// Persist the resolved conflist name for recovery.
 	vmCfg.Network = confList.Name
 	logger := log.WithFunc("cni.Config")
 
 	nsName := netnsName(vmID)
 	nsPath := netnsPath(vmID)
 
-	// Step 1: create named network namespace (platform-specific).
 	if err := createNetns(nsName); err != nil {
 		return nil, fmt.Errorf("create netns %s: %w", nsName, err)
 	}
 
-	// Track successfully added CNI interfaces for rollback.
-	// If store.Update at the end fails, retErr != nil triggers this defer.
-	// CNI DEL can run without persisted records (it uses RuntimeConf, not our DB).
+	// Track successful CNI ADDs for rollback.
 	var addedIFs []string
 	defer func() {
 		if retErr == nil {
 			return
 		}
-		// Rollback: CNI DEL for each successfully added NIC to release IPAM.
 		for _, ifn := range addedIFs {
 			rt := &libcni.RuntimeConf{
 				ContainerID: vmID,
@@ -72,18 +59,13 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		ifName := fmt.Sprintf("eth%d", i)
 		tapName := tapNameForVM(vmID, i)
 
-		// Step 2: CNI ADD — creates veth pair, assigns IP via IPAM.
 		rt := &libcni.RuntimeConf{
 			ContainerID: vmID,
 			NetNS:       nsPath,
 			IfName:      ifName,
 		}
 
-		// Recovery: release stale IPAM allocation, then re-add requesting
-		// the same IP. After host reboot, IPAM state files survive on disk
-		// but the netns is gone. DEL clears the old record; the IP= CNI_ARG
-		// tells host-local to allocate exactly the original address so the
-		// guest's static IP config still matches.
+		// Recovery asks host-local for the previously assigned IP again.
 		if i < len(existing) && existing[i] != nil {
 			if delErr := c.cniConf.DelNetworkList(ctx, confList, rt); delErr != nil {
 				logger.Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
@@ -104,11 +86,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 			return nil, fmt.Errorf("parse CNI result: %w", err)
 		}
 
-		// Step 3: inside netns — flush IP, create tap, wire via TC redirect (platform-specific).
-		// Returns eth0's MAC so the guest virtio-net uses the same address,
-		// required for anti-spoofing CNI plugins (Cilium, Calico eBPF, VPC ENI).
-		// On recovery, overrideMAC restores the original veth MAC to match
-		// the persisted CH --net mac= value.
+		// Mirror the veth MAC into the guest-facing virtio NIC.
 		var overrideMAC string
 		if i < len(existing) && existing[i] != nil {
 			overrideMAC = existing[i].Mac
@@ -136,12 +114,11 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 			i, ifName, logIP, logGW, tapName, mac)
 	}
 
-	// Recovery: DB records survived reboot, nothing to write.
 	if len(existing) > 0 {
 		return configs, nil
 	}
 
-	// Step 4: persist network records to DB.
+	// Persist fresh network records.
 	return configs, c.store.Update(ctx, func(idx *networkIndex) error {
 		for i, cfg := range configs {
 			netID, genErr := utils.GenerateID()
@@ -172,8 +149,7 @@ func tapNameForVM(vmID string, nic int) string {
 	return fmt.Sprintf("tap%s-%d", vmID, nic)
 }
 
-// netNumQueues returns the virtio-net num_queues for a given CPU count.
-// Each vCPU gets a TX/RX queue pair: cpu <= 1 → 2 (single pair), cpu > 1 → cpu * 2.
+// netNumQueues returns the virtio-net queue count for cpu.
 func netNumQueues(cpu int) int {
 	if cpu <= 1 {
 		return 2 //nolint:mnd
@@ -181,9 +157,7 @@ func netNumQueues(cpu int) int {
 	return cpu * 2 //nolint:mnd
 }
 
-// extractNetworkInfo parses the CNI ADD result into types.Network.
-// Returns (nil, nil) when CNI returns no IPs (e.g. macvlan without IPAM),
-// indicating the guest should use DHCP.
+// extractNetworkInfo converts a CNI ADD result into types.Network.
 func extractNetworkInfo(result cnitypes.Result) (*types.Network, error) {
 	newResult, err := current.NewResultFromResult(result)
 	if err != nil {
@@ -193,7 +167,6 @@ func extractNetworkInfo(result cnitypes.Result) (*types.Network, error) {
 		return nil, nil
 	}
 
-	// Find the first IPv4 address. Dual-stack CNI plugins may return IPv6 first.
 	for _, ipCfg := range newResult.IPs {
 		if ipCfg.Address.IP.To4() != nil {
 			ones, _ := ipCfg.Address.Mask.Size()

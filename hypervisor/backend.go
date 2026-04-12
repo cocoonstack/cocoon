@@ -25,18 +25,10 @@ const (
 	// CowSerial is the well-known virtio serial for the COW disk attached to OCI VMs.
 	CowSerial = "cocoon-cow"
 
-	// CreatingStateGCGrace is how long a VM can stay in "creating" state
-	// before GC treats it as a crash remnant and cleans it up.
+	// CreatingStateGCGrace bounds how long GC tolerates a "creating" VM.
 	CreatingStateGCGrace = 24 * time.Hour
 
-	// VMMemTransferTimeout is the per-call HTTP timeout for hypervisor API
-	// endpoints that move the entire guest memory (snapshot/restore). The
-	// default utils.HTTPTimeout (30s) is marginal for multi-GiB transfers
-	// on slow storage, and these operations have no useful retry semantics:
-	// they are non-idempotent (a partial snapshot overwrites files; a
-	// partial restore leaves the hypervisor in an undefined state), so
-	// callers must bypass the per-backend retry wrapper and issue a single
-	// call with this deadline.
+	// VMMemTransferTimeout is the single-shot timeout for snapshot/restore API calls.
 	VMMemTransferTimeout = 10 * time.Minute
 )
 
@@ -51,8 +43,6 @@ type BackendConfig interface {
 }
 
 // Backend provides shared store operations for hypervisor backends.
-// Embed this struct in backend implementations to avoid duplicating
-// store access patterns (resolve, load, state updates, VM iteration).
 type Backend struct {
 	Typ    string
 	Conf   BackendConfig
@@ -90,8 +80,7 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	})
 }
 
-// ToVM converts a VMRecord to a types.VM with runtime fields populated.
-// Deep-copies SnapshotIDs to prevent shared mutable reference to DB record.
+// ToVM converts a VMRecord into a types.VM.
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	info := rec.VM // value copy
 	info.Hypervisor = b.Typ
@@ -137,8 +126,7 @@ func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
 	})
 }
 
-// WithRunningVM verifies the VM process is alive, then calls fn with the PID.
-// Returns ErrNotRunning if the process is not alive.
+// WithRunningVM calls fn if rec still points to a live VM process.
 func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid int) error) error {
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	if pidErr != nil && !os.IsNotExist(pidErr) {
@@ -182,8 +170,7 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
-// ReserveVM writes a placeholder VMRecord (state=Creating) so GC won't
-// treat the VM's directories as orphans.
+// ReserveVM writes a placeholder VMRecord in Creating state.
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := time.Now()
 	return b.DB.Update(ctx, func(idx *VMIndex) error {
@@ -230,13 +217,13 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn fun
 	return result.Succeeded, result.Err()
 }
 
-// AbortLaunch kills a hypervisor process and removes runtime files after a failed launch.
+// AbortLaunch terminates a failed launch and removes runtime files.
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
 
-// BatchMarkStarted updates a batch of VMs to Running state with FirstBooted=true.
+// BatchMarkStarted marks a batch of VMs running and first-booted.
 func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil

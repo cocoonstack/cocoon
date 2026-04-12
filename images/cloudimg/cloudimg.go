@@ -22,8 +22,7 @@ var _ images.Images = (*CloudImg)(nil)
 
 const typ = "cloudimg"
 
-// CloudImg implements the images.Images interface using cloud images (qcow2/raw)
-// downloaded from HTTP/HTTPS URLs, converted to qcow2 v3 for use with Cloud Hypervisor via UEFI boot.
+// CloudImg stores cloud image blobs for UEFI boot under Cloud Hypervisor.
 type CloudImg struct {
 	conf      *Config
 	store     storage.Store[imageIndex]
@@ -59,8 +58,7 @@ func New(ctx context.Context, conf *config.Config) (*CloudImg, error) {
 
 func (c *CloudImg) Type() string { return typ }
 
-// Pull downloads a cloud image from a URL, converts it to qcow2 v3,
-// and stores the blob in the content-addressed cache.
+// Pull downloads a cloud image and stores it in the blob cache.
 func (c *CloudImg) Pull(ctx context.Context, url string, tracker progress.Tracker) error {
 	_, err, _ := c.pullGroup.Do(url, func() (any, error) {
 		return nil, pull(ctx, c.conf, c.store, url, tracker)
@@ -69,8 +67,6 @@ func (c *CloudImg) Pull(ctx context.Context, url string, tracker progress.Tracke
 }
 
 // Import imports local qcow2 file(s) as a cloud image.
-// A single file uses an optimized path that hashes in place and avoids a temp copy.
-// Multiple files are concatenated via the reader path (split file reassembly).
 func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 1 {
 		return importQcow2File(ctx, c.conf, c.store, name, tracker, file[0])
@@ -94,13 +90,11 @@ func (c *CloudImg) List(ctx context.Context) ([]*types.Image, error) {
 }
 
 // Delete removes images from the index.
-// Returns the list of actually deleted refs.
 func (c *CloudImg) Delete(ctx context.Context, ids []string) ([]string, error) {
 	return c.ops.Delete(ctx, ids)
 }
 
-// Config generates StorageConfig and BootConfig entries for the given VMs.
-// For cloud images: single qcow2 blob per image, UEFI boot (empty BootConfig).
+// Config resolves cloud images to qcow2 storage plus firmware boot config.
 func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
 	err = c.store.With(ctx, func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))
