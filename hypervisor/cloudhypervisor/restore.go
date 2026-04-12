@@ -80,8 +80,14 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	}()
 
 	chConfigPath := filepath.Join(rec.RunDir, "config.json")
+	// Use activeDisks to match the filtered view that buildVMConfig
+	// produced on the snapshotted start — a post-first-boot cloudimg
+	// snapshot has [overlay] only, while rec.StorageConfigs still
+	// carries [overlay, cidata]. patchCHConfig's disk-count guard
+	// would otherwise hard-fail after prepareRestore has already
+	// torn down the running VM.
 	if err = patchCHConfig(chConfigPath, &patchOptions{
-		storageConfigs: rec.StorageConfigs,
+		storageConfigs: activeDisks(rec),
 		consoleSock:    hypervisor.ConsoleSockPath(rec.RunDir),
 		directBoot:     directBoot,
 		windows:        vmCfg.Windows,

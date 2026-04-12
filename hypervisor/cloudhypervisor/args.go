@@ -66,10 +66,7 @@ func buildVMConfig(ctx context.Context, rec *hypervisor.VMRecord, consoleSockPat
 		}
 	}
 
-	for _, storageConfig := range rec.StorageConfigs {
-		if rec.FirstBooted && !isDirectBoot(rec.BootConfig) && isCidataDisk(storageConfig) {
-			continue
-		}
+	for _, storageConfig := range activeDisks(rec) {
 		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu))
 	}
 
@@ -300,4 +297,28 @@ func queueAffinityToCLI(qa []chQueueAffinity) string {
 // isCidataDisk reports whether a storage config is the cloud-init cidata disk.
 func isCidataDisk(sc *types.StorageConfig) bool {
 	return filepath.Base(sc.Path) == cidataFile
+}
+
+// activeDisks returns the storage configs currently attached to the
+// running VM. cloudimg VMs that have already booted once drop their
+// cidata disk on subsequent starts (cloud-init has already consumed
+// it), so both the launch path (buildVMConfig) and the restore path
+// (patchCHConfig) must use this filtered view — otherwise the record's
+// StorageConfigs (which still carries cidata) disagrees with the
+// live config.json and patchCHConfig hard-fails on disk-count mismatch.
+//
+// NOTE: the returned slice holds pointers that alias rec.StorageConfigs.
+// Callers must treat elements as read-only; mutating a returned entry
+// mutates the underlying VMRecord. All current callers (buildVMConfig,
+// restoreAfterExtract) only read.
+func activeDisks(rec *hypervisor.VMRecord) []*types.StorageConfig {
+	skipCidata := rec.FirstBooted && !isDirectBoot(rec.BootConfig)
+	out := make([]*types.StorageConfig, 0, len(rec.StorageConfigs))
+	for _, sc := range rec.StorageConfigs {
+		if skipCidata && isCidataDisk(sc) {
+			continue
+		}
+		out = append(out, sc)
+	}
+	return out
 }
