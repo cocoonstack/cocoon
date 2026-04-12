@@ -44,7 +44,17 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 	// Stage: extract into a sibling scratch dir while the VM is still
 	// running. If extraction fails, clean up and return — the VM is
 	// untouched and the caller can retry.
+	//
+	// Clear any remnants of a previously interrupted restore: an
+	// abrupt exit (SIGKILL, panic, power loss) may have left files
+	// behind that the deferred RemoveAll never ran, and ExtractTar
+	// only overwrites entries present in the new tar. Without the
+	// pre-clear, MergeDirInto would later drag those orphan files
+	// into rec.RunDir and poison the restored VM state.
 	stagingDir := rec.RunDir + ".restore-staging"
+	if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
+		return nil, fmt.Errorf("clear staging dir: %w", rmErr)
+	}
 	if mkErr := os.MkdirAll(stagingDir, 0o700); mkErr != nil {
 		return nil, fmt.Errorf("create staging dir: %w", mkErr)
 	}
