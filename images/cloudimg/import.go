@@ -82,8 +82,19 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 	defer os.Remove(tmpPath) //nolint:errcheck,gosec
 	defer tmpFile.Close()    //nolint:errcheck,gosec
 
-	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+	// Hash the second pass too and compare to pass 1. If the user file
+	// was modified in place between the two reads (TOCTOU), the two
+	// digests disagree and we refuse to commit — otherwise the blob
+	// would be stored and indexed under a digest that doesn't match
+	// its own bytes. Zero extra I/O: hashing runs inline in the
+	// io.Copy via MultiWriter.
+	verifyHash := sha256.New()
+	if _, err = io.Copy(io.MultiWriter(tmpFile, verifyHash), srcFile); err != nil {
 		return fmt.Errorf("copy %s: %w", filePath, err)
+	}
+	if verifyHex := hex.EncodeToString(verifyHash.Sum(nil)); verifyHex != digestHex {
+		return fmt.Errorf("import %s: source file changed between hash and copy passes (hash was %s, copy is %s)",
+			filePath, digestHex[:12], verifyHex[:12])
 	}
 
 	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
