@@ -76,7 +76,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 
 	storageConfigs := rebuildStorageConfigs(chCfg)
 	bootCfg := rebuildBootConfig(chCfg)
-	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 	directBoot := isDirectBoot(bootCfg)
 
 	cowPath := ch.cowPath(vmID, directBoot)
@@ -175,7 +174,14 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		}
 		r.VM = info
 		r.BootConfig = bootCfg
-		r.ImageBlobIDs = blobIDs
+		// NOTE: do NOT overwrite r.ImageBlobIDs with values derived from
+		// rebuilt storageConfigs. On the cloudimg path those configs hold
+		// the clone's overlay path (not the base blob path), so
+		// ExtractBlobIDs would compute a garbage digest and GC would
+		// eventually delete the real base image the clone depends on.
+		// ReserveVM already pinned snapshotConfig.ImageBlobIDs during
+		// cloneSetup — trust the snapshot's view.
+		//
 		// Clone VM is already running with cidata attached; cloud-init reinit
 		// is done via post-clone hints. Mark as first-booted so the next
 		// cold boot (stop+start) skips cidata — no need for a second cloud-init run.
