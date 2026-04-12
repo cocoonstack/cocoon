@@ -2,6 +2,11 @@ package images
 
 import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 
+// Handler provides image command implementations.
+type Handler struct {
+	cmdcore.BaseHandler
+}
+
 // imageType identifies the content type detected from a stream.
 type imageType int
 
@@ -18,10 +23,6 @@ const (
 	importSourceTar    importSourceKind = 1
 	importSourceStream importSourceKind = 2
 )
-
-type Handler struct {
-	cmdcore.BaseHandler
-}
 
 type importLocalPlan struct {
 	kind  importSourceKind

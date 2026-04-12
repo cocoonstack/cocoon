@@ -60,9 +60,16 @@ type imageEntry struct {
 
 // images.Entry implementation (value receivers).
 
-func (e imageEntry) EntryID() string           { return e.ManifestDigest.String() }
-func (e imageEntry) EntryRef() string          { return e.Ref }
+// EntryID returns the manifest digest as the unique entry identifier.
+func (e imageEntry) EntryID() string { return e.ManifestDigest.String() }
+
+// EntryRef returns the image reference string.
+func (e imageEntry) EntryRef() string { return e.Ref }
+
+// EntryCreatedAt returns when this image entry was created.
 func (e imageEntry) EntryCreatedAt() time.Time { return e.CreatedAt }
+
+// DigestHexes returns the hex-encoded digests of all layers.
 func (e imageEntry) DigestHexes() []string {
 	hexes := make([]string, len(e.Layers))
 	for i, l := range e.Layers {

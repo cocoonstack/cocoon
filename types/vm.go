@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// VMState represents the lifecycle state of a VM.
 type VMState string
 
 const (

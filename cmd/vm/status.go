@@ -21,6 +21,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// List handles the 'vm list' command.
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -47,6 +48,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+// Status handles the 'vm status' command.
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

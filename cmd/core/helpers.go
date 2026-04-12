@@ -28,27 +28,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// hypervisorFactory keeps backend lookup and iteration order together.
-type hypervisorFactory struct {
-	typ  config.HypervisorType
-	ctor func(*config.Config) (hypervisor.Hypervisor, error)
-}
-
-var hypervisorFactories = []hypervisorFactory{
-	{config.HypervisorCH, func(c *config.Config) (hypervisor.Hypervisor, error) { return cloudhypervisor.New(c) }},
-	{config.HypervisorFirecracker, func(c *config.Config) (hypervisor.Hypervisor, error) { return firecracker.New(c) }},
-}
-
-// findHypervisorFactory returns the ctor for a given type, or nil.
-func findHypervisorFactory(typ config.HypervisorType) func(*config.Config) (hypervisor.Hypervisor, error) {
-	for _, f := range hypervisorFactories {
-		if f.typ == typ {
-			return f.ctor
-		}
-	}
-	return nil
-}
-
 // BaseHandler provides shared config access for all command handlers.
 type BaseHandler struct {
 	ConfProvider func() *config.Config
@@ -182,34 +161,6 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 		result[owner] = append(result[owner], ref)
 	}
 	return result, nil
-}
-
-// resolveVMOwner returns the single backend that owns ref.
-func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, error) {
-	var matches []hypervisor.Hypervisor
-	for _, h := range hypers {
-		_, resolveErr := h.Inspect(ctx, ref)
-		if resolveErr == nil {
-			matches = append(matches, h)
-			continue
-		}
-		if errors.Is(resolveErr, hypervisor.ErrNotFound) {
-			continue
-		}
-		return nil, fmt.Errorf("inspect %s in %s: %w", ref, h.Type(), resolveErr)
-	}
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf("VM %s: %w", ref, hypervisor.ErrNotFound)
-	case 1:
-		return matches[0], nil
-	default:
-		names := make([]string, len(matches))
-		for i, h := range matches {
-			names[i] = h.Type()
-		}
-		return nil, fmt.Errorf("VM %s: %w (backends: %s)", ref, hypervisor.ErrAmbiguous, strings.Join(names, ", "))
-	}
 }
 
 // InitNetwork creates the CNI network provider.
@@ -405,12 +356,63 @@ func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Wri
 	return w.Flush()
 }
 
+// FormatSize formats a byte count as a human-readable size string.
 func FormatSize(bytes int64) string {
 	return units.HumanSize(float64(bytes))
 }
 
+// IsURL reports whether ref starts with http:// or https://.
 func IsURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+}
+
+// hypervisorFactory keeps backend lookup and iteration order together.
+type hypervisorFactory struct {
+	typ  config.HypervisorType
+	ctor func(*config.Config) (hypervisor.Hypervisor, error)
+}
+
+var hypervisorFactories = []hypervisorFactory{
+	{config.HypervisorCH, func(c *config.Config) (hypervisor.Hypervisor, error) { return cloudhypervisor.New(c) }},
+	{config.HypervisorFirecracker, func(c *config.Config) (hypervisor.Hypervisor, error) { return firecracker.New(c) }},
+}
+
+// findHypervisorFactory returns the ctor for a given type, or nil.
+func findHypervisorFactory(typ config.HypervisorType) func(*config.Config) (hypervisor.Hypervisor, error) {
+	for _, f := range hypervisorFactories {
+		if f.typ == typ {
+			return f.ctor
+		}
+	}
+	return nil
+}
+
+// resolveVMOwner returns the single backend that owns ref.
+func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, error) {
+	var matches []hypervisor.Hypervisor
+	for _, h := range hypers {
+		_, resolveErr := h.Inspect(ctx, ref)
+		if resolveErr == nil {
+			matches = append(matches, h)
+			continue
+		}
+		if errors.Is(resolveErr, hypervisor.ErrNotFound) {
+			continue
+		}
+		return nil, fmt.Errorf("inspect %s in %s: %w", ref, h.Type(), resolveErr)
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("VM %s: %w", ref, hypervisor.ErrNotFound)
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, len(matches))
+		for i, h := range matches {
+			names[i] = h.Type()
+		}
+		return nil, fmt.Errorf("VM %s: %w (backends: %s)", ref, hypervisor.ErrAmbiguous, strings.Join(names, ", "))
+	}
 }
 
 // sanitizeVMName derives a safe VM name from an image reference using

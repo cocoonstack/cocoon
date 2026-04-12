@@ -13,6 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+// Debug handles the 'vm debug' command.
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

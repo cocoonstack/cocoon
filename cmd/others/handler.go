@@ -11,10 +11,12 @@ import (
 	"github.com/cocoonstack/cocoon/version"
 )
 
+// Handler groups miscellaneous CLI commands (gc, version).
 type Handler struct {
 	cmdcore.BaseHandler
 }
 
+// GC handles the 'gc' command.
 func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -54,6 +56,7 @@ func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
+// Version handles the 'version' command.
 func (h Handler) Version(_ *cobra.Command, _ []string) error {
 	fmt.Print(version.String())
 	return nil

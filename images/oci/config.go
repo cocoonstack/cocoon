@@ -30,16 +30,20 @@ func (c *Config) EnsureDirs() error {
 
 // OCI-specific paths.
 
+// BootBaseDir returns the root directory for extracted boot files.
 func (c *Config) BootBaseDir() string { return filepath.Join(c.BackendDir(), "boot") }
 
+// BootDir returns the boot directory for a specific layer digest.
 func (c *Config) BootDir(layerDigestHex string) string {
 	return filepath.Join(c.BootBaseDir(), layerDigestHex)
 }
 
+// KernelPath returns the vmlinuz path for a specific layer digest.
 func (c *Config) KernelPath(layerDigestHex string) string {
 	return filepath.Join(c.BootDir(layerDigestHex), "vmlinuz")
 }
 
+// InitrdPath returns the initrd.img path for a specific layer digest.
 func (c *Config) InitrdPath(layerDigestHex string) string {
 	return filepath.Join(c.BootDir(layerDigestHex), "initrd.img")
 }

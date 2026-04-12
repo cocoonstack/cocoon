@@ -26,9 +26,14 @@ func (c *Config) EnsureDirs() error {
 	)
 }
 
+// IndexFile returns the path to the network index JSON file.
 func (c *Config) IndexFile() string { return filepath.Join(c.dbDir(), "networks.json") }
+
+// IndexLock returns the path to the network index lock file.
 func (c *Config) IndexLock() string { return filepath.Join(c.dbDir(), "networks.lock") }
-func (c *Config) CacheDir() string  { return filepath.Join(c.dir(), "cache") }
+
+// CacheDir returns the CNI result cache directory path.
+func (c *Config) CacheDir() string { return filepath.Join(c.dir(), "cache") }
 
 func (c *Config) dir() string   { return filepath.Join(c.RootDir, "cni") }
 func (c *Config) dbDir() string { return filepath.Join(c.dir(), "db") }

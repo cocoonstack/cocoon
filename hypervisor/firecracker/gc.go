@@ -19,7 +19,10 @@ type fcSnapshot struct {
 	logDirs     []string
 }
 
+// UsedBlobIDs returns blob IDs referenced by all Firecracker VMs.
 func (s fcSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
+
+// ActiveVMIDs returns IDs of all Firecracker VMs in the database.
 func (s fcSnapshot) ActiveVMIDs() map[string]struct{} { return s.vmIDs }
 
 // GCModule returns the GC module for cross-module blob pinning and orphan cleanup.

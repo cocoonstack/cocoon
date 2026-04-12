@@ -52,23 +52,6 @@ func ScanSubdirs(dir string) ([]string, error) {
 	})
 }
 
-func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("scan %s: %w", dir, err)
-	}
-	var result []string
-	for _, e := range entries {
-		if name, ok := fn(e); ok {
-			result = append(result, name)
-		}
-	}
-	return result, nil
-}
-
 // FilterUnreferenced returns the elements of candidates not present in refs
 // or any of the optional exclude sets. Used by GC Resolve to compute deletions.
 func FilterUnreferenced(candidates []string, refs map[string]struct{}, exclude ...map[string]struct{}) []string {
@@ -115,4 +98,21 @@ func RemoveMatching(ctx context.Context, dir string, match func(os.DirEntry) boo
 		}
 	}
 	return errs
+}
+
+func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan %s: %w", dir, err)
+	}
+	var result []string
+	for _, e := range entries {
+		if name, ok := fn(e); ok {
+			result = append(result, name)
+		}
+	}
+	return result, nil
 }

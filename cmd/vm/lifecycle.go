@@ -17,6 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+// Start handles the 'vm start' command.
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -44,6 +45,7 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// Stop handles the 'vm stop' command.
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -72,6 +74,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// Inspect handles the 'vm inspect' command.
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -91,6 +94,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	return cmdcore.OutputJSON(info)
 }
 
+// Console handles the 'vm console' command.
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -149,6 +153,7 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// RM handles the 'vm rm' command.
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

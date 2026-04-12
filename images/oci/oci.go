@@ -64,6 +64,7 @@ func New(ctx context.Context, conf *config.Config) (*OCI, error) {
 	return o, nil
 }
 
+// Type returns the image backend identifier.
 func (o *OCI) Type() string { return typ }
 
 // Pull downloads an OCI image from a container registry, extracts boot files

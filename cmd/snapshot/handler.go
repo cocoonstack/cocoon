@@ -23,6 +23,7 @@ type Handler struct {
 	cmdcore.BaseHandler
 }
 
+// Save handles the 'snapshot save' command.
 func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -80,6 +81,7 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// List handles the 'snapshot list' command.
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -143,6 +145,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+// Inspect handles the 'snapshot inspect' command.
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -160,6 +163,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	return cmdcore.OutputJSON(s)
 }
 
+// Export handles the 'snapshot export' command.
 func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -241,6 +245,7 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 	return nil
 }
 
+// Import handles the 'snapshot import' command.
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -278,6 +283,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// RM handles the 'snapshot rm' command.
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

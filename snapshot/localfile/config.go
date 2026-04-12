@@ -25,9 +25,6 @@ func (c *Config) EnsureDirs() error {
 	)
 }
 
-func (c *Config) dir() string   { return filepath.Join(c.RootDir, "snapshot") }
-func (c *Config) dbDir() string { return filepath.Join(c.dir(), "db") }
-
 // DataDir returns the top-level directory for snapshot data.
 func (c *Config) DataDir() string { return filepath.Join(c.dir(), "localfile") }
 
@@ -39,3 +36,6 @@ func (c *Config) IndexFile() string { return filepath.Join(c.dbDir(), "snapshots
 
 // IndexLock returns the snapshot index lock path.
 func (c *Config) IndexLock() string { return filepath.Join(c.dbDir(), "snapshots.lock") }
+
+func (c *Config) dir() string   { return filepath.Join(c.RootDir, "snapshot") }
+func (c *Config) dbDir() string { return filepath.Join(c.dir(), "db") }

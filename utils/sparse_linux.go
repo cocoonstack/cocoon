@@ -15,42 +15,6 @@ const (
 	seekHole = 4 // SEEK_HOLE
 )
 
-// scanDataSegments uses SEEK_DATA/SEEK_HOLE to find all data regions in f.
-func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
-	var segments []sparseSegment
-	offset := int64(0)
-
-	for offset < size {
-		// Find next data start.
-		dataStart, err := syscall.Seek(fd, offset, seekData)
-		if err != nil {
-			// ENXIO means no more data after offset — rest is hole.
-			if errors.Is(err, syscall.ENXIO) {
-				break
-			}
-			return nil, fmt.Errorf("seek_data at %d: %w", offset, err)
-		}
-
-		// Find the end of this data segment (start of next hole).
-		holeStart, err := syscall.Seek(fd, dataStart, seekHole)
-		if err != nil {
-			if errors.Is(err, syscall.ENXIO) {
-				// Data extends to EOF.
-				holeStart = size
-			} else {
-				return nil, fmt.Errorf("seek_hole at %d: %w", dataStart, err)
-			}
-		}
-
-		segments = append(segments, sparseSegment{
-			Offset: dataStart,
-			Length: holeStart - dataStart,
-		})
-		offset = holeStart
-	}
-	return segments, nil
-}
-
 // SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA.
 // dst is created as a new file (truncated to src size, then only data segments written).
 func SparseCopy(dst, src string) error {
@@ -108,4 +72,40 @@ func SparseCopy(dst, src string) error {
 	}
 	cleanup = false
 	return dstFile.Close()
+}
+
+// scanDataSegments uses SEEK_DATA/SEEK_HOLE to find all data regions in f.
+func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
+	var segments []sparseSegment
+	offset := int64(0)
+
+	for offset < size {
+		// Find next data start.
+		dataStart, err := syscall.Seek(fd, offset, seekData)
+		if err != nil {
+			// ENXIO means no more data after offset — rest is hole.
+			if errors.Is(err, syscall.ENXIO) {
+				break
+			}
+			return nil, fmt.Errorf("seek_data at %d: %w", offset, err)
+		}
+
+		// Find the end of this data segment (start of next hole).
+		holeStart, err := syscall.Seek(fd, dataStart, seekHole)
+		if err != nil {
+			if errors.Is(err, syscall.ENXIO) {
+				// Data extends to EOF.
+				holeStart = size
+			} else {
+				return nil, fmt.Errorf("seek_hole at %d: %w", dataStart, err)
+			}
+		}
+
+		segments = append(segments, sparseSegment{
+			Offset: dataStart,
+			Length: holeStart - dataStart,
+		})
+		offset = holeStart
+	}
+	return segments, nil
 }

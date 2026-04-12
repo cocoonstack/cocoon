@@ -1,5 +1,6 @@
 package types
 
+// BootConfig holds kernel and firmware paths used to boot a VM.
 type BootConfig struct {
 	// Direct-boot fields (OCI images).
 	KernelPath string `json:"kernel_path,omitempty"`

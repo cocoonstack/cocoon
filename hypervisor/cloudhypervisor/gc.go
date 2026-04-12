@@ -19,7 +19,10 @@ type chSnapshot struct {
 	logDirs     []string            // subdirectory names under CHLogDir
 }
 
+// UsedBlobIDs returns blob IDs referenced by all Cloud Hypervisor VMs.
 func (s chSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
+
+// ActiveVMIDs returns IDs of all Cloud Hypervisor VMs in the database.
 func (s chSnapshot) ActiveVMIDs() map[string]struct{} { return s.vmIDs }
 
 // GCModule returns the GC module for cross-module blob pinning and orphan cleanup.

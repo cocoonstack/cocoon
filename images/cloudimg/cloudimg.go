@@ -56,6 +56,7 @@ func New(ctx context.Context, conf *config.Config) (*CloudImg, error) {
 	return c, nil
 }
 
+// Type returns the image backend identifier.
 func (c *CloudImg) Type() string { return typ }
 
 // Pull downloads a cloud image and stores it in the blob cache.

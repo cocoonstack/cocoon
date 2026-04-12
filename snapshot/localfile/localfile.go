@@ -37,6 +37,7 @@ type LocalFile struct {
 	locker lock.Locker
 }
 
+// Type returns the snapshot backend identifier.
 func (lf *LocalFile) Type() string { return typ }
 
 // New creates a new LocalFile snapshot backend.
@@ -140,19 +141,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	return id, nil
 }
 
-// rollbackCreate removes a placeholder snapshot record from the DB.
-func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
-		delete(idx.Snapshots, id)
-		if name != "" {
-			delete(idx.Names, name)
-		}
-		return nil
-	}); err != nil {
-		log.WithFunc("localfile.rollbackCreate").Warnf(ctx, "rollback snapshot %s (name=%s): %v", id, name, err)
-	}
-}
-
 // List returns all snapshots (excluding pending ones).
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
@@ -252,6 +240,19 @@ func (lf *LocalFile) Restore(ctx context.Context, ref string) (*types.SnapshotCo
 // RegisterGC registers the snapshot GC module with the orchestrator.
 func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, gcModule(lf.conf, lf.store, lf.locker))
+}
+
+// rollbackCreate removes a placeholder snapshot record from the DB.
+func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
+	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+		delete(idx.Snapshots, id)
+		if name != "" {
+			delete(idx.Names, name)
+		}
+		return nil
+	}); err != nil {
+		log.WithFunc("localfile.rollbackCreate").Warnf(ctx, "rollback snapshot %s (name=%s): %v", id, name, err)
+	}
 }
 
 // snapshotRecordToConfig builds a detached SnapshotConfig from a record,

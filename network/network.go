@@ -13,6 +13,7 @@ var (
 	ErrNotConfigured = errors.New("network provider not configured")
 )
 
+// Network defines the interface for a network provider (CNI, etc.).
 type Network interface {
 	Type() string
 

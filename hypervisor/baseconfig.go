@@ -26,9 +26,6 @@ func NewBaseConfig(conf *config.Config, name string) BaseConfig {
 	return BaseConfig{Config: conf, backendName: name}
 }
 
-func (c *BaseConfig) dir() string   { return filepath.Join(c.RootDir, c.backendName) }
-func (c *BaseConfig) dbDir() string { return filepath.Join(c.dir(), "db") }
-
 // RunDir returns the top-level runtime directory for this backend.
 func (c *BaseConfig) RunDir() string { return filepath.Join(c.Config.RunDir, c.backendName) }
 
@@ -67,3 +64,6 @@ func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 	}
 	return defaultTerminateGracePeriod
 }
+
+func (c *BaseConfig) dir() string   { return filepath.Join(c.RootDir, c.backendName) }
+func (c *BaseConfig) dbDir() string { return filepath.Join(c.dir(), "db") }

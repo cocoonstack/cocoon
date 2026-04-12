@@ -38,6 +38,7 @@ type progressWriter struct {
 	lastReport int64
 }
 
+// Write implements io.Writer and emits periodic download progress events.
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p)
 	pw.written += int64(n)

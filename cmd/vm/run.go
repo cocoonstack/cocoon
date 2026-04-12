@@ -18,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// Create handles the 'vm create' command.
 func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	ctx, vm, _, err := h.createVM(cmd, args[0])
 	if err != nil {
@@ -29,6 +30,7 @@ func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// Run handles the 'vm run' command.
 func (h Handler) Run(cmd *cobra.Command, args []string) error {
 	ctx, vm, hyper, err := h.createVM(cmd, args[0])
 	if err != nil {
@@ -47,6 +49,7 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// Clone handles the 'vm clone' command.
 func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -107,6 +110,75 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm, networkConfigs)
+	return nil
+}
+
+// Restore handles the 'vm restore' command.
+func (h Handler) Restore(cmd *cobra.Command, args []string) error {
+	ctx, conf, err := h.Init(cmd)
+	if err != nil {
+		return err
+	}
+	logger := log.WithFunc("cmd.restore")
+
+	vmRef := args[0]
+	snapRef := args[1]
+
+	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
+	if err != nil {
+		return fmt.Errorf("find VM %s: %w", vmRef, err)
+	}
+	snapBackend, err := cmdcore.InitSnapshot(conf)
+	if err != nil {
+		return err
+	}
+
+	vm, err := hyper.Inspect(ctx, vmRef)
+	if err != nil {
+		return fmt.Errorf("inspect VM: %w", err)
+	}
+	snapInfo, err := snapBackend.Inspect(ctx, snapRef)
+	if err != nil {
+		return fmt.Errorf("inspect snapshot: %w", err)
+	}
+	if _, ok := vm.SnapshotIDs[snapInfo.ID]; !ok {
+		return fmt.Errorf("snapshot %s does not belong to VM %s", snapRef, vmRef)
+	}
+
+	if snapInfo.NICs != len(vm.NetworkConfigs) {
+		return fmt.Errorf("nic count mismatch: vm has %d, snapshot has %d",
+			len(vm.NetworkConfigs), snapInfo.NICs)
+	}
+
+	vmCfg, err := cmdcore.RestoreVMConfigFromFlags(cmd, vm, &snapInfo.SnapshotConfig)
+	if err != nil {
+		return err
+	}
+
+	done, directErr := h.restoreDirect(ctx, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
+	if done {
+		return directErr
+	}
+
+	_, stream, err := snapBackend.Restore(ctx, snapRef)
+	if err != nil {
+		return fmt.Errorf("open snapshot: %w", err)
+	}
+	defer stream.Close() //nolint:errcheck
+
+	stop := context.AfterFunc(ctx, func() {
+		stream.Close() //nolint:errcheck,gosec
+	})
+	defer stop()
+
+	logger.Infof(ctx, "restoring VM %s from snapshot %s ...", vmRef, snapRef)
+
+	result, err := hyper.Restore(ctx, vmRef, vmCfg, stream)
+	if err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+
+	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
 	return nil
 }
 
@@ -194,74 +266,6 @@ func (h Handler) restoreDirect(ctx context.Context, snapRef, vmRef string, vmCfg
 
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
 	return true, nil
-}
-
-func (h Handler) Restore(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
-	logger := log.WithFunc("cmd.restore")
-
-	vmRef := args[0]
-	snapRef := args[1]
-
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
-	if err != nil {
-		return fmt.Errorf("find VM %s: %w", vmRef, err)
-	}
-	snapBackend, err := cmdcore.InitSnapshot(conf)
-	if err != nil {
-		return err
-	}
-
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM: %w", err)
-	}
-	snapInfo, err := snapBackend.Inspect(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("inspect snapshot: %w", err)
-	}
-	if _, ok := vm.SnapshotIDs[snapInfo.ID]; !ok {
-		return fmt.Errorf("snapshot %s does not belong to VM %s", snapRef, vmRef)
-	}
-
-	if snapInfo.NICs != len(vm.NetworkConfigs) {
-		return fmt.Errorf("nic count mismatch: vm has %d, snapshot has %d",
-			len(vm.NetworkConfigs), snapInfo.NICs)
-	}
-
-	vmCfg, err := cmdcore.RestoreVMConfigFromFlags(cmd, vm, &snapInfo.SnapshotConfig)
-	if err != nil {
-		return err
-	}
-
-	done, directErr := h.restoreDirect(ctx, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
-	if done {
-		return directErr
-	}
-
-	_, stream, err := snapBackend.Restore(ctx, snapRef)
-	if err != nil {
-		return fmt.Errorf("open snapshot: %w", err)
-	}
-	defer stream.Close() //nolint:errcheck
-
-	stop := context.AfterFunc(ctx, func() {
-		stream.Close() //nolint:errcheck,gosec
-	})
-	defer stop()
-
-	logger.Infof(ctx, "restoring VM %s from snapshot %s ...", vmRef, snapRef)
-
-	result, err := hyper.Restore(ctx, vmRef, vmCfg, stream)
-	if err != nil {
-		return fmt.Errorf("restore: %w", err)
-	}
-
-	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
-	return nil
 }
 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {

@@ -72,6 +72,7 @@ func New(conf *config.Config) (*CNI, error) {
 	return c, nil
 }
 
+// Type returns the network provider identifier.
 func (c *CNI) Type() string { return typ }
 
 // Verify checks whether the network namespace for a VM exists.

@@ -2,6 +2,7 @@ package types
 
 import "time"
 
+// Image represents metadata for a stored image entry.
 type Image struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

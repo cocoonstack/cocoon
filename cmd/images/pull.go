@@ -15,6 +15,7 @@ import (
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
+// Pull handles the 'image pull' command.
 func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

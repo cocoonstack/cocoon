@@ -21,6 +21,28 @@ const (
 	cidataFile     = "cidata.img"
 )
 
+// DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
+func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount int) []string {
+	args := make([]string, 0, len(storageConfigs))
+	for _, storageConfig := range storageConfigs {
+		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount)))
+	}
+	return args
+}
+
+// kvBuilder accumulates key=value CLI fragments.
+type kvBuilder []string
+
+// String joins all key=value pairs with commas.
+func (b kvBuilder) String() string { return strings.Join(b, ",") }
+
+func (b *kvBuilder) add(kv string) { *b = append(*b, kv) }
+func (b *kvBuilder) addIf(cond bool, kv string) {
+	if cond {
+		*b = append(*b, kv)
+	}
+}
+
 func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
@@ -73,60 +95,6 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 	}
 
 	return cfg
-}
-
-func networkConfigToNet(nc *types.NetworkConfig) chNet {
-	return chNet{
-		Tap:         nc.Tap,
-		Mac:         nc.Mac,
-		NumQueues:   nc.NumQueues,
-		QueueSize:   nc.QueueSize,
-		OffloadTSO:  true,
-		OffloadUFO:  true,
-		OffloadCsum: true,
-	}
-}
-
-func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount int) chDisk {
-	d := chDisk{
-		Path:      storageConfig.Path,
-		ReadOnly:  storageConfig.RO,
-		Serial:    storageConfig.Serial,
-		NumQueues: cpuCount,
-		QueueSize: defaultDiskQueueSize,
-	}
-
-	// Cache readonly bases, use O_DIRECT for writable disks.
-	d.DirectIO = !storageConfig.RO
-
-	switch {
-	case filepath.Ext(storageConfig.Path) == ".qcow2":
-		d.ImageType = "Qcow2"
-		d.BackingFiles = !storageConfig.RO
-	case storageConfig.RO:
-		d.ImageType = "Raw"
-	default:
-		d.ImageType = "Raw"
-		d.Sparse = true
-	}
-
-	// Pin writable blk queues to vCPUs.
-	if cpuCount > 1 && !storageConfig.RO {
-		d.QueueAffinity = make([]chQueueAffinity, cpuCount)
-		for i := range d.QueueAffinity {
-			d.QueueAffinity[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{i}}
-		}
-	}
-	return d
-}
-
-// DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
-func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount int) []string {
-	args := make([]string, 0, len(storageConfigs))
-	for _, storageConfig := range storageConfigs {
-		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount)))
-	}
-	return args
 }
 
 // buildCLIArgs converts a chVMConfig into cloud-hypervisor CLI arguments.
@@ -194,16 +162,50 @@ func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	return args
 }
 
-// kvBuilder accumulates key=value CLI fragments.
-type kvBuilder []string
-
-func (b *kvBuilder) add(kv string) { *b = append(*b, kv) }
-func (b *kvBuilder) addIf(cond bool, kv string) {
-	if cond {
-		*b = append(*b, kv)
+func networkConfigToNet(nc *types.NetworkConfig) chNet {
+	return chNet{
+		Tap:         nc.Tap,
+		Mac:         nc.Mac,
+		NumQueues:   nc.NumQueues,
+		QueueSize:   nc.QueueSize,
+		OffloadTSO:  true,
+		OffloadUFO:  true,
+		OffloadCsum: true,
 	}
 }
-func (b kvBuilder) String() string { return strings.Join(b, ",") }
+
+func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount int) chDisk {
+	d := chDisk{
+		Path:      storageConfig.Path,
+		ReadOnly:  storageConfig.RO,
+		Serial:    storageConfig.Serial,
+		NumQueues: cpuCount,
+		QueueSize: defaultDiskQueueSize,
+	}
+
+	// Cache readonly bases, use O_DIRECT for writable disks.
+	d.DirectIO = !storageConfig.RO
+
+	switch {
+	case filepath.Ext(storageConfig.Path) == ".qcow2":
+		d.ImageType = "Qcow2"
+		d.BackingFiles = !storageConfig.RO
+	case storageConfig.RO:
+		d.ImageType = "Raw"
+	default:
+		d.ImageType = "Raw"
+		d.Sparse = true
+	}
+
+	// Pin writable blk queues to vCPUs.
+	if cpuCount > 1 && !storageConfig.RO {
+		d.QueueAffinity = make([]chQueueAffinity, cpuCount)
+		for i := range d.QueueAffinity {
+			d.QueueAffinity[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{i}}
+		}
+	}
+	return d
+}
 
 func diskToCLIArg(d chDisk) string {
 	var b kvBuilder
