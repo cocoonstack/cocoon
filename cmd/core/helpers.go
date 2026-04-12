@@ -168,12 +168,15 @@ func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hyper
 }
 
 // ListAllVMs returns VMs from all registered backends, merged.
+// A backend read error is returned immediately; partial results are
+// not silently accepted — a corrupt or transient-failing backend must
+// be visible to the user instead of hiding half the fleet.
 func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.VM, error) {
 	var all []*types.VM
 	for _, h := range hypers {
 		vms, listErr := h.List(ctx)
 		if listErr != nil {
-			continue
+			return nil, fmt.Errorf("list %s: %w", h.Type(), listErr)
 		}
 		all = append(all, vms...)
 	}
