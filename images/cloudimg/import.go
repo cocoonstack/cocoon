@@ -155,15 +155,22 @@ func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[im
 // importQcow2Concat concatenates multiple source files into a cocoon-owned
 // temp file and imports the result under name.
 //
-// The first file is sniffed inline during its copy pass — since the
-// concatenated result's first 8 bytes always come from file[0], this is
-// equivalent to sniffing the final tmp but fails fast before any I/O if
-// file[0] is obviously not a disk image.
+// Before touching the tmp file, sniff the first 8 bytes of the
+// conceptually-concatenated stream — accumulating bytes across shards
+// if file[0] is shorter than the longest signature we care about
+// (xz/7z need 6 bytes, qcow2 magic needs 4). This preserves the
+// fail-fast behavior without the false-positive that arises when
+// file[0] is only a few bytes and would otherwise be rejected as
+// "too small" even though the joined stream is valid.
 func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
 	logger := log.WithFunc("cloudimg.import")
 
 	if len(file) == 0 {
 		return errors.New("no qcow2 files provided")
+	}
+
+	if sniffErr := sniffConcatHead(file); sniffErr != nil {
+		return fmt.Errorf("import %s: %w", name, sniffErr)
 	}
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
@@ -179,18 +186,10 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 	h := sha256.New()
 	w := io.MultiWriter(tmpFile, h)
 
-	for i, filePath := range file {
+	for _, filePath := range file {
 		src, openErr := os.Open(filePath) //nolint:gosec
 		if openErr != nil {
 			return fmt.Errorf("open %s: %w", filePath, openErr)
-		}
-		// Sniff the first file inline — ReadAt(0) doesn't move the
-		// offset, so the following io.Copy still starts at 0.
-		if i == 0 {
-			if sniffErr := sniffImageSource(src); sniffErr != nil {
-				src.Close() //nolint:errcheck,gosec
-				return fmt.Errorf("import %s: %w", name, sniffErr)
-			}
 		}
 		_, copyErr := io.Copy(w, src)
 		src.Close() //nolint:errcheck,gosec
@@ -207,4 +206,33 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 	}
 	logger.Infof(ctx, "import complete: %s -> sha256:%s", name, digestHex)
 	return nil
+}
+
+// sniffConcatHead reads up to 8 bytes from the concatenated prefix of
+// the given shards (file[0]'s first bytes, falling through to file[1]
+// etc. if earlier shards are short) and hands the accumulated prefix
+// to sniffHead. Each shard is opened only long enough to fill the
+// remaining prefix budget — tiny syscall cost relative to the
+// full-file copy that follows, and sidesteps the "file[0] is 3 bytes
+// of a valid qcow2 magic" false-positive rejection that results from
+// sniffing file[0] in isolation.
+func sniffConcatHead(file []string) error {
+	var head [8]byte
+	collected := 0
+	for _, fp := range file {
+		if collected >= len(head) {
+			break
+		}
+		f, err := os.Open(fp) //nolint:gosec // path is caller input
+		if err != nil {
+			return fmt.Errorf("open %s: %w", fp, err)
+		}
+		n, readErr := f.ReadAt(head[collected:], 0)
+		f.Close() //nolint:errcheck,gosec
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return fmt.Errorf("peek %s: %w", fp, readErr)
+		}
+		collected += n
+	}
+	return sniffHead(head[:collected])
 }
