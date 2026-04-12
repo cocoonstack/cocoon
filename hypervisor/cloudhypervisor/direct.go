@@ -40,7 +40,7 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 	// Validate CPU BEFORE prepareRestore kills the running VM —
 	// otherwise a bad --cpu override would tear down the VM only to
 	// reject it afterwards.
-	if err := validateHostCPU(vmCfg.CPU); err != nil {
+	if err := hypervisor.ValidateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
 	}
 

@@ -18,7 +18,7 @@ import (
 
 // Restore stages a snapshot tar before replacing the running VM state.
 func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader) (*types.VM, error) {
-	if err := validateHostCPU(vmCfg.CPU); err != nil {
+	if err := hypervisor.ValidateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
 	}
 

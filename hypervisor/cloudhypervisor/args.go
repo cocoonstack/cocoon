@@ -13,9 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Local alias for shared CPU validation.
-var validateHostCPU = hypervisor.ValidateHostCPU
-
 const (
 	// defaultDiskQueueSize is the virtio-blk queue depth per device.
 	defaultDiskQueueSize = 512

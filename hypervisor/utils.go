@@ -122,28 +122,24 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
-// MergeDirInto renames every entry under src into the matching path under dst.
+// MergeDirInto renames every entry under src into the matching path
+// under dst, overwriting existing files. Staging dirs produced by
+// ExtractTar are always flat (it uses filepath.Base), so we use
+// os.ReadDir instead of filepath.Walk to avoid unnecessary recursion
+// and sorting overhead.
 func MergeDirInto(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("read staging dir: %w", err)
+	}
+	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			return fmt.Errorf("rename %s to %s: %w", srcPath, dstPath, err)
 		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-		if err := os.Rename(path, target); err != nil {
-			return fmt.Errorf("rename %s to %s: %w", path, target, err)
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // ValidateHostCPU rejects VM configs that exceed host cores.
