@@ -91,7 +91,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		if i < len(existing) && existing[i] != nil {
 			overrideMAC = existing[i].Mac
 		}
-		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, vmCfg.CPU, overrideMAC)
+		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, netNumQueues(vmCfg.CPU), overrideMAC)
 		if setupErr != nil {
 			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 		}

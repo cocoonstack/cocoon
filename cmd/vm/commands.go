@@ -167,4 +167,5 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("storage", "", "COW disk size (empty = inherit from snapshot)")
 	cmd.Flags().Int("nics", 0, "number of NICs (0 = inherit from snapshot)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
+	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 }

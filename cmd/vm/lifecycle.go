@@ -13,6 +13,7 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/console"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -191,6 +192,8 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("vm(s) deleted but network cleanup failed: %w", delErr)
 			}
 		}
+		// Also clean up bridge TAPs (no-op if none exist).
+		bridgenet.CleanupTAPs(allDeleted)
 	}
 
 	if lastErr != nil {

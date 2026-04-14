@@ -34,6 +34,9 @@ func (b *Bridge) Config(_ context.Context, _ string, _ int, _ *types.VMConfig, _
 // Delete is not supported.
 func (b *Bridge) Delete(_ context.Context, _ []string) ([]string, error) { return nil, errUnsupported }
 
+// CleanupTAPs is a no-op on non-Linux.
+func CleanupTAPs(_ []string) []string { return nil }
+
 // Inspect is not supported.
 func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
 	return nil, errUnsupported

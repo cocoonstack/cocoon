@@ -130,7 +130,14 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 
 // Delete removes TAP devices for the given VMs.
 func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
-	var succeeded []string
+	return CleanupTAPs(vmIDs), nil
+}
+
+// CleanupTAPs removes bridge TAP devices for the given VM IDs.
+// It does not require a Bridge instance and is safe to call
+// even when no bridge TAPs exist (no-op per VM).
+func CleanupTAPs(vmIDs []string) []string {
+	var cleaned []string
 	for _, vmID := range vmIDs {
 		for i := range 8 { // max 8 NICs per VM
 			name := tapName(vmID, i)
@@ -140,9 +147,9 @@ func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
 			}
 			_ = netlink.LinkDel(l)
 		}
-		succeeded = append(succeeded, vmID)
+		cleaned = append(cleaned, vmID)
 	}
-	return succeeded, nil
+	return cleaned
 }
 
 // Inspect is not supported — bridge mode has no persistent records.
@@ -160,18 +167,23 @@ func (b *Bridge) RegisterGC(_ *gc.Orchestrator) {}
 
 // --- helpers ---
 
-func createTAP(name string, queues int) error {
+func createTAP(name string, numQueues int) error {
+	// CH uses queue pairs (TX+RX): queue_pairs = num_queues / 2.
+	// Multi-queue requires queue_pairs > 1, i.e. num_queues > 2.
+	// The TAP's IFF_MULTI_QUEUE flag must match CH's expectation,
+	// otherwise CH's sysfs pre-flight check rejects the device.
+	queuePairs := max(1, numQueues/2) //nolint:mnd
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
-	if queues <= 1 {
-		queues = 1
+	if queuePairs <= 1 {
 		flags |= netlink.TUNTAP_ONE_QUEUE
+		queuePairs = 1
 	} else {
 		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
 	}
 	tap := &netlink.Tuntap{
 		LinkAttrs: netlink.LinkAttrs{Name: name},
 		Mode:      netlink.TUNTAP_MODE_TAP,
-		Queues:    queues,
+		Queues:    queuePairs,
 		Flags:     flags,
 	}
 	if err := netlink.LinkAdd(tap); err != nil {

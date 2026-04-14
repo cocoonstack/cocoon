@@ -95,18 +95,20 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// Match hypervisor attach flags and queue layout.
+	// CH uses queue pairs (TX+RX): queue_pairs = num_queues / 2.
+	// Multi-queue requires queue_pairs > 1, i.e. num_queues > 2.
+	queuePairs := max(1, queues/2) //nolint:mnd
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
-	if queues <= 1 {
-		queues = 1
+	if queuePairs <= 1 {
 		flags |= netlink.TUNTAP_ONE_QUEUE
+		queuePairs = 1
 	} else {
 		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
 	}
 	tap := &netlink.Tuntap{
 		LinkAttrs: netlink.LinkAttrs{Name: tapName},
 		Mode:      netlink.TUNTAP_MODE_TAP,
-		Queues:    queues,
+		Queues:    queuePairs,
 		Flags:     flags,
 	}
 	if addErr := netlink.LinkAdd(tap); addErr != nil {
