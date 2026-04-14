@@ -7,6 +7,15 @@ type NetworkConfig struct {
 	NumQueues int    `json:"num_queues"` // Virtio queue count (= CPU * 2 for multi-queue).
 	QueueSize int    `json:"queue_size"`
 
+	// Backend identifies the network provider that created this NIC ("cni" or "bridge").
+	// Used to select the correct provider during network recovery on VM start.
+	// Empty means "cni" for backward compatibility with existing VM records.
+	Backend string `json:"backend,omitempty"`
+
+	// BridgeDev is the Linux bridge device name (e.g. "cni0", "br0").
+	// Set only when Backend is "bridge"; required for recovery and GC.
+	BridgeDev string `json:"bridge_dev,omitempty"`
+
 	// NetnsPath is the network namespace path where the tap device lives.
 	// Set by the network plugin at Config time; read by the hypervisor at Start time.
 	// Empty when the network backend does not use network namespaces (e.g. macOS vmnet).

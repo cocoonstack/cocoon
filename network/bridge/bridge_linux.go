@@ -91,7 +91,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			mac = generateMAC()
 		}
 
-		queues := netNumQueues(vmCfg.CPU)
+		queues := network.NetNumQueues(vmCfg.CPU)
 		if err := createTAP(name, queues); err != nil {
 			return nil, fmt.Errorf("create tap %s: %w", name, err)
 		}
@@ -103,6 +103,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 
 		// Add TAP to bridge — this is the only wiring needed.
 		if err := netlink.LinkSetMaster(tap, br); err != nil {
+			_ = netlink.LinkDel(tap)
 			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, err)
 		}
 
@@ -112,6 +113,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 		}
 
 		if err := netlink.LinkSetUp(tap); err != nil {
+			_ = netlink.LinkDel(tap)
 			return nil, fmt.Errorf("set %s up: %w", name, err)
 		}
 
@@ -120,6 +122,8 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			Mac:       mac,
 			NumQueues: queues,
 			QueueSize: defaultQueueSize,
+			Backend:   typ,
+			BridgeDev: b.bridgeDev,
 			// NetnsPath: empty — TAP is in host netns.
 			// Network:   nil — IP comes from DHCP on the bridge.
 		})
@@ -131,6 +135,21 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 // Delete removes TAP devices for the given VMs.
 func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
 	return CleanupTAPs(vmIDs), nil
+}
+
+// Inspect is not supported — bridge mode has no persistent records.
+func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
+	return nil, nil
+}
+
+// List is not supported — bridge mode has no persistent records.
+func (b *Bridge) List(_ context.Context) ([]*types.Network, error) {
+	return nil, nil
+}
+
+// RegisterGC registers the bridge GC module that reclaims orphan bt* TAP devices.
+func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
+	gc.Register(orch, GCModule(b.conf.RootDir))
 }
 
 // CleanupTAPs removes bridge TAP devices for the given VM IDs.
@@ -152,21 +171,6 @@ func CleanupTAPs(vmIDs []string) []string {
 	return cleaned
 }
 
-// Inspect is not supported — bridge mode has no persistent records.
-func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
-	return nil, nil
-}
-
-// List is not supported — bridge mode has no persistent records.
-func (b *Bridge) List(_ context.Context) ([]*types.Network, error) {
-	return nil, nil
-}
-
-// RegisterGC is a no-op.
-func (b *Bridge) RegisterGC(_ *gc.Orchestrator) {}
-
-// --- helpers ---
-
 func createTAP(name string, numQueues int) error {
 	// CH uses queue pairs (TX+RX): queue_pairs = num_queues / 2.
 	// Multi-queue requires queue_pairs > 1, i.e. num_queues > 2.
@@ -176,7 +180,6 @@ func createTAP(name string, numQueues int) error {
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {
 		flags |= netlink.TUNTAP_ONE_QUEUE
-		queuePairs = 1
 	} else {
 		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
 	}
@@ -196,18 +199,7 @@ func createTAP(name string, numQueues int) error {
 }
 
 func tapName(vmID string, nic int) string {
-	const pfxLen = 8
-	if len(vmID) > pfxLen {
-		vmID = vmID[:pfxLen]
-	}
-	return fmt.Sprintf("bt%s-%d", vmID, nic)
-}
-
-func netNumQueues(cpu int) int {
-	if cpu <= 1 {
-		return 2 //nolint:mnd
-	}
-	return cpu * 2 //nolint:mnd
+	return fmt.Sprintf("%s%s-%d", tapPrefix, network.VMIDPrefix(vmID), nic)
 }
 
 func generateMAC() string {

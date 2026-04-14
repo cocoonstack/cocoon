@@ -11,10 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/console"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/network"
+	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -35,10 +36,8 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	}
 
 	// Recover network for all backends before starting.
-	if netProvider, netErr := cmdcore.InitNetwork(conf); netErr == nil {
-		for hyper, refs := range routed {
-			h.recoverNetwork(ctx, hyper, netProvider, refs)
-		}
+	for hyper, refs := range routed {
+		h.recoverNetwork(ctx, conf, hyper, refs)
 	}
 
 	return batchRoutedCmd(ctx, "start", "started", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
@@ -205,21 +204,65 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (h Handler) recoverNetwork(ctx context.Context, hyper hypervisor.Hypervisor, net network.Network, refs []string) {
+func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
 	logger := log.WithFunc("cmd.recoverNetwork")
+
+	// Lazy-init CNI provider (may fail if not configured — OK for bridge-only setups).
+	var cniProvider network.Network
+	if p, err := cmdcore.InitNetwork(conf); err == nil {
+		cniProvider = p
+	}
+
+	// Cache bridge providers by device name to avoid redundant netlink lookups.
+	bridgeProviders := map[string]network.Network{}
+
 	for _, ref := range refs {
 		vm, err := hyper.Inspect(ctx, ref)
 		if err != nil || vm == nil || len(vm.NetworkConfigs) == 0 {
 			continue
 		}
-		if net.Verify(ctx, vm.ID) == nil {
+
+		netProvider, provErr := providerForVM(conf, cniProvider, bridgeProviders, vm.NetworkConfigs)
+		if provErr != nil {
+			logger.Warnf(ctx, "skip recovery for VM %s: %v", vm.ID, provErr)
 			continue
 		}
-		logger.Warnf(ctx, "netns missing for VM %s, recovering network", vm.ID)
-		if _, recoverErr := net.Config(ctx, vm.ID, len(vm.NetworkConfigs), &vm.Config, vm.NetworkConfigs...); recoverErr != nil {
+		if netProvider.Verify(ctx, vm.ID) == nil {
+			continue
+		}
+		logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
+		if _, recoverErr := netProvider.Config(ctx, vm.ID, len(vm.NetworkConfigs), &vm.Config, vm.NetworkConfigs...); recoverErr != nil {
 			logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
 		}
 	}
+}
+
+// providerForVM selects the correct network provider based on persisted NetworkConfig.
+func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache map[string]network.Network, configs []*types.NetworkConfig) (network.Network, error) {
+	if len(configs) == 0 {
+		return nil, fmt.Errorf("no network configs")
+	}
+	// All NICs on a VM share the same backend.
+	cfg := configs[0]
+	if cfg.Backend == "bridge" {
+		if cfg.BridgeDev == "" {
+			return nil, fmt.Errorf("bridge backend but no bridge device persisted")
+		}
+		if cached, ok := bridgeCache[cfg.BridgeDev]; ok {
+			return cached, nil
+		}
+		p, err := cmdcore.InitBridgeNetwork(conf, cfg.BridgeDev)
+		if err != nil {
+			return nil, err
+		}
+		bridgeCache[cfg.BridgeDev] = p
+		return p, nil
+	}
+	// "cni" or empty (backward compat).
+	if cniProvider == nil {
+		return nil, fmt.Errorf("CNI provider not available")
+	}
+	return cniProvider, nil
 }
 
 // batchRoutedCmd runs a batch operation across multiple backends.

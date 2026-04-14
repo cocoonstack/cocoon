@@ -8,6 +8,7 @@ import (
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/version"
 )
 
@@ -48,6 +49,7 @@ func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 		hyper.RegisterGC(o)
 	}
 	netProvider.RegisterGC(o)
+	gc.Register(o, bridge.GCModule(conf.RootDir))
 	snapBackend.RegisterGC(o)
 	if err := o.Run(ctx); err != nil {
 		return err

@@ -91,7 +91,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		if i < len(existing) && existing[i] != nil {
 			overrideMAC = existing[i].Mac
 		}
-		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, netNumQueues(vmCfg.CPU), overrideMAC)
+		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, network.NetNumQueues(vmCfg.CPU), overrideMAC)
 		if setupErr != nil {
 			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 		}
@@ -99,8 +99,9 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		configs = append(configs, &types.NetworkConfig{
 			Tap:       tapName,
 			Mac:       mac,
-			NumQueues: netNumQueues(vmCfg.CPU),
+			NumQueues: network.NetNumQueues(vmCfg.CPU),
 			QueueSize: defaultQueueSize,
+			Backend:   typ,
 			NetnsPath: nsPath,
 			Network:   netInfo,
 		})
@@ -142,19 +143,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 }
 
 func tapNameForVM(vmID string, nic int) string {
-	const vmIDPrefixLen = 8
-	if len(vmID) > vmIDPrefixLen {
-		vmID = vmID[:vmIDPrefixLen]
-	}
-	return fmt.Sprintf("tap%s-%d", vmID, nic)
-}
-
-// netNumQueues returns the virtio-net queue count for cpu.
-func netNumQueues(cpu int) int {
-	if cpu <= 1 {
-		return 2 //nolint:mnd
-	}
-	return cpu * 2 //nolint:mnd
+	return fmt.Sprintf("tap%s-%d", network.VMIDPrefix(vmID), nic)
 }
 
 // extractNetworkInfo converts a CNI ADD result into types.Network.

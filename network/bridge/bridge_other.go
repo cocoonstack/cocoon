@@ -34,9 +34,6 @@ func (b *Bridge) Config(_ context.Context, _ string, _ int, _ *types.VMConfig, _
 // Delete is not supported.
 func (b *Bridge) Delete(_ context.Context, _ []string) ([]string, error) { return nil, errUnsupported }
 
-// CleanupTAPs is a no-op on non-Linux.
-func CleanupTAPs(_ []string) []string { return nil }
-
 // Inspect is not supported.
 func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
 	return nil, errUnsupported
@@ -47,5 +44,8 @@ func (b *Bridge) List(_ context.Context) ([]*types.Network, error) { return nil,
 
 // RegisterGC is a no-op.
 func (b *Bridge) RegisterGC(_ *gc.Orchestrator) {}
+
+// CleanupTAPs is a no-op on non-Linux.
+func CleanupTAPs(_ []string) []string { return nil }
 
 var errUnsupported = fmt.Errorf("bridge TAP networking requires Linux (running on %s)", runtime.GOOS)

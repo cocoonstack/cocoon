@@ -101,7 +101,6 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {
 		flags |= netlink.TUNTAP_ONE_QUEUE
-		queuePairs = 1
 	} else {
 		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
 	}
