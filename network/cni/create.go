@@ -14,7 +14,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const defaultQueueSize = 256
+const defaultQueueSize = 1024
 
 // Config creates the netns, runs CNI ADD, and wires each NIC to a tap via TC.
 func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types.VMConfig, existing ...*types.NetworkConfig) (configs []*types.NetworkConfig, retErr error) {

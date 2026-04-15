@@ -13,6 +13,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -120,6 +121,9 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 	if err != nil {
 		return "", fmt.Errorf("find tap %s: %w", tapName, err)
 	}
+
+	// Tune TAP: txqueuelen 10000, GRO max 64K.
+	_ = network.TuneTAP(tapLink)
 
 	// Keep tap MTU aligned with the veth.
 	if mtu := link.Attrs().MTU; mtu > 0 {

@@ -11,6 +11,11 @@ func NetNumQueues(cpu int) int {
 	return cpu * 2 //nolint:mnd
 }
 
+// NetQueueSize returns the default virtio-net ring depth per queue.
+// 1024 doubles the CH default (256) to allow more in-flight descriptors
+// per epoll wakeup, reducing eventfd round-trips under high throughput.
+const NetQueueSize = 1024
+
 // VMIDPrefix returns the first 8 characters of a VM ID, matching the
 // truncation used by both bridge and CNI TAP device naming.
 func VMIDPrefix(vmID string) string {

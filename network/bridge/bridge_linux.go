@@ -22,7 +22,7 @@ var _ network.Network = (*Bridge)(nil)
 
 const (
 	typ              = "bridge"
-	defaultQueueSize = 256
+	defaultQueueSize = 1024
 )
 
 // Bridge implements network.Network by creating TAP devices and adding
@@ -107,9 +107,19 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, err)
 		}
 
+		// Disable FDB source MAC learning on this port — the TAP has
+		// exactly one MAC and learning writes add per-packet overhead.
+		// Must run AFTER LinkSetMaster so the port exists on the bridge.
+		_ = netlink.LinkSetLearning(tap, false)
+
 		// Sync MTU from bridge.
 		if mtu := br.Attrs().MTU; mtu > 0 {
 			_ = netlink.LinkSetMTU(tap, mtu)
+		}
+
+		// Tune TAP: txqueuelen 10000, GRO max 64K.
+		if tuneErr := network.TuneTAP(tap); tuneErr != nil {
+			logger.Warnf(ctx, "tune tap %s: %v", name, tuneErr)
 		}
 
 		if err := netlink.LinkSetUp(tap); err != nil {
