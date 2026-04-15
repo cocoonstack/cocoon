@@ -122,7 +122,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			Tap:       name,
 			Mac:       mac,
 			NumQueues: queues,
-			QueueSize: network.NetQueueSize,
+			QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
 			Backend:   typ,
 			BridgeDev: b.bridgeDev,
 			// NetnsPath: empty — TAP is in host netns.

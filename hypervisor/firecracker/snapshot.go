@@ -123,6 +123,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 		Memory:     rec.Config.Memory,
 		Storage:    rec.Config.Storage,
 		NICs:       len(rec.NetworkConfigs),
+		QueueSize:  rec.Config.QueueSize,
 		Network:    rec.Config.Network,
 	}
 	if rec.ImageBlobIDs != nil {

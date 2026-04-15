@@ -131,6 +131,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 		Memory:     rec.Config.Memory,
 		Storage:    rec.Config.Storage,
 		NICs:       len(rec.NetworkConfigs),
+		QueueSize:  rec.Config.QueueSize,
 		Network:    rec.Config.Network,
 		Windows:    rec.Config.Windows,
 	}

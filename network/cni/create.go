@@ -98,7 +98,7 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 			Tap:       tapName,
 			Mac:       mac,
 			NumQueues: network.NetNumQueues(vmCfg.CPU),
-			QueueSize: network.NetQueueSize,
+			QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
 			Backend:   typ,
 			NetnsPath: nsPath,
 			Network:   netInfo,

@@ -4,9 +4,9 @@ const (
 	vmIDPrefixLen = 8
 
 	// NetQueueSize is the default virtio-net ring depth per queue.
-	// 1024 doubles the CH default (256) to allow more in-flight descriptors
-	// per epoll wakeup, reducing eventfd round-trips under high throughput.
-	NetQueueSize = 1024
+	// 512 balances download throughput (favors larger rings) against
+	// request-response latency (favors smaller rings).
+	NetQueueSize = 512
 )
 
 // NetNumQueues returns the virtio-net queue count for the given CPU count.
@@ -16,6 +16,14 @@ func NetNumQueues(cpu int) int {
 		return 2 //nolint:mnd
 	}
 	return cpu * 2 //nolint:mnd
+}
+
+// ResolveQueueSize returns qs if positive, otherwise the default NetQueueSize.
+func ResolveQueueSize(qs int) int {
+	if qs > 0 {
+		return qs
+	}
+	return NetQueueSize
 }
 
 // VMIDPrefix returns the first 8 characters of a VM ID, matching the

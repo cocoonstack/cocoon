@@ -250,6 +250,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	cpu, _ := cmd.Flags().GetInt("cpu")
 	memStr, _ := cmd.Flags().GetString("memory")
 	storStr, _ := cmd.Flags().GetString("storage")
+	queueSize, _ := cmd.Flags().GetInt("queue-size")
 	network, _ := cmd.Flags().GetString("network")
 	windows, _ := cmd.Flags().GetBool("windows")
 
@@ -267,13 +268,14 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	}
 
 	cfg := &types.VMConfig{
-		Name:    vmName,
-		CPU:     cpu,
-		Memory:  memBytes,
-		Storage: storBytes,
-		Image:   image,
-		Network: network,
-		Windows: windows,
+		Name:      vmName,
+		CPU:       cpu,
+		Memory:    memBytes,
+		Storage:   storBytes,
+		QueueSize: queueSize,
+		Image:     image,
+		Network:   network,
+		Windows:   windows,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -290,6 +292,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 	if network == "" {
 		network = snapCfg.Network
 	}
+	queueSize, _ := cmd.Flags().GetInt("queue-size")
+	if queueSize == 0 {
+		queueSize = snapCfg.QueueSize
+	}
 
 	cpu, memBytes, storBytes, err := mergeResourceFlags(cmd, snapCfg.CPU, snapCfg.Memory, snapCfg.Storage, snapCfg)
 	if err != nil {
@@ -297,13 +303,14 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 	}
 
 	cfg := &types.VMConfig{
-		Name:    vmName,
-		CPU:     cpu,
-		Memory:  memBytes,
-		Storage: storBytes,
-		Image:   snapCfg.Image,
-		Network: network,
-		Windows: snapCfg.Windows,
+		Name:      vmName,
+		CPU:       cpu,
+		Memory:    memBytes,
+		Storage:   storBytes,
+		QueueSize: queueSize,
+		Image:     snapCfg.Image,
+		Network:   network,
+		Windows:   snapCfg.Windows,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err

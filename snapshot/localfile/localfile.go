@@ -271,6 +271,7 @@ func snapshotRecordToConfig(rec *snapshot.SnapshotRecord) *types.SnapshotConfig 
 		Memory:       rec.Memory,
 		Storage:      rec.Storage,
 		NICs:         rec.NICs,
+		QueueSize:    rec.QueueSize,
 		Network:      rec.Network,
 		Windows:      rec.Windows,
 	}
