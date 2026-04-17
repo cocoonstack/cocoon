@@ -16,6 +16,7 @@ type patchOptions struct {
 	windows        bool
 	cpu            int
 	memory         int64
+	diskQueueSize  int
 }
 
 // patchCHConfig patches specific fields in config.json while preserving all
@@ -41,9 +42,7 @@ func patchCHConfig(path string, opts *patchOptions, chCfg *chVMConfig, rawData [
 			len(opts.storageConfigs), diskCount)
 	}
 	if diskRaw, ok := raw["disks"]; ok {
-		patched, patchErr := patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
-			return setField(elem, "path", opts.storageConfigs[i].Path)
-		})
+		patched, patchErr := patchDisks(diskRaw, opts)
 		if patchErr != nil {
 			return fmt.Errorf("patch disks: %w", patchErr)
 		}
@@ -81,6 +80,22 @@ func patchCHConfig(path string, opts *patchOptions, chCfg *chVMConfig, rawData [
 		return fmt.Errorf("marshal patched config: %w", err)
 	}
 	return os.WriteFile(path, out, 0o600) //nolint:gosec
+}
+
+func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
+	diskQueueSize := opts.diskQueueSize
+	if diskQueueSize <= 0 {
+		diskQueueSize = defaultDiskQueueSize
+	}
+	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
+		if e := setField(elem, "path", opts.storageConfigs[i].Path); e != nil {
+			return e
+		}
+		// Patch queue_size (ring depth) — safe to change on restore.
+		// Do NOT patch num_queues: it is part of the virtio device state
+		// baked into the snapshot binary; changing it crashes CH.
+		return setField(elem, "queue_size", diskQueueSize)
+	})
 }
 
 func patchMemoryAndBalloon(raw map[string]json.RawMessage, chCfg *chVMConfig, memory int64, windows bool) error {

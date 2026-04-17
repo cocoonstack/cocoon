@@ -115,6 +115,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 		windows:        vmCfg.Windows,
 		cpu:            vmCfg.CPU,
 		memory:         vmCfg.Memory,
+		diskQueueSize:  vmCfg.DiskQueueSize,
 	}, nil, nil); err != nil {
 		return nil, fmt.Errorf("patch config: %w", err)
 	}

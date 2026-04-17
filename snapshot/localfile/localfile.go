@@ -261,18 +261,19 @@ func snapshotRecordToConfig(rec *snapshot.SnapshotRecord) *types.SnapshotConfig 
 	blobIDs := make(map[string]struct{}, len(rec.ImageBlobIDs))
 	maps.Copy(blobIDs, rec.ImageBlobIDs)
 	return &types.SnapshotConfig{
-		ID:           rec.ID,
-		Name:         rec.Name,
-		Description:  rec.Description,
-		Image:        rec.Image,
-		ImageBlobIDs: blobIDs,
-		Hypervisor:   rec.Hypervisor,
-		CPU:          rec.CPU,
-		Memory:       rec.Memory,
-		Storage:      rec.Storage,
-		NICs:         rec.NICs,
-		QueueSize:    rec.QueueSize,
-		Network:      rec.Network,
-		Windows:      rec.Windows,
+		ID:            rec.ID,
+		Name:          rec.Name,
+		Description:   rec.Description,
+		Image:         rec.Image,
+		ImageBlobIDs:  blobIDs,
+		Hypervisor:    rec.Hypervisor,
+		CPU:           rec.CPU,
+		Memory:        rec.Memory,
+		Storage:       rec.Storage,
+		NICs:          rec.NICs,
+		QueueSize:     rec.QueueSize,
+		DiskQueueSize: rec.DiskQueueSize,
+		Network:       rec.Network,
+		Windows:       rec.Windows,
 	}
 }

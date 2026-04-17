@@ -61,7 +61,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 		if balloon == 0 {
 			balloon = memoryMB / 2 //nolint:mnd
 		}
-		printCHDebug(storageConfigs, boot, vmCfg.Name, vmCfg.Image, cowPath, chBin, vmCfg.CPU, maxCPU, memoryMB, balloon, cowSizeGB, vmCfg.Windows, boot.KernelPath != "")
+		printCHDebug(storageConfigs, boot, vmCfg.Name, vmCfg.Image, cowPath, chBin, vmCfg.CPU, maxCPU, memoryMB, balloon, cowSizeGB, vmCfg.DiskQueueSize, vmCfg.Windows, boot.KernelPath != "")
 	}
 	return nil
 }
@@ -137,14 +137,14 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	fmt.Printf("  -d '{\"action_type\": \"InstanceStart\"}'\n")
 }
 
-func printCHDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmName, image, cowPath, chBin string, cpu, maxCPU, memory, balloon, cowSize int, windows, directBoot bool) {
+func printCHDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmName, image, cowPath, chBin string, cpu, maxCPU, memory, balloon, cowSize, diskQueueSize int, windows, directBoot bool) {
 	if directBoot {
 		if cowPath == "" {
 			cowPath = fmt.Sprintf("cow-%s.raw", vmName)
 		}
 		debugConfigs := append(append([]*types.StorageConfig(nil), configs...),
 			&types.StorageConfig{Path: cowPath, RO: false, Serial: hypervisor.CowSerial})
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize)
 		cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(configs), ",")
 		cmdline := fmt.Sprintf(
 			"console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
@@ -179,7 +179,7 @@ func printCHDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmName
 		fmt.Printf("%s \\\n", chBin)
 		fmt.Printf("  --firmware %s \\\n", boot.FirmwarePath)
 		fmt.Printf("  --disk \\\n")
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: cowPath, RO: false}}, cpu)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: cowPath, RO: false}}, cpu, diskQueueSize)
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
 	printCommonCHArgs(cpu, maxCPU, memory, balloon, windows)

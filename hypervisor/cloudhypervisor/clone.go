@@ -88,6 +88,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		windows:        vmCfg.Windows,
 		cpu:            vmCfg.CPU,
 		memory:         vmCfg.Memory,
+		diskQueueSize:  vmCfg.DiskQueueSize,
 	}, chCfg, chConfigRaw); err != nil {
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
@@ -122,7 +123,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("launch CH: %w", err)
 	}
 
-	if err := ch.restoreAndResumeClone(ctx, pid, sockPath, runDir, directBoot, vmCfg.Windows, hadCidataInSnapshot, storageConfigs, networkConfigs, chCfg, vmCfg.CPU); err != nil {
+	if err := ch.restoreAndResumeClone(ctx, pid, sockPath, runDir, directBoot, vmCfg.Windows, hadCidataInSnapshot, storageConfigs, networkConfigs, chCfg, vmCfg.CPU, vmCfg.DiskQueueSize); err != nil {
 		return nil, err
 	}
 
@@ -165,7 +166,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 	storageConfigs []*types.StorageConfig,
 	networkConfigs []*types.NetworkConfig,
 	snapshotCfg *chVMConfig,
-	cpu int,
+	cpu, diskQueueSize int,
 ) (err error) {
 	defer func() {
 		if err != nil {
@@ -187,7 +188,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 		if len(storageConfigs) == 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
 		}
-		cidataDisk := storageConfigToDisk(storageConfigs[len(storageConfigs)-1], cpu)
+		cidataDisk := storageConfigToDisk(storageConfigs[len(storageConfigs)-1], cpu, diskQueueSize)
 		if err = addDiskVM(ctx, hc, cidataDisk); err != nil {
 			return fmt.Errorf("vm.add-disk (cidata): %w", err)
 		}

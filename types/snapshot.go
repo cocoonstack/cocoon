@@ -14,13 +14,14 @@ type SnapshotConfig struct {
 
 	// Original VM resource config, populated during snapshot creation.
 	// Used by clone for parameter inheritance and validation.
-	CPU       int    `json:"cpu,omitempty"`
-	Memory    int64  `json:"memory,omitempty"`  // bytes
-	Storage   int64  `json:"storage,omitempty"` // bytes
-	NICs      int    `json:"nics,omitempty"`
-	QueueSize int    `json:"queue_size,omitempty"`
-	Network   string `json:"network,omitempty"`
-	Windows   bool   `json:"windows,omitempty"`
+	CPU           int    `json:"cpu,omitempty"`
+	Memory        int64  `json:"memory,omitempty"`  // bytes
+	Storage       int64  `json:"storage,omitempty"` // bytes
+	NICs          int    `json:"nics,omitempty"`
+	QueueSize     int    `json:"queue_size,omitempty"`
+	DiskQueueSize int    `json:"disk_queue_size,omitempty"`
+	Network       string `json:"network,omitempty"`
+	Windows       bool   `json:"windows,omitempty"`
 }
 
 // Snapshot is the public record for a snapshot.

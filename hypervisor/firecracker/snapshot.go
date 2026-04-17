@@ -116,15 +116,16 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 	}
 
 	cfg := &types.SnapshotConfig{
-		ID:         snapID,
-		Image:      rec.Config.Image,
-		Hypervisor: typ,
-		CPU:        rec.Config.CPU,
-		Memory:     rec.Config.Memory,
-		Storage:    rec.Config.Storage,
-		NICs:       len(rec.NetworkConfigs),
-		QueueSize:  rec.Config.QueueSize,
-		Network:    rec.Config.Network,
+		ID:            snapID,
+		Image:         rec.Config.Image,
+		Hypervisor:    typ,
+		CPU:           rec.Config.CPU,
+		Memory:        rec.Config.Memory,
+		Storage:       rec.Config.Storage,
+		NICs:          len(rec.NetworkConfigs),
+		QueueSize:     rec.Config.QueueSize,
+		DiskQueueSize: rec.Config.DiskQueueSize,
+		Network:       rec.Config.Network,
 	}
 	if rec.ImageBlobIDs != nil {
 		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))

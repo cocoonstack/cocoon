@@ -22,10 +22,10 @@ const (
 )
 
 // DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
-func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount int) []string {
+func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int) []string {
 	args := make([]string, 0, len(storageConfigs))
 	for _, storageConfig := range storageConfigs {
-		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount)))
+		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize)))
 	}
 	return args
 }
@@ -74,7 +74,7 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 	}
 
 	for _, storageConfig := range activeDisks(rec) {
-		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu))
+		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize))
 	}
 
 	for _, nc := range rec.NetworkConfigs {
@@ -174,13 +174,16 @@ func networkConfigToNet(nc *types.NetworkConfig) chNet {
 	}
 }
 
-func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount int) chDisk {
+func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int) chDisk {
+	if diskQueueSize <= 0 {
+		diskQueueSize = defaultDiskQueueSize
+	}
 	d := chDisk{
 		Path:      storageConfig.Path,
 		ReadOnly:  storageConfig.RO,
 		Serial:    storageConfig.Serial,
 		NumQueues: cpuCount,
-		QueueSize: defaultDiskQueueSize,
+		QueueSize: diskQueueSize,
 	}
 
 	// Cache readonly bases, use O_DIRECT for writable disks.

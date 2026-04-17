@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -51,9 +53,11 @@ func RunRelay(ctx context.Context) {
 	}
 	defer listener.Close() //nolint:errcheck
 
-	fcPid, _ := strconv.Atoi(os.Getenv(relayPIDEnvKey))
-	if fcPid <= 0 {
-		return // invalid PID, nothing to relay
+	pidStr := os.Getenv(relayPIDEnvKey)
+	fcPid, pidErr := strconv.Atoi(pidStr)
+	if pidErr != nil || fcPid <= 0 {
+		log.WithFunc("firecracker.runRelay").Warnf(ctx, "invalid FC PID %q, skipping relay", pidStr)
+		return
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

@@ -179,6 +179,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--storage` | `10G`            | COW disk size (e.g., 10G, 20G)                |
 | `--nics`    | `1`              | Number of network interfaces (0 = no network) |
 | `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
+| `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device (CH only, ignored by FC) |
 | `--network` | empty (default)  | CNI conflist name (empty = first conflist)     |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 
@@ -194,6 +195,7 @@ Applies to `cocoon vm clone`:
 | `--storage` | empty (inherit)          | COW disk size (must be >= snapshot value)                |
 | `--nics`    | `0` (inherit)            | Number of NICs (must be >= snapshot value)               |
 | `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue (0 = inherit from snapshot) |
+| `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device (0 = inherit from snapshot; CH only) |
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 
 ### Snapshot Flags
