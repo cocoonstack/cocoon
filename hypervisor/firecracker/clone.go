@@ -117,7 +117,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, cloneErr
 	}
 
-	info := types.VM{
+	info := &types.VM{
 		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
 		Config: *vmCfg, StorageConfigs: storageConfigs, NetworkConfigs: networkConfigs,
 		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
@@ -127,7 +127,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		if r == nil {
 			return fmt.Errorf("vm %s disappeared from index", vmID)
 		}
-		r.VM = info
+		r.VM = *info
 		r.BootConfig = bootCfg
 		r.ImageBlobIDs = blobIDs
 		r.FirstBooted = true
@@ -138,7 +138,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	logger.Infof(ctx, "VM %s cloned from snapshot", vmID)
-	return &info, nil
+	return info, nil
 }
 
 func (fc *Firecracker) restoreAndResumeClone(

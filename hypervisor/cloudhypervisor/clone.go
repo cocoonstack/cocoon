@@ -138,7 +138,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, err
 	}
 
-	info := types.VM{
+	info := &types.VM{
 		ID:             vmID,
 		Hypervisor:     typ,
 		State:          types.VMStateRunning,
@@ -154,7 +154,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		if r == nil {
 			return fmt.Errorf("vm %s disappeared from index", vmID)
 		}
-		r.VM = info
+		r.VM = *info
 		r.BootConfig = bootCfg
 		// Preserve the snapshot's blob pin set; rebuilt storage holds overlay paths.
 		// Mark the clone first-booted so later cold boots skip cidata.
@@ -166,7 +166,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	}
 
 	logger.Infof(ctx, "VM %s cloned from snapshot", vmID)
-	return &info, nil
+	return info, nil
 }
 
 type cloneResumeOpts struct {

@@ -54,7 +54,7 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 		return nil, err
 	}
 
-	info := types.VM{
+	info := &types.VM{
 		ID: id, Hypervisor: typ, State: types.VMStateCreated,
 		Config:         *vmCfg,
 		StorageConfigs: preparedStorage,
@@ -62,7 +62,7 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 		CreatedAt:      now, UpdatedAt: now,
 	}
 	rec := hypervisor.VMRecord{
-		VM:           info,
+		VM:           *info,
 		BootConfig:   bootCopy,
 		ImageBlobIDs: blobIDs,
 		RunDir:       runDir,
@@ -74,7 +74,7 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 	}); err != nil {
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
-	return &info, nil
+	return info, nil
 }
 
 // prepareOCI creates the raw COW disk and final kernel cmdline.
