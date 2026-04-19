@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -79,7 +80,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 
 				// 3. Remove the named netns (with retry for async kernel fd cleanup).
 				nsName := netnsName(vmID)
-				if err := deleteNetns(ctx, nsName); err != nil && !os.IsNotExist(err) {
+				if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
 				}
 

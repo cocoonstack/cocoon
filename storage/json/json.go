@@ -3,7 +3,9 @@ package json
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/projecteru2/core/log"
@@ -73,7 +75,7 @@ func (s *Store[T]) load() (*T, error) {
 	var data T
 	raw, err := os.ReadFile(s.filePath) //nolint:gosec
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			initData(&data)
 			return &data, nil
 		}

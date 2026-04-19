@@ -2,7 +2,9 @@ package cni
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -158,7 +160,7 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	// Remove the named netns (unmount bind-mount + remove file).
 	// deleteNetns retries briefly to handle async fd cleanup after process kill.
 	nsName := netnsName(vmID)
-	if err := deleteNetns(ctx, nsName); err != nil && !os.IsNotExist(err) {
+	if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove netns %s: %w", nsPath, err)
 	}
 
