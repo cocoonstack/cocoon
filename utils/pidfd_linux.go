@@ -4,8 +4,6 @@ package utils
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"syscall"
 	"time"
 
@@ -14,7 +12,7 @@ import (
 
 // terminateWithPidfd uses pidfd_open + pidfd_send_signal for TOCTOU-safe
 // process termination. Returns false if pidfd is unavailable (kernel < 5.3).
-func terminateWithPidfd(pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
+func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
 	if !VerifyProcessCmdline(pid, binaryName, expectArg) {
 		return true, nil
 	}
@@ -33,11 +31,13 @@ func terminateWithPidfd(pid int, binaryName, expectArg string, gracePeriod time.
 		if !IsProcessAlive(pid) {
 			return true, nil
 		}
-		return true, killFallback(pid)
+		// SIGTERM via pidfd failed but process is alive; escalate via pidfd.
+		_ = unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0)
+		return true, WaitFor(ctx, killWaitTimeout, 50*time.Millisecond, func() (bool, error) {
+			return !IsProcessAlive(pid), nil
+		})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
-	defer cancel()
 	if err := WaitFor(ctx, gracePeriod, 100*time.Millisecond, func() (bool, error) {
 		return !IsProcessAlive(pid), nil
 	}); err == nil {
@@ -45,17 +45,11 @@ func terminateWithPidfd(pid int, binaryName, expectArg string, gracePeriod time.
 	}
 
 	if err := unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0); err != nil {
-		return true, killFallback(pid)
+		if !IsProcessAlive(pid) {
+			return true, nil
+		}
 	}
-	return true, WaitFor(context.Background(), killWaitTimeout, 50*time.Millisecond, func() (bool, error) {
+	return true, WaitFor(ctx, killWaitTimeout, 50*time.Millisecond, func() (bool, error) {
 		return !IsProcessAlive(pid), nil
 	})
-}
-
-func killFallback(pid int) error {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return fmt.Errorf("find process %d: %w", pid, err)
-	}
-	return killAndWait(context.Background(), proc, pid)
 }

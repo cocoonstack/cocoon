@@ -15,7 +15,7 @@ func lockPath(t *testing.T) string {
 
 func TestLockUnlock(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l.Lock(ctx); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -27,7 +27,7 @@ func TestLockUnlock(t *testing.T) {
 
 func TestLockBlocksConcurrent(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l.Lock(ctx); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -65,7 +65,7 @@ func TestLockBlocksConcurrent(t *testing.T) {
 
 func TestTryLockHeld(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l.Lock(ctx); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -88,7 +88,7 @@ func TestTryLockCrossInstance(t *testing.T) {
 	path := lockPath(t)
 	l1 := New(path)
 	l2 := New(path)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l1.Lock(ctx); err != nil {
 		t.Fatalf("l1 Lock: %v", err)
@@ -121,7 +121,7 @@ func TestTryLockCrossInstance(t *testing.T) {
 
 func TestLockContextCancel(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l.Lock(ctx); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -142,7 +142,7 @@ func TestLockContextCancel(t *testing.T) {
 
 func TestConcurrentLockUnlock(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var (
 		mu      sync.Mutex
@@ -175,7 +175,7 @@ func TestConcurrentLockUnlock(t *testing.T) {
 
 func TestUnlockWithoutLock(t *testing.T) {
 	l := New(lockPath(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := l.Unlock(ctx); err != nil {
 		t.Fatalf("Unlock on unheld lock should not error, got: %v", err)

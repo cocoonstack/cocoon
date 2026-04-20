@@ -2,8 +2,11 @@
 
 package utils
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
-func terminateWithPidfd(_ int, _, _ string, _ time.Duration) (bool, error) {
+func terminateWithPidfd(_ context.Context, _ int, _, _ string, _ time.Duration) (bool, error) {
 	return false, nil
 }

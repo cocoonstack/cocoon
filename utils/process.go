@@ -78,7 +78,7 @@ func VerifyProcessCmdline(pid int, binaryName, expectArg string) bool {
 // cmdline arg check), then sends SIGTERM, waits up to gracePeriod, and
 // falls back to SIGKILL.
 func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) error {
-	if handled, err := terminateWithPidfd(pid, binaryName, expectArg, gracePeriod); handled {
+	if handled, err := terminateWithPidfd(ctx, pid, binaryName, expectArg, gracePeriod); handled {
 		return err
 	}
 
