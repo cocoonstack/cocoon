@@ -318,6 +318,8 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 		return nil, err
 	}
 
+	onDemand, _ := cmd.Flags().GetBool("on-demand")
+
 	cfg := &types.VMConfig{
 		Name:          vmName,
 		CPU:           cpu,
@@ -329,6 +331,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 		Network:       network,
 		NoDirectIO:    noDirectIO,
 		Windows:       snapCfg.Windows,
+		OnDemand:      onDemand,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -349,6 +352,9 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg *types.S
 	result.CPU = cpu
 	result.Memory = memBytes
 	result.Storage = storBytes
+
+	onDemand, _ := cmd.Flags().GetBool("on-demand")
+	result.OnDemand = onDemand
 
 	return &result, nil
 }

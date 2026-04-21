@@ -134,6 +134,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		cpu:                 vmCfg.CPU,
 		diskQueueSize:       vmCfg.DiskQueueSize,
 		noDirectIO:          vmCfg.NoDirectIO,
+		onDemand:            vmCfg.OnDemand,
 	}); err != nil {
 		return nil, err
 	}
@@ -162,6 +163,7 @@ type cloneResumeOpts struct {
 	cpu                 int
 	diskQueueSize       int
 	noDirectIO          bool
+	onDemand            bool
 }
 
 func (ch *CloudHypervisor) restoreAndResumeClone(
@@ -176,7 +178,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 		}
 	}()
 
-	if err = restoreVM(ctx, sockPath, runDir); err != nil {
+	if err = restoreVM(ctx, sockPath, runDir, opts.onDemand); err != nil {
 		return fmt.Errorf("vm.restore: %w", err)
 	}
 	hc := utils.NewSocketHTTPClient(sockPath)

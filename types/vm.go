@@ -38,6 +38,7 @@ type VMConfig struct {
 
 	NoDirectIO bool `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
 	Windows    bool `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
+	OnDemand   bool `json:"-"`                      // use UFFD on-demand memory restore (CH only); transient, not persisted
 
 	// Transient cloud-init credentials — carried in-memory from CLI to cidata
 	// generation, never serialized to JSON or persisted in the VM record.

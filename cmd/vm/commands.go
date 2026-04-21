@@ -109,6 +109,7 @@ func Command(h Actions) *cobra.Command {
 	restoreCmd.Flags().Int("cpu", 0, "boot CPUs (0 = keep current)")
 	restoreCmd.Flags().String("memory", "", "memory size (empty = keep current)")
 	restoreCmd.Flags().String("storage", "", "COW disk size (empty = keep current)")
+	restoreCmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster restore (CH only; snapshot file must remain on disk)")
 
 	debugCmd := &cobra.Command{
 		Use:   "debug [flags] IMAGE",
@@ -176,4 +177,5 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
+	cmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk)")
 }

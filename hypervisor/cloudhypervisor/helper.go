@@ -82,10 +82,28 @@ func snapshotVM(ctx context.Context, sockPath, destDir string) error {
 	return err
 }
 
-func restoreVM(ctx context.Context, sockPath, sourceDir string) error {
-	body, err := json.Marshal(map[string]string{
-		"source_url": "file://" + sourceDir,
-	})
+// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
+type chMemoryRestoreMode string
+
+const (
+	// chMemoryRestoreOnDemand uses userfaultfd (UFFD) to lazily page in
+	// guest memory from the snapshot file, avoiding a full upfront copy.
+	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
+)
+
+type chRestoreConfig struct {
+	SourceURL         string              `json:"source_url"`
+	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
+}
+
+func restoreVM(ctx context.Context, sockPath, sourceDir string, onDemand bool) error {
+	cfg := chRestoreConfig{
+		SourceURL: "file://" + sourceDir,
+	}
+	if onDemand {
+		cfg.MemoryRestoreMode = chMemoryRestoreOnDemand
+	}
+	body, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal restore request: %w", err)
 	}
