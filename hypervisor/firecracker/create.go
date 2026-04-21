@@ -56,22 +56,10 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 
 	info := &types.VM{
 		ID: id, Hypervisor: typ, State: types.VMStateCreated,
-		Config:         *vmCfg,
-		StorageConfigs: preparedStorage,
-		NetworkConfigs: networkConfigs,
-		CreatedAt:      now, UpdatedAt: now,
+		Config: *vmCfg, StorageConfigs: preparedStorage, NetworkConfigs: networkConfigs,
+		CreatedAt: now, UpdatedAt: now,
 	}
-	rec := hypervisor.VMRecord{
-		VM:           *info,
-		BootConfig:   bootCopy,
-		ImageBlobIDs: blobIDs,
-		RunDir:       runDir,
-		LogDir:       logDir,
-	}
-	if err := fc.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		idx.VMs[id] = &rec
-		return nil
-	}); err != nil {
+	if err := fc.FinalizeCreate(ctx, id, info, bootCopy, blobIDs); err != nil {
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 	return info, nil

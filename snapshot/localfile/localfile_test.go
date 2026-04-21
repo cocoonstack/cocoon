@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,7 +313,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Data dir should be gone.
-	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !os.IsNotExist(err) {
+	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("expected data dir to be removed")
 	}
 

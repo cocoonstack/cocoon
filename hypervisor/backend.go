@@ -442,6 +442,26 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	return &rec, nil
 }
 
+// FinalizeCreate writes the fully populated VM record to the DB after
+// disk preparation, replacing the placeholder written by ReserveVM.
+// RunDir and LogDir are carried over from the existing placeholder.
+func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
+	return b.DB.Update(ctx, func(idx *VMIndex) error {
+		existing := idx.VMs[id]
+		if existing == nil {
+			return fmt.Errorf("vm %s disappeared from index", id)
+		}
+		idx.VMs[id] = &VMRecord{
+			VM:           *info,
+			BootConfig:   bootCfg,
+			ImageBlobIDs: blobIDs,
+			RunDir:       existing.RunDir,
+			LogDir:       existing.LogDir,
+		}
+		return nil
+	})
+}
+
 // FinalizeClone marks a just-cloned VM as running in the DB.
 // If blobIDs is non-nil, it overwrites the record's image blob pin set.
 func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {

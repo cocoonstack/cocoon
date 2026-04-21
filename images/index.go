@@ -167,7 +167,7 @@ func GCStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
 }
 
 // GCCollectBlobs removes temp files and blob artifacts by hex ID.
-// removers are called for each hex; os.IsNotExist errors are ignored.
+// removers are called for each hex; fs.ErrNotExist errors are ignored.
 func GCCollectBlobs(ctx context.Context, tempDir string, dirOnly bool, ids []string, removers ...func(string) error) error {
 	var errs []error
 	errs = append(errs, GCStaleTemp(ctx, tempDir, dirOnly)...)

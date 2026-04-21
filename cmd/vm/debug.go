@@ -124,8 +124,8 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 		len(configs), cowPath)
 	fmt.Println()
 
-	balloonMiB := memMiB / 4     //nolint:mnd
-	if vmCfg.Memory >= 256<<20 { //nolint:mnd
+	balloonMiB := memMiB / hypervisor.DefaultBalloonDiv
+	if vmCfg.Memory >= hypervisor.MinBalloonMemory {
 		fmt.Printf("# 4. Balloon\n")
 		fmt.Printf("curl --unix-socket %s -X PUT http://localhost/balloon \\\n", sock)
 		fmt.Printf("  -d '{\"amount_mib\": %d, \"deflate_on_oom\": true, \"free_page_reporting\": true}'\n", balloonMiB)
