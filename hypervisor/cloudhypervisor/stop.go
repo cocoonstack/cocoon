@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -54,17 +53,7 @@ func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
 		return ch.shutdownUEFI(ctx, hc, id, sockPath, pid, stopTimeout)
 	})
 
-	switch {
-	case errors.Is(shutdownErr, hypervisor.ErrNotRunning):
-		hypervisor.CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-		return nil
-	case shutdownErr != nil:
-		ch.MarkError(ctx, id)
-		return shutdownErr
-	default:
-		hypervisor.CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-		return nil
-	}
+	return ch.HandleStopResult(ctx, id, rec.RunDir, runtimeFiles, shutdownErr)
 }
 
 // shutdownUEFI shuts down a UEFI-boot VM:

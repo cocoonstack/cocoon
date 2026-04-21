@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -316,13 +318,123 @@ func (b *Backend) GCCollect(ctx context.Context, ids []string) error {
 	return errors.Join(errs...)
 }
 
-// SocketPath returns the API socket path under a VM's run directory.
-func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
-
 // PIDFilePath returns the PID file path for the backend's PID file name.
 func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
 }
 
+// RecordSnapshot generates a snapshot ID and atomically records it on the VM.
+// On failure it removes tmpDir and returns the error.
+func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snapID string, err error) {
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
+		}
+	}()
+
+	snapID, err = utils.GenerateID()
+	if err != nil {
+		return "", fmt.Errorf("generate snapshot ID: %w", err)
+	}
+	if err = b.DB.Update(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[vmID]
+		if r == nil {
+			return fmt.Errorf("vm %s disappeared from index", vmID)
+		}
+		if r.SnapshotIDs == nil {
+			r.SnapshotIDs = make(map[string]struct{})
+		}
+		r.SnapshotIDs[snapID] = struct{}{}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("record snapshot on VM: %w", err)
+	}
+	return snapID, nil
+}
+
+// BuildSnapshotConfig builds a SnapshotConfig from a VM record's config.
+func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
+	cfg := &types.SnapshotConfig{
+		ID:            snapID,
+		Image:         rec.Config.Image,
+		Hypervisor:    b.Typ,
+		CPU:           rec.Config.CPU,
+		Memory:        rec.Config.Memory,
+		Storage:       rec.Config.Storage,
+		NICs:          len(rec.NetworkConfigs),
+		QueueSize:     rec.Config.QueueSize,
+		DiskQueueSize: rec.Config.DiskQueueSize,
+		Network:       rec.Config.Network,
+		NoDirectIO:    rec.Config.NoDirectIO,
+		Windows:       rec.Config.Windows,
+	}
+	if rec.ImageBlobIDs != nil {
+		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))
+		maps.Copy(cfg.ImageBlobIDs, rec.ImageBlobIDs)
+	}
+	return cfg
+}
+
+// FinalizeRestore updates the DB and assembles the returned types.VM after
+// a successful VM restore.
+func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
+	now := time.Now()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[vmID]
+		if r == nil {
+			return fmt.Errorf("vm %s disappeared from index", vmID)
+		}
+		r.Config = *vmCfg
+		r.State = types.VMStateRunning
+		r.StartedAt = &now
+		r.UpdatedAt = now
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("update record: %w", err)
+	}
+
+	info := rec.VM
+	info.Config = *vmCfg
+	info.State = types.VMStateRunning
+	info.PID = pid
+	info.SocketPath = SocketPath(rec.RunDir)
+	info.StartedAt = &now
+	info.UpdatedAt = now
+	return &info, nil
+}
+
+// HandleStopResult processes the error from a per-VM stop attempt.
+// Real errors mark the VM as error state; ErrNotRunning and nil both
+// clean up runtime files and return success.
+func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
+	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
+		b.MarkError(ctx, id)
+		return shutdownErr
+	}
+	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+	return nil
+}
+
+// SocketPath returns the API socket path under a VM's run directory.
+func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
+
 // ConsoleSockPath returns the console socket path under a VM's run directory.
 func ConsoleSockPath(runDir string) string { return filepath.Join(runDir, ConsoleSockName) }
+
+// PrepareStagingDir creates a sibling staging directory, extracts the snapshot
+// tar into it, and returns a cleanup function that removes the staging dir.
+func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
+	stagingDir = runDir + ".restore-staging"
+	if err = os.RemoveAll(stagingDir); err != nil {
+		return "", nil, fmt.Errorf("clear staging dir: %w", err)
+	}
+	if err = os.MkdirAll(stagingDir, 0o700); err != nil {
+		return "", nil, fmt.Errorf("create staging dir: %w", err)
+	}
+	cleanup = func() { os.RemoveAll(stagingDir) } //nolint:errcheck,gosec
+	if err = utils.ExtractTar(stagingDir, snapshot); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("extract snapshot: %w", err)
+	}
+	return stagingDir, cleanup, nil
+}

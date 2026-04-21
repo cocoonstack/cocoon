@@ -39,9 +39,6 @@ type LocalFile struct {
 	locker lock.Locker
 }
 
-// Type returns the snapshot backend identifier.
-func (lf *LocalFile) Type() string { return typ }
-
 // New creates a new LocalFile snapshot backend.
 func New(conf *config.Config) (*LocalFile, error) {
 	if conf == nil {
@@ -55,6 +52,9 @@ func New(conf *config.Config) (*LocalFile, error) {
 	store := storejson.New[snapshot.SnapshotIndex](cfg.IndexFile(), locker)
 	return &LocalFile{conf: cfg, store: store, locker: locker}, nil
 }
+
+// Type returns the snapshot backend identifier.
+func (lf *LocalFile) Type() string { return typ }
 
 // DataDir returns the local data directory and snapshot config for direct file access.
 func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, *types.SnapshotConfig, error) {

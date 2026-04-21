@@ -2,7 +2,6 @@ package firecracker
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -50,17 +49,7 @@ func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
 		return fc.gracefulStop(ctx, hc, id, sockPath, pid, stopTimeout)
 	})
 
-	switch {
-	case errors.Is(shutdownErr, hypervisor.ErrNotRunning):
-		hypervisor.CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-		return nil
-	case shutdownErr != nil:
-		fc.MarkError(ctx, id)
-		return shutdownErr
-	default:
-		hypervisor.CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-		return nil
-	}
+	return fc.HandleStopResult(ctx, id, rec.RunDir, runtimeFiles, shutdownErr)
 }
 
 // gracefulStop sends SendCtrlAltDel, waits for the guest to shut down within

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,45 +94,12 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 		return nil, nil, fmt.Errorf("save snapshot metadata: %w", metaErr)
 	}
 
-	snapID, genErr := utils.GenerateID()
-	if genErr != nil {
-		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
-		return nil, nil, fmt.Errorf("generate snapshot ID: %w", genErr)
-	}
-	if updateErr := fc.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r := idx.VMs[vmID]
-		if r == nil {
-			return fmt.Errorf("vm %s disappeared from index", vmID)
-		}
-		if r.SnapshotIDs == nil {
-			r.SnapshotIDs = make(map[string]struct{})
-		}
-		r.SnapshotIDs[snapID] = struct{}{}
-		return nil
-	}); updateErr != nil {
-		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
-		return nil, nil, fmt.Errorf("record snapshot on VM: %w", updateErr)
+	snapID, recErr := fc.RecordSnapshot(ctx, vmID, tmpDir)
+	if recErr != nil {
+		return nil, nil, recErr
 	}
 
-	cfg := &types.SnapshotConfig{
-		ID:            snapID,
-		Image:         rec.Config.Image,
-		Hypervisor:    typ,
-		CPU:           rec.Config.CPU,
-		Memory:        rec.Config.Memory,
-		Storage:       rec.Config.Storage,
-		NICs:          len(rec.NetworkConfigs),
-		QueueSize:     rec.Config.QueueSize,
-		DiskQueueSize: rec.Config.DiskQueueSize,
-		Network:       rec.Config.Network,
-		NoDirectIO:    rec.Config.NoDirectIO,
-	}
-	if rec.ImageBlobIDs != nil {
-		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))
-		maps.Copy(cfg.ImageBlobIDs, rec.ImageBlobIDs)
-	}
-
-	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
+	return fc.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
 }
 
 // snapshotMeta is persisted as cocoon.json inside the snapshot tar.

@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -28,17 +26,11 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	}
 
 	// Use a clean sibling staging dir before touching the live runDir.
-	stagingDir := rec.RunDir + ".restore-staging"
-	if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
-		return nil, fmt.Errorf("clear staging dir: %w", rmErr)
+	stagingDir, cleanupStaging, err := hypervisor.PrepareStagingDir(rec.RunDir, snapshot)
+	if err != nil {
+		return nil, err
 	}
-	if mkErr := os.MkdirAll(stagingDir, 0o700); mkErr != nil {
-		return nil, fmt.Errorf("create staging dir: %w", mkErr)
-	}
-	defer os.RemoveAll(stagingDir) //nolint:errcheck
-	if extractErr := utils.ExtractTar(stagingDir, snapshot); extractErr != nil {
-		return nil, fmt.Errorf("extract snapshot: %w", extractErr)
-	}
+	defer cleanupStaging()
 
 	// Once staging succeeds, stop the current VM and swap files into place.
 	if killErr := ch.killForRestore(ctx, vmID, rec); killErr != nil {
@@ -151,29 +143,6 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 		return nil, fmt.Errorf("vm.resume: %w", err)
 	}
 
-	now := time.Now()
-	if err = ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r := idx.VMs[vmID]
-		if r == nil {
-			return fmt.Errorf("vm %s disappeared from index", vmID)
-		}
-		r.Config = *vmCfg
-		r.State = types.VMStateRunning
-		r.StartedAt = &now
-		r.UpdatedAt = now
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("update record: %w", err)
-	}
-
 	logger.Infof(ctx, "VM %s restored from snapshot", vmID)
-
-	info := rec.VM
-	info.Config = *vmCfg
-	info.State = types.VMStateRunning
-	info.PID = pid
-	info.SocketPath = hypervisor.SocketPath(rec.RunDir)
-	info.StartedAt = &now
-	info.UpdatedAt = now
-	return &info, nil
+	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
 }

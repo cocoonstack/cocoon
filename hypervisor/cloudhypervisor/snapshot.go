@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 
@@ -102,45 +101,10 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 	}
 
 	// Generate snapshot ID and record it on the VM atomically.
-	snapID, genErr := utils.GenerateID()
-	if genErr != nil {
-		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
-		return nil, nil, fmt.Errorf("generate snapshot ID: %w", genErr)
-	}
-	if updateErr := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r := idx.VMs[vmID]
-		if r == nil {
-			return fmt.Errorf("vm %s disappeared from index", vmID)
-		}
-		if r.SnapshotIDs == nil {
-			r.SnapshotIDs = make(map[string]struct{})
-		}
-		r.SnapshotIDs[snapID] = struct{}{}
-		return nil
-	}); updateErr != nil {
-		os.RemoveAll(tmpDir) //nolint:errcheck,gosec
-		return nil, nil, fmt.Errorf("record snapshot on VM: %w", updateErr)
+	snapID, recErr := ch.RecordSnapshot(ctx, vmID, tmpDir)
+	if recErr != nil {
+		return nil, nil, recErr
 	}
 
-	// Build SnapshotConfig from the VM record.
-	cfg := &types.SnapshotConfig{
-		ID:            snapID,
-		Image:         rec.Config.Image,
-		Hypervisor:    typ,
-		CPU:           rec.Config.CPU,
-		Memory:        rec.Config.Memory,
-		Storage:       rec.Config.Storage,
-		NICs:          len(rec.NetworkConfigs),
-		QueueSize:     rec.Config.QueueSize,
-		DiskQueueSize: rec.Config.DiskQueueSize,
-		Network:       rec.Config.Network,
-		NoDirectIO:    rec.Config.NoDirectIO,
-		Windows:       rec.Config.Windows,
-	}
-	if rec.ImageBlobIDs != nil {
-		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))
-		maps.Copy(cfg.ImageBlobIDs, rec.ImageBlobIDs)
-	}
-
-	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
+	return ch.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
 }
