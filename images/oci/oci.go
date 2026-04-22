@@ -118,6 +118,8 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}
+			vm.ImageDigest = entry.EntryID()
+			vm.ImageType = o.Type()
 
 			var configs []*types.StorageConfig
 			for j, layer := range entry.Layers {

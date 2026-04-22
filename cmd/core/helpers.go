@@ -328,6 +328,8 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 		QueueSize:     queueSize,
 		DiskQueueSize: diskQueueSize,
 		Image:         snapCfg.Image,
+		ImageDigest:   snapCfg.ImageDigest,
+		ImageType:     snapCfg.ImageType,
 		Network:       network,
 		NoDirectIO:    noDirectIO,
 		Windows:       snapCfg.Windows,

@@ -9,6 +9,8 @@ type SnapshotConfig struct {
 	Name         string              `json:"name"`
 	Description  string              `json:"description,omitempty"`
 	Image        string              `json:"image,omitempty"`          // source image reference (e.g. "ubuntu:22.04")
+	ImageDigest  string              `json:"image_digest,omitempty"`   // resolved image digest (e.g. "sha256:abc123...")
+	ImageType    string              `json:"image_type,omitempty"`     // image backend type ("oci" or "cloudimg")
 	ImageBlobIDs map[string]struct{} `json:"image_blob_ids,omitempty"` // blob hex set for GC pinning
 	Hypervisor   string              `json:"hypervisor,omitempty"`     // originating backend ("cloud-hypervisor" or "firecracker")
 

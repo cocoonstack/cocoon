@@ -267,6 +267,8 @@ func snapshotRecordToConfig(rec *snapshot.SnapshotRecord) *types.SnapshotConfig 
 		Name:          rec.Name,
 		Description:   rec.Description,
 		Image:         rec.Image,
+		ImageDigest:   rec.ImageDigest,
+		ImageType:     rec.ImageType,
 		ImageBlobIDs:  blobIDs,
 		Hypervisor:    rec.Hypervisor,
 		CPU:           rec.CPU,

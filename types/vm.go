@@ -34,14 +34,13 @@ type VMConfig struct {
 	QueueSize     int    `json:"queue_size,omitempty"`      // virtio-net ring depth per queue; 0 = default
 	DiskQueueSize int    `json:"disk_queue_size,omitempty"` // virtio-blk ring depth per device; 0 = default
 	Image         string `json:"image"`
-	Network       string `json:"network,omitempty"` // CNI conflist name; empty = default
+	ImageDigest   string `json:"image_digest,omitempty"` // resolved image digest (e.g. "sha256:abc123")
+	ImageType     string `json:"image_type,omitempty"`   // image backend type ("oci" or "cloudimg")
+	Network       string `json:"network,omitempty"`      // CNI conflist name; empty = default
+	NoDirectIO    bool   `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
+	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
 
-	NoDirectIO bool `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
-	Windows    bool `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
-	OnDemand   bool `json:"-"`                      // use UFFD on-demand memory restore (CH only); transient, not persisted
-
-	// Transient cloud-init credentials — carried in-memory from CLI to cidata
-	// generation, never serialized to JSON or persisted in the VM record.
+	OnDemand bool   `json:"-"` // use UFFD on-demand memory restore (CH only); transient, not persisted
 	User     string `json:"-"`
 	Password string `json:"-"`
 }

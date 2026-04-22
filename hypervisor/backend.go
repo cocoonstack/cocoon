@@ -217,10 +217,6 @@ func (b *Backend) CloneSetup(ctx context.Context, vmID string, vmCfg *types.VMCo
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
 		return "", "", time.Time{}, nil, err
 	}
-	if vmCfg.Image == "" && snapshotConfig.Image != "" {
-		vmCfg.Image = snapshotConfig.Image
-	}
-
 	now = time.Now()
 	runDir = b.Conf.VMRunDir(vmID)
 	logDir = b.Conf.VMLogDir(vmID)
@@ -385,6 +381,8 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	cfg := &types.SnapshotConfig{
 		ID:            snapID,
 		Image:         rec.Config.Image,
+		ImageDigest:   rec.Config.ImageDigest,
+		ImageType:     rec.Config.ImageType,
 		Hypervisor:    b.Typ,
 		CPU:           rec.Config.CPU,
 		Memory:        rec.Config.Memory,

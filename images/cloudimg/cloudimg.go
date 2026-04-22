@@ -109,6 +109,8 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}
+			vm.ImageDigest = entry.EntryID()
+			vm.ImageType = c.Type()
 
 			blobPath := c.conf.BlobPath(entry.ContentSum.Hex())
 			if !utils.ValidFile(blobPath) {
