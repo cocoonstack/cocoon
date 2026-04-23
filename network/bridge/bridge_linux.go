@@ -17,9 +17,9 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-var _ network.Network = (*Bridge)(nil)
-
 const typ = "bridge"
+
+var _ network.Network = (*Bridge)(nil)
 
 // Bridge implements network.Network by creating TAP devices and adding
 // them directly to an existing Linux bridge. An external DHCP server

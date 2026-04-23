@@ -11,14 +11,14 @@ import (
 	storejson "github.com/cocoonstack/cocoon/storage/json"
 )
 
+const typ = "cloud-hypervisor"
+
 // compile-time interface checks.
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
 	_ hypervisor.Direct     = (*CloudHypervisor)(nil)
 	_ hypervisor.Watchable  = (*CloudHypervisor)(nil)
 )
-
-const typ = "cloud-hypervisor"
 
 // CloudHypervisor implements hypervisor.Hypervisor.
 type CloudHypervisor struct {

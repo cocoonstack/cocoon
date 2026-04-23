@@ -18,12 +18,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-var _ images.Images = (*OCI)(nil)
-
 const (
 	typ          = "oci"
 	serialPrefix = "cocoon-layer"
 )
+
+var _ images.Images = (*OCI)(nil)
 
 // OCI implements the images.Images interface using OCI container images
 // converted to EROFS filesystems for use with Cloud Hypervisor.

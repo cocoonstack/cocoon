@@ -17,9 +17,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-var _ images.Images = (*CloudImg)(nil)
-
 const typ = "cloudimg"
+
+var _ images.Images = (*CloudImg)(nil)
 
 // CloudImg stores cloud image blobs for UEFI boot under Cloud Hypervisor.
 type CloudImg struct {

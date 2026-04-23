@@ -11,14 +11,14 @@ import (
 	storejson "github.com/cocoonstack/cocoon/storage/json"
 )
 
+const typ = "firecracker"
+
 // compile-time interface checks.
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
 	_ hypervisor.Watchable  = (*Firecracker)(nil)
 	_ hypervisor.Direct     = (*Firecracker)(nil)
 )
-
-const typ = "firecracker"
 
 // Firecracker implements hypervisor.Hypervisor using the Firecracker VMM.
 // Only OCI images (direct kernel boot) are supported — no UEFI, no cloudimg, no Windows.
