@@ -8,8 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 )
 
-// validFileSize returns the file size or an error if the file is missing,
-// not a regular file, or empty. Combines validation and size in one stat call.
+// validFileSize returns file size, validating it's a regular non-empty file.
 func validFileSize(path string) (int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {

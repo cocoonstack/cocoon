@@ -9,8 +9,10 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// ErrAmbiguous reports an image ref that matches more than one backend.
-var ErrAmbiguous = errors.New("image ref resolves to multiple backends")
+var (
+	// ErrAmbiguous reports an image ref that matches more than one backend.
+	ErrAmbiguous = errors.New("image ref resolves to multiple backends")
+)
 
 // Images defines the interface for an image backend (OCI, cloudimg).
 type Images interface {

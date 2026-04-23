@@ -13,7 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// List handles the 'image list' command.
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -52,7 +51,6 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	})
 }
 
-// RM handles the 'image rm' command.
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -90,12 +88,11 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		logger.Infof(ctx, "deleted: %s", ref)
 	}
 	if len(allDeleted) == 0 {
-		logger.Warn(ctx, "no matching images found")
+		logger.Info(ctx, "no matching images found")
 	}
 	return nil
 }
 
-// Inspect handles the 'image inspect' command.
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {

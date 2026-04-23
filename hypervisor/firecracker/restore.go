@@ -57,21 +57,13 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 	return result, nil
 }
 
-// resolveForRestore loads the record without stopping the running VM.
+// resolveForRestore loads the record and validates running state.
 func (fc *Firecracker) resolveForRestore(ctx context.Context, vmRef string) (string, *hypervisor.VMRecord, string, error) {
-	vmID, err := fc.ResolveRef(ctx, vmRef)
+	vmID, rec, err := fc.ResolveForRestore(ctx, vmRef)
 	if err != nil {
 		return "", nil, "", err
 	}
-	rec, err := fc.LoadRecord(ctx, vmID)
-	if err != nil {
-		return "", nil, "", err
-	}
-	if rec.State != types.VMStateRunning {
-		return "", nil, "", fmt.Errorf("vm %s is %s, must be running to restore", vmID, rec.State)
-	}
-	cowPath := fc.conf.COWRawPath(vmID)
-	return vmID, &rec, cowPath, nil
+	return vmID, rec, fc.conf.COWRawPath(vmID), nil
 }
 
 // killForRestore stops the running FC process and cleans up runtime files.

@@ -7,7 +7,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-var ErrNotFound = errors.New("snapshot not found")
+var (
+	ErrNotFound = errors.New("snapshot not found")
+)
 
 // SnapshotRecord is the persisted record for a single snapshot.
 type SnapshotRecord struct {

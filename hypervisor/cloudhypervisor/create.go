@@ -88,14 +88,8 @@ func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *t
 	if err = os.Truncate(cowPath, vmCfg.Storage); err != nil {
 		return nil, fmt.Errorf("truncate COW: %w", err)
 	}
-	// mkfs.ext4
-	out, err := exec.CommandContext(ctx, //nolint:gosec
-		"mkfs.ext4", "-F", "-m", "0", "-q",
-		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
-		cowPath,
-	).CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("mkfs.ext4 COW: %s: %w", strings.TrimSpace(string(out)), err)
+	if err = hypervisor.InitCOWFilesystem(ctx, cowPath); err != nil {
+		return nil, err
 	}
 
 	storageConfigs = append(storageConfigs, &types.StorageConfig{
@@ -120,6 +114,7 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	basePath := storageConfigs[0].Path
 	overlayPath := ch.conf.OverlayPath(vmID)
 
+	// shell out because no Go qcow2 writer; qemu-img is authoritative for creating backed overlays.
 	if out, err := exec.CommandContext(ctx, //nolint:gosec
 		"qemu-img", "create", "-f", "qcow2", "-F", "qcow2",
 		"-b", basePath, overlayPath,

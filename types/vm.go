@@ -35,6 +35,36 @@ type VMConfig struct {
 	Password string `json:"-"`
 }
 
+// VM is the runtime record for a VM, persisted by the hypervisor backend.
+type VM struct {
+	ID         string   `json:"id"`
+	Hypervisor string   `json:"hypervisor,omitempty"`
+	State      VMState  `json:"state"`
+	Config     VMConfig `json:"config"`
+
+	// Runtime — populated only while State == VMStateRunning.
+	PID        int    `json:"pid"`
+	SocketPath string `json:"socket_path,omitempty"` // CH API Unix socket
+
+	// Attached resources — promoted into VMRecord via embedding.
+	NetworkConfigs []*NetworkConfig `json:"network_configs,omitempty"`
+	StorageConfigs []*StorageConfig `json:"storage_configs,omitempty"`
+
+	// FirstBooted is true after the VM has been started at least once.
+	// Used to skip cidata attachment on subsequent starts (cloudimg only).
+	FirstBooted bool `json:"first_booted"`
+
+	// SnapshotIDs tracks snapshots created from this VM.
+	// Populated at runtime by toVM() from VMRecord.SnapshotIDs.
+	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
+
+	// Timestamps.
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+}
+
 // Validate checks that VMConfig fields are within acceptable ranges.
 func (cfg *VMConfig) Validate() error {
 	if cfg.Name == "" {
@@ -65,34 +95,4 @@ func (cfg *VMConfig) Validate() error {
 		return fmt.Errorf("--password contains unsafe shell characters (backtick, $, ;, |, &, etc.)")
 	}
 	return nil
-}
-
-// VM is the runtime record for a VM, persisted by the hypervisor backend.
-type VM struct {
-	ID         string   `json:"id"`
-	Hypervisor string   `json:"hypervisor,omitempty"`
-	State      VMState  `json:"state"`
-	Config     VMConfig `json:"config"`
-
-	// Runtime — populated only while State == VMStateRunning.
-	PID        int    `json:"pid"`
-	SocketPath string `json:"socket_path,omitempty"` // CH API Unix socket
-
-	// Attached resources — promoted into VMRecord via embedding.
-	NetworkConfigs []*NetworkConfig `json:"network_configs,omitempty"`
-	StorageConfigs []*StorageConfig `json:"storage_configs,omitempty"`
-
-	// FirstBooted is true after the VM has been started at least once.
-	// Used to skip cidata attachment on subsequent starts (cloudimg only).
-	FirstBooted bool `json:"first_booted"`
-
-	// SnapshotIDs tracks snapshots created from this VM.
-	// Populated at runtime by toVM() from VMRecord.SnapshotIDs.
-	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
-
-	// Timestamps.
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 }

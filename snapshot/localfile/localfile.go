@@ -89,7 +89,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	dataDir := lf.conf.SnapshotDataDir(id)
 	now := time.Now()
 
-	// Phase 1: write placeholder record so GC won't orphan our dir.
 	if err = lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
 		if cfg.Name != "" {
 			if existingID, ok := idx.Names[cfg.Name]; ok {
@@ -112,7 +111,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 		return "", err
 	}
 
-	// Rollback on failure: remove data dir + placeholder record.
 	defer func() {
 		if err != nil {
 			os.RemoveAll(dataDir) //nolint:errcheck,gosec
@@ -120,7 +118,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 		}
 	}()
 
-	// Phase 2: create dir + extract data.
 	if err = os.MkdirAll(dataDir, 0o750); err != nil {
 		return "", fmt.Errorf("create data dir: %w", err)
 	}
@@ -128,7 +125,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 		return "", fmt.Errorf("extract snapshot data: %w", err)
 	}
 
-	// Phase 3: finalize — clear pending flag.
 	if err = lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
 		rec := idx.Snapshots[id]
 		if rec == nil {

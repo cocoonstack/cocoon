@@ -34,7 +34,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	}
 	size := fi.Size()
 
-	// Empty or small files: regular entry.
 	if size == 0 {
 		return tarFileFrom(tw, f, fi, nameInTar)
 	}
@@ -48,20 +47,17 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return tarFileFrom(tw, f, fi, nameInTar)
 	}
 
-	// Sum actual data to decide whether the file is sparse.
 	var dataSize int64
 	for _, seg := range segments {
 		dataSize += seg.Length
 	}
 	if dataSize == size {
-		// Not sparse — regular entry avoids PAX overhead.
 		if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
 			return fmt.Errorf("seek %s: %w", path, seekErr)
 		}
 		return tarFileFrom(tw, f, fi, nameInTar)
 	}
 
-	// Convert data segments to JSON for PAX record.
 	mapJSON, err := json.Marshal(segments)
 	if err != nil {
 		return fmt.Errorf("marshal sparse map for %s: %w", path, err)
@@ -82,7 +78,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("write header %s: %w", nameInTar, err)
 	}
 
-	// Write only data segments — tar expects exactly dataSize bytes.
 	for _, seg := range segments {
 		if _, seekErr := f.Seek(seg.Offset, io.SeekStart); seekErr != nil {
 			return fmt.Errorf("seek %s to %d: %w", path, seg.Offset, seekErr)

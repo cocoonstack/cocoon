@@ -48,27 +48,13 @@ func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
 	return fc.HandleStopResult(ctx, id, rec.RunDir, runtimeFiles, shutdownErr)
 }
 
-// gracefulStop sends SendCtrlAltDel, waits for the guest to shut down within
-// the timeout, then falls back to forceTerminate.
+// gracefulStop sends SendCtrlAltDel with poll-and-escalate handled
+// by the shared GracefulStop helper.
 func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, sockPath string, pid int, timeout time.Duration) error {
-	if err := sendCtrlAltDel(ctx, hc); err != nil {
-		log.WithFunc("firecracker.gracefulStop").Warnf(ctx, "SendCtrlAltDel %s: %v — escalating", vmID, err)
-		return fc.forceTerminate(ctx, sockPath, pid)
-	}
-
-	// Poll until the process exits or timeout.
-	if err := utils.WaitFor(ctx, timeout, hypervisor.GracefulStopPollInterval, func() (bool, error) {
-		return !utils.IsProcessAlive(pid), nil
-	}); err == nil {
-		return nil
-	}
-
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	log.WithFunc("firecracker.gracefulStop").Warnf(ctx, "VM %s did not respond to SendCtrlAltDel within %s, escalating", vmID, timeout)
-	return fc.forceTerminate(ctx, sockPath, pid)
+	return fc.GracefulStop(ctx, vmID, pid, timeout,
+		func() error { return sendCtrlAltDel(ctx, hc) },
+		func() error { return fc.forceTerminate(ctx, sockPath, pid) },
+	)
 }
 
 // forceTerminate skips graceful shutdown, going straight to SIGTERM → SIGKILL.

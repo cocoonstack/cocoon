@@ -19,7 +19,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Start handles the 'vm start' command.
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -45,7 +44,6 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// Stop handles the 'vm stop' command.
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -74,7 +72,6 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// Inspect handles the 'vm inspect' command.
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -94,7 +91,6 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	return cmdcore.OutputJSON(info)
 }
 
-// Console handles the 'vm console' command.
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -153,13 +149,12 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// RM handles the 'vm rm' command.
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.rm")
+	logger := log.WithFunc("cmd.vm.rm")
 
 	force, _ := cmd.Flags().GetBool("force")
 
@@ -205,7 +200,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
-	logger := log.WithFunc("cmd.recoverNetwork")
+	logger := log.WithFunc("cmd.vm.recoverNetwork")
 
 	// Lazy-init CNI provider (may fail if not configured — OK for bridge-only setups).
 	var cniProvider network.Network
@@ -237,7 +232,7 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 	}
 }
 
-// providerForVM selects the correct network provider based on persisted NetworkConfig.
+// providerForVM selects network provider from persisted NetworkConfig.
 func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache map[string]network.Network, configs []*types.NetworkConfig) (network.Network, error) {
 	if len(configs) == 0 {
 		return nil, fmt.Errorf("no network configs")
@@ -260,12 +255,11 @@ func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache
 	}
 	// "cni" or empty (backward compat).
 	if cniProvider == nil {
-		return nil, fmt.Errorf("CNI provider not available")
+		return nil, fmt.Errorf("cni provider not available")
 	}
 	return cniProvider, nil
 }
 
-// batchRoutedCmd runs a batch operation across multiple backends.
 func batchRoutedCmd(ctx context.Context, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
 	logger := log.WithFunc("cmd." + name)
 	var allDone []string

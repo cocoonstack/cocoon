@@ -43,22 +43,15 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot, cowPath)
 }
 
-// resolveForRestore loads the record without stopping the running VM.
+// resolveForRestore loads the record and validates running state.
 func (ch *CloudHypervisor) resolveForRestore(ctx context.Context, vmRef string) (string, *hypervisor.VMRecord, bool, string, error) {
-	vmID, err := ch.ResolveRef(ctx, vmRef)
+	vmID, rec, err := ch.ResolveForRestore(ctx, vmRef)
 	if err != nil {
 		return "", nil, false, "", err
-	}
-	rec, err := ch.LoadRecord(ctx, vmID)
-	if err != nil {
-		return "", nil, false, "", err
-	}
-	if rec.State != types.VMStateRunning {
-		return "", nil, false, "", fmt.Errorf("vm %s is %s, must be running to restore", vmID, rec.State)
 	}
 	directBoot := isDirectBoot(rec.BootConfig)
 	cowPath := ch.cowPath(vmID, directBoot)
-	return vmID, &rec, directBoot, cowPath, nil
+	return vmID, rec, directBoot, cowPath, nil
 }
 
 // killForRestore stops the running CH process and cleans up runtime files.

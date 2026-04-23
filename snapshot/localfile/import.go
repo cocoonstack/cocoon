@@ -28,10 +28,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 		return "", err
 	}
 
-	id, err := utils.GenerateID()
-	if err != nil {
-		return "", fmt.Errorf("generate snapshot ID: %w", err)
-	}
+	id := utils.GenerateID()
 	dataDir := lf.conf.SnapshotDataDir(id)
 
 	if err = os.MkdirAll(dataDir, 0o750); err != nil {

@@ -21,7 +21,17 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// List handles the 'vm list' command.
+type vmEvent struct {
+	Event string   `json:"event"`
+	VM    types.VM `json:"vm"`
+}
+
+type vmSnapshot struct {
+	id, name, state, ip, image string
+	cpu                        int
+	memory                     int64
+}
+
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -48,7 +58,6 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	})
 }
 
-// Status handles the 'vm status' command.
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -85,17 +94,6 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 		statusRefreshLoop(ctx, hypers, args, watchCh, ticker.C, isTTY)
 	}
 	return nil
-}
-
-type vmEvent struct {
-	Event string   `json:"event"`
-	VM    types.VM `json:"vm"`
-}
-
-type vmSnapshot struct {
-	id, name, state, ip, image string
-	cpu                        int
-	memory                     int64
 }
 
 func mergeWatchChannels(ctx context.Context, hypers []hypervisor.Hypervisor) <-chan struct{} {
@@ -265,7 +263,7 @@ func printEventRow(w *tabwriter.Writer, event string, snap vmSnapshot) {
 func listAndFilter(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string) []*types.VM {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {
-		log.WithFunc("status").Warnf(ctx, "list: %v", err)
+		log.WithFunc("cmd.vm.listAndFilter").Warnf(ctx, "list: %v", err)
 		return nil
 	}
 	sortVMs(vms)

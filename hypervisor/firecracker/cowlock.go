@@ -8,9 +8,6 @@ import (
 	"github.com/gofrs/flock"
 )
 
-// withCOWPathLocked takes a flock on a COW disk path, runs fn, then unlocks.
-// Serializes access during clone redirect windows. Creates the parent
-// directory if needed (source VM may have been deleted).
 func withCOWPathLocked(cowPath string, fn func() error) error {
 	lockPath := cowPath + ".clone.lock"
 

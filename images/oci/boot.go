@@ -99,7 +99,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, digestHex string) 
 			return "", "", fmt.Errorf("read tar entry: %w", readErr)
 		}
 
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA { //nolint:staticcheck
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA { //nolint:staticcheck // tar.TypeRegA is deprecated but still present in real archives
 			continue
 		}
 

@@ -20,7 +20,6 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	tmpPath := tmp.Name()
 
 	defer func() {
-		// On any error the temp file is cleaned up.
 		if err != nil {
 			_ = tmp.Close()
 			_ = os.Remove(tmpPath)

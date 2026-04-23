@@ -9,9 +9,6 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
-// Console connects to the FC VM's serial console via the PTY relay socket.
-// The relay process (started alongside FC) listens on console.sock and
-// bridges connections to the PTY master connected to FC's stdin/stdout.
 func (fc *Firecracker) Console(ctx context.Context, ref string) (io.ReadWriteCloser, error) {
 	id, err := fc.ResolveRef(ctx, ref)
 	if err != nil {

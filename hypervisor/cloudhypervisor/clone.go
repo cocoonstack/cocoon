@@ -33,22 +33,8 @@ type cloneResumeOpts struct {
 }
 
 // Clone creates a new VM from a snapshot tar stream.
-func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := ch.CloneSetup(ctx, vmID, vmCfg, snapshotConfig)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			cleanup()
-		}
-	}()
-
-	if err = utils.ExtractTar(runDir, snapshot); err != nil {
-		return nil, fmt.Errorf("extract snapshot: %w", err)
-	}
-
-	return ch.cloneAfterExtract(ctx, vmID, vmCfg, networkConfigs, runDir, logDir, now)
+func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
+	return ch.CloneFromStream(ctx, vmID, vmCfg, networkConfigs, snapshotConfig, snapshot, ch.cloneAfterExtract)
 }
 
 // cloneAfterExtract resumes from snapshot data already placed in runDir.

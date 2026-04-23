@@ -18,7 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// commit converts sourcePath if needed, places the blob, and updates the index.
 func commit(
 	ctx context.Context,
 	conf *Config,
@@ -68,7 +67,6 @@ func commit(
 	return nil
 }
 
-// commitExistingBlob only updates the index for an already-cached blob.
 func commitExistingBlob(
 	ctx context.Context,
 	conf *Config,
@@ -89,7 +87,6 @@ func commitExistingBlob(
 	return nil
 }
 
-// prepareTmpBlob produces the qcow2 temp blob used by commit.
 func prepareTmpBlob(
 	ctx context.Context,
 	conf *Config,
@@ -138,8 +135,8 @@ func prepareTmpBlob(
 	return tmpBlobPath, nil
 }
 
-// convertToQcow2 runs qemu-img convert and cleans up dst on failure.
 func convertToQcow2(ctx context.Context, srcFormat, src, dst string) error {
+	// shell out because no Go qcow2 writer; qemu-img is authoritative for format conversion.
 	cmd := exec.CommandContext(ctx, "qemu-img", "convert", //nolint:gosec // args are controlled
 		"-f", srcFormat, "-O", "qcow2", "-o", "compat=1.1",
 		src, dst)
@@ -150,7 +147,6 @@ func convertToQcow2(ctx context.Context, srcFormat, src, dst string) error {
 	return nil
 }
 
-// writeIndexEntry registers ref -> digestHex after statting the blob for size.
 func writeIndexEntry(idx *imageIndex, conf *Config, ref, digestHex string) error {
 	blobPath := conf.BlobPath(digestHex)
 	info, err := os.Stat(blobPath)

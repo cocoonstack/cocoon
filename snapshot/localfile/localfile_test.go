@@ -24,11 +24,7 @@ import (
 // testID generates a random snapshot ID for tests.
 func testID(t *testing.T) string {
 	t.Helper()
-	id, err := utils.GenerateID()
-	if err != nil {
-		t.Fatalf("GenerateID: %v", err)
-	}
-	return id
+	return utils.GenerateID()
 }
 
 // newTestLF creates a LocalFile backed by a temp directory.
@@ -268,7 +264,7 @@ func TestInspect_ByPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use first 5 chars as prefix (IDs are 16-char hex).
+	// Use first 5 chars as prefix (IDs are 26-char base32).
 	prefix := id[:5]
 	s, err := lf.Inspect(ctx, prefix)
 	if err != nil {

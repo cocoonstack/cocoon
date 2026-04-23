@@ -9,12 +9,8 @@ import (
 )
 
 // WatchFile watches a file for changes using fsnotify on the parent directory.
-// It sends on the returned channel after each change, debounced by the given duration.
-// The channel is closed when ctx is canceled. The caller should re-read the file
-// after receiving a signal.
 //
-// Watching the parent directory (rather than the file itself) is required because
-// AtomicWriteJSON uses temp-file + rename, which changes the file's inode.
+// Watch parent dir (temp-file + rename changes inode).
 func WatchFile(ctx context.Context, filePath string, debounce time.Duration) (<-chan struct{}, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

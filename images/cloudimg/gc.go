@@ -8,7 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// GCModule returns a typed gc.Module for the cloud image backend.
 func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 	return images.BuildGCModule(images.GCModuleConfig[imageIndex]{
 		Name:     typ,
@@ -24,7 +23,6 @@ func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 	})
 }
 
-// RegisterGC registers the cloud image GC module with the given Orchestrator.
 func (c *CloudImg) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, c.GCModule())
 }

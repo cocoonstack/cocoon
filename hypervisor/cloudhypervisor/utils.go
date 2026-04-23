@@ -56,6 +56,7 @@ func qemuExpandImage(ctx context.Context, path string, targetSize int64, directB
 	if targetSize <= virtualSize {
 		return nil
 	}
+	// shell out because no mature Go qcow2 writer library; qemu-img is authoritative.
 	if out, err := exec.CommandContext(ctx, //nolint:gosec
 		"qemu-img", "resize", path, fmt.Sprintf("%d", targetSize),
 	).CombinedOutput(); err != nil {

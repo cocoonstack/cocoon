@@ -77,13 +77,8 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	if err = os.Truncate(cowPath, vmCfg.Storage); err != nil {
 		return nil, fmt.Errorf("truncate COW: %w", err)
 	}
-	out, err := exec.CommandContext(ctx, //nolint:gosec
-		"mkfs.ext4", "-F", "-m", "0", "-q",
-		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
-		cowPath,
-	).CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("mkfs.ext4 COW: %s: %w", strings.TrimSpace(string(out)), err)
+	if err = hypervisor.InitCOWFilesystem(ctx, cowPath); err != nil {
+		return nil, err
 	}
 
 	storageConfigs = append(storageConfigs, &types.StorageConfig{
@@ -201,7 +196,7 @@ func decompressKernel(data []byte) ([]byte, error) {
 }
 
 func decompressZstd(data []byte) ([]byte, error) {
-	// Use the zstd CLI because bzImage payloads may have trailing data.
+	// shell out because no mature Go zstd streaming decoder handles the trailing-data pattern in bzImage payloads.
 	cmd := exec.Command("zstd", "-d", "-c", "--no-check") //nolint:gosec
 	cmd.Stdin = bytes.NewReader(data)
 	var stdout bytes.Buffer
@@ -222,7 +217,6 @@ func decompressGzip(data []byte) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// buildCmdline generates the kernel cmdline for FC VMs.
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	nLayers := 0
 	for _, s := range storageConfigs {
@@ -258,7 +252,6 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	return cmdline.String()
 }
 
-// devPath returns the virtio block device path for the i-th drive.
 // Follows Linux naming: vda..vdz, vdaa..vdaz, vdba..vdbz, ...
 func devPath(idx int) string {
 	const letters = 26

@@ -18,25 +18,28 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Create handles the 'vm create' command.
+type nicHint struct {
+	mac, ip, gw string
+	prefix      int
+}
+
 func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	ctx, vm, _, err := h.createVM(cmd, args[0])
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.create")
+	logger := log.WithFunc("cmd.vm.create")
 	logger.Infof(ctx, "VM created: %s (name: %s, state: %s)", vm.ID, vm.Config.Name, vm.State)
 	logger.Infof(ctx, "start with: cocoon vm start %s", vm.ID)
 	return nil
 }
 
-// Run handles the 'vm run' command.
 func (h Handler) Run(cmd *cobra.Command, args []string) error {
 	ctx, vm, hyper, err := h.createVM(cmd, args[0])
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.run")
+	logger := log.WithFunc("cmd.vm.run")
 	logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
 
 	started, err := hyper.Start(ctx, []string{vm.ID})
@@ -49,13 +52,12 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Clone handles the 'vm clone' command.
 func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.clone")
+	logger := log.WithFunc("cmd.vm.clone")
 
 	snapBackend, err := cmdcore.InitSnapshot(conf)
 	if err != nil {
@@ -113,13 +115,12 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Restore handles the 'vm restore' command.
 func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.restore")
+	logger := log.WithFunc("cmd.vm.restore")
 
 	vmRef := args[0]
 	snapRef := args[1]
@@ -211,10 +212,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return nil, "", nil, nil, err
 	}
-	vmID, err := utils.GenerateID()
-	if err != nil {
-		return nil, "", nil, nil, fmt.Errorf("generate VM ID: %w", err)
-	}
+	vmID := utils.GenerateID()
 	if vmCfg.Name == "" {
 		vmCfg.Name = "cocoon-clone-" + vmID[:8]
 	}
@@ -320,10 +318,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	}
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
-	vmID, err := utils.GenerateID()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("generate VM ID: %w", err)
-	}
+	vmID := utils.GenerateID()
 
 	nics, _ := cmd.Flags().GetInt("nics")
 	netProvider, networkConfigs, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
@@ -339,13 +334,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	return ctx, info, hyper, nil
 }
 
-type nicHint struct {
-	mac, ip, gw string
-	prefix      int
-}
-
-// tapQueues returns the number of TAP queues per NIC.
-// FC only supports single-queue TAPs; CH uses one queue per vCPU.
+// tapQueues: FC=1, CH=CPU count.
 func tapQueues(cpu int, useFC bool) int {
 	if useFC {
 		return 1
@@ -384,7 +373,7 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 		return
 	}
 	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
-		log.WithFunc("cmd.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
+		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
 }
 
@@ -427,8 +416,6 @@ func printPostCloneHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 	fmt.Println()
 }
 
-// printFCMACHints prints commands to change guest MAC addresses.
-// FC clone retains the source VM's MAC in vmstate — must be changed manually.
 func printFCMACHints(networkConfigs []*types.NetworkConfig) {
 	fmt.Println()
 	fmt.Println("  # Fix guest MAC addresses (FC clone retains source VM's MAC)")
@@ -506,8 +493,6 @@ func printOCINetworkHints(vm *types.VM, networkConfigs []*types.NetworkConfig) {
 	fmt.Println("  systemctl restart systemd-networkd")
 }
 
-// validateFCCloneOverrides rejects CPU/memory/NIC overrides for FC clones.
-// FC cannot change these after snapshot/load — fail early before creating resources.
 func validateFCCloneOverrides(cmd *cobra.Command, cfg *types.SnapshotConfig) error {
 	if cpuFlag, _ := cmd.Flags().GetInt("cpu"); cpuFlag > 0 && cpuFlag != cfg.CPU {
 		return fmt.Errorf("--cpu %d not supported: Firecracker cannot change CPU after snapshot/load (snapshot has %d)", cpuFlag, cfg.CPU)

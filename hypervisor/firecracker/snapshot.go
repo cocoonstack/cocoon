@@ -22,6 +22,16 @@ const (
 	snapshotMetaFile    = "cocoon.json"
 )
 
+// snapshotMeta is persisted as cocoon.json inside the snapshot tar.
+// All paths are stored as absolute — FC snapshots require the same
+// directory layout on the target host.
+type snapshotMeta struct {
+	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
+	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
+	CPU            int                    `json:"cpu,omitempty"`
+	Memory         int64                  `json:"memory,omitempty"`
+}
+
 // Snapshot pauses the VM, captures its full state (CPU/device state via FC
 // snapshot API + memory file + COW disk via reflink copy), resumes the VM,
 // and returns a streaming tar.gz reader of the snapshot directory.
@@ -102,16 +112,6 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 	return fc.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
 }
 
-// snapshotMeta is persisted as cocoon.json inside the snapshot tar.
-// All paths are stored as absolute — FC snapshots require the same
-// directory layout on the target host.
-type snapshotMeta struct {
-	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
-	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
-	CPU            int                    `json:"cpu,omitempty"`
-	Memory         int64                  `json:"memory,omitempty"`
-}
-
 func saveSnapshotMeta(dir string, storageConfigs []*types.StorageConfig, boot *types.BootConfig, cpu int, memory int64) error {
 	meta := snapshotMeta{CPU: cpu, Memory: memory}
 	for _, sc := range storageConfigs {
@@ -135,9 +135,7 @@ func saveSnapshotMeta(dir string, storageConfigs []*types.StorageConfig, boot *t
 	return os.WriteFile(filepath.Join(dir, snapshotMetaFile), data, 0o600)
 }
 
-// loadSnapshotMeta reads cocoon.json and validates all paths are under
-// Cocoon-managed directories. Rejects tampered archives with paths
-// pointing outside rootDir/runDir.
+// loadSnapshotMeta reads metadata and validates paths are in Cocoon-managed dirs.
 func loadSnapshotMeta(dir, rootDir, runDir string) (*snapshotMeta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, snapshotMetaFile)) //nolint:gosec
 	if err != nil {

@@ -69,6 +69,7 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 		}()
 	}
 
+	// shell out because launching the Cloud Hypervisor process (external binary is the authoritative implementation).
 	cmd := exec.Command(ch.conf.CHBinary, args...) //nolint:gosec
 	// Detach from the parent process group so CH survives if this process exits.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

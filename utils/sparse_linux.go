@@ -42,7 +42,6 @@ func SparseCopy(dst, src string) error {
 		}
 	}()
 
-	// Pre-allocate the full logical size (all holes).
 	if size > 0 {
 		if truncErr := dstFile.Truncate(size); truncErr != nil {
 			return fmt.Errorf("truncate dst: %w", truncErr)
@@ -54,7 +53,6 @@ func SparseCopy(dst, src string) error {
 		return err
 	}
 
-	// Copy only data segments.
 	for _, seg := range segments {
 		if _, err := srcFile.Seek(seg.Offset, io.SeekStart); err != nil {
 			return fmt.Errorf("seek src to %d: %w", seg.Offset, err)

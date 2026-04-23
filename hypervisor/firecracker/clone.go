@@ -19,23 +19,16 @@ const (
 	cloneBackupSuffix = ".cocoon-clone-backup"
 )
 
+// driveRedirect records a temporary symlink replacing a source drive path.
+type driveRedirect struct {
+	symlinkPath string
+	backupPath  string
+	createdDir  bool
+}
+
 // Clone creates a new VM from a snapshot tar stream via FC snapshot/load.
-func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := fc.CloneSetup(ctx, vmID, vmCfg, snapshotConfig)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			cleanup()
-		}
-	}()
-
-	if err = utils.ExtractTar(runDir, snapshot); err != nil {
-		return nil, fmt.Errorf("extract snapshot: %w", err)
-	}
-
-	return fc.cloneAfterExtract(ctx, vmID, vmCfg, networkConfigs, runDir, logDir, now)
+func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
+	return fc.CloneFromStream(ctx, vmID, vmCfg, networkConfigs, snapshotConfig, snapshot, fc.cloneAfterExtract)
 }
 
 // cloneAfterExtract contains all clone logic after snapshot data is in runDir.
@@ -173,13 +166,6 @@ func rebuildCloneStorage(meta *snapshotMeta, cowPath string) []*types.StorageCon
 	}
 	configs = append(configs, &types.StorageConfig{Path: cowPath, RO: false, Serial: hypervisor.CowSerial})
 	return configs
-}
-
-// driveRedirect records a temporary symlink replacing a source drive path.
-type driveRedirect struct {
-	symlinkPath string
-	backupPath  string
-	createdDir  bool
 }
 
 // createDriveRedirects creates temporary symlinks from source COW path to

@@ -17,10 +17,7 @@ type BatchResult[T any] struct {
 // Err returns the combined error from all failed operations.
 func (r BatchResult[T]) Err() error { return errors.Join(r.Errors...) }
 
-// ForEach runs fn for each item concurrently, collecting successes and errors
-// (best-effort). All items are attempted regardless of individual failures.
-// An optional concurrency limit caps in-flight goroutines; zero or omitted
-// means no limit.
+// ForEach runs fn concurrently on each item, best-effort.
 func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) error, concurrency ...int) BatchResult[T] {
 	if len(items) == 0 {
 		return BatchResult[T]{}
@@ -50,7 +47,7 @@ func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) 
 	var r BatchResult[T]
 	for _, res := range results {
 		if res.err != nil {
-			r.Errors = append(r.Errors, fmt.Errorf("%v: %w", res.item, res.err))
+			r.Errors = append(r.Errors, fmt.Errorf("item %v: %w", res.item, res.err))
 		} else {
 			r.Succeeded = append(r.Succeeded, res.item)
 		}

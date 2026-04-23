@@ -32,7 +32,6 @@ func IsTarFile(path string) bool {
 	return err == nil
 }
 
-// importTarLayers imports local tar files as OCI layers.
 func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
 	logger := log.WithFunc("oci.import")
 
@@ -77,7 +76,6 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 	})
 }
 
-// importTarFromReader imports a single tar layer from a reader.
 func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
 	logger := log.WithFunc("oci.import")
 
@@ -108,7 +106,6 @@ func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[
 	})
 }
 
-// processLocalTar opens a local tar and forwards it to processTarReader.
 func processLocalTar(ctx context.Context, conf *Config, idx, total int, tarPath, workDir string, tracker progress.Tracker, result *pullLayerResult) error {
 	f, err := os.Open(tarPath) //nolint:gosec // user-provided import file
 	if err != nil {
@@ -119,7 +116,6 @@ func processLocalTar(ctx context.Context, conf *Config, idx, total int, tarPath,
 	return processTarReader(ctx, conf, idx, total, f, tarPath, workDir, tracker, result)
 }
 
-// processTarReader hashes, converts, and scans one tar stream in a single pass.
 func processTarReader(ctx context.Context, conf *Config, idx, total int, r io.Reader, label, workDir string, tracker progress.Tracker, result *pullLayerResult) error {
 	logger := log.WithFunc("oci.processTarReader")
 
@@ -185,7 +181,6 @@ func processTarReader(ctx context.Context, conf *Config, idx, total int, r io.Re
 	return nil
 }
 
-// renameBootFiles moves extracted kernel/initrd temps to digest-based names.
 func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *pullLayerResult) error {
 	type bootFile struct {
 		src  string
@@ -212,7 +207,6 @@ func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *
 	return nil
 }
 
-// computeManifestDigest computes a synthetic manifest digest from all layer digests.
 func computeManifestDigest(results []pullLayerResult) images.Digest {
 	h := sha256.New()
 	for _, r := range results {

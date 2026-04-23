@@ -15,6 +15,14 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
+type chMemoryRestoreMode string
+
+type chRestoreConfig struct {
+	SourceURL         string              `json:"source_url"`
+	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
+}
+
 const (
 	cmdlineFileName = "cmdline"
 
@@ -23,10 +31,11 @@ const (
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
 )
 
-var runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
+var (
+	runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
+)
 
-// ReverseLayerSerials extracts read-only layer serial names from StorageConfigs
-// and returns them in reverse order (top layer first for overlayfs lowerdir).
+// ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
 func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	var serials []string
 	for _, s := range storageConfigs {
@@ -38,7 +47,6 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	return serials
 }
 
-// vmAPI sends a PUT request to a Cloud Hypervisor REST API endpoint.
 // Reuses the provided http.Client to avoid creating a new client per call.
 func vmAPI(ctx context.Context, hc *http.Client, endpoint string, body []byte, successCodes ...int) error {
 	if len(successCodes) == 0 {
@@ -86,14 +94,6 @@ func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
 	_, err = utils.DoAPI(ctx, hc, http.MethodPut,
 		"http://localhost/api/v1/vm.snapshot", body, http.StatusNoContent)
 	return err
-}
-
-// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
-type chMemoryRestoreMode string
-
-type chRestoreConfig struct {
-	SourceURL         string              `json:"source_url"`
-	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
 }
 
 func restoreVM(ctx context.Context, hc *http.Client, sourceDir string, onDemand bool) error {

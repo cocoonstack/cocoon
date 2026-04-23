@@ -38,7 +38,6 @@ type progressWriter struct {
 	lastReport int64
 }
 
-// Write implements io.Writer and emits periodic download progress events.
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p)
 	pw.written += int64(n)
@@ -92,12 +91,6 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], ur
 	})
 }
 
-// withDownload creates a temp file in conf.TempDir(), downloads url into
-// it, and invokes fn with the open file handle, the temp path, and the
-// content sha256 digest. Both the fd and the temp path are cleaned up on
-// return. If fn renames the temp file away (e.g. commit's fast path),
-// the cleanup silently becomes a no-op — the rename handoff is the
-// intended consumption pattern.
 func withDownload(
 	ctx context.Context,
 	conf *Config,
@@ -120,9 +113,6 @@ func withDownload(
 	return fn(tmpFile, tmpPath, digestHex)
 }
 
-// downloadToFile fetches url into dst, computing sha256 along the way.
-// The caller retains ownership of dst — downloadToFile neither closes
-// nor removes it.
 func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progress.Tracker) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

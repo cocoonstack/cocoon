@@ -19,6 +19,9 @@ const (
 	cidataFile           = "cidata.img"
 )
 
+// kvBuilder accumulates key=value CLI fragments.
+type kvBuilder []string
+
 // DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
 func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool) []string {
 	args := make([]string, 0, len(storageConfigs))
@@ -27,9 +30,6 @@ func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueue
 	}
 	return args
 }
-
-// kvBuilder accumulates key=value CLI fragments.
-type kvBuilder []string
 
 // String joins all key=value pairs with commas.
 func (b kvBuilder) String() string { return strings.Join(b, ",") }

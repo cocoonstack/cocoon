@@ -18,7 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// createNetns creates a named network namespace at /run/netns/{name}.
+// createNetns creates a named netns at /var/run/netns/{name}.
 func createNetns(name string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -41,7 +41,7 @@ func createNetns(name string) error {
 	return nil
 }
 
-// deleteNetns removes a named network namespace, retrying briefly after VM exit.
+// deleteNetns removes a named netns with retry for async kernel cleanup.
 func deleteNetns(ctx context.Context, name string) error {
 	return utils.WaitFor(ctx, time.Second, 100*time.Millisecond, func() (bool, error) { //nolint:mnd
 		err := netns.DeleteNamed(name)
@@ -49,7 +49,7 @@ func deleteNetns(ctx context.Context, name string) error {
 	})
 }
 
-// setupTCRedirect wires ifName <-> tapName inside the target netns and returns ifName's MAC.
+// setupTCRedirect wires ifName <-> tapName inside target netns, returns MAC.
 func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, error) {
 	var mac string
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
@@ -60,14 +60,13 @@ func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC str
 	return mac, err
 }
 
-// tcRedirectInNS runs inside the target netns.
+// tcRedirectInNS runs TC redirect setup inside target netns.
 func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, error) {
 	link, err := netlink.LinkByName(ifName)
 	if err != nil {
 		return "", fmt.Errorf("find %s: %w", ifName, err)
 	}
 
-	// Recovery restores the persisted MAC before traffic flows again.
 	if overrideMAC != "" {
 		hwAddr, parseErr := net.ParseMAC(overrideMAC)
 		if parseErr != nil {
@@ -78,7 +77,6 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// Link attrs are stale after LinkSetHardwareAddr.
 	if overrideMAC != "" {
 		link, err = netlink.LinkByName(ifName)
 		if err != nil {
@@ -97,8 +95,8 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// CH uses queue pairs (TX+RX): queue_pairs = num_queues / 2.
-	// Multi-queue requires queue_pairs > 1, i.e. num_queues > 2.
+	// queue_pairs = num_queues / 2 (TX+RX pair per queue).
+	// Multi-queue requires queue_pairs > 1.
 	queuePairs := max(1, queues/2) //nolint:mnd
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {
@@ -125,7 +123,6 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 
 	_ = network.TuneTAP(tapLink)
 
-	// Keep tap MTU aligned with the veth.
 	if mtu := link.Attrs().MTU; mtu > 0 {
 		if mtuErr := netlink.LinkSetMTU(tapLink, mtu); mtuErr != nil {
 			return "", fmt.Errorf("set tap %s mtu %d: %w", tapName, mtu, mtuErr)

@@ -2,7 +2,6 @@ package images
 
 import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 
-// Handler provides image command implementations.
 type Handler struct {
 	cmdcore.BaseHandler
 }

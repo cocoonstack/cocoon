@@ -15,6 +15,10 @@ import (
 // Bridge is a placeholder for non-Linux.
 type Bridge struct{}
 
+var (
+	errUnsupported = fmt.Errorf("bridge TAP networking requires Linux (running on %s)", runtime.GOOS)
+)
+
 // New returns an error on non-Linux.
 func New(_ *config.Config, _ string) (*Bridge, error) {
 	return nil, fmt.Errorf("bridge TAP networking requires Linux (running on %s)", runtime.GOOS)
@@ -47,5 +51,3 @@ func (b *Bridge) RegisterGC(_ *gc.Orchestrator) {}
 
 // CleanupTAPs is a no-op on non-Linux.
 func CleanupTAPs(_ []string) []string { return nil }
-
-var errUnsupported = fmt.Errorf("bridge TAP networking requires Linux (running on %s)", runtime.GOOS)

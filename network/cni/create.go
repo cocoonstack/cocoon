@@ -23,7 +23,6 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 	if err != nil {
 		return nil, err
 	}
-	// Persist the resolved conflist name for recovery.
 	vmCfg.Network = confList.Name
 	logger := log.WithFunc("cni.Config")
 
@@ -34,7 +33,6 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		return nil, fmt.Errorf("create netns %s: %w", nsName, err)
 	}
 
-	// Track successful CNI ADDs for rollback.
 	var addedIFs []string
 	defer func() {
 		if retErr == nil {
@@ -63,7 +61,6 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 			IfName:      ifName,
 		}
 
-		// Recovery asks host-local for the previously assigned IP again.
 		if i < len(existing) && existing[i] != nil {
 			if delErr := c.cniConf.DelNetworkList(ctx, confList, rt); delErr != nil {
 				logger.Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
@@ -84,7 +81,6 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 			return nil, fmt.Errorf("parse CNI result: %w", err)
 		}
 
-		// Mirror the veth MAC into the guest-facing virtio NIC.
 		var overrideMAC string
 		if i < len(existing) && existing[i] != nil {
 			overrideMAC = existing[i].Mac
@@ -117,13 +113,9 @@ func (c *CNI) Config(ctx context.Context, vmID string, numNICs int, vmCfg *types
 		return configs, nil
 	}
 
-	// Persist fresh network records.
 	return configs, c.store.Update(ctx, func(idx *networkIndex) error {
 		for i, cfg := range configs {
-			netID, genErr := utils.GenerateID()
-			if genErr != nil {
-				return genErr
-			}
+			netID := utils.GenerateID()
 			var net types.Network
 			if cfg.Network != nil {
 				net = *cfg.Network

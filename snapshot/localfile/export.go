@@ -68,7 +68,6 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		}
 		tw := tar.NewWriter(w)
 
-		// First entry: snapshot.json metadata.
 		streamErr = tw.WriteHeader(&tar.Header{
 			Name:    snapshotJSONName,
 			Size:    int64(len(jsonData)),
@@ -82,7 +81,6 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 			return
 		}
 
-		// Remaining entries: data files from the snapshot directory.
 		if streamErr = utils.TarDir(tw, dataDir); streamErr != nil {
 			return
 		}

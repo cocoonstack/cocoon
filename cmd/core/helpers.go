@@ -31,17 +31,29 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// hypervisorFactory keeps backend lookup and iteration order together.
+type hypervisorFactory struct {
+	typ  config.HypervisorType
+	ctor func(*config.Config) (hypervisor.Hypervisor, error)
+}
+
+var (
+	hypervisorFactories = []hypervisorFactory{
+		{config.HypervisorCH, func(c *config.Config) (hypervisor.Hypervisor, error) { return cloudhypervisor.New(c) }},
+		{config.HypervisorFirecracker, func(c *config.Config) (hypervisor.Hypervisor, error) { return firecracker.New(c) }},
+	}
+)
+
 // BaseHandler provides shared config access for all command handlers.
 type BaseHandler struct {
 	ConfProvider func() *config.Config
 }
 
-// NewBaseHandler creates a BaseHandler that returns the given config pointer.
 func NewBaseHandler(conf *config.Config) BaseHandler {
 	return BaseHandler{ConfProvider: func() *config.Config { return conf }}
 }
 
-// Init returns the command context and validated config in one call.
+// Init returns command context and validated config.
 func (h BaseHandler) Init(cmd *cobra.Command) (context.Context, *config.Config, error) {
 	conf, err := h.Conf()
 	if err != nil {
@@ -50,7 +62,7 @@ func (h BaseHandler) Init(cmd *cobra.Command) (context.Context, *config.Config, 
 	return CommandContext(cmd), conf, nil
 }
 
-// Conf validates and returns the config. All handlers call this first.
+// Conf validates and returns the config.
 func (h BaseHandler) Conf() (*config.Config, error) {
 	if h.ConfProvider == nil {
 		return nil, fmt.Errorf("config provider is nil")
@@ -62,7 +74,7 @@ func (h BaseHandler) Conf() (*config.Config, error) {
 	return conf, nil
 }
 
-// CommandContext returns command context, falling back to Background.
+// CommandContext returns command context, fallback to Background.
 func CommandContext(cmd *cobra.Command) context.Context {
 	if cmd != nil && cmd.Context() != nil {
 		return cmd.Context()
@@ -70,7 +82,6 @@ func CommandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
-// InitBackends initializes all image backends and the hypervisor.
 func InitBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, hypervisor.Hypervisor, error) {
 	backends, err := InitImageBackends(ctx, conf)
 	if err != nil {
@@ -83,7 +94,6 @@ func InitBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Imag
 	return backends, hyper, nil
 }
 
-// InitImageBackends initializes only image backends (no hypervisor needed).
 func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, error) {
 	ociStore, cloudimgStore, err := InitImageBackendsForPull(ctx, conf)
 	if err != nil {
@@ -92,7 +102,6 @@ func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend
 	return []imagebackend.Images{ociStore, cloudimgStore}, nil
 }
 
-// InitImageBackendsForPull returns concrete backend types needed by Pull.
 func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OCI, *cloudimg.CloudImg, error) {
 	ociStore, err := oci.New(ctx, conf)
 	if err != nil {
@@ -105,7 +114,6 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	return ociStore, cloudimgStore, nil
 }
 
-// InitHypervisor initializes the selected hypervisor backend.
 func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
 	ctor := findHypervisorFactory(conf.Hypervisor())
 	if ctor == nil {
@@ -118,7 +126,6 @@ func InitHypervisor(conf *config.Config) (hypervisor.Hypervisor, error) {
 	return h, nil
 }
 
-// InitAllHypervisors initializes every backend in deterministic order.
 func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
 	result := make([]hypervisor.Hypervisor, 0, len(hypervisorFactories))
 	for _, f := range hypervisorFactories {
@@ -131,7 +138,6 @@ func InitAllHypervisors(conf *config.Config) ([]hypervisor.Hypervisor, error) {
 	return result, nil
 }
 
-// FindHypervisor returns the unique backend that owns ref.
 func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, error) {
 	hypers, err := InitAllHypervisors(conf)
 	if err != nil {
@@ -140,7 +146,6 @@ func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hyper
 	return resolveVMOwner(ctx, hypers, ref)
 }
 
-// ListAllVMs returns merged VM lists from all backends.
 func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.VM, error) {
 	var all []*types.VM
 	for _, h := range hypers {
@@ -153,7 +158,6 @@ func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.V
 	return all, nil
 }
 
-// RouteRefs groups VM refs by owning backend.
 func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []string) (map[hypervisor.Hypervisor][]string, error) {
 	result := map[hypervisor.Hypervisor][]string{}
 	for _, ref := range refs {
@@ -166,7 +170,6 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
-// InitNetwork creates the CNI network provider.
 func InitNetwork(conf *config.Config) (network.Network, error) {
 	p, err := cni.New(conf)
 	if err != nil {
@@ -175,7 +178,6 @@ func InitNetwork(conf *config.Config) (network.Network, error) {
 	return p, nil
 }
 
-// InitBridgeNetwork creates a TAP-on-bridge network provider.
 func InitBridgeNetwork(conf *config.Config, bridgeDev string) (network.Network, error) {
 	p, err := bridgenet.New(conf, bridgeDev)
 	if err != nil {
@@ -184,7 +186,6 @@ func InitBridgeNetwork(conf *config.Config, bridgeDev string) (network.Network, 
 	return p, nil
 }
 
-// InitSnapshot initializes the snapshot backend.
 func InitSnapshot(conf *config.Config) (snapshot.Snapshot, error) {
 	s, err := localfile.New(conf)
 	if err != nil {
@@ -193,7 +194,6 @@ func InitSnapshot(conf *config.Config) (snapshot.Snapshot, error) {
 	return s, nil
 }
 
-// ResolveImage resolves vmCfg.Image across image backends.
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	vms := []*types.VMConfig{vmCfg}
 	var owner imagebackend.Images
@@ -258,12 +258,21 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 			logger.Warnf(ctx, "auto-pull %s failed (imported image?): %v — clone may fail if base layers are missing", pullRef, pullErr)
 			return
 		}
+		// For non-OCI images (e.g. cloudimg), digestPullRef cannot pin by
+		// digest, so the pull may fetch newer content whose digest differs
+		// from the one recorded at snapshot time. Verify post-pull.
+		if vmCfg.ImageDigest != "" && pullRef == vmCfg.Image {
+			img, err := b.Inspect(ctx, vmCfg.ImageDigest)
+			if err != nil || img == nil {
+				logger.Warnf(ctx, "pulled %s but expected digest %s not found locally — clone may fail in VerifyBaseFiles", pullRef, vmCfg.ImageDigest)
+				return
+			}
+		}
 		logger.Infof(ctx, "base image %s pulled successfully", pullRef)
 		return
 	}
 }
 
-// ResolveImageOwner returns the single backend that owns ref.
 func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, error) {
 	var matches []imagebackend.Images
 	for _, b := range backends {
@@ -289,7 +298,6 @@ func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref 
 	}
 }
 
-// VMConfigFromFlags builds VMConfig for create/run commands.
 func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error) {
 	vmName, _ := cmd.Flags().GetString("name")
 	cpu, _ := cmd.Flags().GetInt("cpu")
@@ -338,9 +346,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	return cfg, nil
 }
 
-// CloneVMConfigFromFlags builds VMConfig for clone commands.
-// Zero-value flags inherit from the snapshot config; explicit values are validated
-// against the snapshot minimums (clone resources must be >= snapshot's).
+// CloneVMConfigFromFlags builds VMConfig for clone (inherits from snapshot).
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (*types.VMConfig, error) {
 	vmName, _ := cmd.Flags().GetString("name")
 	network, _ := cmd.Flags().GetString("network")
@@ -390,9 +396,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 	return cfg, nil
 }
 
-// RestoreVMConfigFromFlags builds VMConfig for restore commands.
-// Keeps VM's current values by default; CLI flags override.
-// Validates that final values are >= snapshot minimums.
+// RestoreVMConfigFromFlags builds VMConfig for restore (allows overrides).
 func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg *types.SnapshotConfig) (*types.VMConfig, error) {
 	result := vm.Config // value copy — keep current VM values
 
@@ -410,14 +414,13 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg *types.S
 	return &result, nil
 }
 
-// EnsureFirmwarePath sets default firmware path for cloudimg boot.
 func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
 	if bootCfg != nil && bootCfg.KernelPath == "" && bootCfg.FirmwarePath == "" {
 		bootCfg.FirmwarePath = cloudimg.NewConfig(conf).FirmwarePath()
 	}
 }
 
-// ReconcileState checks actual process liveness to detect stale "running" records.
+// ReconcileState detects stale running records via process liveness.
 func ReconcileState(vm *types.VM) string {
 	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
 		return "stopped (stale)"
@@ -425,19 +428,17 @@ func ReconcileState(vm *types.VM) string {
 	return string(vm.State)
 }
 
-// OutputJSON encodes v as indented JSON to stdout.
 func OutputJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
 }
 
-// AddFormatFlag registers the --format / -o flag on a command.
 func AddFormatFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("format", "o", "table", `output format: "table" or "json"`)
 }
 
-// OutputFormatted checks --format flag: "json" → JSON, otherwise calls tableFn.
+// OutputFormatted outputs as JSON or table based on --format flag.
 func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Writer)) error {
 	format, _ := cmd.Flags().GetString("format")
 	if format == "json" {
@@ -448,19 +449,15 @@ func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Wri
 	return w.Flush()
 }
 
-// FormatSize formats a byte count as a human-readable size string.
 func FormatSize(bytes int64) string {
 	return units.HumanSize(float64(bytes))
 }
 
-// IsURL reports whether ref starts with http:// or https://.
 func IsURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
 }
 
-// digestPullRef constructs a pull reference using the image digest when available.
-// For OCI images, replaces the tag with @sha256:... to pin the exact version.
-// For cloudimg (URLs), returns the original image ref as-is.
+// digestPullRef pins OCI pulls by digest; returns image as-is for others.
 func digestPullRef(image, digest, imageType string) string {
 	if digest == "" || imageType != "oci" {
 		return image
@@ -473,18 +470,6 @@ func digestPullRef(image, digest, imageType string) string {
 	return ref.Context().String() + "@" + digest
 }
 
-// hypervisorFactory keeps backend lookup and iteration order together.
-type hypervisorFactory struct {
-	typ  config.HypervisorType
-	ctor func(*config.Config) (hypervisor.Hypervisor, error)
-}
-
-var hypervisorFactories = []hypervisorFactory{
-	{config.HypervisorCH, func(c *config.Config) (hypervisor.Hypervisor, error) { return cloudhypervisor.New(c) }},
-	{config.HypervisorFirecracker, func(c *config.Config) (hypervisor.Hypervisor, error) { return firecracker.New(c) }},
-}
-
-// findHypervisorFactory returns the ctor for a given type, or nil.
 func findHypervisorFactory(typ config.HypervisorType) func(*config.Config) (hypervisor.Hypervisor, error) {
 	for _, f := range hypervisorFactories {
 		if f.typ == typ {
@@ -494,7 +479,6 @@ func findHypervisorFactory(typ config.HypervisorType) func(*config.Config) (hype
 	return nil
 }
 
-// resolveVMOwner returns the single backend that owns ref.
 func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, error) {
 	var matches []hypervisor.Hypervisor
 	for _, h := range hypers {
@@ -510,7 +494,7 @@ func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref str
 	}
 	switch len(matches) {
 	case 0:
-		return nil, fmt.Errorf("VM %s: %w", ref, hypervisor.ErrNotFound)
+		return nil, fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound)
 	case 1:
 		return matches[0], nil
 	default:
@@ -518,17 +502,11 @@ func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref str
 		for i, h := range matches {
 			names[i] = h.Type()
 		}
-		return nil, fmt.Errorf("VM %s: %w (backends: %s)", ref, hypervisor.ErrAmbiguous, strings.Join(names, ", "))
+		return nil, fmt.Errorf("vm %s: %w (backends: %s)", ref, hypervisor.ErrAmbiguous, strings.Join(names, ", "))
 	}
 }
 
-// sanitizeVMName derives a safe VM name from an image reference using
-// go-containerregistry/pkg/name to properly parse registry, repository, tag,
-// and digest components.
-//
-//	"ghcr.io/foo/ubuntu:24.04"        → "cocoon-foo-ubuntu-24.04"
-//	"ubuntu:24.04"                    → "cocoon-ubuntu-24.04"
-//	"ghcr.io/ns/img@sha256:abc..."    → "cocoon-ns-img"
+// sanitizeVMName derives a safe VM name from an image reference.
 func sanitizeVMName(image string) string {
 	ref, err := name.ParseReference(image)
 	if err != nil {

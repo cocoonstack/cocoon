@@ -8,9 +8,11 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -20,7 +22,20 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// RemoveVMDirs removes the run and log directories for a VM.
+// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
+type SnapshotFileKind int
+
+const (
+	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
+	SnapshotFileMemory SnapshotFileKind = iota
+	// SnapshotFileCOW is a writable disk that must be copied (reflink/sparse).
+	SnapshotFileCOW
+	// SnapshotFileMeta is small metadata that is plain-copied.
+	SnapshotFileMeta
+	// SnapshotFileSkip means the file should not be cloned.
+	SnapshotFileSkip
+)
+
 func RemoveVMDirs(runDir, logDir string) error {
 	return errors.Join(
 		os.RemoveAll(runDir),
@@ -28,7 +43,6 @@ func RemoveVMDirs(runDir, logDir string) error {
 	)
 }
 
-// CleanupRuntimeFiles removes the given list of runtime files from runDir.
 func CleanupRuntimeFiles(ctx context.Context, runDir string, files []string) {
 	for _, name := range files {
 		p := filepath.Join(runDir, name)
@@ -38,7 +52,6 @@ func CleanupRuntimeFiles(ctx context.Context, runDir string, files []string) {
 	}
 }
 
-// ExtractBlobIDs extracts digest hexes from storage/boot paths for GC pinning.
 func ExtractBlobIDs(storageConfigs []*types.StorageConfig, boot *types.BootConfig) map[string]struct{} {
 	ids := make(map[string]struct{})
 	if boot != nil && boot.KernelPath != "" {
@@ -58,20 +71,17 @@ func ExtractBlobIDs(storageConfigs []*types.StorageConfig, boot *types.BootConfi
 	return ids
 }
 
-// BlobHexFromPath extracts the digest hex from a blob file path.
 // e.g., "/var/lib/cocoon/oci/blobs/abc123.erofs" → "abc123"
 func BlobHexFromPath(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// PrefixToNetmask converts a CIDR prefix length to a dotted-decimal netmask string.
 func PrefixToNetmask(prefix int) string {
 	mask := net.CIDRMask(prefix, 32)
 	return net.IP(mask).String()
 }
 
-// BuildIPParams generates kernel ip= parameters for NICs with static IPs.
 func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var params strings.Builder
 	fmt.Fprintf(&params, " cocoon.hostname=%s", vmName)
@@ -100,7 +110,6 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 	return params.String()
 }
 
-// CopyFile copies a single file preserving permissions.
 func CopyFile(dst, src string) (err error) {
 	srcFile, err := os.Open(src) //nolint:gosec
 	if err != nil {
@@ -123,11 +132,7 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
-// MergeDirInto renames every entry under src into the matching path
-// under dst, overwriting existing files. Staging dirs produced by
-// ExtractTar are always flat (it uses filepath.Base), so we use
-// os.ReadDir instead of filepath.Walk to avoid unnecessary recursion
-// and sorting overhead.
+// MergeDirInto renames entries from src to dst, overwriting existing files.
 func MergeDirInto(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -143,7 +148,6 @@ func MergeDirInto(src, dst string) error {
 	return nil
 }
 
-// ValidateHostCPU rejects VM configs that exceed host cores.
 func ValidateHostCPU(cpu int) error {
 	maxCPU := runtime.NumCPU()
 	if cpu > maxCPU {
@@ -152,7 +156,19 @@ func ValidateHostCPU(cpu int) error {
 	return nil
 }
 
-// VerifyBaseFiles checks that all read-only layer files and boot files exist.
+func InitCOWFilesystem(ctx context.Context, path string) error {
+	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
+	out, err := exec.CommandContext(ctx, //nolint:gosec
+		"mkfs.ext4", "-F", "-m", "0", "-q",
+		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
+		path,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mkfs.ext4: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
 	for _, sc := range storageConfigs {
 		if !sc.RO {
@@ -180,7 +196,68 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// WaitForSocket polls until socketPath is connectable or the process exits.
+// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O.
+func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read srcDir: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		name := entry.Name()
+		src := filepath.Join(srcDir, name)
+		dst := filepath.Join(dstDir, name)
+
+		switch classify(name) {
+		case SnapshotFileMemory:
+			// Hardlink for same-fs; symlink fallback for cross-fs (EXDEV only).
+			// Hypervisors read memory files via MAP_PRIVATE, so neither
+			// hardlink nor symlink will be modified.
+			if linkErr := os.Link(src, dst); linkErr != nil {
+				if !errors.Is(linkErr, syscall.EXDEV) {
+					return fmt.Errorf("link %s: %w", name, linkErr)
+				}
+				if symlinkErr := os.Symlink(src, dst); symlinkErr != nil {
+					return fmt.Errorf("symlink %s: %w", name, symlinkErr)
+				}
+			}
+		case SnapshotFileCOW:
+			if err := utils.ReflinkCopy(dst, src); err != nil {
+				return fmt.Errorf("copy COW %s: %w", name, err)
+			}
+		case SnapshotFileMeta:
+			if err := CopyFile(dst, src); err != nil {
+				return fmt.Errorf("copy %s: %w", name, err)
+			}
+		case SnapshotFileSkip:
+			// do nothing
+		}
+	}
+	return nil
+}
+
+// CleanSnapshotFiles removes snapshot-specific files from runDir.
+func CleanSnapshotFiles(runDir string, match func(name string) bool) error {
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		t := entry.Type()
+		if !t.IsRegular() && t&os.ModeSymlink == 0 {
+			continue
+		}
+		if match(entry.Name()) {
+			if removeErr := os.Remove(filepath.Join(runDir, entry.Name())); removeErr != nil {
+				return fmt.Errorf("remove %s: %w", entry.Name(), removeErr)
+			}
+		}
+	}
+	return nil
+}
+
 func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time.Duration, processName string) error {
 	return utils.WaitFor(ctx, timeout, 1*time.Millisecond, func() (bool, error) { //nolint:mnd
 		if utils.CheckSocket(socketPath) == nil {
@@ -193,7 +270,6 @@ func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time
 	})
 }
 
-// EnterNetns switches the current thread into nsPath and returns a restore func.
 func EnterNetns(nsPath string) (restore func(), err error) {
 	runtime.LockOSThread()
 

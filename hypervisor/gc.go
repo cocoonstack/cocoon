@@ -21,14 +21,11 @@ type VMGCSnapshot struct {
 	logDirs     []string
 }
 
-// UsedBlobIDs returns blob IDs referenced by all VMs in this backend.
 func (s VMGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
-// ActiveVMIDs returns IDs of all VMs in this backend's database.
 func (s VMGCSnapshot) ActiveVMIDs() map[string]struct{} { return s.vmIDs }
 
-// BuildGCModule returns a gc.Module that scans this backend's DB and
-// directories for orphan VMs and stale placeholders.
+// BuildGCModule builds GC module that scans DB and dirs for orphan VMs.
 func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	return gc.Module[VMGCSnapshot]{
 		Name:   b.Typ,
@@ -79,13 +76,11 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	}
 }
 
-// RegisterGC registers the hypervisor GC module with the given Orchestrator.
 func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// WatchPath returns the path to the VM index file for filesystem-based
-// change watching. Implements hypervisor.Watchable.
+// WatchPath returns VM index file path for filesystem-based watching.
 func (b *Backend) WatchPath() string {
 	return b.Conf.IndexFile()
 }

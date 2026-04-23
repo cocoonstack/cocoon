@@ -26,6 +26,14 @@ const (
 	relayBufSize      = 4096
 )
 
+// broadcaster fans out PTY master reads to the active console session.
+// Only one session is active at a time; the subscriber is swapped atomically.
+type broadcaster struct {
+	master io.Reader
+	mu     sync.Mutex
+	sink   io.Writer // current session's conn; nil when no session
+}
+
 // IsRelayMode returns true when the process was started as a console relay.
 func IsRelayMode() bool {
 	return os.Getenv(relayEnvKey) == "1"
@@ -96,14 +104,6 @@ func RunRelay(ctx context.Context) {
 		}
 		relaySession(ctx, master, conn, bc)
 	}
-}
-
-// broadcaster fans out PTY master reads to the active console session.
-// Only one session is active at a time; the subscriber is swapped atomically.
-type broadcaster struct {
-	master io.Reader
-	mu     sync.Mutex
-	sink   io.Writer // current session's conn; nil when no session
 }
 
 // setSink sets (or clears) the active session writer.

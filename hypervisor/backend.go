@@ -66,7 +66,6 @@ type Backend struct {
 	Locker lock.Locker
 }
 
-// Type returns the backend identifier (e.g., "cloud-hypervisor", "firecracker").
 func (b *Backend) Type() string { return b.Typ }
 
 // Inspect returns VM info for a single VM by ref (ID, name, or prefix).
@@ -96,7 +95,6 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	})
 }
 
-// ToVM converts a VMRecord into a types.VM.
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	info := rec.VM // value copy
 	info.Hypervisor = b.Typ
@@ -128,7 +126,6 @@ func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, err
 	})
 }
 
-// LoadRecord loads a deep copy of a VM record by ID.
 func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
 	var rec VMRecord
 	return rec, b.DB.With(ctx, func(idx *VMIndex) error {
@@ -150,7 +147,6 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 	return fn(pid)
 }
 
-// UpdateStates updates the state and timestamp for a batch of VM IDs.
 func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VMState) error {
 	if len(ids) == 0 {
 		return nil
@@ -175,14 +171,12 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	})
 }
 
-// MarkError marks a VM as error state. Logs but does not return errors.
 func (b *Backend) MarkError(ctx context.Context, id string) {
 	if err := b.UpdateStates(ctx, []string{id}, types.VMStateError); err != nil {
 		log.WithFunc(b.Typ+".MarkError").Warnf(ctx, "mark VM %s error: %v", id, err)
 	}
 }
 
-// ReserveVM writes a placeholder VMRecord in Creating state.
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := time.Now()
 	return b.DB.Update(ctx, func(idx *VMIndex) error {
@@ -245,7 +239,6 @@ func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	}
 }
 
-// ForEachVM runs fn for each ID concurrently (bounded by PoolSize).
 func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn func(context.Context, string) error) ([]string, error) {
 	logger := log.WithFunc(b.Typ + "." + op)
 	result := utils.ForEach(ctx, ids, fn, b.Conf.EffectivePoolSize())
@@ -294,13 +287,75 @@ func (b *Backend) DirectCloneBase(
 	return afterExtract(ctx, vmID, vmCfg, networkConfigs, runDir, logDir, now)
 }
 
+// CloneFromStream runs the shared streaming Clone sequence: reserve a
+// placeholder via CloneSetup, extract the snapshot tar into runDir, then
+// hand off to afterExtract for backend-specific startup.
+func (b *Backend) CloneFromStream(
+	ctx context.Context, vmID string, vmCfg *types.VMConfig,
+	networkConfigs []*types.NetworkConfig, snapshotConfig *types.SnapshotConfig, snapshot io.Reader,
+	afterExtract func(ctx context.Context, vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, runDir, logDir string, now time.Time) (*types.VM, error),
+) (_ *types.VM, err error) {
+	runDir, logDir, now, cleanup, err := b.CloneSetup(ctx, vmID, vmCfg, snapshotConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
+
+	if err = utils.ExtractTar(runDir, snapshot); err != nil {
+		return nil, fmt.Errorf("extract snapshot: %w", err)
+	}
+
+	return afterExtract(ctx, vmID, vmCfg, networkConfigs, runDir, logDir, now)
+}
+
+// ResolveForRestore resolves VM ref and validates it's running.
+func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, *VMRecord, error) {
+	vmID, err := b.ResolveRef(ctx, vmRef)
+	if err != nil {
+		return "", nil, err
+	}
+	rec, err := b.LoadRecord(ctx, vmID)
+	if err != nil {
+		return "", nil, err
+	}
+	if rec.State != types.VMStateRunning {
+		return "", nil, fmt.Errorf("vm %s is %s, must be running to restore", vmID, rec.State)
+	}
+	return vmID, &rec, nil
+}
+
+// GracefulStop sends a shutdown signal, polls until the process exits,
+// and escalates via the escalate closure if the timeout fires.
+// Used by both CH (ACPI power-button) and FC (SendCtrlAltDel).
+func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeout time.Duration, signal, escalate func() error) error {
+	logger := log.WithFunc(b.Typ + ".GracefulStop")
+	if err := signal(); err != nil {
+		logger.Warnf(ctx, "shutdown signal %s: %v — escalating", vmID, err)
+		return escalate()
+	}
+	if err := utils.WaitFor(ctx, timeout, GracefulStopPollInterval, func() (bool, error) {
+		return !utils.IsProcessAlive(pid), nil
+	}); err == nil {
+		return nil
+	}
+	// Distinguish user cancellation from timeout.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	logger.Warnf(ctx, "VM %s did not shut down within %s, escalating", vmID, timeout)
+	return escalate()
+}
+
 // AbortLaunch terminates a failed launch and removes runtime files.
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
 
-// BatchMarkStarted marks a batch of VMs running and first-booted.
 func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -321,8 +376,7 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	})
 }
 
-// CleanStalePlaceholders removes DB records stuck in "creating" state
-// past the GC grace period. Used by GC Collect phase.
+// CleanStalePlaceholders removes "creating" records past GC grace period.
 func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -377,13 +431,10 @@ func (b *Backend) killOrphanProcess(ctx context.Context, runDir string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 }
 
-// PIDFilePath returns the PID file path for the backend's PID file name.
 func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
 }
 
-// RecordSnapshot generates a snapshot ID and atomically records it on the VM.
-// On failure it removes tmpDir and returns the error.
 func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snapID string, err error) {
 	defer func() {
 		if err != nil {
@@ -391,10 +442,7 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snap
 		}
 	}()
 
-	snapID, err = utils.GenerateID()
-	if err != nil {
-		return "", fmt.Errorf("generate snapshot ID: %w", err)
-	}
+	snapID = utils.GenerateID()
 	if err = b.DB.Update(ctx, func(idx *VMIndex) error {
 		r := idx.VMs[vmID]
 		if r == nil {
@@ -411,7 +459,6 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snap
 	return snapID, nil
 }
 
-// BuildSnapshotConfig builds a SnapshotConfig from a VM record's config.
 func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
 	cfg := &types.SnapshotConfig{
 		ID:           snapID,
@@ -423,8 +470,7 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	return cfg
 }
 
-// FinalizeRestore updates the DB and assembles the returned types.VM after
-// a successful VM restore.
+// FinalizeRestore updates DB and assembles returned VM after restore.
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
 	now := time.Now()
 	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
@@ -451,9 +497,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	return &info, nil
 }
 
-// PrepareStart loads a VM record, checks if it's already running, ensures
-// directories exist, and cleans up stale runtime files. Returns the record
-// ready for backend-specific launch, or nil if the VM is already running.
+// PrepareStart loads record, validates state, ensures dirs are ready.
 func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
@@ -477,9 +521,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	return &rec, nil
 }
 
-// FinalizeCreate writes the fully populated VM record to the DB after
-// disk preparation, replacing the placeholder written by ReserveVM.
-// RunDir and LogDir are carried over from the existing placeholder.
+// FinalizeCreate writes populated VM record to DB, replacing placeholder.
 func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
 	return b.DB.Update(ctx, func(idx *VMIndex) error {
 		existing := idx.VMs[id]
@@ -497,8 +539,6 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 	})
 }
 
-// FinalizeClone marks a just-cloned VM as running in the DB.
-// If blobIDs is non-nil, it overwrites the record's image blob pin set.
 func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
 	return b.DB.Update(ctx, func(idx *VMIndex) error {
 		r := idx.VMs[vmID]
@@ -515,9 +555,6 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 	})
 }
 
-// HandleStopResult processes the error from a per-VM stop attempt.
-// Real errors mark the VM as error state; ErrNotRunning and nil both
-// clean up runtime files and return success.
 func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
 	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
 		b.MarkError(ctx, id)
@@ -527,10 +564,8 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 	return nil
 }
 
-// SocketPath returns the API socket path under a VM's run directory.
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
 
-// ConsoleSockPath returns the console socket path under a VM's run directory.
 func ConsoleSockPath(runDir string) string { return filepath.Join(runDir, ConsoleSockName) }
 
 // PrepareStagingDir creates a sibling staging directory, extracts the snapshot

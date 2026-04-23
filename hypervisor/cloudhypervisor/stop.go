@@ -50,32 +50,13 @@ func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
 	return ch.HandleStopResult(ctx, id, rec.RunDir, runtimeFiles, shutdownErr)
 }
 
-// shutdownUEFI shuts down a UEFI-boot VM:
-//  1. Send ACPI power-button — asks the guest OS to shut down cleanly.
-//  2. Poll until the process exits or the timeout fires.
-//  3. Fallback: forceTerminate (vm.shutdown → SIGTERM → SIGKILL).
+// shutdownUEFI shuts down a UEFI-boot VM via ACPI power-button with
+// poll-and-escalate handled by the shared GracefulStop helper.
 func (ch *CloudHypervisor) shutdownUEFI(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int, timeout time.Duration) error {
-	if err := powerButton(ctx, hc); err != nil {
-		log.WithFunc("cloudhypervisor.shutdownUEFI").Errorf(ctx, err, "power-button %s — falling back", vmID)
-		return ch.forceTerminate(ctx, hc, vmID, socketPath, pid)
-	}
-
-	// Poll until the process exits or timeout.
-	if err := utils.WaitFor(ctx, timeout, hypervisor.GracefulStopPollInterval, func() (bool, error) {
-		return !utils.IsProcessAlive(pid), nil
-	}); err == nil {
-		return nil
-	}
-
-	// Distinguish user cancellation from timeout. Ctrl-C means "abort the
-	// stop operation", not "escalate to force-kill".
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	// Guest did not power off in time — escalate.
-	log.WithFunc("cloudhypervisor.shutdownUEFI").Warnf(ctx, "VM %s did not respond to power-button within %s, escalating", vmID, timeout)
-	return ch.forceTerminate(ctx, hc, vmID, socketPath, pid)
+	return ch.GracefulStop(ctx, vmID, pid, timeout,
+		func() error { return powerButton(ctx, hc) },
+		func() error { return ch.forceTerminate(ctx, hc, vmID, socketPath, pid) },
+	)
 }
 
 // forceTerminate shuts down a VM by flushing disk backends via the REST API,

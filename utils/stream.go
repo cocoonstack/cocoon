@@ -10,29 +10,29 @@ import (
 // PipeStreamReader wraps a PipeReader with background error collection and cleanup.
 type PipeStreamReader struct {
 	*io.PipeReader
-	done    <-chan error
-	once    sync.Once
-	err     error
-	cleanup func()
+	close func() error
 }
 
 // NewPipeStreamReader creates a PipeStreamReader that waits for the producer goroutine on close.
 func NewPipeStreamReader(pr *io.PipeReader, done <-chan error, cleanup func()) *PipeStreamReader {
-	return &PipeStreamReader{PipeReader: pr, done: done, cleanup: cleanup}
+	return &PipeStreamReader{
+		PipeReader: pr,
+		close: sync.OnceValue(func() error {
+			err := pr.Close()
+			if streamErr := <-done; streamErr != nil {
+				err = streamErr
+			}
+			if cleanup != nil {
+				cleanup()
+			}
+			return err
+		}),
+	}
 }
 
 // Close drains the producer, runs cleanup, and returns any accumulated error.
 func (r *PipeStreamReader) Close() error {
-	r.once.Do(func() {
-		r.err = r.PipeReader.Close()
-		if streamErr := <-r.done; streamErr != nil {
-			r.err = streamErr
-		}
-		if r.cleanup != nil {
-			r.cleanup()
-		}
-	})
-	return r.err
+	return r.close()
 }
 
 // TarDirStream streams a directory as a tar archive via a pipe.

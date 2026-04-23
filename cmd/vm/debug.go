@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,7 +14,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Debug handles the 'vm debug' command.
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -66,7 +66,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// printFCDebug outputs the Firecracker launch sequence as shell commands.
+// printFCDebug prints Firecracker launch sequence as shell commands.
 func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig, fcBin string) {
 	cowPath := fmt.Sprintf("cow-%s.raw", vmCfg.Name)
 	memMiB := int(vmCfg.Memory >> 20)     //nolint:mnd
@@ -146,8 +146,9 @@ func printCHDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 		if cowPath == "" {
 			cowPath = fmt.Sprintf("cow-%s.raw", vmCfg.Name)
 		}
-		debugConfigs := append(append([]*types.StorageConfig(nil), configs...),
-			&types.StorageConfig{Path: cowPath, RO: false, Serial: hypervisor.CowSerial})
+		debugConfigs := slices.Concat(configs, []*types.StorageConfig{
+			{Path: cowPath, RO: false, Serial: hypervisor.CowSerial},
+		})
 		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO)
 		cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(configs), ",")
 		cmdline := fmt.Sprintf(

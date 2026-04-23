@@ -3,13 +3,10 @@ package firecracker
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 // DirectClone creates a new VM from a local snapshot directory.
@@ -56,63 +53,24 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 }
 
 // cloneSnapshotFiles copies snapshot files from srcDir to dstDir using
-// per-file strategies to minimize I/O:
-//   - mem: hardlink (FC memory file is not modified after load)
-//   - cow.raw: ReflinkCopy (FICLONE -> SparseCopy, the only real copy)
-//   - everything else: plain copy (vmstate -- small metadata)
+// per-file strategies: hardlink/symlink for mem, reflink/sparse for COW,
+// plain copy for metadata (vmstate).
 func cloneSnapshotFiles(dstDir, srcDir string) error {
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return fmt.Errorf("read srcDir: %w", err)
-	}
-
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		name := entry.Name()
-		src := filepath.Join(srcDir, name)
-		dst := filepath.Join(dstDir, name)
-
+	return hypervisor.CloneSnapshotFiles(dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case name == snapshotMemFile:
-			// Memory file: hardlink (FC uses MAP_PRIVATE, file is not modified).
-			if err := os.Link(src, dst); err != nil {
-				return fmt.Errorf("hardlink %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileMemory
 		case strings.HasSuffix(name, ".raw"):
-			// COW disk: reflink copy.
-			if err := utils.ReflinkCopy(dst, src); err != nil {
-				return fmt.Errorf("reflink copy %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileCOW
 		default:
-			// Small metadata (vmstate): plain copy.
-			if err := hypervisor.CopyFile(dst, src); err != nil {
-				return fmt.Errorf("copy %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileMeta
 		}
-	}
-	return nil
+	})
 }
 
-// cleanSnapshotFiles removes snapshot-specific files (mem, vmstate, cow.raw)
-// from runDir before replacing them with new snapshot data.
+// cleanSnapshotFiles removes snapshot-specific files from runDir.
 func cleanSnapshotFiles(runDir string) error {
-	entries, err := os.ReadDir(runDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		name := entry.Name()
-		// Keep files that are NOT part of snapshot data (e.g., logs, PID file).
-		if name == snapshotVMStateFile || name == snapshotMemFile || name == cowFileName {
-			if removeErr := os.Remove(filepath.Join(runDir, name)); removeErr != nil {
-				return fmt.Errorf("remove %s: %w", name, removeErr)
-			}
-		}
-	}
-	return nil
+	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
+		return name == snapshotVMStateFile || name == snapshotMemFile || name == cowFileName
+	})
 }

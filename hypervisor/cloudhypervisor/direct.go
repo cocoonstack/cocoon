@@ -3,13 +3,11 @@ package cloudhypervisor
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 // DirectClone creates a new VM from a local snapshot directory.
@@ -50,70 +48,33 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 }
 
 // cloneSnapshotFiles copies snapshot files from srcDir to dstDir using
-// per-file strategies to minimize I/O:
-//   - memory-range-*: hardlink (CH uses MAP_PRIVATE, files are not modified)
-//   - COW disk: ReflinkCopy (FICLONE → SparseCopy, the only real copy)
-//   - everything else: plain copy (config.json, state.json — small metadata)
+// per-file strategies: hardlink/symlink for memory-range-*, reflink/sparse
+// for COW disks, plain copy for metadata (config.json, state.json).
 func cloneSnapshotFiles(dstDir, srcDir string) error {
 	chCfg, _, err := parseCHConfig(filepath.Join(srcDir, "config.json"))
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
 	}
 	cowFiles := identifyCOWFiles(chCfg)
-
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return fmt.Errorf("read srcDir: %w", err)
-	}
-
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		name := entry.Name()
-		src := filepath.Join(srcDir, name)
-		dst := filepath.Join(dstDir, name)
-
+	return hypervisor.CloneSnapshotFiles(dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case strings.HasPrefix(name, "memory-range"):
-			if err := os.Link(src, dst); err != nil {
-				return fmt.Errorf("hardlink %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileMemory
 		case cowFiles[name]:
-			if err := utils.ReflinkCopy(dst, src); err != nil {
-				return fmt.Errorf("reflink copy %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileCOW
 		default:
-			if err := hypervisor.CopyFile(dst, src); err != nil {
-				return fmt.Errorf("copy %s: %w", name, err)
-			}
+			return hypervisor.SnapshotFileMeta
 		}
-	}
-	return nil
+	})
 }
 
-// cleanSnapshotFiles removes snapshot-specific files (memory-range-*, state.json,
-// config.json, COW disk) from runDir before replacing them with new snapshot data.
+// cleanSnapshotFiles removes snapshot-specific files from runDir.
+// COW files have arbitrary names and are overwritten by cloneSnapshotFiles.
 func cleanSnapshotFiles(runDir string) error {
-	entries, err := os.ReadDir(runDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		name := entry.Name()
-		// Keep files that are NOT part of snapshot data (e.g., cidata, logs, cmdline).
-		if strings.HasPrefix(name, "memory-range") ||
-			name == "config.json" || name == "state.json" {
-			if removeErr := os.Remove(filepath.Join(runDir, name)); removeErr != nil {
-				return fmt.Errorf("remove %s: %w", name, removeErr)
-			}
-		}
-	}
-	// COW file may have arbitrary name; it's overwritten by cloneSnapshotFiles.
-	return nil
+	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
+		return strings.HasPrefix(name, "memory-range") ||
+			name == "config.json" || name == "state.json"
+	})
 }
 
 // identifyCOWFiles returns the set of basenames of writable (COW) disk files.

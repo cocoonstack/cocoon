@@ -27,17 +27,9 @@ const (
 	mediaDesc      = 0xF8
 )
 
-// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
-// label is the volume label (e.g. "CIDATA"); files maps filename → content.
-func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
-	b := newFAT12Builder(label)
-
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		if err := b.addFile(name, files[name]); err != nil {
-			return err
-		}
-	}
-	return b.writeTo(w)
+type dataEntry struct {
+	data        []byte
+	numClusters int
 }
 
 // fat12Builder constructs a FAT12 image in memory (FAT + root dir only)
@@ -52,9 +44,17 @@ type fat12Builder struct {
 	shortSeq    int         // counter for ~N short-name suffixes
 }
 
-type dataEntry struct {
-	data        []byte
-	numClusters int
+// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
+// label is the volume label (e.g. "CIDATA"); files maps filename → content.
+func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
+	b := newFAT12Builder(label)
+
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		if err := b.addFile(name, files[name]); err != nil {
+			return err
+		}
+	}
+	return b.writeTo(w)
 }
 
 func newFAT12Builder(label string) *fat12Builder {

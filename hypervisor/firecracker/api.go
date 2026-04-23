@@ -71,6 +71,32 @@ type fcBalloon struct {
 	FreePageReporting bool `json:"free_page_reporting,omitempty"`
 }
 
+// FC snapshot/load request types.
+type fcSnapshotCreate struct {
+	SnapshotPath string `json:"snapshot_path"`
+	MemFilePath  string `json:"mem_file_path"`
+}
+
+type fcSnapshotLoad struct {
+	SnapshotPath        string              `json:"snapshot_path"`
+	MemBackend          fcSnapshotMemBE     `json:"mem_backend"`
+	EnableDiffSnapshots bool                `json:"enable_diff_snapshots,omitempty"`
+	ResumeVM            bool                `json:"resume_vm,omitempty"`
+	NetworkOverrides    []fcNetworkOverride `json:"network_overrides,omitempty"`
+}
+
+// fcNetworkOverride overrides a network interface from the snapshot
+// with a new TAP device (FC v1.14+, PR #4731).
+type fcNetworkOverride struct {
+	IfaceID     string `json:"iface_id"`
+	HostDevName string `json:"host_dev_name"`
+}
+
+type fcSnapshotMemBE struct {
+	BackendPath string `json:"backend_path"`
+	BackendType string `json:"backend_type"`
+}
+
 // fcAPI sends a request to the Firecracker REST API via Unix socket.
 func fcAPI(ctx context.Context, hc *http.Client, method, endpoint string, body []byte, successCodes ...int) error {
 	if len(successCodes) == 0 {
@@ -168,32 +194,6 @@ func resumeVM(ctx context.Context, hc *http.Client) error {
 		return fmt.Errorf("marshal resume request: %w", err)
 	}
 	return fcAPI(ctx, hc, http.MethodPatch, "/vm", body)
-}
-
-// FC snapshot/load request types.
-type fcSnapshotCreate struct {
-	SnapshotPath string `json:"snapshot_path"`
-	MemFilePath  string `json:"mem_file_path"`
-}
-
-type fcSnapshotLoad struct {
-	SnapshotPath        string              `json:"snapshot_path"`
-	MemBackend          fcSnapshotMemBE     `json:"mem_backend"`
-	EnableDiffSnapshots bool                `json:"enable_diff_snapshots,omitempty"`
-	ResumeVM            bool                `json:"resume_vm,omitempty"`
-	NetworkOverrides    []fcNetworkOverride `json:"network_overrides,omitempty"`
-}
-
-// fcNetworkOverride overrides a network interface from the snapshot
-// with a new TAP device (FC v1.14+, PR #4731).
-type fcNetworkOverride struct {
-	IfaceID     string `json:"iface_id"`
-	HostDevName string `json:"host_dev_name"`
-}
-
-type fcSnapshotMemBE struct {
-	BackendPath string `json:"backend_path"`
-	BackendType string `json:"backend_type"`
 }
 
 // createSnapshotFC creates a full VM snapshot (vmstate + memory file) in destDir.

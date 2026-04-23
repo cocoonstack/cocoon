@@ -8,7 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// GCModule returns a typed gc.Module for the OCI backend.
 func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
 	return images.BuildGCModule(images.GCModuleConfig[imageIndex]{
 		Name:      typ,
@@ -26,7 +25,6 @@ func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
 	})
 }
 
-// RegisterGC registers the OCI GC module with the given Orchestrator.
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, o.GCModule())
 }

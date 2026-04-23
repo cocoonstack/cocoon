@@ -11,6 +11,12 @@ import (
 	"os/exec"
 )
 
+type sourceImageInfo struct {
+	Format         string // "qcow2" or "raw"
+	Compat         string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
+	HasBackingFile bool
+}
+
 var (
 	// qcow2Magic is the qcow2 file signature.
 	qcow2Magic = []byte{'Q', 'F', 'I', 0xfb}
@@ -33,8 +39,7 @@ var (
 	}
 )
 
-// IsQcow2File checks whether path starts with the qcow2 magic bytes.
-// Short or unreadable files return false.
+// IsQcow2File checks whether path starts with qcow2 magic bytes.
 func IsQcow2File(path string) bool {
 	f, err := os.Open(path) //nolint:gosec // path is caller-controlled
 	if err != nil {
@@ -49,7 +54,6 @@ func IsQcow2File(path string) bool {
 	return bytes.HasPrefix(head, qcow2Magic)
 }
 
-// sniffImageSource rejects obvious non-disk-image prefixes from an open file.
 func sniffImageSource(f *os.File) error {
 	head, err := peekHead(f, 8)
 	if err != nil {
@@ -58,7 +62,6 @@ func sniffImageSource(f *os.File) error {
 	return sniffHead(head)
 }
 
-// sniffHead rejects obvious non-disk-image prefixes.
 func sniffHead(head []byte) error {
 	if len(head) < 4 {
 		return fmt.Errorf("content too small to be a disk image (%d bytes)", len(head))
@@ -74,7 +77,6 @@ func sniffHead(head []byte) error {
 	return nil
 }
 
-// peekHead reads up to n bytes from the start of f without advancing its offset.
 func peekHead(f *os.File, n int) ([]byte, error) {
 	buf := make([]byte, n)
 	m, err := f.ReadAt(buf, 0)
@@ -84,15 +86,8 @@ func peekHead(f *os.File, n int) ([]byte, error) {
 	return buf[:m], nil
 }
 
-// sourceImageInfo captures the parts of qemu-img info we care about.
-type sourceImageInfo struct {
-	Format         string // "qcow2" or "raw"
-	Compat         string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
-	HasBackingFile bool
-}
-
-// inspectImage describes a source image via qemu-img info.
 func inspectImage(ctx context.Context, path string) (*sourceImageInfo, error) {
+	// shell out because no mature Go qcow2 reader that matches qemu-img info output; qemu-img is authoritative.
 	cmd := exec.CommandContext(ctx, "qemu-img", "info", "--output=json", path) //nolint:gosec // path is controlled
 	out, err := cmd.Output()
 	if err != nil {

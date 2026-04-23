@@ -18,7 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// importQcow2File imports a local qcow2 via a hash pass and, if needed, a copy pass.
 func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, filePath string) error {
 	logger := log.WithFunc("cloudimg.import")
 
@@ -82,7 +81,6 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 	return nil
 }
 
-// importQcow2Reader buffers a stream to a cocoon-owned temp file, then imports it.
 func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
 	logger := log.WithFunc("cloudimg.import")
 
@@ -122,7 +120,6 @@ func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[im
 	return nil
 }
 
-// importQcow2Concat concatenates multiple source files into one temp image.
 func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
 	logger := log.WithFunc("cloudimg.import")
 
@@ -169,7 +166,6 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 	return nil
 }
 
-// sniffConcatHead peeks the first bytes of the logical concatenated stream.
 func sniffConcatHead(file []string) error {
 	var head [8]byte
 	collected := 0

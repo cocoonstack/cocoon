@@ -1,13 +1,20 @@
 package progress
 
-// Nop is a no-op tracker for callers that don't need progress reporting.
-var Nop Tracker = funcTracker(func(any) {})
+var (
+	// Nop is a no-op tracker for callers that don't need progress reporting.
+	Nop Tracker = funcTracker(func(any) {})
+)
 
 // Tracker receives progress events during image operations.
 // Implementations must be safe for concurrent use from multiple goroutines.
 type Tracker interface {
 	OnEvent(any)
 }
+
+type funcTracker func(any)
+
+// OnEvent dispatches a progress event to the wrapped callback.
+func (f funcTracker) OnEvent(e any) { f(e) }
 
 // NewTracker creates a Tracker from a typed callback function.
 // The caller works with a concrete event type; the Tracker interface
@@ -19,8 +26,3 @@ func NewTracker[E any](fn func(E)) Tracker {
 		}
 	})
 }
-
-type funcTracker func(any)
-
-// OnEvent dispatches a progress event to the wrapped callback.
-func (f funcTracker) OnEvent(e any) { f(e) }

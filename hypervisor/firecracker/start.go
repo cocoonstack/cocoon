@@ -152,6 +152,7 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 	}
 	defer slave.Close() //nolint:errcheck
 
+	// shell out because launching the Firecracker hypervisor process (external binary is the authoritative implementation).
 	fcCmd := exec.Command(fc.conf.FCBinary, //nolint:gosec
 		"--api-sock", sockPath,
 		"--log-path", fcLog,
@@ -239,6 +240,7 @@ func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, maste
 		return fmt.Errorf("os.Executable: %w", err)
 	}
 
+	// shell out because self-exec spawns a detached console-relay process that survives the parent.
 	relayCmd := exec.Command(self) //nolint:gosec
 	relayCmd.Env = []string{
 		relayEnvKey + "=1",

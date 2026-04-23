@@ -8,12 +8,10 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 )
 
-// imageIndex is the top-level structure of the OCI images.json file.
 type imageIndex struct {
 	images.Index[imageEntry]
 }
 
-// imageEntry records one pulled OCI image.
 // Paths are not stored; they are derived from digests and config at runtime.
 type imageEntry struct {
 	Ref            string        `json:"ref"`
@@ -25,7 +23,6 @@ type imageEntry struct {
 	CreatedAt      time.Time     `json:"created_at"`
 }
 
-// layerEntry records one EROFS layer within an image.
 type layerEntry struct {
 	Digest images.Digest `json:"digest"`
 }
@@ -63,18 +60,16 @@ func (idx *imageIndex) LookupRefs(id string) []string {
 	})
 }
 
-// images.Entry implementation (value receivers).
-
-// EntryID returns the manifest digest as the unique entry identifier.
+// EntryID returns manifest digest as unique entry identifier.
 func (e imageEntry) EntryID() string { return e.ManifestDigest.String() }
 
-// EntryRef returns the image reference string.
+// EntryRef returns image reference string.
 func (e imageEntry) EntryRef() string { return e.Ref }
 
-// EntryCreatedAt returns when this image entry was created.
+// EntryCreatedAt returns when this entry was created.
 func (e imageEntry) EntryCreatedAt() time.Time { return e.CreatedAt }
 
-// DigestHexes returns the hex-encoded digests of all layers.
+// DigestHexes returns hex-encoded digests of all layers.
 func (e imageEntry) DigestHexes() []string {
 	hexes := make([]string, len(e.Layers))
 	for i, l := range e.Layers {

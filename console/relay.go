@@ -10,7 +10,7 @@ import (
 	"github.com/moby/term"
 )
 
-// Relay runs bidirectional I/O between the user terminal and the remote.
+// Relay runs bidirectional I/O with escape-sequence detection.
 // rw can be a PTY (*os.File) or a Unix socket (net.Conn) — any io.ReadWriter.
 // escapeKeys is the byte sequence that triggers a detach (e.g. {0x1D, '.'}).
 // Returns nil on clean disconnect (escape sequence, EOF, or EIO).
@@ -20,13 +20,11 @@ import (
 func Relay(rw io.ReadWriter, escapeKeys []byte) error {
 	errCh := make(chan error, 2) //nolint:mnd
 
-	// remote → stdout (guest output to user).
 	go func() {
 		_, err := io.Copy(os.Stdout, rw)
 		errCh <- err
 	}()
 
-	// stdin → remote (user input to guest), with escape detection.
 	go func() {
 		var r io.Reader = os.Stdin
 		if len(escapeKeys) > 0 {

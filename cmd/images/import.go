@@ -21,7 +21,6 @@ import (
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
-// Import handles the 'image import' command.
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -80,7 +79,8 @@ func (h Handler) importLocalStream(ctx context.Context, conf *config.Config, nam
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("seek %s: %w", filePath, err)
 	}
-	log.WithFunc("cmd.image.import").Infof(ctx, "importing from %s ...", filePath)
+	logger := log.WithFunc("cmd.images.importLocalStream")
+	logger.Infof(ctx, "importing from %s ...", filePath)
 	return h.importFromReader(ctx, conf, name, f)
 }
 
@@ -102,7 +102,7 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 }
 
 func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	logger := log.WithFunc("cmd.importCloudimg")
+	logger := log.WithFunc("cmd.images.importCloudimgFiles")
 	cloudimgStore, err := cloudimg.New(ctx, conf)
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
@@ -130,7 +130,7 @@ func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, n
 }
 
 func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	logger := log.WithFunc("cmd.importOCI")
+	logger := log.WithFunc("cmd.images.importOCIFiles")
 	ociStore, err := oci.New(ctx, conf)
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)
@@ -154,7 +154,7 @@ func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name s
 }
 
 func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	logger := log.WithFunc("cmd.importCloudimg")
+	logger := log.WithFunc("cmd.images.importCloudimgReader")
 	cloudimgStore, err := cloudimg.New(ctx, conf)
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
@@ -178,7 +178,7 @@ func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, 
 }
 
 func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	logger := log.WithFunc("cmd.importOCI")
+	logger := log.WithFunc("cmd.images.importOCIReader")
 	ociStore, err := oci.New(ctx, conf)
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)

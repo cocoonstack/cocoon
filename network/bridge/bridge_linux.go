@@ -107,8 +107,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, err)
 		}
 
-		// Disable FDB source MAC learning on this port — the TAP has
-		// exactly one MAC and learning writes add per-packet overhead.
+		// Disable FDB source MAC learning per-packet overhead.
 		_ = netlink.LinkSetLearning(tap, false)
 
 		if mtu := br.Attrs().MTU; mtu > 0 {
@@ -129,9 +128,7 @@ func (b *Bridge) Config(ctx context.Context, vmID string, numNICs int, vmCfg *ty
 			QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
 			Backend:   typ,
 			BridgeDev: b.bridgeDev,
-			// NetnsPath: empty — TAP is in host netns.
-			// Network:   nil — IP comes from DHCP on the bridge.
-		})
+			})
 		logger.Debugf(ctx, "NIC %d: tap=%s mac=%s bridge=%s", i, name, mac, b.bridgeDev)
 	}
 	return configs, nil
@@ -177,10 +174,9 @@ func CleanupTAPs(vmIDs []string) []string {
 }
 
 func createTAP(name string, numQueues int) error {
-	// CH uses queue pairs (TX+RX): queue_pairs = num_queues / 2.
-	// Multi-queue requires queue_pairs > 1, i.e. num_queues > 2.
-	// The TAP's IFF_MULTI_QUEUE flag must match CH's expectation,
-	// otherwise CH's sysfs pre-flight check rejects the device.
+	// queue_pairs = num_queues / 2 (TX+RX pair per queue).
+	// Multi-queue requires queue_pairs > 1.
+	// TAP IFF_MULTI_QUEUE must match CH's expectations.
 	queuePairs := max(1, numQueues/2) //nolint:mnd
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {

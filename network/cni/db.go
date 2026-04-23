@@ -20,8 +20,6 @@ type networkRecord struct {
 
 // networkIndex is the top-level DB structure for the CNI network provider.
 type networkIndex struct {
-	// Networks is keyed by network ID (not VM ID).
-	// A VM with 2 NICs has 2 entries here.
 	Networks map[string]*networkRecord `json:"networks"`
 }
 
@@ -33,7 +31,7 @@ func (idx *networkIndex) Init() {
 }
 
 // byVMID returns copies of all network records belonging to vmID.
-// The returned values are detached from the index and safe to use after the lock is released.
+// Returns detached copies safe to use after the lock is released.
 func (idx *networkIndex) byVMID(vmID string) []networkRecord {
 	var out []networkRecord
 	for _, rec := range idx.Networks {

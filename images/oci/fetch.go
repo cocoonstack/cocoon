@@ -16,7 +16,7 @@ import (
 )
 
 func fetchImage(ctx context.Context, imageRef string) (ref, digestHex string, layers []v1.Layer, err error) {
-	logger := log.WithFunc("oci.pull")
+	logger := log.WithFunc("oci.fetchImage")
 
 	parsedRef, parseErr := name.ParseReference(imageRef)
 	if parseErr != nil {

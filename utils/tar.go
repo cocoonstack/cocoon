@@ -21,6 +21,15 @@ const (
 	sparseBlockSize = 4096
 )
 
+var (
+	sparseBlockPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, sparseBlockSize)
+			return &b
+		},
+	}
+)
+
 // sparseSegment describes one contiguous data region in a sparse file.
 type sparseSegment struct {
 	Offset int64 `json:"o"`
@@ -129,13 +138,6 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 	}
 
 	return f.Sync()
-}
-
-var sparseBlockPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, sparseBlockSize)
-		return &b
-	},
 }
 
 func extractFile(path string, r io.Reader, perm os.FileMode) error {

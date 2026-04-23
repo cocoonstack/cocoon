@@ -15,7 +15,6 @@ import (
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
-// Pull handles the 'image pull' command.
 func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -43,7 +42,7 @@ func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) pullOCI(ctx context.Context, store *oci.OCI, image string) error {
-	logger := log.WithFunc("cmd.pullOCI")
+	logger := log.WithFunc("cmd.images.pullOCI")
 	tracker := progress.NewTracker(func(e ociProgress.Event) {
 		switch e.Phase {
 		case ociProgress.PhasePull:
@@ -63,7 +62,7 @@ func (h Handler) pullOCI(ctx context.Context, store *oci.OCI, image string) erro
 }
 
 func (h Handler) pullCloudimg(ctx context.Context, store *cloudimg.CloudImg, url string, force bool) error {
-	logger := log.WithFunc("cmd.pullCloudimg")
+	logger := log.WithFunc("cmd.images.pullCloudimg")
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {
 		case cloudimgProgress.PhaseDownload:

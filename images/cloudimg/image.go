@@ -6,12 +6,10 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 )
 
-// imageIndex is the top-level structure of the cloudimg images.json file.
 type imageIndex struct {
 	images.Index[imageEntry]
 }
 
-// imageEntry records one pulled cloud image.
 type imageEntry struct {
 	Ref        string        `json:"ref"`         // Original URL.
 	ContentSum images.Digest `json:"content_sum"` // SHA-256 of downloaded content.
@@ -41,18 +39,16 @@ func (idx *imageIndex) LookupRefs(id string) []string {
 	return images.LookupRefs(idx.Images, id)
 }
 
-// images.Entry implementation (value receivers).
-
-// EntryID returns the content checksum as the unique entry identifier.
+// EntryID returns content checksum as unique entry identifier.
 func (e imageEntry) EntryID() string { return e.ContentSum.String() }
 
-// EntryRef returns the image reference string.
+// EntryRef returns image reference string.
 func (e imageEntry) EntryRef() string { return e.Ref }
 
-// EntryCreatedAt returns when this image entry was created.
+// EntryCreatedAt returns when this entry was created.
 func (e imageEntry) EntryCreatedAt() time.Time { return e.CreatedAt }
 
-// DigestHexes returns the hex-encoded content digest.
+// DigestHexes returns hex-encoded content digest.
 func (e imageEntry) DigestHexes() []string { return []string{e.ContentSum.Hex()} }
 
 func imageSizer(e *imageEntry) int64 {

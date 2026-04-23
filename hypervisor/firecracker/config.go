@@ -17,13 +17,10 @@ func NewConfig(conf *config.Config) *Config {
 	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "firecracker")}
 }
 
-// BinaryName returns the base name of the Firecracker binary.
 func (c *Config) BinaryName() string { return filepath.Base(c.FCBinary) }
 
-// PIDFileName returns the PID file name for the Firecracker backend.
 func (c *Config) PIDFileName() string { return pidFileName }
 
-// COWRawPath returns the path for the OCI COW raw disk.
 func (c *Config) COWRawPath(vmID string) string {
 	return filepath.Join(c.VMRunDir(vmID), cowFileName)
 }

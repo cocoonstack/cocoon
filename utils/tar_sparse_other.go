@@ -8,8 +8,7 @@ import (
 	"os"
 )
 
-// tarFileMaybeSparse falls back to regular tarFileFrom on non-Linux platforms
-// where SEEK_HOLE/SEEK_DATA is not available.
+// tarFileMaybeSparse falls back to regular tarFileFrom on non-Linux (no SEEK_HOLE/SEEK_DATA).
 func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
