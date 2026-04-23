@@ -76,11 +76,11 @@ lint: golangci-lint ## Run golangci-lint for all target platforms
 	GOOS=darwin GOARCH=amd64 $(GOLANGCILINT) run
 
 fmt: gofumpt goimports ## Format code with gofumpt and goimports
-	$(GOFMT) -l -w .
+	$(GOFMT) -extra -l -w .
 	$(GOIMPORTS) -l -w --local 'github.com/cocoonstack/cocoon' .
 
 fmt-check: gofumpt goimports ## Check formatting (fails if files need formatting)
-	@test -z "$$($(GOFMT) -l .)" || { echo "Files need formatting (gofumpt):"; $(GOFMT) -l .; exit 1; }
+	@test -z "$$($(GOFMT) -extra -l .)" || { echo "Files need formatting (gofumpt):"; $(GOFMT) -extra -l .; exit 1; }
 	@test -z "$$($(GOIMPORTS) -l .)" || { echo "Files need formatting (goimports):"; $(GOIMPORTS) -l .; exit 1; }
 
 # --- Maintenance ---

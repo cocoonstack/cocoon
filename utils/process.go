@@ -11,9 +11,7 @@ import (
 	"time"
 )
 
-const (
-	killWaitTimeout = 5 * time.Second
-)
+const killWaitTimeout = 5 * time.Second
 
 // WritePIDFile writes pid to path with 0600 permissions.
 func WritePIDFile(path string, pid int) error {

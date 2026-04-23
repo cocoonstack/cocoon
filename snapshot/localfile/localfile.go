@@ -21,9 +21,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	typ = "localfile"
-)
+const typ = "localfile"
 
 // compile-time interface checks.
 var (

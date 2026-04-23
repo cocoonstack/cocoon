@@ -15,9 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	cloneBackupSuffix = ".cocoon-clone-backup"
-)
+const cloneBackupSuffix = ".cocoon-clone-backup"
 
 // driveRedirect records a temporary symlink replacing a source drive path.
 type driveRedirect struct {

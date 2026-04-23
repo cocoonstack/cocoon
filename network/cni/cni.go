@@ -23,14 +23,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// compile-time interface check.
-var (
-	_ network.Network = (*CNI)(nil)
-)
+var _ network.Network = (*CNI)(nil)
 
-const (
-	typ = "cni"
-)
+const typ = "cni"
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {

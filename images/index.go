@@ -14,9 +14,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	minHexLen = 12
-)
+const minHexLen = 12
 
 // Entry defines the common behavior of an image index (*entry).
 // Both OCI and cloudimg imageEntry types implement this with value receivers.

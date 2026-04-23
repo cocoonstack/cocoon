@@ -28,7 +28,7 @@ func (ops Ops[I, E]) Inspect(ctx context.Context, id string) (result *types.Imag
 		result = entryToImage(ops.Entries(idx)[refs[0]], ops.Type, ops.Sizer)
 		return nil
 	})
-	return
+	return result, err
 }
 
 // List reads all entries and converts them to []types.Image.
@@ -37,7 +37,7 @@ func (ops Ops[I, E]) List(ctx context.Context) (result []*types.Image, err error
 		result = listImages(ops.Entries(idx), ops.Type, ops.Sizer)
 		return nil
 	})
-	return
+	return result, err
 }
 
 // Delete deletes entries from an index by ids and returns removed refs.
@@ -48,5 +48,5 @@ func (ops Ops[I, E]) Delete(ctx context.Context, ids []string) (deleted []string
 		}, ids)
 		return nil
 	})
-	return
+	return deleted, err
 }

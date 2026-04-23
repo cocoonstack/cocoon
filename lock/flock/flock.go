@@ -10,14 +10,9 @@ import (
 	"github.com/cocoonstack/cocoon/lock"
 )
 
-const (
-	retryDelay = 100 * time.Millisecond
-)
+const retryDelay = 100 * time.Millisecond
 
-// compile-time interface check.
-var (
-	_ lock.Locker = (*Lock)(nil)
-)
+var _ lock.Locker = (*Lock)(nil)
 
 // Lock provides in-process (channel) + cross-process (flock) mutual exclusion.
 type Lock struct {

@@ -13,9 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	snapshotJSONName = "snapshot.json"
-)
+const snapshotJSONName = "snapshot.json"
 
 // Export streams the snapshot as a raw tar archive.
 // The first tar entry is snapshot.json containing the SnapshotConfig metadata;

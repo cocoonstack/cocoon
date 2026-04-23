@@ -159,7 +159,7 @@ func TestForEach_IntItems(t *testing.T) {
 }
 
 func TestMap_AllSucceed(t *testing.T) {
-	results, err := Map(t.Context(), []int{1, 2, 3}, func(_ context.Context, _ int, n int) (string, error) {
+	results, err := Map(t.Context(), []int{1, 2, 3}, func(_ context.Context, _, n int) (string, error) {
 		return fmt.Sprintf("v%d", n), nil
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestMap_AllSucceed(t *testing.T) {
 }
 
 func TestMap_FailFast(t *testing.T) {
-	results, err := Map(t.Context(), []int{1, 2, 3}, func(_ context.Context, _ int, n int) (string, error) {
+	results, err := Map(t.Context(), []int{1, 2, 3}, func(_ context.Context, _, n int) (string, error) {
 		if n == 2 {
 			return "", fmt.Errorf("fail on %d", n)
 		}
@@ -193,7 +193,7 @@ func TestMap_FailFast(t *testing.T) {
 }
 
 func TestMap_Empty(t *testing.T) {
-	results, err := Map(t.Context(), []int{}, func(_ context.Context, _ int, _ int) (string, error) {
+	results, err := Map(t.Context(), []int{}, func(_ context.Context, _, _ int) (string, error) {
 		t.Fatal("should not be called")
 		return "", nil
 	})
@@ -206,7 +206,7 @@ func TestMap_Empty(t *testing.T) {
 }
 
 func TestMap_PreservesOrder(t *testing.T) {
-	results, err := Map(t.Context(), []int{10, 20, 30, 40, 50}, func(_ context.Context, _ int, n int) (int, error) {
+	results, err := Map(t.Context(), []int{10, 20, 30, 40, 50}, func(_ context.Context, _, n int) (int, error) {
 		time.Sleep(time.Duration(50-n) * time.Millisecond) // reverse completion order
 		return n * 2, nil
 	})
@@ -225,7 +225,7 @@ func TestMap_WithConcurrencyLimit(t *testing.T) {
 	var peak atomic.Int32
 	var cur atomic.Int32
 
-	results, err := Map(t.Context(), []int{1, 2, 3, 4, 5}, func(_ context.Context, _ int, n int) (int, error) {
+	results, err := Map(t.Context(), []int{1, 2, 3, 4, 5}, func(_ context.Context, _, n int) (int, error) {
 		c := cur.Add(1)
 		for {
 			old := peak.Load()

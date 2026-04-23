@@ -17,14 +17,9 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// compile-time interface check.
-var (
-	_ network.Network = (*Bridge)(nil)
-)
+var _ network.Network = (*Bridge)(nil)
 
-const (
-	typ = "bridge"
-)
+const typ = "bridge"
 
 // Bridge implements network.Network by creating TAP devices and adding
 // them directly to an existing Linux bridge. An external DHCP server
@@ -160,7 +155,7 @@ func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
 func CleanupTAPs(vmIDs []string) []string {
 	var cleaned []string
 	for _, vmID := range vmIDs {
-		for i := range 8 { // max 8 NICs per VM
+		for i := 0; ; i++ {
 			name := tapName(vmID, i)
 			l, err := netlink.LinkByName(name)
 			if err != nil {

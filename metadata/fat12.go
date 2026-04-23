@@ -361,5 +361,5 @@ func putTimestamps(entry []byte, t time.Time) {
 func encodeFATDateTime(t time.Time) (date, fatTime uint16) {
 	date = uint16((t.Year()-1980)<<9) | uint16(int(t.Month())<<5) | uint16(t.Day()) //nolint:mnd,gosec
 	fatTime = uint16(t.Hour()<<11) | uint16(t.Minute()<<5) | uint16(t.Second()/2)   //nolint:mnd,gosec
-	return
+	return date, fatTime
 }

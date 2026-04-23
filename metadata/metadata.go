@@ -8,9 +8,7 @@ import (
 	"text/template"
 )
 
-const (
-	cidataLabel = "CIDATA"
-)
+const cidataLabel = "CIDATA"
 
 var (
 	tmplFuncs = template.FuncMap{

@@ -42,10 +42,10 @@ func bootFilesPresent(results []pullLayerResult) (hasKernel, hasInitrd bool) {
 			hasInitrd = true
 		}
 		if hasKernel && hasInitrd {
-			return
+			return hasKernel, hasInitrd
 		}
 	}
-	return
+	return hasKernel, hasInitrd
 }
 
 func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest images.Digest, results []pullLayerResult) error {

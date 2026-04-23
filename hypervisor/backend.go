@@ -417,20 +417,6 @@ func (b *Backend) GCCollect(ctx context.Context, ids []string) error {
 	return errors.Join(errs...)
 }
 
-// killOrphanProcess terminates a leftover hypervisor process if the PID
-// file exists and the process matches the expected binary name.
-func (b *Backend) killOrphanProcess(ctx context.Context, runDir string) {
-	pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir))
-	if err != nil {
-		return
-	}
-	sockPath := SocketPath(runDir)
-	if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
-		return
-	}
-	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
-}
-
 func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
 }
@@ -562,6 +548,20 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 	}
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 	return nil
+}
+
+// killOrphanProcess terminates a leftover hypervisor process if the PID
+// file exists and the process matches the expected binary name.
+func (b *Backend) killOrphanProcess(ctx context.Context, runDir string) {
+	pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir))
+	if err != nil {
+		return
+	}
+	sockPath := SocketPath(runDir)
+	if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
+		return
+	}
+	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 }
 
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }

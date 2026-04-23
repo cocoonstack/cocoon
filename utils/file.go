@@ -13,10 +13,8 @@ import (
 	"github.com/projecteru2/core/log"
 )
 
-const (
-	// StaleTempAge is the age threshold for removing stale temp files during GC.
-	StaleTempAge = time.Hour
-)
+// StaleTempAge is the age threshold for removing stale temp files during GC.
+const StaleTempAge = time.Hour
 
 // EnsureDirs creates all directories with 0o750 permissions.
 func EnsureDirs(dirs ...string) error {

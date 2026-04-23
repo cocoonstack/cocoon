@@ -15,9 +15,7 @@ import (
 )
 
 // CowSerial is re-exported for backward compatibility with cmd/vm/debug.go.
-const (
-	CowSerial = hypervisor.CowSerial
-)
+const CowSerial = hypervisor.CowSerial
 
 // Create reserves a VM record, prepares disks, and leaves the VM in Created state.
 func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, bootCfg *types.BootConfig) (_ *types.VM, err error) {
