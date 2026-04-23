@@ -260,25 +260,7 @@ func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 // snapshotRecordToConfig builds a detached SnapshotConfig from a record,
 // deep-copying ImageBlobIDs so the caller can use it after the lock is released.
 func snapshotRecordToConfig(rec *snapshot.SnapshotRecord) *types.SnapshotConfig {
-	blobIDs := make(map[string]struct{}, len(rec.ImageBlobIDs))
-	maps.Copy(blobIDs, rec.ImageBlobIDs)
-	return &types.SnapshotConfig{
-		ID:            rec.ID,
-		Name:          rec.Name,
-		Description:   rec.Description,
-		Image:         rec.Image,
-		ImageDigest:   rec.ImageDigest,
-		ImageType:     rec.ImageType,
-		ImageBlobIDs:  blobIDs,
-		Hypervisor:    rec.Hypervisor,
-		CPU:           rec.CPU,
-		Memory:        rec.Memory,
-		Storage:       rec.Storage,
-		NICs:          rec.NICs,
-		QueueSize:     rec.QueueSize,
-		DiskQueueSize: rec.DiskQueueSize,
-		Network:       rec.Network,
-		NoDirectIO:    rec.NoDirectIO,
-		Windows:       rec.Windows,
-	}
+	cfg := rec.SnapshotConfig // value copy
+	cfg.ImageBlobIDs = maps.Clone(rec.ImageBlobIDs)
+	return &cfg
 }
