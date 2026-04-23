@@ -43,7 +43,7 @@ func TestVMIPsAndSort(t *testing.T) {
 			ID: "2",
 			Config: types.VMConfig{
 				Name: "later",
-				ResourceConfig: types.ResourceConfig{
+				Config: types.Config{
 					CPU:    2,
 					Memory: 2 << 30,
 					Image:  "img-b",
@@ -55,7 +55,7 @@ func TestVMIPsAndSort(t *testing.T) {
 			ID: "1",
 			Config: types.VMConfig{
 				Name: "earlier",
-				ResourceConfig: types.ResourceConfig{
+				Config: types.Config{
 					CPU:    1,
 					Memory: 1 << 30,
 					Image:  "img-a",

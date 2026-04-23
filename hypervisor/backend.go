@@ -414,11 +414,11 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snap
 // BuildSnapshotConfig builds a SnapshotConfig from a VM record's config.
 func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
 	cfg := &types.SnapshotConfig{
-		ID:             snapID,
-		Hypervisor:     b.Typ,
-		NICs:           len(rec.NetworkConfigs),
-		ImageBlobIDs:   maps.Clone(rec.ImageBlobIDs),
-		ResourceConfig: rec.Config.ResourceConfig,
+		ID:           snapID,
+		Hypervisor:   b.Typ,
+		NICs:         len(rec.NetworkConfigs),
+		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
+		Config:       rec.Config.Config,
 	}
 	return cfg
 }

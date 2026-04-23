@@ -486,7 +486,7 @@ func TestDataDir(t *testing.T) {
 		ID:           testID(t),
 		Name:         "datadir",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
-		ResourceConfig: types.ResourceConfig{
+		Config: types.Config{
 			Image:  "ubuntu:24.04",
 			CPU:    2,
 			Memory: 1 << 30,
@@ -577,7 +577,7 @@ func TestRestore_ConfigRoundtrip(t *testing.T) {
 		Description:  "roundtrip",
 		ImageBlobIDs: map[string]struct{}{"deadbeef": {}},
 		NICs:         2,
-		ResourceConfig: types.ResourceConfig{
+		Config: types.Config{
 			Image:   "ubuntu:22.04",
 			CPU:     4,
 			Memory:  1 << 30, // 1 GiB
@@ -760,7 +760,7 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		Description:  "export test",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
 		NICs:         2,
-		ResourceConfig: types.ResourceConfig{
+		Config: types.Config{
 			Image:   "ubuntu:24.04",
 			CPU:     4,
 			Memory:  1 << 30,
@@ -876,7 +876,7 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		Config: types.SnapshotConfig{
 			Name:        "stream-snap",
 			Description: "from reader",
-			ResourceConfig: types.ResourceConfig{
+			Config: types.Config{
 				CPU:    2,
 				Memory: 512 << 20,
 			},
@@ -952,7 +952,7 @@ func TestImport_FromRawTarReader(t *testing.T) {
 		Version: 1,
 		Config: types.SnapshotConfig{
 			Name:           "raw-snap",
-			ResourceConfig: types.ResourceConfig{CPU: 8},
+			Config: types.Config{CPU: 8},
 		},
 	}
 	jsonData, err := json.Marshal(wantCfg)

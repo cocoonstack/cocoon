@@ -273,7 +273,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 
 	cfg := &types.VMConfig{
 		Name: vmName,
-		ResourceConfig: types.ResourceConfig{
+		Config: types.Config{
 			CPU:           cpu,
 			Memory:        memBytes,
 			Storage:       storBytes,
@@ -324,7 +324,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 
 	cfg := &types.VMConfig{
 		Name: vmName,
-		ResourceConfig: types.ResourceConfig{
+		Config: types.Config{
 			CPU:           cpu,
 			Memory:        memBytes,
 			Storage:       storBytes,

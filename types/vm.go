@@ -27,7 +27,7 @@ var (
 
 // VMConfig describes the resources requested for a new VM.
 type VMConfig struct {
-	ResourceConfig
+	Config
 	Name string `json:"name"`
 
 	OnDemand bool   `json:"-"` // use UFFD on-demand memory restore (CH only); transient, not persisted

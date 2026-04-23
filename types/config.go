@@ -1,9 +1,9 @@
 package types
 
-// ResourceConfig holds the resource parameters shared between VMConfig
+// Config holds the resource parameters shared between VMConfig
 // and SnapshotConfig. Embedding it in both structs eliminates field
 // duplication and allows value-copy transfer (e.g. BuildSnapshotConfig).
-type ResourceConfig struct {
+type Config struct {
 	CPU           int    `json:"cpu,omitempty"`
 	Memory        int64  `json:"memory,omitempty"`          // bytes
 	Storage       int64  `json:"storage,omitempty"`         // COW disk size, bytes
