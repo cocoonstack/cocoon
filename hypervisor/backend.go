@@ -104,11 +104,7 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 		info.SocketPath = SocketPath(rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	}
-	if info.SnapshotIDs != nil {
-		ids := make(map[string]struct{}, len(info.SnapshotIDs))
-		maps.Copy(ids, info.SnapshotIDs)
-		info.SnapshotIDs = ids
-	}
+	info.SnapshotIDs = maps.Clone(info.SnapshotIDs)
 	return &info
 }
 
@@ -211,9 +207,8 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 }
 
 // CloneSetup handles the shared pre-clone sequence used by both
-// backends' Clone and DirectClone entry points: validate CPU, backfill
-// image ref from snapshot, reserve a placeholder record, create dirs,
-// and return a cleanup function.
+// backends' Clone and DirectClone entry points: validate CPU,
+// reserve a placeholder record, create dirs, and return a cleanup function.
 func (b *Backend) CloneSetup(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotConfig *types.SnapshotConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
 		return "", "", time.Time{}, nil, err
@@ -419,24 +414,11 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID, tmpDir string) (snap
 // BuildSnapshotConfig builds a SnapshotConfig from a VM record's config.
 func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
 	cfg := &types.SnapshotConfig{
-		ID:            snapID,
-		Image:         rec.Config.Image,
-		ImageDigest:   rec.Config.ImageDigest,
-		ImageType:     rec.Config.ImageType,
-		Hypervisor:    b.Typ,
-		CPU:           rec.Config.CPU,
-		Memory:        rec.Config.Memory,
-		Storage:       rec.Config.Storage,
-		NICs:          len(rec.NetworkConfigs),
-		QueueSize:     rec.Config.QueueSize,
-		DiskQueueSize: rec.Config.DiskQueueSize,
-		Network:       rec.Config.Network,
-		NoDirectIO:    rec.Config.NoDirectIO,
-		Windows:       rec.Config.Windows,
-	}
-	if rec.ImageBlobIDs != nil {
-		cfg.ImageBlobIDs = make(map[string]struct{}, len(rec.ImageBlobIDs))
-		maps.Copy(cfg.ImageBlobIDs, rec.ImageBlobIDs)
+		ID:             snapID,
+		Hypervisor:     b.Typ,
+		NICs:           len(rec.NetworkConfigs),
+		ImageBlobIDs:   maps.Clone(rec.ImageBlobIDs),
+		ResourceConfig: rec.Config.ResourceConfig,
 	}
 	return cfg
 }

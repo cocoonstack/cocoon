@@ -485,10 +485,12 @@ func TestDataDir(t *testing.T) {
 	cfg := &types.SnapshotConfig{
 		ID:           testID(t),
 		Name:         "datadir",
-		Image:        "ubuntu:24.04",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
-		CPU:          2,
-		Memory:       1 << 30,
+		ResourceConfig: types.ResourceConfig{
+			Image:  "ubuntu:24.04",
+			CPU:    2,
+			Memory: 1 << 30,
+		},
 	}
 
 	id, err := lf.Create(ctx, cfg, stream)
@@ -573,12 +575,14 @@ func TestRestore_ConfigRoundtrip(t *testing.T) {
 		ID:           testID(t),
 		Name:         "rt",
 		Description:  "roundtrip",
-		Image:        "ubuntu:22.04",
 		ImageBlobIDs: map[string]struct{}{"deadbeef": {}},
-		CPU:          4,
-		Memory:       1 << 30, // 1 GiB
-		Storage:      10 << 30,
 		NICs:         2,
+		ResourceConfig: types.ResourceConfig{
+			Image:   "ubuntu:22.04",
+			CPU:     4,
+			Memory:  1 << 30, // 1 GiB
+			Storage: 10 << 30,
+		},
 	}
 
 	id, err := lf.Create(ctx, cfg, stream)
@@ -754,12 +758,14 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		ID:           testID(t),
 		Name:         name,
 		Description:  "export test",
-		Image:        "ubuntu:24.04",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
-		CPU:          4,
-		Memory:       1 << 30,
-		Storage:      10 << 30,
 		NICs:         2,
+		ResourceConfig: types.ResourceConfig{
+			Image:   "ubuntu:24.04",
+			CPU:     4,
+			Memory:  1 << 30,
+			Storage: 10 << 30,
+		},
 	}
 	id, err := lf.Create(ctx, cfg, stream)
 	if err != nil {
@@ -870,8 +876,10 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		Config: types.SnapshotConfig{
 			Name:        "stream-snap",
 			Description: "from reader",
-			CPU:         2,
-			Memory:      512 << 20,
+			ResourceConfig: types.ResourceConfig{
+				CPU:    2,
+				Memory: 512 << 20,
+			},
 		},
 	}
 	jsonData, err := json.Marshal(wantCfg)
@@ -943,8 +951,8 @@ func TestImport_FromRawTarReader(t *testing.T) {
 	wantCfg := types.SnapshotExport{
 		Version: 1,
 		Config: types.SnapshotConfig{
-			Name: "raw-snap",
-			CPU:  8,
+			Name:           "raw-snap",
+			ResourceConfig: types.ResourceConfig{CPU: 8},
 		},
 	}
 	jsonData, err := json.Marshal(wantCfg)

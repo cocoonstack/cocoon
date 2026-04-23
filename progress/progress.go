@@ -21,4 +21,3 @@ type funcTracker func(any)
 
 // OnEvent dispatches a progress event to the wrapped callback.
 func (f funcTracker) OnEvent(e any) { f(e) }
-

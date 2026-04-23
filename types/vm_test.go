@@ -7,10 +7,12 @@ import (
 
 func validConfig() VMConfig {
 	return VMConfig{
-		Name:    "test-vm",
-		CPU:     2,
-		Memory:  1 << 30,  // 1 GiB
-		Storage: 20 << 30, // 20 GiB
+		Name: "test-vm",
+		ResourceConfig: ResourceConfig{
+			CPU:     2,
+			Memory:  1 << 30,  // 1 GiB
+			Storage: 20 << 30, // 20 GiB
+		},
 	}
 }
 

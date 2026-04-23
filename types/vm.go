@@ -27,18 +27,8 @@ var (
 
 // VMConfig describes the resources requested for a new VM.
 type VMConfig struct {
-	Name          string `json:"name"`
-	CPU           int    `json:"cpu"`
-	Memory        int64  `json:"memory"`                    // bytes
-	Storage       int64  `json:"storage"`                   // COW disk size, bytes
-	QueueSize     int    `json:"queue_size,omitempty"`      // virtio-net ring depth per queue; 0 = default
-	DiskQueueSize int    `json:"disk_queue_size,omitempty"` // virtio-blk ring depth per device; 0 = default
-	Image         string `json:"image"`
-	ImageDigest   string `json:"image_digest,omitempty"` // resolved image digest (e.g. "sha256:abc123")
-	ImageType     string `json:"image_type,omitempty"`   // image backend type ("oci" or "cloudimg")
-	Network       string `json:"network,omitempty"`      // CNI conflist name; empty = default
-	NoDirectIO    bool   `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
-	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
+	ResourceConfig
+	Name string `json:"name"`
 
 	OnDemand bool   `json:"-"` // use UFFD on-demand memory restore (CH only); transient, not persisted
 	User     string `json:"-"`

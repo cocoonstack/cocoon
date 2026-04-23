@@ -42,20 +42,24 @@ func TestVMIPsAndSort(t *testing.T) {
 		{
 			ID: "2",
 			Config: types.VMConfig{
-				Name:   "later",
-				CPU:    2,
-				Memory: 2 << 30,
-				Image:  "img-b",
+				Name: "later",
+				ResourceConfig: types.ResourceConfig{
+					CPU:    2,
+					Memory: 2 << 30,
+					Image:  "img-b",
+				},
 			},
 			CreatedAt: now,
 		},
 		{
 			ID: "1",
 			Config: types.VMConfig{
-				Name:   "earlier",
-				CPU:    1,
-				Memory: 1 << 30,
-				Image:  "img-a",
+				Name: "earlier",
+				ResourceConfig: types.ResourceConfig{
+					CPU:    1,
+					Memory: 1 << 30,
+					Image:  "img-a",
+				},
 			},
 			CreatedAt: now.Add(-time.Minute),
 			NetworkConfigs: []*types.NetworkConfig{

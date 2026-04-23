@@ -272,18 +272,20 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	}
 
 	cfg := &types.VMConfig{
-		Name:          vmName,
-		CPU:           cpu,
-		Memory:        memBytes,
-		Storage:       storBytes,
-		QueueSize:     queueSize,
-		DiskQueueSize: diskQueueSize,
-		Image:         image,
-		Network:       network,
-		User:          user,
-		Password:      password,
-		NoDirectIO:    noDirectIO,
-		Windows:       windows,
+		Name: vmName,
+		ResourceConfig: types.ResourceConfig{
+			CPU:           cpu,
+			Memory:        memBytes,
+			Storage:       storBytes,
+			QueueSize:     queueSize,
+			DiskQueueSize: diskQueueSize,
+			Image:         image,
+			Network:       network,
+			NoDirectIO:    noDirectIO,
+			Windows:       windows,
+		},
+		User:     user,
+		Password: password,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -321,19 +323,21 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg *types.SnapshotConfig) (
 	onDemand, _ := cmd.Flags().GetBool("on-demand")
 
 	cfg := &types.VMConfig{
-		Name:          vmName,
-		CPU:           cpu,
-		Memory:        memBytes,
-		Storage:       storBytes,
-		QueueSize:     queueSize,
-		DiskQueueSize: diskQueueSize,
-		Image:         snapCfg.Image,
-		ImageDigest:   snapCfg.ImageDigest,
-		ImageType:     snapCfg.ImageType,
-		Network:       network,
-		NoDirectIO:    noDirectIO,
-		Windows:       snapCfg.Windows,
-		OnDemand:      onDemand,
+		Name: vmName,
+		ResourceConfig: types.ResourceConfig{
+			CPU:           cpu,
+			Memory:        memBytes,
+			Storage:       storBytes,
+			QueueSize:     queueSize,
+			DiskQueueSize: diskQueueSize,
+			Image:         snapCfg.Image,
+			ImageDigest:   snapCfg.ImageDigest,
+			ImageType:     snapCfg.ImageType,
+			Network:       network,
+			NoDirectIO:    noDirectIO,
+			Windows:       snapCfg.Windows,
+		},
+		OnDemand: onDemand,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
