@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -108,5 +109,12 @@ func initConfig(ctx context.Context) error {
 		return fmt.Errorf("config: %w", err)
 	}
 
-	return log.SetupLog(ctx, conf.Log, "")
+	// core/log.SetupLog hardcodes os.Stdout as the logger writer. Swap
+	// os.Stdout→os.Stderr for the call so the captured writer is stderr,
+	// preserving stdout for -o json output. Restore immediately after.
+	origStdout := os.Stdout
+	os.Stdout = os.Stderr
+	setupErr := log.SetupLog(ctx, conf.Log, "")
+	os.Stdout = origStdout
+	return setupErr
 }

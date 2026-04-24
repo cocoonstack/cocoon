@@ -28,6 +28,9 @@ func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, vm); done {
+		return jsonErr
+	}
 	logger := log.WithFunc("cmd.vm.create")
 	logger.Infof(ctx, "VM created: %s (name: %s, state: %s)", vm.ID, vm.Config.Name, vm.State)
 	logger.Infof(ctx, "start with: cocoon vm start %s", vm.ID)
@@ -40,11 +43,27 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logger := log.WithFunc("cmd.vm.run")
-	logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
+	wantJSON := cmdcore.WantJSON(cmd)
+	if !wantJSON {
+		logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
+	}
 
 	started, err := hyper.Start(ctx, []string{vm.ID})
 	if err != nil {
 		return fmt.Errorf("start VM %s: %w", vm.ID, err)
+	}
+	if wantJSON {
+		// Re-inspect to capture post-start state (running, PID, IP).
+		// On failure, fall back to pre-start vm and surface the reason so the
+		// caller doesn't silently consume stale JSON.
+		info, inspectErr := hyper.Inspect(ctx, vm.ID)
+		switch {
+		case inspectErr != nil:
+			logger.Warnf(ctx, "inspect after start failed: %v (json payload may be stale)", inspectErr)
+		case info != nil:
+			vm = info
+		}
+		return cmdcore.OutputJSON(vm)
 	}
 	for _, id := range started {
 		logger.Infof(ctx, "started: %s", id)
@@ -110,6 +129,9 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 
+	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, vm); done {
+		return jsonErr
+	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm, networkConfigs)
 	return nil
@@ -156,7 +178,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	done, directErr := h.restoreDirect(ctx, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
+	done, directErr := h.restoreDirect(ctx, cmd, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
 	if done {
 		return directErr
 	}
@@ -179,6 +201,9 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("restore: %w", err)
 	}
 
+	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, result); done {
+		return jsonErr
+	}
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
 	return nil
 }
@@ -194,7 +219,10 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 		return err
 	}
 
-	logger.Infof(ctx, "cloning VM from snapshot %s (direct) ...", snapRef)
+	wantJSON := cmdcore.WantJSON(cmd)
+	if !wantJSON {
+		logger.Infof(ctx, "cloning VM from snapshot %s (direct) ...", snapRef)
+	}
 
 	vm, cloneErr := dcr.DirectClone(ctx, vmID, vmCfg, networkConfigs, cfg, dataDir)
 	if cloneErr != nil {
@@ -202,6 +230,9 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 
+	if wantJSON {
+		return cmdcore.OutputJSON(vm)
+	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm, networkConfigs)
 	return nil
@@ -251,7 +282,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	return vmCfg, vmID, netProvider, networkConfigs, nil
 }
 
-func (h Handler) restoreDirect(ctx context.Context, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
+func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
 	da, ok := snapBackend.(snapshot.Direct)
 	if !ok {
 		return false, nil
@@ -266,12 +297,18 @@ func (h Handler) restoreDirect(ctx context.Context, snapRef, vmRef string, vmCfg
 		return true, fmt.Errorf("open snapshot: %w", err)
 	}
 
-	logger.Infof(ctx, "restoring VM %s from snapshot %s (direct) ...", vmRef, snapRef)
+	wantJSON := cmdcore.WantJSON(cmd)
+	if !wantJSON {
+		logger.Infof(ctx, "restoring VM %s from snapshot %s (direct) ...", vmRef, snapRef)
+	}
 	result, err := dcr.DirectRestore(ctx, vmRef, vmCfg, dataDir)
 	if err != nil {
 		return true, fmt.Errorf("restore: %w", err)
 	}
 
+	if wantJSON {
+		return true, cmdcore.OutputJSON(result)
+	}
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
 	return true, nil
 }

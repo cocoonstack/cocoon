@@ -436,6 +436,29 @@ func AddFormatFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("format", "o", "table", `output format: "table" or "json"`)
 }
 
+// AddOutputFlag adds --output/-o for lifecycle commands. Empty default keeps
+// the human-readable log output; "json" emits a parseable result on stdout.
+func AddOutputFlag(cmd *cobra.Command) {
+	cmd.Flags().StringP("output", "o", "", `emit "json" for machine-readable output`)
+}
+
+// WantJSON reports whether --output=json was requested.
+func WantJSON(cmd *cobra.Command) bool {
+	out, _ := cmd.Flags().GetString("output")
+	return out == "json"
+}
+
+// MaybeOutputJSON emits v as JSON iff --output=json is set. Returns
+// (true, encodeErr) when JSON was emitted — caller should return the error
+// without falling through to human-readable logging. Returns (false, nil)
+// otherwise so the caller proceeds with normal log output.
+func MaybeOutputJSON(cmd *cobra.Command, v any) (bool, error) {
+	if !WantJSON(cmd) {
+		return false, nil
+	}
+	return true, OutputJSON(v)
+}
+
 // OutputFormatted outputs as JSON or table based on --format flag.
 func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Writer)) error {
 	format, _ := cmd.Flags().GetString("format")

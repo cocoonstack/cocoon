@@ -39,7 +39,7 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 		h.recoverNetwork(ctx, conf, hyper, refs)
 	}
 
-	return batchRoutedCmd(ctx, "start", "started", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+	return batchRoutedCmd(ctx, cmd, "start", "started", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Start(ctx, refs)
 	})
 }
@@ -67,7 +67,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return batchRoutedCmd(ctx, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Stop(ctx, refs)
 	})
 }
@@ -167,12 +167,15 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	wantJSON := cmdcore.WantJSON(cmd)
 	var allDeleted []string
 	var lastErr error
 	for hyper, refs := range routed {
 		deleted, deleteErr := hyper.Delete(ctx, refs, force)
-		for _, id := range deleted {
-			logger.Infof(ctx, "deleted VM: %s", id)
+		if !wantJSON {
+			for _, id := range deleted {
+				logger.Infof(ctx, "deleted VM: %s", id)
+			}
 		}
 		allDeleted = append(allDeleted, deleted...)
 		if deleteErr != nil {
@@ -192,6 +195,9 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 
 	if lastErr != nil {
 		return fmt.Errorf("rm: %w", lastErr)
+	}
+	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDeleted}); done {
+		return jsonErr
 	}
 	if len(allDeleted) == 0 {
 		logger.Info(ctx, "no VMs deleted")
@@ -260,14 +266,17 @@ func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache
 	return cniProvider, nil
 }
 
-func batchRoutedCmd(ctx context.Context, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
+func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
 	logger := log.WithFunc("cmd." + name)
+	wantJSON := cmdcore.WantJSON(cmd)
 	var allDone []string
 	var lastErr error
 	for hyper, refs := range routed {
 		done, err := fn(hyper, refs)
-		for _, id := range done {
-			logger.Infof(ctx, "%s: %s", pastTense, id)
+		if !wantJSON {
+			for _, id := range done {
+				logger.Infof(ctx, "%s: %s", pastTense, id)
+			}
 		}
 		allDone = append(allDone, done...)
 		if err != nil {
@@ -276,6 +285,9 @@ func batchRoutedCmd(ctx context.Context, name, pastTense string, routed map[hype
 	}
 	if lastErr != nil {
 		return fmt.Errorf("%s: %w", name, lastErr)
+	}
+	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
+		return jsonErr
 	}
 	if len(allDone) == 0 {
 		logger.Infof(ctx, "no VMs %s", pastTense)

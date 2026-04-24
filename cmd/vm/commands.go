@@ -36,6 +36,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Create,
 	}
 	addVMFlags(createCmd)
+	cmdcore.AddOutputFlag(createCmd)
 
 	runCmd := &cobra.Command{
 		Use:   "run [flags] IMAGE",
@@ -44,6 +45,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Run,
 	}
 	addVMFlags(runCmd)
+	cmdcore.AddOutputFlag(runCmd)
 
 	cloneCmd := &cobra.Command{
 		Use:   "clone [flags] SNAPSHOT",
@@ -52,6 +54,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Clone,
 	}
 	addCloneFlags(cloneCmd)
+	cmdcore.AddOutputFlag(cloneCmd)
 
 	startCmd := &cobra.Command{
 		Use:   "start VM [VM...]",
@@ -59,6 +62,7 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.Start,
 	}
+	cmdcore.AddOutputFlag(startCmd)
 
 	stopCmd := &cobra.Command{
 		Use:   "stop VM [VM...]",
@@ -68,6 +72,7 @@ func Command(h Actions) *cobra.Command {
 	}
 	stopCmd.Flags().Bool("force", false, "force stop (skip graceful shutdown, immediate SIGTERM/SIGKILL)")
 	stopCmd.Flags().Int("timeout", 0, "ACPI shutdown timeout in seconds (0 = use config default)")
+	cmdcore.AddOutputFlag(stopCmd)
 
 	listCmd := &cobra.Command{
 		Use:     "list",
@@ -99,6 +104,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.RM,
 	}
 	rmCmd.Flags().Bool("force", false, "force delete running VMs")
+	cmdcore.AddOutputFlag(rmCmd)
 
 	restoreCmd := &cobra.Command{
 		Use:   "restore [flags] VM SNAPSHOT",
@@ -110,6 +116,7 @@ func Command(h Actions) *cobra.Command {
 	restoreCmd.Flags().String("memory", "", "memory size (empty = keep current)")
 	restoreCmd.Flags().String("storage", "", "COW disk size (empty = keep current)")
 	restoreCmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster restore (CH only; snapshot file must remain on disk)")
+	cmdcore.AddOutputFlag(restoreCmd)
 
 	debugCmd := &cobra.Command{
 		Use:   "debug [flags] IMAGE",
