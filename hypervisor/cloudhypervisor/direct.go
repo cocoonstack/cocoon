@@ -69,11 +69,22 @@ func cloneSnapshotFiles(dstDir, srcDir string) error {
 }
 
 // cleanSnapshotFiles removes snapshot-specific files from runDir.
-// COW files have arbitrary names and are overwritten by cloneSnapshotFiles.
+// COW files have arbitrary names and are overwritten by cloneSnapshotFiles;
+// data disks (data-<name>.raw) and the cocoon.json sidecar are listed
+// explicitly so stale survivors from a previous incarnation don't linger.
 func cleanSnapshotFiles(runDir string) error {
 	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
-		return strings.HasPrefix(name, "memory-range") ||
-			name == "config.json" || name == "state.json"
+		switch {
+		case strings.HasPrefix(name, "memory-range"):
+			return true
+		case name == "config.json" || name == "state.json":
+			return true
+		case name == snapshotMetaFile:
+			return true
+		case strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw"):
+			return true
+		}
+		return false
 	})
 }
 

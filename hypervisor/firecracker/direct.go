@@ -69,8 +69,17 @@ func cloneSnapshotFiles(dstDir, srcDir string) error {
 }
 
 // cleanSnapshotFiles removes snapshot-specific files from runDir.
+// Data disks (data-<name>.raw) are listed explicitly so stale survivors
+// don't linger across restore.
 func cleanSnapshotFiles(runDir string) error {
 	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
-		return name == snapshotVMStateFile || name == snapshotMemFile || name == cowFileName
+		switch name {
+		case snapshotVMStateFile, snapshotMemFile, cowFileName, snapshotMetaFile:
+			return true
+		}
+		if strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw") {
+			return true
+		}
+		return false
 	})
 }

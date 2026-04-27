@@ -85,6 +85,16 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 				return fmt.Errorf("copy COW: %w", err)
 			}
 
+			for _, sc := range rec.StorageConfigs {
+				if sc.Role != types.StorageRoleData {
+					continue
+				}
+				dst := filepath.Join(tmpDir, "data-"+sc.Serial+".raw")
+				if err := utils.ReflinkCopy(dst, sc.Path); err != nil {
+					return fmt.Errorf("copy data disk %s: %w", sc.Serial, err)
+				}
+			}
+
 			doResume()
 			if resumeErr != nil {
 				return fmt.Errorf("snapshot data captured but resume failed: %w", resumeErr)
