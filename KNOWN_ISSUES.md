@@ -193,6 +193,17 @@ This is a fundamental Firecracker design limitation. Cloud Hypervisor snapshots 
 
 Firecracker does not support virtio-blk serial numbers. Cocoon's OCI init script (`overlay.sh`) uses device paths (`/dev/vdX`) instead of serial names to identify disks when booting under Firecracker. OCI images built from `os-image/ubuntu/overlay.sh` (v0.3+) support both formats automatically. Older images must be rebuilt to work with `--fc`.
 
+## Cloudimg post-restart snapshot includes orphan `cidata.img`
+
+When a cloudimg VM is snapshotted **after** it has been stopped and started at least once, the resulting snapshot tar still contains a `cidata.img` file even though the snapshot's `cocoon.json` sidecar and CH `config.json` no longer reference cidata. This is because `hypervisor/cloudhypervisor/snapshot.go` copies `cidata.img` whenever the source VM's `runDir` has it (cloudimg + non-Windows), regardless of whether `activeDisks(rec)` would have re-attached it.
+
+**Consequence**: ~1 MB of dead weight inside the tar. No correctness impact:
+
+- Clone from such a snapshot regenerates a fresh `cidata.img` via `ensureCloneCidata` and overwrites the orphan with the clone's identity / network config.
+- Restore wipes the orphan via `cleanSnapshotFiles` before staging the snapshot back into the runDir.
+
+This predates the data-disk feature; the cocoon.json sidecar just makes the asymmetry visible. We are not patching the copy logic because the orphan is harmless and the Cidata-disk file is small and reflinked.
+
 ## Firecracker clone guest MAC address
 
 Firecracker does not support overriding the guest MAC address during snapshot/load. Cloned FC VMs retain the source VM's guest MAC (baked into the vmstate binary). In Cocoon's TC redirect architecture, each VM runs in an isolated network namespace, so MAC identity is not visible to other VMs or the host bridge — **no MAC conflict occurs in practice**.

@@ -14,6 +14,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **TC redirect I/O path** — veth ↔ TAP wired via ingress qdisc + mirred redirect (no bridge in the data path)
 - **DNS configuration** — custom DNS servers injected into VMs via kernel cmdline (OCI) or cloud-init network-config (cloudimg)
 - **Cloud-init metadata** — automatic NoCloud cidata FAT12 disk for cloudimg VMs (hostname, configurable user/password via `--user`/`--password`, multi-NIC Netplan v2 network-config); cidata is automatically skipped on subsequent boots
+- **User data disks** — `--data-disk` attaches additional virtio-blk disks per VM, with optional ext4 mkfs at create time, cloud-init `mounts:` auto-mount on cloudimg+CH (via `/dev/disk/by-id/virtio-<name>`), per-disk DirectIO override, and 1:1 inheritance through snapshot/clone/restore
 - **Hugepages** — automatic detection of host hugepage configuration; VM memory backed by hugepages when available
 - **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
@@ -184,6 +185,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--user`    | `root`           | Guest username for cloud-init (cloudimg only)  |
 | `--password` | `cocoon`        | Guest password for cloud-init (cloudimg only)  |
 | `--no-direct-io` | `false`     | Disable O_DIRECT on writable disks (use page cache; CH only, useful for dev/test with few VMs) |
+| `--data-disk` | empty (repeatable) | Attach an extra data disk: `size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]`. See [Data Disks](#data-disks) |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 
 ### Clone Flags
@@ -329,6 +331,48 @@ Cloudimg VMs receive a NoCloud cidata disk (FAT12 with `CIDATA` volume label) co
 The cidata disk is **automatically excluded on subsequent boots** — after the first successful start, the VM record is marked as `first_booted` and the cidata disk is no longer attached, preventing cloud-init from re-running.
 
 Note: `--user`/`--password` only apply to **cloudimg** VMs (cloud-init). OCI VM images bake credentials at build time — cocoon OCI Dockerfiles annotate them via `LABEL cocoon.ssh.username` / `cocoon.ssh.password` for external tooling (e.g. glance, vk-cocoon).
+
+## Data Disks
+
+`--data-disk` attaches additional virtio-blk disks beyond the rootfs/COW. Cocoon manages each disk's lifecycle (sparse raw file under the VM's runDir, optional ext4 mkfs at create time, full participation in snapshot/clone/restore), so the user only chooses size, optional fstype/mount, and DirectIO policy.
+
+```bash
+# OCI + CH: two disks, mounted manually inside the guest
+cocoon vm run --data-disk size=20G,name=db --data-disk size=50G,name=cache <oci-image>
+
+# Cloudimg + CH: cloud-init writes /etc/fstab from the spec, disks auto-mount on boot
+cocoon vm run --data-disk size=20G,name=db,mount=/mnt/db <cloudimg>
+
+# Unformatted disk, guest is responsible for mkfs and mount
+cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
+```
+
+### Spec
+
+`--data-disk` accepts comma-separated `key=value` pairs (repeatable):
+
+| Key        | Default          | Notes |
+| ---------- | ---------------- | ----- |
+| `size`     | required         | Minimum 16 MiB; goes through `units.RAMInBytes` so `512M`, `2G`, etc. all work |
+| `name`     | `dataN` (auto)   | 1-20 chars, `[a-z][a-z0-9_-]{0,19}`, `cocoon-` prefix reserved; auto-numbered names skip any explicit one already taken |
+| `fstype`   | `ext4`           | `ext4` (cocoon mkfs's it) or `none` (guest must format); xfs is not supported in Phase 1 |
+| `mount`    | `/mnt/<name>`    | Cloudimg+CH only — emitted as a cloud-init `mounts:` row using `/dev/disk/by-id/virtio-<name>`. Pass `mount=` (empty) to skip auto-mount even when fstype is ext4. `fstype=none` requires `mount=`/empty |
+| `directio` | `auto`           | `on` forces `direct=on`, `off` forces page-cache, `auto` inherits VM-level `--no-direct-io`. CH only — FC has no DirectIO knob and logs a warn |
+
+### Per-Backend Behavior
+
+| | Cloud Hypervisor | Firecracker |
+|---|---|---|
+| Guest device naming | `/dev/disk/by-id/virtio-<name>` (stable) and `/dev/vdX` | `/dev/vdX` only — FC has no virtio-blk serial field |
+| Cloud-init `mounts:` auto-mount | Yes (cloudimg path) | N/A (FC has no cloudimg) |
+| Per-disk DirectIO override | Yes | Ignored with warn |
+| Snapshot/clone/restore | Yes — sidecar carries Role/MountPoint/FSType | Yes — sidecar in `cocoon.json` carries the same |
+
+### Snapshot/Clone/Restore
+
+Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Adding or removing data disks at clone time is not supported in Phase 1 — provision the disks at create time and treat the snapshot as immutable.
+
+Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), and per-index Role/Path/RO match between sidecar and CH config.json **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 
 ## Windows Support
 
