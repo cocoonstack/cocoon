@@ -308,6 +308,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	password, _ := cmd.Flags().GetString("password")
 	noDirectIO, _ := cmd.Flags().GetBool("no-direct-io")
 	windows, _ := cmd.Flags().GetBool("windows")
+	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 
 	if vmName == "" {
 		vmName = sanitizeVMName(image)
@@ -320,6 +321,11 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	storBytes, err := units.RAMInBytes(storStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+	}
+
+	dataDisks, err := parseDataDiskFlags(dataDiskRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	cfg := &types.VMConfig{
@@ -335,13 +341,138 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			NoDirectIO:    noDirectIO,
 			Windows:       windows,
 		},
-		User:     user,
-		Password: password,
+		User:      user,
+		Password:  password,
+		DataDisks: dataDisks,
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// parseDataDiskFlags parses --data-disk values, normalizes defaults, and
+// returns the spec list ready for hypervisor.PrepareDataDisks.
+func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
+	specs := make([]types.DataDiskSpec, 0, len(raw))
+	for _, s := range raw {
+		spec, err := parseDataDiskSpec(s)
+		if err != nil {
+			return nil, err
+		}
+		specs = append(specs, spec)
+	}
+	if err := normalizeDataDiskSpecs(specs); err != nil {
+		return nil, err
+	}
+	return specs, nil
+}
+
+// parseDataDiskSpec parses one --data-disk argument: comma-separated key=value
+// pairs. size is required and >= 16MiB; name/fstype/mount/directio are
+// optional and defaulted by normalizeDataDiskSpecs.
+func parseDataDiskSpec(s string) (types.DataDiskSpec, error) {
+	var spec types.DataDiskSpec
+	if s == "" {
+		return spec, fmt.Errorf("--data-disk: empty spec")
+	}
+	for part := range strings.SplitSeq(s, ",") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			return spec, fmt.Errorf("--data-disk: %q is not key=value", part)
+		}
+		key := strings.TrimSpace(kv[0])
+		val := strings.TrimSpace(kv[1])
+		switch key {
+		case "size":
+			n, err := units.RAMInBytes(val)
+			if err != nil {
+				return spec, fmt.Errorf("--data-disk: invalid size %q: %w", val, err)
+			}
+			if n < hypervisor.MinDataDiskSize {
+				return spec, fmt.Errorf("--data-disk: size %s below 16MiB minimum", val)
+			}
+			spec.Size = n
+		case "name":
+			if !types.ValidDataDiskName(val) {
+				return spec, fmt.Errorf("--data-disk: invalid name %q (must match [a-z][a-z0-9_-]{0,19}, no cocoon- prefix)", val)
+			}
+			spec.Name = val
+		case "fstype":
+			if val != "ext4" && val != "none" {
+				return spec, fmt.Errorf("--data-disk: unsupported fstype %q (only ext4, none in Phase 1)", val)
+			}
+			spec.FSType = val
+		case "mount":
+			spec.MountPoint = val
+			spec.MountPointSet = true
+		case "directio":
+			switch val {
+			case "on":
+				t := true
+				spec.DirectIO = &t
+			case "off":
+				f := false
+				spec.DirectIO = &f
+			case "auto":
+				// keep nil to inherit VM-level NoDirectIO
+			default:
+				return spec, fmt.Errorf("--data-disk: directio must be on/off/auto, got %q", val)
+			}
+		default:
+			return spec, fmt.Errorf("--data-disk: unknown key %q", key)
+		}
+	}
+	if spec.Size == 0 {
+		return spec, fmt.Errorf("--data-disk: size= required")
+	}
+	return spec, nil
+}
+
+// normalizeDataDiskSpecs fills defaults and enforces uniqueness:
+//   - empty FSType => ext4 (then re-validates whitelist)
+//   - empty Name => dataN, skipping any name already taken
+//   - !MountPointSet && fstype != none => /mnt/<name>
+//   - fstype == none requires MountPoint == ""
+//   - Names must be unique across the batch
+func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
+	used := make(map[string]bool)
+	for _, s := range specs {
+		if s.Name == "" {
+			continue
+		}
+		if used[s.Name] {
+			return fmt.Errorf("--data-disk: name %q duplicated", s.Name)
+		}
+		used[s.Name] = true
+	}
+	autoIdx := 1
+	for i := range specs {
+		if specs[i].FSType == "" {
+			specs[i].FSType = "ext4"
+		}
+		if specs[i].FSType != "ext4" && specs[i].FSType != "none" {
+			return fmt.Errorf("--data-disk: invalid fstype %q", specs[i].FSType)
+		}
+		if specs[i].Name == "" {
+			for {
+				candidate := fmt.Sprintf("data%d", autoIdx)
+				autoIdx++
+				if !used[candidate] {
+					specs[i].Name = candidate
+					used[candidate] = true
+					break
+				}
+			}
+		}
+		if !specs[i].MountPointSet && specs[i].FSType != "none" {
+			specs[i].MountPoint = "/mnt/" + specs[i].Name
+		}
+		if specs[i].FSType == "none" && specs[i].MountPoint != "" {
+			return fmt.Errorf("--data-disk %s: fstype=none requires empty mount", specs[i].Name)
+		}
+	}
+	return nil
 }
 
 // CloneVMConfigFromFlags builds VMConfig for clone (inherits from snapshot).

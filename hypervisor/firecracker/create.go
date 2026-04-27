@@ -72,6 +72,11 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	if err != nil {
 		return nil, err
 	}
+	dataDisks, err := hypervisor.PrepareDataDisks(ctx, fc.conf.VMRunDir(vmID), vmCfg.DataDisks)
+	if err != nil {
+		return nil, err
+	}
+	storageConfigs = append(storageConfigs, dataDisks...)
 	// FC needs an uncompressed ELF kernel.
 	if boot != nil && boot.KernelPath != "" {
 		vmlinuxPath, extractErr := EnsureVmlinux(boot.KernelPath)

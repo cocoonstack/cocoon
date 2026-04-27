@@ -169,6 +169,77 @@ func InitCOWFilesystem(ctx context.Context, path string) error {
 	return nil
 }
 
+// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable
+// below this on small sparse files.
+const MinDataDiskSize int64 = 16 << 20
+
+// PrepareDataDisks creates raw sparse files for each spec under baseDir,
+// optionally formats them, and returns StorageConfigs ready to append to a
+// VM's storage list. Names must be unique and pass types.ValidDataDiskName;
+// fstype is "ext4" (default) or "none". Returns an empty slice when specs is
+// empty.
+func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDiskSpec) ([]*types.StorageConfig, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(specs))
+	out := make([]*types.StorageConfig, 0, len(specs))
+	for i, spec := range specs {
+		if !types.ValidDataDiskName(spec.Name) {
+			return nil, fmt.Errorf("data disk %d: invalid name %q", i, spec.Name)
+		}
+		if _, dup := seen[spec.Name]; dup {
+			return nil, fmt.Errorf("data disk: name %q duplicated", spec.Name)
+		}
+		seen[spec.Name] = struct{}{}
+		if spec.Size < MinDataDiskSize {
+			return nil, fmt.Errorf("data disk %s: size %d below %d minimum", spec.Name, spec.Size, MinDataDiskSize)
+		}
+		path := filepath.Join(baseDir, "data-"+spec.Name+".raw")
+		if err := createSparseFile(path, spec.Size); err != nil {
+			return nil, fmt.Errorf("data disk %s: %w", spec.Name, err)
+		}
+		switch spec.FSType {
+		case "ext4":
+			if err := InitCOWFilesystem(ctx, path); err != nil {
+				return nil, fmt.Errorf("data disk %s: mkfs: %w", spec.Name, err)
+			}
+		case "none":
+			// raw, user formats inside guest
+		default:
+			return nil, fmt.Errorf("data disk %s: fstype %q not supported", spec.Name, spec.FSType)
+		}
+		out = append(out, &types.StorageConfig{
+			Path:       path,
+			RO:         false,
+			Serial:     spec.Name,
+			Role:       types.StorageRoleData,
+			MountPoint: spec.MountPoint,
+			FSType:     spec.FSType,
+			DirectIO:   spec.DirectIO,
+		})
+	}
+	return out, nil
+}
+
+// createSparseFile creates path as a sparse file truncated to size, matching
+// PrepareOCICOW's pattern. os.Truncate alone won't create a missing file.
+func createSparseFile(path string, size int64) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	truncErr := f.Truncate(size)
+	closeErr := f.Close()
+	if truncErr != nil {
+		return fmt.Errorf("truncate %s: %w", path, truncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close %s: %w", path, closeErr)
+	}
+	return nil
+}
+
 // PrepareOCICOW creates an ext4-formatted sparse COW file at cowPath and
 // returns storageConfigs with the new COW entry (CowSerial) appended.
 // The returned slice must be used by the caller; append may reallocate.

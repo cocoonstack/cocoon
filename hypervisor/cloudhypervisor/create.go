@@ -79,6 +79,11 @@ func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *t
 	if err != nil {
 		return nil, err
 	}
+	dataDisks, err := hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
+	if err != nil {
+		return nil, err
+	}
+	storageConfigs = append(storageConfigs, dataDisks...)
 	dns, err := ch.conf.DNSServers()
 	if err != nil {
 		return nil, fmt.Errorf("parse DNS servers: %w", err)
@@ -109,21 +114,26 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 		}
 	}
 
+	dataDisks, err := hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
+	if err != nil {
+		return nil, err
+	}
+
+	configs := []*types.StorageConfig{
+		{Path: overlayPath, RO: false, Role: types.StorageRoleCOW},
+	}
+	configs = append(configs, dataDisks...)
+
 	if vmCfg.Windows {
-		return []*types.StorageConfig{
-			{Path: overlayPath, RO: false, Role: types.StorageRoleCOW},
-		}, nil
+		return configs, nil
 	}
 
 	if err := ch.generateCidata(vmID, vmCfg, networkConfigs); err != nil {
 		return nil, err
 	}
-
 	cidataPath := ch.conf.CidataPath(vmID)
-	return []*types.StorageConfig{
-		{Path: overlayPath, RO: false, Role: types.StorageRoleCOW},
-		{Path: cidataPath, RO: true, Role: types.StorageRoleCidata},
-	}, nil
+	configs = append(configs, &types.StorageConfig{Path: cidataPath, RO: true, Role: types.StorageRoleCidata})
+	return configs, nil
 }
 
 // generateCidata writes the NoCloud cidata image used by Create and Clone.
