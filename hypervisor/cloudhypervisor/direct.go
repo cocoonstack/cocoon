@@ -21,16 +21,23 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 // Files are handled per-type: hardlink for memory-range-*, reflink/copy for
 // the COW disk, plain copy for small metadata.
 func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir string) (*types.VM, error) {
-	// Validate CPU BEFORE prepareRestore kills the running VM —
-	// otherwise a bad --cpu override would tear down the VM only to
-	// reject it afterwards.
+	// Validate CPU and snapshot integrity BEFORE killing the running VM —
+	// any failure post-kill costs an outage.
 	if err := hypervisor.ValidateHostCPU(vmCfg.CPU); err != nil {
 		return nil, err
 	}
 
-	vmID, rec, directBoot, cowPath, err := ch.prepareRestore(ctx, vmRef)
+	vmID, rec, directBoot, cowPath, err := ch.resolveForRestore(ctx, vmRef)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := ch.preflightRestore(srcDir, rec); err != nil {
+		return nil, fmt.Errorf("snapshot preflight: %w", err)
+	}
+
+	if killErr := ch.killForRestore(ctx, vmID, rec); killErr != nil {
+		return nil, killErr
 	}
 
 	// Clean old snapshot files from runDir before linking/copying new ones.

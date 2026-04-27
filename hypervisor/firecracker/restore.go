@@ -36,6 +36,12 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 	}
 	defer cleanupStaging()
 
+	// Pre-flight: validate the staged snapshot fully BEFORE killing the
+	// running VM. A malformed snapshot must not cost an outage.
+	if err := fc.preflightRestore(stagingDir, rec); err != nil {
+		return nil, fmt.Errorf("snapshot preflight: %w", err)
+	}
+
 	// Once staging succeeds, stop the current VM and swap files into place.
 	if killErr := fc.killForRestore(ctx, vmID, rec); killErr != nil {
 		return nil, killErr
@@ -72,18 +78,6 @@ func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hyp
 		sockPath := hypervisor.SocketPath(rec.RunDir)
 		return fc.forceTerminate(ctx, sockPath, pid)
 	}, runtimeFiles)
-}
-
-// prepareRestore is the direct-restore helper that keeps the legacy resolve+kill flow.
-func (fc *Firecracker) prepareRestore(ctx context.Context, vmRef string) (string, *hypervisor.VMRecord, string, error) {
-	vmID, rec, cowPath, err := fc.resolveForRestore(ctx, vmRef)
-	if err != nil {
-		return "", nil, "", err
-	}
-	if killErr := fc.killForRestore(ctx, vmID, rec); killErr != nil {
-		return "", nil, "", killErr
-	}
-	return vmID, rec, cowPath, nil
 }
 
 // restoreAfterExtract resumes from snapshot data already placed in runDir.

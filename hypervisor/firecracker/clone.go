@@ -55,7 +55,13 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	// Rebuild storage: reuse RO layer paths from metadata, new COW path.
-	storageConfigs := rebuildCloneStorage(meta, cowPath)
+	storageConfigs, err := rebuildCloneStorage(meta, cowPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
+		return nil, fmt.Errorf("validate sidecar: %w", err)
+	}
 	bootCfg := meta.BootConfig
 	if bootCfg != nil && bootCfg.KernelPath != "" {
 		vmlinuxPath, extractErr := EnsureVmlinux(bootCfg.KernelPath)
@@ -155,21 +161,34 @@ func (fc *Firecracker) restoreAndResumeClone(
 	return nil
 }
 
-func rebuildCloneStorage(meta *snapshotMeta, cowPath string) []*types.StorageConfig {
-	var configs []*types.StorageConfig
-	for _, sc := range meta.StorageConfigs {
-		if sc.Role == types.StorageRoleLayer {
-			configs = append(configs, &types.StorageConfig{
-				Path: sc.Path, RO: true, Serial: sc.Serial,
-				Role: types.StorageRoleLayer,
-			})
+// rebuildCloneStorage produces the clone's storage list in the same order as
+// the snapshot's, rewriting paths as needed:
+//   - Layer disks keep their absolute paths (shared image blobs)
+//   - COW moves to the clone's cowPath
+//   - Data disks move to the clone's runDir under data-<serial>.raw
+//
+// FC has no cloudimg path, so Role==Cidata in meta is unexpected; treat it
+// as an error rather than silently dropping or copying it.
+func rebuildCloneStorage(meta *snapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
+	runDir := filepath.Dir(cowPath)
+	configs := make([]*types.StorageConfig, 0, len(meta.StorageConfigs))
+	for i, sc := range meta.StorageConfigs {
+		cp := *sc
+		switch sc.Role {
+		case types.StorageRoleLayer:
+			// keep Path as-is
+		case types.StorageRoleCOW:
+			cp.Path = cowPath
+		case types.StorageRoleData:
+			cp.Path = filepath.Join(runDir, "data-"+sc.Serial+".raw")
+		case types.StorageRoleCidata:
+			return nil, fmt.Errorf("snapshot disk[%d] has cidata role; FC does not support cloudimg", i)
+		default:
+			return nil, fmt.Errorf("snapshot disk[%d] has unknown role %q", i, sc.Role)
 		}
+		configs = append(configs, &cp)
 	}
-	configs = append(configs, &types.StorageConfig{
-		Path: cowPath, RO: false, Serial: hypervisor.CowSerial,
-		Role: types.StorageRoleCOW,
-	})
-	return configs
+	return configs, nil
 }
 
 // createDriveRedirects creates temporary symlinks from source COW path to

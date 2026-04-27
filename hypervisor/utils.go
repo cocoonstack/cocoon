@@ -267,6 +267,47 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 	}), nil
 }
 
+// ValidateSnapshotIntegrity is the backend-agnostic preflight: every disk in
+// the sidecar passes structural validation, and every Role==Data disk has its
+// data-<serial>.raw file present in srcDir. Backends layer their own checks
+// (e.g. CH compares against config.json) on top.
+func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
+	if err := types.ValidateStorageConfigs(sidecar); err != nil {
+		return fmt.Errorf("sidecar invalid: %w", err)
+	}
+	for _, sc := range sidecar {
+		if sc.Role != types.StorageRoleData {
+			continue
+		}
+		path := filepath.Join(srcDir, "data-"+sc.Serial+".raw")
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("data disk %s missing in snapshot: %w", sc.Serial, err)
+		}
+	}
+	return nil
+}
+
+// ValidateRoleSequence checks that the snapshot's disk shape (sidecar) is a
+// valid prefix of the VM's current record. Rec may have trailing cidata that
+// the snapshot lacks (cloudimg post-first-boot snapshots) — that is the only
+// allowed extension.
+func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
+	if len(sidecar) > len(rec) {
+		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
+	}
+	for i, sc := range sidecar {
+		if rec[i].Role != sc.Role {
+			return fmt.Errorf("disk[%d] role mismatch: snapshot=%s record=%s", i, sc.Role, rec[i].Role)
+		}
+	}
+	for i := len(sidecar); i < len(rec); i++ {
+		if rec[i].Role != types.StorageRoleCidata {
+			return fmt.Errorf("disk[%d] only present in record must be cidata, got %s", i, rec[i].Role)
+		}
+	}
+	return nil
+}
+
 // ExpandRawImage truncates path up to targetSize. No-op if path is already
 // at least targetSize. Used by both backends for raw COW expansion.
 func ExpandRawImage(path string, targetSize int64) error {

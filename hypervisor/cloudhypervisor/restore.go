@@ -31,6 +31,13 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	}
 	defer cleanupStaging()
 
+	// Pre-flight: validate the staged snapshot fully (sidecar shape, data
+	// disk files present, role sequence vs live record) BEFORE killing the
+	// running VM. A malformed snapshot must not cost an outage.
+	if err := ch.preflightRestore(stagingDir, rec); err != nil {
+		return nil, fmt.Errorf("snapshot preflight: %w", err)
+	}
+
 	// Once staging succeeds, stop the current VM and swap files into place.
 	if killErr := ch.killForRestore(ctx, vmID, rec); killErr != nil {
 		return nil, killErr
@@ -41,6 +48,20 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	}
 
 	return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot, cowPath)
+}
+
+// preflightRestore loads the sidecar from srcDir, runs structural validation,
+// then asserts the snapshot's role sequence is a valid prefix of the live
+// record (cidata-only suffix on rec is the one allowed extension).
+func (ch *CloudHypervisor) preflightRestore(srcDir string, rec *hypervisor.VMRecord) error {
+	meta, err := loadSnapshotMeta(srcDir)
+	if err != nil {
+		return err
+	}
+	if err := validateSnapshotIntegrity(srcDir, meta.StorageConfigs); err != nil {
+		return err
+	}
+	return hypervisor.ValidateRoleSequence(meta.StorageConfigs, rec.StorageConfigs)
 }
 
 // resolveForRestore loads the record and validates running state.
@@ -85,13 +106,15 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	}()
 
 	chConfigPath := filepath.Join(rec.RunDir, "config.json")
-	// Match snapshot's disk count — rec.StorageConfigs is ordered [overlay, cidata],
-	// prefix-slice to whatever was attached when the snapshot was taken.
-	snapshotCfg, _, parseErr := parseCHConfig(chConfigPath)
-	if parseErr != nil {
-		return nil, fmt.Errorf("parse snapshot config: %w", parseErr)
+	// Use the sidecar's length, which mirrors snapshot config.json's disk
+	// count. rec.StorageConfigs may carry trailing cidata that the snapshot
+	// (post-first-boot) doesn't — prefix-slicing trims it cleanly because
+	// cidata is always at the tail of rec.
+	meta, metaErr := loadSnapshotMeta(rec.RunDir)
+	if metaErr != nil {
+		return nil, fmt.Errorf("load snapshot meta: %w", metaErr)
 	}
-	diskCount := len(snapshotCfg.Disks)
+	diskCount := len(meta.StorageConfigs)
 	if diskCount > len(rec.StorageConfigs) {
 		return nil, fmt.Errorf("snapshot has %d disks, VM record has %d", diskCount, len(rec.StorageConfigs))
 	}

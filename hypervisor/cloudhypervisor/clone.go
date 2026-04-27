@@ -51,12 +51,8 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", err)
 	}
-	if err := types.ValidateStorageConfigs(meta.StorageConfigs); err != nil {
-		return nil, fmt.Errorf("validate sidecar: %w", err)
-	}
-	if len(meta.StorageConfigs) != len(chCfg.Disks) {
-		return nil, fmt.Errorf("sidecar/config.json mismatch: %d vs %d disks",
-			len(meta.StorageConfigs), len(chCfg.Disks))
+	if err := validateSnapshotIntegrity(runDir, meta.StorageConfigs); err != nil {
+		return nil, fmt.Errorf("snapshot integrity: %w", err)
 	}
 
 	storageConfigs := meta.StorageConfigs
@@ -67,6 +63,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	if err = updateCOWPath(storageConfigs, cowPath); err != nil {
 		return nil, fmt.Errorf("update COW path: %w", err)
 	}
+	updateDataDiskPaths(storageConfigs, runDir)
 
 	// Snapshot may omit cidata if taken after restart.
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
@@ -87,9 +84,12 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	if err != nil {
 		return nil, err
 	}
+	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
+		return nil, fmt.Errorf("validate post-cidata storage: %w", err)
+	}
 
 	// If the snapshot lacked cidata, patch only snapshot disks and hotplug cidata later.
-	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows || hadCidataInSnapshot)
+	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
@@ -267,11 +267,37 @@ func hasCidataRole(sc *types.StorageConfig) bool {
 	return sc.Role == types.StorageRoleCidata
 }
 
-func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoot, hadCidataInSnapshot bool) []*types.StorageConfig {
-	if directBoot || hadCidataInSnapshot || len(storageConfigs) == 0 {
+// restorePatchStorageConfigs returns the disks to feed into patchCHConfig so
+// the disk count matches the snapshot's config.json. When the snapshot did
+// NOT carry cidata (cloudimg post-first-boot), ensureCloneCidata appended a
+// fresh cidata entry — patchCHConfig must not see it (snapshot config.json
+// has no slot for it; cidata is hot-plugged later).
+//
+// When the snapshot carried cidata, or for direct-boot/Windows VMs that
+// never have cidata, we pass everything through unchanged.
+func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoot, windows, hadCidataInSnapshot bool) []*types.StorageConfig {
+	if directBoot || windows || hadCidataInSnapshot {
 		return storageConfigs
 	}
-	return storageConfigs[:len(storageConfigs)-1]
+	out := make([]*types.StorageConfig, 0, len(storageConfigs))
+	for _, sc := range storageConfigs {
+		if sc.Role != types.StorageRoleCidata {
+			out = append(out, sc)
+		}
+	}
+	return out
+}
+
+// updateDataDiskPaths rewrites every Role==Data entry's Path to live under
+// newRunDir, derived from the disk's serial. Used by clone after sidecar
+// load: the sidecar carries the source VM's runDir, but the clone's data
+// disk files have been reflinked into the clone's runDir.
+func updateDataDiskPaths(configs []*types.StorageConfig, newRunDir string) {
+	for _, sc := range configs {
+		if sc.Role == types.StorageRoleData {
+			sc.Path = filepath.Join(newRunDir, "data-"+sc.Serial+".raw")
+		}
+	}
 }
 
 func updateCOWPath(configs []*types.StorageConfig, newCOWPath string) error {
@@ -304,16 +330,19 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 }
 
 // buildStateReplacements builds old→new string mappings for state.json patching.
-// Only disk paths need patching (snapshot paths → clone paths).
-// MAC addresses are no longer patched here — hot-swap (vm.remove-device + vm.add-net)
-// replaces the entire virtio-net device with the correct MAC.
+// Only disk paths need patching (snapshot paths → clone paths). When
+// ensureCloneCidata appended a fresh cidata entry, storageConfigs is one
+// longer than chCfg.Disks; the prefix-min iteration covers the entries the
+// snapshot already knew about, which is exactly what state.json references.
+//
+// MAC addresses are no longer patched here — hot-swap (vm.remove-device +
+// vm.add-net) replaces the entire virtio-net device with the correct MAC.
 func buildStateReplacements(chCfg *chVMConfig, storageConfigs []*types.StorageConfig) map[string]string {
-	m := make(map[string]string, len(chCfg.Disks))
-	if len(storageConfigs) == len(chCfg.Disks) {
-		for i, d := range chCfg.Disks {
-			if storageConfigs[i].Path != d.Path {
-				m[d.Path] = storageConfigs[i].Path
-			}
+	n := min(len(chCfg.Disks), len(storageConfigs))
+	m := make(map[string]string, n)
+	for i := range n {
+		if storageConfigs[i].Path != chCfg.Disks[i].Path {
+			m[chCfg.Disks[i].Path] = storageConfigs[i].Path
 		}
 	}
 	return m

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"slices"
 
 	"github.com/projecteru2/core/log"
@@ -32,6 +33,23 @@ const (
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
+
+// validateSnapshotIntegrity is the CH-specific preflight wrapper around
+// hypervisor.ValidateSnapshotIntegrity: it runs the common checks, then
+// asserts the sidecar mirrors snapshot config.json's disk shape.
+func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
+	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
+		return err
+	}
+	chCfg, _, err := parseCHConfig(filepath.Join(srcDir, "config.json"))
+	if err != nil {
+		return fmt.Errorf("parse snapshot config: %w", err)
+	}
+	if len(sidecar) != len(chCfg.Disks) {
+		return fmt.Errorf("sidecar/config.json mismatch: %d vs %d disks", len(sidecar), len(chCfg.Disks))
+	}
+	return nil
+}
 
 // ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
 func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {

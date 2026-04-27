@@ -28,9 +28,17 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 		return nil, checkErr
 	}
 
-	vmID, rec, cowPath, err := fc.prepareRestore(ctx, vmRef)
+	vmID, rec, cowPath, err := fc.resolveForRestore(ctx, vmRef)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := fc.preflightRestore(srcDir, rec); err != nil {
+		return nil, fmt.Errorf("snapshot preflight: %w", err)
+	}
+
+	if killErr := fc.killForRestore(ctx, vmID, rec); killErr != nil {
+		return nil, killErr
 	}
 
 	var result *types.VM
