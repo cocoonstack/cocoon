@@ -22,9 +22,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
-type SnapshotFileKind int
-
 const (
 	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
@@ -39,6 +36,9 @@ const (
 	// unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
 )
+
+// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
+type SnapshotFileKind int
 
 func RemoveVMDirs(runDir, logDir string) error {
 	return errors.Join(

@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// StorageRole classifies a disk's purpose in the VM. Required on every
-// StorageConfig — empty values are rejected by ValidateStorageConfigs.
-type StorageRole string
-
 const (
 	StorageRoleLayer  StorageRole = "layer"
 	StorageRoleCOW    StorageRole = "cow"
@@ -25,6 +21,10 @@ const (
 // dataDiskNameRe caps length at 20 to match Linux's
 // /dev/disk/by-id/virtio-<first 20 chars> truncation.
 var dataDiskNameRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,19}$`)
+
+// StorageRole classifies a disk's purpose in the VM. Required on every
+// StorageConfig — empty values are rejected by ValidateStorageConfigs.
+type StorageRole string
 
 // StorageConfig describes a disk attached to a VM.
 type StorageConfig struct {

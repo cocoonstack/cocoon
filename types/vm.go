@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// VMState represents the lifecycle state of a VM.
-type VMState string
-
 const (
 	VMStateCreating VMState = "creating" // DB placeholder written, dirs/disks being prepared
 	VMStateCreated  VMState = "created"  // registered, CH process not yet started
@@ -24,6 +21,9 @@ var (
 	// cloud-init runcmd (backticks, $, semicolons, pipes, etc.).
 	shellUnsafe = regexp.MustCompile("[`$;|&(){}\\\\<>!]")
 )
+
+// VMState represents the lifecycle state of a VM.
+type VMState string
 
 // VMConfig describes the resources requested for a new VM.
 type VMConfig struct {

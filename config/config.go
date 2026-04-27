@@ -9,13 +9,13 @@ import (
 	coretypes "github.com/projecteru2/core/types"
 )
 
-// HypervisorType identifies the selected hypervisor backend.
-type HypervisorType string
-
 const (
 	HypervisorCH          HypervisorType = "cloud-hypervisor"
 	HypervisorFirecracker HypervisorType = "firecracker"
 )
+
+// HypervisorType identifies the selected hypervisor backend.
+type HypervisorType string
 
 // Config holds global Cocoon configuration.
 type Config struct {

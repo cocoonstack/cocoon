@@ -18,14 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
-type chMemoryRestoreMode string
-
-type chRestoreConfig struct {
-	SourceURL         string              `json:"source_url"`
-	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
-}
-
 const (
 	cmdlineFileName = "cmdline"
 
@@ -35,6 +27,14 @@ const (
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
+
+// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
+type chMemoryRestoreMode string
+
+type chRestoreConfig struct {
+	SourceURL         string              `json:"source_url"`
+	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
+}
 
 // ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
 func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {

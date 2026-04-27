@@ -1,14 +1,14 @@
 package cloudimg
 
-// Phase represents a stage in the cloud image pull lifecycle.
-type Phase int
-
 const (
 	PhaseDownload Phase = iota // HTTP download started.
 	PhaseConvert               // Format conversion (qemu-img) started.
 	PhaseCommit                // Writing to index.
 	PhaseDone                  // Pull completed successfully.
 )
+
+// Phase represents a stage in the cloud image pull lifecycle.
+type Phase int
 
 // Event describes a single cloud image pull progress update.
 type Event struct {
