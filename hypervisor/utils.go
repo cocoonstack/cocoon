@@ -251,24 +251,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 	return out, nil
 }
 
-// createSparseFile creates path as a sparse file truncated to size, matching
-// PrepareOCICOW's pattern. os.Truncate alone won't create a missing file.
-func createSparseFile(path string, size int64) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("create %s: %w", path, err)
-	}
-	truncErr := f.Truncate(size)
-	closeErr := f.Close()
-	if truncErr != nil {
-		return fmt.Errorf("truncate %s: %w", path, truncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close %s: %w", path, closeErr)
-	}
-	return nil
-}
-
 // PrepareOCICOW creates an ext4-formatted sparse COW file at cowPath and
 // returns storageConfigs with the new COW entry (CowSerial) appended.
 // The returned slice must be used by the caller; append may reallocate.
@@ -307,21 +289,6 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		}
 	}
 	return nil
-}
-
-// snapshotResidentBasename returns the basename a sidecar entry's file should
-// have inside the snapshot dir, or "" if the disk is not stored alongside the
-// snapshot (i.e. shared base layers). The sidecar's Path field still points at
-// the source VM's runDir, so we strip back to the basename.
-func snapshotResidentBasename(sc *types.StorageConfig) string {
-	switch sc.Role {
-	case types.StorageRoleData:
-		return DataDiskBaseName(sc.Serial)
-	case types.StorageRoleCOW, types.StorageRoleCidata:
-		return filepath.Base(sc.Path)
-	default:
-		return ""
-	}
 }
 
 // ValidateRoleSequence checks that the snapshot's disk shape (sidecar) is a
@@ -490,4 +457,37 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 		_ = orig.Close()
 		runtime.UnlockOSThread()
 	}, nil
+}
+
+// createSparseFile creates path as a sparse file truncated to size, matching
+// PrepareOCICOW's pattern. os.Truncate alone won't create a missing file.
+func createSparseFile(path string, size int64) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	truncErr := f.Truncate(size)
+	closeErr := f.Close()
+	if truncErr != nil {
+		return fmt.Errorf("truncate %s: %w", path, truncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close %s: %w", path, closeErr)
+	}
+	return nil
+}
+
+// snapshotResidentBasename returns the basename a sidecar entry's file should
+// have inside the snapshot dir, or "" if the disk is not stored alongside the
+// snapshot (i.e. shared base layers). The sidecar's Path field still points at
+// the source VM's runDir, so we strip back to the basename.
+func snapshotResidentBasename(sc *types.StorageConfig) string {
+	switch sc.Role {
+	case types.StorageRoleData:
+		return DataDiskBaseName(sc.Serial)
+	case types.StorageRoleCOW, types.StorageRoleCidata:
+		return filepath.Base(sc.Path)
+	default:
+		return ""
+	}
 }

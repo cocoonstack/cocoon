@@ -36,6 +36,18 @@ const (
 
 var runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
 
+// ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
+func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
+	var serials []string
+	for _, s := range storageConfigs {
+		if s.Role == types.StorageRoleLayer {
+			serials = append(serials, s.Serial)
+		}
+	}
+	slices.Reverse(serials)
+	return serials
+}
+
 // validateSnapshotIntegrity is the CH-specific preflight wrapper around
 // hypervisor.ValidateSnapshotIntegrity: it runs the common checks, asserts
 // the sidecar mirrors snapshot config.json's disk shape, and verifies the
@@ -91,18 +103,6 @@ func hasMemoryRangeFile(srcDir string) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
-func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
-	var serials []string
-	for _, s := range storageConfigs {
-		if s.Role == types.StorageRoleLayer {
-			serials = append(serials, s.Serial)
-		}
-	}
-	slices.Reverse(serials)
-	return serials
 }
 
 // Reuses the provided http.Client to avoid creating a new client per call.
