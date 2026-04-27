@@ -52,6 +52,18 @@ func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	if len(sidecar) != len(chCfg.Disks) {
 		return fmt.Errorf("sidecar/config.json mismatch: %d vs %d disks", len(sidecar), len(chCfg.Disks))
 	}
+	// writeSnapshotMeta builds the sidecar by walking chCfg.Disks in order, so
+	// sidecar[i] and chCfg.Disks[i] must agree on path and readonly. Tampered or
+	// imported sidecars whose order drifts would otherwise let patchCHConfig
+	// write the wrong path into the wrong disk slot.
+	for i, sc := range sidecar {
+		if sc.Path != chCfg.Disks[i].Path {
+			return fmt.Errorf("sidecar/config.json disk[%d] path mismatch: %q vs %q", i, sc.Path, chCfg.Disks[i].Path)
+		}
+		if sc.RO != chCfg.Disks[i].ReadOnly {
+			return fmt.Errorf("sidecar/config.json disk[%d] readonly mismatch: sidecar=%v config=%v", i, sc.RO, chCfg.Disks[i].ReadOnly)
+		}
+	}
 	if _, statErr := os.Stat(filepath.Join(srcDir, "state.json")); statErr != nil {
 		return fmt.Errorf("state.json missing: %w", statErr)
 	}
