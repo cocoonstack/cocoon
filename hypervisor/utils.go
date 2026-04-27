@@ -192,6 +192,7 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 		Path:   cowPath,
 		RO:     false,
 		Serial: CowSerial,
+		Role:   types.StorageRoleCOW,
 	}), nil
 }
 

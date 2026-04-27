@@ -111,7 +111,7 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 
 	if vmCfg.Windows {
 		return []*types.StorageConfig{
-			{Path: overlayPath, RO: false},
+			{Path: overlayPath, RO: false, Role: types.StorageRoleCOW},
 		}, nil
 	}
 
@@ -121,8 +121,8 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 
 	cidataPath := ch.conf.CidataPath(vmID)
 	return []*types.StorageConfig{
-		{Path: overlayPath, RO: false},
-		{Path: cidataPath, RO: true},
+		{Path: overlayPath, RO: false, Role: types.StorageRoleCOW},
+		{Path: cidataPath, RO: true, Role: types.StorageRoleCidata},
 	}, nil
 }
 

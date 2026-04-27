@@ -128,6 +128,7 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 					Path:   blobPath,
 					RO:     true,
 					Serial: fmt.Sprintf("%s%d", serialPrefix, j),
+					Role:   types.StorageRoleLayer,
 				})
 			}
 			result[i] = configs

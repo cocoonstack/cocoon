@@ -202,6 +202,7 @@ func (ch *CloudHypervisor) ensureCloneCidata(vmID string, vmCfg *types.VMConfig,
 		storageConfigs = append(storageConfigs, &types.StorageConfig{
 			Path: cidataPath,
 			RO:   true,
+			Role: types.StorageRoleCidata,
 		})
 	}
 	return storageConfigs, nil
@@ -226,9 +227,29 @@ func rebuildStorageConfigs(cfg *chVMConfig) []*types.StorageConfig {
 			Path:   d.Path,
 			RO:     d.ReadOnly,
 			Serial: d.Serial,
+			Role:   roleFromCHDisk(d),
 		})
 	}
 	return configs
+}
+
+// roleFromCHDisk infers Role from a CH-written chDisk entry. Used until the
+// snapshot sidecar replaces this reconstruction (next commit).
+//   - empty serial + readonly → cidata (cocoon never assigns a serial to cidata)
+//   - readonly with serial    → base layer
+//   - writable + CowSerial    → COW
+//   - writable otherwise      → data disk
+func roleFromCHDisk(d chDisk) types.StorageRole {
+	switch {
+	case d.ReadOnly && d.Serial == "":
+		return types.StorageRoleCidata
+	case d.ReadOnly:
+		return types.StorageRoleLayer
+	case d.Serial == hypervisor.CowSerial:
+		return types.StorageRoleCOW
+	default:
+		return types.StorageRoleData
+	}
 }
 
 func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {

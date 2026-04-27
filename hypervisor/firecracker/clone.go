@@ -159,10 +159,16 @@ func rebuildCloneStorage(meta *snapshotMeta, cowPath string) []*types.StorageCon
 	var configs []*types.StorageConfig
 	for _, sc := range meta.StorageConfigs {
 		if sc.RO {
-			configs = append(configs, &types.StorageConfig{Path: sc.Path, RO: true, Serial: sc.Serial})
+			configs = append(configs, &types.StorageConfig{
+				Path: sc.Path, RO: true, Serial: sc.Serial,
+				Role: types.StorageRoleLayer,
+			})
 		}
 	}
-	configs = append(configs, &types.StorageConfig{Path: cowPath, RO: false, Serial: hypervisor.CowSerial})
+	configs = append(configs, &types.StorageConfig{
+		Path: cowPath, RO: false, Serial: hypervisor.CowSerial,
+		Role: types.StorageRoleCOW,
+	})
 	return configs
 }
 

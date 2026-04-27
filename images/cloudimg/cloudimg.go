@@ -116,6 +116,7 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 				Path:   blobPath,
 				RO:     true,
 				Serial: "cocoon-base",
+				Role:   types.StorageRoleLayer,
 			}}
 
 			firmwarePath := c.conf.FirmwarePath()
