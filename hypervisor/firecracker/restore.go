@@ -47,8 +47,13 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		return nil, killErr
 	}
 
+	// Lock every writable disk (COW + data disks). withCOWPathLocked alone
+	// would leave a stale data-<x>.raw.cocoon-clone-backup unhealed; the next
+	// concurrent clone/snapshot would acquire that path's lock,
+	// recoverStaleBackup would rename the backup over the just-restored data
+	// disk, silently corrupting it.
 	var result *types.VM
-	if lockErr := withCOWPathLocked(cowPath, func() error {
+	if lockErr := withSourceWritableDisksLocked(rec.StorageConfigs, func() error {
 		_ = os.Remove(cowPath)
 		if mergeErr := hypervisor.MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
 			fc.MarkError(ctx, vmID)

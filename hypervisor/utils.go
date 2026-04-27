@@ -288,23 +288,40 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 }
 
 // ValidateSnapshotIntegrity is the backend-agnostic preflight: every disk in
-// the sidecar passes structural validation, and every Role==Data disk has its
-// data-<serial>.raw file present in srcDir. Backends layer their own checks
-// (e.g. CH compares against config.json) on top.
+// the sidecar passes structural validation, and every snapshot-resident disk
+// (Role in {COW, Cidata, Data}) has its file present under srcDir. Layers are
+// shared blobs and not part of the snapshot tar, so they're skipped here.
+// Backends layer their own checks (e.g. CH state.json + memory-range, FC
+// vmstate + mem) on top.
 func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
 	if err := types.ValidateStorageConfigs(sidecar); err != nil {
 		return fmt.Errorf("sidecar invalid: %w", err)
 	}
 	for _, sc := range sidecar {
-		if sc.Role != types.StorageRoleData {
+		fname := snapshotResidentBasename(sc)
+		if fname == "" {
 			continue
 		}
-		path := filepath.Join(srcDir, DataDiskBaseName(sc.Serial))
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("data disk %s missing in snapshot: %w", sc.Serial, err)
+		if _, err := os.Stat(filepath.Join(srcDir, fname)); err != nil {
+			return fmt.Errorf("snapshot file %s missing: %w", fname, err)
 		}
 	}
 	return nil
+}
+
+// snapshotResidentBasename returns the basename a sidecar entry's file should
+// have inside the snapshot dir, or "" if the disk is not stored alongside the
+// snapshot (i.e. shared base layers). The sidecar's Path field still points at
+// the source VM's runDir, so we strip back to the basename.
+func snapshotResidentBasename(sc *types.StorageConfig) string {
+	switch sc.Role {
+	case types.StorageRoleData:
+		return DataDiskBaseName(sc.Serial)
+	case types.StorageRoleCOW, types.StorageRoleCidata:
+		return filepath.Base(sc.Path)
+	default:
+		return ""
+	}
 }
 
 // ValidateRoleSequence checks that the snapshot's disk shape (sidecar) is a

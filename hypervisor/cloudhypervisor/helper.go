@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/projecteru2/core/log"
 
@@ -35,8 +37,10 @@ const (
 var runtimeFiles = []string{hypervisor.APISocketName, "ch.pid", hypervisor.ConsoleSockName, cmdlineFileName}
 
 // validateSnapshotIntegrity is the CH-specific preflight wrapper around
-// hypervisor.ValidateSnapshotIntegrity: it runs the common checks, then
-// asserts the sidecar mirrors snapshot config.json's disk shape.
+// hypervisor.ValidateSnapshotIntegrity: it runs the common checks, asserts
+// the sidecar mirrors snapshot config.json's disk shape, and verifies the
+// CH-specific runtime files (state.json + at least one memory-range-*) are
+// present so vm.restore won't fail post-kill.
 func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err
@@ -48,7 +52,33 @@ func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	if len(sidecar) != len(chCfg.Disks) {
 		return fmt.Errorf("sidecar/config.json mismatch: %d vs %d disks", len(sidecar), len(chCfg.Disks))
 	}
+	if _, statErr := os.Stat(filepath.Join(srcDir, "state.json")); statErr != nil {
+		return fmt.Errorf("state.json missing: %w", statErr)
+	}
+	hasMemory, memErr := hasMemoryRangeFile(srcDir)
+	if memErr != nil {
+		return fmt.Errorf("read snapshot dir: %w", memErr)
+	}
+	if !hasMemory {
+		return fmt.Errorf("no memory-range-* file in snapshot")
+	}
 	return nil
+}
+
+// hasMemoryRangeFile reports whether srcDir contains at least one CH
+// memory-range-* file. We can't enumerate the exact set without parsing
+// state.json, but a missing prefix is enough to fail vm.restore.
+func hasMemoryRangeFile(srcDir string) (bool, error) {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "memory-range") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.

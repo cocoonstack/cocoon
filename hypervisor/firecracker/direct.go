@@ -41,8 +41,13 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 		return nil, killErr
 	}
 
+	// Lock every writable disk (COW + data disks) so recoverStaleBackup heals
+	// stale clone backups before the restore overwrites the disks. Locking
+	// only the COW would let a leftover data-<x>.raw.cocoon-clone-backup
+	// survive, then a future clone would rename that backup back over the
+	// freshly restored data disk.
 	var result *types.VM
-	if lockErr := withCOWPathLocked(cowPath, func() error {
+	if lockErr := withSourceWritableDisksLocked(rec.StorageConfigs, func() error {
 		if cleanErr := cleanSnapshotFiles(rec.RunDir); cleanErr != nil {
 			fc.MarkError(ctx, vmID)
 			return fmt.Errorf("clean old snapshot files: %w", cleanErr)
