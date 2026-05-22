@@ -57,6 +57,8 @@ type Config struct {
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
 	// Log configuration, uses eru core's ServerLogConfig.
 	Log *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
+	// Metering selects the lifecycle-event recorder backend; zero value keeps v0.4.x file behavior.
+	Metering MeteringConfig `json:"metering,omitzero" mapstructure:"metering"`
 }
 
 // Hypervisor returns the selected hypervisor backend type.

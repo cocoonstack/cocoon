@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/metering"
+	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -41,12 +42,12 @@ func (stubBackendConfig) LogDir() string                      { panic("LogDir: n
 func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
 func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
 
-func newMeteringTestBackend(t *testing.T) (*Backend, *metering.CaptureRecorder) {
+func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
 	dir := t.TempDir()
 	locker := flock.New(filepath.Join(dir, "index.lock"))
 	store := storejson.New[VMIndex](filepath.Join(dir, "index.json"), locker)
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	return &Backend{
 		Typ:      "test-hv",
 		Conf:     stubBackendConfig{},

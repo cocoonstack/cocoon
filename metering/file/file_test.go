@@ -1,4 +1,4 @@
-package metering
+package file
 
 import (
 	"bufio"
@@ -8,32 +8,37 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cocoonstack/cocoon/metering"
 )
 
-func TestFileRecorderRoundTrip(t *testing.T) {
+func TestRecorderRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "ledger.jsonl")
-	r := NewFileRecorder(ctx, path)
+	r, err := New(path)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	r.Emit(ctx, Entry{
+	r.Emit(ctx, metering.Entry{
 		EmittedAt: now,
-		Kind:      KindVMComputeStart,
+		Kind:      metering.KindVMComputeStart,
 		VMID:      "vm1",
-		Reason:    ReasonBoot,
-		Shape:     Shape{CPU: 4, MemBytes: 1 << 30},
+		Reason:    metering.ReasonBoot,
+		Shape:     metering.Shape{CPU: 4, MemBytes: 1 << 30},
 	})
-	r.Emit(ctx, Entry{
+	r.Emit(ctx, metering.Entry{
 		EmittedAt: now.Add(time.Second),
-		Kind:      KindVMComputeStop,
+		Kind:      metering.KindVMComputeStop,
 		VMID:      "vm1",
-		Reason:    ReasonStopUser,
+		Reason:    metering.ReasonStopUser,
 	})
 
 	got := readEntries(t, path)
 	if len(got) != 2 {
 		t.Fatalf("got %d entries, want 2", len(got))
 	}
-	if got[0].Kind != KindVMComputeStart || got[1].Kind != KindVMComputeStop {
+	if got[0].Kind != metering.KindVMComputeStart || got[1].Kind != metering.KindVMComputeStop {
 		t.Errorf("got kinds %v %v", got[0].Kind, got[1].Kind)
 	}
 	if got[0].Shape.CPU != 4 {
@@ -41,15 +46,18 @@ func TestFileRecorderRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFileRecorderConcurrent(t *testing.T) {
+func TestRecorderConcurrent(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "ledger.jsonl")
-	r := NewFileRecorder(ctx, path)
+	r, err := New(path)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	const N = 200
 	var wg sync.WaitGroup
 	for i := range N {
 		wg.Go(func() {
-			r.Emit(ctx, Entry{Kind: KindVMComputeStart, VMID: "vm", Shape: Shape{CPU: i}})
+			r.Emit(ctx, metering.Entry{Kind: metering.KindVMComputeStart, VMID: "vm", Shape: metering.Shape{CPU: i}})
 		})
 	}
 	wg.Wait()
@@ -60,15 +68,14 @@ func TestFileRecorderConcurrent(t *testing.T) {
 	}
 }
 
-func TestNewFileRecorderFallback(t *testing.T) {
-	// Parent dir doesn't exist → OpenFile fails → fallback to NopRecorder.
-	r := NewFileRecorder(t.Context(), filepath.Join(t.TempDir(), "missing-subdir", "ledger.jsonl"))
-	if _, ok := r.(NopRecorder); !ok {
-		t.Errorf("got %T, want NopRecorder", r)
+func TestNewMissingParentDirErrors(t *testing.T) {
+	_, err := New(filepath.Join(t.TempDir(), "missing-subdir", "ledger.jsonl"))
+	if err == nil {
+		t.Error("expected error opening ledger in missing dir; got nil")
 	}
 }
 
-func readEntries(t *testing.T, path string) []Entry {
+func readEntries(t *testing.T, path string) []metering.Entry {
 	t.Helper()
 	f, err := os.Open(path) //nolint:gosec // test-controlled path
 	if err != nil {
@@ -76,10 +83,10 @@ func readEntries(t *testing.T, path string) []Entry {
 	}
 	defer f.Close() //nolint:errcheck
 
-	var out []Entry
+	var out []metering.Entry
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		var e Entry
+		var e metering.Entry
 		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
 			t.Fatalf("unmarshal %q: %v", sc.Text(), err)
 		}

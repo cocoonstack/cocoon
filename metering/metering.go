@@ -1,4 +1,4 @@
-// Package metering emits append-only VM/snapshot lifecycle endpoints; tenant attribution lives upstream.
+// Package metering emits append-only VM/snapshot lifecycle endpoints; tenant attribution lives upstream. Recorder is the contract; backends live in subpackages (file, stderr, capture).
 package metering
 
 import (
