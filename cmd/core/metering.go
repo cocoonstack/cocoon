@@ -24,7 +24,7 @@ var (
 	meteringRec  metering.Recorder
 )
 
-// MeteringRecorder returns the process-wide recorder per conf.Metering.Backend; lazy-init, falls back to NopRecorder on init failure.
+// MeteringRecorder returns the process-wide recorder per conf.Metering.Backend; lazy-init shared across callers.
 func MeteringRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	meteringOnce.Do(func() {
 		meteringRec = buildRecorder(ctx, conf)

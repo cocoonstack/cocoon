@@ -13,13 +13,13 @@ import (
 func TestBuildRecorderBackends(t *testing.T) {
 	tests := []struct {
 		name    string
-		backend string
+		backend config.MeteringBackend
 		want    metering.Recorder
 	}{
 		{"empty defaults to file", "", (*meteringfile.Recorder)(nil)},
-		{"explicit file", "file", (*meteringfile.Recorder)(nil)},
-		{"nop", "nop", metering.NopRecorder{}},
-		{"stderr", "stderr", (*meteringstderr.Recorder)(nil)},
+		{"explicit file", config.MeteringFile, (*meteringfile.Recorder)(nil)},
+		{"nop", config.MeteringNop, metering.NopRecorder{}},
+		{"stderr", config.MeteringStderr, (*meteringstderr.Recorder)(nil)},
 		{"unknown falls back to nop", "kafka", metering.NopRecorder{}},
 	}
 	for _, tt := range tests {
@@ -41,7 +41,7 @@ func TestBuildFileRecorderCustomPath(t *testing.T) {
 	conf := &config.Config{
 		RootDir: dir,
 		Metering: config.MeteringConfig{
-			Backend: "file",
+			Backend: config.MeteringFile,
 			File:    config.FileMeteringConfig{Path: dir + "/custom/ledger.jsonl"},
 		},
 	}

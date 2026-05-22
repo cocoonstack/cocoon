@@ -95,6 +95,9 @@ func (c *Config) Validate() error {
 	if _, err := c.DNSServers(); err != nil {
 		return fmt.Errorf("dns: %w", err)
 	}
+	if err := c.Metering.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 

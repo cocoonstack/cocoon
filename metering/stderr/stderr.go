@@ -3,7 +3,6 @@ package stderr
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -13,7 +12,7 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder writes one JSON entry per line to a writer (os.Stderr by default); for dev / debug only.
+// Recorder writes one JSON entry per line; dev/debug only.
 type Recorder struct {
 	mu  sync.Mutex
 	out io.Writer
@@ -21,13 +20,13 @@ type Recorder struct {
 
 func New() *Recorder { return &Recorder{out: os.Stderr} }
 
-// Emit best-effort writes; marshal errors silently dropped (stderr is fire-and-forget).
 func (r *Recorder) Emit(_ context.Context, e metering.Entry) {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return
 	}
+	data = append(data, '\n')
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	fmt.Fprintln(r.out, string(data)) //nolint:errcheck // fire-and-forget; stderr write failures are not actionable
+	_, _ = r.out.Write(data)
 }
