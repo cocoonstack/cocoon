@@ -1,10 +1,14 @@
-// Package metering emits append-only VM/snapshot lifecycle endpoints; tenant attribution lives upstream.
+// Package metering emits append-only VM/snapshot lifecycle endpoints; tenant attribution lives upstream. Recorder is the contract; backends live in subpackages (file, stderr, capture).
 package metering
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"time"
 )
+
+var _ io.WriterTo = Entry{}
 
 // Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
 type Kind string
@@ -48,6 +52,17 @@ type Entry struct {
 	Hypervisor       string    `json:"hypervisor,omitempty"`
 	Shape            Shape     `json:"shape"`
 	EmittedAt        time.Time `json:"emitted_at"`
+}
+
+// WriteTo writes one JSONL record.
+func (e Entry) WriteTo(w io.Writer) (int64, error) {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return 0, err
+	}
+	data = append(data, '\n')
+	n, err := w.Write(data)
+	return int64(n), err
 }
 
 // Recorder accepts lifecycle entries; implementations must be safe for concurrent use.

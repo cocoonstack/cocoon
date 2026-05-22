@@ -57,6 +57,8 @@ type Config struct {
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
 	// Log configuration, uses eru core's ServerLogConfig.
 	Log *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
+	// Metering selects the lifecycle-event recorder backend.
+	Metering MeteringConfig `json:"metering,omitzero" mapstructure:"metering"`
 }
 
 // Hypervisor returns the selected hypervisor backend type.
@@ -92,6 +94,9 @@ func (c *Config) Validate() error {
 	}
 	if _, err := c.DNSServers(); err != nil {
 		return fmt.Errorf("dns: %w", err)
+	}
+	if err := c.Metering.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

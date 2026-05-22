@@ -15,6 +15,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/metering"
+	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -90,7 +91,7 @@ func TestNew_NilConfig(t *testing.T) {
 // Create
 
 func TestCreateAndDeleteEmitMetering(t *testing.T) {
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
 
@@ -132,7 +133,7 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 	// phantom snap.storage.stop with an empty Hypervisor field. We exercise this
 	// by calling deleteOne twice on the same id (idempotent), simulating the
 	// loser running its loop body after the winner already committed.
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
 
@@ -176,7 +177,7 @@ func kinds(entries []metering.Entry) []metering.Kind {
 }
 
 func TestImportEmitsSnapStorageStart(t *testing.T) {
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
 

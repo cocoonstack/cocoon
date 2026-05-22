@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/metering"
+	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -367,7 +368,7 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 		}
 	}
 
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{Enabled: true}, rec)
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
@@ -424,7 +425,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := &metering.CaptureRecorder{}
+	rec := meteringcapture.New()
 	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{}, rec)
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
