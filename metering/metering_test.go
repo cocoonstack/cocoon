@@ -1,7 +1,9 @@
 package metering
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -53,3 +55,38 @@ func TestNopRecorder(t *testing.T) {
 	r.Emit(t.Context(), Entry{Kind: KindVMComputeStart, VMID: "x"})
 	// no panic, no state — only assertion is "does not crash"
 }
+
+func TestEntryWriteToProducesJSONLine(t *testing.T) {
+	e := Entry{Kind: KindVMComputeStart, VMID: "vm1", Shape: Shape{CPU: 2}}
+	var buf bytes.Buffer
+	n, err := e.WriteTo(&buf)
+	if err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if int(n) != buf.Len() {
+		t.Errorf("n=%d, want %d", n, buf.Len())
+	}
+	if buf.Bytes()[buf.Len()-1] != '\n' {
+		t.Errorf("missing trailing newline; got %q", buf.String())
+	}
+	var got Entry
+	if err := json.Unmarshal(buf.Bytes()[:buf.Len()-1], &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", buf.String(), err)
+	}
+	if got.Kind != e.Kind || got.VMID != e.VMID || got.Shape.CPU != e.Shape.CPU {
+		t.Errorf("got %+v, want %+v", got, e)
+	}
+}
+
+func TestEntryWriteToPropagatesWriterError(t *testing.T) {
+	sentinel := errors.New("boom")
+	e := Entry{Kind: KindVMComputeStart, VMID: "vm1"}
+	_, err := e.WriteTo(errWriter{err: sentinel})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("got err %v, want sentinel %v", err, sentinel)
+	}
+}
+
+type errWriter struct{ err error }
+
+func (w errWriter) Write([]byte) (int, error) { return 0, w.err }

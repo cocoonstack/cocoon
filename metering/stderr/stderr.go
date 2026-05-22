@@ -2,7 +2,6 @@ package stderr
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"sync"
@@ -21,12 +20,7 @@ type Recorder struct {
 func New() *Recorder { return &Recorder{out: os.Stderr} }
 
 func (r *Recorder) Emit(_ context.Context, e metering.Entry) {
-	data, err := json.Marshal(e)
-	if err != nil {
-		return
-	}
-	data = append(data, '\n')
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	_, _ = r.out.Write(data)
+	_, _ = e.WriteTo(r.out)
 }

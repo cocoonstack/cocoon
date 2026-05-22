@@ -2,7 +2,6 @@ package file
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -30,15 +29,9 @@ func New(path string) (*Recorder, error) {
 
 // Emit logs and swallows write errors to never block callers.
 func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
-	data, err := json.Marshal(e)
-	if err != nil {
-		log.WithFunc("metering/file.Recorder.Emit").Warnf(ctx, "marshal entry: %v", err)
-		return
-	}
-	data = append(data, '\n')
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, err := r.f.Write(data); err != nil {
-		log.WithFunc("metering/file.Recorder.Emit").Warnf(ctx, "write entry: %v", err)
+	if _, err := e.WriteTo(r.f); err != nil {
+		log.WithFunc("metering/file.Recorder.Emit").Warnf(ctx, "emit entry: %v", err)
 	}
 }

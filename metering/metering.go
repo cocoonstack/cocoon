@@ -3,8 +3,12 @@ package metering
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"time"
 )
+
+var _ io.WriterTo = Entry{}
 
 // Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
 type Kind string
@@ -48,6 +52,17 @@ type Entry struct {
 	Hypervisor       string    `json:"hypervisor,omitempty"`
 	Shape            Shape     `json:"shape"`
 	EmittedAt        time.Time `json:"emitted_at"`
+}
+
+// WriteTo encodes e as a JSON object followed by '\n' — the JSONL wire format consumed by downstream tools (BigQuery, log shippers).
+func (e Entry) WriteTo(w io.Writer) (int64, error) {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return 0, err
+	}
+	data = append(data, '\n')
+	n, err := w.Write(data)
+	return int64(n), err
 }
 
 // Recorder accepts lifecycle entries; implementations must be safe for concurrent use.
