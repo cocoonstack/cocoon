@@ -11,7 +11,7 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder writes one JSON entry per line; dev/debug only.
+// Recorder writes entries to os.Stderr; dev/debug only.
 type Recorder struct {
 	mu  sync.Mutex
 	out io.Writer

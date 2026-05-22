@@ -11,7 +11,7 @@ const (
 // MeteringBackend identifies the lifecycle-event recorder backend.
 type MeteringBackend string
 
-// MeteringConfig selects the recorder backend; empty Backend defaults to MeteringFile so v0.4.x configs keep working.
+// MeteringConfig selects the recorder backend; empty Backend defaults to MeteringFile.
 type MeteringConfig struct {
 	Backend MeteringBackend    `json:"backend,omitempty" mapstructure:"backend"`
 	File    FileMeteringConfig `json:"file,omitzero"     mapstructure:"file"`

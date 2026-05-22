@@ -13,7 +13,7 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder appends JSON-encoded entries one per line under sync.Mutex; cross-process atomicity comes from O_APPEND.
+// Recorder appends entries under sync.Mutex; O_APPEND gives cross-process atomicity.
 type Recorder struct {
 	mu sync.Mutex
 	f  *os.File
@@ -27,7 +27,7 @@ func New(path string) (*Recorder, error) {
 	return &Recorder{f: f}, nil
 }
 
-// Emit logs and swallows write errors to never block callers.
+// Emit swallows write errors so callers never block.
 func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

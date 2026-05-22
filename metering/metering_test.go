@@ -53,7 +53,6 @@ func TestKindWireFormat(t *testing.T) {
 func TestNopRecorder(t *testing.T) {
 	var r NopRecorder
 	r.Emit(t.Context(), Entry{Kind: KindVMComputeStart, VMID: "x"})
-	// no panic, no state — only assertion is "does not crash"
 }
 
 func TestEntryWriteToProducesJSONLine(t *testing.T) {

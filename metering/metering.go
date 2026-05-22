@@ -54,7 +54,7 @@ type Entry struct {
 	EmittedAt        time.Time `json:"emitted_at"`
 }
 
-// WriteTo encodes e as a JSON object followed by '\n' — the JSONL wire format consumed by downstream tools (BigQuery, log shippers).
+// WriteTo writes one JSONL record.
 func (e Entry) WriteTo(w io.Writer) (int64, error) {
 	data, err := json.Marshal(e)
 	if err != nil {
