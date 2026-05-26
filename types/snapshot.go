@@ -20,8 +20,8 @@ type SnapshotConfig struct {
 
 // Validate checks SnapshotConfig caller-controlled fields. Empty Name is allowed (name is optional).
 func (cfg *SnapshotConfig) Validate() error {
-	if cfg.Name != "" && !validName.MatchString(cfg.Name) {
-		return fmt.Errorf("snapshot name %q is invalid: must match %s (max 63 chars)", cfg.Name, validName.String())
+	if cfg.Name != "" && !validSnapshotName.MatchString(cfg.Name) {
+		return fmt.Errorf("snapshot name %q is invalid: must match %s (max 63 chars)", cfg.Name, validSnapshotName.String())
 	}
 	return nil
 }
