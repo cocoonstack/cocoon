@@ -84,7 +84,7 @@ func recoverBootFiles(ctx context.Context, layer v1.Layer, workDir string, idx i
 	return kp, ip
 }
 
-func scanBootFiles(ctx context.Context, r io.Reader, workDir, digestHex string) (kernelPath, initrdPath string, err error) {
+func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string) (kernelPath, initrdPath string, err error) {
 	logger := log.WithFunc("oci.scanBootFiles")
 
 	tr := tar.NewReader(r)
@@ -121,9 +121,9 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, digestHex string) 
 
 		var dstPath string
 		if isKernel {
-			dstPath = filepath.Join(workDir, digestHex+".vmlinuz")
+			dstPath = filepath.Join(workDir, namePrefix+".vmlinuz")
 		} else {
-			dstPath = filepath.Join(workDir, digestHex+".initrd.img")
+			dstPath = filepath.Join(workDir, namePrefix+".initrd.img")
 		}
 
 		f, createErr := os.Create(dstPath) //nolint:gosec
@@ -141,7 +141,8 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, digestHex string) 
 		} else {
 			initrdPath = dstPath
 		}
-		logger.Debugf(ctx, "Layer %s: extracted %s", digestHex[:12], base)
+		// namePrefix is a short placeholder on the import path, not always a digest.
+		logger.Debugf(ctx, "Layer %s: extracted %s", namePrefix[:min(len(namePrefix), 12)], base)
 	}
 	return kernelPath, initrdPath, nil
 }
