@@ -15,8 +15,9 @@ const (
 )
 
 var (
-	validName     = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
-	validUsername = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+	validName         = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
+	validSnapshotName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,62}$`)
+	validUsername     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	// shellUnsafe rejects chars that break the chpasswd YAML scalar in cidata.
 	shellUnsafe = regexp.MustCompile("[`$;|&(){}\\\\<>!'\"\\x00-\\x1f\\x7f]")
 )
