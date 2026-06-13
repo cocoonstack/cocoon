@@ -19,12 +19,18 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) (bool, error
 	return ch.StartSequence(ctx, id, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
-			vmCfg := buildVMConfig(ctx, rec, hypervisor.ConsoleSockPath(rec.RunDir))
-			args := buildCLIArgs(vmCfg, sockPath)
-			ch.saveCmdline(ctx, rec, args)
-			return ch.launchProcess(ctx, rec, sockPath, args, rec.ResolvedNetnsPath())
+			return ch.launchFresh(ctx, rec, sockPath)
 		},
 	})
+}
+
+// launchFresh cold-boots a VM from its record: builds the CH config from the
+// record, persists the cmdline, and starts the process. Shared by normal start
+// and cold clone — both boot from disk with no saved CH state to restore.
+func (ch *CloudHypervisor) launchFresh(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
+	args := buildCLIArgs(buildVMConfig(ctx, rec, hypervisor.ConsoleSockPath(rec.RunDir)), sockPath)
+	ch.saveCmdline(ctx, rec, args)
+	return ch.launchProcess(ctx, rec, sockPath, args, rec.ResolvedNetnsPath())
 }
 
 func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, socketPath string, args []string, netnsPath string) (int, error) {

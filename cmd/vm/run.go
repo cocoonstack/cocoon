@@ -299,11 +299,24 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		return nil, "", nil, types.NetSetup{}, err
 	}
 	vmID := utils.GenerateID()
+	// Reuse the source VM's ID to preserve identity across a cold migration, so
+	// the managing controller (e.g. vk-cocoon) re-adopts the clone by its stored
+	// VMID instead of treating it as an orphan.
+	if id, _ := cmd.Flags().GetString("vm-id"); id != "" {
+		vmID = id
+	}
 	if vmCfg.Name == "" {
 		vmCfg.Name = "cocoon-clone-" + network.VMIDPrefix(vmID)
 	}
 	if err = vmCfg.Validate(); err != nil {
 		return nil, "", nil, types.NetSetup{}, err
+	}
+
+	if cold, _ := cmd.Flags().GetBool("cold"); cold {
+		if conf.UseFirecracker {
+			return nil, "", nil, types.NetSetup{}, fmt.Errorf("--cold clone is Cloud Hypervisor only")
+		}
+		vmCfg.ColdBoot = true
 	}
 
 	if pull, _ := cmd.Flags().GetBool("pull"); pull && vmCfg.Image != "" && vmCfg.ImageType != "" {

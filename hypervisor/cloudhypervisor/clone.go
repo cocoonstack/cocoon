@@ -65,8 +65,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("verify base files: %w", err)
 	}
 
-	stateReplacements := buildStateReplacements(chCfg, storageConfigs)
-
 	storageConfigs, err = ch.ensureCloneCidata(vmID, vmCfg, networkConfigs, storageConfigs, directBoot)
 	if err != nil {
 		return nil, err
@@ -75,6 +73,11 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("validate post-cidata storage: %w", vErr)
 	}
 
+	if vmCfg.ColdBoot {
+		return ch.coldBootClone(ctx, vmID, vmCfg, net, runDir, logDir, now, bootCfg, storageConfigs, sourceSnapshotID)
+	}
+
+	stateReplacements := buildStateReplacements(chCfg, storageConfigs)
 	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
@@ -138,6 +141,54 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	}
 
 	logger.Infof(ctx, "VM %s cloned from snapshot", vmID)
+	return info, nil
+}
+
+// coldBootClone boots a fresh VM from the cloned disk, discarding the snapshot's
+// saved CH state (state.json + memory ranges). The guest re-evaluates CPUID at
+// boot, so the clone survives hypervisor-version / CPUID changes that would fail
+// a warm vm.restore — at the cost of losing in-memory runtime state. The disk
+// (COW overlay) is a standard guest-owned image and stays valid across versions.
+func (ch *CloudHypervisor) coldBootClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, bootCfg *types.BootConfig, storageConfigs []*types.StorageConfig, sourceSnapshotID string) (_ *types.VM, err error) {
+	logger := log.WithFunc("cloudhypervisor.coldBootClone")
+
+	rec := &hypervisor.VMRecord{
+		VM: types.VM{
+			ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
+			Config: *vmCfg, StorageConfigs: storageConfigs, NetSetup: net,
+			// FirstBooted suppresses cidata re-attach for an already-provisioned
+			// disk (see activeDisks) and meters this as a restart, not a boot.
+			FirstBooted: true,
+		},
+		BootConfig: bootCfg,
+		RunDir:     runDir,
+		LogDir:     logDir,
+	}
+
+	// Clone reassigns NIC MACs and disk serials, so a kernel cmdline baked at
+	// snapshot time is stale; rebuild it for direct-boot guests.
+	if isDirectBoot(bootCfg) {
+		dns, dnsErr := ch.conf.DNSServers()
+		if dnsErr != nil {
+			return nil, fmt.Errorf("parse DNS servers: %w", dnsErr)
+		}
+		bootCfg.Cmdline = buildCmdline(storageConfigs, net.NetworkConfigs, vmCfg.Name, dns)
+	}
+
+	pid, err := ch.launchFresh(ctx, rec, hypervisor.SocketPath(runDir))
+	if err != nil {
+		ch.MarkError(ctx, vmID)
+		return nil, fmt.Errorf("launch CH: %w", err)
+	}
+
+	info := &rec.VM
+	info.CreatedAt, info.UpdatedAt, info.StartedAt = now, now, &now
+	if err = ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
+		ch.AbortLaunch(ctx, pid, hypervisor.SocketPath(runDir), runDir, runtimeFiles)
+		return nil, fmt.Errorf("finalize VM record: %w", err)
+	}
+
+	logger.Infof(ctx, "VM %s cold-cloned from snapshot (disk only)", vmID)
 	return info, nil
 }
 

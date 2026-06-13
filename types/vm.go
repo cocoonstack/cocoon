@@ -31,6 +31,7 @@ type VMConfig struct {
 	Name string `json:"name"`
 
 	OnDemand  bool           `json:"-"` // use UFFD on-demand memory restore (CH only); transient, not persisted
+	ColdBoot  bool           `json:"-"` // clone disk only and cold-boot, discarding saved memory/vCPU state; transient
 	User      string         `json:"-"`
 	Password  string         `json:"-"`
 	DataDisks []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create

@@ -299,6 +299,8 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	cmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk)")
+	cmd.Flags().Bool("cold", false, "clone the disk only and cold-boot the guest, discarding saved memory/vCPU state (CH only; survives hypervisor-version/CPUID changes that block warm restore)")
+	cmd.Flags().String("vm-id", "", "reuse this VM ID instead of generating one (preserves identity for controller re-adoption after a cold migration)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }
