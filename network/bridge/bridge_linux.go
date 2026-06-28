@@ -105,6 +105,12 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, mErr)
 		}
 
+		if vmCfg.Isolated {
+			if iErr := netlink.LinkSetIsolated(tap, true); iErr != nil {
+				return nil, fmt.Errorf("isolate %s: %w", name, iErr)
+			}
+		}
+
 		_ = netlink.LinkSetLearning(tap, false)
 		if mtu := br.Attrs().MTU; mtu > 0 {
 			_ = netlink.LinkSetMTU(tap, mtu)

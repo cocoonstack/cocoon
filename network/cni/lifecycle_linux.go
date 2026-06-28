@@ -52,6 +52,16 @@ func deleteNetns(ctx context.Context, name string) error {
 	})
 }
 
+// setPortIsolated sets the bridge "isolated" flag on a host port so it cannot
+// forward frames to other isolated ports on the same bridge.
+func setPortIsolated(name string) error {
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return fmt.Errorf("find %s: %w", name, err)
+	}
+	return netlink.LinkSetIsolated(link, true)
+}
+
 // deleteTAPInNetns deletes a named TAP device inside target netns.
 func deleteTAPInNetns(nsPath, tapName string) error {
 	return cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {

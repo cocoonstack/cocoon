@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/containernetworking/cni/libcni"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
@@ -104,6 +105,16 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		netInfo, parseErr := extractNetworkInfo(cniResult)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse CNI result: %w", parseErr)
+		}
+
+		if vmCfg.Isolated {
+			hostVeth, vErr := hostVethFromResult(cniResult)
+			if vErr != nil {
+				return nil, fmt.Errorf("isolate %s: %w", vmID, vErr)
+			}
+			if iErr := setPortIsolated(hostVeth); iErr != nil {
+				return nil, fmt.Errorf("isolate %s port %s: %w", vmID, hostVeth, iErr)
+			}
 		}
 
 		var overrideMAC string
@@ -209,6 +220,22 @@ func ensureNetns(name, nsPath string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// hostVethFromResult returns the host-side veth name the bridge CNI plugin
+// created. The bridge plugin reports it with an empty Sandbox and a "veth"
+// name prefix (the bridge device itself, e.g. cni0, also has an empty Sandbox).
+func hostVethFromResult(result cnitypes.Result) (string, error) {
+	r, err := current.NewResultFromResult(result)
+	if err != nil {
+		return "", fmt.Errorf("convert CNI result: %w", err)
+	}
+	for _, iface := range r.Interfaces {
+		if iface.Sandbox == "" && strings.HasPrefix(iface.Name, "veth") {
+			return iface.Name, nil
+		}
+	}
+	return "", errors.New("no host veth in CNI result")
 }
 
 // extractNetworkInfo converts a CNI ADD result into types.Network.

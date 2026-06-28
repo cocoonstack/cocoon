@@ -292,6 +292,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	noDirectIO, _ := cmd.Flags().GetBool("no-direct-io")
 	windows, _ := cmd.Flags().GetBool("windows")
 	sharedMemory, _ := cmd.Flags().GetBool("shared-memory")
+	isolated, _ := cmd.Flags().GetBool("isolated")
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 
 	if vmName == "" {
@@ -325,6 +326,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			NoDirectIO:    noDirectIO,
 			Windows:       windows,
 			SharedMemory:  sharedMemory,
+			Isolated:      isolated,
 		},
 		User:      user,
 		Password:  password,
@@ -350,6 +352,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	}
 
 	onDemand, _ := cmd.Flags().GetBool("on-demand")
+	isolated, _ := cmd.Flags().GetBool("isolated")
 
 	return &types.VMConfig{
 		Name: vmName,
@@ -366,6 +369,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			NoDirectIO:    noDirectIO,
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
+			Isolated:      isolated,
 		},
 		OnDemand: onDemand,
 	}, nil

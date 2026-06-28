@@ -287,6 +287,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (use page cache instead; CH only)")
 	cmd.Flags().Bool("windows", false, "Windows guest (UEFI boot, kvm_hyperv=on, no cidata)")
 	cmd.Flags().Bool("shared-memory", false, "enable CH memory shared=on; required to attach vhost-user-fs later (CH only, fixed for VM lifetime)")
+	cmd.Flags().Bool("isolated", false, "isolate this VM's host bridge port so same-node VMs cannot reach each other (egress/gateway unaffected)")
 	cmd.Flags().StringArray("data-disk", nil, "extra data disk: size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]; repeatable")
 }
 
@@ -299,6 +300,7 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	cmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk)")
+	cmd.Flags().Bool("isolated", false, "isolate this VM's host bridge port so same-node VMs cannot reach each other (egress/gateway unaffected)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }

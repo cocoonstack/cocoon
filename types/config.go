@@ -21,4 +21,8 @@ type Config struct {
 	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
 	// SharedMemory toggles CH memory shared=on (vhost-user-fs prerequisite); fixed at create, persists through clone/restore.
 	SharedMemory bool `json:"shared_memory,omitempty"`
+	// Isolated sets the bridge "isolated" flag on the VM's host port so VMs on
+	// the same node/bridge cannot reach each other (they can still reach the
+	// gateway and route out). Re-applied on NIC recover.
+	Isolated bool `json:"isolated,omitempty"`
 }
