@@ -130,7 +130,7 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 	for _, f := range hypervisorFactories {
 		h, err := f.ctor(ctx, conf)
 		if err != nil {
-			return nil, fmt.Errorf("init %s for GC: %w", f.typ, err)
+			return nil, fmt.Errorf("init hypervisor %s: %w", f.typ, err)
 		}
 		result = append(result, h)
 	}

@@ -198,8 +198,6 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.vm.rm")
-
 	force, _ := cmd.Flags().GetBool("force")
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
@@ -211,21 +209,11 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	wantJSON := cmdcore.WantJSON(cmd)
-	var allDeleted []string
-	var lastErr error
-	for hyper, refs := range routed {
-		deleted, deleteErr := hyper.Delete(ctx, refs, force)
-		if !wantJSON {
-			for _, id := range deleted {
-				logger.Infof(ctx, "deleted VM: %s", id)
-			}
-		}
-		allDeleted = append(allDeleted, deleted...)
-		if deleteErr != nil {
-			lastErr = deleteErr
-		}
-	}
+	const logTag = "cmd.vm.rm"
+	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cmdcore.WantJSON(cmd), routed,
+		func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+			return hyper.Delete(ctx, refs, force)
+		})
 
 	if len(allDeleted) > 0 {
 		if netProvider, initErr := cmdcore.InitNetwork(conf); initErr == nil {
@@ -236,16 +224,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		bridgenet.CleanupTAPs(allDeleted)
 	}
 
-	if lastErr != nil {
-		return fmt.Errorf("rm: %w", lastErr)
-	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDeleted}); done {
-		return jsonErr
-	}
-	if len(allDeleted) == 0 {
-		logger.Info(ctx, "no VMs deleted")
-	}
-	return nil
+	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
 }
 
 func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
@@ -331,11 +310,9 @@ func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache
 	return cmdcore.InitNetwork(conf)
 }
 
-func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
-	logger := log.WithFunc("cmd." + name)
-	wantJSON := cmdcore.WantJSON(cmd)
-	var allDone []string
-	var lastErr error
+// runRoutedLoop runs fn per routed hypervisor, logging each success under logTag (unless JSON), and returns all done ids plus the last error.
+func runRoutedLoop(ctx context.Context, logTag, pastTense string, wantJSON bool, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) (allDone []string, lastErr error) {
+	logger := log.WithFunc(logTag)
 	for hyper, refs := range routed {
 		done, err := fn(hyper, refs)
 		if !wantJSON {
@@ -348,6 +325,11 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 			lastErr = err
 		}
 	}
+	return allDone, lastErr
+}
+
+// finishRoutedCmd is the shared tail for routed batch commands: wrap lastErr, emit JSON, or log the empty-case message.
+func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, pastTense string, allDone []string, lastErr error) error {
 	if lastErr != nil {
 		return fmt.Errorf("%s: %w", name, lastErr)
 	}
@@ -355,9 +337,15 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 		return jsonErr
 	}
 	if len(allDone) == 0 {
-		logger.Infof(ctx, "no VMs %s", pastTense)
+		log.WithFunc(logTag).Infof(ctx, "no VMs %s", pastTense)
 	}
 	return nil
+}
+
+func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
+	logTag := "cmd." + name
+	allDone, lastErr := runRoutedLoop(ctx, logTag, pastTense, cmdcore.WantJSON(cmd), routed, fn)
+	return finishRoutedCmd(ctx, cmd, logTag, name, pastTense, allDone, lastErr)
 }
 
 // collectAttachedDevices reads fs/vfio devices; errors are logged and dropped so inspect tolerates a flaky vm.info.

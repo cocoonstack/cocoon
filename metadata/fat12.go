@@ -231,12 +231,18 @@ func needsLFN(name string) bool {
 	return len(base) > 8 || len(ext) > 3 || name != upper || strings.Count(name, ".") > 1 //nolint:mnd
 }
 
+// blankSFN returns an 11-byte SFN buffer space-padded per the FAT 8.3 layout.
+func blankSFN() [11]byte {
+	var b [11]byte
+	for i := range b {
+		b[i] = ' '
+	}
+	return b
+}
+
 // toShortName pads a simple name (already fits 8.3, uppercase) into an 11-byte SFN.
 func toShortName(name string) [11]byte {
-	var result [11]byte
-	for i := range result {
-		result[i] = ' '
-	}
+	result := blankSFN()
 	upper := strings.ToUpper(name)
 	if dot := strings.LastIndex(upper, "."); dot >= 0 {
 		copy(result[:8], upper[:dot])   //nolint:mnd
@@ -249,10 +255,7 @@ func toShortName(name string) [11]byte {
 
 // generateShortName builds an 8.3 name with numeric tail (e.g. "META-D~1   ").
 func generateShortName(name string, seq int) [11]byte {
-	var result [11]byte
-	for i := range result {
-		result[i] = ' '
-	}
+	result := blankSFN()
 
 	upper := strings.ToUpper(name)
 	var base, ext string
@@ -331,10 +334,7 @@ func lfnChecksum(shortName [11]byte) byte {
 }
 
 func padLabel(label string) [11]byte {
-	var result [11]byte
-	for i := range result {
-		result[i] = ' '
-	}
+	result := blankSFN()
 	copy(result[:], strings.ToUpper(label))
 	return result
 }

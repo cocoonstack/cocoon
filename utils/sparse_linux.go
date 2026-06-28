@@ -18,58 +18,39 @@ const (
 // SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA.
 // dst is created as a new file (truncated to src size, then only data segments written).
 func SparseCopy(dst, src string) error {
-	srcFile, err := os.Open(src) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("open src: %w", err)
-	}
-	defer srcFile.Close() //nolint:errcheck
-
-	fi, err := srcFile.Stat()
-	if err != nil {
-		return fmt.Errorf("stat src: %w", err)
-	}
-	size := fi.Size()
-
-	dstFile, err := os.Create(dst) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("create dst: %w", err)
-	}
-	cleanup := true
-	defer func() {
-		if cleanup {
-			dstFile.Close() //nolint:errcheck,gosec
-			os.Remove(dst)  //nolint:errcheck,gosec
+	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+		fi, err := srcFile.Stat()
+		if err != nil {
+			return fmt.Errorf("stat src: %w", err)
 		}
-	}()
-
-	if size > 0 {
-		if truncErr := dstFile.Truncate(size); truncErr != nil {
-			return fmt.Errorf("truncate dst: %w", truncErr)
+		size := fi.Size()
+		if size > 0 {
+			if truncErr := dstFile.Truncate(size); truncErr != nil {
+				return fmt.Errorf("truncate dst: %w", truncErr)
+			}
 		}
-	}
 
-	segments, err := scanDataSegments(int(srcFile.Fd()), size)
-	if err != nil {
-		return err
-	}
+		segments, err := scanDataSegments(int(srcFile.Fd()), size)
+		if err != nil {
+			return err
+		}
+		for _, seg := range segments {
+			if _, err := srcFile.Seek(seg.Offset, io.SeekStart); err != nil {
+				return fmt.Errorf("seek src to %d: %w", seg.Offset, err)
+			}
+			if _, err := dstFile.Seek(seg.Offset, io.SeekStart); err != nil {
+				return fmt.Errorf("seek dst to %d: %w", seg.Offset, err)
+			}
+			if _, err := io.CopyN(dstFile, srcFile, seg.Length); err != nil {
+				return fmt.Errorf("copy segment at %d len %d: %w", seg.Offset, seg.Length, err)
+			}
+		}
 
-	for _, seg := range segments {
-		if _, err := srcFile.Seek(seg.Offset, io.SeekStart); err != nil {
-			return fmt.Errorf("seek src to %d: %w", seg.Offset, err)
+		if err := dstFile.Sync(); err != nil {
+			return fmt.Errorf("sync dst: %w", err)
 		}
-		if _, err := dstFile.Seek(seg.Offset, io.SeekStart); err != nil {
-			return fmt.Errorf("seek dst to %d: %w", seg.Offset, err)
-		}
-		if _, err := io.CopyN(dstFile, srcFile, seg.Length); err != nil {
-			return fmt.Errorf("copy segment at %d len %d: %w", seg.Offset, seg.Length, err)
-		}
-	}
-
-	if err := dstFile.Sync(); err != nil {
-		return fmt.Errorf("sync dst: %w", err)
-	}
-	cleanup = false
-	return dstFile.Close()
+		return nil
+	})
 }
 
 // scanDataSegments uses SEEK_DATA/SEEK_HOLE to find all data regions in f.

@@ -106,26 +106,8 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	// queue_pairs = num_queues / 2 (TX+RX pair per queue).
-	// Multi-queue requires queue_pairs > 1.
-	queuePairs := max(1, queues/2) //nolint:mnd
-	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
-	if queuePairs <= 1 {
-		flags |= netlink.TUNTAP_ONE_QUEUE
-	} else {
-		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
-	}
-	tap := &netlink.Tuntap{
-		LinkAttrs: netlink.LinkAttrs{Name: tapName},
-		Mode:      netlink.TUNTAP_MODE_TAP,
-		Queues:    queuePairs,
-		Flags:     flags,
-	}
-	if addErr := netlink.LinkAdd(tap); addErr != nil {
-		return "", fmt.Errorf("add tap %s: %w", tapName, addErr)
-	}
-	for _, fd := range tap.Fds {
-		_ = fd.Close()
+	if tapErr := network.CreateTAP(tapName, queues); tapErr != nil {
+		return "", tapErr
 	}
 	tapLink, err := netlink.LinkByName(tapName)
 	if err != nil {

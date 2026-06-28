@@ -20,27 +20,10 @@ func ReflinkCopy(dst, src string) error {
 }
 
 func tryFiclone(dst, src string) error {
-	srcFile, err := os.Open(src) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close() //nolint:errcheck
-
-	dstFile, err := os.Create(dst) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	defer func() {
-		dstFile.Close() //nolint:errcheck,gosec
-		if err != nil {
-			os.Remove(dst) //nolint:errcheck,gosec
+	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd()); errno != 0 {
+			return fmt.Errorf("ficlone: %w", errno)
 		}
-	}()
-
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd())
-	if errno != 0 {
-		err = fmt.Errorf("ficlone: %w", errno)
-		return err
-	}
-	return nil
+		return nil
+	})
 }

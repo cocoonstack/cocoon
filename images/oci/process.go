@@ -3,7 +3,6 @@ package oci
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -60,26 +59,9 @@ func processLayer(ctx context.Context, j layerJob) error {
 	erofsPath := filepath.Join(layerDir, digestHex+".erofs")
 	layerUUID := utils.UUIDv5(digestHex)
 
-	cmd, erofsStdin, output, err := startErofsConversion(ctx, layerUUID, erofsPath)
+	kernelPath, initrdPath, err := runErofsConversion(ctx, rc, layerDir, digestHex, layerUUID, erofsPath)
 	if err != nil {
-		return fmt.Errorf("start erofs conversion: %w", err)
-	}
-
-	tee := io.TeeReader(rc, erofsStdin)
-	kernelPath, initrdPath, scanErr := scanBootFiles(ctx, tee, layerDir, digestHex)
-
-	if scanErr == nil {
-		if _, drainErr := io.Copy(io.Discard, tee); drainErr != nil {
-			scanErr = fmt.Errorf("drain layer stream: %w", drainErr)
-		}
-	}
-	_ = erofsStdin.Close()
-
-	if waitErr := cmd.Wait(); waitErr != nil {
-		return fmt.Errorf("mkfs.erofs failed: %w (output: %s)", waitErr, output.String())
-	}
-	if scanErr != nil {
-		return fmt.Errorf("scan boot files: %w", scanErr)
+		return err
 	}
 
 	j.result.kernelPath = kernelPath
