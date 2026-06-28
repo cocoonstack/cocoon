@@ -221,13 +221,7 @@ func setFATEntry(fat []byte, cluster int, val uint16) {
 // needsLFN reports whether name requires VFAT long-filename entries.
 func needsLFN(name string) bool {
 	upper := strings.ToUpper(name)
-	var base, ext string
-	if dot := strings.LastIndex(upper, "."); dot >= 0 {
-		base = upper[:dot]
-		ext = upper[dot+1:]
-	} else {
-		base = upper
-	}
+	base, ext := splitName(upper)
 	return len(base) > 8 || len(ext) > 3 || name != upper || strings.Count(name, ".") > 1 //nolint:mnd
 }
 
@@ -240,16 +234,20 @@ func blankSFN() [11]byte {
 	return b
 }
 
+// splitName splits an uppercased name into base and extension at the last dot; ext is "" when there is no dot.
+func splitName(upper string) (base, ext string) {
+	if dot := strings.LastIndex(upper, "."); dot >= 0 {
+		return upper[:dot], upper[dot+1:]
+	}
+	return upper, ""
+}
+
 // toShortName pads a simple name (already fits 8.3, uppercase) into an 11-byte SFN.
 func toShortName(name string) [11]byte {
 	result := blankSFN()
-	upper := strings.ToUpper(name)
-	if dot := strings.LastIndex(upper, "."); dot >= 0 {
-		copy(result[:8], upper[:dot])   //nolint:mnd
-		copy(result[8:], upper[dot+1:]) //nolint:mnd
-	} else {
-		copy(result[:8], upper) //nolint:mnd
-	}
+	base, ext := splitName(strings.ToUpper(name))
+	copy(result[:8], base) //nolint:mnd
+	copy(result[8:], ext)  //nolint:mnd
 	return result
 }
 
@@ -257,14 +255,8 @@ func toShortName(name string) [11]byte {
 func generateShortName(name string, seq int) [11]byte {
 	result := blankSFN()
 
-	upper := strings.ToUpper(name)
-	var base, ext string
-	if dot := strings.LastIndex(upper, "."); dot >= 0 {
-		base = strings.ReplaceAll(upper[:dot], ".", "")
-		ext = upper[dot+1:]
-	} else {
-		base = upper
-	}
+	base, ext := splitName(strings.ToUpper(name))
+	base = strings.ReplaceAll(base, ".", "")
 
 	tail := fmt.Sprintf("~%d", seq)
 	maxBase := 8 - len(tail) //nolint:mnd

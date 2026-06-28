@@ -73,20 +73,18 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	var errs []error
 	summary := make(map[string]int, len(locked))
-	failures := 0
 	for _, m := range locked {
 		ids := targets[m.getName()]
 		if len(ids) == 0 {
 			continue
 		}
 		if err := m.collect(ctx, ids, snapshots[m.getName()]); err != nil {
-			failures++
 			errs = append(errs, fmt.Errorf("gc %s: %w", m.getName(), err))
 		}
 		summary[m.getName()] = len(ids)
 	}
 	logger.Infof(ctx, "completed: %s (failures: %d, duration: %s)",
-		formatSummary(summary), failures, time.Since(start).Truncate(time.Millisecond))
+		formatSummary(summary), len(errs), time.Since(start).Truncate(time.Millisecond))
 	return errors.Join(errs...)
 }
 

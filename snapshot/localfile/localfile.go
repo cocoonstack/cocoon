@@ -145,7 +145,7 @@ func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 			if rec == nil || rec.Pending {
 				continue
 			}
-			s := rec.Snapshot // value copy
+			s := rec.Snapshot
 			result = append(result, &s)
 		}
 		return nil

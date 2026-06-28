@@ -3,6 +3,7 @@ package capture
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/cocoonstack/cocoon/metering"
@@ -27,9 +28,7 @@ func (r *Recorder) Emit(_ context.Context, e metering.Entry) {
 func (r *Recorder) Entries() []metering.Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]metering.Entry, len(r.entries))
-	copy(out, r.entries)
-	return out
+	return slices.Clone(r.entries)
 }
 
 func (r *Recorder) Reset() {

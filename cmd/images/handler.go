@@ -2,7 +2,6 @@ package images
 
 import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 
-// imageType identifies the content type detected from a stream.
 type imageType int
 
 type importSourceKind int

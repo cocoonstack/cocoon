@@ -228,7 +228,6 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 	}
 	logger := log.WithFunc("core.EnsureImage")
 
-	// Use digest for lookup when available; fall back to tag/URL.
 	lookupRef := cmp.Or(vmCfg.ImageDigest, vmCfg.Image)
 
 	for _, b := range backends {

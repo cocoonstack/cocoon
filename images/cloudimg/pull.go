@@ -25,7 +25,7 @@ const (
 	// maxDownloadBytes is the maximum allowed download size (20 GiB).
 	maxDownloadBytes int64 = 20 << 30
 
-	// report every 1 MiB
+	// progressInterval is how often download progress is reported (1 MiB).
 	progressInterval = 1 << 20
 )
 
@@ -114,7 +114,7 @@ func withDownload(
 func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progress.Tracker) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("create HTTP request: %w", err)
+		return "", fmt.Errorf("create http request: %w", err)
 	}
 
 	client := &http.Client{Timeout: urlDownloadTimeout}
