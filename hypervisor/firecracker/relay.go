@@ -82,7 +82,7 @@ func RunRelay(ctx context.Context) {
 	pidStr := os.Getenv(relayPIDEnvKey)
 	fcPID, pidErr := strconv.Atoi(pidStr)
 	if pidErr != nil || fcPID <= 0 {
-		log.WithFunc("firecracker.runRelay").Warnf(ctx, "invalid FC PID %q, skipping relay", pidStr)
+		log.WithFunc("firecracker.RunRelay").Warnf(ctx, "invalid FC PID %q, skipping relay", pidStr)
 		return
 	}
 

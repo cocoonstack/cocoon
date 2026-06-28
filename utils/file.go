@@ -149,3 +149,27 @@ func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) 
 	}
 	return result, nil
 }
+
+// copyWithCleanup opens src and creates dst, runs fn to copy the bytes, and removes dst if fn or the final close fails. fn must not close dst.
+func copyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) (err error) {
+	srcFile, err := os.Open(src) //nolint:gosec // caller-controlled internal path
+	if err != nil {
+		return fmt.Errorf("open src: %w", err)
+	}
+	defer srcFile.Close() //nolint:errcheck
+
+	dstFile, err := os.Create(dst) //nolint:gosec // caller-controlled internal path
+	if err != nil {
+		return fmt.Errorf("create dst: %w", err)
+	}
+	defer func() {
+		closeErr := dstFile.Close()
+		if err != nil { // fn failed: drop the partial dst, keep fn's error
+			_ = os.Remove(dst)
+			return
+		}
+		err = closeErr // fn succeeded: surface a close failure but keep dst
+	}()
+
+	return fn(srcFile, dstFile)
+}

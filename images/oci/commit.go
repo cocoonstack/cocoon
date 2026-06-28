@@ -90,18 +90,18 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 	for _, le := range layerEntries {
 		size, err := validFileSize(conf.BlobPath(le.Digest.Hex()))
 		if err != nil {
-			return fmt.Errorf("blob missing for layer %s (concurrent GC?)", le.Digest)
+			return fmt.Errorf("blob missing for layer %s (concurrent GC?): %w", le.Digest, err)
 		}
 		totalSize += size
 	}
 	size, err := validFileSize(conf.KernelPath(kernelLayer.Hex()))
 	if err != nil {
-		return fmt.Errorf("kernel missing for %s (concurrent GC?)", kernelLayer)
+		return fmt.Errorf("kernel missing for %s (concurrent GC?): %w", kernelLayer, err)
 	}
 	totalSize += size
 	size, err = validFileSize(conf.InitrdPath(initrdLayer.Hex()))
 	if err != nil {
-		return fmt.Errorf("initrd missing for %s (concurrent GC?)", initrdLayer)
+		return fmt.Errorf("initrd missing for %s (concurrent GC?): %w", initrdLayer, err)
 	}
 	totalSize += size
 

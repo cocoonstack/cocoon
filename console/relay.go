@@ -35,6 +35,7 @@ func Relay(rw io.ReadWriter, escapeKeys []byte) error {
 	return err
 }
 
+// FormatEscapeChar renders a control byte as caret notation (e.g. ^] for 0x1D).
 func FormatEscapeChar(b byte) string {
 	if b >= 1 && b <= 0x1F {
 		return "^" + string(rune(b+'@'))

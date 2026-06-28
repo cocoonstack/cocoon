@@ -22,6 +22,7 @@ type FileMeteringConfig struct {
 	Path string `json:"path,omitempty" mapstructure:"path"`
 }
 
+// Validate rejects an unknown metering backend at startup.
 func (m MeteringConfig) Validate() error {
 	switch m.Backend {
 	case "", MeteringFile, MeteringNop, MeteringStderr:

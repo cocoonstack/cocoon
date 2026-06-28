@@ -130,7 +130,7 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 	for _, f := range hypervisorFactories {
 		h, err := f.ctor(ctx, conf)
 		if err != nil {
-			return nil, fmt.Errorf("init %s for GC: %w", f.typ, err)
+			return nil, fmt.Errorf("init hypervisor %s: %w", f.typ, err)
 		}
 		result = append(result, h)
 	}
@@ -228,7 +228,6 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 	}
 	logger := log.WithFunc("core.EnsureImage")
 
-	// Use digest for lookup when available; fall back to tag/URL.
 	lookupRef := cmp.Or(vmCfg.ImageDigest, vmCfg.Image)
 
 	for _, b := range backends {

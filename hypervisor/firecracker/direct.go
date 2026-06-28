@@ -20,17 +20,11 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		// Lock writable disks so recoverStaleBackup heals stale data-*.raw.cocoon-clone-backup
-		// before restore overwrites them; otherwise a future clone renames backup over restored data.
-		Wrap: func(rec *hypervisor.VMRecord, inner func() error) error {
-			return withSourceWritableDisksLocked(rec.StorageConfigs, inner)
-		},
+		Wrap:             fc.wrapSourceLocked,
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
 			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, cloneSnapshotFiles)
 		},
-		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-			return fc.restoreAfterExtract(ctx, vmID, vmCfg, rec, fc.conf.COWRawPath(vmID))
-		},
+		AfterExtract: fc.restoreAfterExtractCOW,
 	})
 }
 

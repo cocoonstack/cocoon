@@ -39,3 +39,30 @@ func startErofsConversion(ctx context.Context, uuid, outputPath string) (cmd *ex
 	}
 	return cmd, stdin, output, nil
 }
+
+// runErofsConversion streams src into mkfs.erofs at outPath while scanning for boot files under scanDir.
+// The scan→drain→close→wait order is load-bearing: mkfs.erofs (and any hasher upstream of src) must
+// see the full stream before Wait, and stdin must close before Wait or mkfs.erofs blocks.
+func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix, uuid, outPath string) (kernelPath, initrdPath string, err error) {
+	cmd, stdin, output, err := startErofsConversion(ctx, uuid, outPath)
+	if err != nil {
+		return "", "", fmt.Errorf("start erofs conversion: %w", err)
+	}
+
+	tee := io.TeeReader(src, stdin)
+	kernelPath, initrdPath, scanErr := scanBootFiles(ctx, tee, scanDir, namePrefix)
+	if scanErr == nil {
+		if _, drainErr := io.Copy(io.Discard, tee); drainErr != nil {
+			scanErr = fmt.Errorf("drain layer stream: %w", drainErr)
+		}
+	}
+	_ = stdin.Close()
+
+	if waitErr := cmd.Wait(); waitErr != nil {
+		return "", "", fmt.Errorf("mkfs.erofs failed: %w (output: %s)", waitErr, output.String())
+	}
+	if scanErr != nil {
+		return "", "", fmt.Errorf("scan boot files: %w", scanErr)
+	}
+	return kernelPath, initrdPath, nil
+}

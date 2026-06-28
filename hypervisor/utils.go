@@ -382,7 +382,6 @@ func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) Snapsh
 				return fmt.Errorf("copy %s: %w", name, err)
 			}
 		case SnapshotFileSkip:
-			// do nothing
 		}
 	}
 	return nil

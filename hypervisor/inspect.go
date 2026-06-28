@@ -46,13 +46,13 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 }
 
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {
-	info := rec.VM // value copy
+	info := rec.VM
 	info.Hypervisor = b.Typ
 	if info.State == types.VMStateRunning {
 		info.SocketPath = SocketPath(rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 		// Empty for legacy VMs whose UDS isn't bound.
-		if p := VsockSockPath(rec.RunDir); vsockBound(p) {
+		if p := VsockSockPath(rec.RunDir); isVsockBound(p) {
 			info.VsockSocket = p
 		}
 	}
@@ -106,7 +106,7 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 	})
 }
 
-func vsockBound(path string) bool {
+func isVsockBound(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }

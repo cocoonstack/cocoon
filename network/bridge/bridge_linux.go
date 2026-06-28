@@ -91,8 +91,8 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			mac = spec.Existing.MAC
 		}
 		queues := network.NetNumQueues(vmCfg.CPU)
-		if cErr := createTAP(name, queues); cErr != nil {
-			return nil, fmt.Errorf("create tap %s: %w", name, cErr)
+		if cErr := network.CreateTAP(name, queues); cErr != nil {
+			return nil, cErr
 		}
 		added = append(added, spec.Index)
 
@@ -184,30 +184,6 @@ func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
 			}
 			return fmt.Errorf("delete tap %s: %w", name, err)
 		}
-	}
-	return nil
-}
-
-func createTAP(name string, numQueues int) error {
-	// queue_pairs = num_queues / 2 (TX+RX); multi-queue needs >1, and IFF_MULTI_QUEUE must match CH's expectation.
-	queuePairs := max(1, numQueues/2) //nolint:mnd
-	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
-	if queuePairs <= 1 {
-		flags |= netlink.TUNTAP_ONE_QUEUE
-	} else {
-		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
-	}
-	tap := &netlink.Tuntap{
-		LinkAttrs: netlink.LinkAttrs{Name: name},
-		Mode:      netlink.TUNTAP_MODE_TAP,
-		Queues:    queuePairs,
-		Flags:     flags,
-	}
-	if err := netlink.LinkAdd(tap); err != nil {
-		return err
-	}
-	for _, fd := range tap.Fds {
-		_ = fd.Close()
 	}
 	return nil
 }

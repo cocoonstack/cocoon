@@ -135,28 +135,9 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 	tmpErofsPath := filepath.Join(layerDir, fmt.Sprintf("layer-%d.erofs", j.idx))
 	tmpUUID := utils.UUIDv5(fmt.Sprintf("import-%s-%d", j.label, j.idx))
 
-	cmd, erofsStdin, output, err := startErofsConversion(ctx, tmpUUID, tmpErofsPath)
+	kernelPath, initrdPath, err := runErofsConversion(ctx, teeForHash, layerDir, fmt.Sprintf("import-%d", j.idx), tmpUUID, tmpErofsPath)
 	if err != nil {
-		return fmt.Errorf("start erofs conversion: %w", err)
-	}
-
-	teeForErofs := io.TeeReader(teeForHash, erofsStdin)
-
-	kernelPath, initrdPath, scanErr := scanBootFiles(ctx, teeForErofs, layerDir, fmt.Sprintf("import-%d", j.idx))
-
-	// Drain the rest so the hasher and mkfs.erofs see the full stream.
-	if scanErr == nil {
-		if _, drainErr := io.Copy(io.Discard, teeForErofs); drainErr != nil {
-			scanErr = fmt.Errorf("drain tar stream: %w", drainErr)
-		}
-	}
-	_ = erofsStdin.Close()
-
-	if waitErr := cmd.Wait(); waitErr != nil {
-		return fmt.Errorf("mkfs.erofs failed: %w (output: %s)", waitErr, output.String())
-	}
-	if scanErr != nil {
-		return fmt.Errorf("scan boot files: %w", scanErr)
+		return err
 	}
 
 	digestHex := hex.EncodeToString(hasher.Sum(nil))
