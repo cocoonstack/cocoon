@@ -2,10 +2,6 @@ package images
 
 import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 
-type imageType int
-
-type importSourceKind int
-
 const (
 	// digestDisplayLen = len("sha256:") + 12 hex digits for compact display.
 	digestDisplayLen = 19
@@ -21,6 +17,10 @@ const (
 type Handler struct {
 	cmdcore.BaseHandler
 }
+
+type imageType int
+
+type importSourceKind int
 
 type importLocalPlan struct {
 	kind  importSourceKind
