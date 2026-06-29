@@ -1,6 +1,6 @@
 module github.com/cocoonstack/cocoon
 
-go 1.25.6
+go 1.26.4
 
 require (
 	github.com/cocoonstack/cocoon-agent v0.1.1-0.20260505130343-db13d35d7b13
