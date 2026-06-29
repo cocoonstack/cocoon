@@ -65,26 +65,6 @@ func commit(
 	return nil
 }
 
-func commitExistingBlob(
-	ctx context.Context,
-	conf *Config,
-	store storage.Store[imageIndex],
-	ref string,
-	digestHex string,
-	tracker progress.Tracker,
-) error {
-	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
-
-	if err := store.Update(ctx, func(idx *imageIndex) error {
-		return writeIndexEntry(idx, conf, ref, digestHex)
-	}); err != nil {
-		return fmt.Errorf("update index: %w", err)
-	}
-
-	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDone})
-	return nil
-}
-
 func prepareTmpBlob(
 	ctx context.Context,
 	conf *Config,

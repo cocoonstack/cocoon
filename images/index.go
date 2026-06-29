@@ -2,10 +2,6 @@ package images
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
 	"strings"
 	"time"
 
@@ -87,44 +83,6 @@ func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(st
 		}
 	}
 	return refs
-}
-
-// GCStaleTemp removes temp entries older than StaleTempAge; dirOnly=true skips files.
-// .lock files are never removed — flock syncs on inode, so deleting one races with a current holder.
-func GCStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
-	cutoff := time.Now().Add(-utils.StaleTempAge)
-	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
-		if dirOnly && !e.IsDir() {
-			return false
-		}
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".lock") {
-			return false
-		}
-		info, err := e.Info()
-		return err == nil && info.ModTime().Before(cutoff)
-	})
-}
-
-// GCCollectBlobs removes temp files and blob artifacts by hex ID; module names the gc subsystem for log routing.
-// removers are called for each hex; fs.ErrNotExist errors are ignored.
-func GCCollectBlobs(ctx context.Context, module, tempDir string, dirOnly bool, ids []string, removers ...func(string) error) error {
-	logger := log.WithFunc("gc." + module)
-	var errs []error
-	errs = append(errs, GCStaleTemp(ctx, tempDir, dirOnly)...)
-	for _, hex := range ids {
-		var blobErr error
-		for _, rm := range removers {
-			if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				blobErr = errors.Join(blobErr, err)
-			}
-		}
-		if blobErr != nil {
-			errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, blobErr))
-			continue
-		}
-		logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
-	}
-	return errors.Join(errs...)
 }
 
 // deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps all refs pointing at it.

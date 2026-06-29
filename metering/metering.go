@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-var _ io.WriterTo = Entry{}
+var (
+	_ io.WriterTo = Entry{}
+	_ Recorder    = NopRecorder{}
+)
 
 // Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
 type Kind string

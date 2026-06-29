@@ -43,7 +43,7 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 
 	// Cached fast path: just add the ref.
 	if utils.ValidFile(conf.BlobPath(digestHex)) {
-		if err = commitExistingBlob(ctx, conf, store, name, digestHex, tracker); err != nil {
+		if err = commit(ctx, conf, store, name, tracker, "", digestHex); err != nil {
 			return err
 		}
 		logger.Infof(ctx, "import complete (cached): %s -> sha256:%s", name, digestHex)

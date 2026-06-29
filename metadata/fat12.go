@@ -27,19 +27,6 @@ const (
 	mediaDesc      = 0xF8
 )
 
-// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
-// label is the volume label (e.g. "CIDATA"); files maps filename → content.
-func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
-	b := newFAT12Builder(label)
-
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		if err := b.addFile(name, files[name]); err != nil {
-			return err
-		}
-	}
-	return b.writeTo(w)
-}
-
 type dataEntry struct {
 	data        []byte
 	numClusters int
@@ -110,28 +97,34 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 		shortName = generateShortName(name, b.shortSeq)
 		lfnEntries := makeLFNEntries(name, shortName)
 		for _, entry := range lfnEntries {
-			if b.rootUsed >= rootEntryCount {
-				return fmt.Errorf("fat12: root directory full")
+			if _, err := b.writeDirEntry(entry); err != nil {
+				return err
 			}
-			off := b.rootUsed * dirEntrySize
-			copy(b.rootDir[off:], entry)
-			b.rootUsed++
 		}
 	} else {
 		shortName = toShortName(name)
 	}
 
-	if b.rootUsed >= rootEntryCount {
-		return fmt.Errorf("fat12: root directory full")
+	off, err := b.writeDirEntry(shortName[:])
+	if err != nil {
+		return err
 	}
-	off := b.rootUsed * dirEntrySize
-	copy(b.rootDir[off:], shortName[:])
 	b.rootDir[off+11] = 0x20 // archive //nolint:mnd
 	putTimestamps(b.rootDir[off:], time.Now())
 	binary.LittleEndian.PutUint16(b.rootDir[off+26:], startCluster)         //nolint:mnd
 	binary.LittleEndian.PutUint32(b.rootDir[off+28:], uint32(len(content))) //nolint:mnd,gosec
-	b.rootUsed++
 	return nil
+}
+
+// writeDirEntry copies a 32-byte directory entry into the next free root slot and returns its offset for any follow-up field writes.
+func (b *fat12Builder) writeDirEntry(entry []byte) (int, error) {
+	if b.rootUsed >= rootEntryCount {
+		return 0, fmt.Errorf("fat12: root directory full")
+	}
+	off := b.rootUsed * dirEntrySize
+	copy(b.rootDir[off:], entry)
+	b.rootUsed++
+	return off, nil
 }
 
 // writeTo streams: boot sector → FAT ×2 → root directory → data → zero padding.
@@ -200,6 +193,19 @@ func (b *fat12Builder) makeBootSector() []byte {
 	copy(boot[54:62], "FAT12   ")     //nolint:mnd
 	boot[510], boot[511] = 0x55, 0xAA //nolint:mnd
 	return boot
+}
+
+// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
+// label is the volume label (e.g. "CIDATA"); files maps filename → content.
+func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
+	b := newFAT12Builder(label)
+
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		if err := b.addFile(name, files[name]); err != nil {
+			return err
+		}
+	}
+	return b.writeTo(w)
 }
 
 // setFATEntry writes a 12-bit value into the FAT at the given cluster index.

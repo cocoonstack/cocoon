@@ -17,6 +17,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
+
 func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, bootCfg *types.BootConfig) (*types.VM, error) {
 	return fc.CreateSequence(ctx, id, hypervisor.CreateSpec{
 		VMCfg:          vmCfg,
@@ -68,8 +70,6 @@ func DevPath(idx int) string {
 
 // EnsureVmlinux decompresses kernelPath if needed and returns the ELF path.
 func EnsureVmlinux(kernelPath string) (string, error) {
-	elfMagic := []byte{0x7f, 'E', 'L', 'F'}
-
 	f, err := os.Open(kernelPath) //nolint:gosec
 	if err != nil {
 		return "", fmt.Errorf("open kernel: %w", err)
@@ -115,7 +115,6 @@ func decompressKernel(data []byte) ([]byte, error) {
 		{"gzip", []byte{0x1f, 0x8b, 0x08}},
 	}
 
-	elfMagic := []byte{0x7f, 'E', 'L', 'F'}
 	for _, f := range formats {
 		offset := bytes.Index(data, f.magic)
 		if offset < 0 {

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -24,7 +25,7 @@ func WaitFor(ctx context.Context, timeout, interval time.Duration, check func() 
 		}
 		select {
 		case <-ctx.Done():
-			if ctx.Err() == context.DeadlineExceeded {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return fmt.Errorf("timeout after %s", timeout)
 			}
 			return ctx.Err()

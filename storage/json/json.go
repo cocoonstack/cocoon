@@ -41,10 +41,7 @@ func (s *Store[T]) WriteRaw(fn func(*T) error) error {
 	if err := fn(data); err != nil {
 		return err
 	}
-	if err := utils.AtomicWriteJSON(s.filePath, data); err != nil {
-		return err
-	}
-	return nil
+	return utils.AtomicWriteJSON(s.filePath, data)
 }
 
 // With runs fn read-only under the store lock.

@@ -145,7 +145,7 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 	logger := log.WithFunc("cni.tearDownNICs")
 	if c.cniConf == nil {
 		if !bestEffort {
-			return fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
+			return c.errNoConflist()
 		}
 		return nil
 	}
@@ -198,13 +198,17 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 // Empty name returns the default (first alphabetically).
 func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 	if len(c.confLists) == 0 {
-		return nil, fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
+		return nil, c.errNoConflist()
 	}
 	cl, ok := c.confLists[cmp.Or(name, c.defaultName)]
 	if !ok {
 		return nil, fmt.Errorf("conflist %q not found (available: %s)", name, strings.Join(slices.Sorted(maps.Keys(c.confLists)), ", "))
 	}
 	return cl, nil
+}
+
+func (c *CNI) errNoConflist() error {
+	return fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
 }
 
 // loadConfLists loads all .conflist files from dir.

@@ -24,6 +24,98 @@ type SnapshotMeta struct {
 	Memory int64 `json:"memory,omitempty"`
 }
 
+// RecordSnapshot generates a snapshot ID and records it on the VM's record.
+func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
+	snapID := utils.GenerateID()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r, err := idx.GetRecord(vmID)
+		if err != nil {
+			return err
+		}
+		if r.SnapshotIDs == nil {
+			r.SnapshotIDs = make(map[string]struct{})
+		}
+		r.SnapshotIDs[snapID] = struct{}{}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("record snapshot on VM: %w", err)
+	}
+	return snapID, nil
+}
+
+func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
+	cfg := &types.SnapshotConfig{
+		ID:           snapID,
+		Hypervisor:   b.Typ,
+		NICs:         len(rec.NetworkConfigs),
+		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
+		Config:       rec.Config.Config,
+	}
+	return cfg
+}
+
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
+func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
+	vmID, err := b.ResolveRef(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	rec, err := b.LoadRecord(ctx, vmID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
+		return nil, nil, fmt.Errorf("storage invariants violated: %w", vErr)
+	}
+
+	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
+		}
+	}()
+
+	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
+	pause := func() error { return spec.Pause(&rec, hc) }
+	resume := func() error { return spec.Resume(&rec, hc) }
+	captureWindow := func() error {
+		return b.WithPausedVM(ctx, &rec, pause, resume, func() error {
+			return spec.Capture(&rec, hc, tmpDir)
+		})
+	}
+	if spec.Wrap != nil {
+		err = spec.Wrap(&rec, captureWindow)
+	} else {
+		err = captureWindow()
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
+	}
+
+	if spec.AfterCapture != nil {
+		if err = spec.AfterCapture(&rec, tmpDir); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	meta, err := spec.BuildMeta(&rec, tmpDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build snapshot metadata: %w", err)
+	}
+	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
+		return nil, nil, fmt.Errorf("save snapshot metadata: %w", err)
+	}
+
+	snapID, err := b.RecordSnapshot(ctx, vmID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
+}
+
 func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
 	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta)
 }
@@ -123,96 +215,4 @@ func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(id
 		out[len(layers)-1-i] = project(i, sc)
 	}
 	return out
-}
-
-// RecordSnapshot generates a snapshot ID and records it on the VM's record.
-func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
-	snapID := utils.GenerateID()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
-		if r.SnapshotIDs == nil {
-			r.SnapshotIDs = make(map[string]struct{})
-		}
-		r.SnapshotIDs[snapID] = struct{}{}
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("record snapshot on VM: %w", err)
-	}
-	return snapID, nil
-}
-
-func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
-	cfg := &types.SnapshotConfig{
-		ID:           snapID,
-		Hypervisor:   b.Typ,
-		NICs:         len(rec.NetworkConfigs),
-		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
-		Config:       rec.Config.Config,
-	}
-	return cfg
-}
-
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
-func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
-	vmID, err := b.ResolveRef(ctx, ref)
-	if err != nil {
-		return nil, nil, err
-	}
-	rec, err := b.LoadRecord(ctx, vmID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return nil, nil, fmt.Errorf("storage invariants violated: %w", vErr)
-	}
-
-	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
-	if err != nil {
-		return nil, nil, fmt.Errorf("create temp dir: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
-		}
-	}()
-
-	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
-	pause := func() error { return spec.Pause(&rec, hc) }
-	resume := func() error { return spec.Resume(&rec, hc) }
-	captureWindow := func() error {
-		return b.WithPausedVM(ctx, &rec, pause, resume, func() error {
-			return spec.Capture(&rec, hc, tmpDir)
-		})
-	}
-	if spec.Wrap != nil {
-		err = spec.Wrap(&rec, captureWindow)
-	} else {
-		err = captureWindow()
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
-	}
-
-	if spec.AfterCapture != nil {
-		if err = spec.AfterCapture(&rec, tmpDir); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	meta, err := spec.BuildMeta(&rec, tmpDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build snapshot metadata: %w", err)
-	}
-	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
-		return nil, nil, fmt.Errorf("save snapshot metadata: %w", err)
-	}
-
-	snapID, err := b.RecordSnapshot(ctx, vmID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return b.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
 }

@@ -33,7 +33,7 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 // Add creates the netns (if absent) and allocates each NIC's CNI plumbing.
 func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
-		return nil, fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
+		return nil, c.errNoConflist()
 	}
 	if len(specs) == 0 {
 		return nil, nil
