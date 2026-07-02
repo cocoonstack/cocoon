@@ -44,7 +44,6 @@ type fat12Builder struct {
 }
 
 // CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
-// label is the volume label (e.g. "CIDATA"); files maps filename → content.
 func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 	b := newFAT12Builder(label)
 

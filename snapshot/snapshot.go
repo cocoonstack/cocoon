@@ -38,8 +38,7 @@ type Snapshot interface {
 	// Restore restores a snapshot by ID or name, returning the snapshot config and a data stream.
 	Restore(ctx context.Context, ref string) (types.SnapshotConfig, io.ReadCloser, error)
 
-	// Export streams the snapshot as a raw tar archive.
-	// The archive includes a snapshot.json metadata entry followed by data files.
+	// Export streams the snapshot as a raw tar (snapshot.json entry first, then data files).
 	Export(ctx context.Context, ref string) (io.ReadCloser, error)
 	// Import reads a snapshot tar (gzip auto-detected); non-empty name/description override the envelope.
 	Import(ctx context.Context, r io.Reader, name, description string) (string, error)

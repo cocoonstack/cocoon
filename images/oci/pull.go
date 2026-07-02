@@ -15,16 +15,14 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// pullLayerResult holds the output of processing a single layer.
 type pullLayerResult struct {
 	index      int
 	digest     images.Digest
 	erofsPath  string
-	kernelPath string // non-empty if this layer contains a kernel
-	initrdPath string // non-empty if this layer contains an initrd
+	kernelPath string
+	initrdPath string
 }
 
-// pull downloads an OCI image, extracts boot files, and converts each layer to EROFS concurrently.
 func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], imageRef string, tracker progress.Tracker) error {
 	logger := log.WithFunc("oci.pull")
 

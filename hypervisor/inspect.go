@@ -25,15 +25,11 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	var recs []*VMRecord
 	if err := b.DB.With(ctx, func(idx *VMIndex) error {
-		recs = make([]*VMRecord, 0, len(idx.VMs))
-		for _, r := range idx.VMs {
-			if r == nil {
-				continue
-			}
+		recs = utils.MapValues(idx.VMs, func(r *VMRecord) *VMRecord {
 			cp := *r
 			cp.SnapshotIDs = maps.Clone(r.SnapshotIDs)
-			recs = append(recs, &cp)
-		}
+			return &cp
+		})
 		return nil
 	}); err != nil {
 		return nil, err

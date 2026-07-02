@@ -14,28 +14,23 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-var (
-	// qcow2Magic is the qcow2 file signature.
-	qcow2Magic = []byte{'Q', 'F', 'I', 0xfb}
+// nonImageSignatures catches common payloads qemu-img would misclassify as raw.
+var nonImageSignatures = []struct {
+	prefix []byte
+	desc   string
+}{
+	{[]byte("<!"), "content looks like HTML/XML, not a disk image"},
+	{[]byte("<?"), "content looks like HTML/XML, not a disk image"},
+	{[]byte("<h"), "content looks like HTML, not a disk image"},
+	{[]byte("<H"), "content looks like HTML, not a disk image"},
+	{utils.GzipMagic, "content is gzip-compressed (cloudimg does not auto-decompress)"},
+	{[]byte("\xfd7zXZ\x00"), "content is xz-compressed (cloudimg does not auto-decompress)"},
 
-	// nonImageSignatures catches common payloads qemu-img would misclassify as raw.
-	nonImageSignatures = []struct {
-		prefix []byte
-		desc   string
-	}{
-		{[]byte("<!"), "content looks like HTML/XML, not a disk image"},
-		{[]byte("<?"), "content looks like HTML/XML, not a disk image"},
-		{[]byte("<h"), "content looks like HTML, not a disk image"},
-		{[]byte("<H"), "content looks like HTML, not a disk image"},
-		{[]byte{0x1f, 0x8b}, "content is gzip-compressed (cloudimg does not auto-decompress)"},
-		{[]byte("\xfd7zXZ\x00"), "content is xz-compressed (cloudimg does not auto-decompress)"},
-
-		{[]byte("BZh"), "content is bzip2-compressed (cloudimg does not auto-decompress)"},
-		{[]byte{0x28, 0xb5, 0x2f, 0xfd}, "content is zstd-compressed (cloudimg does not auto-decompress)"},
-		{[]byte("PK"), "content is a zip archive, not a disk image"},
-		{[]byte{0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c}, "content is a 7z archive, not a disk image"},
-	}
-)
+	{[]byte("BZh"), "content is bzip2-compressed (cloudimg does not auto-decompress)"},
+	{[]byte{0x28, 0xb5, 0x2f, 0xfd}, "content is zstd-compressed (cloudimg does not auto-decompress)"},
+	{[]byte("PK"), "content is a zip archive, not a disk image"},
+	{[]byte{0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c}, "content is a 7z archive, not a disk image"},
+}
 
 type sourceImageInfo struct {
 	Format         string // "qcow2" or "raw"
@@ -55,7 +50,7 @@ func sniffHead(head []byte) error {
 	if len(head) < 4 {
 		return fmt.Errorf("content too small to be a disk image (%d bytes)", len(head))
 	}
-	if bytes.HasPrefix(head, qcow2Magic) {
+	if bytes.HasPrefix(head, utils.Qcow2Magic) {
 		return nil
 	}
 	for _, sig := range nonImageSignatures {
@@ -105,7 +100,7 @@ func inspectQcow2Header(path string) (*sourceImageInfo, bool, error) {
 	if _, err := io.ReadFull(f, header[:]); err != nil {
 		return nil, false, nil
 	}
-	if !bytes.Equal(header[:4], qcow2Magic) {
+	if !bytes.Equal(header[:4], utils.Qcow2Magic) {
 		return nil, false, nil
 	}
 	var compat string

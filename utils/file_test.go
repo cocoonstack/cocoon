@@ -3,7 +3,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -32,7 +32,6 @@ func TestEnsureDirs_CreateNew(t *testing.T) {
 
 func TestEnsureDirs_AlreadyExist(t *testing.T) {
 	dir := t.TempDir()
-	// Should not error when dirs already exist.
 	if err := EnsureDirs(dir); err != nil {
 		t.Fatalf("EnsureDirs on existing dir: %v", err)
 	}
@@ -49,7 +48,6 @@ func TestEnsureDirs_FailsUnderFile(t *testing.T) {
 	file := filepath.Join(dir, "regular_file")
 	os.WriteFile(file, []byte("x"), 0o644) //nolint:errcheck
 
-	// Trying to create a dir under a regular file should fail.
 	err := EnsureDirs(filepath.Join(file, "subdir"))
 	if err == nil {
 		t.Fatal("expected error when creating dir under a file")
@@ -104,7 +102,7 @@ func TestScanFileStems_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(stems)
+	slices.Sort(stems)
 	if len(stems) != 2 || stems[0] != "abc" || stems[1] != "def" {
 		t.Errorf("got %v, want [abc def]", stems)
 	}
@@ -154,7 +152,7 @@ func TestScanSubdirs_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(subs)
+	slices.Sort(subs)
 	if len(subs) != 2 || subs[0] != "sub1" || subs[1] != "sub2" {
 		t.Errorf("got %v, want [sub1 sub2]", subs)
 	}
@@ -198,7 +196,7 @@ func TestFilterUnreferenced_Basic(t *testing.T) {
 	refs := map[string]struct{}{"a": {}, "c": {}}
 
 	got := FilterUnreferenced(candidates, refs)
-	sort.Strings(got)
+	slices.Sort(got)
 	if len(got) != 2 || got[0] != "b" || got[1] != "d" {
 		t.Errorf("got %v, want [b d]", got)
 	}
@@ -210,7 +208,7 @@ func TestFilterUnreferenced_WithExclude(t *testing.T) {
 	exclude := map[string]struct{}{"b": {}}
 
 	got := FilterUnreferenced(candidates, refs, exclude)
-	sort.Strings(got)
+	slices.Sort(got)
 	if len(got) != 2 || got[0] != "c" || got[1] != "d" {
 		t.Errorf("got %v, want [c d]", got)
 	}
@@ -250,7 +248,7 @@ func TestFilterUnreferenced_MultipleExcludeSets(t *testing.T) {
 	ex2 := map[string]struct{}{"c": {}}
 
 	got := FilterUnreferenced(candidates, refs, ex1, ex2)
-	sort.Strings(got)
+	slices.Sort(got)
 	if len(got) != 2 || got[0] != "d" || got[1] != "e" {
 		t.Errorf("got %v, want [d e]", got)
 	}

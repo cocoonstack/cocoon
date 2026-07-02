@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-// helpers
-
 // writeAt writes data at the given offset in f, leaving a hole before it if offset > current size.
 func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
 	t.Helper()
@@ -44,8 +42,6 @@ func readFull(t *testing.T, path string) []byte {
 	return data
 }
 
-// tests
-
 func TestSparseCopy_AllSparse(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
@@ -66,7 +62,6 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
-	// Verify size matches.
 	dstInfo, err := os.Stat(dst)
 	if err != nil {
 		t.Fatal(err)
@@ -75,13 +70,11 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 		t.Errorf("size: got %d, want %d", dstInfo.Size(), size)
 	}
 
-	// Verify content is all zeros.
 	got := readFull(t, dst)
 	if !bytes.Equal(got, make([]byte, size)) {
 		t.Error("content mismatch: expected all zeros")
 	}
 
-	// Verify dst is sparse (very few blocks allocated).
 	blocks := fileBlocks(t, dst)
 	if blocks > 16 { // 16 * 512 = 8KB — generous threshold for metadata
 		t.Errorf("expected sparse dst, got %d blocks", blocks)
@@ -102,7 +95,6 @@ func TestSparseCopy_PartialData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write a small chunk at offset 4096.
 	data := []byte("hello sparse world!")
 	writeAt(t, f, 4096, data)
 	f.Close()
@@ -111,14 +103,12 @@ func TestSparseCopy_PartialData(t *testing.T) {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
-	// Content must match exactly.
 	srcData := readFull(t, src)
 	dstData := readFull(t, dst)
 	if !bytes.Equal(srcData, dstData) {
 		t.Error("content mismatch")
 	}
 
-	// Dst should be sparse — far fewer blocks than full size.
 	blocks := fileBlocks(t, dst)
 	fullBlocks := int64(size / 512)
 	if blocks >= fullBlocks/2 {
@@ -131,7 +121,6 @@ func TestSparseCopy_NonSparse(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	// Create a fully written file.
 	data := bytes.Repeat([]byte("X"), 64*1024) // 64KB
 	if err := os.WriteFile(src, data, 0o644); err != nil {
 		t.Fatal(err)
@@ -209,7 +198,6 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 		t.Error("content mismatch")
 	}
 
-	// Should be sparse.
 	blocks := fileBlocks(t, dst)
 	fullBlocks := int64(size / 512)
 	if blocks >= fullBlocks/2 {

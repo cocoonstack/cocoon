@@ -24,8 +24,7 @@ var (
 	// "cocoon-" is reserved so cocoon-derived ids never collide.
 	validIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
-	// ErrUnsupportedBackend signals the resolved hypervisor backend cannot
-	// hot-plug VFIO devices (e.g. Firecracker).
+	// ErrUnsupportedBackend signals the backend cannot hot-plug VFIO devices (e.g. Firecracker).
 	ErrUnsupportedBackend = errors.New("backend does not support device attach")
 )
 

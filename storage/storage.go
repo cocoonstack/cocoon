@@ -9,17 +9,14 @@ type Initer interface {
 	Init()
 }
 
-// Store provides locked read/modify/write access to a data store.
-// T is the top-level structure managed by the store.
+// Store provides locked read/modify/write access to a data store of top-level type T.
 type Store[T any] interface {
 	// With loads under lock and passes to fn; *T's Init() runs first if implemented; lock held for fn's duration.
 	With(ctx context.Context, fn func(*T) error) error
-	// Update performs a read-modify-write under lock.
-	// If fn returns nil the data is persisted.
+	// Update performs a read-modify-write under lock; persists only if fn returns nil.
 	Update(ctx context.Context, fn func(*T) error) error
 
-	// ReadRaw deserializes the data and passes it to fn without acquiring the lock.
-	// The caller must already hold the lock via TryLock.
+	// ReadRaw deserializes and passes to fn without locking; caller must already hold the lock via TryLock.
 	ReadRaw(fn func(*T) error) error
 	// WriteRaw deserializes, runs fn, atomically persists; caller must hold the lock (via TryLock).
 	WriteRaw(fn func(*T) error) error

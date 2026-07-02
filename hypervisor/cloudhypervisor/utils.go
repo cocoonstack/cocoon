@@ -23,8 +23,7 @@ func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRe
 	}
 }
 
-// cowPath returns the writable COW disk path for a VM.
-// Direct-boot (OCI) uses a raw file; UEFI (cloudimg) uses a qcow2 overlay.
+// cowPath returns the writable COW disk: raw for direct-boot (OCI), qcow2 overlay for UEFI (cloudimg).
 func (ch *CloudHypervisor) cowPath(vmID string, directBoot bool) string {
 	if directBoot {
 		return ch.conf.COWRawPath(vmID)
@@ -52,8 +51,7 @@ func qemuExpandImage(ctx context.Context, path string, targetSize int64, directB
 	return nil
 }
 
-// readQcow2VirtualSize reads the virtual size from a qcow2 file header.
-// The qcow2 header stores the virtual size as a big-endian uint64 at offset 24.
+// readQcow2VirtualSize reads the big-endian uint64 virtual size at qcow2 header offset 24.
 func readQcow2VirtualSize(path string) (int64, error) {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {

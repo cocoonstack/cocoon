@@ -9,8 +9,7 @@ import (
 	"syscall"
 )
 
-// AtomicWriteFile writes data to a file atomically using temp + fsync + rename.
-// This prevents partial writes from being visible to readers.
+// AtomicWriteFile writes data via temp + fsync + rename so readers never see a partial file.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")

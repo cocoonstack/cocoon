@@ -150,7 +150,7 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 	}
 }
 
-// pickLRU returns evict IDs keyed by reason ("+" joins multi-match; no criteria → "lru-all").
+// pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {
 		return records[a].lastAccessed.Compare(records[b].lastAccessed)

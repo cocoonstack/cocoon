@@ -24,7 +24,6 @@ import (
 
 const typ = "localfile"
 
-// compile-time interface checks.
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
 	_ snapshot.Direct             = (*LocalFile)(nil)
@@ -40,6 +39,7 @@ func WithGCPolicy(p EvictionPolicy) Option {
 	return func(lf *LocalFile) { lf.gcPolicy = p }
 }
 
+// LocalFile is the local-filesystem snapshot backend.
 type LocalFile struct {
 	conf     *Config
 	store    storage.Store[snapshot.SnapshotIndex]

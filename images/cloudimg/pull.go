@@ -125,7 +125,7 @@ func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progr
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http get %s: status %d %s", url, resp.StatusCode, resp.Status)
+		return "", fmt.Errorf("http get %s: status %s", url, resp.Status)
 	}
 
 	contentLength := resp.ContentLength

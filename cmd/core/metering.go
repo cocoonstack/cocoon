@@ -41,7 +41,7 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	case "stderr":
 		return meteringstderr.New()
 	default:
-		log.WithFunc("core.MeteringRecorder").Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
+		log.WithFunc("core.buildRecorder").Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
 		return metering.NopRecorder{}
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// FC REST API constants.
 const (
 	actionInstanceStart  = "InstanceStart"
 	actionSendCtrlAltDel = "SendCtrlAltDel"
@@ -72,7 +71,6 @@ type fcVsock struct {
 	UDSPath  string `json:"uds_path"`
 }
 
-// FC snapshot/load request types.
 type fcSnapshotCreate struct {
 	SnapshotPath string `json:"snapshot_path"`
 	MemFilePath  string `json:"mem_file_path"`

@@ -449,8 +449,7 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 	}, nil
 }
 
-// createSparseFile creates path as a sparse file truncated to size, matching
-// PrepareOCICOW's pattern. os.Truncate alone won't create a missing file.
+// createSparseFile creates path truncated to size; os.Truncate alone won't create a missing file.
 func createSparseFile(path string, size int64) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
 	if err != nil {

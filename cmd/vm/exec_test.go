@@ -77,8 +77,7 @@ func TestReadHybridVsockReply(t *testing.T) {
 	}
 }
 
-// TestDialHybridVsock_ConnectHandshake spins up an in-process listener that
-// speaks the CH/FC hybrid vsock dialect (CONNECT <port>\n → OK <port>\n).
+// TestDialHybridVsock_ConnectHandshake drives the CH/FC hybrid vsock dialect (CONNECT <port>\n → OK <port>\n) against an in-process listener.
 func TestDialHybridVsock_ConnectHandshake(t *testing.T) {
 	// macOS caps unix socket paths at ~104 bytes, so t.TempDir() (long
 	// /var/folders/... path) can overflow. Use os.CreateTemp + immediate unlink.

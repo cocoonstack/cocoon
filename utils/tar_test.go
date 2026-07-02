@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -61,7 +63,7 @@ func TestTarFile(t *testing.T) {
 	if !bytes.Equal(got, content) {
 		t.Errorf("content mismatch: got %q, want %q", got, content)
 	}
-	if _, err := tr.Next(); err != io.EOF {
+	if _, err := tr.Next(); !errors.Is(err, io.EOF) {
 		t.Errorf("expected EOF, got %v", err)
 	}
 }
@@ -168,7 +170,7 @@ func TestTarDir_Empty(t *testing.T) {
 	tw.Close() //nolint:errcheck
 
 	tr := tar.NewReader(&buf)
-	if _, err := tr.Next(); err != io.EOF {
+	if _, err := tr.Next(); !errors.Is(err, io.EOF) {
 		t.Errorf("expected EOF for empty dir, got %v", err)
 	}
 }
@@ -351,9 +353,7 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 	}
 }
 
-// makeTarSparse builds a tar archive containing one file stored in our custom
-// COCOON.sparse PAX format. Only the bytes described by segments are stored;
-// the logical file size is realSize.
+// makeTarSparse builds a tar with one COCOON.sparse PAX entry (stored bytes = segments, logical size = realSize).
 func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseSegment, data []byte) *bytes.Buffer {
 	t.Helper()
 	mapJSON, err := json.Marshal(segments)
@@ -436,7 +436,7 @@ func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
 		{Offset: 16384, Length: 4096},
 		{Offset: 49152, Length: 8192},
 	}
-	data := concat(seg1, seg2, seg3)
+	data := slices.Concat(seg1, seg2, seg3)
 
 	buf := makeTarSparse(t, "multi.bin", realSize, segments, data)
 	dir := t.TempDir()
@@ -545,11 +545,9 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	// Regular file first.
 	tw.WriteHeader(&tar.Header{Name: "regular.txt", Size: 5, Typeflag: tar.TypeReg, Mode: 0o644}) //nolint:errcheck
 	tw.Write([]byte("hello"))                                                                     //nolint:errcheck
 
-	// Sparse file.
 	tw.WriteHeader(&tar.Header{ //nolint:errcheck
 		Name:     "sparse.bin",
 		Size:     int64(len(dataContent)),
@@ -568,7 +566,6 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify regular file.
 	got, err := os.ReadFile(filepath.Join(dir, "regular.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -577,7 +574,6 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 		t.Errorf("regular.txt: got %q", got)
 	}
 
-	// Verify sparse file.
 	got, err = os.ReadFile(filepath.Join(dir, "sparse.bin"))
 	if err != nil {
 		t.Fatal(err)
@@ -638,7 +634,7 @@ func TestExtractFile_MixedZeroAndData(t *testing.T) {
 	// Pattern: [4KB zeros] [4KB data] [4KB zeros] [4KB data]
 	zeroBlock := make([]byte, sparseBlockSize)
 	dataBlock := bytes.Repeat([]byte{0xCC}, sparseBlockSize)
-	data := concat(zeroBlock, dataBlock, zeroBlock, dataBlock)
+	data := slices.Concat(zeroBlock, dataBlock, zeroBlock, dataBlock)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mixed.bin")
@@ -660,7 +656,7 @@ func TestExtractFile_EndsWithHole(t *testing.T) {
 	// 4KB data then 4KB zeros — file must be truncated to 8KB.
 	dataBlock := bytes.Repeat([]byte{0xDD}, sparseBlockSize)
 	zeroBlock := make([]byte, sparseBlockSize)
-	data := concat(dataBlock, zeroBlock)
+	data := slices.Concat(dataBlock, zeroBlock)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "endhole.bin")
@@ -887,12 +883,4 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	if !bytes.Equal(gotSmall, small) {
 		t.Error("small.txt mismatch")
 	}
-}
-
-func concat(slices ...[]byte) []byte {
-	var out []byte
-	for _, s := range slices {
-		out = append(out, s...)
-	}
-	return out
 }

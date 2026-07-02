@@ -50,7 +50,6 @@ func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 		Resolve: func(_ context.Context, snap bridgeSnapshot, others map[string]any) []string {
 			active := gc.Collect(others, gc.VMIDs)
 
-			// Build set of 8-char prefixes from active VM IDs.
 			activePrefixes := make(map[string]struct{}, len(active))
 			for id := range active {
 				activePrefixes[network.VMIDPrefix(id)] = struct{}{}
@@ -98,7 +97,6 @@ func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 }
 
 // parseTAPName extracts the vmID prefix from a bridge TAP name like "bt<prefix>-<nic>".
-// Returns the prefix and true, or ("", false) if the name doesn't match.
 func parseTAPName(name string) (string, bool) {
 	rest, ok := strings.CutPrefix(name, tapPrefix)
 	if !ok {

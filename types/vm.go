@@ -36,8 +36,7 @@ type VMConfig struct {
 	DataDisks []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
 }
 
-// NetSetup is the VM's host networking state: backend, netns, bridge, and attached NICs.
-// Embedded into VM and also used as the initNetwork → hypervisor handoff.
+// NetSetup is the VM's host networking state, embedded in VM and reused as the initNetwork → hypervisor handoff.
 type NetSetup struct {
 	NetBackend     string           `json:"net_backend,omitempty"`
 	NetnsPath      string           `json:"netns_path,omitempty"`
@@ -57,17 +56,15 @@ type VM struct {
 	SocketPath  string `json:"socket_path,omitempty"`  // CH API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 
-	// Network — embedded; fields promote (vm.NetBackend, vm.NetworkConfigs, ...).
+	// Network.
 	NetSetup
 
 	StorageConfigs []*StorageConfig `json:"storage_configs,omitempty"`
 
-	// FirstBooted is true after the VM has been started at least once.
-	// Used to skip cidata attachment on subsequent starts (cloudimg only).
+	// FirstBooted is set after the first start; skips cidata attachment on later starts (cloudimg only).
 	FirstBooted bool `json:"first_booted"`
 
-	// SnapshotIDs tracks snapshots created from this VM.
-	// Populated at runtime by toVM() from VMRecord.SnapshotIDs.
+	// SnapshotIDs tracks snapshots created from this VM; populated by toVM() from VMRecord.SnapshotIDs.
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
 
 	// Timestamps.
@@ -117,8 +114,8 @@ func (v *VM) ResolvedNetnsPath() string {
 	if v.NetnsPath != "" {
 		return v.NetnsPath
 	}
-	if len(v.NetworkConfigs) > 0 {
-		return v.NetworkConfigs[0].NetnsPath
+	if nic := v.firstNIC(); nic != nil {
+		return nic.NetnsPath
 	}
 	return ""
 }
@@ -131,9 +128,9 @@ func (v *VM) ResolvedNetBackend() string {
 	if v.NetBackend != "" {
 		return v.NetBackend
 	}
-	if len(v.NetworkConfigs) > 0 {
-		if b := v.NetworkConfigs[0].Backend; b != "" {
-			return b
+	if nic := v.firstNIC(); nic != nil {
+		if nic.Backend != "" {
+			return nic.Backend
 		}
 		return BackendCNI
 	}
@@ -148,8 +145,16 @@ func (v *VM) ResolvedNetBridgeDev() string {
 	if v.NetBridgeDev != "" {
 		return v.NetBridgeDev
 	}
-	if len(v.NetworkConfigs) > 0 {
-		return v.NetworkConfigs[0].BridgeDev
+	if nic := v.firstNIC(); nic != nil {
+		return nic.BridgeDev
 	}
 	return ""
+}
+
+// firstNIC returns NIC[0] (nil when absent or the entry is null).
+func (v *VM) firstNIC() *NetworkConfig {
+	if v == nil || len(v.NetworkConfigs) == 0 {
+		return nil
+	}
+	return v.NetworkConfigs[0]
 }

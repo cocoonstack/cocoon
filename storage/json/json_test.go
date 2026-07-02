@@ -32,7 +32,6 @@ func TestLoadFreshFromDisk(t *testing.T) {
 	dir := t.TempDir()
 	dataPath := filepath.Join(dir, "data.json")
 
-	// Write directly to disk.
 	original := testData{Name: "alice", Count: 1}
 	raw, _ := json.Marshal(original)
 	if err := os.WriteFile(dataPath, raw, 0o644); err != nil {
@@ -41,7 +40,6 @@ func TestLoadFreshFromDisk(t *testing.T) {
 
 	s := New[testData](dataPath, flock.New(filepath.Join(dir, "data.lock")))
 
-	// First read.
 	if err := s.ReadRaw(func(d *testData) error {
 		if d.Name != "alice" {
 			t.Fatalf("expected alice, got %s", d.Name)
@@ -80,7 +78,6 @@ func TestCrossInstanceVisibility(t *testing.T) {
 	a := newTestStore(t, dir, "shared")
 	b := newTestStore(t, dir, "shared")
 
-	// A writes.
 	if err := a.Update(ctx, func(d *testData) error {
 		d.Name = "from-a"
 		d.Count = 42
@@ -110,7 +107,6 @@ func TestTryLockThenReadRaw(t *testing.T) {
 	a := newTestStore(t, dir, "trylock")
 	b := newTestStore(t, dir, "trylock")
 
-	// A writes initial data.
 	if err := a.Update(ctx, func(d *testData) error {
 		d.Name = "initial"
 		return nil
@@ -118,7 +114,6 @@ func TestTryLockThenReadRaw(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// B acquires via TryLock, uses WriteRaw, then Unlock.
 	ok, err := b.TryLock(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,12 +86,9 @@ func hasMemoryRangeFile(srcDir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), memoryRangeFile) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return slices.ContainsFunc(entries, func(e os.DirEntry) bool {
+		return strings.HasPrefix(e.Name(), memoryRangeFile)
+	}), nil
 }
 
 // vmAPIOnce is a single PUT for non-idempotent endpoints; returns raw body so add-fs/add-device can decode PciDeviceInfo.
@@ -254,8 +252,7 @@ func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) 
 	return info.Config.Console.File, nil
 }
 
-// resolveConsole determines the console path for a VM after launch.
-// Direct-boot (OCI) VMs use a PTY allocated by CH; UEFI VMs use a Unix socket.
+// resolveConsole returns the CH-allocated PTY (direct-boot OCI) or the console socket (UEFI).
 func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, directBoot bool) string {
 	if directBoot {
 		consolePath, err := utils.DoWithRetry(ctx, func() (string, error) {

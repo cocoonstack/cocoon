@@ -36,6 +36,7 @@ type CNI struct {
 	confLists   map[string]*libcni.NetworkConfigList // name → conflist
 	defaultName string                               // first conflist name (backward compat)
 	cniConf     *libcni.CNIConfig
+	loadErr     error // conflist load failure, surfaced by errNoConflist
 }
 
 // New creates a CNI provider; conflist loading is best-effort so Delete/Inspect/List still work when none are available — Add fails in that case.
@@ -66,6 +67,8 @@ func New(conf *config.Config) (*CNI, error) {
 			cfg.CacheDir(),
 			nil,
 		)
+	} else {
+		c.loadErr = loadErr
 	}
 
 	return c, nil
@@ -83,8 +86,7 @@ func (c *CNI) Verify(_ context.Context, vmID string) error {
 	return nil
 }
 
-// Inspect returns the network record for a single network ID.
-// Returns (nil, nil) if not found.
+// Inspect returns the network record for id, or (nil, nil) if not found.
 func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 	var result *types.Network
 	return result, c.store.With(ctx, func(idx *networkIndex) error {
@@ -92,7 +94,7 @@ func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 		if rec == nil {
 			return nil
 		}
-		net := rec.Network // value copy
+		net := rec.Network // value copy — detached from the locked index
 		result = &net
 		return nil
 	})
@@ -194,8 +196,7 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 	})
 }
 
-// confListByName resolves a conflist by name.
-// Empty name returns the default (first alphabetically).
+// confListByName resolves a conflist by name; empty name returns the default (first alphabetically).
 func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 	if len(c.confLists) == 0 {
 		return nil, c.errNoConflist()
@@ -208,11 +209,13 @@ func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 }
 
 func (c *CNI) errNoConflist() error {
+	if c.loadErr != nil {
+		return fmt.Errorf("%w: load conflists from %s: %w", network.ErrNotConfigured, c.conf.CNIConfDir, c.loadErr)
+	}
 	return fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
 }
 
-// loadConfLists loads all .conflist files from dir.
-// Returns the map of name→conflist and the default name (first file, alphabetically).
+// loadConfLists loads all .conflist files from dir, returning name→conflist and the default (alphabetically first) name.
 func loadConfLists(dir string) (map[string]*libcni.NetworkConfigList, string, error) {
 	files, err := libcni.ConfFiles(dir, []string{".conflist"})
 	if err != nil {

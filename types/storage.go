@@ -13,7 +13,7 @@ const (
 	StorageRoleCidata StorageRole = "cidata"
 	StorageRoleData   StorageRole = "data"
 
-	// Phase 1 fstype values for Role==Data disks.
+	// fstype values for Role==Data disks.
 	FSTypeExt4 = "ext4"
 	FSTypeNone = "none"
 )
@@ -21,8 +21,7 @@ const (
 // dataDiskNameRe caps length at 20 to match Linux's /dev/disk/by-id/virtio-<first 20 chars> truncation.
 var dataDiskNameRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,19}$`)
 
-// StorageRole classifies a disk's purpose in the VM. Required on every
-// StorageConfig — empty values are rejected by ValidateStorageConfigs.
+// StorageRole classifies a disk's purpose; empty is rejected by ValidateStorageConfigs.
 type StorageRole string
 
 // StorageConfig describes a disk attached to a VM.
@@ -91,8 +90,7 @@ func ValidateStorageConfigs(configs []*StorageConfig) error {
 	return nil
 }
 
-// ValidDataDiskName reports whether s is a legal data disk name.
-// Shared between CLI parsing and sidecar loading (sidecar may be untrusted).
+// ValidDataDiskName reports whether s is a legal data disk name; shared with untrusted sidecar loading.
 func ValidDataDiskName(s string) bool {
 	if !dataDiskNameRe.MatchString(s) {
 		return false

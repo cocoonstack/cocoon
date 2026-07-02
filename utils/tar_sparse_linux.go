@@ -15,7 +15,7 @@ import (
 var maxSparseMapJSONSize = 800 * 1024
 
 // tarFileMaybeSparse writes file as COCOON.sparse PAX when it has holes (SEEK_HOLE/SEEK_DATA).
-// Falls back to a regular tar entry on small files, unsupported FS, no holes, or oversized segment map.
+// Falls back to a regular tar entry on empty files, unsupported FS, no holes, or oversized segment map.
 func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {

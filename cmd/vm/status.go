@@ -242,6 +242,9 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 		vms := listAndFilter(ctx, hypers, filters)
 		curr := make(map[string]entry, len(vms))
 		for _, vm := range vms {
+			if vm == nil {
+				continue
+			}
 			state := cmdcore.ReconcileState(vm)
 			vmCopy := *vm
 			vmCopy.State = types.VMState(state)
@@ -315,15 +318,9 @@ func applyFilters(vms []*types.VM, filters []string) []*types.VM {
 }
 
 func matchesFilter(vm *types.VM, filters []string) bool {
-	for _, f := range filters {
-		if vm.ID == f || vm.Config.Name == f {
-			return true
-		}
-		if len(f) >= 3 && strings.HasPrefix(vm.ID, f) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(filters, func(f string) bool {
+		return vm.ID == f || vm.Config.Name == f || (len(f) >= 3 && strings.HasPrefix(vm.ID, f))
+	})
 }
 
 func snapshotAll(vms []*types.VM) []vmSnapshot {

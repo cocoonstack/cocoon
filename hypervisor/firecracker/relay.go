@@ -41,8 +41,7 @@ func (b *broadcaster) setSink(w io.Writer) {
 	b.mu.Unlock()
 }
 
-// readLoop reads from the PTY master forever and writes to the current sink.
-// Runs as a single goroutine for the relay's lifetime.
+// readLoop runs as the relay's single lifetime PTY-reader goroutine, writing to the current sink.
 func (b *broadcaster) readLoop() {
 	buf := make([]byte, relayBufSize)
 	for {
@@ -105,7 +104,6 @@ func RunRelay(ctx context.Context) {
 		}
 	}()
 
-	// Single PTY reader → broadcast to active session so disconnects don't strand goroutines fighting for bytes.
 	bc := &broadcaster{master: master}
 	go bc.readLoop()
 
@@ -126,11 +124,9 @@ func RunRelay(ctx context.Context) {
 func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broadcaster) {
 	defer conn.Close() //nolint:errcheck
 
-	// Subscribe this session to receive PTY output.
 	bc.setSink(conn)
 	defer bc.setSink(nil)
 
-	// Copy conn→master (console input) in a goroutine.
 	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(master, conn)
@@ -142,5 +138,4 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 	case <-ctx.Done(): // FC died
 	}
 	// Closing conn unblocks the io.Copy(master, conn) goroutine.
-	// setSink(nil) in defer stops broadcast to this conn.
 }

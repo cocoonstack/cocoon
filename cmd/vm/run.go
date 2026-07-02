@@ -251,6 +251,9 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
+	if conf == nil {
+		return fmt.Errorf("nil config")
+	}
 	// Local copy keeps backend flip from leaking to the caller's shared *config.Config.
 	localConf := *conf
 	if cfg.Hypervisor != "" {

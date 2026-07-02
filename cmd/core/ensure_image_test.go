@@ -42,8 +42,7 @@ func (f *fakeImageBackend) Config(context.Context, []*types.VMConfig) ([][]*type
 	return nil, nil, nil
 }
 
-// Regression guard for issue 37: pinned digest with no local hit must force-pull
-// to bypass cloudimg's URL-keyed cache.
+// Issue 37 regression guard: a pinned digest with no local hit must force-pull past cloudimg's URL-keyed cache.
 func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 	const (
 		url    = "https://epoch.example/dl/simular/win11"
@@ -98,8 +97,7 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 	}
 }
 
-// A cloudimg ref without an http(s) scheme reaching Pull surfaces as
-// `unsupported protocol scheme` from http.Get; the shape guard short-circuits.
+// A non-http(s) cloudimg ref reaching Pull would surface http.Get's `unsupported protocol scheme`; the shape guard short-circuits first.
 func TestEnsureImage_SkipsBadShape(t *testing.T) {
 	tests := []struct {
 		name      string

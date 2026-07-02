@@ -7,9 +7,7 @@ import (
 	"testing"
 )
 
-// These tests exercise SparseCopy on all platforms.
-// On Linux, SparseCopy preserves sparsity via SEEK_DATA/SEEK_HOLE.
-// On other platforms, SparseCopy falls back to a plain io.Copy.
+// Cross-platform SparseCopy tests; Linux-only sparsity assertions live in sparse_linux_test.go.
 
 func TestSparseCopy_BasicContent(t *testing.T) {
 	dir := t.TempDir()
@@ -95,7 +93,6 @@ func TestSparseCopy_DstDirNotExist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Destination in a directory that doesn't exist.
 	err := SparseCopy(filepath.Join(dir, "nodir", "dst"), src)
 	if err == nil {
 		t.Fatal("expected error for nonexistent dst directory")
@@ -107,7 +104,6 @@ func TestSparseCopy_OverwritesExisting(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	// Write initial dst content.
 	if err := os.WriteFile(dst, []byte("old content that should be overwritten"), 0o644); err != nil {
 		t.Fatal(err)
 	}

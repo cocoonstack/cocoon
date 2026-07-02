@@ -437,9 +437,6 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 	}
 
 	entries := rec.Entries()
-	// vm-stopped → 1 entry (compute.start)
-	// vm-running → 0 entries (no-op)
-	// vm-stale   → 2 entries (compute.stop reason=stop-crash + compute.start reason=restart)
 	if len(entries) != 3 {
 		t.Fatalf("got %d entries, want 3 (vm-stopped: start; vm-stale: stop-crash + start; vm-running: none)", len(entries))
 	}

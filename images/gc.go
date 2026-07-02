@@ -98,8 +98,7 @@ func gcStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
 	})
 }
 
-// gcCollectBlobs removes temp files and blob artifacts by hex ID; module names the gc subsystem for log routing.
-// removers are called for each hex; fs.ErrNotExist errors are ignored.
+// gcCollectBlobs removes stale temps then per-hex blobs via removers (fs.ErrNotExist ignored); module names the gc log subsystem.
 func gcCollectBlobs(ctx context.Context, module, tempDir string, dirOnly bool, ids []string, removers ...func(string) error) error {
 	logger := log.WithFunc("gc." + module)
 	var errs []error
