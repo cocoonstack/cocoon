@@ -13,6 +13,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -123,12 +124,12 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 
 	slices.SortFunc(snapshots, func(a, b *types.Snapshot) int { return a.CreatedAt.Compare(b.CreatedAt) })
 
-	return cmdcore.OutputFormatted(cmd, snapshots, func(w *tabwriter.Writer) {
+	return cliutil.OutputFormatted(cmd, snapshots, func(w *tabwriter.Writer) {
 		fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDESCRIPTION\tCREATED") //nolint:errcheck
 		for _, s := range snapshots {
 			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n", //nolint:errcheck
 				s.ID, s.Name, s.CPU,
-				cmdcore.FormatSize(s.Memory), s.Description,
+				cliutil.FormatSize(s.Memory), s.Description,
 				s.CreatedAt.Local().Format(time.DateTime))
 		}
 	})
@@ -148,7 +149,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}
-	return cmdcore.OutputJSON(s)
+	return cliutil.OutputJSON(s)
 }
 
 func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {

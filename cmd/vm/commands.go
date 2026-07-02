@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
 type Actions interface {
@@ -43,7 +43,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Create,
 	}
 	addVMFlags(createCmd)
-	cmdcore.AddOutputFlag(createCmd)
+	cliutil.AddOutputFlag(createCmd)
 
 	runCmd := &cobra.Command{
 		Use:   "run [flags] IMAGE",
@@ -52,7 +52,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Run,
 	}
 	addVMFlags(runCmd)
-	cmdcore.AddOutputFlag(runCmd)
+	cliutil.AddOutputFlag(runCmd)
 
 	cloneCmd := &cobra.Command{
 		Use:   "clone [flags] [SNAPSHOT]",
@@ -61,7 +61,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Clone,
 	}
 	addCloneFlags(cloneCmd)
-	cmdcore.AddOutputFlag(cloneCmd)
+	cliutil.AddOutputFlag(cloneCmd)
 
 	startCmd := &cobra.Command{
 		Use:   "start VM [VM...]",
@@ -69,7 +69,7 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.Start,
 	}
-	cmdcore.AddOutputFlag(startCmd)
+	cliutil.AddOutputFlag(startCmd)
 
 	stopCmd := &cobra.Command{
 		Use:   "stop VM [VM...]",
@@ -79,7 +79,7 @@ func Command(h Actions) *cobra.Command {
 	}
 	stopCmd.Flags().Bool("force", false, "force stop (skip graceful shutdown, immediate SIGTERM/SIGKILL)")
 	stopCmd.Flags().Int("timeout", 0, "ACPI shutdown timeout in seconds (0 = use config default)")
-	cmdcore.AddOutputFlag(stopCmd)
+	cliutil.AddOutputFlag(stopCmd)
 
 	listCmd := &cobra.Command{
 		Use:     "list",
@@ -87,7 +87,7 @@ func Command(h Actions) *cobra.Command {
 		Short:   "List VMs with status",
 		RunE:    h.List,
 	}
-	cmdcore.AddFormatFlag(listCmd)
+	cliutil.AddFormatFlag(listCmd)
 
 	inspectCmd := &cobra.Command{
 		Use:   "inspect VM",
@@ -128,7 +128,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.RM,
 	}
 	rmCmd.Flags().Bool("force", false, "force delete running VMs")
-	cmdcore.AddOutputFlag(rmCmd)
+	cliutil.AddOutputFlag(rmCmd)
 
 	restoreCmd := &cobra.Command{
 		Use:   "restore [flags] VM [SNAPSHOT]",
@@ -147,7 +147,7 @@ func Command(h Actions) *cobra.Command {
 	restoreCmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster restore (CH only; snapshot file must remain on disk)")
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
-	cmdcore.AddOutputFlag(restoreCmd)
+	cliutil.AddOutputFlag(restoreCmd)
 
 	debugCmd := &cobra.Command{
 		Use:   "debug [flags] IMAGE",
@@ -202,7 +202,7 @@ func buildNetCommand(h Actions) *cobra.Command {
 	}
 	cmd.Flags().Int("nics", -1, "target NIC count (required, >= 0)")
 	_ = cmd.MarkFlagRequired("nics")
-	cmdcore.AddOutputFlag(cmd)
+	cliutil.AddOutputFlag(cmd)
 	return cmd
 }
 
@@ -224,7 +224,7 @@ func buildFsCommand(h Actions) *cobra.Command {
 	attach.Flags().Int("queue-size", 0, "queue depth (0 = default 1024)") //nolint:mnd
 	_ = attach.MarkFlagRequired("socket")
 	_ = attach.MarkFlagRequired("tag")
-	cmdcore.AddOutputFlag(attach)
+	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
 		Use:   "detach VM",
@@ -234,7 +234,7 @@ func buildFsCommand(h Actions) *cobra.Command {
 	}
 	detach.Flags().String("tag", "", "guest mount tag (required)")
 	_ = detach.MarkFlagRequired("tag")
-	cmdcore.AddOutputFlag(detach)
+	cliutil.AddOutputFlag(detach)
 
 	parent.AddCommand(attach, detach)
 	return parent
@@ -255,7 +255,7 @@ func buildDeviceCommand(h Actions) *cobra.Command {
 	attach.Flags().String("pci", "", "BDF (01:00.0 / 0000:01:00.0) or sysfs path /sys/bus/pci/devices/<bdf>")
 	attach.Flags().String("id", "", "optional device id; CH auto-generates if empty (must not start with cocoon-)")
 	_ = attach.MarkFlagRequired("pci")
-	cmdcore.AddOutputFlag(attach)
+	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
 		Use:   "detach VM",
@@ -265,7 +265,7 @@ func buildDeviceCommand(h Actions) *cobra.Command {
 	}
 	detach.Flags().String("id", "", "device id returned by attach (required)")
 	_ = detach.MarkFlagRequired("id")
-	cmdcore.AddOutputFlag(detach)
+	cliutil.AddOutputFlag(detach)
 
 	parent.AddCommand(attach, detach)
 	return parent

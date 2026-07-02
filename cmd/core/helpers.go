@@ -11,11 +11,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, error) {
@@ -134,8 +136,11 @@ func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref 
 	)
 }
 
-func IsURL(ref string) bool {
-	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+func ReconcileState(vm *types.VM) string {
+	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
+		return "stopped (stale)"
+	}
+	return string(vm.State)
 }
 
 // CloseOnCancel closes c when ctx is canceled; callers `defer CloseOnCancel(ctx, c)()` to stop the watcher on return.
@@ -176,7 +181,7 @@ func resolveOwner[T interface{ Type() string }](backends []T, ref string, found 
 func validateRefShape(ref, imageType string) error {
 	switch imageType {
 	case types.ImageTypeCloudImg:
-		if !IsURL(ref) {
+		if !cliutil.IsURL(ref) {
 			return fmt.Errorf("cloudimg ref %q is not an http(s) URL (imported or bare OCI ref?)", ref)
 		}
 	case types.ImageTypeOCI:

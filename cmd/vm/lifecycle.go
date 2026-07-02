@@ -12,6 +12,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/console"
@@ -114,7 +115,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if info.State == types.VMStateRunning {
 		out.AttachedDevices = collectAttachedDevices(ctx, hyper, args[0])
 	}
-	return cmdcore.OutputJSON(out)
+	return cliutil.OutputJSON(out)
 }
 
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
@@ -210,7 +211,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	}
 
 	const logTag = "cmd.vm.rm"
-	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cmdcore.WantJSON(cmd), routed,
+	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cliutil.WantJSON(cmd), routed,
 		func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 			return hyper.Delete(ctx, refs, force)
 		})
@@ -333,7 +334,7 @@ func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, past
 	if lastErr != nil {
 		return fmt.Errorf("%s: %w", name, lastErr)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
 		return jsonErr
 	}
 	if len(allDone) == 0 {
@@ -344,7 +345,7 @@ func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, past
 
 func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
 	logTag := "cmd.vm." + name
-	allDone, lastErr := runRoutedLoop(ctx, logTag, pastTense, cmdcore.WantJSON(cmd), routed, fn)
+	allDone, lastErr := runRoutedLoop(ctx, logTag, pastTense, cliutil.WantJSON(cmd), routed, fn)
 	return finishRoutedCmd(ctx, cmd, logTag, name, pastTense, allDone, lastErr)
 }
 

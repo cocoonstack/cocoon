@@ -3,7 +3,7 @@ package snapshot
 import (
 	"github.com/spf13/cobra"
 
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
 type Actions interface {
@@ -36,7 +36,7 @@ func Command(h Actions) *cobra.Command {
 		Short:   "List all snapshots",
 		RunE:    h.List,
 	}
-	cmdcore.AddFormatFlag(listCmd)
+	cliutil.AddFormatFlag(listCmd)
 	listCmd.Flags().String("vm", "", "only show snapshots belonging to this VM")
 
 	inspectCmd := &cobra.Command{

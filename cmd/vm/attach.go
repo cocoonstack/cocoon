@@ -8,6 +8,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/fs"
@@ -28,7 +29,7 @@ func (h Handler) FsAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "tag": tag, "id": id}); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "tag": tag, "id": id}); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.fs.attach").Infof(ctx, "attached fs tag=%s id=%s vm=%s", tag, id, args[0])
@@ -44,7 +45,7 @@ func (h Handler) FsDetach(cmd *cobra.Command, args []string) error {
 	if err := a.FsDetach(ctx, args[0], tag); err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "tag": tag}); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "tag": tag}); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.fs.detach").Infof(ctx, "detached fs tag=%s vm=%s", tag, args[0])
@@ -62,7 +63,7 @@ func (h Handler) DeviceAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "pci": pci, "id": deviceID}); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "pci": pci, "id": deviceID}); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.device.attach").Infof(ctx, "attached device pci=%s id=%s vm=%s", pci, deviceID, args[0])
@@ -78,7 +79,7 @@ func (h Handler) DeviceDetach(cmd *cobra.Command, args []string) error {
 	if err := a.DeviceDetach(ctx, args[0], id); err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "id": id}); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "id": id}); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.device.detach").Infof(ctx, "detached device id=%s vm=%s", id, args[0])
