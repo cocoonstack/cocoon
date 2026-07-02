@@ -56,7 +56,6 @@ type VM struct {
 	SocketPath  string `json:"socket_path,omitempty"`  // CH API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 
-	// Network.
 	NetSetup
 
 	StorageConfigs []*StorageConfig `json:"storage_configs,omitempty"`
@@ -67,7 +66,6 @@ type VM struct {
 	// SnapshotIDs tracks snapshots created from this VM; populated by toVM() from VMRecord.SnapshotIDs.
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
 
-	// Timestamps.
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	StartedAt *time.Time `json:"started_at,omitempty"`

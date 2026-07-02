@@ -10,38 +10,6 @@ import (
 	"testing"
 )
 
-// writeAt writes data at the given offset in f, leaving a hole before it if offset > current size.
-func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
-	t.Helper()
-	if _, err := f.WriteAt(data, offset); err != nil {
-		t.Fatalf("writeAt offset %d: %v", offset, err)
-	}
-}
-
-// fileBlocks returns the 512-byte block count allocated on disk.
-func fileBlocks(t *testing.T, path string) int64 {
-	t.Helper()
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatal("Stat_t not available")
-	}
-	return st.Blocks
-}
-
-// readFull reads the entire file contents.
-func readFull(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return data
-}
-
 func TestSparseCopy_AllSparse(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
@@ -203,4 +171,36 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 	if blocks >= fullBlocks/2 {
 		t.Errorf("expected sparse dst: got %d blocks, full would be %d", blocks, fullBlocks)
 	}
+}
+
+// writeAt writes data at the given offset in f, leaving a hole before it if offset > current size.
+func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
+	t.Helper()
+	if _, err := f.WriteAt(data, offset); err != nil {
+		t.Fatalf("writeAt offset %d: %v", offset, err)
+	}
+}
+
+// fileBlocks returns the 512-byte block count allocated on disk.
+func fileBlocks(t *testing.T, path string) int64 {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("Stat_t not available")
+	}
+	return st.Blocks
+}
+
+// readFull reads the entire file contents.
+func readFull(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
 }

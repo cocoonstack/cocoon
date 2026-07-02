@@ -14,20 +14,6 @@ import (
 	"testing"
 )
 
-// openAndTarFile is a test helper that opens a file and writes it via tarFileFrom.
-func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	defer f.Close() //nolint:errcheck
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	return tarFileFrom(tw, f, fi, nameInTar)
-}
-
 func TestTarFile(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "hello.txt")
@@ -183,30 +169,6 @@ func TestTarDir_NotExist(t *testing.T) {
 	}
 }
 
-// makeTar builds a plain tar archive in memory from name→content pairs.
-func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
-	t.Helper()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for name, data := range files {
-		if err := tw.WriteHeader(&tar.Header{
-			Name:     name,
-			Size:     int64(len(data)),
-			Mode:     0o644,
-			Typeflag: tar.TypeReg,
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tw.Write(data); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &buf
-}
-
 func TestExtractTar(t *testing.T) {
 	files := map[string][]byte{
 		"a.txt": []byte("hello"),
@@ -351,40 +313,6 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 			t.Errorf("%s content mismatch", name)
 		}
 	}
-}
-
-// makeTarSparse builds a tar with one COCOON.sparse PAX entry (stored bytes = segments, logical size = realSize).
-func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseSegment, data []byte) *bytes.Buffer {
-	t.Helper()
-	mapJSON, err := json.Marshal(segments)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var dataSize int64
-	for _, s := range segments {
-		dataSize += s.Length
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := tw.WriteHeader(&tar.Header{
-		Name:     name,
-		Size:     dataSize,
-		Mode:     0o644,
-		Typeflag: tar.TypeReg,
-		PAXRecords: map[string]string{
-			paxSparseMap:  string(mapJSON),
-			paxSparseSize: strconv.FormatInt(realSize, 10),
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(data); err != nil {
-		t.Fatal(err)
-	}
-	tw.Close() //nolint:errcheck
-	return &buf
 }
 
 func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
@@ -883,4 +811,76 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	if !bytes.Equal(gotSmall, small) {
 		t.Error("small.txt mismatch")
 	}
+}
+
+// openAndTarFile is a test helper that opens a file and writes it via tarFileFrom.
+func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return err
+	}
+	defer f.Close() //nolint:errcheck
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	return tarFileFrom(tw, f, fi, nameInTar)
+}
+
+// makeTar builds a plain tar archive in memory from name→content pairs.
+func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for name, data := range files {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Size:     int64(len(data)),
+			Mode:     0o644,
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf
+}
+
+// makeTarSparse builds a tar with one COCOON.sparse PAX entry (stored bytes = segments, logical size = realSize).
+func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseSegment, data []byte) *bytes.Buffer {
+	t.Helper()
+	mapJSON, err := json.Marshal(segments)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var dataSize int64
+	for _, s := range segments {
+		dataSize += s.Length
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Size:     dataSize,
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+		PAXRecords: map[string]string{
+			paxSparseMap:  string(mapJSON),
+			paxSparseSize: strconv.FormatInt(realSize, 10),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close() //nolint:errcheck
+	return &buf
 }

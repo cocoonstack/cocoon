@@ -7,16 +7,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func buildGCCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "gc"}
-	cmd.Flags().Bool("snapshot", false, "")
-	cmd.Flags().Int("snapshot-keep", 0, "")
-	cmd.Flags().Duration("snapshot-age", 0, "")
-	cmd.Flags().String("snapshot-size", "", "")
-	cmd.Flags().Bool("snapshot-dry-run", false, "")
-	return cmd
-}
-
 func TestParseSnapshotPolicy_Defaults(t *testing.T) {
 	cmd := buildGCCmd()
 	if err := cmd.ParseFlags(nil); err != nil {
@@ -97,4 +87,14 @@ func TestParseSnapshotPolicy_HappyPath(t *testing.T) {
 	if !p.Enabled || !p.DryRun || p.KeepLast != 10 || p.MaxAge == 0 || p.MaxSize == 0 {
 		t.Errorf("policy not populated: %+v", p)
 	}
+}
+
+func buildGCCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "gc"}
+	cmd.Flags().Bool("snapshot", false, "")
+	cmd.Flags().Int("snapshot-keep", 0, "")
+	cmd.Flags().Duration("snapshot-age", 0, "")
+	cmd.Flags().String("snapshot-size", "", "")
+	cmd.Flags().Bool("snapshot-dry-run", false, "")
+	return cmd
 }

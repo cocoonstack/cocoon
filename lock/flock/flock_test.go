@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-func lockPath(t *testing.T) string {
-	t.Helper()
-	return filepath.Join(t.TempDir(), "test.lock")
-}
-
 func TestLockUnlock(t *testing.T) {
 	l := New(lockPath(t))
 	ctx := t.Context()
@@ -180,4 +175,9 @@ func TestUnlockWithoutLock(t *testing.T) {
 	if err := l.Unlock(ctx); err != nil {
 		t.Fatalf("Unlock on unheld lock should not error, got: %v", err)
 	}
+}
+
+func lockPath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "test.lock")
 }

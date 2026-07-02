@@ -14,66 +14,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func newDiskStubConfig(t *testing.T) stubBackendConfig {
-	dir := t.TempDir()
-	return stubBackendConfig{
-		indexFile: filepath.Join(dir, "index.json"),
-		indexLock: filepath.Join(dir, "index.lock"),
-	}
-}
-
-// stubBackendConfig satisfies BackendConfig for tests that only exercise the
-// metering wiring; unused methods panic so accidental dependence shows up loud.
-type stubBackendConfig struct {
-	indexFile string
-	indexLock string
-}
-
-func (stubBackendConfig) BinaryName() string                  { return "stub-vmm" }
-func (stubBackendConfig) PIDFileName() string                 { return "stub.pid" }
-func (stubBackendConfig) TerminateGracePeriod() time.Duration { return time.Second }
-func (stubBackendConfig) SocketWaitTimeout() time.Duration    { return time.Second }
-func (stubBackendConfig) EffectivePoolSize() int              { return 1 }
-func (c stubBackendConfig) IndexFile() string                 { return c.indexFile }
-func (c stubBackendConfig) IndexLock() string                 { return c.indexLock }
-func (stubBackendConfig) EnsureDirs() error                   { return nil }
-func (stubBackendConfig) RunDir() string                      { panic("RunDir: not implemented in stub") }
-func (stubBackendConfig) LogDir() string                      { panic("LogDir: not implemented in stub") }
-func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
-func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
-
-func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
-	t.Helper()
-	dir := t.TempDir()
-	locker := flock.New(filepath.Join(dir, "index.lock"))
-	store := storejson.New[VMIndex](filepath.Join(dir, "index.json"), locker)
-	rec := meteringcapture.New()
-	return &Backend{
-		Typ:      "test-hv",
-		Conf:     stubBackendConfig{},
-		DB:       store,
-		Locker:   locker,
-		Metering: rec,
-	}, rec
-}
-
-func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int64, firstBooted bool) {
-	t.Helper()
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id] = &VMRecord{
-			VM: types.VM{
-				ID:          id,
-				Hypervisor:  b.Typ,
-				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
-				FirstBooted: firstBooted,
-			},
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-}
-
 func TestBatchMarkStartedEmitsComputeStart(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -303,19 +243,6 @@ func TestFinalizeCloneEmitsCloneEntries(t *testing.T) {
 	}
 	if entries[0].Kind != metering.KindVMStorageStart || entries[1].Kind != metering.KindVMComputeStart {
 		t.Errorf("ordering wrong: %s then %s", entries[0].Kind, entries[1].Kind)
-	}
-}
-
-func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage int64) {
-	t.Helper()
-	seedVMRecord(t, b, id, cpu, mem, storage, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-		now := time.Now()
-		idx.VMs[id].State = types.VMStateRunning
-		idx.VMs[id].StartedAt = &now
-		return nil
-	}); err != nil {
-		t.Fatalf("set running: %v", err)
 	}
 }
 
@@ -605,5 +532,78 @@ func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
 	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
 		t.Errorf("BatchMarkStarted with NopRecorder: %v", err)
+	}
+}
+
+func newDiskStubConfig(t *testing.T) stubBackendConfig {
+	dir := t.TempDir()
+	return stubBackendConfig{
+		indexFile: filepath.Join(dir, "index.json"),
+		indexLock: filepath.Join(dir, "index.lock"),
+	}
+}
+
+// stubBackendConfig satisfies BackendConfig for tests that only exercise the
+// metering wiring; unused methods panic so accidental dependence shows up loud.
+type stubBackendConfig struct {
+	indexFile string
+	indexLock string
+}
+
+func (stubBackendConfig) BinaryName() string                  { return "stub-vmm" }
+func (stubBackendConfig) PIDFileName() string                 { return "stub.pid" }
+func (stubBackendConfig) TerminateGracePeriod() time.Duration { return time.Second }
+func (stubBackendConfig) SocketWaitTimeout() time.Duration    { return time.Second }
+func (stubBackendConfig) EffectivePoolSize() int              { return 1 }
+func (c stubBackendConfig) IndexFile() string                 { return c.indexFile }
+func (c stubBackendConfig) IndexLock() string                 { return c.indexLock }
+func (stubBackendConfig) EnsureDirs() error                   { return nil }
+func (stubBackendConfig) RunDir() string                      { panic("RunDir: not implemented in stub") }
+func (stubBackendConfig) LogDir() string                      { panic("LogDir: not implemented in stub") }
+func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
+func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
+
+func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
+	t.Helper()
+	dir := t.TempDir()
+	locker := flock.New(filepath.Join(dir, "index.lock"))
+	store := storejson.New[VMIndex](filepath.Join(dir, "index.json"), locker)
+	rec := meteringcapture.New()
+	return &Backend{
+		Typ:      "test-hv",
+		Conf:     stubBackendConfig{},
+		DB:       store,
+		Locker:   locker,
+		Metering: rec,
+	}, rec
+}
+
+func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int64, firstBooted bool) {
+	t.Helper()
+	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id] = &VMRecord{
+			VM: types.VM{
+				ID:          id,
+				Hypervisor:  b.Typ,
+				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
+				FirstBooted: firstBooted,
+			},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+}
+
+func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage int64) {
+	t.Helper()
+	seedVMRecord(t, b, id, cpu, mem, storage, true)
+	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+		now := time.Now()
+		idx.VMs[id].State = types.VMStateRunning
+		idx.VMs[id].StartedAt = &now
+		return nil
+	}); err != nil {
+		t.Fatalf("set running: %v", err)
 	}
 }

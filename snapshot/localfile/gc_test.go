@@ -15,15 +15,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func meta(ageHours int, size int64) snapshotMeta {
-	accessedAt := time.Now().Add(-time.Duration(ageHours) * time.Hour)
-	return snapshotMeta{lastAccessed: accessedAt, sizeBytes: size}
-}
-
-func sortedKeys(m map[string]string) []string {
-	return slices.Sorted(maps.Keys(m))
-}
-
 func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
 	records := map[string]snapshotMeta{
 		"a": meta(1, 100),
@@ -441,4 +432,13 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("got %d entries; orphan/stale-pending must not emit stop", len(got))
 	}
+}
+
+func meta(ageHours int, size int64) snapshotMeta {
+	accessedAt := time.Now().Add(-time.Duration(ageHours) * time.Hour)
+	return snapshotMeta{lastAccessed: accessedAt, sizeBytes: size}
+}
+
+func sortedKeys(m map[string]string) []string {
+	return slices.Sorted(maps.Keys(m))
 }

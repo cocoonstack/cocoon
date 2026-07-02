@@ -5,17 +5,6 @@ import (
 	"testing"
 )
 
-func validConfig() VMConfig {
-	return VMConfig{
-		Name: "test-vm",
-		Config: Config{
-			CPU:     2,
-			Memory:  1 << 30,  // 1 GiB
-			Storage: 20 << 30, // 20 GiB
-		},
-	}
-}
-
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -265,5 +254,16 @@ func TestVMResolvedNetNilReceiver(t *testing.T) {
 	}
 	if got := v.ResolvedNetBridgeDev(); got != "" {
 		t.Errorf("nil ResolvedNetBridgeDev = %q, want \"\"", got)
+	}
+}
+
+func validConfig() VMConfig {
+	return VMConfig{
+		Name: "test-vm",
+		Config: Config{
+			CPU:     2,
+			Memory:  1 << 30,  // 1 GiB
+			Storage: 20 << 30, // 20 GiB
+		},
 	}
 }

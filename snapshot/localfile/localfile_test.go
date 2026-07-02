@@ -21,55 +21,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// helpers
-
-// testID generates a random snapshot ID for tests.
-func testID(t *testing.T) string {
-	t.Helper()
-	return utils.GenerateID()
-}
-
-// newTestLF creates a LocalFile backed by a temp directory.
-func newTestLF(t *testing.T) *LocalFile {
-	t.Helper()
-	return newTestLFWithRecorder(t, metering.NopRecorder{})
-}
-
-// newTestLFWithRecorder lets tests inject a CaptureRecorder for emit assertions.
-func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
-	t.Helper()
-	dir := t.TempDir()
-	lf, err := New(&config.Config{RootDir: dir}, rec)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return lf
-}
-
-// makeTar builds a tar archive in memory from a map of name→content.
-func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
-	t.Helper()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for name, data := range files {
-		if err := tw.WriteHeader(&tar.Header{
-			Name:     name,
-			Size:     int64(len(data)),
-			Mode:     0o644,
-			Typeflag: tar.TypeReg,
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tw.Write(data); err != nil {
-			t.Fatal(err)
-		}
-	}
-	tw.Close()
-	return &buf
-}
-
-// New
-
 func TestNew(t *testing.T) {
 	dir := t.TempDir()
 	lf, err := New(&config.Config{RootDir: dir}, metering.NopRecorder{})
@@ -165,14 +116,6 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 	if entries[1].Hypervisor != "cloud-hypervisor" {
 		t.Errorf("stop entry has Hypervisor=%q; phantom emits leak as empty", entries[1].Hypervisor)
 	}
-}
-
-func kinds(entries []metering.Entry) []metering.Kind {
-	out := make([]metering.Kind, len(entries))
-	for i, e := range entries {
-		out[i] = e.Kind
-	}
-	return out
 }
 
 func TestImportEmitsSnapStorageStart(t *testing.T) {
@@ -868,31 +811,6 @@ func TestRestore_ImageBlobIDsIsolation(t *testing.T) {
 
 // Export → Import roundtrip
 
-// makeExportableSnapshot creates a snapshot with data files and returns its name.
-func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[string][]byte) string {
-	t.Helper()
-	ctx := t.Context()
-	stream := makeTar(t, files)
-	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
-		Name:         name,
-		Description:  "export test",
-		ImageBlobIDs: map[string]struct{}{"blob1": {}},
-		NICs:         2,
-		Config: types.Config{
-			Image:   "ubuntu:24.04",
-			CPU:     4,
-			Memory:  1 << 30,
-			Storage: 10 << 30,
-		},
-	}
-	id, err := lf.Create(ctx, cfg, stream)
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	return id
-}
-
 func TestExportImport_Roundtrip(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -1299,4 +1217,84 @@ func TestExportToDir_RejectNonEmpty(t *testing.T) {
 	if err == nil {
 		t.Fatal("want non-empty rejection")
 	}
+}
+
+// testID generates a random snapshot ID for tests.
+func testID(t *testing.T) string {
+	t.Helper()
+	return utils.GenerateID()
+}
+
+// newTestLF creates a LocalFile backed by a temp directory.
+func newTestLF(t *testing.T) *LocalFile {
+	t.Helper()
+	return newTestLFWithRecorder(t, metering.NopRecorder{})
+}
+
+// newTestLFWithRecorder lets tests inject a CaptureRecorder for emit assertions.
+func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
+	t.Helper()
+	dir := t.TempDir()
+	lf, err := New(&config.Config{RootDir: dir}, rec)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return lf
+}
+
+// makeTar builds a tar archive in memory from a map of name→content.
+func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for name, data := range files {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Size:     int64(len(data)),
+			Mode:     0o644,
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tw.Close()
+	return &buf
+}
+
+// New
+
+func kinds(entries []metering.Entry) []metering.Kind {
+	out := make([]metering.Kind, len(entries))
+	for i, e := range entries {
+		out[i] = e.Kind
+	}
+	return out
+}
+
+// makeExportableSnapshot creates a snapshot with data files and returns its name.
+func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[string][]byte) string {
+	t.Helper()
+	ctx := t.Context()
+	stream := makeTar(t, files)
+	cfg := &types.SnapshotConfig{
+		ID:           testID(t),
+		Name:         name,
+		Description:  "export test",
+		ImageBlobIDs: map[string]struct{}{"blob1": {}},
+		NICs:         2,
+		Config: types.Config{
+			Image:   "ubuntu:24.04",
+			CPU:     4,
+			Memory:  1 << 30,
+			Storage: 10 << 30,
+		},
+	}
+	id, err := lf.Create(ctx, cfg, stream)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	return id
 }

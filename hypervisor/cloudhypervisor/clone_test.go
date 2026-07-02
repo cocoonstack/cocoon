@@ -7,129 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
-
-// helpers
-
-// writeCHConfig writes a JSON config to path and returns the path.
-func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
-	t.Helper()
-	path := filepath.Join(dir, "config.json")
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-// readRawJSON reads a JSON file back into a generic map.
-func readRawJSON(t *testing.T, path string) map[string]any {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-	return result
-}
-
-// baseCHConfig returns a minimal CH config.json with extra fields that CH adds internally.
-func baseCHConfig() map[string]any {
-	return map[string]any{
-		"payload": map[string]any{
-			"kernel":    "/boot/vmlinux",
-			"initramfs": "/boot/initrd",
-			"cmdline":   "console=hvc0 old-cmdline",
-		},
-		"cpus": map[string]any{
-			"boot_vcpus":    2,
-			"max_vcpus":     8,
-			"topology":      nil,
-			"max_phys_bits": 46,
-		},
-		"memory": map[string]any{
-			"size":           int64(1 << 30),
-			"hugepages":      false,
-			"hotplug_method": "Acpi",
-			"shared":         false,
-			"thp":            true,
-		},
-		"disks": []any{
-			map[string]any{
-				"id":               "_disk0",
-				"path":             "/old/layer.erofs",
-				"readonly":         true,
-				"serial":           "layer0",
-				"pci_segment":      0,
-				"disable_io_uring": false,
-			},
-			map[string]any{
-				"id":               "_disk1",
-				"path":             "/old/cow.raw",
-				"readonly":         false,
-				"serial":           "cocoon-cow",
-				"pci_segment":      0,
-				"disable_io_uring": false,
-				"sparse":           true,
-			},
-		},
-		"net": []any{
-			map[string]any{
-				"id":          "_net0",
-				"tap":         "old-tap0",
-				"mac":         "aa:bb:cc:dd:ee:f0",
-				"num_queues":  4,
-				"queue_size":  256,
-				"ip":          nil,
-				"mask":        nil,
-				"pci_segment": 0,
-			},
-		},
-		"balloon": map[string]any{
-			"id":                  "_balloon0",
-			"size":                int64(1<<30) / 4,
-			"deflate_on_oom":      true,
-			"free_page_reporting": true,
-		},
-		"serial": map[string]any{
-			"mode":   "Socket",
-			"socket": "/old/console.sock",
-		},
-		"console": map[string]any{
-			"mode": "Off",
-		},
-		"rng": map[string]any{
-			"src": "/dev/urandom",
-		},
-		"watchdog": true,
-		"platform": map[string]any{
-			"num_pci_segments": 1,
-			"uuid":             "12345678-1234-1234-1234-123456789abc",
-			"serial_number":    nil,
-			"oem_strings":      nil,
-		},
-	}
-}
-
-func basePatchOpts() *patchOptions {
-	return &patchOptions{
-		storageConfigs: []*types.StorageConfig{
-			{Path: "/new/layer.erofs", RO: true, Serial: "layer0"},
-			{Path: "/new/cow.raw", RO: false, Serial: "cocoon-cow"},
-		},
-		consoleSock: "/new/console.sock",
-		directBoot:  true,
-	}
-}
-
-// patchCHConfig
 
 func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 	dir := t.TempDir()
@@ -290,7 +170,7 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 func TestUpdateCOWPath_OCI(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
-		{Path: "/old/cow.raw", RO: false, Serial: CowSerial, Role: types.StorageRoleCOW},
+		{Path: "/old/cow.raw", RO: false, Serial: hypervisor.CowSerial, Role: types.StorageRoleCOW},
 	}
 	if err := updateCOWPath(configs, "/new/cow.raw"); err != nil {
 		t.Fatal(err)
@@ -631,3 +511,122 @@ func TestPatchStateJSON_EmptyMap(t *testing.T) {
 		t.Errorf("file changed with empty map: %s", data)
 	}
 }
+
+// writeCHConfig writes a JSON config to path and returns the path.
+func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
+	t.Helper()
+	path := filepath.Join(dir, "config.json")
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// readRawJSON reads a JSON file back into a generic map.
+func readRawJSON(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// baseCHConfig returns a minimal CH config.json with extra fields that CH adds internally.
+func baseCHConfig() map[string]any {
+	return map[string]any{
+		"payload": map[string]any{
+			"kernel":    "/boot/vmlinux",
+			"initramfs": "/boot/initrd",
+			"cmdline":   "console=hvc0 old-cmdline",
+		},
+		"cpus": map[string]any{
+			"boot_vcpus":    2,
+			"max_vcpus":     8,
+			"topology":      nil,
+			"max_phys_bits": 46,
+		},
+		"memory": map[string]any{
+			"size":           int64(1 << 30),
+			"hugepages":      false,
+			"hotplug_method": "Acpi",
+			"shared":         false,
+			"thp":            true,
+		},
+		"disks": []any{
+			map[string]any{
+				"id":               "_disk0",
+				"path":             "/old/layer.erofs",
+				"readonly":         true,
+				"serial":           "layer0",
+				"pci_segment":      0,
+				"disable_io_uring": false,
+			},
+			map[string]any{
+				"id":               "_disk1",
+				"path":             "/old/cow.raw",
+				"readonly":         false,
+				"serial":           "cocoon-cow",
+				"pci_segment":      0,
+				"disable_io_uring": false,
+				"sparse":           true,
+			},
+		},
+		"net": []any{
+			map[string]any{
+				"id":          "_net0",
+				"tap":         "old-tap0",
+				"mac":         "aa:bb:cc:dd:ee:f0",
+				"num_queues":  4,
+				"queue_size":  256,
+				"ip":          nil,
+				"mask":        nil,
+				"pci_segment": 0,
+			},
+		},
+		"balloon": map[string]any{
+			"id":                  "_balloon0",
+			"size":                int64(1<<30) / 4,
+			"deflate_on_oom":      true,
+			"free_page_reporting": true,
+		},
+		"serial": map[string]any{
+			"mode":   "Socket",
+			"socket": "/old/console.sock",
+		},
+		"console": map[string]any{
+			"mode": "Off",
+		},
+		"rng": map[string]any{
+			"src": "/dev/urandom",
+		},
+		"watchdog": true,
+		"platform": map[string]any{
+			"num_pci_segments": 1,
+			"uuid":             "12345678-1234-1234-1234-123456789abc",
+			"serial_number":    nil,
+			"oem_strings":      nil,
+		},
+	}
+}
+
+func basePatchOpts() *patchOptions {
+	return &patchOptions{
+		storageConfigs: []*types.StorageConfig{
+			{Path: "/new/layer.erofs", RO: true, Serial: "layer0"},
+			{Path: "/new/cow.raw", RO: false, Serial: "cocoon-cow"},
+		},
+		consoleSock: "/new/console.sock",
+		directBoot:  true,
+	}
+}
+
+// patchCHConfig

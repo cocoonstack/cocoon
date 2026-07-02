@@ -280,7 +280,7 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	return hypervisor.BuildBaseCmdline(
 		"console=hvc0 loglevel=3",
 		strings.Join(ReverseLayerSerials(storageConfigs), ","),
-		CowSerial,
+		hypervisor.CowSerial,
 		networkConfigs, vmName, dnsServers,
 	)
 }

@@ -11,32 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// captureStdout redirects os.Stdout to a pipe, runs fn, returns the bytes; panic-safe via deferred cleanup.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	defer r.Close() //nolint:errcheck
-	defer w.Close() //nolint:errcheck // idempotent fallback if fn panics before the inline Close
-	orig := os.Stdout
-	defer func() { os.Stdout = orig }()
-	os.Stdout = w
-
-	var buf []byte
-	done := make(chan struct{})
-	go func() {
-		buf, _ = io.ReadAll(r)
-		close(done)
-	}()
-
-	fn()
-	_ = w.Close()
-	<-done
-	return string(buf)
-}
-
 func TestMatchesFilter(t *testing.T) {
 	vm := &types.VM{
 		ID: "abcdef123456",
@@ -182,4 +156,30 @@ func TestApplyFilters(t *testing.T) {
 			}
 		})
 	}
+}
+
+// captureStdout redirects os.Stdout to a pipe, runs fn, returns the bytes; panic-safe via deferred cleanup.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer r.Close() //nolint:errcheck
+	defer w.Close() //nolint:errcheck // idempotent fallback if fn panics before the inline Close
+	orig := os.Stdout
+	defer func() { os.Stdout = orig }()
+	os.Stdout = w
+
+	var buf []byte
+	done := make(chan struct{})
+	go func() {
+		buf, _ = io.ReadAll(r)
+		close(done)
+	}()
+
+	fn()
+	_ = w.Close()
+	<-done
+	return string(buf)
 }

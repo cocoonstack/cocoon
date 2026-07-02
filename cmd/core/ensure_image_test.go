@@ -10,38 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-type fakeImageBackend struct {
-	typ          string
-	inspectByRef map[string]*types.Image
-	pullRefs     []string
-	pullForce    []bool
-}
-
-func (f *fakeImageBackend) Type() string { return f.typ }
-
-func (f *fakeImageBackend) Pull(_ context.Context, ref string, force bool, _ progress.Tracker) error {
-	f.pullRefs = append(f.pullRefs, ref)
-	f.pullForce = append(f.pullForce, force)
-	return nil
-}
-
-func (f *fakeImageBackend) Inspect(_ context.Context, ref string) (*types.Image, error) {
-	return f.inspectByRef[ref], nil
-}
-
-func (f *fakeImageBackend) Import(context.Context, string, progress.Tracker, ...string) error {
-	return nil
-}
-
-func (f *fakeImageBackend) List(context.Context) ([]*types.Image, error) { return nil, nil }
-func (f *fakeImageBackend) Delete(context.Context, []string) ([]string, error) {
-	return nil, nil
-}
-func (f *fakeImageBackend) RegisterGC(*gc.Orchestrator) {}
-func (f *fakeImageBackend) Config(context.Context, []*types.VMConfig) ([][]*types.StorageConfig, []*types.BootConfig, error) {
-	return nil, nil, nil
-}
-
 // Issue 37 regression guard: a pinned digest with no local hit must force-pull past cloudimg's URL-keyed cache.
 func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 	const (
@@ -163,4 +131,36 @@ func TestEnsureImage_SkipsPullWhenDigestLocal(t *testing.T) {
 	if len(f.pullRefs) != 0 {
 		t.Errorf("Pull called %d time(s), want 0", len(f.pullRefs))
 	}
+}
+
+type fakeImageBackend struct {
+	typ          string
+	inspectByRef map[string]*types.Image
+	pullRefs     []string
+	pullForce    []bool
+}
+
+func (f *fakeImageBackend) Type() string { return f.typ }
+
+func (f *fakeImageBackend) Pull(_ context.Context, ref string, force bool, _ progress.Tracker) error {
+	f.pullRefs = append(f.pullRefs, ref)
+	f.pullForce = append(f.pullForce, force)
+	return nil
+}
+
+func (f *fakeImageBackend) Inspect(_ context.Context, ref string) (*types.Image, error) {
+	return f.inspectByRef[ref], nil
+}
+
+func (f *fakeImageBackend) Import(context.Context, string, progress.Tracker, ...string) error {
+	return nil
+}
+
+func (f *fakeImageBackend) List(context.Context) ([]*types.Image, error) { return nil, nil }
+func (f *fakeImageBackend) Delete(context.Context, []string) ([]string, error) {
+	return nil, nil
+}
+func (f *fakeImageBackend) RegisterGC(*gc.Orchestrator) {}
+func (f *fakeImageBackend) Config(context.Context, []*types.VMConfig) ([][]*types.StorageConfig, []*types.BootConfig, error) {
+	return nil, nil, nil
 }

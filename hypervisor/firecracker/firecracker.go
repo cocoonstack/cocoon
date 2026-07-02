@@ -11,7 +11,6 @@ import (
 
 const typ = "firecracker"
 
-// compile-time interface checks.
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
 	_ hypervisor.Watchable  = (*Firecracker)(nil)

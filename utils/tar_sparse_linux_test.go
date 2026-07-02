@@ -10,28 +10,6 @@ import (
 	"testing"
 )
 
-// writeSparseFile alternates numSegments data regions of blockSize with equal-sized holes.
-func writeSparseFile(t *testing.T, path string, numSegments, blockSize int) int64 {
-	t.Helper()
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close() //nolint:errcheck
-	for i := range numSegments {
-		offset := int64(i) * int64(blockSize) * 2
-		data := bytes.Repeat([]byte{byte((i % 250) + 1)}, blockSize)
-		if _, err := f.WriteAt(data, offset); err != nil {
-			t.Fatal(err)
-		}
-	}
-	fi, err := f.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fi.Size()
-}
-
 // Segment-map JSON over the cap → tarFileMaybeSparse falls back to non-sparse.
 func TestTarFileMaybeSparse_FallsBackOnLargeMap(t *testing.T) {
 	orig := maxSparseMapJSONSize
@@ -139,4 +117,26 @@ func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 	if _, ok := hdr.PAXRecords[paxSparseMap]; !ok {
 		t.Errorf("expected sparse PAX record for small fragmentation, got none")
 	}
+}
+
+// writeSparseFile alternates numSegments data regions of blockSize with equal-sized holes.
+func writeSparseFile(t *testing.T, path string, numSegments, blockSize int) int64 {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close() //nolint:errcheck
+	for i := range numSegments {
+		offset := int64(i) * int64(blockSize) * 2
+		data := bytes.Repeat([]byte{byte((i % 250) + 1)}, blockSize)
+		if _, err := f.WriteAt(data, offset); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Size()
 }

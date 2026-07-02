@@ -31,13 +31,6 @@ const (
 	}`
 )
 
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
 func TestLoadConfLists(t *testing.T) {
 	t.Run("empty dir errors", func(t *testing.T) {
 		dir := t.TempDir()
@@ -107,4 +100,11 @@ func TestLoadConfLists(t *testing.T) {
 			t.Fatalf("expected parse error, got nil")
 		}
 	})
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
