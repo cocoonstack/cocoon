@@ -1,6 +1,7 @@
 package localfile
 
 import (
+	"bytes"
 	"cmp"
 	"compress/gzip"
 	"context"
@@ -76,8 +77,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	return id, nil
 }
 
-// unwrapGzip peeks at the first 2 bytes to detect gzip magic (0x1f 0x8b).
-// Returns the underlying tar reader and an optional gzip closer.
+// unwrapGzip sniffs the 2-byte gzip magic (0x1f 0x8b) and returns the tar reader plus a gzip closer (nil for raw tar).
 func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
 	head, full, err := utils.PeekReader(r, 2)
 	if err != nil {
@@ -86,7 +86,7 @@ func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
 	if len(head) < 2 {
 		return nil, nil, errors.New("peek archive header: stream shorter than gzip magic (2 bytes)")
 	}
-	if head[0] == 0x1f && head[1] == 0x8b {
+	if bytes.HasPrefix(head, utils.GzipMagic) {
 		gr, gzErr := gzip.NewReader(full)
 		if gzErr != nil {
 			return nil, nil, fmt.Errorf("decompress: %w", gzErr)

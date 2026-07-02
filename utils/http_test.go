@@ -192,7 +192,7 @@ func TestDoAPI_ContextCanceled(t *testing.T) {
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	cancel() // cancel immediately
+	cancel()
 
 	_, err := DoAPI(ctx, srv.Client(), http.MethodGet, srv.URL+"/slow", nil, http.StatusOK)
 	if err == nil {
@@ -279,7 +279,6 @@ func TestDoWithRetry_ExhaustedRetries(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error after exhausted retries")
 	}
-	// MaxRetries=3, so total attempts = MaxRetries+1 = 4
 	if calls != MaxRetries+1 {
 		t.Errorf("expected %d calls, got %d", MaxRetries+1, calls)
 	}

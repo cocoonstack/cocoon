@@ -24,7 +24,6 @@ const (
 // kvBuilder accumulates key=value CLI fragments.
 type kvBuilder []string
 
-// String joins all key=value pairs with commas.
 func (b kvBuilder) String() string { return strings.Join(b, ",") }
 
 func (b *kvBuilder) add(kv string) { *b = append(*b, kv) }
@@ -97,7 +96,6 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 	return cfg
 }
 
-// buildCLIArgs converts a chVMConfig into cloud-hypervisor CLI arguments.
 func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	args := []string{"--api-socket", socketPath}
 
@@ -275,7 +273,6 @@ func runtimeFileToCLIArg(c *chRuntimeFile) string {
 	}
 }
 
-// queueAffinityToCLI converts queue affinity to CH CLI format.
 func queueAffinityToCLI(qa []chQueueAffinity) string {
 	parts := make([]string, len(qa))
 	for i, a := range qa {

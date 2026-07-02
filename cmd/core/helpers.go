@@ -98,8 +98,7 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 		if img != nil {
 			return // exact image version exists locally
 		}
-		// Pull by digest reference when available — ensures we get the exact
-		// version recorded at snapshot time, not whatever the tag points to now.
+		// Pull by digest when available — the tag may point at a different manifest than at snapshot time.
 		pullRef := digestPullRef(vmCfg.Image, vmCfg.ImageDigest, vmCfg.ImageType)
 		if shapeErr := validateRefShape(pullRef, vmCfg.ImageType); shapeErr != nil {
 			logger.Warnf(ctx, "skipping auto-pull of %s: %v — pre-pull manually if missing", pullRef, shapeErr)

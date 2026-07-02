@@ -61,7 +61,7 @@ func Command(h Actions) *cobra.Command {
 	}
 	exportCmd.Flags().StringP("output", "o", "", "output file path (default: <name-or-id>.tar)")
 	exportCmd.Flags().Bool("gzip", false, "compress output with gzip")
-	exportCmd.Flags().String("to-dir", "", "export into a directory (must be empty/absent) instead of a tar; pairs with `vm clone --from-dir`")
+	exportCmd.Flags().String("to-dir", "", "export into a directory (must be empty/absent) instead of a tar; pairs with 'vm clone --from-dir'")
 	exportCmd.MarkFlagsMutuallyExclusive("to-dir", "output")
 	exportCmd.MarkFlagsMutuallyExclusive("to-dir", "gzip")
 

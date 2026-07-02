@@ -14,7 +14,7 @@ func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 		Locker:   c.locker,
 		Store:    c.store,
 		ReadRefs: func(idx *imageIndex) map[string]struct{} { return images.ReferencedDigests(idx.Images) },
-		ScanDisk: func() ([]string, error) { return utils.ScanFileStems(c.conf.BlobsDir(), ".qcow2") },
+		ScanDisk: func() ([]string, error) { return utils.ScanFileStems(c.conf.BlobsDir(), c.conf.BlobExt) },
 		Removers: []func(string) error{
 			func(hex string) error { return os.Remove(c.conf.BlobPath(hex)) },
 		},

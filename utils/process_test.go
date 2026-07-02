@@ -83,7 +83,6 @@ func TestWriteReadPIDFile_Roundtrip_LargePID(t *testing.T) {
 func TestReadPIDFile_WhitespaceHandling(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ws.pid")
-	// Extra whitespace around PID.
 	if err := os.WriteFile(path, []byte("  42  \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +120,6 @@ func TestIsProcessAlive_InvalidPID(t *testing.T) {
 }
 
 func TestIsProcessAlive_DeadProcess(t *testing.T) {
-	// Start a process and wait for it to exit, then check.
 	cmd := exec.Command("true")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
@@ -129,9 +127,6 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 	pid := cmd.Process.Pid
 	_ = cmd.Wait()
 
-	// Process has exited; PID may be recycled eventually,
-	// but immediately after Wait it should not be alive.
-	// Allow a small race window by retrying.
 	if IsProcessAlive(pid) {
 		// PID recycled extremely fast — skip rather than fail.
 		t.Skip("PID recycled too quickly, skipping")
@@ -151,13 +146,10 @@ func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
 	pid := os.Getpid()
 	// On Linux, this checks /proc/pid/cmdline; on other platforms falls back to IsProcessAlive.
 	result := VerifyProcessCmdline(pid, "definitely-not-the-binary", "definitely-not-the-arg")
-	// On Linux, should return false (cmdline doesn't contain these strings).
-	// On other platforms, falls back to IsProcessAlive (true).
 	_ = result // Just verify no panic.
 }
 
 func TestTerminateProcess_SleepProcess(t *testing.T) {
-	// Start a sleep process we can terminate.
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sleep: %v", err)
@@ -191,7 +183,6 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 }
 
 func TestTerminateProcess_AlreadyDead(t *testing.T) {
-	// Start and immediately wait.
 	cmd := exec.Command("true")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -287,7 +278,6 @@ func TestFindVMMByCmdline(t *testing.T) {
 }
 
 func TestTerminateProcess_ContextCancelled(t *testing.T) {
-	// Start a process that ignores SIGTERM (sleep handles it by default though).
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -299,9 +289,8 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	}()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	cancel() // Cancel immediately.
+	cancel()
 
-	// With cancelled context, TerminateProcess should still attempt to kill.
-	// It may return context error from WaitFor, but the process should be killed.
+	// Cancelled ctx: may return WaitFor's ctx error but must still attempt the kill.
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
 }

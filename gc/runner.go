@@ -6,8 +6,7 @@ import (
 	"github.com/cocoonstack/cocoon/lock"
 )
 
-// runner is the internal interface Orchestrator uses to hold heterogeneous
-// Module[S] values. Unexported — callers work with Module[S] and Register.
+// runner lets Orchestrator hold heterogeneous Module[S] values; callers use Module[S] + Register.
 type runner interface {
 	getName() string
 	getLocker() lock.Locker

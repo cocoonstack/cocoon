@@ -38,8 +38,6 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			}); err != nil {
 				return snap, err
 			}
-			// Scan named netns with the cocoon- prefix only.
-			// Other tools (docker, containerd) may have their own entries.
 			if entries, readErr := os.ReadDir(netnsBasePath); readErr == nil {
 				for _, e := range entries {
 					if name, ok := strings.CutPrefix(e.Name(), netnsPrefix); ok {
@@ -81,7 +79,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 				// 2. CNI DEL per NIC — best-effort IPAM release.
 				_ = c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false, true)
 
-				// 3. Remove the named netns (with retry for async kernel fd cleanup).
+				// 3. Remove the named netns.
 				nsName := netnsName(vmID)
 				if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))

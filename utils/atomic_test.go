@@ -118,7 +118,6 @@ func TestAtomicWriteJSON_Basic(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 
-	// Should end with newline.
 	if data[len(data)-1] != '\n' {
 		t.Error("expected trailing newline")
 	}

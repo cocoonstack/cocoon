@@ -11,7 +11,6 @@ import (
 
 const typ = "cloud-hypervisor"
 
-// compile-time interface checks.
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
 	_ hypervisor.Direct     = (*CloudHypervisor)(nil)

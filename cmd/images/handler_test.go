@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-)
 
-var qcow2Magic = []byte{'Q', 'F', 'I', 0xfb}
+	"github.com/cocoonstack/cocoon/utils"
+)
 
 func gzipWrap(t *testing.T, data []byte) []byte {
 	t.Helper()
@@ -55,7 +55,7 @@ func writeTempFile(t *testing.T, dir, name string, data []byte) string {
 }
 
 func TestDetectReader(t *testing.T) {
-	qcow2Data := append(qcow2Magic, make([]byte, 100)...)
+	qcow2Data := append(utils.Qcow2Magic, make([]byte, 100)...)
 	tarData := []byte("this is a tar-like stream of data, not really tar but not qcow2 either")
 
 	tests := []struct {
@@ -155,7 +155,7 @@ func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 
 func TestDetectLocalImportSource(t *testing.T) {
 	dir := t.TempDir()
-	qcow2Path := writeTempFile(t, dir, "image.qcow2", append(qcow2Magic, make([]byte, 32)...))
+	qcow2Path := writeTempFile(t, dir, "image.qcow2", append(utils.Qcow2Magic, make([]byte, 32)...))
 	tarPath := writeTempFile(t, dir, "image.tar", tarWrap(t, "payload.txt", []byte("payload")))
 	gzipTarPath := writeTempFile(t, dir, "image.tar.gz", gzipWrap(t, tarWrap(t, "payload.txt", []byte("payload"))))
 	invalidPath := writeTempFile(t, dir, "invalid.bin", []byte("not an archive"))
@@ -193,7 +193,7 @@ func TestDetectLocalImportSource(t *testing.T) {
 
 func TestPlanLocalImportPreservesAllFiles(t *testing.T) {
 	dir := t.TempDir()
-	part1 := writeTempFile(t, dir, "part-1.qcow2", append(qcow2Magic, make([]byte, 8)...))
+	part1 := writeTempFile(t, dir, "part-1.qcow2", append(utils.Qcow2Magic, make([]byte, 8)...))
 	part2 := writeTempFile(t, dir, "part-2.qcow2", []byte("second-part"))
 
 	plan, err := planLocalImport([]string{part1, part2})

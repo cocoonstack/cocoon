@@ -22,7 +22,6 @@ func (ch *CloudHypervisor) Console(ctx context.Context, ref string) (io.ReadWrit
 
 	var conn io.ReadWriteCloser
 	if err := ch.WithRunningVM(ctx, &rec, func(_ int) error {
-		// Resolve on demand: query CH API for PTY (OCI) or use deterministic socket (UEFI).
 		path := resolveConsole(ctx, id, hypervisor.SocketPath(rec.RunDir),
 			hypervisor.ConsoleSockPath(rec.RunDir),
 			isDirectBoot(rec.BootConfig))

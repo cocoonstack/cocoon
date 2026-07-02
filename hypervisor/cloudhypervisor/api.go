@@ -3,14 +3,14 @@ package cloudhypervisor
 import "encoding/json"
 
 type chVMConfig struct {
-	// Optional — pointer + omitempty (nil → omitted from JSON).
+	// Optional — nil omitted from JSON.
 	Payload *chPayload     `json:"payload,omitempty"`
 	Balloon *chBalloon     `json:"balloon,omitempty"`
 	Serial  *chRuntimeFile `json:"serial,omitempty"`
 	Console *chRuntimeFile `json:"console,omitempty"`
 	Vsock   *chVsock       `json:"vsock,omitempty"`
 
-	// Required — value (always present).
+	// Required.
 	CPUs     chCPUs   `json:"cpus"`
 	Memory   chMemory `json:"memory"`
 	Disks    []chDisk `json:"disks,omitempty"`

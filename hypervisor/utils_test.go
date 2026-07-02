@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ func TestValidateSnapshotIntegrity(t *testing.T) {
 	})
 
 	t.Run("missing data disk", func(t *testing.T) {
-		bogus := append([]*types.StorageConfig{}, sidecar...)
+		bogus := slices.Clone(sidecar)
 		bogus = append(bogus, &types.StorageConfig{
 			Path: "/src/runDir/data-missing.raw", RO: false, Role: types.StorageRoleData,
 			Serial: "missing", FSType: "ext4",

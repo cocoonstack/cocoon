@@ -31,8 +31,7 @@ func TestEntryJSONRoundTrip(t *testing.T) {
 }
 
 func TestKindWireFormat(t *testing.T) {
-	// Wire-format strings are consumed by external BQ schema; renaming any
-	// of these is a breaking change for downstream consumers.
+	// Wire strings feed the external BQ schema; renaming any is a breaking change downstream.
 	cases := []struct {
 		got, want string
 	}{

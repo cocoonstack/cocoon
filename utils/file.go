@@ -107,8 +107,7 @@ func FilterUnreferenced(candidates []string, refs map[string]struct{}, exclude .
 	return out
 }
 
-// RemoveMatching scans dir and removes entries where match returns true.
-// Returns a slice of errors for entries that could not be removed.
+// RemoveMatching removes entries in dir where match returns true, returning per-entry removal errors.
 func RemoveMatching(ctx context.Context, dir string, match func(os.DirEntry) bool) []error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -13,8 +13,7 @@ type NetworkConfig struct {
 	NumQueues int    `json:"num_queues"` // Virtio queue count (= CPU * 2 for multi-queue).
 	QueueSize int    `json:"queue_size"`
 
-	// Backend is the provider type ("cni" or "bridge"); empty means "cni" for
-	// backward compat with pre-bridge VM records.
+	// Backend is the provider type ("cni" or "bridge"); empty means "cni" (pre-bridge records).
 	Backend string `json:"backend,omitempty"`
 
 	// BridgeDev is the Linux bridge device name; set only when Backend=="bridge".

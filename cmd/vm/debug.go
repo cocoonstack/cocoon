@@ -109,39 +109,38 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	fmt.Println("# Configure via REST API (use curl or similar):")
 	sock := fmt.Sprintf("/tmp/fc-%s.sock", vmCfg.Name)
 
-	fmt.Printf("# 1. Machine config\n")
+	fmt.Println("# 1. Machine config")
 	fmt.Printf("curl --unix-socket %s -X PUT http://localhost/machine-config \\\n", sock)
 	fmt.Printf("  -d '{\"vcpu_count\": %d, \"mem_size_mib\": %d}'\n", vmCfg.CPU, memMiB)
 	fmt.Println()
 
-	fmt.Printf("# 2. Boot source\n")
+	fmt.Println("# 2. Boot source")
 	fmt.Printf("curl --unix-socket %s -X PUT http://localhost/boot-source \\\n", sock)
 	fmt.Printf("  -d '{\"kernel_image_path\": \"%s\", \"initrd_path\": \"%s\", \"boot_args\": \"%s\"}'\n",
 		boot.KernelPath, boot.InitrdPath, cmdline)
 	fmt.Println()
 
-	fmt.Printf("# 3. Drives\n")
+	fmt.Println("# 3. Drives")
 	for i, sc := range configs {
 		fmt.Printf("curl --unix-socket %s -X PUT http://localhost/drives/drive_%d \\\n", sock, i)
 		fmt.Printf("  -d '{\"drive_id\": \"drive_%d\", \"path_on_host\": \"%s\", \"is_root_device\": false, \"is_read_only\": %t}'\n",
 			i, sc.Path, sc.RO)
 	}
-	// COW drive
 	fmt.Printf("curl --unix-socket %s -X PUT http://localhost/drives/drive_%d \\\n", sock, len(configs))
 	fmt.Printf("  -d '{\"drive_id\": \"drive_%d\", \"path_on_host\": \"%s\", \"is_root_device\": false, \"is_read_only\": false}'\n",
 		len(configs), cowPath)
 	fmt.Println()
 
 	if size, ok := hypervisor.BalloonSize(vmCfg.Memory, vmCfg.Windows); ok {
-		fmt.Printf("# 4. Balloon\n")
+		fmt.Println("# 4. Balloon")
 		fmt.Printf("curl --unix-socket %s -X PUT http://localhost/balloon \\\n", sock)
 		fmt.Printf("  -d '{\"amount_mib\": %d, \"deflate_on_oom\": true, \"free_page_reporting\": true}'\n", size>>20) //nolint:mnd
 		fmt.Println()
 	}
 
-	fmt.Printf("# 5. Start\n")
+	fmt.Println("# 5. Start")
 	fmt.Printf("curl --unix-socket %s -X PUT http://localhost/actions \\\n", sock)
-	fmt.Printf("  -d '{\"action_type\": \"InstanceStart\"}'\n")
+	fmt.Println("  -d '{\"action_type\": \"InstanceStart\"}'")
 }
 
 func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig) chDebugSpec {
@@ -149,8 +148,7 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 	balloon, _ := cmd.Flags().GetInt("balloon")
 	cowPath, _ := cmd.Flags().GetString("cow")
 	chBin, _ := cmd.Flags().GetString("ch")
-	// Mirror runtime gating: Windows / sub-MinBalloon VMs never get balloon,
-	// even if the user passed --balloon, so debug output stays truthful.
+	// Mirror runtime gating: Windows / sub-MinBalloon VMs never get balloon even with --balloon, so debug output stays truthful.
 	size, ok := hypervisor.BalloonSize(vmCfg.Memory, vmCfg.Windows)
 	switch {
 	case !ok:
@@ -196,11 +194,11 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --kernel %s \\\n", s.Boot.KernelPath)
 		fmt.Printf("  --initramfs %s \\\n", s.Boot.InitrdPath)
-		fmt.Printf("  --disk")
+		fmt.Print("  --disk")
 		for _, d := range diskArgs {
 			fmt.Printf(" \\\n    \"%s\"", d)
 		}
-		fmt.Printf(" \\\n")
+		fmt.Print(" \\\n")
 		fmt.Printf("  --cmdline \"%s\" \\\n", cmdline)
 	} else {
 		if s.CowPath == "" {
@@ -216,7 +214,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("# Launch VM: %s (image: %s, boot: UEFI firmware)\n", s.VMCfg.Name, s.VMCfg.Image)
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --firmware %s \\\n", s.Boot.FirmwarePath)
-		fmt.Printf("  --disk \\\n")
+		fmt.Print("  --disk \\\n")
 		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO)
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
@@ -234,10 +232,10 @@ func printCommonCHArgs(s chDebugSpec) {
 	}
 	fmt.Printf("  --cpus boot=%d,max=%d%s \\\n", s.VMCfg.CPU, s.MaxCPU, cpuExtra)
 	fmt.Printf("  --memory size=%dM%s \\\n", s.VMCfg.Memory>>20, memExtra) //nolint:mnd
-	fmt.Printf("  --rng src=/dev/urandom \\\n")
+	fmt.Print("  --rng src=/dev/urandom \\\n")
 	if s.Balloon > 0 {
 		fmt.Printf("  --balloon size=%dM,deflate_on_oom=on,free_page_reporting=on \\\n", s.Balloon)
 	}
-	fmt.Printf("  --watchdog \\\n")
-	fmt.Printf("  --serial tty --console off\n")
+	fmt.Print("  --watchdog \\\n")
+	fmt.Println("  --serial tty --console off")
 }

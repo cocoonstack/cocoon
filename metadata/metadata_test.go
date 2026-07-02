@@ -201,7 +201,6 @@ func TestGenerate_ProducesValidFAT12(t *testing.T) {
 	}
 
 	raw := buf.String()
-	// network-config should contain MAC matching.
 	if !strings.Contains(raw, `macaddress: "aa:bb:cc:dd:ee:ff"`) {
 		t.Error("macaddress matching not found in FAT12 image")
 	}
@@ -276,8 +275,7 @@ func TestUserData_NoMounts(t *testing.T) {
 }
 
 func TestUserData_MountsYAMLEscape(t *testing.T) {
-	// A malicious mount field with a single quote would otherwise break out
-	// of the YAML scalar; yamlQuote should double the quote.
+	// yamlQuote must double single quotes so a mount field can't break out of the YAML scalar.
 	cfg := &Config{
 		Mounts: []MountSpec{
 			{Device: "/dev/x", MountPoint: "/mnt/it's-here", FSType: "ext4", Options: "defaults"},

@@ -110,13 +110,10 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	}
 
 	if filterIDs != nil {
-		filtered := snapshots[:0]
-		for _, s := range snapshots {
-			if _, ok := filterIDs[s.ID]; ok {
-				filtered = append(filtered, s)
-			}
-		}
-		snapshots = filtered
+		snapshots = slices.DeleteFunc(snapshots, func(s *types.Snapshot) bool {
+			_, ok := filterIDs[s.ID]
+			return !ok
+		})
 	}
 
 	if len(snapshots) == 0 {

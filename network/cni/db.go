@@ -8,11 +8,9 @@ import (
 // Keyed by a generated network ID (unique per NIC, not per VM).
 type networkRecord struct {
 	types.Network `json:"network"`
-	// ID is the unique network record identifier (map key in networkIndex).
-	ID string `json:"id"`
+	ID            string `json:"id"`
 	// Type is the CNI conflist name (e.g. "cocoon", "calico").
 	Type string `json:"type"`
-	// VMID links this network back to the owning VM.
 	VMID string `json:"vm_id"`
 	// IfName is the CNI interface name inside the netns (eth0, eth1, ...).
 	IfName string `json:"if_name"`
@@ -30,8 +28,7 @@ func (idx *networkIndex) Init() {
 	}
 }
 
-// byVMID returns copies of all network records belonging to vmID.
-// Returns detached copies safe to use after the lock is released.
+// byVMID returns detached copies of vmID's records, safe to use after the lock is released.
 func (idx *networkIndex) byVMID(vmID string) []networkRecord {
 	var out []networkRecord
 	for _, rec := range idx.Networks {

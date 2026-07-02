@@ -343,7 +343,7 @@ func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, past
 }
 
 func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
-	logTag := "cmd." + name
+	logTag := "cmd.vm." + name
 	allDone, lastErr := runRoutedLoop(ctx, logTag, pastTense, cmdcore.WantJSON(cmd), routed, fn)
 	return finishRoutedCmd(ctx, cmd, logTag, name, pastTense, allDone, lastErr)
 }

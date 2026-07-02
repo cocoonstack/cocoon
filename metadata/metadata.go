@@ -131,8 +131,7 @@ type NetworkInfo struct {
 	MAC     string // MAC address for match:macaddress in network-config
 }
 
-// MountSpec is one cloud-init `mounts:` row. Options defaults to
-// "defaults,nofail" so a missing disk doesn't block boot.
+// MountSpec is one cloud-init `mounts:` row; fields render verbatim.
 type MountSpec struct {
 	Device     string
 	MountPoint string

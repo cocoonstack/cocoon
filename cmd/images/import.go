@@ -20,6 +20,7 @@ import (
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
@@ -226,10 +227,10 @@ func detectLocalImportSource(filePath string) (importSourceKind, error) {
 		return 0, fmt.Errorf("peek %s: %w", filePath, readErr)
 	}
 
-	if n >= 2 && bytes.Equal(magic[:2], []byte{0x1f, 0x8b}) {
+	if n >= 2 && bytes.Equal(magic[:2], utils.GzipMagic) {
 		return importSourceStream, nil
 	}
-	if n >= 4 && bytes.Equal(magic[:4], []byte{'Q', 'F', 'I', 0xfb}) {
+	if n >= 4 && bytes.Equal(magic[:4], utils.Qcow2Magic) {
 		return importSourceQcow2, nil
 	}
 
@@ -270,7 +271,7 @@ func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
 		return nil, 0, nil, fmt.Errorf("peek content: %w", err)
 	}
 
-	if cpeek[0] == 'Q' && cpeek[1] == 'F' && cpeek[2] == 'I' && cpeek[3] == 0xfb {
+	if bytes.HasPrefix(cpeek, utils.Qcow2Magic) {
 		return inner, imageTypeQcow2, cleanup, nil
 	}
 

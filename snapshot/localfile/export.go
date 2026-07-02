@@ -33,8 +33,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 	if err = utils.EnsureDirs(dir); err != nil {
 		return err
 	}
-	// Reject non-empty targets so the export can't silently merge into an
-	// unrelated tree.
+	// Reject non-empty targets so the export can't merge into an unrelated tree.
 	dstEntries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", dir, err)

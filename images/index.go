@@ -13,8 +13,7 @@ import (
 
 const minHexLen = 12
 
-// Entry defines the common behavior of an image index (*entry).
-// Both OCI and cloudimg imageEntry types implement this with value receivers.
+// Entry is the common index-entry contract; backends implement it with value receivers.
 type Entry interface {
 	EntryID() string
 	EntryRef() string
@@ -22,8 +21,7 @@ type Entry interface {
 	DigestHexes() []string
 }
 
-// Index is the shared generic base for image indices.
-// Both backends embed Index[imageEntry] to inherit Init() and the Images map.
+// Index is the generic base both backends embed for Init and the Images map.
 type Index[E any] struct {
 	Images map[string]*E `json:"images"`
 }
@@ -52,7 +50,6 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 
 // LookupRefs returns all ref keys matching id by exact key, normalizer, or digest prefix.
 func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) []string {
-	// Exact key match.
 	if entry, ok := images[id]; ok && entry != nil {
 		return []string{id}
 	}

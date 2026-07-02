@@ -151,8 +151,7 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 		t.Fatalf("second deleteOne (idempotent): %v", err)
 	}
 
-	// Ledger should hold exactly 2 entries: Create's start and the FIRST
-	// deleteOne's stop. The second call must not contribute a phantom event.
+	// Exactly 2 entries: Create's start + the first deleteOne's stop.
 	entries := rec.Entries()
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (start + 1× stop); kinds = %v", len(entries), kinds(entries))
@@ -825,7 +824,6 @@ func TestRestore_DoubleCloseNoPanic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// First close — should work normally.
 	rc.Close()
 	// Second close — must not deadlock or panic (idempotent via sync.Once).
 	rc.Close()
@@ -1012,7 +1010,6 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
 
-	// snapshot.json entry.
 	if err := tw.WriteHeader(&tar.Header{
 		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
 	}); err != nil {
@@ -1022,7 +1019,6 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// data file entry.
 	dataContent := []byte("state data")
 	if err := tw.WriteHeader(&tar.Header{
 		Name: "state.json", Size: int64(len(dataContent)), Mode: 0o644, Typeflag: tar.TypeReg,

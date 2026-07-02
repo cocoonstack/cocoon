@@ -8,10 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-var (
-	ErrNotFound      = errors.New("network not found")
-	ErrNotConfigured = errors.New("network provider not configured")
-)
+var ErrNotConfigured = errors.New("network provider not configured")
 
 // AddSpec is one NIC's add request; Existing != nil reuses MAC/IP for recovery.
 type AddSpec struct {

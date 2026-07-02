@@ -1,6 +1,8 @@
 // Cross-module GC protocols: snapshots opt in via the matching method; this file imports nothing concrete.
 package gc
 
+import "maps"
+
 // usedBlobIDs is implemented by snapshots that reference image blobs.
 type usedBlobIDs interface {
 	UsedBlobIDs() map[string]struct{}
@@ -15,15 +17,12 @@ type activeVMIDs interface {
 func Collect(others map[string]any, accessor func(any) map[string]struct{}) map[string]struct{} {
 	result := make(map[string]struct{})
 	for _, snap := range others {
-		for id := range accessor(snap) {
-			result[id] = struct{}{}
-		}
+		maps.Copy(result, accessor(snap))
 	}
 	return result
 }
 
-// BlobIDs extracts blob hex IDs from a snapshot.
-// Returns nil if the snapshot does not implement UsedBlobIDs.
+// BlobIDs extracts blob hex IDs from a snapshot; nil if it doesn't implement UsedBlobIDs.
 func BlobIDs(snap any) map[string]struct{} {
 	if u, ok := snap.(usedBlobIDs); ok {
 		return u.UsedBlobIDs()
@@ -31,8 +30,7 @@ func BlobIDs(snap any) map[string]struct{} {
 	return nil
 }
 
-// VMIDs extracts active VM IDs from a snapshot.
-// Returns nil if the snapshot does not implement ActiveVMIDs.
+// VMIDs extracts active VM IDs from a snapshot; nil if it doesn't implement ActiveVMIDs.
 func VMIDs(snap any) map[string]struct{} {
 	if a, ok := snap.(activeVMIDs); ok {
 		return a.ActiveVMIDs()

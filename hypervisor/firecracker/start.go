@@ -156,21 +156,19 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 		return 0, err
 	}
 
-	// Start console relay as a background process (self-exec).
-	// The relay holds the PTY master and listens on console.sock.
-	relayOK := fc.startConsoleRelay(ctx, rec.RunDir, master, pid) == nil
-	if relayOK {
+	relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid)
+	if relayErr == nil {
 		// Master fd ownership transferred to relay; close parent's copy.
 		_ = master.Close()
 	} else {
-		log.WithFunc("firecracker.launchProcess").Warn(ctx, "console relay failed (console unavailable)")
+		log.WithFunc("firecracker.launchProcess").Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
 	go func() {
 		_ = fcCmd.Wait()
 		// If relay failed, master fd was kept open to preserve ttyS0.
 		// Close it now that FC has exited to avoid permanent fd leak.
-		if !relayOK {
+		if relayErr != nil {
 			_ = master.Close()
 		}
 	}()

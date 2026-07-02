@@ -21,7 +21,7 @@ type Module[S any] struct {
 	Collect func(ctx context.Context, ids []string, snap S) error
 }
 
-// Module[S] implements runner — internal to the gc package.
+// Module[S] implements runner.
 func (m Module[S]) getName() string        { return m.Name }
 func (m Module[S]) getLocker() lock.Locker { return m.Locker }
 

@@ -6,7 +6,6 @@ import (
 )
 
 // ResolveRef resolves a ref (exact ID, name, or ID prefix ≥3 chars) to a full ID.
-// Works with any Index that has an Items map and a Names map.
 func ResolveRef[T any](items map[string]*T, names map[string]string, ref string, notFound error) (string, error) {
 	if items[ref] != nil {
 		return ref, nil
@@ -16,8 +15,8 @@ func ResolveRef[T any](items map[string]*T, names map[string]string, ref string,
 	}
 	if len(ref) >= 3 {
 		var match string
-		for id := range items {
-			if strings.HasPrefix(id, ref) {
+		for id, item := range items {
+			if item != nil && strings.HasPrefix(id, ref) {
 				if match != "" {
 					return "", fmt.Errorf("ambiguous ref %q: multiple matches", ref)
 				}

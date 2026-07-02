@@ -8,17 +8,6 @@ import (
 	"time"
 )
 
-var (
-	_ io.WriterTo = Entry{}
-	_ Recorder    = NopRecorder{}
-)
-
-// Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
-type Kind string
-
-// Reason annotates why an endpoint was emitted.
-type Reason string
-
 const (
 	KindVMComputeStart   Kind = "vm.compute.start"
 	KindVMComputeStop    Kind = "vm.compute.stop"
@@ -37,6 +26,17 @@ const (
 	ReasonVMRemove      Reason = "vm-rm"
 	ReasonSnapRemove    Reason = "snap-rm"
 )
+
+var (
+	_ io.WriterTo = Entry{}
+	_ Recorder    = NopRecorder{}
+)
+
+// Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
+type Kind string
+
+// Reason annotates why an endpoint was emitted.
+type Reason string
 
 // Shape is the resource snapshot at the moment an Entry is emitted.
 type Shape struct {
