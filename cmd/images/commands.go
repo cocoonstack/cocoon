@@ -3,7 +3,7 @@ package images
 import (
 	"github.com/spf13/cobra"
 
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
 type Actions interface {
@@ -25,7 +25,7 @@ func Command(h Actions) *cobra.Command {
 		Short:   "List locally stored images (all backends)",
 		RunE:    h.List,
 	}
-	cmdcore.AddFormatFlag(listCmd)
+	cliutil.AddFormatFlag(listCmd)
 
 	importCmd := &cobra.Command{
 		Use:   "import NAME [FILE...]",

@@ -8,6 +8,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
@@ -36,7 +37,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	return cmdcore.OutputFormatted(cmd, all, func(w *tabwriter.Writer) {
+	return cliutil.OutputFormatted(cmd, all, func(w *tabwriter.Writer) {
 		fmt.Fprintln(w, "TYPE\tNAME\tDIGEST\tSIZE\tCREATED") //nolint:errcheck
 		for _, img := range all {
 			digest := img.ID
@@ -45,7 +46,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 				img.Type, img.Name, digest,
-				cmdcore.FormatSize(img.Size),
+				cliutil.FormatSize(img.Size),
 				img.CreatedAt.Local().Format(time.DateTime))
 		}
 	})
@@ -113,5 +114,5 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 		// TOCTOU: concurrent rm/GC between resolve and re-probe; fail explicit instead of dumping "null" JSON.
 		return fmt.Errorf("image %q: disappeared during resolve", ref)
 	}
-	return cmdcore.OutputJSON(img)
+	return cliutil.OutputJSON(img)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -28,7 +29,7 @@ func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, vm); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
 	}
 	logger := log.WithFunc("cmd.vm.create")
@@ -43,7 +44,7 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logger := log.WithFunc("cmd.vm.run")
-	wantJSON := cmdcore.WantJSON(cmd)
+	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
 	}
@@ -60,7 +61,7 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 		case info != nil:
 			vm = info
 		}
-		return cmdcore.OutputJSON(vm)
+		return cliutil.OutputJSON(vm)
 	}
 	for _, id := range started {
 		logger.Infof(ctx, "started: %s", id)
@@ -127,7 +128,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, vm); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
@@ -196,7 +197,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("restore: %w", err)
 	}
 
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, result); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
 		return jsonErr
 	}
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
@@ -277,7 +278,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		return err
 	}
 
-	wantJSON := cmdcore.WantJSON(cmd)
+	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "cloning VM from %s ...", sourceLabel)
 	}
@@ -289,7 +290,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	}
 
 	if wantJSON {
-		return cmdcore.OutputJSON(vm)
+		return cliutil.OutputJSON(vm)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm)
@@ -352,7 +353,7 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 
 // runDirectRestore is the shared tail for the snapshot-DB and --from-dir restore paths: log, DirectRestore, output.
 func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
-	wantJSON := cmdcore.WantJSON(cmd)
+	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
 	}
@@ -361,7 +362,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, dcr h
 		return fmt.Errorf("restore: %w", err)
 	}
 	if wantJSON {
-		return cmdcore.OutputJSON(result)
+		return cliutil.OutputJSON(result)
 	}
 	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
 	return nil

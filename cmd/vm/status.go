@@ -15,6 +15,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -118,7 +119,7 @@ func renderVMList(vms []*types.VM, format string) error {
 		if vms == nil {
 			vms = []*types.VM{}
 		}
-		return cmdcore.OutputJSON(vms)
+		return cliutil.OutputJSON(vms)
 	}
 	if len(vms) == 0 {
 		fmt.Println("No VMs found.")

@@ -1,28 +1,22 @@
-package core
+// Package cliutil holds dependency-free CLI helpers (flags, table/JSON output) shared by cocoon and downstream CLIs.
+package cliutil
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/docker/go-units"
 	"github.com/spf13/cobra"
-
-	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
-func ReconcileState(vm *types.VM) string {
-	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
-		return "stopped (stale)"
+func CommandContext(cmd *cobra.Command) context.Context {
+	if cmd != nil && cmd.Context() != nil {
+		return cmd.Context()
 	}
-	return string(vm.State)
-}
-
-func OutputJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+	return context.Background()
 }
 
 func AddFormatFlag(cmd *cobra.Command) {
@@ -36,6 +30,12 @@ func AddOutputFlag(cmd *cobra.Command) {
 func WantJSON(cmd *cobra.Command) bool {
 	out, _ := cmd.Flags().GetString("output")
 	return out == "json"
+}
+
+func OutputJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
 
 // MaybeOutputJSON emits JSON iff --output=json; (true, _) means caller should stop logging.
@@ -58,4 +58,8 @@ func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Wri
 
 func FormatSize(bytes int64) string {
 	return units.HumanSize(float64(bytes))
+}
+
+func IsURL(ref string) bool {
+	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
 }

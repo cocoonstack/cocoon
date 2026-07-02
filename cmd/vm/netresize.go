@@ -6,7 +6,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/network"
@@ -31,7 +31,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cmdcore.MaybeOutputJSON(cmd, res); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, res); done {
 		return jsonErr
 	}
 	logger := log.WithFunc("cmd.vm.net")

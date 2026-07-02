@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/config"
 )
 
@@ -18,7 +19,7 @@ func (h BaseHandler) Init(cmd *cobra.Command) (context.Context, *config.Config, 
 	if err != nil {
 		return nil, nil, err
 	}
-	return CommandContext(cmd), conf, nil
+	return cliutil.CommandContext(cmd), conf, nil
 }
 
 func (h BaseHandler) Conf() (*config.Config, error) {
@@ -30,11 +31,4 @@ func (h BaseHandler) Conf() (*config.Config, error) {
 		return nil, fmt.Errorf("config not initialized")
 	}
 	return conf, nil
-}
-
-func CommandContext(cmd *cobra.Command) context.Context {
-	if cmd != nil && cmd.Context() != nil {
-		return cmd.Context()
-	}
-	return context.Background()
 }

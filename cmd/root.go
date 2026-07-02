@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	cmdimages "github.com/cocoonstack/cocoon/cmd/images"
 	cmdothers "github.com/cocoonstack/cocoon/cmd/others"
@@ -31,7 +32,7 @@ var (
 			Short:        "Cocoon - MicroVM Engine",
 			SilenceUsage: true,
 			PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-				return initConfig(cmdcore.CommandContext(cmd))
+				return initConfig(cliutil.CommandContext(cmd))
 			},
 		}
 
