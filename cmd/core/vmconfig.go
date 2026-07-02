@@ -11,7 +11,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/images/cloudimg"
+	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -129,7 +129,7 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 
 func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
 	if bootCfg != nil && bootCfg.KernelPath == "" && bootCfg.FirmwarePath == "" {
-		bootCfg.FirmwarePath = cloudimg.NewConfig(conf).FirmwarePath()
+		bootCfg.FirmwarePath = images.FirmwarePath(conf.RootDir)
 	}
 }
 

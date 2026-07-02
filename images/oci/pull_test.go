@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 )
 
@@ -38,7 +37,7 @@ func TestCollectBootHexesAndBootFilesPresent(t *testing.T) {
 
 func TestMoveBootFileAndIsUpToDate(t *testing.T) {
 	root := t.TempDir()
-	conf := NewConfig(&config.Config{RootDir: root})
+	conf := NewConfig(root, 1)
 	if err := conf.EnsureDirs(); err != nil {
 		t.Fatalf("EnsureDirs(): %v", err)
 	}

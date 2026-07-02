@@ -8,7 +8,6 @@ import (
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/lock"
 	"github.com/cocoonstack/cocoon/progress"
@@ -30,11 +29,8 @@ type CloudImg struct {
 	ops       images.Ops[imageIndex, imageEntry]
 }
 
-func New(ctx context.Context, conf *config.Config) (*CloudImg, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	cfg := NewConfig(conf)
+func New(ctx context.Context, rootDir string) (*CloudImg, error) {
+	cfg := NewConfig(rootDir)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
@@ -115,7 +111,7 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 				Role:   types.StorageRoleLayer,
 			}}
 
-			firmwarePath := c.conf.FirmwarePath()
+			firmwarePath := images.FirmwarePath(c.conf.RootDir)
 			if !utils.ValidFile(firmwarePath) {
 				return fmt.Errorf("firmware not found: %s", firmwarePath)
 			}
