@@ -10,8 +10,8 @@ set -eu
 AGENT_VERSION="${COCOON_AGENT_VERSION:-0.1.5}"
 ARCH="${TARGETARCH:-$(dpkg --print-architecture)}"
 case "$ARCH" in
-    amd64) AGENT_ARCH="x86_64"; AGENT_SHA256="f0fa49a65d0648795316898af351574777e74bf75b1a600b5046cb741d76e123" ;;
-    arm64) AGENT_ARCH="arm64";  AGENT_SHA256="f2e69c6be8f7d44b8d21ecd6b91a950bc0aaae7c16e63bec91f010e2311d1b26" ;;
+    amd64) AGENT_ARCH="x86_64"; AGENT_SHA256="4ca52609076efb4d5091d42b4a41533102766568e91d096e8ed25d2f4250ec25" ;;
+    arm64) AGENT_ARCH="arm64";  AGENT_SHA256="74a7f53282063b60fa2a8288c40df8ac78f479f403751c729b5e761187a3145d" ;;
     *) echo "install-agent: unsupported arch '$ARCH'" >&2; exit 1 ;;
 esac
 
