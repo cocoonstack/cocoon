@@ -3,19 +3,21 @@ package oci
 import (
 	"path/filepath"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 type Config struct {
 	images.BaseConfig
+	// PoolSize bounds concurrent layer processing.
+	PoolSize int
 }
 
-func NewConfig(conf *config.Config) *Config {
-	return &Config{BaseConfig: images.BaseConfig{
-		Root: conf, Subdir: "oci", BlobExt: ".erofs",
-	}}
+func NewConfig(rootDir string, poolSize int) *Config {
+	return &Config{
+		BaseConfig: images.BaseConfig{RootDir: rootDir, Subdir: "oci", BlobExt: ".erofs"},
+		PoolSize:   utils.PoolSizeOrDefault(poolSize),
+	}
 }
 
 func (c *Config) EnsureDirs() error {

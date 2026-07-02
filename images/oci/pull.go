@@ -76,7 +76,7 @@ func processLayers(ctx context.Context, conf *Config, layers []v1.Layer, workDir
 			tracker: tracker, result: &r,
 		})
 		return r, err
-	}, conf.Root.EffectivePoolSize())
+	}, conf.PoolSize)
 	if waitErr != nil {
 		return nil, fmt.Errorf("process layers: %w", waitErr)
 	}

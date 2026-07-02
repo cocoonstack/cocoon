@@ -3,10 +3,11 @@ package config
 import (
 	"fmt"
 	"net"
-	"runtime"
 	"strings"
 
 	coretypes "github.com/projecteru2/core/types"
+
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -60,10 +61,7 @@ func (c *Config) Hypervisor() HypervisorType {
 
 // EffectivePoolSize returns PoolSize if set, otherwise runtime.NumCPU().
 func (c *Config) EffectivePoolSize() int {
-	if c.PoolSize <= 0 {
-		return runtime.NumCPU()
-	}
-	return c.PoolSize
+	return utils.PoolSizeOrDefault(c.PoolSize)
 }
 
 // Validate checks that all config fields are within acceptable ranges.

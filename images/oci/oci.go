@@ -9,7 +9,6 @@ import (
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/lock"
 	"github.com/cocoonstack/cocoon/progress"
@@ -34,16 +33,14 @@ type OCI struct {
 	ops       images.Ops[imageIndex, imageEntry]
 }
 
-func New(ctx context.Context, conf *config.Config) (*OCI, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	cfg := NewConfig(conf)
+// New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.
+func New(ctx context.Context, rootDir string, poolSize int) (*OCI, error) {
+	cfg := NewConfig(rootDir, poolSize)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 
-	log.WithFunc("oci.New").Debugf(ctx, "OCI image backend initialized, pool size: %d", conf.PoolSize)
+	log.WithFunc("oci.New").Debugf(ctx, "OCI image backend initialized, pool size: %d", cfg.PoolSize)
 
 	store, locker := images.NewStore[imageIndex](cfg.IndexFile(), cfg.IndexLock())
 	o := &OCI{

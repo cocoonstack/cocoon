@@ -102,7 +102,7 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 
 func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.images.importCloudimgFiles")
-	cloudimgStore, err := cloudimg.New(ctx, conf)
+	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir)
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
 	}
@@ -130,7 +130,7 @@ func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, n
 
 func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.images.importOCIFiles")
-	ociStore, err := oci.New(ctx, conf)
+	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)
 	}
@@ -154,7 +154,7 @@ func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name s
 
 func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
 	logger := log.WithFunc("cmd.images.importCloudimgReader")
-	cloudimgStore, err := cloudimg.New(ctx, conf)
+	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir)
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
 	}
@@ -178,7 +178,7 @@ func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, 
 
 func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
 	logger := log.WithFunc("cmd.images.importOCIReader")
-	ociStore, err := oci.New(ctx, conf)
+	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)
 	}

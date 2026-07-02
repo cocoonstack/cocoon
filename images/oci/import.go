@@ -57,7 +57,7 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 				label: filePath, workDir: workDir, tracker: tracker, result: &r,
 			}, filePath)
 			return r, err
-		}, conf.Root.EffectivePoolSize())
+		}, conf.PoolSize)
 		if mapErr != nil {
 			return fmt.Errorf("process layers: %w", mapErr)
 		}
