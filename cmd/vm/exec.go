@@ -12,9 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 )
 
 const hybridVsockReplyMax = 256
@@ -40,16 +38,9 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("exec: no command given")
 	}
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, ref)
+	info, err := h.resolveRunningVM(ctx, conf, "exec", ref)
 	if err != nil {
-		return fmt.Errorf("exec: %w", err)
-	}
-	info, err := hyper.Inspect(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("exec: inspect: %w", err)
-	}
-	if info.State != types.VMStateRunning {
-		return fmt.Errorf("exec: %w", hypervisor.ErrNotRunning)
+		return err
 	}
 	if info.VsockSocket == "" {
 		return fmt.Errorf("exec: %w (recreate the VM to enable agent exec)", ErrVsockNotConfigured)
