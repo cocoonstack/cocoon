@@ -4,16 +4,23 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/images"
+	"github.com/cocoonstack/cocoon/utils"
 )
+
+// defaultPullConns is the default concurrent Range connections per cloud-image download.
+const defaultPullConns = 8
 
 type Config struct {
 	images.BaseConfig
+	// PullConns bounds concurrent HTTP Range connections per cloud-image download.
+	PullConns int
 }
 
-func NewConfig(rootDir string) *Config {
-	return &Config{BaseConfig: images.BaseConfig{
-		RootDir: rootDir, Subdir: "cloudimg", BlobExt: ".qcow2",
-	}}
+func NewConfig(rootDir string, pullConns int) *Config {
+	return &Config{
+		BaseConfig: images.BaseConfig{RootDir: rootDir, Subdir: "cloudimg", BlobExt: ".qcow2"},
+		PullConns:  utils.OrDefault(pullConns, defaultPullConns),
+	}
 }
 
 func (c *Config) EnsureDirs() error {

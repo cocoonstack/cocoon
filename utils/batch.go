@@ -88,8 +88,13 @@ func Map[T, R any](ctx context.Context, items []T, fn func(ctx context.Context, 
 
 // PoolSizeOrDefault returns n, or runtime.NumCPU() when n <= 0.
 func PoolSizeOrDefault(n int) int {
+	return OrDefault(n, runtime.NumCPU())
+}
+
+// OrDefault returns n, or def when n <= 0.
+func OrDefault(n, def int) int {
 	if n <= 0 {
-		return runtime.NumCPU()
+		return def
 	}
 	return n
 }

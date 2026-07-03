@@ -29,13 +29,14 @@ type CloudImg struct {
 	ops       images.Ops[imageIndex, imageEntry]
 }
 
-func New(ctx context.Context, rootDir string) (*CloudImg, error) {
-	cfg := NewConfig(rootDir)
+// New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.
+func New(ctx context.Context, rootDir string, pullConns int) (*CloudImg, error) {
+	cfg := NewConfig(rootDir, pullConns)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 
-	log.WithFunc("cloudimg.New").Debug(ctx, "cloud image backend initialized")
+	log.WithFunc("cloudimg.New").Debugf(ctx, "cloud image backend initialized, pull conns: %d", cfg.PullConns)
 
 	store, locker := images.NewStore[imageIndex](cfg.IndexFile(), cfg.IndexLock())
 	c := &CloudImg{
