@@ -313,6 +313,9 @@ func hashDigest(dst *os.File) (string, error) {
 
 // splitRanges divides [0,size) into up to n contiguous, inclusive-ended byte ranges.
 func splitRanges(size int64, n int) []byteRange {
+	if n < 1 {
+		n = 1
+	}
 	chunk := (size + int64(n) - 1) / int64(n)
 	ranges := make([]byteRange, 0, n)
 	for start := int64(0); start < size; start += chunk {

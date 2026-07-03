@@ -92,7 +92,8 @@ func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
 		return false
 	}
 	if vm.VsockSocket == "" {
-		logger.Debug(ctx, "skip reseed signal: vsock not configured")
+		// Not Debug: a legacy VM silently keeps the snapshot's CRNG state.
+		logger.Warnf(ctx, "skip reseed for %s: no vsock; this clone keeps the snapshot's CRNG state — recreate the VM to enable the agent", vm.ID)
 		return false
 	}
 	if err := reseedVM(ctx, vm, regenMachineID); err != nil {
