@@ -97,6 +97,11 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 			return fmt.Errorf("refuse delete: api socket %s still responsive (suspected orphan vmm; kill the vmm process then retry)", sockPath)
 		}
 		for _, pid := range procScan.Find(sockPath) {
+			// procScan is a pre-stopOne snapshot: a just-force-stopped VM is already gone.
+			// Only a still-live match is a real orphan worth killing and logging.
+			if !utils.IsProcessAlive(pid) {
+				continue
+			}
 			if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
 				return fmt.Errorf("terminate orphan VMM pid=%d for VM %s: %w", pid, id, termErr)
 			}
