@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -30,16 +29,9 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	ref := args[0]
 	regenMachineID, _ := cmd.Flags().GetBool("machine-id")
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, ref)
+	vm, err := h.resolveRunningVM(ctx, conf, "reseed", ref)
 	if err != nil {
-		return fmt.Errorf("reseed: %w", err)
-	}
-	vm, err := hyper.Inspect(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("reseed: inspect: %w", err)
-	}
-	if vm.State != types.VMStateRunning {
-		return fmt.Errorf("reseed: %w", hypervisor.ErrNotRunning)
+		return err
 	}
 	return reseedVM(ctx, vm, regenMachineID)
 }
