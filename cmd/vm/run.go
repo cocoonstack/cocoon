@@ -127,7 +127,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	signalReseed(ctx, refreshVM(ctx, hyper, vm), true)
+	h.reseedAfterResume(ctx, hyper, vm, true)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
@@ -197,7 +197,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	signalReseed(ctx, refreshVM(ctx, hyper, result), false)
+	h.reseedAfterResume(ctx, hyper, result, false)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
 		return jsonErr
@@ -290,7 +290,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	signalReseed(ctx, refreshVM(ctx, hyper, vm), true)
+	h.reseedAfterResume(ctx, hyper, vm, true)
 
 	if wantJSON {
 		return cliutil.OutputJSON(vm)
@@ -364,7 +364,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	signalReseed(ctx, refreshVM(ctx, hyper, result), false)
+	h.reseedAfterResume(ctx, hyper, result, false)
 	if wantJSON {
 		return cliutil.OutputJSON(result)
 	}
@@ -499,16 +499,6 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
 		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
-}
-
-// refreshVM re-inspects after clone/restore: the value Clone/Restore return is built in-process and
-// never passes through ToVM, so runtime-only fields (VsockSocket, PID, SocketPath) are still zero.
-// Falls back to the original value if inspect fails.
-func refreshVM(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM) *types.VM {
-	if info, err := hyper.Inspect(ctx, vm.ID); err == nil {
-		return info
-	}
-	return vm
 }
 
 func printPostCloneHints(vm *types.VM) {
