@@ -176,6 +176,12 @@ cocoon
 | `--cni-bin-dir`   | `COCOON_CNI_BIN_DIR`           | `/opt/cni/bin`     | CNI plugin binary directory            |
 | `--dns`           | `COCOON_DNS`                   | `8.8.8.8,1.1.1.1`  | DNS servers for VMs (comma separated)  |
 
+Config-file / env-only keys (no CLI flag):
+
+| Key          | Env Variable        | Default | Description                                                            |
+| ------------ | ------------------- | ------- | ---------------------------------------------------------------------- |
+| `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry |
+
 ## VM Flags
 
 Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
