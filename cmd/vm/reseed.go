@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -36,8 +35,10 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	return reseedVM(ctx, vm, regenMachineID)
 }
 
-// reseedVM pushes fresh entropy and a CRNG reseed order over vsock, retrying because the
-// guest agent re-listens shortly after a clone/restore resume.
+// reseedVM pushes fresh entropy and a CRNG reseed order over vsock. Only a failed
+// dial is retried — the guest agent re-listens shortly after a clone/restore resume;
+// once a live agent answers, its reply (success, version-skew rejection, or failure)
+// is final, so an old agent isn't billed the whole retry budget.
 func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 	if vm.VsockSocket == "" {
 		return fmt.Errorf("reseed: %w (recreate the VM to enable agent reseed)", ErrVsockNotConfigured)
@@ -47,44 +48,66 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 		return fmt.Errorf("reseed: generate entropy: %w", err)
 	}
 
-	var err error
+	var dialErr error
 	for attempt := 1; attempt <= reseedMaxAttempts; attempt++ {
-		if err = ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var conn io.ReadWriteCloser
-		if conn, err = dialHybridVsock(ctx, vm.VsockSocket, hypervisor.VsockAgentPort); err == nil {
-			err = client.Reseed(ctx, conn, entropy, regenMachineID)
-			conn.Close() //nolint:errcheck,gosec
-			if err == nil {
-				return nil
+		conn, err := dialHybridVsock(ctx, vm.VsockSocket, hypervisor.VsockAgentPort)
+		if err != nil {
+			dialErr = err
+			if attempt < reseedMaxAttempts {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(reseedRetryDelay):
+				}
 			}
+			continue
 		}
-		if attempt < reseedMaxAttempts {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(reseedRetryDelay):
-			}
+		err = client.Reseed(ctx, conn, entropy, regenMachineID)
+		conn.Close() //nolint:errcheck,gosec
+		if err != nil {
+			return fmt.Errorf("reseed: %w", err)
 		}
+		return nil
 	}
-	return fmt.Errorf("reseed: %w", err)
+	return fmt.Errorf("reseed: dial agent: %w", dialErr)
 }
 
-// signalReseed is the non-fatal wrapper called from clone/restore paths: skips silently on
-// Windows guests (agent verb is Linux-only) or legacy VMs without vsock, and never fails the
-// calling command on agent version skew.
-func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) {
+// reseedAfterResume re-inspects then fires the best-effort reseed. Clone/Restore return a
+// *types.VM built in-process that never passed through ToVM, so its VsockSocket is zero;
+// pairing refresh with signal keeps a caller from silently no-op-ing on a stale value.
+func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
+	signalReseed(ctx, refreshVM(ctx, hyper, vm), regenMachineID)
+}
+
+// signalReseed is the non-fatal wrapper for clone/restore paths: it reports whether a reseed
+// was attempted (false = skipped for a Windows guest or a legacy VM without vsock) and never
+// fails the calling command on agent version skew.
+func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
 	logger := log.WithFunc("cmd.vm.reseed")
 	if vm.Config.Windows {
 		logger.Debug(ctx, "skip reseed signal: Windows guest")
-		return
+		return false
 	}
 	if vm.VsockSocket == "" {
 		logger.Debug(ctx, "skip reseed signal: vsock not configured")
-		return
+		return false
 	}
 	if err := reseedVM(ctx, vm, regenMachineID); err != nil {
 		logger.Warnf(ctx, "reseed signal failed (agent >= v0.1.6 required): %v; run 'cocoon vm reseed %s' after fixing", err, vm.ID)
 	}
+	return true
+}
+
+// refreshVM re-inspects to recover runtime-only fields (VsockSocket, PID, SocketPath) that
+// ToVM sets but Clone/Restore's in-process return value lacks; keeps the original on error.
+func refreshVM(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM) *types.VM {
+	info, err := hyper.Inspect(ctx, vm.ID)
+	if err != nil {
+		log.WithFunc("cmd.vm.reseed").Debugf(ctx, "refresh VM %s before reseed: %v", vm.ID, err)
+		return vm
+	}
+	return info
 }

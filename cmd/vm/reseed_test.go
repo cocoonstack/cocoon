@@ -9,13 +9,18 @@ import (
 )
 
 func TestSignalReseed_SkipsWindows(t *testing.T) {
+	// VsockSocket is set: a regressed Windows guard would fall through to a dial instead of skipping.
 	vm := &types.VM{ID: "vm1", Config: types.VMConfig{Config: types.Config{Windows: true}}, VsockSocket: "/tmp/whatever.sock"}
-	signalReseed(t.Context(), vm, true)
+	if signalReseed(t.Context(), vm, true) {
+		t.Error("attempted reseed on a Windows guest, want skip")
+	}
 }
 
 func TestSignalReseed_SkipsNoVsock(t *testing.T) {
 	vm := &types.VM{ID: "vm1"}
-	signalReseed(t.Context(), vm, true)
+	if signalReseed(t.Context(), vm, true) {
+		t.Error("attempted reseed with no vsock, want skip")
+	}
 }
 
 func TestReseedVM_NoVsock(t *testing.T) {
