@@ -104,7 +104,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 
 	if da, ok := snapBackend.(snapshot.Direct); ok {
 		if dcr, ok := hyper.(hypervisor.Direct); ok {
-			return h.cloneDirect(ctx, cmd, conf, dcr, da, snapRef, logger)
+			return h.cloneDirect(ctx, cmd, conf, hyper, dcr, da, snapRef, logger)
 		}
 	}
 
@@ -127,7 +127,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	signalReseed(ctx, vm, true)
+	signalReseed(ctx, refreshVM(ctx, hyper, vm), true)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
@@ -197,7 +197,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	signalReseed(ctx, result, false)
+	signalReseed(ctx, refreshVM(ctx, hyper, result), false)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
 		return jsonErr
@@ -235,16 +235,16 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
-	return h.runDirectRestore(ctx, cmd, dcr, vmRef, vmCfg, dir, cfg.ID,
+	return h.runDirectRestore(ctx, cmd, hyper, dcr, vmRef, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
-func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, dcr hypervisor.Direct, da snapshot.Direct, snapRef string, logger *log.Fields) error {
+func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, da snapshot.Direct, snapRef string, logger *log.Fields) error {
 	dataDir, cfg, err := da.DataDir(ctx, snapRef)
 	if err != nil {
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
-	return h.cloneFromSrcDir(ctx, cmd, conf, dcr, cfg, dataDir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, dcr, cfg, dataDir,
 		fmt.Sprintf("snapshot %s (direct)", snapRef), logger)
 }
 
@@ -270,11 +270,11 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if !ok {
 		return fmt.Errorf("backend %s does not support direct clone", hyper.Type())
 	}
-	return h.cloneFromSrcDir(ctx, cmd, &localConf, dcr, cfg, dir,
+	return h.cloneFromSrcDir(ctx, cmd, &localConf, hyper, dcr, cfg, dir,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
-func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
+func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
 	vmCfg, vmID, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, cfg)
 	if err != nil {
 		return err
@@ -290,7 +290,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	signalReseed(ctx, vm, true)
+	signalReseed(ctx, refreshVM(ctx, hyper, vm), true)
 
 	if wantJSON {
 		return cliutil.OutputJSON(vm)
@@ -350,12 +350,12 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 	if err != nil {
 		return true, fmt.Errorf("open snapshot: %w", err)
 	}
-	return true, h.runDirectRestore(ctx, cmd, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
+	return true, h.runDirectRestore(ctx, cmd, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
 // runDirectRestore is the shared tail for the snapshot-DB and --from-dir restore paths: log, DirectRestore, output.
-func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
+func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
@@ -364,7 +364,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, dcr h
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	signalReseed(ctx, result, false)
+	signalReseed(ctx, refreshVM(ctx, hyper, result), false)
 	if wantJSON {
 		return cliutil.OutputJSON(result)
 	}
@@ -499,6 +499,16 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
 		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
+}
+
+// refreshVM re-inspects after clone/restore: the value Clone/Restore return is built in-process and
+// never passes through ToVM, so runtime-only fields (VsockSocket, PID, SocketPath) are still zero.
+// Falls back to the original value if inspect fails.
+func refreshVM(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM) *types.VM {
+	if info, err := hyper.Inspect(ctx, vm.ID); err == nil {
+		return info
+	}
+	return vm
 }
 
 func printPostCloneHints(vm *types.VM) {
