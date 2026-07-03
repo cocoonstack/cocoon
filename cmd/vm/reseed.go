@@ -35,6 +35,13 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	return reseedVM(ctx, vm, regenMachineID)
 }
 
+// reseedAfterResume re-inspects then fires the best-effort reseed. Clone/Restore return a
+// *types.VM built in-process that never passed through ToVM, so its VsockSocket is zero;
+// pairing refresh with signal keeps a caller from silently no-op-ing on a stale value.
+func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
+	signalReseed(ctx, refreshVM(ctx, hyper, vm), regenMachineID)
+}
+
 // reseedVM pushes fresh entropy and a CRNG reseed order over vsock. Only a failed
 // dial is retried — the guest agent re-listens shortly after a clone/restore resume;
 // once a live agent answers, its reply (success, version-skew rejection, or failure)
@@ -73,13 +80,6 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 		return nil
 	}
 	return fmt.Errorf("reseed: dial agent: %w", dialErr)
-}
-
-// reseedAfterResume re-inspects then fires the best-effort reseed. Clone/Restore return a
-// *types.VM built in-process that never passed through ToVM, so its VsockSocket is zero;
-// pairing refresh with signal keeps a caller from silently no-op-ing on a stale value.
-func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
-	signalReseed(ctx, refreshVM(ctx, hyper, vm), regenMachineID)
 }
 
 // signalReseed is the non-fatal wrapper for clone/restore paths: it reports whether a reseed
