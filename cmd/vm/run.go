@@ -127,6 +127,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
+	signalReseed(ctx, vm, true)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
@@ -196,6 +197,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
+	signalReseed(ctx, result, false)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
 		return jsonErr
@@ -288,6 +290,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		rollbackNetwork(ctx, netProvider, vmID)
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
+	signalReseed(ctx, vm, true)
 
 	if wantJSON {
 		return cliutil.OutputJSON(vm)
@@ -361,6 +364,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, dcr h
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
+	signalReseed(ctx, result, false)
 	if wantJSON {
 		return cliutil.OutputJSON(result)
 	}

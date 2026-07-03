@@ -28,6 +28,7 @@ type Actions interface {
 	DeviceAttach(cmd *cobra.Command, args []string) error
 	DeviceDetach(cmd *cobra.Command, args []string) error
 	NetResize(cmd *cobra.Command, args []string) error
+	Reseed(cmd *cobra.Command, args []string) error
 }
 
 func Command(h Actions) *cobra.Command {
@@ -112,6 +113,14 @@ func Command(h Actions) *cobra.Command {
 	}
 	execCmd.Flags().StringArrayP("env", "e", nil, "extra env var KEY=VALUE (repeatable)")
 
+	reseedCmd := &cobra.Command{
+		Use:   "reseed VM",
+		Short: "Force a CRNG reseed inside the guest (fresh entropy over vsock)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.Reseed,
+	}
+	reseedCmd.Flags().Bool("machine-id", false, "also regenerate /etc/machine-id (use after clone, not restore)")
+
 	logsCmd := &cobra.Command{
 		Use:   "logs [flags] VM",
 		Short: "Print the per-VM hypervisor log file",
@@ -181,6 +190,7 @@ func Command(h Actions) *cobra.Command {
 		inspectCmd,
 		consoleCmd,
 		execCmd,
+		reseedCmd,
 		logsCmd,
 		rmCmd,
 		restoreCmd,
