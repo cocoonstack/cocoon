@@ -16,6 +16,8 @@ const (
 
 	// defaultPullConns is the default concurrent Range connections per cloud-image download.
 	defaultPullConns = 8
+	// maxPullConns caps it so a misconfigured pull_conns can't exhaust file descriptors.
+	maxPullConns = 64
 )
 
 // HypervisorType identifies the selected hypervisor backend.
@@ -69,9 +71,9 @@ func (c *Config) EffectivePoolSize() int {
 	return utils.PoolSizeOrDefault(c.PoolSize)
 }
 
-// EffectivePullConns returns PullConns if set, otherwise defaultPullConns.
+// EffectivePullConns returns PullConns (defaultPullConns when unset) clamped to maxPullConns.
 func (c *Config) EffectivePullConns() int {
-	return utils.OrDefault(c.PullConns, defaultPullConns)
+	return min(utils.OrDefault(c.PullConns, defaultPullConns), maxPullConns)
 }
 
 // Validate checks that all config fields are within acceptable ranges.
