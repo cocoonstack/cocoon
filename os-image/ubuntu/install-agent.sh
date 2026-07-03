@@ -7,11 +7,11 @@
 # `systemctl enable` is a no-op when the symlinks are already in place.
 set -eu
 
-AGENT_VERSION="${COCOON_AGENT_VERSION:-0.1.5}"
+AGENT_VERSION="${COCOON_AGENT_VERSION:-0.1.6}"
 ARCH="${TARGETARCH:-$(dpkg --print-architecture)}"
 case "$ARCH" in
-    amd64) AGENT_ARCH="x86_64"; AGENT_SHA256="4ca52609076efb4d5091d42b4a41533102766568e91d096e8ed25d2f4250ec25" ;;
-    arm64) AGENT_ARCH="arm64";  AGENT_SHA256="74a7f53282063b60fa2a8288c40df8ac78f479f403751c729b5e761187a3145d" ;;
+    amd64) AGENT_ARCH="x86_64"; AGENT_SHA256="f6339ce6fc8d0779642a8a91692d62a06958964f8a723c3644779c435aba2bd7" ;;
+    arm64) AGENT_ARCH="arm64";  AGENT_SHA256="7165d2a471940b763d85e10475f44762129810dd01d22beec40984052cae9503" ;;
     *) echo "install-agent: unsupported arch '$ARCH'" >&2; exit 1 ;;
 esac
 
