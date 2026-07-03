@@ -57,7 +57,7 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	if err != nil {
 		return nil, nil, fmt.Errorf("init oci backend: %w", err)
 	}
-	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir)
+	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns())
 	if err != nil {
 		return nil, nil, fmt.Errorf("init cloudimg backend: %w", err)
 	}

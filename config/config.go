@@ -13,6 +13,9 @@ import (
 const (
 	HypervisorCH          HypervisorType = "cloud-hypervisor"
 	HypervisorFirecracker HypervisorType = "firecracker"
+
+	// defaultPullConns is the default concurrent Range connections per cloud-image download.
+	defaultPullConns = 8
 )
 
 // HypervisorType identifies the selected hypervisor backend.
@@ -36,6 +39,8 @@ type Config struct {
 	StopTimeoutSeconds int `json:"stop_timeout_seconds" mapstructure:"stop_timeout_seconds"`
 	// PoolSize: goroutine pool size for concurrent operations; 0 = runtime.NumCPU().
 	PoolSize int `json:"pool_size" mapstructure:"pool_size"`
+	// PullConns: concurrent HTTP Range connections per cloud-image download; <=0 = 8.
+	PullConns int `json:"pull_conns" mapstructure:"pull_conns"`
 	// CNIConfDir: CNI plugin configuration dir. Default: /etc/cni/net.d.
 	CNIConfDir string `json:"cni_conf_dir" mapstructure:"cni_conf_dir"`
 	// CNIBinDir: CNI plugin binary dir. Default: /opt/cni/bin.
@@ -62,6 +67,11 @@ func (c *Config) Hypervisor() HypervisorType {
 // EffectivePoolSize returns PoolSize if set, otherwise runtime.NumCPU().
 func (c *Config) EffectivePoolSize() int {
 	return utils.PoolSizeOrDefault(c.PoolSize)
+}
+
+// EffectivePullConns returns PullConns if set, otherwise defaultPullConns.
+func (c *Config) EffectivePullConns() int {
+	return utils.OrDefault(c.PullConns, defaultPullConns)
 }
 
 // Validate checks that all config fields are within acceptable ranges.
