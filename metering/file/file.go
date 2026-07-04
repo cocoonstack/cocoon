@@ -32,6 +32,6 @@ func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, err := e.WriteTo(r.f); err != nil {
-		log.WithFunc("metering/file.Recorder.Emit").Warnf(ctx, "emit entry: %v", err)
+		log.WithFunc("metering.file.Recorder.Emit").Warnf(ctx, "emit entry: %v", err)
 	}
 }

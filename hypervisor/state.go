@@ -143,10 +143,7 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 			if hasOpenComputeInterval(r) {
 				emits = append(emits, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 			}
-			reason := metering.ReasonBoot
-			if r.FirstBooted {
-				reason = metering.ReasonRestart
-			}
+			reason := bootOrRestartReason(r.FirstBooted)
 			emits = append(emits, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 			r.State = types.VMStateRunning
 			r.StartedAt = &now
@@ -226,10 +223,7 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		}
 		emit = true
 		shape = shapeFromConfig(r.Config)
-		reason = metering.ReasonBoot
-		if r.FirstBooted {
-			reason = metering.ReasonRestart
-		}
+		reason = bootOrRestartReason(r.FirstBooted)
 		r.State = types.VMStateRunning
 		r.StartedAt = &now
 		r.StoppedAt = nil
@@ -248,4 +242,12 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 // hasOpenComputeInterval reports whether the VM's record shows an unmatched compute.start (StoppedAt is the ledger-close sentinel; transitions to Running clear it).
 func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
+}
+
+// bootOrRestartReason picks the metering reason for a VM's compute.start event.
+func bootOrRestartReason(firstBooted bool) metering.Reason {
+	if firstBooted {
+		return metering.ReasonRestart
+	}
+	return metering.ReasonBoot
 }

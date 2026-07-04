@@ -16,26 +16,7 @@ type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig
 
 // CloneSetup is the shared pre-clone sequence: validate CPU, reserve a placeholder, ensure dirs, return a cleanup that rolls back both.
 func (b *Backend) CloneSetup(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotConfig *types.SnapshotConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
-	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
-		return "", "", time.Time{}, nil, err
-	}
-	now = time.Now()
-	runDir = b.Conf.VMRunDir(vmID)
-	logDir = b.Conf.VMLogDir(vmID)
-
-	cleanup = func() {
-		_ = RemoveVMDirs(runDir, logDir)
-		b.RollbackCreate(ctx, vmID, vmCfg.Name)
-	}
-
-	if err = b.ReserveVM(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs, runDir, logDir); err != nil {
-		return "", "", time.Time{}, nil, fmt.Errorf("reserve VM record: %w", err)
-	}
-	if err = utils.EnsureDirs(runDir, logDir); err != nil {
-		cleanup()
-		return "", "", time.Time{}, nil, fmt.Errorf("ensure dirs: %w", err)
-	}
-	return runDir, logDir, now, cleanup, nil
+	return b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
 }
 
 // DirectCloneBase clones from a local snapshot directory. Used when the snapshot lives on the same host (no tar streaming needed).

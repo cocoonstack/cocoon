@@ -107,12 +107,13 @@ func EnsureVmlinux(kernelPath string) (string, error) {
 
 func decompressKernel(data []byte) ([]byte, error) {
 	type kernelCodec struct {
-		name  string
-		magic []byte
+		name   string
+		magic  []byte
+		decode func([]byte) ([]byte, error)
 	}
 	formats := []kernelCodec{
-		{"zstd", []byte{0x28, 0xb5, 0x2f, 0xfd}},
-		{"gzip", []byte{0x1f, 0x8b, 0x08}},
+		{"zstd", []byte{0x28, 0xb5, 0x2f, 0xfd}, decompressZstd},
+		{"gzip", []byte{0x1f, 0x8b, 0x08}, decompressGzip},
 	}
 
 	for _, f := range formats {
@@ -120,21 +121,18 @@ func decompressKernel(data []byte) ([]byte, error) {
 		if offset < 0 {
 			continue
 		}
-		payload := data[offset:]
-		var decompressed []byte
-		var err error
-		switch f.name {
-		case "zstd":
-			decompressed, err = decompressZstd(payload)
-		case "gzip":
-			decompressed, err = decompressGzip(payload)
-		}
+		decompressed, err := f.decode(data[offset:])
 		if err != nil || !bytes.HasPrefix(decompressed, elfMagic) {
 			continue
 		}
 		return decompressed, nil
 	}
-	return nil, fmt.Errorf("no supported compression format found (tried zstd, gzip)")
+
+	tried := make([]string, len(formats))
+	for i, f := range formats {
+		tried[i] = f.name
+	}
+	return nil, fmt.Errorf("no supported compression format found (tried %s)", strings.Join(tried, ", "))
 }
 
 func decompressZstd(data []byte) ([]byte, error) {

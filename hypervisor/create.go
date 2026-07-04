@@ -72,28 +72,16 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 
 // CreateSequence is the shared placeholder→finalize create skeleton.
 func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec) (_ *types.VM, err error) {
-	if err = ValidateHostCPU(spec.VMCfg.CPU); err != nil {
+	blobIDs := ExtractBlobIDs(spec.StorageConfigs, spec.BootConfig)
+	_, _, now, cleanup, err := b.reservePlaceholder(ctx, id, spec.VMCfg, blobIDs)
+	if err != nil {
 		return nil, err
 	}
-
-	now := time.Now()
-	runDir := b.Conf.VMRunDir(id)
-	logDir := b.Conf.VMLogDir(id)
-	blobIDs := ExtractBlobIDs(spec.StorageConfigs, spec.BootConfig)
-
 	defer func() {
 		if err != nil {
-			_ = RemoveVMDirs(runDir, logDir)
-			b.RollbackCreate(ctx, id, spec.VMCfg.Name)
+			cleanup()
 		}
 	}()
-
-	if err = b.ReserveVM(ctx, id, spec.VMCfg, blobIDs, runDir, logDir); err != nil {
-		return nil, fmt.Errorf("reserve VM record: %w", err)
-	}
-	if err = utils.EnsureDirs(runDir, logDir); err != nil {
-		return nil, fmt.Errorf("ensure dirs: %w", err)
-	}
 
 	var bootCopy *types.BootConfig
 	if spec.BootConfig != nil {
@@ -119,4 +107,28 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 	return info, nil
+}
+
+// reservePlaceholder validates host CPU, reserves a "creating" VM record, and ensures its run/log dirs exist; shared by CreateSequence and CloneSetup. On failure it rolls back internally (if needed) and returns a nil cleanup; on success cleanup removes the dirs and rolls back the reservation — the caller decides when to run it.
+func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (runDir, logDir string, now time.Time, cleanup func(), err error) {
+	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
+		return "", "", time.Time{}, nil, err
+	}
+	now = time.Now()
+	runDir = b.Conf.VMRunDir(id)
+	logDir = b.Conf.VMLogDir(id)
+
+	cleanup = func() {
+		_ = RemoveVMDirs(runDir, logDir)
+		b.RollbackCreate(ctx, id, vmCfg.Name)
+	}
+
+	if err = b.ReserveVM(ctx, id, vmCfg, blobIDs, runDir, logDir); err != nil {
+		return "", "", time.Time{}, nil, fmt.Errorf("reserve VM record: %w", err)
+	}
+	if err = utils.EnsureDirs(runDir, logDir); err != nil {
+		cleanup()
+		return "", "", time.Time{}, nil, fmt.Errorf("ensure dirs: %w", err)
+	}
+	return runDir, logDir, now, cleanup, nil
 }

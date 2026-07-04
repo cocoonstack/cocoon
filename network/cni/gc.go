@@ -66,7 +66,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			logger := log.WithFunc("gc.cni")
 			var errs []error
 			for _, vmID := range ids {
-				// 1. Read CNI records for this VM (lockless — orchestrator holds flock).
+				// Lockless — orchestrator holds flock.
 				var records []networkRecord
 				if readErr := c.store.ReadRaw(func(idx *networkIndex) error {
 					records = idx.byVMID(vmID)
@@ -76,17 +76,16 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 					continue
 				}
 
-				// 2. CNI DEL per NIC — best-effort IPAM release.
+				// CNI DEL per NIC — best-effort IPAM release.
 				_ = c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false, true)
 
-				// 3. Remove the named netns.
 				nsName := netnsName(vmID)
 				if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
 					continue
 				}
 
-				// 4. Clean DB records (lockless write).
+				// Lockless write.
 				if len(records) > 0 {
 					if err := c.store.WriteRaw(func(idx *networkIndex) error {
 						for id, rec := range idx.Networks {
