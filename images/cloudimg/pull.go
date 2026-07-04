@@ -74,11 +74,6 @@ func (cw countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// byteRange is an inclusive [start, end] byte span for an HTTP Range request.
-type byteRange struct {
-	start, end int64
-}
-
 // rangeProbe carries the resolved URL and total size of a Range-capable source.
 type rangeProbe struct {
 	finalURL string
@@ -249,8 +244,8 @@ func downloadRangesParallel(ctx context.Context, client *http.Client, url string
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: size})
 	pc := &progressCounter{total: size, tracker: tracker}
 
-	ranges := splitRanges(size, pullConns)
-	if _, err := utils.Map(ctx, ranges, func(ctx context.Context, _ int, r byteRange) (struct{}, error) {
+	ranges := utils.SplitRanges(size, pullConns)
+	if _, err := utils.Map(ctx, ranges, func(ctx context.Context, _ int, r [2]int64) (struct{}, error) {
 		return struct{}{}, downloadRange(ctx, client, url, dst, r, pc)
 	}, pullConns); err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
@@ -264,38 +259,22 @@ func downloadRangesParallel(ctx context.Context, client *http.Client, url string
 	return nil
 }
 
-func downloadRange(ctx context.Context, client *http.Client, url string, dst *os.File, r byteRange, pc *progressCounter) error {
+func downloadRange(ctx context.Context, client *http.Client, url string, dst *os.File, r [2]int64, pc *progressCounter) error {
+	start, end := r[0], r[1]
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("create range request: %w", err)
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", r.start, r.end))
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("http get range %d-%d: %w", r.start, r.end, err)
+		return fmt.Errorf("http get range %d-%d: %w", start, end, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	if resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("http get range %d-%d: status %s", r.start, r.end, resp.Status)
-	}
-	// A mismatched span would land bytes at the wrong offsets; a short body would
-	// leave a zero hole that hashDigest then blesses with a "valid" digest.
-	if cr := resp.Header.Get("Content-Range"); !strings.HasPrefix(cr, fmt.Sprintf("bytes %d-%d/", r.start, r.end)) {
-		return fmt.Errorf("http get range %d-%d: mismatched content-range %q", r.start, r.end, cr)
-	}
-
-	want := r.end - r.start + 1
-	w := countingWriter{w: io.NewOffsetWriter(dst, r.start), pc: pc}
-	n, err := io.Copy(w, io.LimitReader(resp.Body, want))
-	if err != nil {
-		return fmt.Errorf("write range %d-%d: %w", r.start, r.end, err)
-	}
-	if n != want {
-		return fmt.Errorf("http get range %d-%d: short body %d of %d bytes", r.start, r.end, n, want)
-	}
-	return nil
+	w := countingWriter{w: io.NewOffsetWriter(dst, start), pc: pc}
+	return utils.CopyRangeBody(resp, w, start, end)
 }
 
 // hashDigest re-reads dst from disk: scattered parallel writes can't feed a streaming
@@ -309,23 +288,6 @@ func hashDigest(dst *os.File) (string, error) {
 		return "", fmt.Errorf("hash temp file: %w", err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// splitRanges divides [0,size) into up to n contiguous, inclusive-ended byte ranges.
-func splitRanges(size int64, n int) []byteRange {
-	if n < 1 {
-		n = 1
-	}
-	chunk := (size + int64(n) - 1) / int64(n)
-	ranges := make([]byteRange, 0, n)
-	for start := int64(0); start < size; start += chunk {
-		end := start + chunk - 1
-		if end >= size {
-			end = size - 1
-		}
-		ranges = append(ranges, byteRange{start: start, end: end})
-	}
-	return ranges
 }
 
 // parseContentRangeSize extracts the total size from a "Content-Range: bytes 0-0/12345" header value.
