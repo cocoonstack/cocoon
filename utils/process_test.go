@@ -210,8 +210,9 @@ func TestTerminateProcess_InvalidPID(t *testing.T) {
 }
 
 func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
-	// Process that traps SIGTERM: won't die from SIGTERM alone.
-	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60`)
+	// Traps SIGTERM so only SIGKILL can end it. The trailing "; :" stops bash from
+	// tail-exec'ing into sleep, which would rename argv0 and fail the "bash" cmdline check.
+	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
