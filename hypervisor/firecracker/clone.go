@@ -136,10 +136,7 @@ func (fc *Firecracker) restoreAndResumeClone(
 	// Re-anchor redirected drives at the clone's own paths: the loaded
 	// vmstate still names the source's, and any future snapshot of this VM
 	// would embed those dangling paths — breaking its restore (hibernate).
-	for i, src := range srcConfigs {
-		if i >= len(dstConfigs) || src.Path == dstConfigs[i].Path {
-			continue
-		}
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
 		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), dstConfigs[i].Path); err != nil {
 			return fmt.Errorf("re-anchor drive %d: %w", i, err)
 		}
@@ -167,12 +164,23 @@ func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*type
 	return configs, nil
 }
 
+// redirectedDriveIndices lists the drives whose source and clone paths
+// differ: exactly the set createDriveRedirects symlinks and the re-anchor
+// loop patches — the two must never diverge, so both derive from here.
+func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int {
+	var indices []int
+	for i, src := range srcConfigs {
+		if i < len(dstConfigs) && src.Path != dstConfigs[i].Path {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
 func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driveRedirect, error) {
 	var redirects []driveRedirect
-	for i, src := range srcConfigs {
-		if i >= len(dstConfigs) || src.Path == dstConfigs[i].Path {
-			continue
-		}
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
+		src := srcConfigs[i]
 		r := driveRedirect{symlinkPath: src.Path}
 
 		if _, err := os.Stat(src.Path); err == nil {
