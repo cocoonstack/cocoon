@@ -58,7 +58,14 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close() //nolint:errcheck
 
-	code, err := client.Run(ctx, conn, argv, env, os.Stdin, os.Stdout, os.Stderr)
+	// Stdin is opt-in (docker semantics): a nil reader makes client.Run close
+	// the child's stdin immediately, so scripted callers feeding a shell over
+	// stdin don't have the rest of their script swallowed by the pump.
+	var stdin io.Reader
+	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
+		stdin = os.Stdin
+	}
+	code, err := client.Run(ctx, conn, argv, env, stdin, os.Stdout, os.Stderr)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
