@@ -22,15 +22,15 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
 }
 
-// Hibernate captures like Snapshot but terminates the VMM inside the pause window instead of resuming.
-func (fc *Firecracker) Hibernate(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
+// Hibernate captures like Snapshot but persists and then terminates the VMM inside the pause window instead of resuming.
+func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, _ *http.Client, pid int) error {
 			return fc.terminateVMM(ctx, rec, pid)
 		},
 		RuntimeFiles: runtimeFiles,
-	})
+	}, persist)
 }
 
 func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec {

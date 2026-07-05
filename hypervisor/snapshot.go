@@ -82,11 +82,11 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
 }
 
-// HibernateSequence captures like SnapshotSequence but ends the pause window by terminating the VMM instead of resuming, so the snapshot point and the stop coincide — no post-snapshot guest writes to lose on resume. Capture failure resumes the VM; terminate failure marks it error.
-func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
+// HibernateSequence captures like SnapshotSequence but persists inside the pause window and then terminates the VMM instead of resuming, so the snapshot point and the stop coincide — and the VMM dies only after the resume point is durable. Any failure before terminate resumes the VM (fast fail, nothing lost); terminate failure marks it error.
+func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) (err error) {
 	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	defer func() {
 		if err != nil {
@@ -102,11 +102,21 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			if pErr := spec.Pause(&rec, hc); pErr != nil {
 				return fmt.Errorf("pause: %w", pErr)
 			}
-			if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
+			failResume := func(e error) error {
 				if rErr := spec.Resume(&rec, hc); rErr != nil {
-					logger.Warnf(ctx, "resume VM %s after failed capture: %v", rec.ID, rErr)
+					logger.Warnf(ctx, "resume VM %s after failed hibernate: %v", rec.ID, rErr)
 				}
-				return cErr
+				return e
+			}
+			if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
+				return failResume(cErr)
+			}
+			cfg, sErr := b.finalizeSnapshot(ctx, vmID, &rec, spec.SnapshotSpec, tmpDir)
+			if sErr != nil {
+				return failResume(sErr)
+			}
+			if pErr := persist(cfg, utils.TarDirStreamWithRemove(tmpDir)); pErr != nil {
+				return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 			}
 			if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
 				killFailed = true
@@ -119,15 +129,15 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		if killFailed {
 			b.MarkError(ctx, vmID)
 		}
-		return nil, nil, fmt.Errorf("hibernate VM %s: %w", vmID, err)
+		return fmt.Errorf("hibernate VM %s: %w", vmID, err)
 	}
 
 	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
-	// Warn-and-continue like StopAll: the VMM is dead, the flip self-heals, and failing would delete the only memory image.
+	// Warn-and-continue like StopAll: the VMM is dead and the flip self-heals; the snapshot is already durable.
 	if uErr := b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped); uErr != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
 	}
-	return b.finishSnapshot(ctx, vmID, &rec, spec.SnapshotSpec, tmpDir)
+	return nil
 }
 
 // prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
@@ -150,25 +160,34 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	return vmID, rec, tmpDir, nil
 }
 
-// finishSnapshot runs the post-capture tail: sidecar metadata, snapshot registration, tar stream.
+// finishSnapshot runs the post-capture tail and hands back the tar stream.
 func (b *Backend) finishSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, io.ReadCloser, error) {
+	cfg, err := b.finalizeSnapshot(ctx, vmID, rec, spec, tmpDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
+}
+
+// finalizeSnapshot writes the sidecar metadata and registers the snapshot on the VM record.
+func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, error) {
 	if spec.AfterCapture != nil {
 		if err := spec.AfterCapture(rec, tmpDir); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	meta, err := spec.BuildMeta(rec, tmpDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build snapshot metadata: %w", err)
+		return nil, fmt.Errorf("build snapshot metadata: %w", err)
 	}
 	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
-		return nil, nil, fmt.Errorf("save snapshot metadata: %w", err)
+		return nil, fmt.Errorf("save snapshot metadata: %w", err)
 	}
 	snapID, err := b.RecordSnapshot(ctx, vmID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return b.BuildSnapshotConfig(snapID, rec), utils.TarDirStreamWithRemove(tmpDir), nil
+	return b.BuildSnapshotConfig(snapID, rec), nil
 }
 
 func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
