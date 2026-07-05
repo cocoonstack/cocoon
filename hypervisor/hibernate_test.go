@@ -11,8 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // hibernateTestConfig extends the metering stub with a real VMRunDir so prepareSnapshot can MkdirTemp.
@@ -94,6 +96,35 @@ func TestHibernateSequenceSuccess(t *testing.T) {
 	}
 }
 
+func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	calls := &hibernateCalls{}
+
+	spec := hibernateStubSpec(calls)
+	spec.Terminate = func(*VMRecord, *http.Client, int) error { return errors.New("kill refused") }
+	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, stream io.ReadCloser) error {
+		_, _ = io.Copy(io.Discard, stream)
+		return stream.Close()
+	})
+	if err == nil || !strings.Contains(err.Error(), "terminate") {
+		t.Fatalf("HibernateSequence: %v, want terminate error", err)
+	}
+	if calls.resumed {
+		t.Error("VM was resumed after the snapshot was already persisted")
+	}
+
+	rec, err := b.LoadRecord(t.Context(), id)
+	if err != nil {
+		t.Fatalf("load record: %v", err)
+	}
+	if rec.State != types.VMStateError {
+		t.Errorf("state %s, want error", rec.State)
+	}
+	if len(rec.SnapshotIDs) != 1 {
+		t.Errorf("persisted snapshot id missing from record: %v", rec.SnapshotIDs)
+	}
+}
+
 // newHibernateTestVM seeds a running VM whose RunDir holds a live stub VMM process, so WithRunningVM lets the sequence proceed.
 func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	t.Helper()
@@ -127,6 +158,14 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
+	// cmd.Start returns before bash execs into tail; wait until the cmdline check would pass.
+	deadline := time.Now().Add(2 * time.Second)
+	for !utils.VerifyProcessCmdline(cmd.Process.Pid, b.Conf.BinaryName(), sock) {
+		if time.Now().After(deadline) {
+			t.Fatal("stub vmm did not exec in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err := os.WriteFile(b.PIDFilePath(runDir), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 		t.Fatalf("write pidfile: %v", err)
 	}
