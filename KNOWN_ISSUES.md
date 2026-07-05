@@ -15,10 +15,6 @@ After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP addre
 
 `cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected on FC. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
 
-## Restore requires a running VM
-
-`cocoon vm restore` only works on running VMs — it relies on the existing network namespace (netns, tap devices, TC redirect) surviving the CH process restart. A stopped VM's network state may not be intact (e.g., after host reboot the netns is gone). For stopped VMs or cross-VM restore, use `cocoon vm clone` which creates fresh network resources. See [Restore Constraints](README.md#restore-constraints) for all requirements.
-
 ## OCI VM multi-NIC kernel IP limitation
 
 OCI VMs use the kernel `ip=` boot parameter for network configuration. While multiple `ip=` parameters can be specified, the Linux kernel only reliably configures **one interface** via this mechanism — subsequent `ip=` parameters may be silently ignored or produce inconsistent results depending on kernel version.

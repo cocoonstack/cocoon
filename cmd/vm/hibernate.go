@@ -35,16 +35,31 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+	// Fail on a taken name before the VM is even paused.
+	if err = cmdcore.EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+		return err
+	}
 
 	logger.Infof(ctx, "hibernating VM %s ...", vmRef)
-	// CaptureSnapshot's name preflight runs before the VM is stopped.
-	snapID, err := cmdcore.CaptureSnapshot(ctx, cmd, snapBackend, func() (*types.SnapshotConfig, io.ReadCloser, error) {
-		return hib.Hibernate(ctx, vmRef)
+	// persist runs inside the pause window; the VMM dies only after it succeeds.
+	var snapID string
+	err = hib.Hibernate(ctx, vmRef, func(cfg *types.SnapshotConfig, stream io.ReadCloser) error {
+		defer stream.Close() //nolint:errcheck
+		defer cmdcore.CloseOnCancel(ctx, stream)()
+		cfg.Name = name
+		cfg.Description = description
+		id, createErr := snapBackend.Create(ctx, cfg, stream)
+		if createErr != nil {
+			return createErr
+		}
+		snapID = id
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	name, _ := cmd.Flags().GetString("name")
 	logger.Infof(ctx, "VM hibernated; snapshot %s (resume: cocoon vm restore %s %s)", snapID, vmRef, cmp.Or(name, snapID))
 	return nil
 }

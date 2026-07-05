@@ -141,7 +141,8 @@ cocoon
 │   ├── exec [flags] VM -- CMD     Run a command in a running VM via cocoon-agent (vsock)
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force to stop first)
-│   ├── restore [flags] VM SNAP   Restore a running VM to a snapshot
+│   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
+│   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
 │   ├── status [VM...]             Watch VM status in real time
 │   ├── fs
 │   │   ├── attach [flags] VM     Attach a vhost-user-fs share (CH only)
@@ -793,18 +794,29 @@ The `--pull` flag uses the image digest recorded at snapshot time to verify that
 
 ### Restore
 
-Restore reverts a **running** VM to a previous snapshot's state in-place:
+Restore reverts a VM — running or stopped — to a previous snapshot's state in-place:
 
 ```bash
 # Restore a VM to a previous snapshot
 cocoon vm restore my-vm my-snap
 ```
 
-Cocoon stages the snapshot into a scratch directory first, then restarts the hypervisor process only after the full extraction succeeds — a truncated or corrupt snapshot stream errors out with the running VM still intact. Network is fully preserved — same IP, same MAC, same network namespace. No guest-side reconfiguration is needed (unlike clone).
+Cocoon stages the snapshot into a scratch directory first, then (re)starts the hypervisor process only after the full extraction succeeds — a truncated or corrupt snapshot stream errors out with the VM in its prior state. Network is fully preserved — same IP, same MAC, same network namespace; restoring a stopped VM first runs the same network self-heal as `vm start`, so a hibernated VM resumes even after a host reboot. No guest-side reconfiguration is needed (unlike clone).
+
+### Hibernate
+
+Hibernate atomically snapshots a running VM and stops it, releasing its memory; resume with `vm restore`:
+
+```bash
+cocoon vm hibernate my-vm --name nap
+cocoon vm restore my-vm nap
+```
+
+Pause, capture, persist, and VMM termination share one pause window: the snapshot point and the stop coincide (nothing the guest does can be lost in between), and the VMM dies only after the snapshot is durably saved — if saving fails (disk full, snapshot DB error), the VM simply resumes running and the command fails. Restore of the hibernated VM preserves machine identity (entropy-only reseed): running processes, sessions, and tmpfs contents continue where they stopped.
 
 ### Restore Constraints
 
-- **VM must be running.** Restore operates on a live VM by restarting its CH process with snapshot state. For stopped VMs, use `cocoon vm clone` instead.
+- **VM must be running or stopped.** Restore cold-spawns a fresh hypervisor process from the snapshot; a stopped target (e.g. hibernated) gets the `vm start` network self-heal first.
 - **Snapshot must belong to the VM.** Only snapshots created from the same VM (tracked in `snapshot_ids`) are accepted; pass `--force` with `--from-dir` to opt into a foreign lineage.
 - **CPU, memory, and storage come from the snapshot.** The hypervisor reconstructs the guest from snapshot state, so these are not configurable at restore time; cocoon realigns the persisted record to match.
 - **NIC count must match the target VM.** Restore reuses the VM's existing network namespace, TAP devices, and IP allocation; a mismatched count is rejected.
