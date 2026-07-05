@@ -254,11 +254,16 @@ func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapsh
 	if err != nil {
 		return "", err
 	}
+	return PersistSnapshotStream(ctx, snapBackend, cfg, stream, name, description)
+}
+
+// PersistSnapshotStream labels cfg and stores the stream, closing it either way.
+func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, stream io.ReadCloser, name, description string) (string, error) {
 	defer stream.Close() //nolint:errcheck
 	defer CloseOnCancel(ctx, stream)()
 	cfg.Name = name
 	cfg.Description = description
-	log.WithFunc("cmdcore.CaptureSnapshot").Info(ctx, "saving snapshot data ...")
+	log.WithFunc("cmdcore.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
 	snapID, err := snapBackend.Create(ctx, cfg, stream)
 	if err != nil {
 		return "", fmt.Errorf("save snapshot: %w", err)

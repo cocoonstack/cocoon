@@ -93,10 +93,14 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	if err = runWrapped(&rec, spec.Wrap, captureWindow); err != nil {
 		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
-	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
+	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
 }
 
-// HibernateSequence captures like SnapshotSequence but persists inside the pause window and then terminates the VMM instead of resuming, so the snapshot point and the stop coincide — and the VMM dies only after the resume point is durable. Any failure before terminate resumes the VM (fast fail, nothing lost); terminate failure marks it error.
+// HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.
 func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) (err error) {
 	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
@@ -173,15 +177,6 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 		return "", VMRecord{}, "", fmt.Errorf("create temp dir: %w", err)
 	}
 	return vmID, rec, tmpDir, nil
-}
-
-// finishSnapshot runs the post-capture tail and hands back the tar stream.
-func (b *Backend) finishSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, io.ReadCloser, error) {
-	cfg, err := b.finalizeSnapshot(ctx, vmID, rec, spec, tmpDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
 }
 
 // finalizeSnapshot writes the sidecar metadata and registers the snapshot on the VM record.

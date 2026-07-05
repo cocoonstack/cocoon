@@ -45,7 +45,7 @@ type Direct interface {
 	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 }
 
-// Hibernator is an optional interface for hypervisors that can snapshot and stop atomically: capture, persist, and VMM termination share one pause window. The VMM dies only after persist succeeds, so a failed persist leaves the VM running and nothing is lost.
+// Hibernator snapshots and stops atomically: capture, persist, and termination share one pause window, and the VMM dies only after persist succeeds — a failed persist leaves the VM running.
 type Hibernator interface {
 	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) error
 }

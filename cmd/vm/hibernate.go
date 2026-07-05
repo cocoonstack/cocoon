@@ -46,16 +46,9 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	// persist runs inside the pause window; the VMM dies only after it succeeds.
 	var snapID string
 	err = hib.Hibernate(ctx, vmRef, func(cfg *types.SnapshotConfig, stream io.ReadCloser) error {
-		defer stream.Close() //nolint:errcheck
-		defer cmdcore.CloseOnCancel(ctx, stream)()
-		cfg.Name = name
-		cfg.Description = description
-		id, createErr := snapBackend.Create(ctx, cfg, stream)
-		if createErr != nil {
-			return createErr
-		}
+		id, pErr := cmdcore.PersistSnapshotStream(ctx, snapBackend, cfg, stream, name, description)
 		snapID = id
-		return nil
+		return pErr
 	})
 	if err != nil {
 		return err
