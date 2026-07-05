@@ -46,12 +46,6 @@ func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMR
 func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, directBoot bool) (_ *types.VM, err error) {
 	logger := log.WithFunc("cloudhypervisor.Restore")
 
-	defer func() {
-		if err != nil {
-			ch.MarkError(ctx, vmID)
-		}
-	}()
-
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
 	meta, metaErr := hypervisor.LoadAndValidateMeta(rec.RunDir, ch.conf.RootDir, ch.conf.Config.RunDir)
