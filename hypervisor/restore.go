@@ -25,6 +25,17 @@ func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord
 	return nil
 }
 
+// FailRestore marks the VM error after a post-kill restore failure; a stopped
+// origin is spared so hibernate wake stays retryable. Run-dir-mutating steps
+// (staged merge, direct populate) quarantine unconditionally at their own
+// site; origin is the pre-kill state — the DB may read stopped after the kill.
+func (b *Backend) FailRestore(ctx context.Context, vmID string, origin types.VMState) {
+	if origin == types.VMStateStopped {
+		return
+	}
+	b.MarkError(ctx, vmID)
+}
+
 func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, *VMRecord, error) {
 	vmID, err := b.ResolveRef(ctx, vmRef)
 	if err != nil {
@@ -101,6 +112,8 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 			}
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
+			// A partial merge leaves mixed-vintage files in the run dir;
+			// quarantine regardless of origin so vm start cannot boot them.
 			b.MarkError(ctx, vmID)
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
@@ -109,6 +122,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		return afterErr
 	}
 	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
+		b.FailRestore(ctx, vmID, rec.State)
 		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
@@ -137,6 +151,8 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	var result *types.VM
 	inner := func() error {
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
+			// Populate cleans then clones with no rollback; a partial run
+			// dir must quarantine regardless of origin, like the merge.
 			b.MarkError(ctx, vmID)
 			return populateErr
 		}
@@ -145,6 +161,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		return afterErr
 	}
 	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
+		b.FailRestore(ctx, vmID, rec.State)
 		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)

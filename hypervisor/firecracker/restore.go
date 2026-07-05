@@ -54,12 +54,6 @@ func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecor
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {
 	logger := log.WithFunc("firecracker.Restore")
 
-	defer func() {
-		if err != nil {
-			fc.MarkError(ctx, vmID)
-		}
-	}()
-
 	snapshotCOW := filepath.Join(rec.RunDir, cowFileName)
 	if snapshotCOW != cowPath {
 		if _, statErr := os.Stat(snapshotCOW); statErr == nil {
