@@ -90,7 +90,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 			return fmt.Errorf("launch FC: %w", launchErr)
 		}
 
-		return fc.restoreAndResumeClone(ctx, pid, sockPath, runDir, networkConfigs)
+		return fc.restoreAndResumeClone(ctx, pid, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
 	}); cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
@@ -116,6 +116,7 @@ func (fc *Firecracker) restoreAndResumeClone(
 	pid int,
 	sockPath, runDir string,
 	networkConfigs []*types.NetworkConfig,
+	srcConfigs, dstConfigs []*types.StorageConfig,
 ) (err error) {
 	defer func() {
 		if err != nil {
@@ -131,6 +132,17 @@ func (fc *Firecracker) restoreAndResumeClone(
 	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)
+	}
+	// Re-anchor redirected drives at the clone's own paths: the loaded
+	// vmstate still names the source's, and any future snapshot of this VM
+	// would embed those dangling paths — breaking its restore (hibernate).
+	for i, src := range srcConfigs {
+		if i >= len(dstConfigs) || src.Path == dstConfigs[i].Path {
+			continue
+		}
+		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), dstConfigs[i].Path); err != nil {
+			return fmt.Errorf("re-anchor drive %d: %w", i, err)
+		}
 	}
 	return nil
 }
