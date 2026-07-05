@@ -44,3 +44,8 @@ type Direct interface {
 	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)
 	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 }
+
+// Hibernator is an optional interface for hypervisors that can snapshot and stop atomically: capture and VMM termination share one pause window, so no post-snapshot guest writes are lost on resume.
+type Hibernator interface {
+	Hibernate(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error)
+}

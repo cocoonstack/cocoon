@@ -15,7 +15,19 @@ import (
 
 // Snapshot pauses, captures CH state+COW, resumes, and streams the result.
 func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
-	return ch.SnapshotSequence(ctx, ref, hypervisor.SnapshotSpec{
+	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
+}
+
+// Hibernate captures like Snapshot but terminates the VMM inside the pause window instead of resuming.
+func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
+	return ch.HibernateSequence(ctx, ref, ch.snapshotSpec(ctx), func(rec *hypervisor.VMRecord, pid int) error {
+		sockPath := hypervisor.SocketPath(rec.RunDir)
+		return ch.forceTerminate(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid)
+	}, runtimeFiles)
+}
+
+func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec {
+	return hypervisor.SnapshotSpec{
 		Pause:  func(_ *hypervisor.VMRecord, hc *http.Client) error { return pauseVM(ctx, hc) },
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		Capture: func(rec *hypervisor.VMRecord, hc *http.Client, tmpDir string) error {
@@ -43,7 +55,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 			return nil
 		},
 		BuildMeta: buildSnapshotMeta,
-	})
+	}
 }
 
 // buildSnapshotMeta mirrors config.json's disk shape (not activeDisks — diverges for cloudimg post-FirstBooted pre-restart where CH still holds cidata).
