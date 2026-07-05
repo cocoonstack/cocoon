@@ -10,12 +10,14 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/projecteru2/core/log"
+	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -223,4 +225,43 @@ func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref str
 		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
 	)
 	return owner, resolved, err
+}
+
+// EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
+func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, name string) error {
+	if err := (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+		return err
+	}
+	if name == "" {
+		return nil
+	}
+	if _, err := snapBackend.Inspect(ctx, name); err == nil {
+		return fmt.Errorf("snapshot name %q already exists", name)
+	} else if !errors.Is(err, snapshot.ErrNotFound) {
+		return fmt.Errorf("check snapshot name: %w", err)
+	}
+	return nil
+}
+
+// CaptureSnapshot checks the --name preflight, runs capture, and persists the stream, returning the stored snapshot id.
+func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, io.ReadCloser, error)) (string, error) {
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+	if err := EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+		return "", err
+	}
+	cfg, stream, err := capture()
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close() //nolint:errcheck
+	defer CloseOnCancel(ctx, stream)()
+	cfg.Name = name
+	cfg.Description = description
+	log.WithFunc("cmdcore.CaptureSnapshot").Info(ctx, "saving snapshot data ...")
+	snapID, err := snapBackend.Create(ctx, cfg, stream)
+	if err != nil {
+		return "", fmt.Errorf("save snapshot: %w", err)
+	}
+	return snapID, nil
 }
