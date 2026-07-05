@@ -112,6 +112,7 @@ func Command(h Actions) *cobra.Command {
 		RunE:  h.Exec,
 	}
 	execCmd.Flags().StringArrayP("env", "e", nil, "extra env var KEY=VALUE (repeatable)")
+	execCmd.Flags().BoolP("interactive", "i", false, "attach the caller's stdin to the command (otherwise stdin closes immediately)")
 
 	reseedCmd := &cobra.Command{
 		Use:   "reseed VM",
