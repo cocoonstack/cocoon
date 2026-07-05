@@ -45,6 +45,20 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, erro
 	return snapID, nil
 }
 
+// UnrecordSnapshot drops a snapshot id from the VM's record (persist-failure rollback); best-effort, a leftover id is cosmetic.
+func (b *Backend) UnrecordSnapshot(ctx context.Context, vmID, snapID string) {
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r, err := idx.GetRecord(vmID)
+		if err != nil {
+			return err
+		}
+		delete(r.SnapshotIDs, snapID)
+		return nil
+	}); err != nil {
+		log.WithFunc(b.Typ+".UnrecordSnapshot").Warnf(ctx, "unrecord snapshot %s on %s: %v", snapID, vmID, err)
+	}
+}
+
 func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
 	cfg := &types.SnapshotConfig{
 		ID:           snapID,
@@ -116,6 +130,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 				return failResume(sErr)
 			}
 			if pErr := persist(cfg, utils.TarDirStreamWithRemove(tmpDir)); pErr != nil {
+				b.UnrecordSnapshot(ctx, vmID, cfg.ID)
 				return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 			}
 			if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
