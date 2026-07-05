@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/config"
@@ -17,7 +16,6 @@ import (
 	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
-	"github.com/cocoonstack/cocoon/types"
 )
 
 var hypervisorFactories = []hypervisorFactory{
@@ -112,22 +110,6 @@ func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Op
 		return nil, fmt.Errorf("init snapshot backend: %w", err)
 	}
 	return s, nil
-}
-
-// EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
-func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, name string) error {
-	if err := (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
-		return err
-	}
-	if name == "" {
-		return nil
-	}
-	if _, err := snapBackend.Inspect(ctx, name); err == nil {
-		return fmt.Errorf("snapshot name %q already exists", name)
-	} else if !errors.Is(err, snapshot.ErrNotFound) {
-		return fmt.Errorf("check snapshot name: %w", err)
-	}
-	return nil
 }
 
 func findHypervisorFactory(typ config.HypervisorType) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {

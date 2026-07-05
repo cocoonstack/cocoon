@@ -42,9 +42,13 @@ func (fc *Firecracker) restoreAfterExtractCOW(ctx context.Context, vmID string, 
 
 func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
 	return fc.KillForRestore(ctx, vmID, rec, func(pid int) error {
-		sockPath := hypervisor.SocketPath(rec.RunDir)
-		return fc.forceTerminate(ctx, sockPath, pid)
+		return fc.terminateVMM(ctx, rec, pid)
 	}, runtimeFiles)
+}
+
+// terminateVMM force-terminates rec's VMM; shared by restore and hibernate.
+func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecord, pid int) error {
+	return fc.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {

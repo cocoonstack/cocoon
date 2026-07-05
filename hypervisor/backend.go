@@ -154,3 +154,18 @@ type SnapshotSpec struct {
 	AfterCapture func(rec *VMRecord, tmpDir string) error
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*SnapshotMeta, error)
 }
+
+// HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.
+type HibernateSpec struct {
+	SnapshotSpec
+	Terminate    func(rec *VMRecord, hc *http.Client, pid int) error
+	RuntimeFiles []string
+}
+
+// runWrapped runs fn under a spec's optional Wrap.
+func runWrapped(rec *VMRecord, wrap func(*VMRecord, func() error) error, fn func() error) error {
+	if wrap != nil {
+		return wrap(rec, fn)
+	}
+	return fn()
+}

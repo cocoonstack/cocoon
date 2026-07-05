@@ -108,11 +108,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		result, afterErr = spec.AfterExtract(ctx, vmID, spec.VMCfg, rec)
 		return afterErr
 	}
-	if spec.Wrap != nil {
-		if err := spec.Wrap(rec, inner); err != nil {
-			return nil, err
-		}
-	} else if err := inner(); err != nil {
+	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
 		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
@@ -148,12 +144,8 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		result, afterErr = spec.AfterExtract(ctx, vmID, spec.VMCfg, rec)
 		return afterErr
 	}
-	if spec.Wrap != nil {
-		if wrapErr := spec.Wrap(rec, inner); wrapErr != nil {
-			return nil, wrapErr
-		}
-	} else if innerErr := inner(); innerErr != nil {
-		return nil, innerErr
+	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
+		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
 	return result, nil

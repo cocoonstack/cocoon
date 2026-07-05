@@ -38,33 +38,14 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name, _ := cmd.Flags().GetString("name")
-	description, _ := cmd.Flags().GetString("description")
-
-	if err = cmdcore.EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
-		return err
-	}
 
 	logger.Infof(ctx, "snapshotting VM %s ...", vmRef)
-
-	cfg, stream, err := hyper.Snapshot(ctx, vmRef)
+	snapID, err := cmdcore.CaptureSnapshot(ctx, cmd, snapBackend, func() (*types.SnapshotConfig, io.ReadCloser, error) {
+		return hyper.Snapshot(ctx, vmRef)
+	})
 	if err != nil {
-		return fmt.Errorf("snapshot VM %s: %w", vmRef, err)
+		return err
 	}
-	defer stream.Close() //nolint:errcheck
-
-	defer cmdcore.CloseOnCancel(ctx, stream)()
-
-	cfg.Name = name
-	cfg.Description = description
-
-	logger.Info(ctx, "saving snapshot data ...")
-
-	snapID, err := snapBackend.Create(ctx, cfg, stream)
-	if err != nil {
-		return fmt.Errorf("save snapshot: %w", err)
-	}
-
 	logger.Infof(ctx, "snapshot saved: %s", snapID)
 	return nil
 }

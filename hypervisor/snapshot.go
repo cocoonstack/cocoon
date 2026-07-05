@@ -76,19 +76,14 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 			return spec.Capture(&rec, hc, tmpDir)
 		})
 	}
-	if spec.Wrap != nil {
-		err = spec.Wrap(&rec, captureWindow)
-	} else {
-		err = captureWindow()
-	}
-	if err != nil {
+	if err = runWrapped(&rec, spec.Wrap, captureWindow); err != nil {
 		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
 }
 
 // HibernateSequence captures like SnapshotSequence but ends the pause window by terminating the VMM instead of resuming, so the snapshot point and the stop coincide — no post-snapshot guest writes to lose on resume. Capture failure resumes the VM; terminate failure marks it error.
-func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec SnapshotSpec, terminate func(rec *VMRecord, pid int) error, runtimeFiles []string) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
+func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
 	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return nil, nil, err
@@ -99,6 +94,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Snapsh
 		}
 	}()
 
+	logger := log.WithFunc(b.Typ + ".HibernateSequence")
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
 	var killFailed bool
 	window := func() error {
@@ -108,34 +104,30 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Snapsh
 			}
 			if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
 				if rErr := spec.Resume(&rec, hc); rErr != nil {
-					log.WithFunc(b.Typ+".HibernateSequence").Warnf(ctx, "resume VM %s after failed capture: %v", rec.ID, rErr)
+					logger.Warnf(ctx, "resume VM %s after failed capture: %v", rec.ID, rErr)
 				}
 				return cErr
 			}
-			if kErr := terminate(&rec, pid); kErr != nil {
+			if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
 				killFailed = true
 				return fmt.Errorf("terminate: %w", kErr)
 			}
 			return nil
 		})
 	}
-	if spec.Wrap != nil {
-		err = spec.Wrap(&rec, window)
-	} else {
-		err = window()
-	}
-	if err != nil {
+	if err = runWrapped(&rec, spec.Wrap, window); err != nil {
 		if killFailed {
 			b.MarkError(ctx, vmID)
 		}
 		return nil, nil, fmt.Errorf("hibernate VM %s: %w", vmID, err)
 	}
 
-	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-	if err = b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped); err != nil {
-		return nil, nil, fmt.Errorf("mark stopped: %w", err)
+	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
+	// Warn-and-continue like StopAll: the VMM is dead, the flip self-heals, and failing would delete the only memory image.
+	if uErr := b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped); uErr != nil {
+		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
 	}
-	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
+	return b.finishSnapshot(ctx, vmID, &rec, spec.SnapshotSpec, tmpDir)
 }
 
 // prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
