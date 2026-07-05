@@ -126,6 +126,18 @@ func putMachineConfig(ctx context.Context, hc *http.Client, cfg fcMachineConfig)
 	return putJSON(ctx, hc, "/machine-config", cfg, "machine-config")
 }
 
+// patchDrivePath repoints a block device's backing file on a booted VM.
+func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost string) error {
+	body, err := json.Marshal(struct {
+		DriveID    string `json:"drive_id"`
+		PathOnHost string `json:"path_on_host"`
+	}{DriveID: driveID, PathOnHost: pathOnHost})
+	if err != nil {
+		return fmt.Errorf("marshal drive patch: %w", err)
+	}
+	return fcAPIOnce(ctx, hc, http.MethodPatch, "/drives/"+driveID, body)
+}
+
 func putBootSource(ctx context.Context, hc *http.Client, boot fcBootSource) error {
 	return putJSON(ctx, hc, "/boot-source", boot, "boot-source")
 }
