@@ -21,6 +21,7 @@ type Actions interface {
 	Logs(cmd *cobra.Command, args []string) error
 	RM(cmd *cobra.Command, args []string) error
 	Restore(cmd *cobra.Command, args []string) error
+	Hibernate(cmd *cobra.Command, args []string) error
 	Debug(cmd *cobra.Command, args []string) error
 	Status(cmd *cobra.Command, args []string) error
 	FsAttach(cmd *cobra.Command, args []string) error
@@ -141,7 +142,7 @@ func Command(h Actions) *cobra.Command {
 
 	restoreCmd := &cobra.Command{
 		Use:   "restore [flags] VM [SNAPSHOT]",
-		Short: "Restore a running VM to a previous snapshot (or a directory via --from-dir)",
+		Short: "Restore a running or stopped VM to a previous snapshot (or a directory via --from-dir)",
 		Args:  cobra.RangeArgs(1, 2),
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			force, _ := cmd.Flags().GetBool("force")
@@ -157,6 +158,15 @@ func Command(h Actions) *cobra.Command {
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
 	cliutil.AddOutputFlag(restoreCmd)
+
+	hibernateCmd := &cobra.Command{
+		Use:   "hibernate [flags] VM",
+		Short: "Atomically snapshot a running VM and stop it (resume with vm restore)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.Hibernate,
+	}
+	hibernateCmd.Flags().String("name", "", "snapshot name")
+	hibernateCmd.Flags().String("description", "", "snapshot description")
 
 	debugCmd := &cobra.Command{
 		Use:   "debug [flags] IMAGE",
@@ -194,6 +204,7 @@ func Command(h Actions) *cobra.Command {
 		logsCmd,
 		rmCmd,
 		restoreCmd,
+		hibernateCmd,
 		debugCmd,
 		statusCmd,
 		buildFsCommand(h),

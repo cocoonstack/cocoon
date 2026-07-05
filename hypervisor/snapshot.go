@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -56,21 +58,9 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 
 // SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
 func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
-	vmID, err := b.ResolveRef(ctx, ref)
+	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return nil, nil, err
-	}
-	rec, err := b.LoadRecord(ctx, vmID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return nil, nil, fmt.Errorf("storage invariants violated: %w", vErr)
-	}
-
-	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
-	if err != nil {
-		return nil, nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -94,26 +84,99 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	if err != nil {
 		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
+	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
+}
 
+// HibernateSequence captures like SnapshotSequence but ends the pause window by terminating the VMM instead of resuming, so the snapshot point and the stop coincide — no post-snapshot guest writes to lose on resume. Capture failure resumes the VM; terminate failure marks it error.
+func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec SnapshotSpec, terminate func(rec *VMRecord, pid int) error, runtimeFiles []string) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
+	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
+		}
+	}()
+
+	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
+	var killFailed bool
+	window := func() error {
+		return b.WithRunningVM(ctx, &rec, func(pid int) error {
+			if pErr := spec.Pause(&rec, hc); pErr != nil {
+				return fmt.Errorf("pause: %w", pErr)
+			}
+			if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
+				if rErr := spec.Resume(&rec, hc); rErr != nil {
+					log.WithFunc(b.Typ+".HibernateSequence").Warnf(ctx, "resume VM %s after failed capture: %v", rec.ID, rErr)
+				}
+				return cErr
+			}
+			if kErr := terminate(&rec, pid); kErr != nil {
+				killFailed = true
+				return fmt.Errorf("terminate: %w", kErr)
+			}
+			return nil
+		})
+	}
+	if spec.Wrap != nil {
+		err = spec.Wrap(&rec, window)
+	} else {
+		err = window()
+	}
+	if err != nil {
+		if killFailed {
+			b.MarkError(ctx, vmID)
+		}
+		return nil, nil, fmt.Errorf("hibernate VM %s: %w", vmID, err)
+	}
+
+	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
+	if err = b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped); err != nil {
+		return nil, nil, fmt.Errorf("mark stopped: %w", err)
+	}
+	return b.finishSnapshot(ctx, vmID, &rec, spec, tmpDir)
+}
+
+// prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
+func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, error) {
+	vmID, err := b.ResolveRef(ctx, ref)
+	if err != nil {
+		return "", VMRecord{}, "", err
+	}
+	rec, err := b.LoadRecord(ctx, vmID)
+	if err != nil {
+		return "", VMRecord{}, "", err
+	}
+	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
+		return "", VMRecord{}, "", fmt.Errorf("storage invariants violated: %w", vErr)
+	}
+	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
+	if err != nil {
+		return "", VMRecord{}, "", fmt.Errorf("create temp dir: %w", err)
+	}
+	return vmID, rec, tmpDir, nil
+}
+
+// finishSnapshot runs the post-capture tail: sidecar metadata, snapshot registration, tar stream.
+func (b *Backend) finishSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, io.ReadCloser, error) {
 	if spec.AfterCapture != nil {
-		if err = spec.AfterCapture(&rec, tmpDir); err != nil {
+		if err := spec.AfterCapture(rec, tmpDir); err != nil {
 			return nil, nil, err
 		}
 	}
-
-	meta, err := spec.BuildMeta(&rec, tmpDir)
+	meta, err := spec.BuildMeta(rec, tmpDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build snapshot metadata: %w", err)
 	}
 	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
 		return nil, nil, fmt.Errorf("save snapshot metadata: %w", err)
 	}
-
 	snapID, err := b.RecordSnapshot(ctx, vmID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return b.BuildSnapshotConfig(snapID, &rec), utils.TarDirStreamWithRemove(tmpDir), nil
+	return b.BuildSnapshotConfig(snapID, rec), utils.TarDirStreamWithRemove(tmpDir), nil
 }
 
 func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {

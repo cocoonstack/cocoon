@@ -34,8 +34,9 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	if err != nil {
 		return "", nil, err
 	}
-	if rec.State != types.VMStateRunning {
-		return "", nil, fmt.Errorf("vm %s is %s, must be running to restore", vmID, rec.State)
+	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one.
+	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped {
+		return "", nil, fmt.Errorf("vm %s is %s, must be running or stopped to restore", vmID, rec.State)
 	}
 	return vmID, &rec, nil
 }

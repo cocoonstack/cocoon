@@ -19,7 +19,18 @@ const (
 
 // Snapshot pauses, captures vmstate+mem+COW, resumes, and streams the result.
 func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
-	return fc.SnapshotSequence(ctx, ref, hypervisor.SnapshotSpec{
+	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
+}
+
+// Hibernate captures like Snapshot but terminates the VMM inside the pause window instead of resuming.
+func (fc *Firecracker) Hibernate(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
+	return fc.HibernateSequence(ctx, ref, fc.snapshotSpec(ctx), func(rec *hypervisor.VMRecord, pid int) error {
+		return fc.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
+	}, runtimeFiles)
+}
+
+func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec {
+	return hypervisor.SnapshotSpec{
 		Pause:  func(_ *hypervisor.VMRecord, hc *http.Client) error { return pauseVM(ctx, hc) },
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		// createSnapshotFC builds its own client with VMMemTransferTimeout
@@ -39,7 +50,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 			return withSourceWritableDisksLocked(rec.StorageConfigs, fn)
 		},
 		BuildMeta: buildSnapshotMeta,
-	})
+	}
 }
 
 // buildSnapshotMeta rewrites kernel path to vmlinuz so clones get the portable artifact instead of the FC-specific vmlinux cache.

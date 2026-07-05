@@ -2,7 +2,6 @@ package snapshot
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,15 +41,8 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 
-	if err = (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+	if err = cmdcore.EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
 		return err
-	}
-	if name != "" {
-		if _, inspectErr := snapBackend.Inspect(ctx, name); inspectErr == nil {
-			return fmt.Errorf("snapshot name %q already exists", name)
-		} else if !errors.Is(inspectErr, snapshot.ErrNotFound) {
-			return fmt.Errorf("check snapshot name: %w", inspectErr)
-		}
 	}
 
 	logger.Infof(ctx, "snapshotting VM %s ...", vmRef)
