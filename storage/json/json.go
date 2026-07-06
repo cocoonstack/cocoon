@@ -14,11 +14,13 @@ import (
 
 var _ storage.Store[struct{}] = (*Store[struct{}])(nil)
 
+// Store is a lock-guarded JSON file holding one value of type T.
 type Store[T any] struct {
 	filePath string
 	locker   lock.Locker
 }
 
+// New returns a Store backed by filePath and guarded by locker.
 func New[T any](filePath string, locker lock.Locker) *Store[T] {
 	return &Store[T]{filePath: filePath, locker: locker}
 }

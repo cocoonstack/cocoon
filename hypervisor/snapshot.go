@@ -18,6 +18,7 @@ import (
 // SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config can't hold (Role/MountPoint/FSType/DirectIO; FC CPU/Memory).
 const SnapshotMetaFile = "cocoon.json"
 
+// SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
 type SnapshotMeta struct {
 	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
 	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`

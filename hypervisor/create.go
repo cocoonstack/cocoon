@@ -36,6 +36,7 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 	})
 }
 
+// RollbackCreate removes the placeholder record and its name mapping after a failed create.
 func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
 		delete(idx.VMs, id)

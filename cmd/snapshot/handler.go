@@ -18,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+// Handler groups the snapshot subcommands.
 type Handler struct {
 	cmdcore.BaseHandler
 }

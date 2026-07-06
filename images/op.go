@@ -29,6 +29,7 @@ func (ops Ops[I, E]) Inspect(ctx context.Context, id string) (result *types.Imag
 	return result, err
 }
 
+// List returns every image in the index.
 func (ops Ops[I, E]) List(ctx context.Context) (result []*types.Image, err error) {
 	err = ops.Store.With(ctx, func(idx *I) error {
 		result = listImages(ops.Entries(idx), ops.Type, ops.Sizer)

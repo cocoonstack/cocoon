@@ -8,6 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// ErrNotFound is returned when a snapshot ref matches no record.
 var ErrNotFound = errors.New("snapshot not found")
 
 // SnapshotRecord is the persisted record for a single snapshot.
