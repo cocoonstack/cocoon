@@ -201,3 +201,42 @@ func TestResolveForRestoreStates(t *testing.T) {
 		})
 	}
 }
+
+func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
+	tests := []struct {
+		name   string
+		origin types.VMState
+		want   types.VMState
+	}{
+		{"stopped origin stays restorable (hibernate wake)", types.VMStateStopped, types.VMStateStopped},
+		{"running origin quarantines", types.VMStateRunning, types.VMStateError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, id := newHibernateTestVM(t)
+			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+				idx.VMs[id].State = tt.origin
+				return nil
+			}); err != nil {
+				t.Fatalf("seed state: %v", err)
+			}
+			rec, err := b.LoadRecord(t.Context(), id)
+			if err != nil {
+				t.Fatalf("load record: %v", err)
+			}
+
+			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") }, nil)
+			if killErr == nil || !strings.Contains(killErr.Error(), "stop running VM") {
+				t.Fatalf("KillForRestore: %v, want stop running VM error", killErr)
+			}
+
+			got, err := b.LoadRecord(t.Context(), id)
+			if err != nil {
+				t.Fatalf("reload record: %v", err)
+			}
+			if got.State != tt.want {
+				t.Errorf("state %s, want %s", got.State, tt.want)
+			}
+		})
+	}
+}
