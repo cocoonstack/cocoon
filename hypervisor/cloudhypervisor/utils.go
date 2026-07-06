@@ -22,9 +22,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
-type chMemoryRestoreMode string
-
 const (
 	pidFileName     = "ch.pid"
 	cmdlineFileName = "cmdline"
@@ -40,6 +37,9 @@ const (
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, cmdlineFileName, hypervisor.VsockSockName}
+
+// chMemoryRestoreMode controls how CH restores guest memory from a snapshot.
+type chMemoryRestoreMode string
 
 type chRestoreConfig struct {
 	SourceURL         string              `json:"source_url"`

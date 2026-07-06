@@ -36,6 +36,38 @@ type VMConfig struct {
 	DataDisks []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
 }
 
+// Validate checks that VMConfig fields are within acceptable ranges.
+func (cfg *VMConfig) Validate() error {
+	if cfg.Name == "" {
+		return fmt.Errorf("vm name cannot be empty")
+	}
+	if !validName.MatchString(cfg.Name) {
+		return fmt.Errorf("vm name %q is invalid: must match %s (max 63 chars)", cfg.Name, validName.String())
+	}
+	if cfg.CPU <= 0 {
+		return fmt.Errorf("--cpu must be at least 1, got %d", cfg.CPU)
+	}
+	if cfg.Memory < 512<<20 {
+		return fmt.Errorf("--memory must be at least 512M, got %d", cfg.Memory)
+	}
+	if cfg.Storage < 10<<30 {
+		return fmt.Errorf("--storage must be at least 10G, got %d", cfg.Storage)
+	}
+	if cfg.QueueSize < 0 {
+		return fmt.Errorf("--queue-size must be non-negative, got %d", cfg.QueueSize)
+	}
+	if cfg.DiskQueueSize < 0 {
+		return fmt.Errorf("--disk-queue-size must be non-negative, got %d", cfg.DiskQueueSize)
+	}
+	if cfg.User != "" && !validUsername.MatchString(cfg.User) {
+		return fmt.Errorf("--user %q is invalid: must be a lowercase Linux username (letters, digits, underscores, hyphens)", cfg.User)
+	}
+	if cfg.Password != "" && shellUnsafe.MatchString(cfg.Password) {
+		return fmt.Errorf("--password contains unsafe shell or YAML characters")
+	}
+	return nil
+}
+
 // NetSetup is the VM's host networking state, embedded in VM and reused as the initNetwork → hypervisor handoff.
 type NetSetup struct {
 	NetBackend     string           `json:"net_backend,omitempty"`
@@ -70,38 +102,6 @@ type VM struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
-}
-
-// Validate checks that VMConfig fields are within acceptable ranges.
-func (cfg *VMConfig) Validate() error {
-	if cfg.Name == "" {
-		return fmt.Errorf("vm name cannot be empty")
-	}
-	if !validName.MatchString(cfg.Name) {
-		return fmt.Errorf("vm name %q is invalid: must match %s (max 63 chars)", cfg.Name, validName.String())
-	}
-	if cfg.CPU <= 0 {
-		return fmt.Errorf("--cpu must be at least 1, got %d", cfg.CPU)
-	}
-	if cfg.Memory < 512<<20 {
-		return fmt.Errorf("--memory must be at least 512M, got %d", cfg.Memory)
-	}
-	if cfg.Storage < 10<<30 {
-		return fmt.Errorf("--storage must be at least 10G, got %d", cfg.Storage)
-	}
-	if cfg.QueueSize < 0 {
-		return fmt.Errorf("--queue-size must be non-negative, got %d", cfg.QueueSize)
-	}
-	if cfg.DiskQueueSize < 0 {
-		return fmt.Errorf("--disk-queue-size must be non-negative, got %d", cfg.DiskQueueSize)
-	}
-	if cfg.User != "" && !validUsername.MatchString(cfg.User) {
-		return fmt.Errorf("--user %q is invalid: must be a lowercase Linux username (letters, digits, underscores, hyphens)", cfg.User)
-	}
-	if cfg.Password != "" && shellUnsafe.MatchString(cfg.Password) {
-		return fmt.Errorf("--password contains unsafe shell or YAML characters")
-	}
-	return nil
 }
 
 // ResolvedNetnsPath returns NetnsPath, with NIC[0] fallback.

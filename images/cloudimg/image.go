@@ -10,13 +10,6 @@ type imageIndex struct {
 	images.Index[imageEntry]
 }
 
-type imageEntry struct {
-	Ref        string        `json:"ref"`
-	ContentSum images.Digest `json:"content_sum"`
-	Size       int64         `json:"size"`
-	CreatedAt  time.Time     `json:"created_at"`
-}
-
 // Lookup finds an entry by URL or content digest.
 func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
 	if entry, ok := idx.Images[id]; ok && entry != nil {
@@ -32,6 +25,13 @@ func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
 
 func (idx *imageIndex) LookupRefs(id string) []string {
 	return images.LookupRefs(idx.Images, id)
+}
+
+type imageEntry struct {
+	Ref        string        `json:"ref"`
+	ContentSum images.Digest `json:"content_sum"`
+	Size       int64         `json:"size"`
+	CreatedAt  time.Time     `json:"created_at"`
 }
 
 func (e imageEntry) EntryID() string           { return e.ContentSum.String() }

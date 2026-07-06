@@ -165,8 +165,6 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 	}
 }
 
-// updateCOWPath
-
 func TestUpdateCOWPath_OCI(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
@@ -209,8 +207,6 @@ func TestUpdateCOWPath_Cloudimg(t *testing.T) {
 		t.Errorf("writable path not updated: %s", configs[1].Path)
 	}
 }
-
-// rebuildBootConfig
 
 func TestRebuildBootConfig(t *testing.T) {
 	t.Run("nil_payload", func(t *testing.T) {
@@ -257,8 +253,6 @@ func TestRebuildBootConfig(t *testing.T) {
 		}
 	})
 }
-
-// patchStateJSON
 
 func TestPatchStateJSON(t *testing.T) {
 	dir := t.TempDir()
@@ -628,5 +622,3 @@ func basePatchOpts() *patchOptions {
 		directBoot:  true,
 	}
 }
-
-// patchCHConfig
