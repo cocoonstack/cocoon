@@ -27,11 +27,6 @@ const (
 	ReasonSnapRemove    Reason = "snap-rm"
 )
 
-var (
-	_ io.WriterTo = Entry{}
-	_ Recorder    = NopRecorder{}
-)
-
 // Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.
 type Kind string
 
@@ -44,6 +39,8 @@ type Shape struct {
 	MemBytes     int64 `json:"mem_bytes,omitempty"`
 	StorageBytes int64 `json:"storage_bytes,omitempty"`
 }
+
+var _ io.WriterTo = Entry{}
 
 // Entry is one append-only lifecycle event.
 type Entry struct {
@@ -72,6 +69,8 @@ func (e Entry) WriteTo(w io.Writer) (int64, error) {
 type Recorder interface {
 	Emit(context.Context, Entry)
 }
+
+var _ Recorder = NopRecorder{}
 
 // NopRecorder discards every entry; zero value is usable.
 type NopRecorder struct{}
