@@ -13,6 +13,7 @@ func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *type
 	return fc.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, cloneSnapshotFiles, fc.cloneAfterExtract)
 }
 
+// DirectRestore restores a VM in place from a local snapshot dir.
 func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
 	return fc.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
 		VMCfg:            vmCfg,

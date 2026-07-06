@@ -21,6 +21,7 @@ type Lock struct {
 	fl   *flock.Flock // active flock fd, non-nil while held
 }
 
+// New returns a Lock guarding path; the lock file is created on first acquire.
 func New(path string) *Lock {
 	return &Lock{path: path, ch: make(chan struct{}, 1)}
 }

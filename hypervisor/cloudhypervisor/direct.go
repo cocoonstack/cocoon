@@ -15,6 +15,7 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 	return ch.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, cloneSnapshotFiles, ch.cloneAfterExtract)
 }
 
+// DirectRestore restores a VM in place from a local snapshot dir.
 func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
 	return ch.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
 		VMCfg:            vmCfg,

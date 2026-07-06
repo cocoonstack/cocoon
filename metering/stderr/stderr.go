@@ -17,6 +17,7 @@ type Recorder struct {
 	out io.Writer
 }
 
+// New returns a Recorder that writes entries to os.Stderr.
 func New() *Recorder { return &Recorder{out: os.Stderr} }
 
 func (r *Recorder) Emit(_ context.Context, e metering.Entry) {

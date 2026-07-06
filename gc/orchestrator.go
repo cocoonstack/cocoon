@@ -17,6 +17,7 @@ type Orchestrator struct {
 	modules []runner
 }
 
+// New returns an Orchestrator with no registered modules.
 func New() *Orchestrator { return &Orchestrator{} }
 
 // Register is package-level because Go methods can't have type params.

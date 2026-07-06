@@ -11,11 +11,13 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
+// Recorder collects emitted entries in memory for test assertions.
 type Recorder struct {
 	mu      sync.Mutex
 	entries []metering.Entry
 }
 
+// New returns an empty in-memory Recorder.
 func New() *Recorder { return &Recorder{} }
 
 func (r *Recorder) Emit(_ context.Context, e metering.Entry) {
