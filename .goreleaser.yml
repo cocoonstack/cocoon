@@ -58,6 +58,18 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}_debug
       {{- if .Arm }}v{{ .Arm }}{{ end -}}
 
+  # Unversioned alias so releases/latest/download/cocoon_Linux_x86_64.tar.gz resolves.
+  - id: release-latest
+    builds:
+      - cocoon-linux
+    name_template: >-
+      {{- .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end -}}
+
 checksum:
   name_template: 'checksums.txt'
 
