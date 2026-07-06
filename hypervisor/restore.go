@@ -18,14 +18,16 @@ import (
 func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
-		b.MarkError(ctx, vmID)
+		// A stopped origin has no live VMM, so a transient liveness-scan error
+		// here must not brick the wake — nothing was mutated, retry converges.
+		b.FailRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
 	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
 	return nil
 }
 
-// FailRestore marks the VM error after a post-kill restore failure; a stopped
+// FailRestore marks the VM error after a restore-path failure; a stopped
 // origin is spared so hibernate wake stays retryable. Run-dir-mutating steps
 // (staged merge, direct populate) quarantine unconditionally at their own
 // site; origin is the pre-kill state — the DB may read stopped after the kill.
