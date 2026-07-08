@@ -560,7 +560,14 @@ Flags:
 | `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
 
 Re-attaching the same name immediately after a detach can race the guest's
-device teardown — give the guest a moment before the re-attach.
+ACPI eject ack (~100ms on a healthy guest) — retry after a moment, or poll
+`vm inspect` until the disk leaves `attached_devices`.
+
+The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
+usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink
+is created by guest udev and can lag or be skipped on minimal images —
+`udevadm trigger --action=add --subsystem-match=block && udevadm settle`
+materializes it; scripts should resolve by serial instead.
 
 ### VFIO PCI passthrough
 
