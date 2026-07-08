@@ -138,7 +138,7 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.RM,
 	}
-	rmCmd.Flags().Bool("force", false, "force delete running VMs")
+	rmCmd.Flags().Bool("force", false, "force delete running VMs (immediate SIGTERM/SIGKILL, no graceful window)")
 	cliutil.AddOutputFlag(rmCmd)
 
 	restoreCmd := &cobra.Command{

@@ -200,6 +200,12 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	force, _ := cmd.Flags().GetBool("force")
+	// force means "now", docker-rm-like: skip the graceful window the same
+	// way stop --force does — FC guests without i8042 never see CtrlAltDel
+	// and would burn the full 30s per VM otherwise (#82).
+	if force {
+		conf.StopTimeoutSeconds = -1
+	}
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
