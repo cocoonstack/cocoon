@@ -48,25 +48,3 @@ func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
 	log.WithFunc("cmd.vm.disk.detach").Infof(ctx, "detached disk name=%s vm=%s", name, args[0])
 	return nil
 }
-
-func (h Handler) DiskList(cmd *cobra.Command, args []string) error {
-	ctx, _, _, l, err := resolveAttacher[disk.Lister](h, cmd, args, "disk list", disk.ErrUnsupportedBackend)
-	if err != nil {
-		return err
-	}
-	disks, err := l.DiskList(ctx, args[0])
-	if err != nil {
-		return classifyAttachErr(err)
-	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, disks); done {
-		return jsonErr
-	}
-	logger := log.WithFunc("cmd.vm.disk.list")
-	for _, d := range disks {
-		logger.Infof(ctx, "%s  %s  readonly=%v", d.Name, d.Path, d.ReadOnly)
-	}
-	if len(disks) == 0 {
-		logger.Info(ctx, "no hot-attached disks")
-	}
-	return nil
-}

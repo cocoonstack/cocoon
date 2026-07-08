@@ -148,15 +148,3 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 		t.Errorf("got %d, want 0", len(got))
 	}
 }
-
-// External volumes never reach a snapshot (snapshot/hibernate refuse them);
-// a sidecar carrying one — its path outside the managed roots — is rejected
-// as an untrusted path, the same as any escape.
-func TestValidateMetaPaths_RejectsExternalPath(t *testing.T) {
-	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
-		{Path: "/vols/a.raw", Serial: "vola", Role: types.StorageRoleData, External: true},
-	}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
-		t.Fatal("external path outside managed roots should be refused")
-	}
-}

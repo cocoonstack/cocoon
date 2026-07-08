@@ -154,8 +154,7 @@ cocoon
 │   │   └── detach [flags] VM     Detach a VFIO PCI device by --id
 │   ├── disk
 │   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH only)
-│   │   ├── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
-│   │   └── list VM               List hot-attached disks
+│   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH only)
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
@@ -499,7 +498,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
 - **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-Fs and VFIO attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart, and Cloud Hypervisor rejects snapshotting while one is attached. **Disk attaches persist across stop/start** — the volume is recorded on the VM, so `vm stop` + `vm start` brings it back (with a deterministic device id, so `disk list`/`detach` keep working) — but they are **capture-excluded**: `snapshot save` and `vm hibernate` refuse to run while an external volume is attached. External volumes are runtime state cocoon does not own (the user provisions the file and manages its filesystem), so they never enter a snapshot; detach the volume (and umount it in-guest) before snapshotting or hibernating, and re-attach it after the wake/restore. This keeps snapshot, hibernate/wake, restore, and clone entirely free of external-volume reasoning. Cocoon never creates, copies, or deletes the backing file. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window.
+All three attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart — re-attach after the next start. Cloud Hypervisor itself rejects snapshotting while a vhost-user or VFIO device is attached; cocoon likewise refuses `snapshot save` and `vm hibernate` while an external disk is attached — umount it in-guest, detach, capture, then re-attach after the wake/restore. External volumes are host state cocoon does not own: it never creates, copies, or deletes the backing file, and snapshot, restore, and clone carry no trace of them. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window.
 
 ### Vhost-user-fs
 
@@ -547,12 +546,13 @@ mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
 cocoon vm disk detach my-vm --name vol1
 ```
 
-The attach persists across `vm stop` + `vm start` (the volume comes back).
-`snapshot save` and `vm hibernate` refuse to run while a volume is attached —
-detach it (umount in-guest first), snapshot/hibernate, then re-attach after
-the wake or restore. The backing file may live anywhere outside cocoon's
-managed directories (e.g. under `/tmp`); attach refuses a path under the
-root/run dirs because `vm rm` would delete it with the run dir.
+The attach is runtime-only, like `vm fs` and `vm device`: the disk is gone
+after `vm stop`/restart — re-attach it after the next start. `snapshot save`
+and `vm hibernate` refuse while a volume is attached — umount in-guest,
+detach, capture, then re-attach after the wake or restore. The backing file
+may live anywhere outside cocoon's managed directories (e.g. under `/tmp`);
+attach refuses a path under the root/run dirs because `vm rm` would delete
+it with the run dir.
 
 Flags:
 

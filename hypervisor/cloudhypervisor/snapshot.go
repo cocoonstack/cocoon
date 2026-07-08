@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -75,6 +76,9 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	for _, d := range chCfg.Disks {
 		sc, ok := byPath[d.Path]
 		if !ok {
+			if name := disk.NameFromID(d.ID); name != "" {
+				return nil, fmt.Errorf("hot-attached disk %q: detach before snapshot or hibernate", name)
+			}
 			return nil, fmt.Errorf("snapshot config has disk %q not present in VM record", d.Path)
 		}
 		ordered = append(ordered, sc)

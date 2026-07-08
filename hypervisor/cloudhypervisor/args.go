@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -196,12 +195,6 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 		NumQueues: cpuCount,
 		QueueSize: diskQueueSize,
 	}
-	// External volumes keep a deterministic device id so disk list/detach
-	// find them again after stop/start and hibernate/wake.
-	if storageConfig.External {
-		d.ID = disk.DeriveID(storageConfig.Serial)
-	}
-
 	if storageConfig.DirectIO != nil {
 		d.DirectIO = *storageConfig.DirectIO
 	} else {
@@ -232,7 +225,6 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 func diskToCLIArg(d chDisk) string {
 	var b kvBuilder
 	b.add("path=" + d.Path)
-	b.addIf(d.ID != "", "id="+d.ID)
 	b.addIf(d.ReadOnly, "readonly=on")
 	b.addIf(d.DirectIO, "direct=on")
 	b.addIf(d.Sparse, "sparse=on")

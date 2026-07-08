@@ -175,14 +175,6 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
-	// External volumes are runtime-only: snapshot/hibernate would freeze a
-	// mount the capture cannot own, so the decision is surfaced here, not
-	// deferred to clone/restore. Detach (and umount in-guest) first.
-	for _, sc := range rec.StorageConfigs {
-		if sc.External {
-			return fail(fmt.Errorf("detach external volume %q before snapshot or hibernate", sc.Serial))
-		}
-	}
 	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
 	if err != nil {
 		return fail(fmt.Errorf("create temp dir: %w", err))
