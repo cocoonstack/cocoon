@@ -247,6 +247,7 @@ func buildDiskCommand(h Actions) *cobra.Command {
 	attach.Flags().String("path", "", "absolute path to an existing raw disk file (required; never deleted by cocoon)")
 	attach.Flags().String("name", "", "disk name: guest /dev/disk/by-id/virtio-<name> and the detach key (required)")
 	attach.Flags().Bool("readonly", false, "attach read-only")
+	attach.Flags().String("directio", "auto", "O_DIRECT for the disk: on|off|auto (off for files on tmpfs)")
 	_ = attach.MarkFlagRequired("path")
 	_ = attach.MarkFlagRequired("name")
 	cliutil.AddOutputFlag(attach)

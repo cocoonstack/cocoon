@@ -1,6 +1,8 @@
 package vm
 
 import (
+	"fmt"
+
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
@@ -16,7 +18,11 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	path, _ := cmd.Flags().GetString("path")
 	name, _ := cmd.Flags().GetString("name")
 	readonly, _ := cmd.Flags().GetBool("readonly")
-	id, err := a.DiskAttach(ctx, args[0], disk.Spec{Path: path, Name: name, ReadOnly: readonly})
+	directIO, err := parseDirectIOFlag(cmd)
+	if err != nil {
+		return err
+	}
+	id, err := a.DiskAttach(ctx, args[0], disk.Spec{Path: path, Name: name, ReadOnly: readonly, DirectIO: directIO})
 	if err != nil {
 		return classifyAttachErr(err)
 	}
@@ -63,4 +69,21 @@ func (h Handler) DiskList(cmd *cobra.Command, args []string) error {
 		logger.Info(ctx, "no hot-attached disks")
 	}
 	return nil
+}
+
+// parseDirectIOFlag maps --directio on|off|auto to the tri-state spec field
+// (auto = create-path default; tmpfs-backed files need an explicit off).
+func parseDirectIOFlag(cmd *cobra.Command) (*bool, error) {
+	v, _ := cmd.Flags().GetString("directio")
+	switch v {
+	case "", "auto":
+		return nil, nil
+	case "on":
+		t := true
+		return &t, nil
+	case "off":
+		f := false
+		return &f, nil
+	}
+	return nil, fmt.Errorf("--directio must be on, off, or auto, got %q", v)
 }

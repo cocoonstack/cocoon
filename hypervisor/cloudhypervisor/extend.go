@@ -45,6 +45,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	// semantics must match create-path data disks.
 	d := storageConfigToDisk(&types.StorageConfig{
 		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
+		DirectIO: spec.DirectIO,
 	}, vm.Config.CPU, vm.Config.DiskQueueSize, vm.Config.NoDirectIO)
 	id := disk.DeriveID(spec.Name)
 	d.ID = id
@@ -52,6 +53,11 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 		for _, ex := range info.Config.Disks {
 			if ex.ID == id {
 				return fmt.Errorf("disk name %q already attached", spec.Name)
+			}
+			// Record data disks carry CH auto ids — match serials too, else two
+			// devices race for one /dev/disk/by-id/virtio-<name>.
+			if ex.Serial == spec.Name {
+				return fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
 			}
 			if ex.Path == spec.Path {
 				return fmt.Errorf("disk path %q already attached as %q", spec.Path, ex.ID)
@@ -289,7 +295,6 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 // ensureNotPaused refuses device-set mutations while a capture window is open
 // (snapshot/hibernate/fork): mutating mid-capture would desync config and memory.
 func ensureNotPaused(info *chVMInfoResponse) error {
@@ -299,6 +304,7 @@ func ensureNotPaused(info *chVMInfoResponse) error {
 	return nil
 }
 
+// listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 func listWith[A any](
 	ctx context.Context, ch *CloudHypervisor, vmRef string,
 	extract func(*chVMInfoResponse) []A,

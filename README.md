@@ -554,6 +554,7 @@ Flags:
 | `--path` | required | Absolute path to an existing raw disk file |
 | `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`) |
 | `--readonly` | `false` | Attach read-only |
+| `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
 
 Re-attaching the same name immediately after a detach can race the guest's
 device teardown — give the guest a moment before the re-attach.
