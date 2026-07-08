@@ -223,7 +223,7 @@ func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
 	return &meta, nil
 }
 
-func LoadAndValidateMeta(dir, rootDir, runDir string, trustedExternal map[string]struct{}) (*SnapshotMeta, error) {
+func LoadAndValidateMeta(dir, rootDir, runDir string, trustedExternal map[string]ExternalTrust) (*SnapshotMeta, error) {
 	meta, err := LoadSnapshotMeta(dir)
 	if err != nil {
 		return nil, err
@@ -234,17 +234,25 @@ func LoadAndValidateMeta(dir, rootDir, runDir string, trustedExternal map[string
 	return meta, nil
 }
 
-// ExternalPathSet collects the record's external volume paths — the trust
-// anchor for sidecar external entries (a foreign snapshot cannot name a host
-// file the live record does not already reference).
-func ExternalPathSet(configs []*types.StorageConfig) map[string]struct{} {
-	var set map[string]struct{}
+// ExternalTrust is the identity a sidecar external entry must match exactly;
+// path membership alone would let a tampered sidecar flip RO or the guest
+// serial on a file the record legitimately references.
+type ExternalTrust struct {
+	Serial string
+	RO     bool
+}
+
+// ExternalTrustSet collects the record's external volumes — the trust anchor
+// for sidecar external entries (a foreign snapshot cannot name a host file
+// the live record does not already reference, nor alter its identity).
+func ExternalTrustSet(configs []*types.StorageConfig) map[string]ExternalTrust {
+	var set map[string]ExternalTrust
 	for _, sc := range configs {
 		if sc != nil && sc.External {
 			if set == nil {
-				set = make(map[string]struct{})
+				set = make(map[string]ExternalTrust)
 			}
-			set[sc.Path] = struct{}{}
+			set[sc.Path] = ExternalTrust{Serial: sc.Serial, RO: sc.RO}
 		}
 	}
 	return set
@@ -263,7 +271,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 
 // PreflightRestore: load+validate sidecar, run backend-specific integrity, assert snapshot role sequence is a prefix of rec.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
-	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir, ExternalPathSet(rec.StorageConfigs))
+	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir, ExternalTrustSet(rec.StorageConfigs))
 	if err != nil {
 		return err
 	}
@@ -298,11 +306,20 @@ func IsUnderDir(path, dir string) bool {
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
 // External volume entries are trusted only when the live record already references the same path (trustedExternal) — this both
 // blocks a foreign sidecar from naming arbitrary host files and refuses clones of volume-referencing snapshots (clones pass nil).
-func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string, trustedExternal map[string]struct{}) error {
+func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string, trustedExternal map[string]ExternalTrust) error {
 	for _, sc := range meta.StorageConfigs {
 		if sc.External {
-			if _, ok := trustedExternal[sc.Path]; !ok {
+			t, ok := trustedExternal[sc.Path]
+			if !ok {
 				return fmt.Errorf("snapshot references external volume %q (%s) not present on the VM record", sc.Serial, sc.Path)
+			}
+			if sc.Serial != t.Serial || sc.RO != t.RO {
+				return fmt.Errorf("snapshot external volume %q (%s) does not match the VM record's identity (serial/readonly)", sc.Serial, sc.Path)
+			}
+			// External paths inside cocoon-managed roots are contradictions:
+			// rm/GC may delete them with the run dir.
+			if IsUnderDir(sc.Path, rootDir) || IsUnderDir(sc.Path, runDir) {
+				return fmt.Errorf("external volume %q path %s is inside a cocoon-managed directory", sc.Serial, sc.Path)
 			}
 			continue
 		}

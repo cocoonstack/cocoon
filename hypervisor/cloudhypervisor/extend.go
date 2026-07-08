@@ -39,6 +39,11 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	if _, err := os.Stat(spec.Path); err != nil {
 		return "", fmt.Errorf("disk path: %w", err)
 	}
+	// A volume under a cocoon-managed root would be deleted by vm rm / GC,
+	// breaking the never-deletes contract.
+	if hypervisor.IsUnderDir(spec.Path, ch.conf.RootDir) || hypervisor.IsUnderDir(spec.Path, ch.conf.Config.RunDir) {
+		return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", spec.Path)
+	}
 	hc, info, vmID, rec, unlock, err := ch.lockedDeviceOpWithRecord(ctx, vmRef)
 	if err != nil {
 		return "", err
