@@ -28,6 +28,9 @@ func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMCo
 }
 
 func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
+	if len(vmCfg.DataDisks) > 0 {
+		return nil, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug)")
+	}
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("firecracker.Clone")
 

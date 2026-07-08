@@ -26,6 +26,9 @@ type Actions interface {
 	Status(cmd *cobra.Command, args []string) error
 	FsAttach(cmd *cobra.Command, args []string) error
 	FsDetach(cmd *cobra.Command, args []string) error
+	DiskAttach(cmd *cobra.Command, args []string) error
+	DiskDetach(cmd *cobra.Command, args []string) error
+	DiskList(cmd *cobra.Command, args []string) error
 	DeviceAttach(cmd *cobra.Command, args []string) error
 	DeviceDetach(cmd *cobra.Command, args []string) error
 	NetResize(cmd *cobra.Command, args []string) error
@@ -210,6 +213,7 @@ func Command(h Actions) *cobra.Command {
 		statusCmd,
 		buildFsCommand(h),
 		buildDeviceCommand(h),
+		buildDiskCommand(h),
 		buildNetCommand(h),
 	)
 	return vmCmd
@@ -226,6 +230,47 @@ func buildNetCommand(h Actions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("nics")
 	cliutil.AddOutputFlag(cmd)
 	return cmd
+}
+
+func buildDiskCommand(h Actions) *cobra.Command {
+	parent := &cobra.Command{
+		Use:   "disk",
+		Short: "Attach/detach an extra raw data disk to a running VM (CH only)",
+	}
+
+	attach := &cobra.Command{
+		Use:   "attach VM",
+		Short: "Hot-attach an existing raw disk file to a running VM",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.DiskAttach,
+	}
+	attach.Flags().String("path", "", "absolute path to an existing raw disk file (required; never deleted by cocoon)")
+	attach.Flags().String("name", "", "disk name: guest /dev/disk/by-id/virtio-<name> and the detach key (required)")
+	attach.Flags().Bool("readonly", false, "attach read-only")
+	_ = attach.MarkFlagRequired("path")
+	_ = attach.MarkFlagRequired("name")
+	cliutil.AddOutputFlag(attach)
+
+	detach := &cobra.Command{
+		Use:   "detach VM",
+		Short: "Detach a hot-attached disk from a running VM (keeps the backing file)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.DiskDetach,
+	}
+	detach.Flags().String("name", "", "disk name used at attach (required)")
+	_ = detach.MarkFlagRequired("name")
+	cliutil.AddOutputFlag(detach)
+
+	list := &cobra.Command{
+		Use:   "list VM",
+		Short: "List hot-attached disks on a running VM",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.DiskList,
+	}
+	cliutil.AddOutputFlag(list)
+
+	parent.AddCommand(attach, detach, list)
+	return parent
 }
 
 func buildFsCommand(h Actions) *cobra.Command {
@@ -322,5 +367,6 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	cmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
+	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH only)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }

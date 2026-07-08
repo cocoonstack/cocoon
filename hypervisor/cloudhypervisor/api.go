@@ -119,6 +119,7 @@ type chVMInfoConfig struct {
 	Serial  chRuntimeFile `json:"serial"`
 	Console chRuntimeFile `json:"console"`
 	Memory  chMemory      `json:"memory"`
+	Disks   []chDisk      `json:"disks,omitempty"`
 	Fs      []chFs        `json:"fs,omitempty"`
 	Devices []chDevice    `json:"devices,omitempty"`
 	Nets    []chNet       `json:"net,omitempty"`

@@ -86,6 +86,11 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	}
 
 	onDemand, _ := cmd.Flags().GetBool("on-demand")
+	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
+	dataDisks, err := parseDataDiskFlags(dataDiskRaw)
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.VMConfig{
 		Name: vmName,
@@ -103,7 +108,8 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 		},
-		OnDemand: onDemand,
+		DataDisks: dataDisks,
+		OnDemand:  onDemand,
 	}, nil
 }
 
