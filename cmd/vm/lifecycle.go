@@ -42,22 +42,6 @@ type inspectOutput struct {
 	AttachedDevices *attachedDevices `json:"attached_devices,omitempty"`
 }
 
-// applyStopFlags maps --force / --timeout onto the stop window shared by the
-// stop and rm handlers: force means "now", docker-style (StopTimeoutSeconds
-// = -1, immediate SIGTERM/SIGKILL) — FC guests without i8042 never see
-// CtrlAltDel and would otherwise burn the full graceful window (#82). rm has
-// no --timeout flag; the missing-flag read is a no-op zero.
-func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
-	force, _ := cmd.Flags().GetBool("force")
-	timeout, _ := cmd.Flags().GetInt("timeout")
-	switch {
-	case force:
-		conf.StopTimeoutSeconds = -1
-	case timeout > 0:
-		conf.StopTimeoutSeconds = timeout
-	}
-}
-
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -300,6 +284,20 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 		if _, recoverErr := netProvider.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...); recoverErr != nil {
 			logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
 		}
+	}
+}
+
+// applyStopFlags maps --force (-1 = immediate kill, docker-style; #82: FC
+// guests without i8042 never answer CtrlAltDel) and --timeout onto the stop
+// window for stop and rm; rm has no --timeout flag, that read no-ops.
+func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
+	force, _ := cmd.Flags().GetBool("force")
+	timeout, _ := cmd.Flags().GetInt("timeout")
+	switch {
+	case force:
+		conf.StopTimeoutSeconds = -1
+	case timeout > 0:
+		conf.StopTimeoutSeconds = timeout
 	}
 }
 
