@@ -15,6 +15,9 @@ import (
 const SysfsPCIPrefix = "/sys/bus/pci/devices/"
 
 var (
+	// ErrUnsupportedBackend signals the backend cannot hot-plug VFIO devices (e.g. Firecracker).
+	ErrUnsupportedBackend = errors.New("backend does not support device attach")
+
 	// Match BDF in either short (01:00.0) or full (0000:01:00.0) form so the
 	// CLI accepts what `lspci` prints by default.
 	bdfShortRe = regexp.MustCompile(`^[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$`)
@@ -23,9 +26,6 @@ var (
 	// User-facing id charset matches CH device-id constraints; the prefix
 	// "cocoon-" is reserved so cocoon-derived ids never collide.
 	validIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
-
-	// ErrUnsupportedBackend signals the backend cannot hot-plug VFIO devices (e.g. Firecracker).
-	ErrUnsupportedBackend = errors.New("backend does not support device attach")
 )
 
 // Spec is one attach request. PCI may be a short BDF, full BDF, or a sysfs path; NormalizePath canonicalizes it.

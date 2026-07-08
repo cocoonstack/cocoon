@@ -42,7 +42,7 @@ func AddRange(from, count int) []AddSpec {
 	return out
 }
 
-// AddRecover builds AddSpecs for re-creating existing NICs (post-reboot recovery); the persisted queue count is authoritative, not the VM's current CPU. Nil entries (null in persisted network_configs) keep the derive-from-CPU default.
+// AddRecover builds AddSpecs re-creating existing NICs from their persisted state (nil entries fall back to CPU-derived queues).
 func AddRecover(existing []*types.NetworkConfig) []AddSpec {
 	out := make([]AddSpec, len(existing))
 	for i, e := range existing {

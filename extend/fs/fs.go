@@ -17,12 +17,12 @@ const (
 )
 
 var (
+	// ErrUnsupportedBackend signals the backend cannot hot-plug vhost-user-fs (e.g. Firecracker).
+	ErrUnsupportedBackend = errors.New("backend does not support fs attach")
+
 	// Tag charset is intentionally portable: usable as a CH device id suffix
 	// (cocoon-fs-<tag>) and safe for shell quoting and guest mount commands.
 	validTagRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}$`)
-
-	// ErrUnsupportedBackend signals the backend cannot hot-plug vhost-user-fs (e.g. Firecracker).
-	ErrUnsupportedBackend = errors.New("backend does not support fs attach")
 )
 
 // Spec is one attach request.
