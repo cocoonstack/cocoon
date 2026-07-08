@@ -39,8 +39,6 @@ func TestNew_NilConfig(t *testing.T) {
 	}
 }
 
-// Create
-
 func TestCreateAndDeleteEmitMetering(t *testing.T) {
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
@@ -233,8 +231,6 @@ func TestCreate_InvalidStream(t *testing.T) {
 	}
 }
 
-// List
-
 func TestList_Empty(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -277,8 +273,6 @@ func TestList(t *testing.T) {
 		}
 	}
 }
-
-// Inspect
 
 func TestInspect_ByID(t *testing.T) {
 	lf := newTestLF(t)
@@ -357,8 +351,6 @@ func TestInspect_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
-
-// Delete
 
 func TestDelete(t *testing.T) {
 	lf := newTestLF(t)
@@ -470,8 +462,6 @@ func TestDelete_NotFound(t *testing.T) {
 	}
 }
 
-// Create → Inspect round trip verifies timestamps and fields.
-
 func TestCreate_Inspect_Fields(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -507,8 +497,6 @@ func TestCreate_Inspect_Fields(t *testing.T) {
 	}
 }
 
-// Delete then recreate with same name should succeed.
-
 func TestDelete_RecreateName(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -537,8 +525,6 @@ func TestDelete_RecreateName(t *testing.T) {
 		t.Errorf("expected new ID %q, got %q", id2, s.ID)
 	}
 }
-
-// DataDir
 
 func TestDataDir(t *testing.T) {
 	lf := newTestLF(t)
@@ -626,8 +612,6 @@ func TestDataDir_ImageBlobIDsIsolation(t *testing.T) {
 		t.Error("ImageBlobIDs missing 'original' after re-read")
 	}
 }
-
-// Restore
 
 func TestRestore_ConfigRoundtrip(t *testing.T) {
 	lf := newTestLF(t)
@@ -808,8 +792,6 @@ func TestRestore_ImageBlobIDsIsolation(t *testing.T) {
 		t.Error("ImageBlobIDs missing 'orig' after re-read")
 	}
 }
-
-// Export → Import roundtrip
 
 func TestExportImport_Roundtrip(t *testing.T) {
 	lf := newTestLF(t)
@@ -1263,8 +1245,6 @@ func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
 	tw.Close()
 	return &buf
 }
-
-// New
 
 func kinds(entries []metering.Entry) []metering.Kind {
 	out := make([]metering.Kind, len(entries))

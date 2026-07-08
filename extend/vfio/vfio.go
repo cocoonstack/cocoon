@@ -34,6 +34,17 @@ type Spec struct {
 	ID  string
 }
 
+// NormalizedPath validates the spec and returns the canonical sysfs path; existence is checked at attach time.
+func (s *Spec) NormalizedPath() (string, error) {
+	if s.PCI == "" {
+		return "", fmt.Errorf("pci is required")
+	}
+	if s.ID != "" && (strings.HasPrefix(s.ID, "cocoon-") || !validIDRe.MatchString(s.ID)) {
+		return "", fmt.Errorf("id %q invalid: must match [A-Za-z0-9][A-Za-z0-9_.-]{0,63} and not start with cocoon-", s.ID)
+	}
+	return NormalizePath(s.PCI)
+}
+
 // Attached is the inspect-time view of one VFIO device from running VM state.
 type Attached struct {
 	ID  string `json:"id"`
@@ -49,17 +60,6 @@ type Attacher interface {
 // Lister enumerates VFIO devices from running VM state.
 type Lister interface {
 	DeviceList(ctx context.Context, vmRef string) ([]Attached, error)
-}
-
-// NormalizedPath validates the spec and returns the canonical sysfs path; existence is checked at attach time.
-func (s *Spec) NormalizedPath() (string, error) {
-	if s.PCI == "" {
-		return "", fmt.Errorf("pci is required")
-	}
-	if s.ID != "" && (strings.HasPrefix(s.ID, "cocoon-") || !validIDRe.MatchString(s.ID)) {
-		return "", fmt.Errorf("id %q invalid: must match [A-Za-z0-9][A-Za-z0-9_.-]{0,63} and not start with cocoon-", s.ID)
-	}
-	return NormalizePath(s.PCI)
 }
 
 // NormalizePath maps {short BDF, full BDF, sysfs path} → canonical /sys/bus/pci/devices/<bdf>; rejects paths outside that root.

@@ -33,38 +33,6 @@ func TestDevPath(t *testing.T) {
 	}
 }
 
-func fakeELF() []byte {
-	out := []byte{0x7f, 'E', 'L', 'F'}
-	out = append(out, bytes.Repeat([]byte{0x00}, 60)...)
-	return out
-}
-
-func gzipCompress(t *testing.T, data []byte) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	if _, err := gw.Write(data); err != nil {
-		t.Fatalf("gzip write: %v", err)
-	}
-	if err := gw.Close(); err != nil {
-		t.Fatalf("gzip close: %v", err)
-	}
-	return buf.Bytes()
-}
-
-func zstdCompress(t *testing.T, data []byte) []byte {
-	t.Helper()
-	enc, err := zstd.NewWriter(nil)
-	if err != nil {
-		t.Fatalf("zstd writer: %v", err)
-	}
-	out := enc.EncodeAll(data, nil)
-	if err := enc.Close(); err != nil {
-		t.Fatalf("zstd close: %v", err)
-	}
-	return out
-}
-
 func TestDecompressKernel(t *testing.T) {
 	elf := fakeELF()
 
@@ -118,4 +86,36 @@ func TestDecompressKernel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func fakeELF() []byte {
+	out := []byte{0x7f, 'E', 'L', 'F'}
+	out = append(out, bytes.Repeat([]byte{0x00}, 60)...)
+	return out
+}
+
+func gzipCompress(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(data); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func zstdCompress(t *testing.T, data []byte) []byte {
+	t.Helper()
+	enc, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatalf("zstd writer: %v", err)
+	}
+	out := enc.EncodeAll(data, nil)
+	if err := enc.Close(); err != nil {
+		t.Fatalf("zstd close: %v", err)
+	}
+	return out
 }
