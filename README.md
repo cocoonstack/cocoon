@@ -14,7 +14,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **TC redirect I/O path** — veth ↔ TAP wired via ingress qdisc + mirred redirect (no bridge in the data path)
 - **DNS configuration** — custom DNS servers injected into VMs via kernel cmdline (OCI) or cloud-init network-config (cloudimg)
 - **Cloud-init metadata** — automatic NoCloud cidata FAT12 disk for cloudimg VMs (hostname, configurable user/password via `--user`/`--password`, multi-NIC Netplan v2 network-config); cidata is automatically skipped on subsequent boots
-- **User data disks** — `--data-disk` attaches additional virtio-blk disks per VM, with optional ext4 mkfs at create time, cloud-init `mounts:` auto-mount on cloudimg+CH (via `/dev/disk/by-id/virtio-<name>`), per-disk DirectIO override, and 1:1 inheritance through snapshot/clone/restore
+- **User data disks** — `--data-disk` attaches additional virtio-blk disks per VM, with optional ext4 mkfs at create time, cloud-init `mounts:` auto-mount on cloudimg+CH (via `/dev/disk/by-id/virtio-<name>`), per-disk DirectIO override, and 1:1 inheritance through snapshot/clone/restore; `vm clone --data-disk` adds fresh disks to a clone and `vm disk attach/detach` hot-plugs existing raw files on a running VM (both CH only)
 - **Hugepages** — automatic detection of host hugepage configuration; VM memory backed by hugepages when available
 - **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
@@ -152,6 +152,10 @@ cocoon
 │   ├── device
 │   │   ├── attach [flags] VM     Attach a VFIO PCI device (CH only)
 │   │   └── detach [flags] VM     Detach a VFIO PCI device by --id
+│   ├── disk
+│   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH only)
+│   │   ├── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
+│   │   └── list VM               List hot-attached disks
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH only)
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
@@ -224,6 +228,7 @@ Applies to `cocoon vm clone`:
 | `--on-demand` | `false`             | Use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk) |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
+| `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH only; names must not collide with disks inherited from the snapshot) |
 
 CPU, memory, and storage all inherit from the snapshot — both hypervisors
 restore the guest from the snapshot's binary device state, so those values
@@ -482,18 +487,19 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 ### Snapshot/Clone/Restore
 
-Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Adding or removing data disks at clone time is not supported in Phase 1 — provision the disks at create time and treat the snapshot as immutable.
+Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); removing inherited disks at clone time is not supported, and Firecracker clones reject `--data-disk`.
 
 Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), and per-index Role/Path/RO match between sidecar and CH config.json **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 
 ## Runtime Device Attach (Cloud Hypervisor only)
 
-Cocoon can hot-plug two classes of external resources onto a running VM:
+Cocoon can hot-plug three classes of external resources onto a running VM:
 
 - **Vhost-user-fs** — a file share served by an external `virtiofsd` (or compatible backend) over a Unix socket. Attach surfaces a virtio-fs device in the guest, accessible via `mount -t virtiofs <tag> /mnt/...`.
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
+- **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-Both attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor itself rejects snapshotting a VM that has vhost-user or VFIO devices attached, so plan accordingly.
+All attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, provisions the disk file, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor rejects snapshotting a VM with vhost-user or VFIO devices attached; a hot-attached **disk** is the exception — it is embedded in any later snapshot, so its backing file must stay readable at the same path for that snapshot to restore.
 
 ### Vhost-user-fs
 
@@ -525,6 +531,33 @@ Flags:
 | `--num-queues` | `1` | Request queues |
 | `--queue-size` | `1024` | Queue depth |
 
+### Data disk hot-attach
+
+```bash
+# Provision a raw disk file anywhere on the host (cocoon never touches its lifecycle).
+dd if=/dev/zero of=/srv/volumes/vol1.raw bs=1M count=1024 && mkfs.ext4 /srv/volumes/vol1.raw
+
+# Attach: name is the guest serial (/dev/disk/by-id/virtio-vol1) and the detach key.
+cocoon vm disk attach my-vm --path /srv/volumes/vol1.raw --name vol1
+
+# Inside the guest:
+mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
+
+# Detach later (backing file kept; re-attach to any VM to see the same data):
+cocoon vm disk detach my-vm --name vol1
+```
+
+Flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--path` | required | Absolute path to an existing raw disk file |
+| `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`) |
+| `--readonly` | `false` | Attach read-only |
+
+Re-attaching the same name immediately after a detach can race the guest's
+device teardown — give the guest a moment before the re-attach.
+
 ### VFIO PCI passthrough
 
 Prerequisite: host has `intel_iommu=on` (or `amd_iommu=on`) on the kernel command line and the target PCI device is bound to `vfio-pci`.
@@ -542,7 +575,7 @@ cocoon vm device attach my-vm --pci 01:00.0 --id mygpu
 cocoon vm device detach my-vm --id mygpu
 ```
 
-`cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share and VFIO device, read live from CH `vm.info`. The field is omitted for stopped VMs.
+`cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs.
 
 ## NIC Hot-Resize (Cloud Hypervisor only)
 
@@ -718,7 +751,7 @@ A snapshot contains the full VM state:
 
 ### Clone Constraints
 
-CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so growing them at clone time would not be honored. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones must keep the snapshot's NIC topology — `--nics` is rejected because FC's `network_overrides` only retargets existing interfaces, it cannot add or drop them. Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.
+CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so growing them at clone time would not be honored. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones must keep the snapshot's NIC topology — `--nics` is rejected because FC's `network_overrides` only retargets existing interfaces, it cannot add or drop them. Fresh data disks can be added to a Cloud Hypervisor clone via `--data-disk` (hot-added after restore); Firecracker rejects it — no hotplug. Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.
 
 ### Post-Clone Guest Setup
 
