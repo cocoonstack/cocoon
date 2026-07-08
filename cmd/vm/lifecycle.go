@@ -16,6 +16,7 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/console"
+	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -35,6 +36,7 @@ const (
 type attachedDevices struct {
 	Fs      []fs.Attached   `json:"fs,omitempty"`
 	Devices []vfio.Attached `json:"devices,omitempty"`
+	Disks   []disk.Attached `json:"disks,omitempty"`
 }
 
 type inspectOutput struct {
@@ -384,7 +386,14 @@ func collectAttachedDevices(ctx context.Context, hyper hypervisor.Hypervisor, re
 			out.Devices = devs
 		}
 	}
-	if len(out.Fs) == 0 && len(out.Devices) == 0 {
+	if l, ok := hyper.(disk.Lister); ok {
+		if devs, err := l.DiskList(ctx, ref); err != nil {
+			logger.Warnf(ctx, "list hot-attached disks for %s: %v", ref, err)
+		} else {
+			out.Disks = devs
+		}
+	}
+	if len(out.Fs) == 0 && len(out.Devices) == 0 && len(out.Disks) == 0 {
 		return nil
 	}
 	return out
