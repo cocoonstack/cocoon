@@ -149,18 +149,6 @@ func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
 	_ = result // Just verify no panic.
 }
 
-// waitForExec blocks until /proc/<pid>/cmdline shows the target argv:
-// cmd.Start returns before the child execs, and TerminateProcess declines a
-// pid whose cmdline does not match (the stub-VMM race from cocoon#87).
-func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
-	t.Helper()
-	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
-		return VerifyProcessCmdline(pid, binaryName, expectArg), nil
-	}); err != nil {
-		t.Fatalf("child never execed into %s: %v", binaryName, err)
-	}
-}
-
 func TestTerminateProcess_SleepProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
@@ -309,4 +297,15 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 
 	// Cancelled ctx: may return WaitFor's ctx error but must still attempt the kill.
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
+}
+
+// waitForExec parks until the child's execve lands: cmd.Start returns
+// pre-exec, and TerminateProcess declines a mismatched cmdline (#87 race).
+func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
+	t.Helper()
+	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
+		return VerifyProcessCmdline(pid, binaryName, expectArg), nil
+	}); err != nil {
+		t.Fatalf("child never execed into %s: %v", binaryName, err)
+	}
 }
