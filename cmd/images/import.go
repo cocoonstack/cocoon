@@ -17,9 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
-	"github.com/cocoonstack/cocoon/progress"
-	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -106,21 +103,11 @@ func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, n
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
 	}
-	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
-		switch e.Phase {
-		case cloudimgProgress.PhaseDownload:
-			if len(files) == 1 {
-				logger.Infof(ctx, "hashing %s", files[0])
-			} else {
-				logger.Infof(ctx, "hashing split qcow2 parts (%d files)", len(files))
-			}
-		case cloudimgProgress.PhaseConvert:
-			logger.Info(ctx, "converting to qcow2...")
-		case cloudimgProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case cloudimgProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", name)
+	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
+		if len(files) == 1 {
+			return "hashing " + files[0]
 		}
+		return fmt.Sprintf("hashing split qcow2 parts (%d files)", len(files))
 	})
 	if err := cloudimgStore.Import(ctx, name, tracker, files...); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
@@ -134,17 +121,8 @@ func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name s
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)
 	}
-	tracker := progress.NewTracker(func(e ociProgress.Event) {
-		switch e.Phase {
-		case ociProgress.PhasePull:
-			logger.Infof(ctx, "importing %s (%d layer(s))", name, e.Total)
-		case ociProgress.PhaseLayer:
-			logger.Infof(ctx, "[%d/%d] %s done", e.Index+1, e.Total, e.Digest)
-		case ociProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case ociProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", name)
-		}
+	tracker := ociTracker(ctx, logger, name, func(total int) string {
+		return fmt.Sprintf("importing %s (%d layer(s))", name, total)
 	})
 	if err := ociStore.Import(ctx, name, tracker, files...); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
@@ -158,17 +136,8 @@ func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, 
 	if err != nil {
 		return fmt.Errorf("init cloudimg backend: %w", err)
 	}
-	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
-		switch e.Phase {
-		case cloudimgProgress.PhaseDownload:
-			logger.Infof(ctx, "reading stream for %s", name)
-		case cloudimgProgress.PhaseConvert:
-			logger.Info(ctx, "converting to qcow2...")
-		case cloudimgProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case cloudimgProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", name)
-		}
+	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
+		return "reading stream for " + name
 	})
 	if err := cloudimgStore.ImportFromReader(ctx, name, tracker, r); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
@@ -182,17 +151,8 @@ func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name 
 	if err != nil {
 		return fmt.Errorf("init oci backend: %w", err)
 	}
-	tracker := progress.NewTracker(func(e ociProgress.Event) {
-		switch e.Phase {
-		case ociProgress.PhasePull:
-			logger.Infof(ctx, "importing %s (1 layer from stream)", name)
-		case ociProgress.PhaseLayer:
-			logger.Infof(ctx, "[1/1] %s done", e.Digest)
-		case ociProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case ociProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", name)
-		}
+	tracker := ociTracker(ctx, logger, name, func(int) string {
+		return fmt.Sprintf("importing %s (1 layer from stream)", name)
 	})
 	if err := ociStore.ImportFromReader(ctx, name, tracker, r); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)

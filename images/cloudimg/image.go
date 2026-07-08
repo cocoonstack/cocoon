@@ -10,17 +10,9 @@ type imageIndex struct {
 	images.Index[imageEntry]
 }
 
-// Lookup finds an entry by URL or content digest.
+// Lookup finds an entry by URL or content digest (exact or prefix).
 func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
-	if entry, ok := idx.Images[id]; ok && entry != nil {
-		return id, entry, true
-	}
-	for ref, entry := range idx.Images {
-		if entry != nil && (entry.ContentSum.String() == id || entry.ContentSum.Hex() == id) {
-			return ref, entry, true
-		}
-	}
-	return "", nil, false
+	return images.LookupOne(idx.Images, id)
 }
 
 func (idx *imageIndex) LookupRefs(id string) []string {

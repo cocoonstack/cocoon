@@ -43,11 +43,11 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 	return store.Update(ctx, func(idx *imageIndex) error {
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(file)})
 
-		workDir, err := os.MkdirTemp(conf.TempDir(), "import-*")
+		workDir, cleanup, err := newWorkDir(conf, "import-*")
 		if err != nil {
-			return fmt.Errorf("create work dir: %w", err)
+			return err
 		}
-		defer os.RemoveAll(workDir) //nolint:errcheck
+		defer cleanup()
 
 		totalLayers := len(file)
 		results, mapErr := utils.Map(ctx, file, func(ctx context.Context, i int, filePath string) (pullLayerResult, error) {
@@ -81,11 +81,11 @@ func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[
 	return store.Update(ctx, func(idx *imageIndex) error {
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
 
-		workDir, err := os.MkdirTemp(conf.TempDir(), "import-*")
+		workDir, cleanup, err := newWorkDir(conf, "import-*")
 		if err != nil {
-			return fmt.Errorf("create work dir: %w", err)
+			return err
 		}
-		defer os.RemoveAll(workDir) //nolint:errcheck
+		defer cleanup()
 
 		var result pullLayerResult
 		if err := processTarReader(ctx, tarImportJob{

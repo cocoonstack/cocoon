@@ -455,12 +455,12 @@ func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (string, st
 	return "", args[baseArgs], nil
 }
 
-// tapQueues: FC=1, CH=CPU count.
+// tapQueues sizes the TAP queue count: FC opens the TAP single-queue, CH per-vCPU.
 func tapQueues(cpu int, useFC bool) int {
 	if useFC {
-		return 1
+		return network.NetNumQueues(1)
 	}
-	return cpu
+	return network.NetNumQueues(cpu)
 }
 
 func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, queues int, bridgeDev string) (network.Network, types.NetSetup, error) {
@@ -488,11 +488,11 @@ func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int
 	if nics <= 0 {
 		return netProvider, setup, nil
 	}
-	// FC needs 1 TAP queue, CH needs per-vCPU; network reads vmCfg.CPU.
-	origCPU := vmCfg.CPU
-	vmCfg.CPU = queues
-	configs, err := netProvider.Add(ctx, vmID, vmCfg, network.AddRange(0, nics)...)
-	vmCfg.CPU = origCPU
+	specs := network.AddRange(0, nics)
+	for i := range specs {
+		specs[i].Queues = queues
+	}
+	configs, err := netProvider.Add(ctx, vmID, vmCfg, specs...)
 	if err != nil {
 		rollbackNetwork(ctx, netProvider, vmID)
 		return nil, types.NetSetup{}, fmt.Errorf("configure network: %w", err)

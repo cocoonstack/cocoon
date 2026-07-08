@@ -24,14 +24,13 @@ func (fc *Firecracker) stopOneLocked(ctx context.Context, id string) error {
 }
 
 func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
-	stopTimeout := time.Duration(fc.conf.StopTimeoutSeconds) * time.Second
 	return hypervisor.StopSpec{
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
-			if stopTimeout < 0 { // --force
+			if fc.conf.ForceStop() {
 				return fc.forceTerminate(ctx, sockPath, pid)
 			}
-			return fc.gracefulStop(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid, stopTimeout)
+			return fc.gracefulStop(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid, fc.conf.StopTimeout())
 		},
 	}
 }

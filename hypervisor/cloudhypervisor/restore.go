@@ -22,7 +22,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		Preflight:        ch.preflightRestore,
 		Kill:             ch.killForRestore,
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-			directBoot := isDirectBoot(rec.BootConfig)
+			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot)
 		},
 	})

@@ -21,7 +21,7 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 	})
 }
 
-// List snapshots all records under the DB lock then runs ToVM (which does file IO) outside the lock so concurrent writers don't queue behind status polls. Mutable map fields are cloned inside the lock to avoid a concurrent-read race with RecordSnapshot etc.
+// List snapshots all records under the DB lock then runs ToVM (which does per-running-VM file IO) outside the lock and in parallel, so concurrent writers don't queue behind status polls and poll latency stays bounded by pool size, not fleet size. Mutable map fields are cloned inside the lock to avoid a concurrent-read race with RecordSnapshot etc.
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	var recs []*VMRecord
 	if err := b.DB.With(ctx, func(idx *VMIndex) error {
@@ -34,11 +34,9 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	}); err != nil {
 		return nil, err
 	}
-	result := make([]*types.VM, len(recs))
-	for i, r := range recs {
-		result[i] = b.ToVM(r)
-	}
-	return result, nil
+	return utils.Map(ctx, recs, func(_ context.Context, _ int, r *VMRecord) (*types.VM, error) {
+		return b.ToVM(r), nil
+	}, b.Conf.EffectivePoolSize())
 }
 
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {

@@ -108,6 +108,11 @@ func BalloonSize(memoryBytes int64, windows bool) (int64, bool) {
 	return memoryBytes / DefaultBalloonDiv, true
 }
 
+// IsDirectBoot reports whether boot uses a direct kernel (OCI) rather than UEFI firmware (cloudimg).
+func IsDirectBoot(boot *types.BootConfig) bool {
+	return boot != nil && boot.KernelPath != ""
+}
+
 func RemoveVMDirs(runDir, logDir string) error {
 	return errors.Join(
 		os.RemoveAll(runDir),

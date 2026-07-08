@@ -55,6 +55,11 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 
 func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, vmCfg *types.VMConfig, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	rollbackPlumbing := func(i int) {
+		if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
+			logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+		}
+	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
 		ncs, err := plumbing.Add(ctx, vmID, vmCfg, network.AddSpec{Index: i})
@@ -67,9 +72,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 		nc := ncs[0]
 		chID, err := addCocoonNIC(ctx, hc, nc)
 		if err != nil {
-			if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-				logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-			}
+			rollbackPlumbing(i)
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
@@ -79,9 +82,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 			} else if wErr := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); wErr != nil {
 				logger.Warnf(ctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
 			}
-			if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-				logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-			}
+			rollbackPlumbing(i)
 			return res, fmt.Errorf("persist nic %d: %w", i, err)
 		}
 		res.Added = append(res.Added, netresize.NIC{Index: i, TAP: nc.TAP, MAC: nc.MAC})

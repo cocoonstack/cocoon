@@ -23,7 +23,7 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		Kill:             fc.killForRestore,
 		Wrap:             fc.wrapSourceLocked,
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
-			_ = os.Remove(filepath.Join(rec.RunDir, cowFileName))
+			_ = os.Remove(filepath.Join(rec.RunDir, hypervisor.COWRawFileName))
 			return nil
 		},
 		AfterExtract: fc.restoreAfterExtractCOW,
@@ -54,7 +54,7 @@ func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecor
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {
 	logger := log.WithFunc("firecracker.Restore")
 
-	snapshotCOW := filepath.Join(rec.RunDir, cowFileName)
+	snapshotCOW := filepath.Join(rec.RunDir, hypervisor.COWRawFileName)
 	if snapshotCOW != cowPath {
 		if _, statErr := os.Stat(snapshotCOW); statErr == nil {
 			if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {

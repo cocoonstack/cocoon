@@ -22,5 +22,5 @@ func (c *Config) BinaryName() string { return filepath.Base(c.FCBinary) }
 func (c *Config) PIDFileName() string { return pidFileName }
 
 func (c *Config) COWRawPath(vmID string) string {
-	return filepath.Join(c.VMRunDir(vmID), cowFileName)
+	return filepath.Join(c.VMRunDir(vmID), hypervisor.COWRawFileName)
 }

@@ -87,23 +87,25 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 	}
 
 	var totalSize int64
-	for _, le := range layerEntries {
-		size, err := validFileSize(conf.BlobPath(le.Digest.Hex()))
+	addSize := func(path, desc string) error {
+		size, err := validFileSize(path)
 		if err != nil {
-			return fmt.Errorf("blob missing for layer %s (concurrent GC?): %w", le.Digest, err)
+			return fmt.Errorf("%s (concurrent GC?): %w", desc, err)
 		}
 		totalSize += size
+		return nil
 	}
-	size, err := validFileSize(conf.KernelPath(kernelLayer.Hex()))
-	if err != nil {
-		return fmt.Errorf("kernel missing for %s (concurrent GC?): %w", kernelLayer, err)
+	for _, le := range layerEntries {
+		if err := addSize(conf.BlobPath(le.Digest.Hex()), fmt.Sprintf("blob missing for layer %s", le.Digest)); err != nil {
+			return err
+		}
 	}
-	totalSize += size
-	size, err = validFileSize(conf.InitrdPath(initrdLayer.Hex()))
-	if err != nil {
-		return fmt.Errorf("initrd missing for %s (concurrent GC?): %w", initrdLayer, err)
+	if err := addSize(conf.KernelPath(kernelLayer.Hex()), fmt.Sprintf("kernel missing for %s", kernelLayer)); err != nil {
+		return err
 	}
-	totalSize += size
+	if err := addSize(conf.InitrdPath(initrdLayer.Hex()), fmt.Sprintf("initrd missing for %s", initrdLayer)); err != nil {
+		return err
+	}
 
 	idx.Images[ref] = &imageEntry{
 		Ref:            ref,

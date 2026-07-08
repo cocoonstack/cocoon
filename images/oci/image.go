@@ -12,33 +12,13 @@ type imageIndex struct {
 	images.Index[imageEntry]
 }
 
-// Lookup finds an entry by ref (exact or normalized) or manifest digest.
+// Lookup finds an entry by ref (exact or normalized) or manifest digest (exact or prefix).
 func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
-	if entry, ok := idx.Images[id]; ok && entry != nil {
-		return id, entry, true
-	}
-	if parsed, err := name.ParseReference(id); err == nil {
-		normalized := parsed.String()
-		if entry, ok := idx.Images[normalized]; ok && entry != nil {
-			return normalized, entry, true
-		}
-	}
-	for ref, entry := range idx.Images {
-		if entry != nil && entry.ManifestDigest.String() == id {
-			return ref, entry, true
-		}
-	}
-	return "", nil, false
+	return images.LookupOne(idx.Images, id, normalizeRef)
 }
 
 func (idx *imageIndex) LookupRefs(id string) []string {
-	return images.LookupRefs(idx.Images, id, func(s string) (string, bool) {
-		parsed, err := name.ParseReference(s)
-		if err != nil {
-			return "", false
-		}
-		return parsed.String(), true
-	})
+	return images.LookupRefs(idx.Images, id, normalizeRef)
 }
 
 // Paths derive from digests at runtime; not stored.
@@ -66,4 +46,13 @@ func (e imageEntry) DigestHexes() []string {
 
 type layerEntry struct {
 	Digest images.Digest `json:"digest"`
+}
+
+// normalizeRef expands a short OCI ref (e.g. "ubuntu:24.04" → "docker.io/library/ubuntu:24.04").
+func normalizeRef(s string) (string, bool) {
+	parsed, err := name.ParseReference(s)
+	if err != nil {
+		return "", false
+	}
+	return parsed.String(), true
 }

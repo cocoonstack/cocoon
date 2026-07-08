@@ -48,6 +48,16 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 	return refs
 }
 
+// LookupOne resolves id to a single entry via LookupRefs' rules, so backend Config
+// and the shared Inspect share one notion of "found" (including digest prefixes).
+func LookupOne[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) (string, *E, bool) {
+	refs := LookupRefs(images, id, normalizers...)
+	if len(refs) == 0 {
+		return "", nil, false
+	}
+	return refs[0], images[refs[0]], true
+}
+
 // LookupRefs returns all ref keys matching id by exact key, normalizer, or digest prefix.
 func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) []string {
 	if entry, ok := images[id]; ok && entry != nil {

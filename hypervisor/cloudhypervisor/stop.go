@@ -8,7 +8,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -27,15 +26,14 @@ func (ch *CloudHypervisor) stopOneLocked(ctx context.Context, id string) error {
 }
 
 func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
-	stopTimeout := time.Duration(ch.conf.StopTimeoutSeconds) * time.Second
 	return hypervisor.StopSpec{
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			hc := utils.NewSocketHTTPClient(sockPath)
-			if isDirectBoot(rec.BootConfig) || stopTimeout < 0 /* --force */ {
+			if hypervisor.IsDirectBoot(rec.BootConfig) || ch.conf.ForceStop() {
 				return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid)
 			}
-			return ch.shutdownUEFI(ctx, hc, rec.ID, sockPath, pid, stopTimeout)
+			return ch.shutdownUEFI(ctx, hc, rec.ID, sockPath, pid, ch.conf.StopTimeout())
 		},
 	}
 }
@@ -54,8 +52,4 @@ func (ch *CloudHypervisor) forceTerminate(ctx context.Context, hc *http.Client, 
 		log.WithFunc("cloudhypervisor.forceTerminate").Warnf(ctx, "vm.shutdown %s: %v", vmID, err)
 	}
 	return utils.TerminateProcess(ctx, pid, ch.conf.BinaryName(), socketPath, ch.conf.TerminateGracePeriod())
-}
-
-func isDirectBoot(boot *types.BootConfig) bool {
-	return boot != nil && boot.KernelPath != ""
 }

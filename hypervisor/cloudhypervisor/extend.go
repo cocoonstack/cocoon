@@ -69,27 +69,6 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	})
 }
 
-// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence)
-// and refuses anything inside a cocoon-managed root: vm rm / GC delete those
-// trees, breaking the never-deletes contract, and a symlink must not smuggle a
-// managed path past the check. Returns the resolved path so the duplicate
-// precheck and CH both see one canonical name per volume.
-func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", fmt.Errorf("disk path: %w", err)
-	}
-	for _, dir := range []string{ch.conf.RootDir, ch.conf.Config.RunDir, ch.conf.Config.LogDir} {
-		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
-			dir = r
-		}
-		if hypervisor.IsUnderDir(resolved, dir) {
-			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
-		}
-	}
-	return resolved, nil
-}
-
 func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) error {
 	if name == "" {
 		return fmt.Errorf("name is required")
@@ -203,10 +182,8 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 		return fmt.Errorf("id is required")
 	}
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		for _, ex := range info.Config.Devices {
-			if ex.ID == id {
-				return id, nil
-			}
+		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
+			return id, nil
 		}
 		return "", fmt.Errorf("device id %q not attached", id)
 	})
@@ -220,6 +197,27 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 		}
 		return out
 	})
+}
+
+// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence)
+// and refuses anything inside a cocoon-managed root: vm rm / GC delete those
+// trees, breaking the never-deletes contract, and a symlink must not smuggle a
+// managed path past the check. Returns the resolved path so the duplicate
+// precheck and CH both see one canonical name per volume.
+func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("disk path: %w", err)
+	}
+	for _, dir := range []string{ch.conf.RootDir, ch.conf.Config.RunDir, ch.conf.Config.LogDir} {
+		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+			dir = r
+		}
+		if hypervisor.IsUnderDir(resolved, dir) {
+			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
+		}
+	}
+	return resolved, nil
 }
 
 // inspectRunning gates on a live VM and returns a fresh vm.info for conflict/memory/device-id lookups.

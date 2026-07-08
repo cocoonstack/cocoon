@@ -124,13 +124,11 @@ func withDownload(
 	tracker progress.Tracker,
 	fn func(f *os.File, tmpPath, digestHex string) error,
 ) error {
-	tmpFile, err := os.CreateTemp(conf.TempDir(), "pull-*.img")
+	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "pull-*.img")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck,gosec
-	defer tmpFile.Close()    //nolint:errcheck,gosec
+	defer cleanup()
 
 	digestHex, err := downloadToFile(ctx, url, tmpFile, tracker, conf.PullConns)
 	if err != nil {
