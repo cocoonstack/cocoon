@@ -149,12 +149,25 @@ func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
 	_ = result // Just verify no panic.
 }
 
+// waitForExec blocks until /proc/<pid>/cmdline shows the target argv:
+// cmd.Start returns before the child execs, and TerminateProcess declines a
+// pid whose cmdline does not match (the stub-VMM race from cocoon#87).
+func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
+	t.Helper()
+	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
+		return VerifyProcessCmdline(pid, binaryName, expectArg), nil
+	}); err != nil {
+		t.Fatalf("child never execed into %s: %v", binaryName, err)
+	}
+}
+
 func TestTerminateProcess_SleepProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sleep: %v", err)
 	}
 	pid := cmd.Process.Pid
+	waitForExec(t, pid, "sleep", "60")
 
 	// Reap the child in background so it doesn't become a zombie after SIGTERM.
 	// Without this, kill(pid, 0) keeps returning nil for zombies and WaitFor times out.
@@ -217,6 +230,7 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	pid := cmd.Process.Pid
+	waitForExec(t, pid, "bash", "sleep")
 
 	waitDone := make(chan struct{})
 	go func() {
