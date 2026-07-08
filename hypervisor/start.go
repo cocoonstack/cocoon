@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/projecteru2/core/log"
 
@@ -13,67 +12,55 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// StartAll runs startOne per ref; only launched=true ids reach BatchMarkStarted.
-func (b *Backend) StartAll(ctx context.Context, refs []string, startOne func(context.Context, string) (bool, error)) ([]string, error) {
+// StartAll runs startOne per ref; each start flips its own state under its VM's ops lock.
+func (b *Backend) StartAll(ctx context.Context, refs []string, startOne func(context.Context, string) error) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	var (
-		mu       sync.Mutex
-		launched []string
-	)
-	wrapped := func(ctx context.Context, id string) error {
-		wasLaunched, sErr := startOne(ctx, id)
-		if sErr != nil {
-			return sErr
-		}
-		if wasLaunched {
-			mu.Lock()
-			launched = append(launched, id)
-			mu.Unlock()
-		}
-		return nil
-	}
-	succeeded, forEachErr := b.ForEachVM(ctx, ids, "Start", wrapped)
-	if batchErr := b.BatchMarkStarted(ctx, launched); batchErr != nil {
-		log.WithFunc(b.Typ+".Start").Warnf(ctx, "batch state update: %v", batchErr)
-	}
-	return succeeded, forEachErr
+	return b.ForEachVM(ctx, ids, "Start", startOne)
 }
 
-// StartSequence runs the shared start skeleton under the VM's ops lock (a concurrent rm --force must not delete the record/dirs mid-launch and orphan the VMM); returns whether a fresh process was launched.
-func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) (bool, error) {
+// StartSequence runs the shared start skeleton under the VM's ops lock: a concurrent rm --force must not delete the record/dirs mid-launch, and the Running flip lands before the lock is released so a stop queued behind this start can't be overwritten by a late state write.
+func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer unlock()
 	rec, err := b.PrepareStart(ctx, id, spec.RuntimeFiles)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if rec == nil {
-		return false, nil
+		return nil
 	}
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		b.MarkError(ctx, id)
-		return false, fmt.Errorf("storage invariants violated: %w", vErr)
+		return fmt.Errorf("storage invariants violated: %w", vErr)
+	}
+	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
+		b.MarkError(ctx, id)
+		return fmt.Errorf("network invariants violated: %w", vErr)
 	}
 	sockPath := SocketPath(rec.RunDir)
 	pid, err := spec.Launch(ctx, rec, sockPath)
 	if err != nil {
 		b.MarkError(ctx, id)
-		return false, fmt.Errorf("launch VM: %w", err)
+		return fmt.Errorf("launch VM: %w", err)
 	}
 	if spec.PostLaunch != nil {
 		if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
 			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
 			b.MarkError(ctx, id)
-			return false, fmt.Errorf("configure VM: %w", err)
+			return fmt.Errorf("configure VM: %w", err)
 		}
 	}
-	return true, nil
+	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
+	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
+		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
+	}
+	return nil
 }
 
 // PrepareStart loads the record, verifies not-running, ensures dirs exist.

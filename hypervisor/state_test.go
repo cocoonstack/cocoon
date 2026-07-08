@@ -334,9 +334,9 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 	// Three records distinguish the three cases that must end up correctly in
 	// the ledger:
-	//   - vm-stopped: DB Stopped, process dead → launched=true → emit
-	//   - vm-running: DB Running, process alive → launched=false → no emit
-	//   - vm-stale:   DB Running, process dead, relaunched → launched=true → emit
+	//   - vm-stopped: DB Stopped, process dead → launched → emit
+	//   - vm-running: DB Running, process alive → no launch → no emit
+	//   - vm-stale:   DB Running, process dead, relaunched → emit
 	// The bug being locked down: an earlier impl had BatchMarkStarted skip
 	// anything with r.State==Running, which silently dropped vm-stale.
 	b, rec := newMeteringTestBackend(t)
@@ -345,14 +345,15 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 	seedRunningVM(t, b, "vm-running", 1, 1<<30, 10<<30)
 	seedRunningVM(t, b, "vm-stale", 2, 2<<30, 20<<30)
 
-	startOne := func(_ context.Context, id string) (bool, error) {
+	// Mimics StartSequence's per-VM contract: only an actual launch flips state.
+	startOne := func(ctx context.Context, id string) error {
 		switch id {
 		case "vm-stopped", "vm-stale":
-			return true, nil
+			return b.BatchMarkStarted(ctx, []string{id})
 		case "vm-running":
-			return false, nil
+			return nil
 		}
-		return false, fmt.Errorf("unexpected id: %s", id)
+		return fmt.Errorf("unexpected id: %s", id)
 	}
 
 	succeeded, err := b.StartAll(ctx, []string{"vm-stopped", "vm-running", "vm-stale"}, startOne)

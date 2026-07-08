@@ -43,7 +43,7 @@ func (b *Backend) StopOneSequence(ctx context.Context, id string, spec StopSpec)
 	return b.StopOneLocked(ctx, id, spec)
 }
 
-// StopOneLocked is StopOneSequence minus the lock; DeleteAll calls it with the VM's ops lock already held (re-locking would deadlock).
+// StopOneLocked is StopOneSequence minus the lock; DeleteAll calls it with the VM's ops lock already held (re-locking would deadlock). The Stopped flip lands inside the caller's lock so a start queued behind this stop can't interleave between the kill and the state write.
 func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) error {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
@@ -53,20 +53,23 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	shutdownErr := b.WithRunningVM(ctx, &rec, func(pid int) error {
 		return spec.Shutdown(ctx, &rec, sockPath, pid)
 	})
-	return b.HandleStopResult(ctx, id, rec.RunDir, spec.RuntimeFiles, shutdownErr)
+	if err := b.HandleStopResult(ctx, id, rec.RunDir, spec.RuntimeFiles, shutdownErr); err != nil {
+		return err
+	}
+	// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
+	if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
+		log.WithFunc(b.Typ+".StopOneLocked").Warnf(ctx, "mark stopped %s: %v", id, err)
+	}
+	return nil
 }
 
-// StopAll mirrors StartAll: stopOne per ref, batch-flip succeeded to Stopped.
+// StopAll mirrors StartAll: stopOne per ref, each flipping its own state under its VM's ops lock.
 func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(context.Context, string) error) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	succeeded, forEachErr := b.ForEachVM(ctx, ids, "Stop", stopOne)
-	if batchErr := b.UpdateStates(ctx, succeeded, types.VMStateStopped); batchErr != nil {
-		log.WithFunc(b.Typ+".Stop").Warnf(ctx, "batch state update: %v", batchErr)
-	}
-	return succeeded, forEachErr
+	return b.ForEachVM(ctx, ids, "Stop", stopOne)
 }
 
 // DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.
