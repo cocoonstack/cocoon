@@ -9,9 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/cocoonstack/cocoon/types"
 )
+
+const diskIDPrefix = "cocoon-disk-"
 
 // ErrUnsupportedBackend signals the backend cannot hot-plug virtio-blk disks (e.g. Firecracker).
 var ErrUnsupportedBackend = errors.New("backend does not support disk attach")
@@ -63,15 +66,15 @@ type Lister interface {
 // DeriveID returns the deterministic CH device id for a disk name (used by
 // attach + detach so concurrent attaches collide on CH's id check).
 func DeriveID(name string) string {
-	return "cocoon-disk-" + name
+	return diskIDPrefix + name
 }
 
 // NameFromID reverses DeriveID; empty when id is not a hot-added disk
 // (foreign same-prefix ids with an illegal name suffix are not ours).
 func NameFromID(id string) string {
-	const prefix = "cocoon-disk-"
-	if len(id) > len(prefix) && id[:len(prefix)] == prefix && types.ValidDataDiskName(id[len(prefix):]) {
-		return id[len(prefix):]
+	name, ok := strings.CutPrefix(id, diskIDPrefix)
+	if ok && types.ValidDataDiskName(name) {
+		return name
 	}
 	return ""
 }

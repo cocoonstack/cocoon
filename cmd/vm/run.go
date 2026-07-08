@@ -12,6 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
@@ -332,6 +333,11 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 			return nil, "", nil, types.NetSetup{}, fmt.Errorf("--nics override on clone is Cloud Hypervisor only (FC network_overrides retargets existing NICs, not resize)")
 		}
 		nics, _ = cmd.Flags().GetInt("nics")
+	}
+	// Fast-fail beside the --nics precedent, before network setup and tar
+	// extraction; fc's clone-extract guard stays as the library backstop.
+	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker {
+		return nil, "", nil, types.NetSetup{}, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend)
 	}
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
 	if err != nil {
