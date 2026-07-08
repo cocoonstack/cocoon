@@ -130,7 +130,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	t.Helper()
 	b, _ := newMeteringTestBackend(t)
 	b.Conf = hibernateTestConfig{
-		stubBackendConfig: b.Conf.(stubBackendConfig),
+		stubBackendConfig: stubBackendConfig{},
 		vmRunRoot:         t.TempDir(),
 	}
 

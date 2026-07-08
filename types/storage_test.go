@@ -109,3 +109,18 @@ func TestValidateStorageConfigs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateStorageConfigs_External(t *testing.T) {
+	valid := &StorageConfig{Role: StorageRoleData, Path: "/vols/a.raw", Serial: "vola", External: true, FSType: "none"}
+	if err := ValidateStorageConfigs([]*StorageConfig{valid}); err != nil {
+		t.Fatalf("valid external: %v", err)
+	}
+	rel := &StorageConfig{Role: StorageRoleData, Path: "vols/a.raw", Serial: "vola", External: true, FSType: "none"}
+	ro := &StorageConfig{Role: StorageRoleData, Path: "/vols/a.raw", Serial: "vola", External: true, FSType: "none", RO: true}
+	if err := ValidateStorageConfigs([]*StorageConfig{ro}); err != nil {
+		t.Fatalf("readonly external should pass: %v", err)
+	}
+	if err := ValidateStorageConfigs([]*StorageConfig{rel}); err == nil {
+		t.Fatal("relative external path should fail")
+	}
+}

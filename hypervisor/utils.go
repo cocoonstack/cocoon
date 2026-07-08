@@ -18,6 +18,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netns"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -26,6 +27,9 @@ import (
 type SnapshotFileKind int
 
 const (
+	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
+	OpsLockName = "ops.lock"
+
 	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
 	// SnapshotFileCOW is a writable disk that must be copied (reflink/sparse).
@@ -41,6 +45,23 @@ const (
 	// socketReadyPollInterval is the WaitForSocket poll cadence — VMM socket usually appears within a few ms after process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 )
+
+// LockVMOps serializes mutating verbs on one VM across processes (#103):
+// device attach/detach, net resize, snapshot, hibernate, restore, stop.
+// The flock dies with the process, so a crashed holder never wedges the VM.
+func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
+	runDir := b.Conf.VMRunDir(vmID)
+	// The dir can be gone on crash-leftover cleanup paths; the lock must not
+	// block the cleanup that would remove it.
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		return nil, fmt.Errorf("ops lock dir: %w", err)
+	}
+	l := flock.New(filepath.Join(runDir, OpsLockName))
+	if err := l.Lock(ctx); err != nil {
+		return nil, err
+	}
+	return func() { _ = l.Unlock(ctx) }, nil
+}
 
 func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
@@ -245,7 +266,7 @@ func IsDataDiskFile(name string) bool {
 // ReflinkDataDisks reflinks every Role==Data disk into dstDir under data-<serial>.raw (CH+FC use it inside the snapshot pause window).
 func ReflinkDataDisks(dstDir string, configs []*types.StorageConfig) error {
 	for _, sc := range configs {
-		if sc.Role != types.StorageRoleData {
+		if sc.Role != types.StorageRoleData || sc.External {
 			continue
 		}
 		dst := filepath.Join(dstDir, DataDiskBaseName(sc.Serial))
@@ -323,6 +344,14 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		return fmt.Errorf("sidecar invalid: %w", err)
 	}
 	for _, sc := range sidecar {
+		if sc.External {
+			// The backing file is reference-only: never captured, must still
+			// exist at its absolute path for the restore to resume onto it.
+			if _, err := os.Stat(sc.Path); err != nil {
+				return fmt.Errorf("external volume %s missing: %w", sc.Serial, err)
+			}
+			continue
+		}
 		fname := snapshotResidentBasename(sc)
 		if fname == "" {
 			continue
@@ -516,6 +545,9 @@ func createSparseFile(path string, size int64) error {
 func snapshotResidentBasename(sc *types.StorageConfig) string {
 	switch sc.Role {
 	case types.StorageRoleData:
+		if sc.External {
+			return ""
+		}
 		return DataDiskBaseName(sc.Serial)
 	case types.StorageRoleCOW, types.StorageRoleCidata:
 		return filepath.Base(sc.Path)

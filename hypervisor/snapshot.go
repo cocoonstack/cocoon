@@ -73,10 +73,11 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 
 // SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
 func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
-	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
+	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer unlock()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
@@ -103,10 +104,11 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 
 // HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.
 func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) (err error) {
-	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
+	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
@@ -161,23 +163,31 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 }
 
 // prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
-func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, error) {
+func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, func(), error) {
 	vmID, err := b.ResolveRef(ctx, ref)
 	if err != nil {
-		return "", VMRecord{}, "", err
+		return "", VMRecord{}, "", nil, err
+	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return "", VMRecord{}, "", nil, err
+	}
+	fail := func(err error) (string, VMRecord, string, func(), error) {
+		unlock()
+		return "", VMRecord{}, "", nil, err
 	}
 	rec, err := b.LoadRecord(ctx, vmID)
 	if err != nil {
-		return "", VMRecord{}, "", err
+		return fail(err)
 	}
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return "", VMRecord{}, "", fmt.Errorf("storage invariants violated: %w", vErr)
+		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
 	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
 	if err != nil {
-		return "", VMRecord{}, "", fmt.Errorf("create temp dir: %w", err)
+		return fail(fmt.Errorf("create temp dir: %w", err))
 	}
-	return vmID, rec, tmpDir, nil
+	return vmID, rec, tmpDir, unlock, nil
 }
 
 // finalizeSnapshot writes the sidecar metadata and registers the snapshot on the VM record.
@@ -213,15 +223,31 @@ func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
 	return &meta, nil
 }
 
-func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
+func LoadAndValidateMeta(dir, rootDir, runDir string, trustedExternal map[string]struct{}) (*SnapshotMeta, error) {
 	meta, err := LoadSnapshotMeta(dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir, trustedExternal); err != nil {
 		return nil, err
 	}
 	return meta, nil
+}
+
+// ExternalPathSet collects the record's external volume paths — the trust
+// anchor for sidecar external entries (a foreign snapshot cannot name a host
+// file the live record does not already reference).
+func ExternalPathSet(configs []*types.StorageConfig) map[string]struct{} {
+	var set map[string]struct{}
+	for _, sc := range configs {
+		if sc != nil && sc.External {
+			if set == nil {
+				set = make(map[string]struct{})
+			}
+			set[sc.Path] = struct{}{}
+		}
+	}
+	return set
 }
 
 // PopulateFromSrc cleans runDir of old snapshot files then copies fresh ones from srcDir (used by DirectRestore).
@@ -237,7 +263,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 
 // PreflightRestore: load+validate sidecar, run backend-specific integrity, assert snapshot role sequence is a prefix of rec.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
-	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
+	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir, ExternalPathSet(rec.StorageConfigs))
 	if err != nil {
 		return err
 	}
@@ -270,8 +296,16 @@ func IsUnderDir(path, dir string) bool {
 }
 
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
-func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
+// External volume entries are trusted only when the live record already references the same path (trustedExternal) — this both
+// blocks a foreign sidecar from naming arbitrary host files and refuses clones of volume-referencing snapshots (clones pass nil).
+func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string, trustedExternal map[string]struct{}) error {
 	for _, sc := range meta.StorageConfigs {
+		if sc.External {
+			if _, ok := trustedExternal[sc.Path]; !ok {
+				return fmt.Errorf("snapshot references external volume %q (%s) not present on the VM record", sc.Serial, sc.Path)
+			}
+			continue
+		}
 		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 		}

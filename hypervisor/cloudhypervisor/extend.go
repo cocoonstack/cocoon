@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/netresize"
@@ -37,49 +39,81 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	if _, err := os.Stat(spec.Path); err != nil {
 		return "", fmt.Errorf("disk path: %w", err)
 	}
-	vm, err := ch.Inspect(ctx, vmRef)
+	hc, info, vmID, rec, unlock, err := ch.lockedDeviceOpWithRecord(ctx, vmRef)
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
+	if err = ensureNotPaused(info); err != nil {
+		return "", err
+	}
+	id := disk.DeriveID(spec.Name)
+	for _, ex := range info.Config.Disks {
+		if ex.ID == id {
+			return "", fmt.Errorf("disk name %q already attached", spec.Name)
+		}
+		// Record data disks carry CH auto ids — match serials too, else two
+		// devices race for one /dev/disk/by-id/virtio-<name>.
+		if ex.Serial == spec.Name {
+			return "", fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
+		}
+		if ex.Path == spec.Path {
+			return "", fmt.Errorf("disk path %q already attached as %q", spec.Path, ex.ID)
+		}
+	}
+	// FSType none: the external file's filesystem is user-managed, mkfs and
+	// cloud-init mounts never apply to it.
+	sc := &types.StorageConfig{
+		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
+		DirectIO: spec.DirectIO, External: true, FSType: "none",
+	}
 	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
 	// semantics must match create-path data disks.
-	d := storageConfigToDisk(&types.StorageConfig{
-		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
-		DirectIO: spec.DirectIO,
-	}, vm.Config.CPU, vm.Config.DiskQueueSize, vm.Config.NoDirectIO)
-	id := disk.DeriveID(spec.Name)
-	d.ID = id
-	return ch.attachWith(ctx, vmRef, "vm.add-disk", d, id, func(info *chVMInfoResponse) error {
-		for _, ex := range info.Config.Disks {
-			if ex.ID == id {
-				return fmt.Errorf("disk name %q already attached", spec.Name)
-			}
-			// Record data disks carry CH auto ids — match serials too, else two
-			// devices race for one /dev/disk/by-id/virtio-<name>.
-			if ex.Serial == spec.Name {
-				return fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
-			}
-			if ex.Path == spec.Path {
-				return fmt.Errorf("disk path %q already attached as %q", spec.Path, ex.ID)
-			}
+	d := storageConfigToDisk(sc, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO)
+	if err = addDiskVM(ctx, hc, d); err != nil {
+		return "", fmt.Errorf("vm.add-disk: %w", err)
+	}
+	// Persist so the volume survives stop/start and rides hibernate/wake; on
+	// persist failure remove the live device (netresize rollback pattern).
+	if err = ch.appendStorageConfig(ctx, vmID, sc); err != nil {
+		if rmErr := removeDeviceVM(ctx, hc, d.ID); rmErr != nil {
+			log.WithFunc("cloudhypervisor.DiskAttach").Warnf(ctx, "rollback vm.remove-device %s after persist failure: %v", d.ID, rmErr)
 		}
-		return nil
-	})
+		return "", fmt.Errorf("persist disk %s: %w", spec.Name, err)
+	}
+	return d.ID, nil
 }
 
 func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) error {
 	if name == "" {
 		return fmt.Errorf("name is required")
 	}
+	hc, info, vmID, _, unlock, err := ch.lockedDeviceOpWithRecord(ctx, vmRef)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err = ensureNotPaused(info); err != nil {
+		return err
+	}
 	id := disk.DeriveID(name)
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		for _, ex := range info.Config.Disks {
-			if ex.ID == id {
-				return ex.ID, nil
-			}
+	found := false
+	for _, ex := range info.Config.Disks {
+		if ex.ID == id {
+			found = true
+			break
 		}
-		return "", fmt.Errorf("disk %q not attached", name)
-	})
+	}
+	if !found {
+		return fmt.Errorf("disk %q not attached", name)
+	}
+	if err := removeDeviceVM(ctx, hc, id); err != nil {
+		return fmt.Errorf("vm.remove-device %s: %w", id, err)
+	}
+	if err := ch.removeStorageConfig(ctx, vmID, name); err != nil {
+		return fmt.Errorf("device removed but record retained for %s: %w", name, err)
+	}
+	return nil
 }
 
 func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
@@ -211,15 +245,85 @@ func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*h
 	return hc, info, nil
 }
 
+// lockedDeviceOpWithRecord is lockedDeviceOp for callers that also need the
+// VM id and record (the disk verbs persist to it).
+func (ch *CloudHypervisor) lockedDeviceOpWithRecord(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, string, hypervisor.VMRecord, func(), error) {
+	hc, vmID, rec, err := ch.runningVMClientWithRecord(ctx, vmRef)
+	if err != nil {
+		return nil, nil, "", hypervisor.VMRecord{}, nil, err
+	}
+	unlock, err := ch.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, nil, "", hypervisor.VMRecord{}, nil, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		unlock()
+		return nil, nil, "", hypervisor.VMRecord{}, nil, err
+	}
+	return hc, info, vmID, rec, unlock, nil
+}
+
+func (ch *CloudHypervisor) appendStorageConfig(ctx context.Context, vmID string, sc *types.StorageConfig) error {
+	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
+		r, err := idx.GetRecord(vmID)
+		if err != nil {
+			return err
+		}
+		r.StorageConfigs = append(r.StorageConfigs, sc)
+		return nil
+	})
+}
+
+func (ch *CloudHypervisor) removeStorageConfig(ctx context.Context, vmID, serial string) error {
+	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
+		r, err := idx.GetRecord(vmID)
+		if err != nil {
+			return err
+		}
+		kept := r.StorageConfigs[:0]
+		for _, sc := range r.StorageConfigs {
+			if sc.Role != types.StorageRoleData || !sc.External || sc.Serial != serial {
+				kept = append(kept, sc)
+			}
+		}
+		r.StorageConfigs = kept
+		return nil
+	})
+}
+
+// lockedDeviceOp serializes device-set mutations per VM across processes and
+// hands back a vm.info snapshot taken UNDER the lock, so precheck-then-call
+// is atomic against concurrent attach/detach (two attaches of one path with
+// different names both passed the old unlocked precheck). Callers unlock
+// after their API call; the flock dies with the process, so no stale locks.
+func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, func(), error) {
+	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	unlock, err := ch.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		unlock()
+		return nil, nil, nil, err
+	}
+	return hc, info, unlock, nil
+}
+
 func (ch *CloudHypervisor) attachWith(
 	ctx context.Context, vmRef, endpoint string,
 	body any, fallbackID string,
 	preCheck func(*chVMInfoResponse) error,
 ) (string, error) {
-	hc, info, err := ch.inspectRunning(ctx, vmRef)
+	hc, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
 	if err = ensureNotPaused(info); err != nil {
 		return "", err
 	}
@@ -253,10 +357,11 @@ func (ch *CloudHypervisor) detachWith(
 	ctx context.Context, vmRef string,
 	findID func(*chVMInfoResponse) (string, error),
 ) error {
-	hc, info, err := ch.inspectRunning(ctx, vmRef)
+	hc, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	if err = ensureNotPaused(info); err != nil {
 		return err
 	}

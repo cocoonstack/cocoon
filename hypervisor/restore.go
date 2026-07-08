@@ -90,6 +90,11 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	if err != nil {
 		return nil, err
 	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, spec.Snapshot)
 	if err != nil {
@@ -140,6 +145,11 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	if err != nil {
 		return nil, err
 	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)

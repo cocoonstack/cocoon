@@ -35,6 +35,11 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 
 // StopOneSequence runs the shared per-id stop skeleton (LoadRecord → WithRunningVM(Shutdown) → HandleStopResult) so backends only express their force-vs-graceful choice.
 func (b *Backend) StopOneSequence(ctx context.Context, id string, spec StopSpec) error {
+	unlock, err := b.LockVMOps(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
 		return err

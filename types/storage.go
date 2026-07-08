@@ -33,6 +33,7 @@ type StorageConfig struct {
 	MountPoint string      `json:"mount_point,omitempty"` // Role==Data only
 	FSType     string      `json:"fstype,omitempty"`      // Role==Data only
 	DirectIO   *bool       `json:"direct_io,omitempty"`   // Role==Data only; nil inherits VM-level NoDirectIO
+	External   bool        `json:"external,omitempty"`    // Role==Data only; backing file outside cocoon's management (never created/copied/deleted/path-rewritten)
 }
 
 // DataDiskSpec is the user-facing description of an extra data disk parsed from --data-disk. Transient — never persisted.
@@ -57,7 +58,8 @@ func ValidateStorageConfigs(configs []*StorageConfig) error {
 				return fmt.Errorf("storage config %d (%s): role %s requires RO=true", i, sc.Path, sc.Role)
 			}
 		case StorageRoleCOW, StorageRoleData:
-			if sc.RO {
+			// External volumes may be attached read-only (shared reference data).
+			if sc.RO && !sc.External {
 				return fmt.Errorf("storage config %d (%s): role %s requires RO=false", i, sc.Path, sc.Role)
 			}
 		default:
@@ -82,6 +84,9 @@ func ValidateStorageConfigs(configs []*StorageConfig) error {
 			if strings.ContainsAny(sc.MountPoint, "\x00\n") {
 				return fmt.Errorf("data disk %s: mount_point contains forbidden characters", sc.Serial)
 			}
+		}
+		if sc.External && !filepath.IsAbs(sc.Path) {
+			return fmt.Errorf("data disk %s: external requires an absolute path, got %q", sc.Serial, sc.Path)
 		}
 		if !ValidDataDiskName(sc.Serial) {
 			return fmt.Errorf("data disk: serial %q does not match name rules", sc.Serial)

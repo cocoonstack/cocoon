@@ -563,6 +563,15 @@ func (stubBackendConfig) LogDir() string                      { panic("LogDir: n
 func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
 func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
 
+// meteringStubConfig gives the metering stub a real VMRunDir so sequences
+// can take the per-VM ops lock and MkdirTemp under it.
+type meteringStubConfig struct {
+	stubBackendConfig
+	vmRunRoot string
+}
+
+func (c meteringStubConfig) VMRunDir(string) string { return c.vmRunRoot }
+
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
 	dir := t.TempDir()
@@ -571,7 +580,7 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 	rec := meteringcapture.New()
 	return &Backend{
 		Typ:      "test-hv",
-		Conf:     stubBackendConfig{},
+		Conf:     meteringStubConfig{vmRunRoot: dir},
 		DB:       store,
 		Locker:   locker,
 		Metering: rec,

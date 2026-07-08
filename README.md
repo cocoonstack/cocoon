@@ -499,7 +499,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
 - **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-All attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, provisions the disk file, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor rejects snapshotting a VM with vhost-user or VFIO devices attached; cocoon likewise refuses to snapshot or hibernate a VM with a hot-attached disk ("disk not present in VM record") — detach first. Attach/detach are also refused while the VM is paused (a snapshot/hibernate capture in flight).
+Fs and VFIO attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart, and Cloud Hypervisor rejects snapshotting while one is attached. **Disk attaches persist**: the volume is recorded on the VM, survives stop/start, and rides hibernate/wake transparently (the guest resumes with the volume still mounted). Snapshots carry only the volume *reference* — the backing file is never copied into a snapshot and must stay readable at its absolute path; restoring a snapshot older than the volume's current content leaves the volume as-is (its content is not rolled back). Cloning a snapshot that references an external volume is refused — a clone would share the writable file. Cocoon never owns backend lifecycles (the user runs `virtiofsd`, binds PCI devices, provisions volume files). All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window.
 
 ### Vhost-user-fs
 
@@ -546,6 +546,11 @@ mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
 # Detach later (backing file kept; re-attach to any VM to see the same data):
 cocoon vm disk detach my-vm --name vol1
 ```
+
+The attach persists: `vm stop` + `vm start` brings the volume back, and
+`vm hibernate` + wake resumes the guest with the volume still mounted.
+Detach before `snapshot save` if the snapshot will be a clone source —
+clones of volume-referencing snapshots are refused.
 
 Flags:
 

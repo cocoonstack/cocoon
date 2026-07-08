@@ -27,6 +27,11 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if err != nil {
 		return netresize.Result{}, err
 	}
+	unlock, err := ch.LockVMOps(ctx, vmID)
+	if err != nil {
+		return netresize.Result{}, err
+	}
+	defer unlock()
 	current := len(rec.NetworkConfigs)
 	res := netresize.Result{Before: current, After: current}
 	switch {

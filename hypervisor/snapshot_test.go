@@ -44,7 +44,7 @@ func TestValidateMetaPaths_Accepts(t *testing.T) {
 			InitrdPath: filepath.Join(rootDir, "oci/.../boot/initrd"),
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir, nil); err != nil {
 		t.Fatalf("ValidateMetaPaths: %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
 			{Path: "/etc/shadow"},
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err == nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir, nil); err == nil {
 		t.Fatal("expected ValidateMetaPaths to reject /etc/shadow")
 	}
 }
@@ -66,7 +66,7 @@ func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
 	meta := &SnapshotMeta{
 		BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
 		t.Fatal("expected kernel path outside rootDir to be rejected")
 	}
 }
@@ -78,7 +78,7 @@ func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
 			InitrdPath: "/etc/passwd",
 		},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
 		t.Fatal("expected initrd path outside rootDir to be rejected")
 	}
 }
@@ -146,5 +146,18 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 	got := ReverseLayers(configs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
 	if len(got) != 0 {
 		t.Errorf("got %d, want 0", len(got))
+	}
+}
+
+func TestValidateMetaPaths_External(t *testing.T) {
+	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
+		{Path: "/vols/a.raw", Serial: "vola", Role: types.StorageRoleData, External: true},
+	}}
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
+		t.Fatal("untrusted external should be refused")
+	}
+	trusted := map[string]struct{}{"/vols/a.raw": {}}
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", trusted); err != nil {
+		t.Fatalf("record-trusted external should pass: %v", err)
 	}
 }
