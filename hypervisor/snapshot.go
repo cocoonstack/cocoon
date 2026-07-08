@@ -175,6 +175,14 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
+	// External volumes are runtime-only: snapshot/hibernate would freeze a
+	// mount the capture cannot own, so the decision is surfaced here, not
+	// deferred to clone/restore. Detach (and umount in-guest) first.
+	for _, sc := range rec.StorageConfigs {
+		if sc.External {
+			return fail(fmt.Errorf("detach external volume %q before snapshot or hibernate", sc.Serial))
+		}
+	}
 	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
 	if err != nil {
 		return fail(fmt.Errorf("create temp dir: %w", err))
@@ -215,39 +223,15 @@ func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
 	return &meta, nil
 }
 
-func LoadAndValidateMeta(dir, rootDir, runDir string, trustedExternal map[string]ExternalTrust) (*SnapshotMeta, error) {
+func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
 	meta, err := LoadSnapshotMeta(dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir, trustedExternal); err != nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
 		return nil, err
 	}
 	return meta, nil
-}
-
-// ExternalTrust is the identity a sidecar external entry must match exactly;
-// path membership alone would let a tampered sidecar flip RO or the guest
-// serial on a file the record legitimately references.
-type ExternalTrust struct {
-	Serial string
-	RO     bool
-}
-
-// ExternalTrustSet collects the record's external volumes — the trust anchor
-// for sidecar external entries (a foreign snapshot cannot name a host file
-// the live record does not already reference, nor alter its identity).
-func ExternalTrustSet(configs []*types.StorageConfig) map[string]ExternalTrust {
-	var set map[string]ExternalTrust
-	for _, sc := range configs {
-		if sc != nil && sc.External {
-			if set == nil {
-				set = make(map[string]ExternalTrust)
-			}
-			set[sc.Path] = ExternalTrust{Serial: sc.Serial, RO: sc.RO}
-		}
-	}
-	return set
 }
 
 // PopulateFromSrc cleans runDir of old snapshot files then copies fresh ones from srcDir (used by DirectRestore).
@@ -263,7 +247,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 
 // PreflightRestore: load+validate sidecar, run backend-specific integrity, assert snapshot role sequence is a prefix of rec.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
-	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir, ExternalTrustSet(rec.StorageConfigs))
+	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
 	if err != nil {
 		return err
 	}
@@ -296,25 +280,9 @@ func IsUnderDir(path, dir string) bool {
 }
 
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
-// External volume entries are trusted only when the live record already references the same path (trustedExternal) — this both
-// blocks a foreign sidecar from naming arbitrary host files and refuses clones of volume-referencing snapshots (clones pass nil).
-func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string, trustedExternal map[string]ExternalTrust) error {
+// External volumes never reach a snapshot (snapshot/hibernate refuse them), so every sidecar path must be under a managed root.
+func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 	for _, sc := range meta.StorageConfigs {
-		if sc.External {
-			t, ok := trustedExternal[sc.Path]
-			if !ok {
-				return fmt.Errorf("snapshot references external volume %q (%s) not present on the VM record", sc.Serial, sc.Path)
-			}
-			if sc.Serial != t.Serial || sc.RO != t.RO {
-				return fmt.Errorf("snapshot external volume %q (%s) does not match the VM record's identity (serial/readonly)", sc.Serial, sc.Path)
-			}
-			// External paths inside cocoon-managed roots are contradictions:
-			// rm/GC may delete them with the run dir.
-			if IsUnderDir(sc.Path, rootDir) || IsUnderDir(sc.Path, runDir) {
-				return fmt.Errorf("external volume %q path %s is inside a cocoon-managed directory", sc.Serial, sc.Path)
-			}
-			continue
-		}
 		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 		}

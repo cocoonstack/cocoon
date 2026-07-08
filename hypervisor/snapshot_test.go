@@ -44,7 +44,7 @@ func TestValidateMetaPaths_Accepts(t *testing.T) {
 			InitrdPath: filepath.Join(rootDir, "oci/.../boot/initrd"),
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir, nil); err != nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
 		t.Fatalf("ValidateMetaPaths: %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
 			{Path: "/etc/shadow"},
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir, nil); err == nil {
+	if err := ValidateMetaPaths(meta, rootDir, runDir); err == nil {
 		t.Fatal("expected ValidateMetaPaths to reject /etc/shadow")
 	}
 }
@@ -66,7 +66,7 @@ func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
 	meta := &SnapshotMeta{
 		BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("expected kernel path outside rootDir to be rejected")
 	}
 }
@@ -78,7 +78,7 @@ func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
 			InitrdPath: "/etc/passwd",
 		},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("expected initrd path outside rootDir to be rejected")
 	}
 }
@@ -149,30 +149,14 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 	}
 }
 
-func TestValidateMetaPaths_External(t *testing.T) {
+// External volumes never reach a snapshot (snapshot/hibernate refuse them);
+// a sidecar carrying one — its path outside the managed roots — is rejected
+// as an untrusted path, the same as any escape.
+func TestValidateMetaPaths_RejectsExternalPath(t *testing.T) {
 	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
 		{Path: "/vols/a.raw", Serial: "vola", Role: types.StorageRoleData, External: true},
 	}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", nil); err == nil {
-		t.Fatal("untrusted external should be refused")
-	}
-	trusted := map[string]ExternalTrust{"/vols/a.raw": {Serial: "vola", RO: false}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", trusted); err != nil {
-		t.Fatalf("record-trusted external should pass: %v", err)
-	}
-	tamperedSerial := map[string]ExternalTrust{"/vols/a.raw": {Serial: "other", RO: false}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", tamperedSerial); err == nil {
-		t.Fatal("serial mismatch should be refused")
-	}
-	tamperedRO := map[string]ExternalTrust{"/vols/a.raw": {Serial: "vola", RO: true}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon", tamperedRO); err == nil {
-		t.Fatal("readonly flip should be refused")
-	}
-	inRoot := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
-		{Path: "/srv/cocoon/run/vm1/x.raw", Serial: "volb", Role: types.StorageRoleData, External: true},
-	}}
-	inRootTrust := map[string]ExternalTrust{"/srv/cocoon/run/vm1/x.raw": {Serial: "volb"}}
-	if err := ValidateMetaPaths(inRoot, "/srv/cocoon", "/run/cocoon", inRootTrust); err == nil {
-		t.Fatal("external inside a managed root should be refused")
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+		t.Fatal("external path outside managed roots should be refused")
 	}
 }

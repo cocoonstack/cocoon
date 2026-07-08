@@ -265,7 +265,7 @@ func IsDataDiskFile(name string) bool {
 // ReflinkDataDisks reflinks every Role==Data disk into dstDir under data-<serial>.raw (CH+FC use it inside the snapshot pause window).
 func ReflinkDataDisks(dstDir string, configs []*types.StorageConfig) error {
 	for _, sc := range configs {
-		if sc.Role != types.StorageRoleData || sc.External {
+		if sc.Role != types.StorageRoleData {
 			continue
 		}
 		dst := filepath.Join(dstDir, DataDiskBaseName(sc.Serial))
@@ -343,14 +343,6 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		return fmt.Errorf("sidecar invalid: %w", err)
 	}
 	for _, sc := range sidecar {
-		if sc.External {
-			// The backing file is reference-only: never captured, must still
-			// exist at its absolute path for the restore to resume onto it.
-			if _, err := os.Stat(sc.Path); err != nil {
-				return fmt.Errorf("external volume %s missing: %w", sc.Serial, err)
-			}
-			continue
-		}
 		fname := snapshotResidentBasename(sc)
 		if fname == "" {
 			continue
@@ -544,9 +536,6 @@ func createSparseFile(path string, size int64) error {
 func snapshotResidentBasename(sc *types.StorageConfig) string {
 	switch sc.Role {
 	case types.StorageRoleData:
-		if sc.External {
-			return ""
-		}
 		return DataDiskBaseName(sc.Serial)
 	case types.StorageRoleCOW, types.StorageRoleCidata:
 		return filepath.Base(sc.Path)

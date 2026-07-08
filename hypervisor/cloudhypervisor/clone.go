@@ -41,7 +41,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("parse CH config: %w", err)
 	}
 
-	meta, err := hypervisor.LoadAndValidateMeta(runDir, ch.conf.RootDir, ch.conf.Config.RunDir, nil)
+	meta, err := hypervisor.LoadAndValidateMeta(runDir, ch.conf.RootDir, ch.conf.Config.RunDir)
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", err)
 	}
@@ -286,7 +286,7 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 // updateDataDiskPaths rewrites Role==Data paths to clone runDir; sidecar carries source paths.
 func updateDataDiskPaths(configs []*types.StorageConfig, newRunDir string) {
 	for _, sc := range configs {
-		if sc.Role == types.StorageRoleData && !sc.External {
+		if sc.Role == types.StorageRoleData {
 			sc.Path = filepath.Join(newRunDir, hypervisor.DataDiskBaseName(sc.Serial))
 		}
 	}

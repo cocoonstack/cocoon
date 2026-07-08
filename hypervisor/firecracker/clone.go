@@ -35,7 +35,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("firecracker.Clone")
 
-	meta, err := hypervisor.LoadAndValidateMeta(runDir, fc.conf.RootDir, fc.conf.Config.RunDir, nil)
+	meta, err := hypervisor.LoadAndValidateMeta(runDir, fc.conf.RootDir, fc.conf.Config.RunDir)
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
