@@ -22,6 +22,7 @@ type cloneResumeOpts struct {
 	directBoot          bool
 	hadCidataInSnapshot bool
 	storageConfigs      []*types.StorageConfig
+	dataDisks           []*types.StorageConfig
 	networkConfigs      []*types.NetworkConfig
 	snapshotCfg         *chVMConfig
 }
@@ -71,11 +72,17 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	if err != nil {
 		return nil, err
 	}
+	// The patch list is taken before the new --data-disk configs are appended:
+	// they are not in the snapshot's device tree and are hot-added post-restore.
+	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
+	newDataDisks, err := ch.prepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
+	if err != nil {
+		return nil, err
+	}
+	storageConfigs = append(storageConfigs, newDataDisks...)
 	if vErr := types.ValidateStorageConfigs(storageConfigs); vErr != nil {
 		return nil, fmt.Errorf("validate post-cidata storage: %w", vErr)
 	}
-
-	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
@@ -120,6 +127,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		directBoot:          directBoot,
 		hadCidataInSnapshot: hadCidataInSnapshot,
 		storageConfigs:      storageConfigs,
+		dataDisks:           newDataDisks,
 		networkConfigs:      networkConfigs,
 		snapshotCfg:         chCfg,
 	}); err != nil {
@@ -172,10 +180,33 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 			return fmt.Errorf("vm.add-disk (cidata): %w", err)
 		}
 	}
+	for _, sc := range opts.dataDisks {
+		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO)); err != nil {
+			return fmt.Errorf("vm.add-disk (data %s): %w", sc.Serial, err)
+		}
+	}
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("vm.resume: %w", err)
 	}
 	return nil
+}
+
+// prepareCloneDataDisks creates the --data-disk files requested for a clone.
+// The snapshot's device tree cannot grow at restore, so these are hot-added
+// after resume; a name colliding with an inherited disk's serial would
+// overwrite its backing file in the clone run dir.
+func (ch *CloudHypervisor) prepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
+	if len(vmCfg.DataDisks) == 0 {
+		return nil, nil
+	}
+	for _, spec := range vmCfg.DataDisks {
+		for _, sc := range existing {
+			if sc.Serial == spec.Name {
+				return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
+			}
+		}
+	}
+	return hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
 func (ch *CloudHypervisor) ensureCloneCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, storageConfigs []*types.StorageConfig, directBoot bool) ([]*types.StorageConfig, error) {

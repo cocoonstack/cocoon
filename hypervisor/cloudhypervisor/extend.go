@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -18,12 +19,73 @@ import (
 )
 
 var (
+	_ disk.Attacher     = (*CloudHypervisor)(nil)
+	_ disk.Lister       = (*CloudHypervisor)(nil)
 	_ fs.Attacher       = (*CloudHypervisor)(nil)
 	_ fs.Lister         = (*CloudHypervisor)(nil)
 	_ vfio.Attacher     = (*CloudHypervisor)(nil)
 	_ vfio.Lister       = (*CloudHypervisor)(nil)
 	_ netresize.Resizer = (*CloudHypervisor)(nil)
 )
+
+func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
+	if err := spec.Normalize(); err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(spec.Path); err != nil {
+		return "", fmt.Errorf("disk path: %w", err)
+	}
+	vm, err := ch.Inspect(ctx, vmRef)
+	if err != nil {
+		return "", err
+	}
+	// Route through storageConfigToDisk: the CH fork refuses disks without an
+	// explicit image_type, and DirectIO/queue semantics must match create-path
+	// data disks.
+	d := storageConfigToDisk(&types.StorageConfig{
+		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
+	}, vm.Config.CPU, vm.Config.DiskQueueSize, vm.Config.NoDirectIO)
+	id := disk.DeriveID(spec.Name)
+	d.ID = id
+	return ch.attachWith(ctx, vmRef, "vm.add-disk", d, id, func(info *chVMInfoResponse) error {
+		for _, ex := range info.Config.Disks {
+			if ex.ID == id {
+				return fmt.Errorf("disk name %q already attached", spec.Name)
+			}
+			if ex.Path == spec.Path {
+				return fmt.Errorf("disk path %q already attached as %q", spec.Path, ex.ID)
+			}
+		}
+		return nil
+	})
+}
+
+func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) error {
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	id := disk.DeriveID(name)
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+		for _, ex := range info.Config.Disks {
+			if ex.ID == id {
+				return ex.ID, nil
+			}
+		}
+		return "", fmt.Errorf("disk %q not attached", name)
+	})
+}
+
+func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
+	return listWith(ctx, ch, vmRef, func(info *chVMInfoResponse) []disk.Attached {
+		var out []disk.Attached
+		for _, d := range info.Config.Disks {
+			if name := disk.NameFromID(d.ID); name != "" {
+				out = append(out, disk.Attached{ID: d.ID, Name: name, Path: d.Path, ReadOnly: d.ReadOnly})
+			}
+		}
+		return out
+	})
+}
 
 func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.Spec) (string, error) {
 	if err := spec.Normalize(); err != nil {
