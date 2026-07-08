@@ -55,13 +55,11 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 		return fmt.Errorf("seek %s: %w", filePath, err)
 	}
 
-	tmpFile, err := os.CreateTemp(conf.TempDir(), "import-*.img")
+	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck,gosec
-	defer tmpFile.Close()    //nolint:errcheck,gosec
+	defer cleanup()
 
 	// Rehash the copy pass so in-place source changes fail closed.
 	verifyHash := sha256.New()
@@ -93,13 +91,11 @@ func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[im
 		return fmt.Errorf("import %s: %w", name, sniffErr)
 	}
 
-	tmpFile, err := os.CreateTemp(conf.TempDir(), "import-*.img")
+	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck,gosec
-	defer tmpFile.Close()    //nolint:errcheck,gosec
+	defer cleanup()
 
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmpFile, h), full); err != nil {
@@ -129,13 +125,11 @@ func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[im
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
-	tmpFile, err := os.CreateTemp(conf.TempDir(), "import-*.img")
+	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck,gosec
-	defer tmpFile.Close()    //nolint:errcheck,gosec
+	defer cleanup()
 
 	h := sha256.New()
 	w := io.MultiWriter(tmpFile, h)

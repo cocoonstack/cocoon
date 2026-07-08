@@ -56,7 +56,7 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},
 	}
 
-	if isDirectBoot(rec.BootConfig) {
+	if hypervisor.IsDirectBoot(rec.BootConfig) {
 		cfg.Serial = &chRuntimeFile{Mode: "Off"}
 		cfg.Console = &chRuntimeFile{Mode: "Pty"}
 	} else {
@@ -195,7 +195,6 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 		NumQueues: cpuCount,
 		QueueSize: diskQueueSize,
 	}
-
 	if storageConfig.DirectIO != nil {
 		d.DirectIO = *storageConfig.DirectIO
 	} else {
@@ -287,7 +286,7 @@ func queueAffinityToCLI(qa []chQueueAffinity) string {
 
 // activeDisks filters cidata out of post-first-boot cloudimg VMs.
 func activeDisks(rec *hypervisor.VMRecord) []*types.StorageConfig {
-	skipCidata := rec.FirstBooted && !isDirectBoot(rec.BootConfig)
+	skipCidata := rec.FirstBooted && !hypervisor.IsDirectBoot(rec.BootConfig)
 	out := make([]*types.StorageConfig, 0, len(rec.StorageConfigs))
 	for _, sc := range rec.StorageConfigs {
 		if skipCidata && sc.Role == types.StorageRoleCidata {

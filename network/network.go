@@ -12,7 +12,10 @@ var ErrNotConfigured = errors.New("network provider not configured")
 
 // AddSpec is one NIC's add request; Existing != nil reuses MAC/IP for recovery.
 type AddSpec struct {
-	Index    int
+	Index int
+	// Queues is the TAP queue count; 0 derives NetNumQueues(vmCfg.CPU). Callers with a
+	// backend-specific size (FC opens the TAP single-queue) set it explicitly.
+	Queues   int
 	Existing *types.NetworkConfig
 }
 
@@ -39,11 +42,14 @@ func AddRange(from, count int) []AddSpec {
 	return out
 }
 
-// AddRecover builds AddSpecs for re-creating existing NICs (post-reboot recovery).
+// AddRecover builds AddSpecs re-creating existing NICs from their persisted state (nil entries fall back to CPU-derived queues).
 func AddRecover(existing []*types.NetworkConfig) []AddSpec {
 	out := make([]AddSpec, len(existing))
 	for i, e := range existing {
 		out[i] = AddSpec{Index: i, Existing: e}
+		if e != nil {
+			out[i].Queues = e.NumQueues
+		}
 	}
 	return out
 }

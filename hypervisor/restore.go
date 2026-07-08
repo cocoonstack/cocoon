@@ -39,11 +39,7 @@ func (b *Backend) FailRestore(ctx context.Context, vmID string, origin types.VMS
 }
 
 func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, *VMRecord, error) {
-	vmID, err := b.ResolveRef(ctx, vmRef)
-	if err != nil {
-		return "", nil, err
-	}
-	rec, err := b.LoadRecord(ctx, vmID)
+	vmID, rec, err := b.ResolveAndLoad(ctx, vmRef)
 	if err != nil {
 		return "", nil, err
 	}
@@ -56,11 +52,7 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
 	now := time.Now()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
 		r.StartedAt = &now
@@ -86,10 +78,11 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, err := b.ResolveForRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
 	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 
 	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, spec.Snapshot)
 	if err != nil {
@@ -136,10 +129,11 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, err := b.ResolveForRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
 	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 
 	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
@@ -168,6 +162,35 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
 	return result, nil
+}
+
+// prepareRestore resolves ref, takes the VM ops lock, re-resolves under it, and validates the record (mirrors prepareSnapshot/StartSequence); the caller defers the returned unlock.
+func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
+	vmID, _, err := b.ResolveForRestore(ctx, vmRef)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	fail := func(err error) (string, *VMRecord, func(), error) {
+		unlock()
+		return "", nil, nil, err
+	}
+	// Revalidate under the lock: the pre-lock record may predate a concurrent
+	// mutating verb, and preflight anchors the external trust set to it.
+	vmID, rec, err := b.ResolveForRestore(ctx, vmID)
+	if err != nil {
+		return fail(err)
+	}
+	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
+		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
+	}
+	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
+		return fail(fmt.Errorf("network invariants violated: %w", vErr))
+	}
+	return vmID, rec, unlock, nil
 }
 
 // emitRestoreComputeStop closes the compute interval after a confirmed kill; fail-closed on DB error and skip on vanished record so the ledger never gets a phantom entry.

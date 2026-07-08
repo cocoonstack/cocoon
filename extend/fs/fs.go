@@ -17,12 +17,12 @@ const (
 )
 
 var (
+	// ErrUnsupportedBackend signals the backend cannot hot-plug vhost-user-fs (e.g. Firecracker).
+	ErrUnsupportedBackend = errors.New("backend does not support fs attach")
+
 	// Tag charset is intentionally portable: usable as a CH device id suffix
 	// (cocoon-fs-<tag>) and safe for shell quoting and guest mount commands.
 	validTagRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}$`)
-
-	// ErrUnsupportedBackend signals the backend cannot hot-plug vhost-user-fs (e.g. Firecracker).
-	ErrUnsupportedBackend = errors.New("backend does not support fs attach")
 )
 
 // Spec is one attach request.
@@ -31,24 +31,6 @@ type Spec struct {
 	Tag       string
 	NumQueues int
 	QueueSize int
-}
-
-// Attached is the inspect-time view of one fs device read from the running VM's CH config.
-type Attached struct {
-	ID     string `json:"id"`
-	Tag    string `json:"tag"`
-	Socket string `json:"socket"`
-}
-
-// Attacher hot-plugs and removes vhost-user-fs devices.
-type Attacher interface {
-	FsAttach(ctx context.Context, vmRef string, spec Spec) (deviceID string, err error)
-	FsDetach(ctx context.Context, vmRef, tag string) error
-}
-
-// Lister enumerates currently-attached fs devices from running VM state.
-type Lister interface {
-	FsList(ctx context.Context, vmRef string) ([]Attached, error)
 }
 
 // Normalize enforces required fields and applies queue-size defaults; mutates the receiver.
@@ -74,6 +56,24 @@ func (s *Spec) Normalize() error {
 	s.NumQueues = cmp.Or(s.NumQueues, DefaultNumQueues)
 	s.QueueSize = cmp.Or(s.QueueSize, DefaultQueueSize)
 	return nil
+}
+
+// Attached is the inspect-time view of one fs device read from the running VM's CH config.
+type Attached struct {
+	ID     string `json:"id"`
+	Tag    string `json:"tag"`
+	Socket string `json:"socket"`
+}
+
+// Attacher hot-plugs and removes vhost-user-fs devices.
+type Attacher interface {
+	FsAttach(ctx context.Context, vmRef string, spec Spec) (deviceID string, err error)
+	FsDetach(ctx context.Context, vmRef, tag string) error
+}
+
+// Lister enumerates currently-attached fs devices from running VM state.
+type Lister interface {
+	FsList(ctx context.Context, vmRef string) ([]Attached, error)
 }
 
 // DeriveID returns the deterministic CH device id for a tag (used by attach + detach so concurrent attaches collide on CH's id check).

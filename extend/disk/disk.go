@@ -18,11 +18,14 @@ const diskIDPrefix = "cocoon-disk-"
 // ErrUnsupportedBackend signals the backend cannot hot-plug virtio-blk disks (e.g. Firecracker).
 var ErrUnsupportedBackend = errors.New("backend does not support disk attach")
 
-// Spec is one attach request: an existing raw disk file.
+// Spec is one attach request: an existing raw disk file. DirectIO nil means
+// the create-path default (O_DIRECT unless writable disks have it disabled);
+// tmpfs-backed files need an explicit off.
 type Spec struct {
 	Path     string
 	Name     string
 	ReadOnly bool
+	DirectIO *bool
 }
 
 // Normalize enforces required fields; Name doubles as the guest serial (/dev/disk/by-id/virtio-<name>) and the detach key.

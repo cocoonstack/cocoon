@@ -18,6 +18,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netns"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -35,12 +36,31 @@ const (
 	// SnapshotFileSkip means the file should not be cloned.
 	SnapshotFileSkip
 
+	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
+	OpsLockName = "ops.lock"
+
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
 
 	// socketReadyPollInterval is the WaitForSocket poll cadence — VMM socket usually appears within a few ms after process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 )
+
+// LockVMOps serializes mutating verbs on one VM across processes (#103):
+// device attach/detach, net resize, snapshot, hibernate, restore, stop.
+// The flock dies with the process, so a crashed holder never wedges the VM.
+func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
+	runDir := b.Conf.VMRunDir(vmID)
+	// Recreate if missing so stop/delete on a crash-leftover VM can still lock.
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		return nil, fmt.Errorf("ops lock dir: %w", err)
+	}
+	l := flock.New(filepath.Join(runDir, OpsLockName))
+	if err := l.Lock(ctx); err != nil {
+		return nil, err
+	}
+	return func() { _ = l.Unlock(ctx) }, nil
+}
 
 func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
@@ -86,6 +106,11 @@ func BalloonSize(memoryBytes int64, windows bool) (int64, bool) {
 		return 0, false
 	}
 	return memoryBytes / DefaultBalloonDiv, true
+}
+
+// IsDirectBoot reports whether boot uses a direct kernel (OCI) rather than UEFI firmware (cloudimg).
+func IsDirectBoot(boot *types.BootConfig) bool {
+	return boot != nil && boot.KernelPath != ""
 }
 
 func RemoveVMDirs(runDir, logDir string) error {
@@ -334,7 +359,7 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role-by-role prefix of rec; rec may carry trailing cidata (cloudimg post-first-boot) — the only allowed extension.
+// ValidateRoleSequence checks sidecar is a role+serial prefix of rec (an imported sidecar is untrusted — a swapped serial must not survive preflight); rec may carry trailing cidata (cloudimg post-first-boot) — the only allowed extension.
 func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	if len(sidecar) > len(rec) {
 		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
@@ -342,6 +367,9 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	for i, sc := range sidecar {
 		if rec[i].Role != sc.Role {
 			return fmt.Errorf("disk[%d] role mismatch: snapshot=%s record=%s", i, sc.Role, rec[i].Role)
+		}
+		if rec[i].Serial != sc.Serial {
+			return fmt.Errorf("disk[%d] serial mismatch: snapshot=%q record=%q", i, sc.Serial, rec[i].Serial)
 		}
 	}
 	for i := len(sidecar); i < len(rec); i++ {

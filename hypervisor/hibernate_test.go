@@ -17,14 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// hibernateTestConfig extends the metering stub with a real VMRunDir so prepareSnapshot can MkdirTemp.
-type hibernateTestConfig struct {
-	stubBackendConfig
-	vmRunRoot string
-}
-
-func (c hibernateTestConfig) VMRunDir(string) string { return c.vmRunRoot }
-
 type hibernateCalls struct {
 	resumed    bool
 	terminated bool
@@ -129,13 +121,8 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	t.Helper()
 	b, _ := newMeteringTestBackend(t)
-	b.Conf = hibernateTestConfig{
-		stubBackendConfig: b.Conf.(stubBackendConfig),
-		vmRunRoot:         t.TempDir(),
-	}
-
 	const id = "vm-hibernate-test"
-	runDir := t.TempDir()
+	runDir := shortTempDir(t)
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
 	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateRunning
@@ -154,9 +141,16 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start stub vmm: %v", err)
 	}
+	// Background reaper: a test-killed stub must not linger as a zombie, or
+	// TerminateProcess's IsProcessAlive polling never sees it exit.
+	waitDone := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(waitDone)
+	}()
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		<-waitDone
 	})
 	// cmd.Start returns before bash execs into tail; wait until the cmdline check would pass.
 	deadline := time.Now().Add(2 * time.Second)

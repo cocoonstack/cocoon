@@ -13,7 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/images/oci"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
 func (h Handler) Pull(cmd *cobra.Command, args []string) error {
@@ -44,17 +43,8 @@ func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 
 func (h Handler) pullOCI(ctx context.Context, store *oci.OCI, image string) error {
 	logger := log.WithFunc("cmd.images.pullOCI")
-	tracker := progress.NewTracker(func(e ociProgress.Event) {
-		switch e.Phase {
-		case ociProgress.PhasePull:
-			logger.Infof(ctx, "pulling OCI image %s (%d layers)", image, e.Total)
-		case ociProgress.PhaseLayer:
-			logger.Infof(ctx, "[%d/%d] %s done", e.Index+1, e.Total, e.Digest)
-		case ociProgress.PhaseCommit:
-			logger.Info(ctx, "committing...")
-		case ociProgress.PhaseDone:
-			logger.Infof(ctx, "done: %s", image)
-		}
+	tracker := ociTracker(ctx, logger, image, func(total int) string {
+		return fmt.Sprintf("pulling OCI image %s (%d layers)", image, total)
 	})
 	if err := store.Pull(ctx, image, false, tracker); err != nil {
 		return fmt.Errorf("pull %s: %w", image, err)

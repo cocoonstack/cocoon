@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 // Network backend identifiers stored in NetworkConfig.Backend.
 const (
 	BackendCNI    = "cni"
@@ -31,4 +33,14 @@ type Network struct {
 	IP      string `json:"ip,omitempty"`      // dotted decimal, e.g. "10.0.0.2"
 	Gateway string `json:"gateway,omitempty"` // dotted decimal, e.g. "10.0.0.1"
 	Prefix  int    `json:"prefix,omitempty"`  // CIDR prefix length, e.g. 24
+}
+
+// ValidateNetworkConfigs rejects nil NIC entries (null in a persisted record) at load boundaries so downstream consumers may dereference freely.
+func ValidateNetworkConfigs(configs []*NetworkConfig) error {
+	for i, nc := range configs {
+		if nc == nil {
+			return fmt.Errorf("network config %d: nil", i)
+		}
+	}
+	return nil
 }

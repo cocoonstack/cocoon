@@ -24,7 +24,7 @@ func (ch *CloudHypervisor) Console(ctx context.Context, ref string) (io.ReadWrit
 	if err := ch.WithRunningVM(ctx, &rec, func(_ int) error {
 		path := resolveConsole(ctx, id, hypervisor.SocketPath(rec.RunDir),
 			hypervisor.ConsoleSockPath(rec.RunDir),
-			isDirectBoot(rec.BootConfig))
+			hypervisor.IsDirectBoot(rec.BootConfig))
 		if path == "" {
 			return fmt.Errorf("no console path for VM %s", id)
 		}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -37,7 +38,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			directBoot := isDirectBoot(rec.BootConfig)
+			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 			cowPath := ch.cowPath(rec.ID, directBoot)
 			if err := utils.ReflinkCopy(filepath.Join(tmpDir, filepath.Base(cowPath)), cowPath); err != nil {
 				return fmt.Errorf("copy COW: %w", err)
@@ -45,7 +46,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			return hypervisor.ReflinkDataDisks(tmpDir, rec.StorageConfigs)
 		},
 		AfterCapture: func(rec *hypervisor.VMRecord, tmpDir string) error {
-			if isDirectBoot(rec.BootConfig) || rec.Config.Windows {
+			if hypervisor.IsDirectBoot(rec.BootConfig) || rec.Config.Windows {
 				return nil
 			}
 			cidataSrc := ch.conf.CidataPath(rec.ID)
@@ -75,6 +76,9 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	for _, d := range chCfg.Disks {
 		sc, ok := byPath[d.Path]
 		if !ok {
+			if name := disk.NameFromID(d.ID); name != "" {
+				return nil, fmt.Errorf("hot-attached disk %q: detach before snapshot or hibernate", name)
+			}
 			return nil, fmt.Errorf("snapshot config has disk %q not present in VM record", d.Path)
 		}
 		ordered = append(ordered, sc)

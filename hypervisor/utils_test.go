@@ -127,6 +127,16 @@ func TestValidateRoleSequence(t *testing.T) {
 			wantErr: "role mismatch",
 		},
 		{
+			name: "serial mismatch at index (tampered sidecar)",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleData, Serial: "evil"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleData, Serial: "data1"},
+			},
+			wantErr: "serial mismatch",
+		},
+		{
 			name:    "rec extension is not cidata",
 			sidecar: []*types.StorageConfig{{Role: types.StorageRoleCOW}},
 			rec: []*types.StorageConfig{

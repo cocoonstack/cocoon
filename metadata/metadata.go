@@ -144,23 +144,25 @@ func Generate(w io.Writer, cfg *Config) error {
 	files := make(map[string][]byte, 3) //nolint:mnd
 
 	var buf bytes.Buffer
-	if err := metaDataTmpl.Execute(&buf, cfg); err != nil {
-		return fmt.Errorf("render meta-data: %w", err)
-	}
-	files["meta-data"] = bytes.Clone(buf.Bytes())
-
-	buf.Reset()
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		return fmt.Errorf("render user-data: %w", err)
-	}
-	files["user-data"] = bytes.Clone(buf.Bytes())
-
-	if len(cfg.Networks) > 0 {
+	render := func(name string, tmpl *template.Template) error {
 		buf.Reset()
-		if err := networkConfigTmpl.Execute(&buf, cfg); err != nil {
-			return fmt.Errorf("render network-config: %w", err)
+		if err := tmpl.Execute(&buf, cfg); err != nil {
+			return fmt.Errorf("render %s: %w", name, err)
 		}
-		files["network-config"] = bytes.Clone(buf.Bytes())
+		files[name] = bytes.Clone(buf.Bytes())
+		return nil
+	}
+
+	if err := render("meta-data", metaDataTmpl); err != nil {
+		return err
+	}
+	if err := render("user-data", userDataTmpl); err != nil {
+		return err
+	}
+	if len(cfg.Networks) > 0 {
+		if err := render("network-config", networkConfigTmpl); err != nil {
+			return err
+		}
 	}
 
 	return CreateFAT12(w, cidataLabel, files)

@@ -18,6 +18,14 @@ type Spec struct {
 	Target int
 }
 
+// Normalize validates the spec.
+func (s *Spec) Normalize() error {
+	if s.Target < 0 {
+		return fmt.Errorf("--nics must be non-negative, got %d", s.Target)
+	}
+	return nil
+}
+
 // NIC is one NIC summary surfaced through Result.Added / Result.Removed.
 type NIC struct {
 	Index int    `json:"index"`
@@ -43,12 +51,4 @@ type Plumbing interface {
 // Resizer resizes a running VM's NIC count.
 type Resizer interface {
 	NetResize(ctx context.Context, vmRef string, spec Spec, plumbing Plumbing) (Result, error)
-}
-
-// Normalize validates the spec.
-func (s *Spec) Normalize() error {
-	if s.Target < 0 {
-		return fmt.Errorf("--nics must be non-negative, got %d", s.Target)
-	}
-	return nil
 }

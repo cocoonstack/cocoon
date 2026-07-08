@@ -83,6 +83,13 @@ func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
 	}
 }
 
+func TestValidateMetaPaths_RejectsNilStorage(t *testing.T) {
+	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}
+	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+		t.Fatal("nil storage config in an imported snapshot must be rejected, not panic")
+	}
+}
+
 func TestCloneStorageConfigs_DeepCopy(t *testing.T) {
 	src := []*types.StorageConfig{
 		{Path: "/a", Serial: "s1"},

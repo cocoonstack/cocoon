@@ -72,9 +72,7 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 		return killAndWait(ctx, proc, pid)
 	}
 
-	if err := WaitFor(ctx, gracePeriod, time.Millisecond, func() (bool, error) {
-		return !IsProcessAlive(pid), nil
-	}); err == nil {
+	if err := waitDead(ctx, pid, gracePeriod); err == nil {
 		return nil
 	}
 
@@ -83,7 +81,12 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 
 func killAndWait(ctx context.Context, proc *os.Process, pid int) error {
 	_ = proc.Kill()
-	return WaitFor(ctx, killWaitTimeout, time.Millisecond, func() (bool, error) {
+	return waitDead(ctx, pid, killWaitTimeout)
+}
+
+// waitDead polls until pid no longer responds to kill(0), bounded by timeout.
+func waitDead(ctx context.Context, pid int, timeout time.Duration) error {
+	return WaitFor(ctx, timeout, time.Millisecond, func() (bool, error) {
 		return !IsProcessAlive(pid), nil
 	})
 }

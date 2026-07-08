@@ -27,7 +27,7 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, cloneSnapshotFiles)
 		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-			directBoot := isDirectBoot(rec.BootConfig)
+			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot)
 		},
 	})

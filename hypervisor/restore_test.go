@@ -145,24 +145,6 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	}
 }
 
-func tarWithFiles(t *testing.T, names ...string) io.Reader {
-	t.Helper()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for _, name := range names {
-		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: 1}); err != nil {
-			t.Fatalf("tar hdr %s: %v", name, err)
-		}
-		if _, err := tw.Write([]byte("y")); err != nil {
-			t.Fatalf("tar body %s: %v", name, err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("tar close: %v", err)
-	}
-	return &buf
-}
-
 func TestResolveForRestoreStates(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	tests := []struct {
@@ -239,4 +221,59 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A corrupt persisted record (null storage/NIC entry) must fail restore preflight
+// with a clean invariants error, not panic in ValidateMetaPaths/ValidateRoleSequence.
+func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*VMRecord)
+		wantErr string
+	}{
+		{"nil storage config", func(r *VMRecord) { r.StorageConfigs = []*types.StorageConfig{nil} }, "storage invariants violated"},
+		{"nil network config", func(r *VMRecord) {
+			r.StorageConfigs = nil
+			r.NetworkConfigs = []*types.NetworkConfig{nil}
+		}, "network invariants violated"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := newMeteringTestBackend(t)
+			ctx := t.Context()
+			const id = "vm-corrupt"
+			seedStoppedVMWithDirs(t, b, id)
+			if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+				tt.mutate(idx.VMs[id])
+				return nil
+			}); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+			_, _, unlock, err := b.prepareRestore(ctx, id)
+			if unlock != nil {
+				unlock()
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func tarWithFiles(t *testing.T, names ...string) io.Reader {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, name := range names {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: 1}); err != nil {
+			t.Fatalf("tar hdr %s: %v", name, err)
+		}
+		if _, err := tw.Write([]byte("y")); err != nil {
+			t.Fatalf("tar body %s: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	return &buf
 }

@@ -41,7 +41,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	cowPath := fc.conf.COWRawPath(vmID)
-	snapshotCOW := filepath.Join(runDir, cowFileName)
+	snapshotCOW := filepath.Join(runDir, hypervisor.COWRawFileName)
 	if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {
 		return nil, fmt.Errorf("move COW to canonical path: %w", renameErr)
 	}

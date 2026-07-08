@@ -44,7 +44,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			if err := utils.ReflinkCopy(filepath.Join(tmpDir, cowFileName), fc.conf.COWRawPath(rec.ID)); err != nil {
+			if err := utils.ReflinkCopy(filepath.Join(tmpDir, hypervisor.COWRawFileName), fc.conf.COWRawPath(rec.ID)); err != nil {
 				return fmt.Errorf("copy COW: %w", err)
 			}
 			return hypervisor.ReflinkDataDisks(tmpDir, rec.StorageConfigs)

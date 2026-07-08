@@ -51,7 +51,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 
 	storageConfigs := meta.StorageConfigs
 	bootCfg := rebuildBootConfig(chCfg)
-	directBoot := isDirectBoot(bootCfg)
+	directBoot := hypervisor.IsDirectBoot(bootCfg)
 
 	cowPath := ch.cowPath(vmID, directBoot)
 	if err = updateCOWPath(storageConfigs, cowPath); err != nil {

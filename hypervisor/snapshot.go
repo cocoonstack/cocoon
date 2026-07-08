@@ -30,11 +30,7 @@ type SnapshotMeta struct {
 // RecordSnapshot generates a snapshot ID and records it on the VM's record.
 func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
 	snapID := utils.GenerateID()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		if r.SnapshotIDs == nil {
 			r.SnapshotIDs = make(map[string]struct{})
 		}
@@ -48,11 +44,7 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, erro
 
 // UnrecordSnapshot drops a snapshot id from the VM's record (persist-failure rollback); best-effort, a leftover id is cosmetic.
 func (b *Backend) UnrecordSnapshot(ctx context.Context, vmID, snapID string) {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		delete(r.SnapshotIDs, snapID)
 		return nil
 	}); err != nil {
@@ -73,10 +65,11 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 
 // SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
 func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
-	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
+	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer unlock()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
@@ -103,10 +96,11 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 
 // HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.
 func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) (err error) {
-	vmID, rec, tmpDir, err := b.prepareSnapshot(ctx, ref)
+	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(tmpDir) //nolint:errcheck,gosec
@@ -161,23 +155,31 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 }
 
 // prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
-func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, error) {
+func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, func(), error) {
 	vmID, err := b.ResolveRef(ctx, ref)
 	if err != nil {
-		return "", VMRecord{}, "", err
+		return "", VMRecord{}, "", nil, err
+	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return "", VMRecord{}, "", nil, err
+	}
+	fail := func(err error) (string, VMRecord, string, func(), error) {
+		unlock()
+		return "", VMRecord{}, "", nil, err
 	}
 	rec, err := b.LoadRecord(ctx, vmID)
 	if err != nil {
-		return "", VMRecord{}, "", err
+		return fail(err)
 	}
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return "", VMRecord{}, "", fmt.Errorf("storage invariants violated: %w", vErr)
+		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
 	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
 	if err != nil {
-		return "", VMRecord{}, "", fmt.Errorf("create temp dir: %w", err)
+		return fail(fmt.Errorf("create temp dir: %w", err))
 	}
-	return vmID, rec, tmpDir, nil
+	return vmID, rec, tmpDir, unlock, nil
 }
 
 // finalizeSnapshot writes the sidecar metadata and registers the snapshot on the VM record.
@@ -270,8 +272,12 @@ func IsUnderDir(path, dir string) bool {
 }
 
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
+// External volumes never reach a snapshot (snapshot/hibernate refuse them), so every sidecar path must be under a managed root.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
-	for _, sc := range meta.StorageConfigs {
+	for i, sc := range meta.StorageConfigs {
+		if sc == nil {
+			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
+		}
 		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 		}

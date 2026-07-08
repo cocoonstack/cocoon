@@ -154,8 +154,7 @@ cocoon
 │   │   └── detach [flags] VM     Detach a VFIO PCI device by --id
 │   ├── disk
 │   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH only)
-│   │   ├── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
-│   │   └── list VM               List hot-attached disks
+│   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH only)
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
@@ -499,7 +498,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
 - **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-All attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, provisions the disk file, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor rejects snapshotting a VM with vhost-user or VFIO devices attached; cocoon likewise refuses to snapshot or hibernate a VM with a hot-attached disk ("disk not present in VM record") — detach first. Attach/detach are also refused while the VM is paused (a snapshot/hibernate capture in flight).
+All three attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart — re-attach after the next start. Cloud Hypervisor itself rejects snapshotting while a vhost-user or VFIO device is attached; cocoon likewise refuses `snapshot save` and `vm hibernate` while an external disk is attached — umount it in-guest, detach, capture, then re-attach after the wake/restore. External volumes are host state cocoon does not own: it never creates, copies, or deletes the backing file, and snapshot, restore, and clone carry no trace of them. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window.
 
 ### Vhost-user-fs
 
@@ -547,6 +546,10 @@ mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
 cocoon vm disk detach my-vm --name vol1
 ```
 
+The backing file may live anywhere outside cocoon's managed directories;
+attach resolves symlinks and refuses a path under the root/run/log dirs
+because `vm rm` would delete it along with them.
+
 Flags:
 
 | Flag | Default | Description |
@@ -554,9 +557,18 @@ Flags:
 | `--path` | required | Absolute path to an existing raw disk file |
 | `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`) |
 | `--readonly` | `false` | Attach read-only |
+| `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
 
-Re-attaching the same name immediately after a detach can race the guest's
-device teardown — give the guest a moment before the re-attach.
+Detach blocks until the guest acks the ACPI eject (up to 30s — Windows can
+take 10–20s), so when it returns the slot, the name, and the backing file
+are free for immediate reuse; a guest that never acks fails the detach with
+a typed error.
+
+The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
+usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink
+is created by guest udev and can lag or be skipped on minimal images —
+`udevadm trigger --action=add --subsystem-match=block && udevadm settle`
+materializes it; scripts should resolve by serial instead.
 
 ### VFIO PCI passthrough
 

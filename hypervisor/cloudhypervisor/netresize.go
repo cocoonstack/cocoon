@@ -27,6 +27,23 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if err != nil {
 		return netresize.Result{}, err
 	}
+	unlock, err := ch.LockVMOps(ctx, vmID)
+	if err != nil {
+		return netresize.Result{}, err
+	}
+	defer unlock()
+	// Reload under the lock: a resize that won the lock first may have
+	// changed the NIC set after this one loaded the record.
+	if rec, err = ch.LoadRecord(ctx, vmID); err != nil {
+		return netresize.Result{}, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return netresize.Result{}, err
+	}
+	if err = ensureNotPaused(info); err != nil {
+		return netresize.Result{}, err
+	}
 	current := len(rec.NetworkConfigs)
 	res := netresize.Result{Before: current, After: current}
 	switch {
@@ -35,16 +52,17 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	case spec.Target > current:
 		return ch.netResizeAdd(ctx, hc, vmID, &rec.Config, plumbing, current, spec.Target, res)
 	default:
-		info, infoErr := getVMInfo(ctx, hc)
-		if infoErr != nil {
-			return res, infoErr
-		}
 		return ch.netResizeRemove(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing, current, spec.Target, res)
 	}
 }
 
 func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, vmCfg *types.VMConfig, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	rollbackPlumbing := func(i int) {
+		if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
+			logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+		}
+	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
 		ncs, err := plumbing.Add(ctx, vmID, vmCfg, network.AddSpec{Index: i})
@@ -57,9 +75,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 		nc := ncs[0]
 		chID, err := addCocoonNIC(ctx, hc, nc)
 		if err != nil {
-			if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-				logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-			}
+			rollbackPlumbing(i)
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
@@ -69,9 +85,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 			} else if wErr := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); wErr != nil {
 				logger.Warnf(ctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
 			}
-			if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-				logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-			}
+			rollbackPlumbing(i)
 			return res, fmt.Errorf("persist nic %d: %w", i, err)
 		}
 		res.Added = append(res.Added, netresize.NIC{Index: i, TAP: nc.TAP, MAC: nc.MAC})
@@ -122,22 +136,14 @@ func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client,
 }
 
 func (ch *CloudHypervisor) appendNetworkConfig(ctx context.Context, vmID string, nc *types.NetworkConfig) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
 		r.NetworkConfigs = append(r.NetworkConfigs, nc)
 		return nil
 	})
 }
 
 func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID string, length int) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
 		if length < len(r.NetworkConfigs) {
 			r.NetworkConfigs = r.NetworkConfigs[:length]
 		}

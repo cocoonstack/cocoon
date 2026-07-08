@@ -15,16 +15,24 @@ func (fc *Firecracker) Stop(ctx context.Context, refs []string) ([]string, error
 }
 
 func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
-	stopTimeout := time.Duration(fc.conf.StopTimeoutSeconds) * time.Second
-	return fc.StopOneSequence(ctx, id, hypervisor.StopSpec{
+	return fc.StopOneSequence(ctx, id, fc.stopSpec())
+}
+
+// stopOneLocked is stopOne for callers already holding the VM's ops lock (DeleteAll).
+func (fc *Firecracker) stopOneLocked(ctx context.Context, id string) error {
+	return fc.StopOneLocked(ctx, id, fc.stopSpec())
+}
+
+func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
+	return hypervisor.StopSpec{
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
-			if stopTimeout < 0 { // --force
+			if fc.conf.ForceStop() {
 				return fc.forceTerminate(ctx, sockPath, pid)
 			}
-			return fc.gracefulStop(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid, stopTimeout)
+			return fc.gracefulStop(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid, fc.conf.StopTimeout())
 		},
-	})
+	}
 }
 
 // gracefulStop sends SendCtrlAltDel with poll-and-escalate handled by the shared GracefulStop helper.

@@ -3,7 +3,6 @@ package oci
 import (
 	"context"
 	"fmt"
-	"os"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/projecteru2/core/log"
@@ -41,11 +40,11 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], im
 
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(layers)})
 
-		workDir, mkErr := os.MkdirTemp(conf.TempDir(), "pull-*")
+		workDir, cleanup, mkErr := newWorkDir(conf, "pull-*")
 		if mkErr != nil {
-			return fmt.Errorf("create work dir: %w", mkErr)
+			return mkErr
 		}
-		defer os.RemoveAll(workDir) //nolint:errcheck
+		defer cleanup()
 
 		results, waitErr := processLayers(ctx, conf, layers, workDir, knownBootHexes, tracker)
 		if waitErr != nil {

@@ -24,6 +24,11 @@ func ResolveQueueSize(qs int) int {
 	return cmp.Or(qs, NetQueueSize)
 }
 
+// ResolveQueues returns specQueues if set, otherwise the CPU-derived TAP queue count.
+func ResolveQueues(specQueues, cpu int) int {
+	return cmp.Or(specQueues, NetNumQueues(cpu))
+}
+
 // VMIDPrefix returns the first 8 characters of a VM ID, matching the truncation used by both bridge and CNI TAP device naming.
 func VMIDPrefix(vmID string) string {
 	if len(vmID) > vmIDPrefixLen {

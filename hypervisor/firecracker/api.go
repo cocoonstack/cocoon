@@ -21,8 +21,6 @@ const (
 	driveIDFmt = "drive_%d"
 	ifaceIDFmt = "eth%d"
 
-	cowFileName = "cow.raw"
-
 	hugePagesNone = "None"
 	hugePages2M   = "2M"
 	ioEngineAsync = "Async" // io_uring
@@ -122,20 +120,25 @@ func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, paylo
 	return fcAPI(ctx, hc, endpoint, body)
 }
 
+// sendJSONOnce is putJSON's no-retry twin over fcAPIOnce for non-idempotent endpoints.
+func sendJSONOnce[T any](ctx context.Context, hc *http.Client, method, endpoint string, payload T, kind string, successCodes ...int) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", kind, err)
+	}
+	return fcAPIOnce(ctx, hc, method, endpoint, body, successCodes...)
+}
+
 func putMachineConfig(ctx context.Context, hc *http.Client, cfg fcMachineConfig) error {
 	return putJSON(ctx, hc, "/machine-config", cfg, "machine-config")
 }
 
 // patchDrivePath repoints a block device's backing file on a booted VM.
 func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost string) error {
-	body, err := json.Marshal(struct {
+	return sendJSONOnce(ctx, hc, http.MethodPatch, "/drives/"+driveID, struct {
 		DriveID    string `json:"drive_id"`
 		PathOnHost string `json:"path_on_host"`
-	}{DriveID: driveID, PathOnHost: pathOnHost})
-	if err != nil {
-		return fmt.Errorf("marshal drive patch: %w", err)
-	}
-	return fcAPIOnce(ctx, hc, http.MethodPatch, "/drives/"+driveID, body)
+	}{DriveID: driveID, PathOnHost: pathOnHost}, "drive patch")
 }
 
 func putBootSource(ctx context.Context, hc *http.Client, boot fcBootSource) error {
@@ -163,37 +166,22 @@ func putVsock(ctx context.Context, hc *http.Client, vsock fcVsock) error {
 }
 
 func instanceStart(ctx context.Context, hc *http.Client) error {
-	body, err := json.Marshal(fcAction{ActionType: actionInstanceStart})
-	if err != nil {
-		return fmt.Errorf("marshal action: %w", err)
-	}
-	return fcAPIOnce(ctx, hc, http.MethodPut, "/actions", body, http.StatusNoContent, http.StatusOK)
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/actions", fcAction{ActionType: actionInstanceStart}, "action",
+		http.StatusNoContent, http.StatusOK)
 }
 
 func sendCtrlAltDel(ctx context.Context, hc *http.Client) error {
-	body, err := json.Marshal(fcAction{ActionType: actionSendCtrlAltDel})
-	if err != nil {
-		return fmt.Errorf("marshal action: %w", err)
-	}
-	return fcAPIOnce(ctx, hc, http.MethodPut, "/actions", body)
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/actions", fcAction{ActionType: actionSendCtrlAltDel}, "action")
 }
 
 // pauseVM pauses a running FC instance via PATCH /vm. Idempotent: FC's vCPU event loop acks Pause from the paused state without error (vstate/vcpu.rs).
 func pauseVM(ctx context.Context, hc *http.Client) error {
-	body, err := json.Marshal(map[string]string{"state": vmStatePaused})
-	if err != nil {
-		return fmt.Errorf("marshal pause request: %w", err)
-	}
-	return fcAPIOnce(ctx, hc, http.MethodPatch, "/vm", body)
+	return sendJSONOnce(ctx, hc, http.MethodPatch, "/vm", map[string]string{"state": vmStatePaused}, "pause request")
 }
 
 // resumeVM resumes a paused FC instance via PATCH /vm. Idempotent like pauseVM.
 func resumeVM(ctx context.Context, hc *http.Client) error {
-	body, err := json.Marshal(map[string]string{"state": vmStateResumed})
-	if err != nil {
-		return fmt.Errorf("marshal resume request: %w", err)
-	}
-	return fcAPIOnce(ctx, hc, http.MethodPatch, "/vm", body)
+	return sendJSONOnce(ctx, hc, http.MethodPatch, "/vm", map[string]string{"state": vmStateResumed}, "resume request")
 }
 
 // createSnapshotFC writes vmstate + memory to destDir; no retry — resending would re-transfer multi-GiB and clobber a partial state.json.

@@ -98,95 +98,6 @@ func TestDownloadToFileEmitsFinalProgressEvent(t *testing.T) {
 	}
 }
 
-// rangeHandler serves data with full HTTP Range support; fail, if non-nil, lets a test force a
-// specific requested range to error out (simulating a mid-download server failure).
-func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rangeHeader := r.Header.Get("Range")
-		if rangeHeader == "" {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(data)
-			return
-		}
-
-		start, end, ok := parseTestRange(rangeHeader, int64(len(data)))
-		if !ok {
-			http.Error(w, "bad range", http.StatusRequestedRangeNotSatisfiable)
-			return
-		}
-		if fail != nil && fail(start, end) {
-			http.Error(w, "injected failure", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
-		w.WriteHeader(http.StatusPartialContent)
-		_, _ = w.Write(data[start : end+1])
-	})
-}
-
-func parseTestRange(h string, size int64) (start, end int64, ok bool) {
-	h = strings.TrimPrefix(h, "bytes=")
-	parts := strings.SplitN(h, "-", 2)
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-	start, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, 0, false
-	}
-	end, err = strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return 0, 0, false
-	}
-	if end >= size {
-		end = size - 1
-	}
-	return start, end, true
-}
-
-func testPayload(size int) []byte {
-	data := make([]byte, size)
-	for i := range data {
-		data[i] = byte(i % 251)
-	}
-	return data
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func createTempFile(t *testing.T) *os.File {
-	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "dst-*.img")
-	if err != nil {
-		t.Fatalf("CreateTemp(): %v", err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return f
-}
-
-func assertFileContent(t *testing.T, f *os.File, want []byte) {
-	t.Helper()
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		t.Fatalf("Seek(): %v", err)
-	}
-	got, err := io.ReadAll(f)
-	if err != nil {
-		t.Fatalf("ReadAll(): %v", err)
-	}
-	if len(got) != len(want) {
-		t.Fatalf("file size = %d, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("file content mismatch at byte %d: got %d, want %d", i, got[i], want[i])
-		}
-	}
-}
-
 func TestDownloadToFileUnevenLastRange(t *testing.T) {
 	data := testPayload(257*1024 + 7) // not divisible by 4: exercises the short final range
 	server := httptest.NewServer(rangeHandler(data, nil))
@@ -279,5 +190,94 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 	dst := createTempFile(t)
 	if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil {
 		t.Fatal("expected error for mismatched content-range, got nil")
+	}
+}
+
+// rangeHandler serves data with full HTTP Range support; fail, if non-nil, lets a test force a
+// specific requested range to error out (simulating a mid-download server failure).
+func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rangeHeader := r.Header.Get("Range")
+		if rangeHeader == "" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+			return
+		}
+
+		start, end, ok := parseTestRange(rangeHeader, int64(len(data)))
+		if !ok {
+			http.Error(w, "bad range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if fail != nil && fail(start, end) {
+			http.Error(w, "injected failure", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(data[start : end+1])
+	})
+}
+
+func parseTestRange(h string, size int64) (start, end int64, ok bool) {
+	h = strings.TrimPrefix(h, "bytes=")
+	parts := strings.SplitN(h, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	start, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	end, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	if end >= size {
+		end = size - 1
+	}
+	return start, end, true
+}
+
+func testPayload(size int) []byte {
+	data := make([]byte, size)
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	return data
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func createTempFile(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "dst-*.img")
+	if err != nil {
+		t.Fatalf("CreateTemp(): %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return f
+}
+
+func assertFileContent(t *testing.T, f *os.File, want []byte) {
+	t.Helper()
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Seek(): %v", err)
+	}
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("ReadAll(): %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("file size = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("file content mismatch at byte %d: got %d, want %d", i, got[i], want[i])
+		}
 	}
 }

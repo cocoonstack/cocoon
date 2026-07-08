@@ -260,6 +260,11 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 		if vm == nil {
 			continue
 		}
+		// A corrupt record (null NIC entry) must not grow fresh plumbing here; start will refuse it with a typed error.
+		if err := types.ValidateNetworkConfigs(vm.NetworkConfigs); err != nil {
+			logger.Warnf(ctx, "skip network recovery for VM %s: %v", vm.ID, err)
+			continue
+		}
 		backend := vm.ResolvedNetBackend()
 		if backend == "" {
 			continue

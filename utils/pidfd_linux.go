@@ -32,14 +32,10 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 		}
 		// SIGTERM via pidfd failed but process is alive; escalate via pidfd.
 		_ = unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0)
-		return true, WaitFor(ctx, killWaitTimeout, time.Millisecond, func() (bool, error) {
-			return !IsProcessAlive(pid), nil
-		})
+		return true, waitDead(ctx, pid, killWaitTimeout)
 	}
 
-	if err := WaitFor(ctx, gracePeriod, time.Millisecond, func() (bool, error) {
-		return !IsProcessAlive(pid), nil
-	}); err == nil {
+	if err := waitDead(ctx, pid, gracePeriod); err == nil {
 		return true, nil
 	}
 
@@ -48,7 +44,5 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 			return true, nil
 		}
 	}
-	return true, WaitFor(ctx, killWaitTimeout, time.Millisecond, func() (bool, error) {
-		return !IsProcessAlive(pid), nil
-	})
+	return true, waitDead(ctx, pid, killWaitTimeout)
 }

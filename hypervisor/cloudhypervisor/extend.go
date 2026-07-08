@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/cocoonstack/cocoon/extend/disk"
@@ -34,27 +36,33 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	if err := spec.Normalize(); err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(spec.Path); err != nil {
-		return "", fmt.Errorf("disk path: %w", err)
-	}
-	vm, err := ch.Inspect(ctx, vmRef)
+	path, err := ch.resolveExternalVolume(spec.Path)
 	if err != nil {
 		return "", err
 	}
-	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
-	// semantics must match create-path data disks.
-	d := storageConfigToDisk(&types.StorageConfig{
-		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
-	}, vm.Config.CPU, vm.Config.DiskQueueSize, vm.Config.NoDirectIO)
 	id := disk.DeriveID(spec.Name)
-	d.ID = id
-	return ch.attachWith(ctx, vmRef, "vm.add-disk", d, id, func(info *chVMInfoResponse) error {
+	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
+	// semantics must match create-path data disks, so the disk is built from
+	// the record reloaded under the ops lock (restore rewrites Config in there).
+	makeBody := func(rec *hypervisor.VMRecord) any {
+		d := storageConfigToDisk(&types.StorageConfig{
+			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
+		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO)
+		d.ID = id
+		return d
+	}
+	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, id, func(info *chVMInfoResponse) error {
 		for _, ex := range info.Config.Disks {
 			if ex.ID == id {
 				return fmt.Errorf("disk name %q already attached", spec.Name)
 			}
-			if ex.Path == spec.Path {
-				return fmt.Errorf("disk path %q already attached as %q", spec.Path, ex.ID)
+			// Record data disks carry CH auto ids — match serials too, else two
+			// devices race for one /dev/disk/by-id/virtio-<name>.
+			if ex.Serial == spec.Name {
+				return fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
+			}
+			if ex.Path == path {
+				return fmt.Errorf("disk path %q already attached as %q", path, ex.ID)
 			}
 		}
 		return nil
@@ -67,10 +75,8 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 	}
 	id := disk.DeriveID(name)
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		for _, ex := range info.Config.Disks {
-			if ex.ID == id {
-				return ex.ID, nil
-			}
+		if slices.ContainsFunc(info.Config.Disks, func(d chDisk) bool { return d.ID == id }) {
+			return id, nil
 		}
 		return "", fmt.Errorf("disk %q not attached", name)
 	})
@@ -93,13 +99,16 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 		return "", err
 	}
 	id := fs.DeriveID(spec.Tag)
-	return ch.attachWith(ctx, vmRef, "vm.add-fs", chFs{
-		ID:        id,
-		Tag:       spec.Tag,
-		Socket:    spec.Socket,
-		NumQueues: spec.NumQueues,
-		QueueSize: spec.QueueSize,
-	}, id, func(info *chVMInfoResponse) error {
+	makeBody := func(*hypervisor.VMRecord) any {
+		return chFs{
+			ID:        id,
+			Tag:       spec.Tag,
+			Socket:    spec.Socket,
+			NumQueues: spec.NumQueues,
+			QueueSize: spec.QueueSize,
+		}
+	}
+	return ch.attachWith(ctx, vmRef, "vm.add-fs", makeBody, id, func(info *chVMInfoResponse) error {
 		if !info.Config.Memory.Shared {
 			return fmt.Errorf("fs attach requires the VM to be created with --shared-memory (current memory shared=off; cannot be flipped on a running VM)")
 		}
@@ -144,10 +153,10 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 	if err != nil {
 		return "", err
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-device", chDevice{
-		ID:   spec.ID,
-		Path: path,
-	}, spec.ID, func(info *chVMInfoResponse) error {
+	makeBody := func(*hypervisor.VMRecord) any {
+		return chDevice{ID: spec.ID, Path: path}
+	}
+	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, spec.ID, func(info *chVMInfoResponse) error {
 		// stat is gated behind the running-VM check so stopped VMs surface the state error, not a host-path one.
 		st, statErr := os.Stat(path)
 		if statErr != nil {
@@ -173,10 +182,8 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 		return fmt.Errorf("id is required")
 	}
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		for _, ex := range info.Config.Devices {
-			if ex.ID == id {
-				return id, nil
-			}
+		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
+			return id, nil
 		}
 		return "", fmt.Errorf("device id %q not attached", id)
 	})
@@ -192,6 +199,27 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	})
 }
 
+// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence)
+// and refuses anything inside a cocoon-managed root: vm rm / GC delete those
+// trees, breaking the never-deletes contract, and a symlink must not smuggle a
+// managed path past the check. Returns the resolved path so the duplicate
+// precheck and CH both see one canonical name per volume.
+func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("disk path: %w", err)
+	}
+	for _, dir := range []string{ch.conf.RootDir, ch.conf.Config.RunDir, ch.conf.Config.LogDir} {
+		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+			dir = r
+		}
+		if hypervisor.IsUnderDir(resolved, dir) {
+			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
+		}
+	}
+	return resolved, nil
+}
+
 // inspectRunning gates on a live VM and returns a fresh vm.info for conflict/memory/device-id lookups.
 func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, error) {
 	hc, err := ch.runningVMClient(ctx, vmRef)
@@ -205,22 +233,52 @@ func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*h
 	return hc, info, nil
 }
 
+// lockedDeviceOp serializes device-set mutations per VM across processes and
+// hands back the record and a vm.info snapshot taken UNDER the lock, so
+// precheck-then-call is atomic against concurrent attach/detach and the
+// record's Config can't be a pre-restore vintage (restore rewrites it while
+// holding this lock). The flock dies with the process, so no stale locks.
+func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
+	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
+	if err != nil {
+		return nil, hypervisor.VMRecord{}, nil, nil, err
+	}
+	unlock, err := ch.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, hypervisor.VMRecord{}, nil, nil, err
+	}
+	fail := func(err error) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
+		unlock()
+		return nil, hypervisor.VMRecord{}, nil, nil, err
+	}
+	rec, err := ch.LoadRecord(ctx, vmID)
+	if err != nil {
+		return fail(err)
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return fail(err)
+	}
+	return hc, rec, info, unlock, nil
+}
+
 func (ch *CloudHypervisor) attachWith(
 	ctx context.Context, vmRef, endpoint string,
-	body any, fallbackID string,
+	makeBody func(rec *hypervisor.VMRecord) any, fallbackID string,
 	preCheck func(*chVMInfoResponse) error,
 ) (string, error) {
-	hc, info, err := ch.inspectRunning(ctx, vmRef)
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
 	if err = ensureNotPaused(info); err != nil {
 		return "", err
 	}
 	if checkErr := preCheck(info); checkErr != nil {
 		return "", checkErr
 	}
-	bodyBytes, err := json.Marshal(body)
+	bodyBytes, err := json.Marshal(makeBody(&rec))
 	if err != nil {
 		return "", fmt.Errorf("marshal %s: %w", endpoint, err)
 	}
@@ -247,10 +305,11 @@ func (ch *CloudHypervisor) detachWith(
 	ctx context.Context, vmRef string,
 	findID func(*chVMInfoResponse) (string, error),
 ) error {
-	hc, info, err := ch.inspectRunning(ctx, vmRef)
+	hc, _, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	if err = ensureNotPaused(info); err != nil {
 		return err
 	}
@@ -260,6 +319,12 @@ func (ch *CloudHypervisor) detachWith(
 	}
 	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+	}
+	// Block until the guest acks the ACPI eject (B0EJ): only then has CH freed
+	// the slot, the id, and the backing file — a caller reusing either right
+	// after detach must not race a still-live device (Windows can take 10-20s).
+	if err := waitDeviceEjected(ctx, hc, deviceID, ejectWaitTimeout); err != nil {
+		return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 	}
 	return nil
 }
@@ -289,7 +354,6 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 // ensureNotPaused refuses device-set mutations while a capture window is open
 // (snapshot/hibernate/fork): mutating mid-capture would desync config and memory.
 func ensureNotPaused(info *chVMInfoResponse) error {
@@ -299,6 +363,7 @@ func ensureNotPaused(info *chVMInfoResponse) error {
 	return nil
 }
 
+// listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 func listWith[A any](
 	ctx context.Context, ch *CloudHypervisor, vmRef string,
 	extract func(*chVMInfoResponse) []A,

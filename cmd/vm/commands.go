@@ -28,7 +28,6 @@ type Actions interface {
 	FsDetach(cmd *cobra.Command, args []string) error
 	DiskAttach(cmd *cobra.Command, args []string) error
 	DiskDetach(cmd *cobra.Command, args []string) error
-	DiskList(cmd *cobra.Command, args []string) error
 	DeviceAttach(cmd *cobra.Command, args []string) error
 	DeviceDetach(cmd *cobra.Command, args []string) error
 	NetResize(cmd *cobra.Command, args []string) error
@@ -247,6 +246,7 @@ func buildDiskCommand(h Actions) *cobra.Command {
 	attach.Flags().String("path", "", "absolute path to an existing raw disk file (required; never deleted by cocoon)")
 	attach.Flags().String("name", "", "disk name: guest /dev/disk/by-id/virtio-<name> and the detach key (required)")
 	attach.Flags().Bool("readonly", false, "attach read-only")
+	attach.Flags().String("directio", "auto", "O_DIRECT for the disk: on|off|auto (off for files on tmpfs)")
 	_ = attach.MarkFlagRequired("path")
 	_ = attach.MarkFlagRequired("name")
 	cliutil.AddOutputFlag(attach)
@@ -261,15 +261,7 @@ func buildDiskCommand(h Actions) *cobra.Command {
 	_ = detach.MarkFlagRequired("name")
 	cliutil.AddOutputFlag(detach)
 
-	list := &cobra.Command{
-		Use:   "list VM",
-		Short: "List hot-attached disks on a running VM",
-		Args:  cobra.ExactArgs(1),
-		RunE:  h.DiskList,
-	}
-	cliutil.AddOutputFlag(list)
-
-	parent.AddCommand(attach, detach, list)
+	parent.AddCommand(attach, detach)
 	return parent
 }
 
