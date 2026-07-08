@@ -42,6 +42,22 @@ type inspectOutput struct {
 	AttachedDevices *attachedDevices `json:"attached_devices,omitempty"`
 }
 
+// applyStopFlags maps --force / --timeout onto the stop window shared by the
+// stop and rm handlers: force means "now", docker-style (StopTimeoutSeconds
+// = -1, immediate SIGTERM/SIGKILL) — FC guests without i8042 never see
+// CtrlAltDel and would otherwise burn the full graceful window (#82). rm has
+// no --timeout flag; the missing-flag read is a no-op zero.
+func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
+	force, _ := cmd.Flags().GetBool("force")
+	timeout, _ := cmd.Flags().GetInt("timeout")
+	switch {
+	case force:
+		conf.StopTimeoutSeconds = -1
+	case timeout > 0:
+		conf.StopTimeoutSeconds = timeout
+	}
+}
+
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
@@ -72,14 +88,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	force, _ := cmd.Flags().GetBool("force")
-	timeout, _ := cmd.Flags().GetInt("timeout")
-
-	if force {
-		conf.StopTimeoutSeconds = -1
-	} else if timeout > 0 {
-		conf.StopTimeoutSeconds = timeout
-	}
+	applyStopFlags(conf, cmd)
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
@@ -200,12 +209,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	force, _ := cmd.Flags().GetBool("force")
-	// force means "now", docker-rm-like: skip the graceful window the same
-	// way stop --force does — FC guests without i8042 never see CtrlAltDel
-	// and would burn the full 30s per VM otherwise (#82).
-	if force {
-		conf.StopTimeoutSeconds = -1
-	}
+	applyStopFlags(conf, cmd)
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
