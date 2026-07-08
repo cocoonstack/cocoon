@@ -37,6 +37,13 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if rec, err = ch.LoadRecord(ctx, vmID); err != nil {
 		return netresize.Result{}, err
 	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return netresize.Result{}, err
+	}
+	if err = ensureNotPaused(info); err != nil {
+		return netresize.Result{}, err
+	}
 	current := len(rec.NetworkConfigs)
 	res := netresize.Result{Before: current, After: current}
 	switch {
@@ -45,10 +52,6 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	case spec.Target > current:
 		return ch.netResizeAdd(ctx, hc, vmID, &rec.Config, plumbing, current, spec.Target, res)
 	default:
-		info, infoErr := getVMInfo(ctx, hc)
-		if infoErr != nil {
-			return res, infoErr
-		}
 		return ch.netResizeRemove(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing, current, spec.Target, res)
 	}
 }

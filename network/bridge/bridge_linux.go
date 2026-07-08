@@ -3,7 +3,6 @@
 package bridge
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -91,7 +90,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
 		}
-		queues := cmp.Or(spec.Queues, network.NetNumQueues(vmCfg.CPU))
+		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
 		if cErr := network.CreateTAP(name, queues); cErr != nil {
 			return nil, cErr
 		}

@@ -1,7 +1,6 @@
 package cni
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -111,7 +110,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		if spec.Existing != nil {
 			overrideMAC = spec.Existing.MAC
 		}
-		queues := cmp.Or(spec.Queues, network.NetNumQueues(vmCfg.CPU))
+		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
 		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, queues, overrideMAC)
 		if setupErr != nil {
 			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)

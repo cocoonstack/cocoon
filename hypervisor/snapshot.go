@@ -274,7 +274,10 @@ func IsUnderDir(path, dir string) bool {
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
 // External volumes never reach a snapshot (snapshot/hibernate refuse them), so every sidecar path must be under a managed root.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
-	for _, sc := range meta.StorageConfigs {
+	for i, sc := range meta.StorageConfigs {
+		if sc == nil {
+			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
+		}
 		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 		}
