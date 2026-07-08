@@ -546,13 +546,9 @@ mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
 cocoon vm disk detach my-vm --name vol1
 ```
 
-The attach is runtime-only, like `vm fs` and `vm device`: the disk is gone
-after `vm stop`/restart — re-attach it after the next start. `snapshot save`
-and `vm hibernate` refuse while a volume is attached — umount in-guest,
-detach, capture, then re-attach after the wake or restore. The backing file
-may live anywhere outside cocoon's managed directories (e.g. under `/tmp`);
-attach refuses a path under the root/run dirs because `vm rm` would delete
-it with the run dir.
+The backing file may live anywhere outside cocoon's managed directories;
+attach refuses a path under the root/run/log dirs because `vm rm` would
+delete it along with them.
 
 Flags:
 

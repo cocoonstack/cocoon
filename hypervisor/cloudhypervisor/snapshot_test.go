@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestBuildSnapshotMetaRefusesUnrecordedDisk(t *testing.T) {
@@ -26,7 +25,7 @@ func TestBuildSnapshotMetaRefusesUnrecordedDisk(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, configJSONName), []byte(cfg), 0o600); err != nil {
 				t.Fatalf("write config: %v", err)
 			}
-			rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1"}}
+			rec := &hypervisor.VMRecord{}
 			_, err := buildSnapshotMeta(rec, dir)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)

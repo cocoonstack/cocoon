@@ -139,6 +139,21 @@ func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
 	}
 }
 
+// ParseDirectIO maps a directio value (on/off/auto) to the tri-state StorageConfig.DirectIO; auto is nil.
+func ParseDirectIO(val string) (*bool, error) {
+	switch val {
+	case "on":
+		t := true
+		return &t, nil
+	case "off":
+		f := false
+		return &f, nil
+	case "auto":
+		return nil, nil
+	}
+	return nil, fmt.Errorf("directio must be on/off/auto, got %q", val)
+}
+
 func sanitizeVMName(image string) string {
 	ref, err := name.ParseReference(image)
 	if err != nil {
@@ -166,22 +181,6 @@ func sanitizeVMName(image string) string {
 }
 
 // parseDataDiskFlags parses --data-disk values, normalizes defaults, and returns the spec list ready for hypervisor.PrepareDataDisks.
-// ParseDirectIO maps a directio value to the tri-state StorageConfig.DirectIO;
-// auto is nil (inherit the VM-level NoDirectIO default).
-func ParseDirectIO(val string) (*bool, error) {
-	switch val {
-	case "on":
-		t := true
-		return &t, nil
-	case "off":
-		f := false
-		return &f, nil
-	case "auto":
-		return nil, nil
-	}
-	return nil, fmt.Errorf("directio must be on/off/auto, got %q", val)
-}
-
 func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	specs := make([]types.DataDiskSpec, 0, len(raw))
 	for _, s := range raw {

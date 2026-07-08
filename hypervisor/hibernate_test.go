@@ -17,14 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// hibernateTestConfig extends the metering stub with a real VMRunDir so prepareSnapshot can MkdirTemp.
-type hibernateTestConfig struct {
-	stubBackendConfig
-	vmRunRoot string
-}
-
-func (c hibernateTestConfig) VMRunDir(string) string { return c.vmRunRoot }
-
 type hibernateCalls struct {
 	resumed    bool
 	terminated bool
@@ -129,11 +121,6 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	t.Helper()
 	b, _ := newMeteringTestBackend(t)
-	b.Conf = hibernateTestConfig{
-		stubBackendConfig: stubBackendConfig{},
-		vmRunRoot:         t.TempDir(),
-	}
-
 	const id = "vm-hibernate-test"
 	runDir := t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
