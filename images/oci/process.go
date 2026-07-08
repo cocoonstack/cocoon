@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/projecteru2/core/log"
@@ -13,6 +14,11 @@ import (
 	"github.com/cocoonstack/cocoon/progress"
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 	"github.com/cocoonstack/cocoon/utils"
+)
+
+const (
+	pullLayerAttempts = 3
+	pullLayerBackoff  = 2 * time.Second
 )
 
 // layerJob carries the per-layer processing context (one struct per worker).
@@ -46,20 +52,18 @@ func processLayer(ctx context.Context, j layerJob) error {
 	logger.Debugf(ctx, "Layer %d: sha256:%s -> erofs (single-pass)", j.idx, digestHex[:12])
 
 	layerDir := filepath.Join(j.workDir, fmt.Sprintf("layer-%d", j.idx))
-	if err = os.MkdirAll(layerDir, 0o750); err != nil {
-		return fmt.Errorf("create layer work dir: %w", err)
-	}
-
-	rc, err := j.layer.Uncompressed()
-	if err != nil {
-		return fmt.Errorf("open uncompressed layer: %w", err)
-	}
-	defer rc.Close() //nolint:errcheck
-
 	erofsPath := filepath.Join(layerDir, digestHex+".erofs")
 	layerUUID := utils.UUIDv5(digestHex)
 
-	kernelPath, initrdPath, err := runErofsConversion(ctx, rc, layerDir, digestHex, layerUUID, erofsPath)
+	var kernelPath, initrdPath string
+	err = retryLayer(ctx, pullLayerAttempts, pullLayerBackoff, func() error {
+		var convErr error
+		kernelPath, initrdPath, convErr = convertLayer(ctx, j, layerDir, digestHex, layerUUID, erofsPath)
+		if convErr != nil {
+			logger.Warnf(ctx, "layer %d (sha256:%s): %v", j.idx, digestHex[:12], convErr)
+		}
+		return convErr
+	})
 	if err != nil {
 		return err
 	}
@@ -69,6 +73,24 @@ func processLayer(ctx context.Context, j layerJob) error {
 	j.result.erofsPath = erofsPath
 	j.tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseLayer, Index: j.idx, Total: j.total, Digest: digestHex[:12]})
 	return nil
+}
+
+// convertLayer downloads and converts one layer into a fresh layerDir; the
+// remote stream cannot resume, so each attempt redoes the whole layer and
+// must not see a previous attempt's partial erofs or scanned boot files.
+func convertLayer(ctx context.Context, j layerJob, layerDir, digestHex, layerUUID, erofsPath string) (kernelPath, initrdPath string, err error) {
+	if err = os.RemoveAll(layerDir); err != nil {
+		return "", "", fmt.Errorf("reset layer work dir: %w", err)
+	}
+	if err = os.MkdirAll(layerDir, 0o750); err != nil {
+		return "", "", fmt.Errorf("create layer work dir: %w", err)
+	}
+	rc, err := j.layer.Uncompressed()
+	if err != nil {
+		return "", "", fmt.Errorf("open uncompressed layer: %w", err)
+	}
+	defer rc.Close() //nolint:errcheck
+	return runErofsConversion(ctx, rc, layerDir, digestHex, layerUUID, erofsPath)
 }
 
 func handleCachedLayer(ctx context.Context, j layerJob, digestHex string) {
@@ -87,5 +109,29 @@ func applyCachedLayerPaths(conf *Config, result *pullLayerResult, digestHex stri
 	}
 	if utils.ValidFile(conf.InitrdPath(digestHex)) {
 		result.initrdPath = conf.InitrdPath(digestHex)
+	}
+}
+
+// retryLayer runs one layer attempt up to attempts times, sleeping backoff
+// between failures. A transient stream break is indistinguishable from bad
+// input by the time mkfs or the boot scan reports it, so every error is
+// retried — the attempt count bounds the waste and re-downloads are
+// digest-addressed. Context cancellation stops the retries immediately.
+func retryLayer(ctx context.Context, attempts int, backoff time.Duration, fn func() error) error {
+	var err error
+	for attempt := 1; ; attempt++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if attempt == attempts || ctx.Err() != nil {
+			return err
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return err
+		case <-timer.C:
+		}
 	}
 }
