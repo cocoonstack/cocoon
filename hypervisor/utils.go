@@ -359,7 +359,7 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role-by-role prefix of rec; rec may carry trailing cidata (cloudimg post-first-boot) — the only allowed extension.
+// ValidateRoleSequence checks sidecar is a role+serial prefix of rec (an imported sidecar is untrusted — a swapped serial must not survive preflight); rec may carry trailing cidata (cloudimg post-first-boot) — the only allowed extension.
 func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	if len(sidecar) > len(rec) {
 		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
@@ -367,6 +367,9 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	for i, sc := range sidecar {
 		if rec[i].Role != sc.Role {
 			return fmt.Errorf("disk[%d] role mismatch: snapshot=%s record=%s", i, sc.Role, rec[i].Role)
+		}
+		if rec[i].Serial != sc.Serial {
+			return fmt.Errorf("disk[%d] serial mismatch: snapshot=%q record=%q", i, sc.Serial, rec[i].Serial)
 		}
 	}
 	for i := len(sidecar); i < len(rec); i++ {

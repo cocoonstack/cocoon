@@ -42,8 +42,13 @@ func (b *Backend) StartAll(ctx context.Context, refs []string, startOne func(con
 	return succeeded, forEachErr
 }
 
-// StartSequence runs the shared start skeleton; returns whether a fresh process was launched.
+// StartSequence runs the shared start skeleton under the VM's ops lock (a concurrent rm --force must not delete the record/dirs mid-launch and orphan the VMM); returns whether a fresh process was launched.
 func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) (bool, error) {
+	unlock, err := b.LockVMOps(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	rec, err := b.PrepareStart(ctx, id, spec.RuntimeFiles)
 	if err != nil {
 		return false, err

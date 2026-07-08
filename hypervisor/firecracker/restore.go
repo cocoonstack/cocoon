@@ -22,9 +22,10 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
 		Wrap:             fc.wrapSourceLocked,
+		// Same sweep as DirectRestore's Populate: stale vmstate/mem/data-*.raw
+		// from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
-			_ = os.Remove(filepath.Join(rec.RunDir, hypervisor.COWRawFileName))
-			return nil
+			return cleanSnapshotFiles(rec.RunDir)
 		},
 		AfterExtract: fc.restoreAfterExtractCOW,
 	})

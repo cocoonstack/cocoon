@@ -320,6 +320,12 @@ func (ch *CloudHypervisor) detachWith(
 	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
 	}
+	// Block until the guest acks the ACPI eject (B0EJ): only then has CH freed
+	// the slot, the id, and the backing file — a caller reusing either right
+	// after detach must not race a still-live device (Windows can take 10-20s).
+	if err := waitDeviceEjected(ctx, hc, deviceID, ejectWaitTimeout); err != nil {
+		return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
+	}
 	return nil
 }
 

@@ -559,9 +559,10 @@ Flags:
 | `--readonly` | `false` | Attach read-only |
 | `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
 
-Re-attaching the same name immediately after a detach can race the guest's
-ACPI eject ack (~100ms on a healthy guest) — retry after a moment, or poll
-`vm inspect` until the disk leaves `attached_devices`.
+Detach blocks until the guest acks the ACPI eject (up to 30s — Windows can
+take 10–20s), so when it returns the slot, the name, and the backing file
+are free for immediate reuse; a guest that never acks fails the detach with
+a typed error.
 
 The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
 usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink

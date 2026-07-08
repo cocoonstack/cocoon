@@ -21,6 +21,11 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        ch.preflightRestore,
 		Kill:             ch.killForRestore,
+		// Same sweep as DirectRestore's Populate: stale snapshot files (data-*.raw,
+		// memory ranges) from a previous incarnation must not survive the merge.
+		BeforeMerge: func(rec *hypervisor.VMRecord) error {
+			return cleanSnapshotFiles(rec.RunDir)
+		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot)
