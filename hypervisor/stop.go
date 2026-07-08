@@ -33,13 +33,18 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 	return escalate()
 }
 
-// StopOneSequence runs the shared per-id stop skeleton (LoadRecord → WithRunningVM(Shutdown) → HandleStopResult) so backends only express their force-vs-graceful choice.
+// StopOneSequence runs the shared per-id stop skeleton (LoadRecord → WithRunningVM(Shutdown) → HandleStopResult) under the VM's ops lock so backends only express their force-vs-graceful choice.
 func (b *Backend) StopOneSequence(ctx context.Context, id string, spec StopSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	return b.StopOneLocked(ctx, id, spec)
+}
+
+// StopOneLocked is StopOneSequence minus the lock; DeleteAll calls it with the VM's ops lock already held (re-locking would deadlock).
+func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) error {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
 		return err
@@ -64,8 +69,8 @@ func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(conte
 	return succeeded, forEachErr
 }
 
-// DeleteAll removes VMs by ref; dir cleanup before DB delete keeps a failed cleanup retry-able.
-func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopOne func(context.Context, string) error) ([]string, error) {
+// DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.
+func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -76,6 +81,11 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 		return nil, fmt.Errorf("refuse delete: /proc scan errored: %w (resolve the host issue and retry)", scanErr)
 	}
 	return b.ForEachVM(ctx, ids, "Delete", func(ctx context.Context, id string) error {
+		unlock, lockErr := b.LockVMOps(ctx, id)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 		rec, loadErr := b.LoadRecord(ctx, id)
 		if loadErr != nil {
 			return loadErr
@@ -87,7 +97,7 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 				return fmt.Errorf("running (force required)")
 			}
 			stoppedByUs = true
-			return stopOne(ctx, id)
+			return stopLocked(ctx, id)
 		}); runningErr != nil && !errors.Is(runningErr, ErrNotRunning) {
 			return fmt.Errorf("stop before delete: %w", runningErr)
 		}
@@ -102,7 +112,7 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 			return fmt.Errorf("refuse delete: api socket %s still responsive (suspected orphan vmm; kill the vmm process then retry)", sockPath)
 		}
 		for _, pid := range procScan.Find(sockPath) {
-			// procScan is a pre-stopOne snapshot: a just-force-stopped VM is already gone.
+			// procScan is a pre-stop snapshot: a just-force-stopped VM is already gone.
 			// Only a still-live match is a real orphan worth killing and logging.
 			if !utils.IsProcessAlive(pid) {
 				continue
@@ -112,14 +122,15 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 			}
 			log.WithFunc(b.Typ+".Delete").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
 		}
-		if rmErr := RemoveVMDirs(rec.RunDir, rec.LogDir); rmErr != nil {
-			return fmt.Errorf("cleanup VM dirs: %w", rmErr)
-		}
 		var (
 			shape              metering.Shape
 			hadRunningInterval bool
 		)
-		// Capture in the same transaction as delete so a concurrent UpdateStates can't shift the truth.
+		// Record goes first: dir removal deletes the ops.lock file, and a later
+		// locker on the recreated file is a fresh inode that does not contend —
+		// with the record already gone its resolve fails instead of reviving the
+		// VM. Capture in the same transaction so a concurrent UpdateStates can't
+		// shift the truth; a failed dir removal below leaves orphans for GC.
 		if err := b.DB.Update(ctx, func(idx *VMIndex) error {
 			r := idx.VMs[id]
 			if r == nil {
@@ -138,6 +149,9 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 			computeReason = metering.ReasonStopUser
 		}
 		b.emitDeleteClose(ctx, id, shape, computeReason, hadRunningInterval)
+		if rmErr := RemoveVMDirs(rec.RunDir, rec.LogDir); rmErr != nil {
+			return fmt.Errorf("cleanup VM dirs: %w", rmErr)
+		}
 		return nil
 	})
 }

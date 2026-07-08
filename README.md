@@ -547,8 +547,8 @@ cocoon vm disk detach my-vm --name vol1
 ```
 
 The backing file may live anywhere outside cocoon's managed directories;
-attach refuses a path under the root/run/log dirs because `vm rm` would
-delete it along with them.
+attach resolves symlinks and refuses a path under the root/run/log dirs
+because `vm rm` would delete it along with them.
 
 Flags:
 

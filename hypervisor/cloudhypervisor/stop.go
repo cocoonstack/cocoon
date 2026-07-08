@@ -18,8 +18,17 @@ func (ch *CloudHypervisor) Stop(ctx context.Context, refs []string) ([]string, e
 }
 
 func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
+	return ch.StopOneSequence(ctx, id, ch.stopSpec())
+}
+
+// stopOneLocked is stopOne for callers already holding the VM's ops lock (DeleteAll).
+func (ch *CloudHypervisor) stopOneLocked(ctx context.Context, id string) error {
+	return ch.StopOneLocked(ctx, id, ch.stopSpec())
+}
+
+func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 	stopTimeout := time.Duration(ch.conf.StopTimeoutSeconds) * time.Second
-	return ch.StopOneSequence(ctx, id, hypervisor.StopSpec{
+	return hypervisor.StopSpec{
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			hc := utils.NewSocketHTTPClient(sockPath)
@@ -28,7 +37,7 @@ func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
 			}
 			return ch.shutdownUEFI(ctx, hc, rec.ID, sockPath, pid, stopTimeout)
 		},
-	})
+	}
 }
 
 // shutdownUEFI shuts down a UEFI-boot VM via ACPI power-button with poll-and-escalate handled by the shared GracefulStop helper.

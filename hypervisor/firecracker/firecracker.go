@@ -39,5 +39,5 @@ func New(conf *config.Config, rec metering.Recorder) (*Firecracker, error) {
 
 // Delete removes VMs. Running VMs require force=true (stops them first).
 func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
-	return fc.DeleteAll(ctx, refs, force, fc.stopOne)
+	return fc.DeleteAll(ctx, refs, force, fc.stopOneLocked)
 }
