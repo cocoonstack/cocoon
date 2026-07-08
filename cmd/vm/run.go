@@ -334,8 +334,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		}
 		nics, _ = cmd.Flags().GetInt("nics")
 	}
-	// Fast-fail beside the --nics precedent, before network setup and tar
-	// extraction; fc's clone-extract guard stays as the library backstop.
+	// Pre-extract fast-fail; fc's clone-extract guard stays as the library backstop.
 	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker {
 		return nil, "", nil, types.NetSetup{}, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend)
 	}
