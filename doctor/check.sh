@@ -140,6 +140,16 @@ bin_to_pkg() {
     esac
 }
 
+# Mirror the runtime floor in images/oci/erofs.go: erofs-utils < 1.8 tar mode
+# silently corrupts layers, so doctor must not PASS a host cocoon will refuse.
+erofs_version_ok() {
+    local xy major minor
+    xy=$(echo "$1" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    [ -n "$xy" ] || return 1
+    major=${xy%%.*}; minor=${xy#*.}
+    [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 8 ]; }
+}
+
 check_binary() {
     local name="$1"
     if command -v "$name" &>/dev/null; then
@@ -153,6 +163,10 @@ check_binary() {
             mkfs.ext4)        ver=$("$name" -V 2>&1 | head -1) || true ;;
             mkfs.erofs)       ver=$("$name" --version 2>&1 | head -1) || true ;;
         esac
+        if [ "$name" = "mkfs.erofs" ] && ! erofs_version_ok "$ver"; then
+            fail "$name (${ver:-unknown}) is older than 1.8 — tar mode silently corrupts layers; apt ships 1.7.x, install erofs-utils >= 1.8 from source"
+            return
+        fi
         pass "${name}${ver:+ ($ver)}"
     else
         fail "$name not found in PATH"
@@ -161,6 +175,10 @@ check_binary() {
             pkg=$(bin_to_pkg "$name")
             if [ -n "$pkg" ] && command -v apt-get &>/dev/null; then
                 apt-get install -y "$pkg" &>/dev/null && fixed "apt-get install $pkg" || warn "failed to install $pkg"
+                if [ "$name" = "mkfs.erofs" ] && command -v mkfs.erofs &>/dev/null \
+                    && ! erofs_version_ok "$(mkfs.erofs --version 2>&1 | head -1)"; then
+                    warn "installed mkfs.erofs is still older than 1.8 — install erofs-utils from source"
+                fi
             fi
         fi
     fi
