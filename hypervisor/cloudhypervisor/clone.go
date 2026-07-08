@@ -193,8 +193,8 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 
 // prepareCloneDataDisks creates the --data-disk files requested for a clone.
 // The snapshot's device tree cannot grow at restore, so these are hot-added
-// after resume; a name colliding with an inherited disk's serial would
-// overwrite its backing file in the clone run dir.
+// after restore, before resume; a name colliding with an inherited disk's
+// serial would overwrite its backing file in the clone run dir.
 func (ch *CloudHypervisor) prepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
 	if len(vmCfg.DataDisks) == 0 {
 		return nil, nil
