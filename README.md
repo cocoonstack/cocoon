@@ -38,6 +38,8 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0+ (for Windows VMs, use our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) for full compatibility — see [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
 - [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16+ (optional, for `--fc` backend; `vm clone` requires >= v1.16 for the vsock override)
 - `qemu-img` (from qemu-utils, for cloud images)
+- `mkfs.erofs` from erofs-utils **>= 1.8** (for OCI images; 1.7.x tar mode
+  silently corrupts layers — cocoon refuses to convert with older versions)
 - UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`)
 - CNI plugins (`bridge`, `host-local`, `loopback`)
 - Go 1.25+ (build only)
