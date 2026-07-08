@@ -298,6 +298,7 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
+	waitForExec(t, pid, "sleep", "60")
 	defer func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
