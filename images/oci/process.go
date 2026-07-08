@@ -51,6 +51,12 @@ func processLayer(ctx context.Context, j layerJob) error {
 
 	logger.Debugf(ctx, "Layer %d: sha256:%s -> erofs (single-pass)", j.idx, digestHex[:12])
 
+	// Hoisted out of the retried region: a too-old mkfs.erofs is permanent,
+	// retrying it would burn attempts, backoff sleeps, and aborted blob GETs.
+	if err = checkErofsVersion(ctx); err != nil {
+		return err
+	}
+
 	layerDir := filepath.Join(j.workDir, fmt.Sprintf("layer-%d", j.idx))
 	erofsPath := filepath.Join(layerDir, digestHex+".erofs")
 	layerUUID := utils.UUIDv5(digestHex)
@@ -112,11 +118,9 @@ func applyCachedLayerPaths(conf *Config, result *pullLayerResult, digestHex stri
 	}
 }
 
-// retryLayer runs one layer attempt up to attempts times, sleeping backoff
-// between failures. A transient stream break is indistinguishable from bad
-// input by the time mkfs or the boot scan reports it, so every error is
-// retried — the attempt count bounds the waste and re-downloads are
-// digest-addressed. Context cancellation stops the retries immediately.
+// retryLayer runs fn up to attempts times, sleeping backoff between failures;
+// every error retries — a mid-stream break is indistinguishable from bad input
+// by the time mkfs or the boot scan reports it.
 func retryLayer(ctx context.Context, attempts int, backoff time.Duration, fn func() error) error {
 	var err error
 	for attempt := 1; ; attempt++ {
@@ -126,12 +130,10 @@ func retryLayer(ctx context.Context, attempts int, backoff time.Duration, fn fun
 		if attempt == attempts || ctx.Err() != nil {
 			return err
 		}
-		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return err
-		case <-timer.C:
+		case <-time.After(backoff):
 		}
 	}
 }
