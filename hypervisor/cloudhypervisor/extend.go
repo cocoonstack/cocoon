@@ -18,6 +18,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const chStatePaused = "Paused"
+
 var (
 	_ disk.Attacher     = (*CloudHypervisor)(nil)
 	_ disk.Lister       = (*CloudHypervisor)(nil)
@@ -213,6 +215,11 @@ func (ch *CloudHypervisor) attachWith(
 	if err != nil {
 		return "", err
 	}
+	// A paused VMM means a snapshot/hibernate/fork capture window is open;
+	// mutating the device set mid-capture would desync config and memory.
+	if info.State == chStatePaused {
+		return "", fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
+	}
 	if checkErr := preCheck(info); checkErr != nil {
 		return "", checkErr
 	}
@@ -244,6 +251,9 @@ func (ch *CloudHypervisor) detachWith(
 	findID func(*chVMInfoResponse) (string, error),
 ) error {
 	hc, info, err := ch.inspectRunning(ctx, vmRef)
+	if err == nil && info.State == chStatePaused {
+		err = fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
+	}
 	if err != nil {
 		return err
 	}

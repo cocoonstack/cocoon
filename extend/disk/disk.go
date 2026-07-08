@@ -1,8 +1,7 @@
 // Package disk is the runtime attach interface for extra virtio-blk data
-// disks backed by existing raw files. Attach is runtime-only — a hot-added
-// disk joins any snapshot taken afterwards, so its backing file must stay
-// readable at the same path for later restores; detach never deletes the
-// backing file.
+// disks backed by existing raw files. Attach is runtime-only: the disk is
+// not part of the VM record, snapshot/hibernate of the VM is refused while
+// one is attached (detach first), and detach never deletes the backing file.
 package disk
 
 import (
@@ -67,10 +66,11 @@ func DeriveID(name string) string {
 	return "cocoon-disk-" + name
 }
 
-// NameFromID reverses DeriveID; empty when id is not a hot-added disk.
+// NameFromID reverses DeriveID; empty when id is not a hot-added disk
+// (foreign same-prefix ids with an illegal name suffix are not ours).
 func NameFromID(id string) string {
 	const prefix = "cocoon-disk-"
-	if len(id) > len(prefix) && id[:len(prefix)] == prefix {
+	if len(id) > len(prefix) && id[:len(prefix)] == prefix && types.ValidDataDiskName(id[len(prefix):]) {
 		return id[len(prefix):]
 	}
 	return ""

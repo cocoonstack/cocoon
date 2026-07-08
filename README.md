@@ -499,7 +499,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
 - **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-All attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, provisions the disk file, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor rejects snapshotting a VM with vhost-user or VFIO devices attached; a hot-attached **disk** is the exception — it is embedded in any later snapshot, so its backing file must stay readable at the same path for that snapshot to restore.
+All attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart. Cocoon does not own the backend lifecycle (the user runs `virtiofsd`, binds the PCI device, provisions the disk file, etc.). Attached devices are not part of the VM record and are not preserved by snapshot / clone / restore. Cloud Hypervisor rejects snapshotting a VM with vhost-user or VFIO devices attached; cocoon likewise refuses to snapshot or hibernate a VM with a hot-attached disk ("disk not present in VM record") — detach first. Attach/detach are also refused while the VM is paused (a snapshot/hibernate capture in flight).
 
 ### Vhost-user-fs
 

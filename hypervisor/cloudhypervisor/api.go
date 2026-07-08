@@ -111,6 +111,7 @@ type chPciDeviceInfo struct {
 }
 
 type chVMInfoResponse struct {
+	State      string                     `json:"state,omitempty"`
 	Config     chVMInfoConfig             `json:"config"`
 	DeviceTree map[string]json.RawMessage `json:"device_tree,omitempty"`
 }

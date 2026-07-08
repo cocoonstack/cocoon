@@ -37,3 +37,11 @@ func TestDeriveIDRoundTrip(t *testing.T) {
 		t.Fatalf("NameFromID(foreign id) = %q, want empty", got)
 	}
 }
+
+func TestNameFromIDRejectsForeignSuffix(t *testing.T) {
+	for _, id := range []string{"cocoon-disk-VOL1", "cocoon-disk-", "cocoon-disk-9bad", "cocoon-disk-abcdefghijklmnopqrstu"} {
+		if got := NameFromID(id); got != "" {
+			t.Errorf("NameFromID(%q) = %q, want empty", id, got)
+		}
+	}
+}
