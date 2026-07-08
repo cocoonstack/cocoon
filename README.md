@@ -142,7 +142,7 @@ cocoon
 │   ├── console [flags] VM         Attach interactive console
 │   ├── exec [flags] VM -- CMD     Run a command in a running VM via cocoon-agent (vsock)
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
-│   ├── rm [flags] VM [VM...]      Delete VM(s) (--force to stop first)
+│   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
 │   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
 │   ├── status [VM...]             Watch VM status in real time
@@ -668,6 +668,7 @@ OCI images must include a `resolve_disk()` init script that supports device path
 - **Direct-boot VMs (CH, OCI)**: `vm.shutdown` API → SIGTERM → 5s → SIGKILL (no ACPI support)
 - **Firecracker VMs**: `SendCtrlAltDel` → SIGTERM → 5s → SIGKILL
 - **Force stop** (`--force`): skip ACPI, immediate SIGTERM → SIGKILL
+- **Force delete** (`vm rm --force`): same immediate path as force stop, then delete — no graceful window
 - PID ownership is verified before sending signals to prevent killing unrelated processes
 
 ### Stop Flags
