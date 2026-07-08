@@ -71,8 +71,7 @@ func (h Handler) DiskList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// parseDirectIOFlag maps --directio on|off|auto to the tri-state spec field
-// (auto = create-path default; tmpfs-backed files need an explicit off).
+// parseDirectIOFlag maps --directio on|off|auto to the tri-state spec field.
 func parseDirectIOFlag(cmd *cobra.Command) (*bool, error) {
 	v, _ := cmd.Flags().GetString("directio")
 	switch v {

@@ -27,9 +27,6 @@ import (
 type SnapshotFileKind int
 
 const (
-	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
-	OpsLockName = "ops.lock"
-
 	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
 	// SnapshotFileCOW is a writable disk that must be copied (reflink/sparse).
@@ -38,6 +35,9 @@ const (
 	SnapshotFileMeta
 	// SnapshotFileSkip means the file should not be cloned.
 	SnapshotFileSkip
+
+	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
+	OpsLockName = "ops.lock"
 
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
@@ -51,8 +51,7 @@ const (
 // The flock dies with the process, so a crashed holder never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
-	// The dir can be gone on crash-leftover cleanup paths; the lock must not
-	// block the cleanup that would remove it.
+	// Recreate if missing so stop/delete on a crash-leftover VM can still lock.
 	if err := os.MkdirAll(runDir, 0o750); err != nil {
 		return nil, fmt.Errorf("ops lock dir: %w", err)
 	}

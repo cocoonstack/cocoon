@@ -250,8 +250,12 @@ func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*h
 	return hc, info, nil
 }
 
-// lockedDeviceOpWithRecord is lockedDeviceOp for callers that also need the
-// VM id and record (the disk verbs persist to it).
+// lockedDeviceOpWithRecord serializes device-set mutations per VM across
+// processes and hands back a vm.info snapshot taken UNDER the lock, so
+// precheck-then-call is atomic against concurrent attach/detach (two attaches
+// of one path with different names both passed the old unlocked precheck).
+// Callers unlock after their API call; the flock dies with the process, so no
+// stale locks.
 func (ch *CloudHypervisor) lockedDeviceOpWithRecord(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, string, hypervisor.VMRecord, func(), error) {
 	hc, vmID, rec, err := ch.runningVMClientWithRecord(ctx, vmRef)
 	if err != nil {
@@ -267,6 +271,12 @@ func (ch *CloudHypervisor) lockedDeviceOpWithRecord(ctx context.Context, vmRef s
 		return nil, nil, "", hypervisor.VMRecord{}, nil, err
 	}
 	return hc, info, vmID, rec, unlock, nil
+}
+
+// lockedDeviceOp is lockedDeviceOpWithRecord for callers that need neither the id nor the record.
+func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, func(), error) {
+	hc, info, _, _, unlock, err := ch.lockedDeviceOpWithRecord(ctx, vmRef)
+	return hc, info, unlock, err
 }
 
 func (ch *CloudHypervisor) appendStorageConfig(ctx context.Context, vmID string, sc *types.StorageConfig) error {
@@ -295,28 +305,6 @@ func (ch *CloudHypervisor) removeStorageConfig(ctx context.Context, vmID, serial
 		r.StorageConfigs = kept
 		return nil
 	})
-}
-
-// lockedDeviceOp serializes device-set mutations per VM across processes and
-// hands back a vm.info snapshot taken UNDER the lock, so precheck-then-call
-// is atomic against concurrent attach/detach (two attaches of one path with
-// different names both passed the old unlocked precheck). Callers unlock
-// after their API call; the flock dies with the process, so no stale locks.
-func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, func(), error) {
-	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	unlock, err := ch.LockVMOps(ctx, vmID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil {
-		unlock()
-		return nil, nil, nil, err
-	}
-	return hc, info, unlock, nil
 }
 
 func (ch *CloudHypervisor) attachWith(
