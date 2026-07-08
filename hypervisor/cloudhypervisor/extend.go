@@ -41,9 +41,8 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	if err != nil {
 		return "", err
 	}
-	// Route through storageConfigToDisk: the CH fork refuses disks without an
-	// explicit image_type, and DirectIO/queue semantics must match create-path
-	// data disks.
+	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
+	// semantics must match create-path data disks.
 	d := storageConfigToDisk(&types.StorageConfig{
 		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
 	}, vm.Config.CPU, vm.Config.DiskQueueSize, vm.Config.NoDirectIO)
@@ -265,15 +264,6 @@ func (ch *CloudHypervisor) detachWith(
 	return nil
 }
 
-// ensureNotPaused refuses device-set mutations while a capture window is open
-// (snapshot/hibernate/fork): mutating mid-capture would desync config and memory.
-func ensureNotPaused(info *chVMInfoResponse) error {
-	if info.State == chStatePaused {
-		return fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
-	}
-	return nil
-}
-
 // runningVMClient asserts the CH process is alive and returns an http.Client on its API socket.
 func (ch *CloudHypervisor) runningVMClient(ctx context.Context, vmRef string) (*http.Client, error) {
 	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
@@ -300,6 +290,15 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 }
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
+// ensureNotPaused refuses device-set mutations while a capture window is open
+// (snapshot/hibernate/fork): mutating mid-capture would desync config and memory.
+func ensureNotPaused(info *chVMInfoResponse) error {
+	if info.State == chStatePaused {
+		return fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
+	}
+	return nil
+}
+
 func listWith[A any](
 	ctx context.Context, ch *CloudHypervisor, vmRef string,
 	extract func(*chVMInfoResponse) []A,
