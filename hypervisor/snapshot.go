@@ -30,11 +30,7 @@ type SnapshotMeta struct {
 // RecordSnapshot generates a snapshot ID and records it on the VM's record.
 func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
 	snapID := utils.GenerateID()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		if r.SnapshotIDs == nil {
 			r.SnapshotIDs = make(map[string]struct{})
 		}
@@ -48,11 +44,7 @@ func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, erro
 
 // UnrecordSnapshot drops a snapshot id from the VM's record (persist-failure rollback); best-effort, a leftover id is cosmetic.
 func (b *Backend) UnrecordSnapshot(ctx context.Context, vmID, snapID string) {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		delete(r.SnapshotIDs, snapID)
 		return nil
 	}); err != nil {

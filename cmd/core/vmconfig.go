@@ -166,6 +166,22 @@ func sanitizeVMName(image string) string {
 }
 
 // parseDataDiskFlags parses --data-disk values, normalizes defaults, and returns the spec list ready for hypervisor.PrepareDataDisks.
+// ParseDirectIO maps a directio value to the tri-state StorageConfig.DirectIO;
+// auto is nil (inherit the VM-level NoDirectIO default).
+func ParseDirectIO(val string) (*bool, error) {
+	switch val {
+	case "on":
+		t := true
+		return &t, nil
+	case "off":
+		f := false
+		return &f, nil
+	case "auto":
+		return nil, nil
+	}
+	return nil, fmt.Errorf("directio must be on/off/auto, got %q", val)
+}
+
 func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	specs := make([]types.DataDiskSpec, 0, len(raw))
 	for _, s := range raw {
@@ -218,18 +234,11 @@ func parseDataDiskSpec(s string) (types.DataDiskSpec, error) {
 			spec.MountPoint = val
 			spec.MountPointSet = true
 		case "directio":
-			switch val {
-			case "on":
-				t := true
-				spec.DirectIO = &t
-			case "off":
-				f := false
-				spec.DirectIO = &f
-			case "auto":
-				// keep nil to inherit VM-level NoDirectIO
-			default:
-				return spec, fmt.Errorf("--data-disk: directio must be on/off/auto, got %q", val)
+			dio, err := ParseDirectIO(val)
+			if err != nil {
+				return spec, fmt.Errorf("--data-disk: %w", err)
 			}
+			spec.DirectIO = dio
 		default:
 			return spec, fmt.Errorf("--data-disk: unknown key %q", key)
 		}

@@ -132,22 +132,14 @@ func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client,
 }
 
 func (ch *CloudHypervisor) appendNetworkConfig(ctx context.Context, vmID string, nc *types.NetworkConfig) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
 		r.NetworkConfigs = append(r.NetworkConfigs, nc)
 		return nil
 	})
 }
 
 func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID string, length int) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
 		if length < len(r.NetworkConfigs) {
 			r.NetworkConfigs = r.NetworkConfigs[:length]
 		}

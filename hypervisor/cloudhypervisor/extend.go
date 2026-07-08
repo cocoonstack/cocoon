@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/projecteru2/core/log"
@@ -70,7 +71,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	// cloud-init mounts never apply to it.
 	sc := &types.StorageConfig{
 		Role: types.StorageRoleData, Path: spec.Path, Serial: spec.Name, RO: spec.ReadOnly,
-		DirectIO: spec.DirectIO, External: true, FSType: "none",
+		DirectIO: spec.DirectIO, External: true, FSType: types.FSTypeNone,
 	}
 	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
 	// semantics must match create-path data disks.
@@ -102,14 +103,7 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 		return err
 	}
 	id := disk.DeriveID(name)
-	found := false
-	for _, ex := range info.Config.Disks {
-		if ex.ID == id {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.ContainsFunc(info.Config.Disks, func(d chDisk) bool { return d.ID == id }) {
 		return fmt.Errorf("disk %q not attached", name)
 	}
 	if err := removeDeviceVM(ctx, hc, id); err != nil {
@@ -280,29 +274,17 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 }
 
 func (ch *CloudHypervisor) appendStorageConfig(ctx context.Context, vmID string, sc *types.StorageConfig) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
 		r.StorageConfigs = append(r.StorageConfigs, sc)
 		return nil
 	})
 }
 
 func (ch *CloudHypervisor) removeStorageConfig(ctx context.Context, vmID, serial string) error {
-	return ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
-		kept := r.StorageConfigs[:0]
-		for _, sc := range r.StorageConfigs {
-			if sc.Role != types.StorageRoleData || !sc.External || sc.Serial != serial {
-				kept = append(kept, sc)
-			}
-		}
-		r.StorageConfigs = kept
+	return ch.UpdateRecord(ctx, vmID, func(r *hypervisor.VMRecord) error {
+		r.StorageConfigs = slices.DeleteFunc(r.StorageConfigs, func(sc *types.StorageConfig) bool {
+			return sc.Role == types.StorageRoleData && sc.External && sc.Serial == serial
+		})
 		return nil
 	})
 }

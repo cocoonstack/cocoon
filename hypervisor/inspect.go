@@ -102,6 +102,17 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 	})
 }
 
+// UpdateRecord runs mutate on the VM's live record inside one DB transaction.
+func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VMRecord) error) error {
+	return b.DB.Update(ctx, func(idx *VMIndex) error {
+		r, err := idx.GetRecord(vmID)
+		if err != nil {
+			return err
+		}
+		return mutate(r)
+	})
+}
+
 func isVsockBound(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

@@ -56,11 +56,7 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
 	now := time.Now()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
 		r.StartedAt = &now
@@ -95,6 +91,11 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		return nil, err
 	}
 	defer unlock()
+	// Revalidate under the lock: the pre-lock record may predate a concurrent
+	// mutating verb, and preflight anchors the external trust set to it.
+	if vmID, rec, err = b.ResolveForRestore(ctx, vmID); err != nil {
+		return nil, err
+	}
 
 	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, spec.Snapshot)
 	if err != nil {
@@ -150,6 +151,11 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		return nil, err
 	}
 	defer unlock()
+	// Revalidate under the lock: the pre-lock record may predate a concurrent
+	// mutating verb, and preflight anchors the external trust set to it.
+	if vmID, rec, err = b.ResolveForRestore(ctx, vmID); err != nil {
+		return nil, err
+	}
 
 	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
