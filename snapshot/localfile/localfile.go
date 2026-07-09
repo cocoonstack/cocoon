@@ -2,10 +2,12 @@ package localfile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -23,6 +25,8 @@ import (
 )
 
 const typ = "localfile"
+
+var osRename = os.Rename // seam for EXDEV fallback tests
 
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
@@ -173,13 +177,20 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 		}
 	}()
 
-	// Atomic move: the snapshot is complete and durable before we return, so
-	// hibernate may terminate the VMM. SameFilesystem ruled out EXDEV.
-	if err = os.Rename(srcDir, dataDir); err != nil {
+	// A st_dev match can't rule out EXDEV (bind mounts): roll back and report ok=false so the caller streams via tar.
+	if err = osRename(srcDir, dataDir); err != nil {
+		if errors.Is(err, syscall.EXDEV) {
+			lf.rollbackCreate(ctx, id, cfg.Name)
+			return "", false, nil
+		}
 		return "", false, fmt.Errorf("move capture into store: %w", err)
 	}
 	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (MkdirAll in Create)
 		return "", false, fmt.Errorf("chmod data dir: %w", err)
+	}
+	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize (the tar path fsyncs per file in ExtractTar).
+	if err = utils.SyncTree(dataDir); err != nil {
+		return "", false, fmt.Errorf("sync snapshot to disk: %w", err)
 	}
 
 	size, sizeErr := utils.DirSize(dataDir)

@@ -82,3 +82,32 @@ func SyncParentDir(dir string) error {
 	}
 	return nil
 }
+
+// SyncTree fsyncs every regular file directly under dir (snapshot dirs are flat), then dir and its parent — the durable-before-kill barrier hibernate needs, since a bare rename fsyncs nothing.
+func SyncTree(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		if err := syncFile(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	if err := SyncParentDir(dir); err != nil {
+		return err
+	}
+	return SyncParentDir(filepath.Dir(dir))
+}
+
+func syncFile(path string) (err error) {
+	f, err := os.Open(path) //nolint:gosec // path is a cocoon-managed snapshot file
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	return f.Sync()
+}

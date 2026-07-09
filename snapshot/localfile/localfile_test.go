@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
@@ -161,6 +162,40 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 	streamed := readDirFiles(t, lf.conf.SnapshotDataDir(id2))
 	if !maps.Equal(direct, streamed) {
 		t.Errorf("direct layout %v differs from tar layout %v", direct, streamed)
+	}
+}
+
+func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
+	rec := meteringcapture.New()
+	lf := newTestLFWithRecorder(t, rec)
+	ctx := t.Context()
+
+	// st_dev matches but rename EXDEVs (as on a bind mount): must roll back the pending record, leave srcDir intact, and report ok=false.
+	orig := osRename
+	osRename = func(string, string) error { return syscall.EXDEV }
+	t.Cleanup(func() { osRename = orig })
+
+	id := testID(t)
+	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-exdev"), map[string][]byte{
+		"memory-range-0": []byte("ram"),
+	})
+	gotID, ok, err := lf.CreateFromDir(ctx, &types.SnapshotConfig{
+		ID: id, Name: "exdev-snap", Hypervisor: "cloud-hypervisor",
+	}, srcDir)
+	if err != nil {
+		t.Fatalf("CreateFromDir on EXDEV: unexpected err = %v", err)
+	}
+	if ok || gotID != "" {
+		t.Fatalf("CreateFromDir = (%q, %v), want fallback (\"\", false)", gotID, ok)
+	}
+	if _, statErr := os.Stat(srcDir); statErr != nil {
+		t.Errorf("srcDir removed on EXDEV fallback: %v", statErr)
+	}
+	if _, inspectErr := lf.Inspect(ctx, id); inspectErr == nil {
+		t.Errorf("snapshot %s still indexed after EXDEV fallback; pending record not rolled back", id)
+	}
+	if n := len(rec.Entries()); n != 0 {
+		t.Errorf("metering emitted %d entries on fallback, want 0", n)
 	}
 }
 

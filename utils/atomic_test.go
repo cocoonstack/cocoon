@@ -58,6 +58,25 @@ func TestAtomicWriteFile_Overwrite(t *testing.T) {
 	}
 }
 
+func TestSyncTree(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "snap")
+	if err := os.MkdirAll(sub, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"memory-range-0", "config.json"} {
+		if err := os.WriteFile(filepath.Join(sub, name), []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SyncTree(sub); err != nil {
+		t.Fatalf("SyncTree: %v", err)
+	}
+	if err := SyncTree(filepath.Join(dir, "nonexistent")); err == nil {
+		t.Error("SyncTree on missing dir: want error, got nil")
+	}
+}
+
 func TestAtomicWriteFile_EmptyData(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.dat")
