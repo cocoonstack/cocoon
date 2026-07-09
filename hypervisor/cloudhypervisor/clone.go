@@ -173,10 +173,13 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 	}
 
 	if !opts.directBoot && !opts.vmCfg.Windows && !opts.hadCidataInSnapshot {
-		if len(opts.storageConfigs) == 0 {
+		// Select by role, not position: new --data-disk configs are appended after
+		// the cidata entry, so the last element is not necessarily cidata.
+		i := slices.IndexFunc(opts.storageConfigs, hasCidataRole)
+		if i < 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
 		}
-		cidataDisk := storageConfigToDisk(opts.storageConfigs[len(opts.storageConfigs)-1], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO)
+		cidataDisk := storageConfigToDisk(opts.storageConfigs[i], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO)
 		if err = addDiskVM(ctx, hc, cidataDisk); err != nil {
 			return fmt.Errorf("vm.add-disk (cidata): %w", err)
 		}
