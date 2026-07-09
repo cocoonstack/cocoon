@@ -107,13 +107,10 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VM
 	})
 }
 
-// SetRunningSockets fills a running VM's live host-side sockets — the CH API
-// socket, and the hybrid-vsock UDS when it is bound — from runDir. Records
-// built in-process by clone and restore skip ToVM, so they call this to make
-// `-o json` carry the sockets the way inspect and list do.
+// SetRunningSockets fills a running VM's live sockets (CH API socket, vsock UDS
+// when bound) from runDir — for clone/restore records that skip ToVM.
 func SetRunningSockets(info *types.VM, runDir string) {
 	info.SocketPath = SocketPath(runDir)
-	// Empty for legacy VMs whose UDS isn't bound.
 	if p := VsockSockPath(runDir); isVsockBound(p) {
 		info.VsockSocket = p
 	}
