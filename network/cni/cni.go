@@ -146,10 +146,7 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	return c.deleteRecords(ctx, allIDs)
 }
 
-// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the IDs of
-// fully-torn-down records and the joined per-record failures. Callers sweep only the
-// returned IDs: a failed NIC keeps its record so retry / vm rm / GC — which all walk the
-// DB — can still release its CNI resources (the IPAM lease foremost).
+// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {
 	logger := log.WithFunc("cni.tearDownNICs")
 	if c.cniConf == nil {
