@@ -95,7 +95,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 }
 
 // HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.
-func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) (err error) {
+func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, srcDir string) error) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			if sErr != nil {
 				return failResume(sErr)
 			}
-			if pErr := persist(cfg, utils.TarDirStreamWithRemove(tmpDir)); pErr != nil {
+			if pErr := persist(cfg, tmpDir); pErr != nil {
 				b.UnrecordSnapshot(ctx, vmID, cfg.ID)
 				return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 			}

@@ -13,6 +13,11 @@ type Direct interface {
 	DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, error)
 }
 
+// DirectCreator is an optional interface for snapshot backends that can ingest a capture directory in place — moving it into the store instead of a tar round-trip — when srcDir shares a filesystem with the store's data dir. ok is false (srcDir left intact) when the direct path is unavailable, so the caller falls back to Create with a stream.
+type DirectCreator interface {
+	CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (id string, ok bool, err error)
+}
+
 // CompressedExporter is an optional interface for backends that support exporting with compression (e.g. gzip). The default Export produces raw tar.
 type CompressedExporter interface {
 	ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error)

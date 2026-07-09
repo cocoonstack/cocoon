@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,53 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 	}
 	if entries[1].Hypervisor != "cloud-hypervisor" {
 		t.Errorf("stop entry has Hypervisor=%q; phantom emits leak as empty", entries[1].Hypervisor)
+	}
+}
+
+func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
+	rec := meteringcapture.New()
+	lf := newTestLFWithRecorder(t, rec)
+	ctx := t.Context()
+
+	files := map[string][]byte{
+		"memory-range-0": []byte("guest-ram"),
+		"config.json":    []byte(`{"disks":[]}`),
+		"cocoon.json":    []byte(`{"storage_configs":[]}`),
+	}
+
+	// A capture dir under the store root shares its filesystem, so the direct
+	// (rename) path is taken rather than the cross-fs streaming fallback.
+	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-src"), files)
+	id, ok, err := lf.CreateFromDir(ctx, &types.SnapshotConfig{
+		ID: testID(t), Name: "direct-snap", Hypervisor: "cloud-hypervisor",
+	}, srcDir)
+	if err != nil {
+		t.Fatalf("CreateFromDir: %v", err)
+	}
+	if !ok {
+		t.Fatal("CreateFromDir took the fallback path; expected direct (same filesystem)")
+	}
+	if _, statErr := os.Stat(srcDir); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("srcDir survived the move: stat err = %v", statErr)
+	}
+	if _, err := lf.Inspect(ctx, id); err != nil {
+		t.Fatalf("Inspect after CreateFromDir: %v", err)
+	}
+	if entries := rec.Entries(); len(entries) != 1 || entries[0].Kind != metering.KindSnapStorageStart {
+		t.Fatalf("metering = %v, want one snap.storage.start", kinds(rec.Entries()))
+	}
+
+	// The on-disk layout is byte-for-byte what the tar path (Create) produces.
+	id2, err := lf.Create(ctx, &types.SnapshotConfig{
+		ID: testID(t), Name: "streamed-snap", Hypervisor: "cloud-hypervisor",
+	}, makeTar(t, files))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	direct := readDirFiles(t, lf.conf.SnapshotDataDir(id))
+	streamed := readDirFiles(t, lf.conf.SnapshotDataDir(id2))
+	if !maps.Equal(direct, streamed) {
+		t.Errorf("direct layout %v differs from tar layout %v", direct, streamed)
 	}
 }
 
@@ -1222,6 +1270,41 @@ func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
 		t.Fatalf("New: %v", err)
 	}
 	return lf
+}
+
+// writeCaptureDir stages a capture directory (like a hypervisor's snapshot tmp dir) for CreateFromDir.
+func writeCaptureDir(t *testing.T, dir string, files map[string][]byte) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// readDirFiles reads a directory's regular files into a name→content map.
+func readDirFiles(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	out := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[e.Name()] = string(data)
+	}
+	return out
 }
 
 // makeTar builds a tar archive in memory from a map of name→content.

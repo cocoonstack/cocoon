@@ -3,7 +3,6 @@ package vm
 import (
 	"cmp"
 	"fmt"
-	"io"
 
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
@@ -45,8 +44,8 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	logger.Infof(ctx, "hibernating VM %s ...", vmRef)
 	// persist runs inside the pause window; the VMM dies only after it succeeds.
 	var snapID string
-	err = hib.Hibernate(ctx, vmRef, func(cfg *types.SnapshotConfig, stream io.ReadCloser) error {
-		id, pErr := cmdcore.PersistSnapshotStream(ctx, snapBackend, cfg, stream, name, description)
+	err = hib.Hibernate(ctx, vmRef, func(cfg *types.SnapshotConfig, srcDir string) error {
+		id, pErr := cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 		snapID = id
 		return pErr
 	})

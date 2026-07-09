@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -16,6 +17,27 @@ import (
 
 // StaleTempAge is the age threshold for removing stale temp files during GC.
 const StaleTempAge = time.Hour
+
+// SameFilesystem reports whether a and b live on the same filesystem (matching st_dev), so a rename or hardlink between them can succeed rather than failing with EXDEV.
+func SameFilesystem(a, b string) (bool, error) {
+	sa, err := os.Stat(a)
+	if err != nil {
+		return false, err
+	}
+	sb, err := os.Stat(b)
+	if err != nil {
+		return false, err
+	}
+	da, ok := sa.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false, nil
+	}
+	db, ok := sb.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false, nil
+	}
+	return da.Dev == db.Dev, nil
+}
 
 // EnsureDirs creates all directories with 0o750 permissions.
 func EnsureDirs(dirs ...string) error {

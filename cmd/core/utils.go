@@ -257,6 +257,23 @@ func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapsh
 	return PersistSnapshotStream(ctx, snapBackend, cfg, stream, name, description)
 }
 
+// PersistSnapshotDir stores a finalized capture dir, preferring a direct in-place move (DirectCreator) when srcDir shares a filesystem with the backend's data dir, and falling back to a tar stream otherwise (cross-filesystem, or a backend without DirectCreator such as a remote store). srcDir is consumed on every path.
+func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
+	cfg.Name = name
+	cfg.Description = description
+	if dc, ok := snapBackend.(snapshot.DirectCreator); ok {
+		id, done, err := dc.CreateFromDir(ctx, cfg, srcDir)
+		if err != nil {
+			return "", fmt.Errorf("save snapshot: %w", err)
+		}
+		if done {
+			log.WithFunc("cmdcore.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
+			return id, nil
+		}
+	}
+	return PersistSnapshotStream(ctx, snapBackend, cfg, utils.TarDirStreamWithRemove(srcDir), name, description)
+}
+
 // PersistSnapshotStream labels cfg and stores the stream, closing it either way.
 func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, stream io.ReadCloser, name, description string) (string, error) {
 	defer stream.Close() //nolint:errcheck
