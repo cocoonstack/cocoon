@@ -23,7 +23,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 }
 
 // Hibernate captures like Snapshot but persists and then terminates the VMM inside the pause window instead of resuming.
-func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) error {
+func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, _ *http.Client, pid int) error {

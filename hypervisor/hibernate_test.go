@@ -3,7 +3,6 @@ package hypervisor
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,9 +25,7 @@ func TestHibernateSequencePersistFailureResumesAndRollsBack(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	calls := &hibernateCalls{}
 
-	err := b.HibernateSequence(t.Context(), id, hibernateStubSpec(calls), func(_ *types.SnapshotConfig, stream io.ReadCloser) error {
-		_, _ = io.Copy(io.Discard, stream)
-		_ = stream.Close()
+	err := b.HibernateSequence(t.Context(), id, hibernateStubSpec(calls), func(_ *types.SnapshotConfig, _ string) error {
 		return errors.New("store full")
 	})
 	if err == nil || !strings.Contains(err.Error(), "persist snapshot") {
@@ -58,10 +55,12 @@ func TestHibernateSequenceSuccess(t *testing.T) {
 	calls := &hibernateCalls{}
 
 	var gotCfg *types.SnapshotConfig
-	err := b.HibernateSequence(t.Context(), id, hibernateStubSpec(calls), func(cfg *types.SnapshotConfig, stream io.ReadCloser) error {
+	err := b.HibernateSequence(t.Context(), id, hibernateStubSpec(calls), func(cfg *types.SnapshotConfig, srcDir string) error {
 		gotCfg = cfg
-		_, _ = io.Copy(io.Discard, stream)
-		return stream.Close()
+		if _, statErr := os.Stat(srcDir); statErr != nil {
+			return statErr
+		}
+		return os.RemoveAll(srcDir)
 	})
 	if err != nil {
 		t.Fatalf("HibernateSequence: %v", err)
@@ -94,9 +93,8 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 
 	spec := hibernateStubSpec(calls)
 	spec.Terminate = func(*VMRecord, *http.Client, int) error { return errors.New("kill refused") }
-	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, stream io.ReadCloser) error {
-		_, _ = io.Copy(io.Discard, stream)
-		return stream.Close()
+	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, srcDir string) error {
+		return os.RemoveAll(srcDir)
 	})
 	if err == nil || !strings.Contains(err.Error(), "terminate") {
 		t.Fatalf("HibernateSequence: %v, want terminate error", err)

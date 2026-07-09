@@ -45,7 +45,7 @@ type Direct interface {
 	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 }
 
-// Hibernator snapshots and stops atomically: capture, persist, and termination share one pause window, and the VMM dies only after persist succeeds — a failed persist leaves the VM running.
+// Hibernator snapshots and stops atomically: capture, persist, and termination share one pause window, and the VMM dies only after persist succeeds — a failed persist leaves the VM running. persist consumes srcDir (the finalized capture dir) — moving it into a local store or streaming it out — and must return only once the snapshot is durable.
 type Hibernator interface {
-	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) error
+	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error
 }

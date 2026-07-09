@@ -20,7 +20,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 }
 
 // Hibernate captures like Snapshot but persists and then terminates the VMM inside the pause window instead of resuming.
-func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, stream io.ReadCloser) error) error {
+func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
 	return ch.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: ch.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, hc *http.Client, pid int) error {

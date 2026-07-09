@@ -2,10 +2,12 @@ package localfile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -27,8 +29,11 @@ const typ = "localfile"
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
 	_ snapshot.Direct             = (*LocalFile)(nil)
+	_ snapshot.DirectCreator      = (*LocalFile)(nil)
 	_ snapshot.CompressedExporter = (*LocalFile)(nil)
 	_ snapshot.DirectoryExporter  = (*LocalFile)(nil)
+
+	osRename = os.Rename // seam for EXDEV fallback tests
 )
 
 // Option configures a LocalFile constructed via New.
@@ -135,6 +140,79 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 
 	emitSnapStart(ctx, lf.metering, id, cfg.Hypervisor, size, finalizedAt)
 	return id, nil
+}
+
+// CreateFromDir persists a snapshot by renaming srcDir into the store data dir — one atomic move, no tar read+extract — when they share a filesystem. It reports ok=false (srcDir untouched) across filesystems so the caller streams instead. The placeholder→move→finalize protocol matches Create, so a mid-flight crash leaves a GC-collectable pending record and the layout is byte-for-byte what Create produces.
+func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (_ string, _ bool, err error) {
+	id := cfg.ID
+	if id == "" {
+		return "", false, fmt.Errorf("snapshot ID is required (must be set by caller)")
+	}
+	if err = cfg.Validate(); err != nil {
+		return "", false, err
+	}
+
+	sameFS, err := utils.SameFilesystem(srcDir, lf.conf.DataDir())
+	if err != nil {
+		return "", false, fmt.Errorf("check filesystem: %w", err)
+	}
+	if !sameFS {
+		return "", false, nil
+	}
+
+	dataDir := lf.conf.SnapshotDataDir(id)
+	now := time.Now()
+	if err = lf.insertRecord(ctx, id, cfg.Name, &snapshot.SnapshotRecord{
+		Snapshot: types.Snapshot{SnapshotConfig: *cfg, CreatedAt: now},
+		Pending:  true,
+		DataDir:  dataDir,
+	}); err != nil {
+		return "", false, err
+	}
+
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dataDir) //nolint:errcheck,gosec
+			lf.rollbackCreate(ctx, id, cfg.Name)
+		}
+	}()
+
+	// A st_dev match can't rule out EXDEV (bind mounts): roll back and report ok=false so the caller streams via tar.
+	if err = osRename(srcDir, dataDir); err != nil {
+		if errors.Is(err, syscall.EXDEV) {
+			lf.rollbackCreate(ctx, id, cfg.Name)
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("move capture into store: %w", err)
+	}
+	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (MkdirAll in Create)
+		return "", false, fmt.Errorf("chmod data dir: %w", err)
+	}
+	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize (the tar path fsyncs per file in ExtractTar).
+	if err = utils.SyncTree(dataDir); err != nil {
+		return "", false, fmt.Errorf("sync snapshot to disk: %w", err)
+	}
+
+	size, sizeErr := utils.DirSize(dataDir)
+	if sizeErr != nil {
+		return "", false, fmt.Errorf("compute data dir size: %w", sizeErr)
+	}
+	finalizedAt := time.Now()
+	if err = lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+		rec := idx.Snapshots[id]
+		if rec == nil {
+			return fmt.Errorf("snapshot %q disappeared from index", id)
+		}
+		rec.Pending = false
+		rec.SizeBytes = size
+		rec.LastAccessedAt = finalizedAt
+		return nil
+	}); err != nil {
+		return "", false, fmt.Errorf("finalize snapshot: %w", err)
+	}
+
+	emitSnapStart(ctx, lf.metering, id, cfg.Hypervisor, size, finalizedAt)
+	return id, true, nil
 }
 
 // List returns all snapshots (excluding pending ones).
