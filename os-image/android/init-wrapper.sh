@@ -87,6 +87,15 @@ for f in $($BB find /vendor/etc/vintf -name '*bluetooth*' 2>/dev/null); do
     $BB mv "$f" "${f}.disabled" 2>/dev/null
 done
 
+# Refresh rate: redroid guest mode leaves the display HAL at its 15fps default,
+# which feels laggy even though the software renderer draws a frame in ~1ms and
+# host CPU stays under 10%. Default to 60fps (measured ~4x smoother scroll);
+# override via kernel cmdline redroid.fps=N (e.g. cocoon COCOON_REDROID_FPS).
+REDROID_FPS=60
+for _x in $($BB cat /proc/cmdline); do
+    case "$_x" in redroid.fps=*) REDROID_FPS="${_x#redroid.fps=}" ;; esac
+done
+
 exec /init \
     qemu=1 \
     androidboot.hardware=redroid \
@@ -98,4 +107,5 @@ exec /init \
     androidboot.redroid_gpu_mode=guest \
     androidboot.redroid_width=720 \
     androidboot.redroid_height=1280 \
-    androidboot.redroid_dpi=240
+    androidboot.redroid_dpi=240 \
+    androidboot.redroid_fps=$REDROID_FPS
