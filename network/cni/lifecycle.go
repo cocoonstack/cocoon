@@ -186,7 +186,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		picked = append(picked, rec)
 		pickedIDs = append(pickedIDs, rec.ID)
 	}
-	err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true, false)
+	err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
 	return errors.Join(err, c.deleteRecords(ctx, pickedIDs))
 }
 

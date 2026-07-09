@@ -130,7 +130,7 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	}
 	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
 	nsPath := netnsPath(vmID)
-	_ = c.tearDownNICs(ctx, vmID, nsPath, records, false, true)
+	_ = c.tearDownNICs(ctx, vmID, nsPath, records, false)
 	nsName := netnsName(vmID)
 	if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove netns %s: %w", nsPath, err)
@@ -142,15 +142,14 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	return c.deleteRecords(ctx, allIDs)
 }
 
-// tearDownNICs runs CNI DEL (+ optional TAP delete) per record; bestEffort=false stops at first failure. Caller sweeps DB.
-func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP, bestEffort bool) error {
+// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, joining per-record
+// failures — the caller sweeps the DB afterwards, so a skipped record never gets another attempt.
+func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) error {
 	logger := log.WithFunc("cni.tearDownNICs")
 	if c.cniConf == nil {
-		if !bestEffort {
-			return c.errNoConflist()
-		}
-		return nil
+		return c.errNoConflist()
 	}
+	var errs []error
 	for _, rec := range records {
 		var recErr error
 		cl, err := c.confListByName(rec.Type)
@@ -177,11 +176,11 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 				logger.Warnf(ctx, "delete tap %s in netns %s: %v", tapNameForVM(vmID, idx), nsPath, delErr)
 			}
 		}
-		if recErr != nil && !bestEffort {
-			return recErr
+		if recErr != nil {
+			errs = append(errs, recErr)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
