@@ -167,6 +167,29 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 	assertRecordIDs(t, c, nil)
 }
 
+func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	origTAP := deleteTAPFn
+	deleteTAPFn = func(string, string) error { return nil }
+	t.Cleanup(func() { deleteTAPFn = origTAP })
+
+	ctx := t.Context()
+	// A failed reclaim can leave two records for one ifname; Remove must tear down
+	// and sweep both (DEL is idempotent), not strand one as a phantom.
+	seedRecords(t, c, "vm1", "eth1")
+	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+		idx.Networks["n-eth1-dup"] = &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Remove(ctx, "vm1", 1); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
 func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	exec.failIf = "eth1"

@@ -188,18 +188,24 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
-	byIfName := make(map[string]networkRecord, len(records))
-	for _, r := range records {
-		byIfName[r.IfName] = r
-	}
-	picked := make([]networkRecord, 0, len(indices))
+	wanted := make(map[string]bool, len(indices))
 	for _, i := range indices {
-		ifName := fmt.Sprintf("eth%d", i)
-		rec, ok := byIfName[ifName]
-		if !ok {
+		wanted[fmt.Sprintf("eth%d", i)] = true
+	}
+	// Pick every matching record, not one per ifname: a failed reclaim can leave
+	// duplicates, and DEL is idempotent — skipping one would strand it as a phantom.
+	picked := make([]networkRecord, 0, len(indices))
+	found := make(map[string]bool, len(indices))
+	for _, r := range records {
+		if wanted[r.IfName] {
+			picked = append(picked, r)
+			found[r.IfName] = true
+		}
+	}
+	for _, i := range indices {
+		if ifName := fmt.Sprintf("eth%d", i); !found[ifName] {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
-		picked = append(picked, rec)
 	}
 	downIDs, err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
 	return errors.Join(err, c.deleteRecords(ctx, downIDs))
