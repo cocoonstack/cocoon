@@ -2,9 +2,13 @@ package cloudhypervisor
 
 import (
 	"encoding/json"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -620,5 +624,64 @@ func basePatchOpts() *patchOptions {
 		},
 		consoleSock: "/new/console.sock",
 		directBoot:  true,
+	}
+}
+
+func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
+	// Short dir: t.TempDir embeds the test name and busts the unix sockaddr limit.
+	sockDir, err := os.MkdirTemp("", "ch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	sock := filepath.Join(sockDir, "a.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var (
+		mu    sync.Mutex
+		added []string
+	)
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "vm.add-disk") {
+			var d chDisk
+			if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			added = append(added, d.Path)
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	go srv.Serve(ln) //nolint:errcheck
+	t.Cleanup(func() { _ = srv.Close() })
+
+	// Snapshot lacked cidata, so ensureCloneCidata appended one — and the clone's
+	// new --data-disk config landed after it. The hot-plug must pick the Role
+	// match, not the last element (which double-attached the data disk and never
+	// attached cidata).
+	storageConfigs := []*types.StorageConfig{
+		{Path: "/store/cow.raw", Role: types.StorageRoleCOW, Serial: "cocoon-cow"},
+		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
+		{Path: "/run/extra.raw", Role: types.StorageRoleData, Serial: "extra"},
+	}
+	ch := &CloudHypervisor{}
+	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+		vmCfg:          &types.VMConfig{Config: types.Config{CPU: 2}},
+		storageConfigs: storageConfigs,
+		dataDisks:      storageConfigs[2:],
+		snapshotCfg:    &chVMConfig{},
+	}); err != nil {
+		t.Fatalf("restoreAndResumeClone: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"/run/cidata.img", "/run/extra.raw"}
+	if !slices.Equal(added, want) {
+		t.Fatalf("vm.add-disk paths = %v, want %v", added, want)
 	}
 }
