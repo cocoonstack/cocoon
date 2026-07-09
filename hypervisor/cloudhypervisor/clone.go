@@ -140,6 +140,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		NetSetup:  net,
 		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
 	}
+	hypervisor.SetRunningSockets(info, runDir)
 	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)

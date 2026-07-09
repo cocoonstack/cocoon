@@ -106,6 +106,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		NetSetup:  net,
 		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
 	}
+	hypervisor.SetRunningSockets(info, runDir)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)

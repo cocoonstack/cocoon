@@ -43,12 +43,8 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	info := rec.VM
 	info.Hypervisor = b.Typ
 	if info.State == types.VMStateRunning {
-		info.SocketPath = SocketPath(rec.RunDir)
+		SetRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
-		// Empty for legacy VMs whose UDS isn't bound.
-		if p := VsockSockPath(rec.RunDir); isVsockBound(p) {
-			info.VsockSocket = p
-		}
 	}
 	info.SnapshotIDs = maps.Clone(info.SnapshotIDs)
 	return &info
@@ -109,6 +105,18 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VM
 		}
 		return mutate(r)
 	})
+}
+
+// SetRunningSockets fills a running VM's live host-side sockets — the CH API
+// socket, and the hybrid-vsock UDS when it is bound — from runDir. Records
+// built in-process by clone and restore skip ToVM, so they call this to make
+// `-o json` carry the sockets the way inspect and list do.
+func SetRunningSockets(info *types.VM, runDir string) {
+	info.SocketPath = SocketPath(runDir)
+	// Empty for legacy VMs whose UDS isn't bound.
+	if p := VsockSockPath(runDir); isVsockBound(p) {
+		info.VsockSocket = p
+	}
 }
 
 func isVsockBound(path string) bool {
