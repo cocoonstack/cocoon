@@ -67,10 +67,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	info.Config = *vmCfg
 	info.State = types.VMStateRunning
 	info.PID = pid
-	info.SocketPath = SocketPath(rec.RunDir)
-	if p := VsockSockPath(rec.RunDir); isVsockBound(p) {
-		info.VsockSocket = p // let `vm restore -o json` carry the vsock UDS, as ToVM does
-	}
+	SetRunningSockets(&info, rec.RunDir)
 	info.StartedAt = &now
 	info.UpdatedAt = now
 	return &info, nil
