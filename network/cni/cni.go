@@ -26,7 +26,11 @@ import (
 
 const typ = "cni"
 
-var _ network.Network = (*CNI)(nil)
+var (
+	_ network.Network = (*CNI)(nil)
+
+	deleteTAPFn = deleteTAPInNetns // seam for cross-platform teardown tests
+)
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {
@@ -130,7 +134,7 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	}
 	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
 	nsPath := netnsPath(vmID)
-	_ = c.tearDownNICs(ctx, vmID, nsPath, records, false)
+	_, _ = c.tearDownNICs(ctx, vmID, nsPath, records, false)
 	nsName := netnsName(vmID)
 	if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove netns %s: %w", nsPath, err)
@@ -142,13 +146,16 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	return c.deleteRecords(ctx, allIDs)
 }
 
-// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, joining per-record
-// failures — the caller sweeps the DB afterwards, so a skipped record never gets another attempt.
-func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) error {
+// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the IDs of
+// fully-torn-down records and the joined per-record failures. Callers sweep only the
+// returned IDs: a failed NIC keeps its record so retry / vm rm / GC — which all walk the
+// DB — can still release its CNI resources (the IPAM lease foremost).
+func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {
 	logger := log.WithFunc("cni.tearDownNICs")
 	if c.cniConf == nil {
-		return c.errNoConflist()
+		return nil, c.errNoConflist()
 	}
+	downIDs := make([]string, 0, len(records))
 	var errs []error
 	for _, rec := range records {
 		var recErr error
@@ -169,7 +176,7 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 			var idx int
 			if _, scanErr := fmt.Sscanf(rec.IfName, "eth%d", &idx); scanErr != nil {
 				logger.Warnf(ctx, "parse ifname %q for %s: %v (skip tap delete)", rec.IfName, vmID, scanErr)
-			} else if delErr := deleteTAPInNetns(nsPath, tapNameForVM(vmID, idx)); delErr != nil {
+			} else if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, idx)); delErr != nil {
 				if recErr == nil {
 					recErr = fmt.Errorf("delete tap %s: %w", tapNameForVM(vmID, idx), delErr)
 				}
@@ -178,9 +185,11 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 		}
 		if recErr != nil {
 			errs = append(errs, recErr)
+			continue
 		}
+		downIDs = append(downIDs, rec.ID)
 	}
-	return errors.Join(errs...)
+	return downIDs, errors.Join(errs...)
 }
 
 func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {

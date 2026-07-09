@@ -77,7 +77,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 				}
 
 				// CNI DEL per NIC — best-effort IPAM release.
-				_ = c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
+				_, _ = c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
 
 				nsName := netnsName(vmID)
 				if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {

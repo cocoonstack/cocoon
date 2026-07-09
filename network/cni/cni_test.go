@@ -3,6 +3,7 @@ package cni
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/version"
+
+	"github.com/cocoonstack/cocoon/lock/flock"
+	storejson "github.com/cocoonstack/cocoon/storage/json"
 )
 
 const (
@@ -125,13 +129,71 @@ func TestTearDownNICsAttemptsAllRecords(t *testing.T) {
 		{ID: "n2", Type: "cni-bridge", VMID: "vm1", IfName: "eth2"},
 	}
 
-	err = c.tearDownNICs(t.Context(), "vm1", "/run/netns/vm1", records, false)
+	downIDs, err := c.tearDownNICs(t.Context(), "vm1", "/run/netns/vm1", records, false)
 	if err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("tearDownNICs err = %v, want eth1 failure", err)
 	}
 	want := []string{"eth0", "eth1", "eth2"}
 	if !slices.Equal(exec.attempted, want) {
 		t.Fatalf("DEL attempted on %v, want %v (a mid-list failure must not skip later records)", exec.attempted, want)
+	}
+	if wantDown := []string{"n0", "n2"}; !slices.Equal(downIDs, wantDown) {
+		t.Fatalf("downIDs = %v, want %v (only fully-torn-down records are sweepable)", downIDs, wantDown)
+	}
+}
+
+func TestRemoveKeepsFailedNICRecords(t *testing.T) {
+	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := &recordingExec{failIf: "eth1"}
+	dir := t.TempDir()
+	c := &CNI{
+		store:       storejson.New[networkIndex](filepath.Join(dir, "net.json"), flock.New(filepath.Join(dir, "net.lock"))),
+		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
+		defaultName: "cni-bridge",
+		cniConf:     libcni.NewCNIConfig([]string{"/nonexistent"}, exec),
+	}
+	origTAP := deleteTAPFn
+	deleteTAPFn = func(string, string) error { return nil }
+	t.Cleanup(func() { deleteTAPFn = origTAP })
+
+	ctx := t.Context()
+	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+		idx.Networks["n0"] = &networkRecord{ID: "n0", Type: "cni-bridge", VMID: "vm1", IfName: "eth0"}
+		idx.Networks["n1"] = &networkRecord{ID: "n1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can
+	// still release the IPAM lease; eth0's record must be swept.
+	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
+		t.Fatalf("Remove err = %v, want eth1 failure", err)
+	}
+	assertRecordIDs(t, c, []string{"n1"})
+
+	// Retry after the fault clears: the kept record lets Remove finish the release.
+	exec.failIf = ""
+	if err := c.Remove(ctx, "vm1", 1); err != nil {
+		t.Fatalf("retry Remove: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
+func assertRecordIDs(t *testing.T, c *CNI, want []string) {
+	t.Helper()
+	var got []string
+	if err := c.store.With(t.Context(), func(idx *networkIndex) error {
+		got = slices.Sorted(maps.Keys(idx.Networks))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("records = %v, want %v", got, want)
 	}
 }
 
