@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -191,8 +192,19 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	if _, statErr := os.Stat(srcDir); statErr != nil {
 		t.Errorf("srcDir removed on EXDEV fallback: %v", statErr)
 	}
-	if _, inspectErr := lf.Inspect(ctx, id); inspectErr == nil {
-		t.Errorf("snapshot %s still indexed after EXDEV fallback; pending record not rolled back", id)
+	// Check the index directly: Inspect hides pending records, so it cannot
+	// distinguish "rolled back" from "stale pending left behind" — and a stale
+	// name reservation would fail the tar-fallback Create with "already in use".
+	if err := lf.store.With(ctx, func(idx *snapshot.SnapshotIndex) error {
+		if _, stale := idx.Snapshots[id]; stale {
+			return fmt.Errorf("pending record %s still in index", id)
+		}
+		if _, stale := idx.Names["exdev-snap"]; stale {
+			return fmt.Errorf("name %q still reserved", "exdev-snap")
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("EXDEV rollback incomplete: %v", err)
 	}
 	if n := len(rec.Entries()); n != 0 {
 		t.Errorf("metering emitted %d entries on fallback, want 0", n)
