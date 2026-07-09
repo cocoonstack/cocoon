@@ -143,37 +143,21 @@ func TestTearDownNICsAttemptsAllRecords(t *testing.T) {
 }
 
 func TestRemoveKeepsFailedNICRecords(t *testing.T) {
-	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
-	if err != nil {
-		t.Fatal(err)
-	}
-	exec := &recordingExec{failIf: "eth1"}
-	dir := t.TempDir()
-	c := &CNI{
-		store:       storejson.New[networkIndex](filepath.Join(dir, "net.json"), flock.New(filepath.Join(dir, "net.lock"))),
-		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
-		defaultName: "cni-bridge",
-		cniConf:     libcni.NewCNIConfig([]string{"/nonexistent"}, exec),
-	}
+	c, exec := newTestCNIWithStore(t)
+	exec.failIf = "eth1"
 	origTAP := deleteTAPFn
 	deleteTAPFn = func(string, string) error { return nil }
 	t.Cleanup(func() { deleteTAPFn = origTAP })
 
 	ctx := t.Context()
-	if err := c.store.Update(ctx, func(idx *networkIndex) error {
-		idx.Networks["n0"] = &networkRecord{ID: "n0", Type: "cni-bridge", VMID: "vm1", IfName: "eth0"}
-		idx.Networks["n1"] = &networkRecord{ID: "n1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	seedRecords(t, c, "vm1", "eth0", "eth1")
 
 	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can
 	// still release the IPAM lease; eth0's record must be swept.
 	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("Remove err = %v, want eth1 failure", err)
 	}
-	assertRecordIDs(t, c, []string{"n1"})
+	assertRecordIDs(t, c, []string{"n-eth1"})
 
 	// Retry after the fault clears: the kept record lets Remove finish the release.
 	exec.failIf = ""
@@ -181,6 +165,79 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 		t.Fatalf("retry Remove: %v", err)
 	}
 	assertRecordIDs(t, c, nil)
+}
+
+func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	exec.failIf = "eth1"
+	origNetns := deleteNetnsFn
+	deleteNetnsFn = func(context.Context, string) error { return nil }
+	t.Cleanup(func() { deleteNetnsFn = origNetns })
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+
+	// vm rm stays best-effort, but the failed NIC's record must survive for GC to retry.
+	if err := c.deleteVM(ctx, "vm1"); err != nil {
+		t.Fatalf("deleteVM: %v", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+}
+
+func TestReclaimStaleNIC(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	origTAP := deleteTAPFn
+	deleteTAPFn = func(string, string) error { return nil }
+	t.Cleanup(func() { deleteTAPFn = origTAP })
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth1")
+	rec := networkRecord{ID: "n-eth1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
+
+	// DEL failure keeps the record (nothing was released).
+	exec.failIf = "eth1"
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", "tapvm1-1", rec); err == nil {
+		t.Fatal("reclaimStaleNIC: want error on failed DEL")
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+
+	// DEL success releases and sweeps the record, freeing the index for re-add.
+	exec.failIf = ""
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", "tapvm1-1", rec); err != nil {
+		t.Fatalf("reclaimStaleNIC: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
+// newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
+func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
+	t.Helper()
+	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := &recordingExec{}
+	dir := t.TempDir()
+	return &CNI{
+		store:       storejson.New[networkIndex](filepath.Join(dir, "net.json"), flock.New(filepath.Join(dir, "net.lock"))),
+		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
+		defaultName: "cni-bridge",
+		cniConf:     libcni.NewCNIConfig([]string{"/nonexistent"}, exec),
+	}, exec
+}
+
+// seedRecords inserts one record per ifName, with ID "n-<ifName>".
+func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
+	t.Helper()
+	if err := c.store.Update(t.Context(), func(idx *networkIndex) error {
+		for _, ifName := range ifNames {
+			id := "n-" + ifName
+			idx.Networks[id] = &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertRecordIDs(t *testing.T, c *CNI, want []string) {

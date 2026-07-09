@@ -76,22 +76,20 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 					continue
 				}
 
-				// CNI DEL per NIC — best-effort IPAM release.
-				_, _ = c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
+				// CNI DEL per NIC — a failed release keeps its record for the next GC cycle.
+				downIDs, _ := c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
 
 				nsName := netnsName(vmID)
-				if err := deleteNetns(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
 					continue
 				}
 
 				// Lockless write.
-				if len(records) > 0 {
+				if len(downIDs) > 0 {
 					if err := c.store.WriteRaw(func(idx *networkIndex) error {
-						for id, rec := range idx.Networks {
-							if rec != nil && rec.VMID == vmID {
-								delete(idx.Networks, id)
-							}
+						for _, id := range downIDs {
+							delete(idx.Networks, id)
 						}
 						return nil
 					}); err != nil {
@@ -99,8 +97,8 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 						continue
 					}
 				}
-				logger.Infof(ctx, "collected id=%s netns=%s nics=%d reason=orphan",
-					vmID, nsName, len(records))
+				logger.Infof(ctx, "collected id=%s netns=%s nics=%d/%d reason=orphan",
+					vmID, nsName, len(downIDs), len(records))
 			}
 			return errors.Join(errs...)
 		},

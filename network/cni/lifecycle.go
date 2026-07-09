@@ -48,6 +48,18 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	nsName := netnsName(vmID)
 	nsPath := netnsPath(vmID)
 
+	var stale map[string]networkRecord
+	if err = c.store.With(ctx, func(idx *networkIndex) error {
+		records := idx.byVMID(vmID)
+		stale = make(map[string]networkRecord, len(records))
+		for _, r := range records {
+			stale[r.IfName] = r
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("read network index: %w", err)
+	}
+
 	createdNetns, err := ensureNetns(nsName, nsPath)
 	if err != nil {
 		return nil, fmt.Errorf("ensure netns %s: %w", nsName, err)
@@ -92,6 +104,12 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			}
 			if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
 				rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
+			}
+		} else if rec, ok := stale[ifName]; ok {
+			// A failed detach left this index's record: release it first, or the IPAM
+			// plugin refuses the duplicate container+ifname allocation.
+			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, tapName, rec); rcErr != nil {
+				logger.Warnf(ctx, "reclaim stale NIC %s/%s: %v (continuing)", vmID, ifName, rcErr)
 			}
 		}
 
@@ -190,6 +208,19 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifName string) error {
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
+}
+
+// reclaimStaleNIC releases a record left by a failed detach before its index is reused: CNI DEL (by the record's own conflist), best-effort TAP delete, then the record sweep.
+func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath, tapName string, rec networkRecord) error {
+	cl, err := c.confListByName(rec.Type)
+	if err != nil {
+		return err
+	}
+	if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
+		return fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err)
+	}
+	_ = deleteTAPFn(nsPath, tapName)
+	return c.deleteRecords(ctx, []string{rec.ID})
 }
 
 func tapNameForVM(vmID string, nic int) string {
