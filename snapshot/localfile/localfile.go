@@ -26,14 +26,14 @@ import (
 
 const typ = "localfile"
 
-var osRename = os.Rename // seam for EXDEV fallback tests
-
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
 	_ snapshot.Direct             = (*LocalFile)(nil)
 	_ snapshot.DirectCreator      = (*LocalFile)(nil)
 	_ snapshot.CompressedExporter = (*LocalFile)(nil)
 	_ snapshot.DirectoryExporter  = (*LocalFile)(nil)
+
+	osRename = os.Rename // seam for EXDEV fallback tests
 )
 
 // Option configures a LocalFile constructed via New.

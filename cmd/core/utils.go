@@ -267,7 +267,7 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 			return "", fmt.Errorf("save snapshot: %w", err)
 		}
 		if done {
-			log.WithFunc("cmdcore.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
+			log.WithFunc("core.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
 			return id, nil
 		}
 	}
@@ -280,7 +280,7 @@ func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, c
 	defer CloseOnCancel(ctx, stream)()
 	cfg.Name = name
 	cfg.Description = description
-	log.WithFunc("cmdcore.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
+	log.WithFunc("core.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
 	snapID, err := snapBackend.Create(ctx, cfg, stream)
 	if err != nil {
 		return "", fmt.Errorf("save snapshot: %w", err)
