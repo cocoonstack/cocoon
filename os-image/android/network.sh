@@ -14,9 +14,12 @@
 IFACE=eth0
 TABLES="legacy_system legacy_network local_network"
 
-# Guard against repeated invocations.
-GUARD="/data/local/tmp/.cocoon-network-done"
-[ -f "$GUARD" ] && exit 0
+# Guard against repeated invocations WITHIN a boot only. Must NOT persist across
+# reboots: /data survives stop/start, and a stale guard would skip the eth0
+# re-bounce below, so the guest never re-triggers DHCP -> eth0 stays IP-less ->
+# EthernetService/IpClient NPE -> system_server crash-loop. A property resets
+# every boot; a /data file does not.
+[ "$(getprop cocoon.network.configured)" = "1" ] && exit 0
 
 cmdline_ip() {
     local cmdline
@@ -88,4 +91,4 @@ else
     log -t cocoon-network "dhcp: deleted ipconfig.txt, bounced $IFACE for EthernetService DHCP"
 fi
 
-touch "$GUARD"
+setprop cocoon.network.configured 1
