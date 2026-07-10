@@ -10,7 +10,7 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 | `created`  | Registered, hypervisor process not yet started           |
 | `running`  | Hypervisor process alive, guest is up                    |
 | `stopped`  | Hypervisor process exited cleanly                        |
-| `error`    | Start or stop failed                                     |
+| `error`    | Start, stop, or restore failed — recover with `vm restore` |
 
 ### Shutdown Behavior
 

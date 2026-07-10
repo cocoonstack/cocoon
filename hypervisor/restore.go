@@ -44,9 +44,9 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	if err != nil {
 		return "", nil, err
 	}
-	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Quarantined VMs are allowed through — restore rebuilding the run dir is exactly the recovery path.
-	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.Quarantine == "" {
-		return "", nil, fmt.Errorf("vm %s is %s, must be running or stopped to restore", vmID, rec.State)
+	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Error VMs are allowed through (quarantine sets Error too) — restore rebuilds the run dir, so it is the recovery path start.go redirects a crashed restore to; FailRestore leaves a running-origin failure in Error with no quarantine reason, and rejecting it here would dead-end at vm rm.
+	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
+		return "", nil, fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)
 	}
 	return vmID, &rec, nil
 }
@@ -237,13 +237,6 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }
 
-func markRestoreDirty(runDir string) error {
-	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
-		return fmt.Errorf("mark restore dirty: %w", err)
-	}
-	return nil
-}
-
 // PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
@@ -259,4 +252,11 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 		return "", nil, fmt.Errorf("extract snapshot: %w", err)
 	}
 	return stagingDir, cleanup, nil
+}
+
+func markRestoreDirty(runDir string) error {
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		return fmt.Errorf("mark restore dirty: %w", err)
+	}
+	return nil
 }

@@ -11,7 +11,7 @@ const (
 	VMStateCreated  VMState = "created"  // registered, CH process not yet started
 	VMStateRunning  VMState = "running"  // CH process alive, guest is up
 	VMStateStopped  VMState = "stopped"  // CH process has exited cleanly
-	VMStateError    VMState = "error"    // start or stop failed
+	VMStateError    VMState = "error"    // start, stop, or restore failed
 )
 
 var (
