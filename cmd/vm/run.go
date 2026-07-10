@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
@@ -19,6 +20,8 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const rollbackTimeout = 30 * time.Second
 
 type nicHint struct {
 	mac, ip, gw string
@@ -542,6 +545,9 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 	if netProvider == nil {
 		return
 	}
+	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
 	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
 		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
