@@ -21,7 +21,7 @@ Guest virtio-net  ←→  TAP (multi-queue)  ←TC redirect→  veth  ←→  CN
 
 - **Default**: 1 NIC with automatic IP assignment via CNI
 - **No network**: `--nics 0` creates a VM with no network interfaces
-- **Multi-NIC**: `--nics N` creates N interfaces; for cloudimg VMs all NICs are auto-configured via Netplan, for OCI images all NICs are auto-configured via kernel `ip=` parameters
+- **Multi-NIC**: `--nics N` creates N interfaces; for cloudimg VMs all NICs are auto-configured via Netplan. For OCI images the kernel `ip=` parameter reliably configures only the first NIC on a cold boot — configure the rest inside the guest (see [known issues](known-issues.md#oci-vm-multi-nic-kernel-ip-limitation))
 - **Multi-network**: `--network <name>` selects a specific CNI conflist by name (e.g., `--network macvlan`); omitting uses the first conflist alphabetically. The network name is stored in the VM record for recovery after host reboot. Clone allows `--network` override; restore reuses the existing network.
 - **Bridge mode**: `--bridge <device>` creates TAP devices directly on an existing Linux bridge (e.g., `--bridge cni0`), bypassing CNI and TC redirect. VMs get IP via DHCP from the bridge. Mutually exclusive with `--network`
 - **DNS**: Use `--dns` to set custom DNS servers (comma separated)

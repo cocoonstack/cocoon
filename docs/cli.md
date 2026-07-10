@@ -158,11 +158,11 @@ Applies to `cocoon snapshot export`:
 
 | Flag            | Default                    | Description                                       |
 | --------------- | -------------------------- | ------------------------------------------------- |
-| `--output`, `-o` |  `<name-or-id>.tar.gz`    | Output file path (`-` for stdout)                 |
+| `--output`, `-o` |  `<name-or-id>.tar` (`.tar.gz` with `--gzip`) | Output file path (`-` for stdout)                 |
 | `--gzip`        | `false`                    | Compress output with gzip                         |
 | `--to-dir`      |                            | Export into a directory (must be empty/absent) instead of a tar; pairs with `vm clone --from-dir` |
 
-`--to-dir` writes a `snapshot.json` envelope alongside reflink-copied data files. Useful for NFS golden images or rsync-friendly handoff: `cocoon snapshot export snap -o ... --to-dir /nfs/golden && rsync ...`. Mutually exclusive with `--output` and `--gzip`.
+`--to-dir` writes a `snapshot.json` envelope alongside reflink-copied data files. Useful for NFS golden images or rsync-friendly handoff: `cocoon snapshot export snap --to-dir /nfs/golden && rsync ...`. Mutually exclusive with `--output` and `--gzip`.
 
 ### Import Flags
 
@@ -200,9 +200,10 @@ Applies to `cocoon vm status`:
 
 | Flag               | Default | Description                                             |
 | ------------------ | ------- | ------------------------------------------------------- |
-| `--interval`, `-n` | `5`     | Poll interval in seconds                                |
+| `--interval`, `-n` | `5`     | Poll interval in seconds (only with `--watch` or `--event`) |
+| `--watch`, `-w`    | `false` | Refresh-loop mode (full-screen redraw each tick); omit for a one-shot snapshot |
 | `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
-| `--format`         |         | Output format: `json` (event mode only)                  |
+| `--format`         |         | Output format: `json` (one-shot and event modes; `--watch` always renders a table) |
 
 ### Debug-only Flags
 
@@ -225,9 +226,10 @@ Applies to `cocoon vm debug`:
 
 `cocoon vm exec` runs a command inside a running VM via the cocoon-agent (vsock, no SSH). Stdin/stdout/stderr stream like `kubectl exec`; the host shell sees the guest command's exit code.
 
-| Flag           | Default | Description                                        |
-| -------------- | ------- | -------------------------------------------------- |
-| `--env`, `-e`  |         | Extra env var `KEY=VALUE` (repeatable)              |
+| Flag                  | Default | Description                                        |
+| --------------------- | ------- | -------------------------------------------------- |
+| `--env`, `-e`         |         | Extra env var `KEY=VALUE` (repeatable)              |
+| `--interactive`, `-i` | `false` | Attach the caller's stdin to the command (otherwise stdin closes immediately) |
 
 ```
 $ cocoon vm exec myvm -- uname -n

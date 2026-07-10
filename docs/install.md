@@ -13,7 +13,7 @@ Requirements, install paths, the doctor script, and a first VM.
   silently corrupts layers — cocoon refuses to convert with older versions)
 - UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`)
 - CNI plugins (`bridge`, `host-local`, `loopback`)
-- Go 1.25+ (build only)
+- Go 1.26+ (build only)
 
 ## Installation
 
@@ -39,7 +39,7 @@ cd cocoon
 make build
 ```
 
-This produces a `cocoon` binary in the project root. Use `make install` to install into `$GOPATH/bin`.
+This produces a `cocoon` binary in the project root.
 
 ## Doctor
 

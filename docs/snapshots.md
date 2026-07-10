@@ -80,11 +80,11 @@ The `cocoon vm clone` command prints these hints with the actual values after a 
 
 ### Export & Import
 
-Snapshots can be exported to portable `.tar.gz` archives for transfer between hosts or clusters, and imported back:
+Snapshots can be exported to portable tar archives (gzip with `--gzip`) for transfer between hosts or clusters, and imported back:
 
 ```bash
 # Export a snapshot to a file
-cocoon snapshot export my-snap -o my-snap.tar.gz
+cocoon snapshot export my-snap --gzip -o my-snap.tar.gz
 
 # Import on another host
 cocoon snapshot import my-snap.tar.gz --name imported-snap
