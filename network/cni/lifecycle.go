@@ -226,7 +226,7 @@ func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath string, rec netw
 }
 
 func tapNameForVM(vmID string, nic int) string {
-	return fmt.Sprintf("tap%s-%d", network.VMIDPrefix(vmID), nic)
+	return network.TAPName(tapPrefix, vmID, nic)
 }
 
 // ensureNetns creates the netns if missing; bool reports whether this call did the creation.

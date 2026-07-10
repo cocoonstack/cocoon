@@ -76,15 +76,10 @@ func (l *Lock) Unlock(_ context.Context) error {
 func (l *Lock) commitFlock(acquire func(*flock.Flock) (bool, error)) (bool, error) {
 	fl := flock.New(l.path)
 	locked, err := acquire(fl)
-	if err != nil {
+	if err != nil || !locked {
 		_ = fl.Close()
 		<-l.ch
 		return false, err
-	}
-	if !locked {
-		_ = fl.Close()
-		<-l.ch
-		return false, nil
 	}
 	l.fl = fl
 	return true, nil

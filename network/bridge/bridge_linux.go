@@ -189,7 +189,7 @@ func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
 }
 
 func tapName(vmID string, nic int) string {
-	return fmt.Sprintf("%s%s-%d", tapPrefix, network.VMIDPrefix(vmID), nic)
+	return network.TAPName(tapPrefix, vmID, nic)
 }
 
 func generateMAC() string {

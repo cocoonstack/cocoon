@@ -13,6 +13,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 type cniSnapshot struct {
@@ -53,12 +54,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			for _, name := range snap.netnsNames {
 				candidates[name] = struct{}{}
 			}
-			var orphans []string
-			for id := range candidates {
-				if _, ok := active[id]; !ok {
-					orphans = append(orphans, id)
-				}
-			}
+			orphans := utils.FilterUnreferenced(slices.Collect(maps.Keys(candidates)), active)
 			slices.Sort(orphans)
 			return orphans
 		},

@@ -1,6 +1,9 @@
 package network
 
-import "cmp"
+import (
+	"cmp"
+	"fmt"
+)
 
 const (
 	vmIDPrefixLen = 8
@@ -35,4 +38,9 @@ func VMIDPrefix(vmID string) string {
 		return vmID[:vmIDPrefixLen]
 	}
 	return vmID
+}
+
+// TAPName composes the shared TAP device name scheme: prefix + 8-char VM-ID prefix + NIC index.
+func TAPName(prefix, vmID string, nic int) string {
+	return fmt.Sprintf("%s%s-%d", prefix, VMIDPrefix(vmID), nic)
 }
