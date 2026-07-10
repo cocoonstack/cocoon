@@ -66,8 +66,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("verify base files: %w", err)
 	}
 
-	stateReplacements := buildStateReplacements(chCfg, storageConfigs)
-
 	storageConfigs, err = ch.ensureCloneCidata(vmID, vmCfg, networkConfigs, storageConfigs, directBoot)
 	if err != nil {
 		return nil, err
@@ -94,11 +92,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		noDirectIO:     vmCfg.NoDirectIO,
 	}); err != nil {
 		return nil, fmt.Errorf("patch CH config: %w", err)
-	}
-
-	stateJSONPath := filepath.Join(runDir, stateJSONName)
-	if err = patchStateJSON(stateJSONPath, stateReplacements); err != nil {
-		return nil, fmt.Errorf("patch state.json: %w", err)
 	}
 
 	if directBoot && bootCfg != nil {
@@ -317,18 +310,6 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 		hypervisor.CowSerial,
 		networkConfigs, vmName, dnsServers,
 	)
-}
-
-// buildStateReplacements maps source→clone disk paths for state.json; min-length slice keeps appended cidata aligned.
-func buildStateReplacements(chCfg *chVMConfig, storageConfigs []*types.StorageConfig) map[string]string {
-	n := min(len(chCfg.Disks), len(storageConfigs))
-	m := make(map[string]string, n)
-	for i := range n {
-		if storageConfigs[i].Path != chCfg.Disks[i].Path {
-			m[chCfg.Disks[i].Path] = storageConfigs[i].Path
-		}
-	}
-	return m
 }
 
 // hotSwapNets removes NICs with stale MAC (from snapshot binary state) and adds fresh ones. Must run between vm.restore and vm.resume (VM paused).

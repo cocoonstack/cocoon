@@ -11,49 +11,25 @@ import (
 
 // AtomicWriteFile writes data via temp + fsync + rename so readers never see a partial file.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
+	return atomicWriteFile(path, data, perm, true)
+}
 
-	defer func() {
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("sync temp file: %w", err)
-	}
-	if err = tmp.Chmod(perm); err != nil {
-		return fmt.Errorf("chmod temp file: %w", err)
-	}
-	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-	if err = os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename temp to target: %w", err)
-	}
-	if err = SyncParentDir(dir); err != nil {
-		return fmt.Errorf("sync parent dir: %w", err)
-	}
-	return nil
+// AtomicWriteFileNoSync is AtomicWriteFile without the fsyncs, for transient
+// run-dir files regenerated on the next launch — durability buys nothing
+// there and each fsync costs clone latency.
+func AtomicWriteFileNoSync(path string, data []byte, perm os.FileMode) error {
+	return atomicWriteFile(path, data, perm, false)
 }
 
 // AtomicWriteJSON marshals v to JSON and writes it atomically.
 func AtomicWriteJSON(path string, v any) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal JSON: %w", err)
-	}
-	data = append(data, '\n')
-	return AtomicWriteFile(path, data, 0o644)
+	return atomicWriteJSON(path, v, true)
+}
+
+// AtomicWriteJSONNoSync marshals v and writes it atomically without fsync
+// (see AtomicWriteFileNoSync).
+func AtomicWriteJSONNoSync(path string, v any) error {
+	return atomicWriteJSON(path, v, false)
 }
 
 // ReadJSONFile loads path and unmarshals it into v.
@@ -101,6 +77,55 @@ func SyncTree(dir string) error {
 		return err
 	}
 	return SyncParentDir(filepath.Dir(dir))
+}
+
+func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = tmp.Write(data); err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if sync {
+		if err = tmp.Sync(); err != nil {
+			return fmt.Errorf("sync temp file: %w", err)
+		}
+	}
+	if err = tmp.Chmod(perm); err != nil {
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename temp to target: %w", err)
+	}
+	if sync {
+		if err = SyncParentDir(dir); err != nil {
+			return fmt.Errorf("sync parent dir: %w", err)
+		}
+	}
+	return nil
+}
+
+func atomicWriteJSON(path string, v any, sync bool) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("marshal JSON: %w", err)
+	}
+	data = append(data, '\n')
+	return atomicWriteFile(path, data, 0o644, sync)
 }
 
 func syncFile(path string) (err error) {

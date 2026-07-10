@@ -64,7 +64,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		}
 	}
 
-	return utils.AtomicWriteJSON(path, raw)
+	return utils.AtomicWriteJSONNoSync(path, raw)
 }
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
@@ -105,53 +105,6 @@ func rawArrayLen(raw json.RawMessage) int {
 		return 0
 	}
 	return len(arr)
-}
-
-// patchStateJSON rewrites disk_path/path string values in state.json that exactly match a replacements key.
-// CH restores from config.json, not state.json — this is purely to keep state.json readable post-clone.
-func patchStateJSON(path string, replacements map[string]string) error {
-	if len(replacements) == 0 {
-		return nil
-	}
-	data, err := os.ReadFile(path) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	var root any
-	if e := json.Unmarshal(data, &root); e != nil {
-		return fmt.Errorf("decode %s: %w", path, e)
-	}
-	root = walkAndReplace(root, "", replacements)
-	return utils.AtomicWriteJSON(path, root)
-}
-
-func isDiskPathKey(key string) bool {
-	return key == "disk_path" || key == "path"
-}
-
-// walkAndReplace recursively traverses a parsed JSON value and replaces string values that are under a disk-path key and exactly match a replacement entry.
-func walkAndReplace(v any, key string, replacements map[string]string) any {
-	switch val := v.(type) {
-	case map[string]any:
-		for k, child := range val {
-			val[k] = walkAndReplace(child, k, replacements)
-		}
-		return val
-	case []any:
-		for i, child := range val {
-			val[i] = walkAndReplace(child, "", replacements)
-		}
-		return val
-	case string:
-		if isDiskPathKey(key) {
-			if newVal, ok := replacements[val]; ok {
-				return newVal
-			}
-		}
-		return val
-	default:
-		return val
-	}
 }
 
 // setField marshals value and stores it in obj[key].
