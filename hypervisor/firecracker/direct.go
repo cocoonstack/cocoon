@@ -21,7 +21,9 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		Wrap:             fc.wrapSourceLocked,
+		Wrap: func(rec *hypervisor.VMRecord, inner func() error) error {
+			return fc.wrapSourceLocked(ctx, rec, inner)
+		},
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
 			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, cloneSnapshotFiles)
 		},

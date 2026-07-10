@@ -21,7 +21,9 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		Wrap:             fc.wrapSourceLocked,
+		Wrap: func(rec *hypervisor.VMRecord, inner func() error) error {
+			return fc.wrapSourceLocked(ctx, rec, inner)
+		},
 		// Same sweep as DirectRestore's Populate: stale vmstate/mem/data-*.raw
 		// from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
@@ -32,8 +34,8 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 }
 
 // wrapSourceLocked holds the source writable-disk locks across inner so recoverStaleBackup heals stale data-*.raw.cocoon-clone-backup before restore overwrites them; otherwise a future clone renames backup over restored data.
-func (fc *Firecracker) wrapSourceLocked(rec *hypervisor.VMRecord, inner func() error) error {
-	return withSourceWritableDisksLocked(rec.StorageConfigs, inner)
+func (fc *Firecracker) wrapSourceLocked(ctx context.Context, rec *hypervisor.VMRecord, inner func() error) error {
+	return withSourceWritableDisksLocked(ctx, rec.StorageConfigs, inner)
 }
 
 // restoreAfterExtractCOW adapts restoreAfterExtract to the RestoreSpec/DirectRestoreSpec AfterExtract signature using the VM's default COW path.

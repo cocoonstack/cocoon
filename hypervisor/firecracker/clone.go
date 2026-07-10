@@ -35,7 +35,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("firecracker.Clone")
 
-	meta, err := hypervisor.LoadAndValidateMeta(runDir, fc.conf.RootDir, fc.conf.Config.RunDir)
+	meta, err := fc.conf.LoadAndValidateMeta(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
@@ -54,30 +54,22 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, fmt.Errorf("validate sidecar: %w", err)
 	}
 	bootCfg := meta.BootConfig
-	if bootCfg != nil && bootCfg.KernelPath != "" {
-		vmlinuxPath, extractErr := EnsureVmlinux(bootCfg.KernelPath)
-		if extractErr != nil {
-			return nil, fmt.Errorf("extract vmlinux for clone: %w", extractErr)
-		}
-		bootCfg.KernelPath = vmlinuxPath
+	if err := EnsureVmlinuxBoot(bootCfg); err != nil {
+		return nil, err
 	}
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 
 	if verifyErr := hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
 		return nil, fmt.Errorf("verify base files: %w", verifyErr)
 	}
-	if bootCfg != nil {
-		dns, dnsErr := fc.conf.DNSServers()
-		if dnsErr != nil {
-			return nil, fmt.Errorf("parse DNS servers: %w", dnsErr)
-		}
-		bootCfg.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
+	if err := fc.setBootCmdline(bootCfg, storageConfigs, networkConfigs, vmCfg.Name); err != nil {
+		return nil, err
 	}
 
 	// FC snapshot/load wants source-absolute drive paths; symlink-redirect the source COW.
 	sockPath := hypervisor.SocketPath(runDir)
 	var pid int
-	if cloneErr := withSourceWritableDisksLocked(meta.StorageConfigs, func() error {
+	if cloneErr := withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
 		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 		if redirectErr != nil {
 			return fmt.Errorf("drive redirect: %w", redirectErr)
