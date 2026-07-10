@@ -3,7 +3,6 @@ package firecracker
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 
@@ -17,8 +16,8 @@ const (
 	snapshotMemFile     = "mem"
 )
 
-// Snapshot pauses, captures vmstate+mem+COW, resumes, and streams the result.
-func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
+// Snapshot pauses, captures vmstate+mem+COW, resumes, and returns the capture dir.
+func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
 	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
 }
 

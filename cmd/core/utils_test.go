@@ -1,9 +1,13 @@
 package core
 
 import (
+	"context"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -181,4 +185,28 @@ func TestNormalizeDataDiskSpecs(t *testing.T) {
 			t.Error("expected duplicate-name error")
 		}
 	})
+}
+
+// directErrSnap is a DirectCreator whose CreateFromDir always fails; the
+// embedded interface panics on any other call, so the test proves the failure
+// path alone.
+type directErrSnap struct {
+	snapshot.Snapshot
+}
+
+func (directErrSnap) CreateFromDir(context.Context, *types.SnapshotConfig, string) (string, bool, error) {
+	return "", false, errors.New("disk full")
+}
+
+func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
+	srcDir, err := os.MkdirTemp(t.TempDir(), "capture-*")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if _, err := PersistSnapshotDir(context.Background(), directErrSnap{}, &types.SnapshotConfig{}, srcDir, "s", ""); err == nil {
+		t.Fatal("want error from a failed direct save")
+	}
+	if _, err := os.Stat(srcDir); !os.IsNotExist(err) {
+		t.Errorf("capture dir survived a failed direct save: %v", err)
+	}
 }

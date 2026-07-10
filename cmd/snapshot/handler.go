@@ -41,7 +41,7 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	}
 
 	logger.Infof(ctx, "snapshotting VM %s ...", vmRef)
-	snapID, err := cmdcore.CaptureSnapshot(ctx, cmd, snapBackend, func() (*types.SnapshotConfig, io.ReadCloser, error) {
+	snapID, err := cmdcore.CaptureSnapshot(ctx, cmd, snapBackend, func() (*types.SnapshotConfig, string, error) {
 		return hyper.Snapshot(ctx, vmRef)
 	})
 	if err != nil {
