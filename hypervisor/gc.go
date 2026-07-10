@@ -25,12 +25,33 @@ type VMGCSnapshot struct {
 	staleCreate []string
 	runDirs     []string
 	logDirs     []string
+	recRunDirs  []string
 	reasons     map[string]string
 }
 
 func (s VMGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
 func (s VMGCSnapshot) ActiveVMIDs() map[string]struct{} { return s.vmIDs }
+
+// sweepDirs joins the scanned run-dir names with every persisted record RunDir (a --run-dir migration leaves crash leftovers in old roots the config no longer names), deduplicated.
+func (s VMGCSnapshot) sweepDirs(runRoot string) []string {
+	dirs := make([]string, 0, len(s.runDirs)+len(s.recRunDirs))
+	seen := make(map[string]struct{}, cap(dirs))
+	add := func(dir string) {
+		dir = filepath.Clean(dir)
+		if _, ok := seen[dir]; !ok {
+			seen[dir] = struct{}{}
+			dirs = append(dirs, dir)
+		}
+	}
+	for _, name := range s.runDirs {
+		add(filepath.Join(runRoot, name))
+	}
+	for _, dir := range s.recRunDirs {
+		add(dir)
+	}
+	return dirs
+}
 
 // BuildGCModule builds GC module that scans DB and dirs for orphan VMs.
 func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
@@ -48,6 +69,9 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 						continue
 					}
 					snap.vmIDs[id] = struct{}{}
+					if rec.RunDir != "" {
+						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
+					}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.State == types.VMStateCreating && rec.UpdatedAt.Before(cutoff) {
 						snap.staleCreate = append(snap.staleCreate, id)
@@ -106,7 +130,7 @@ func (b *Backend) WatchPath() string {
 // gcCollect kills leftover hypervisor processes, removes orphan dirs/records, and sweeps stale capture/staging leftovers under the orchestrator's flock.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
-	errs := b.sweepStaleCaptureDirs(ctx, snap.runDirs)
+	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM
 	// would strand a live VMM/dirs with no owner and let network GC tear it down.
 	safeToUnrecord := make([]string, 0, len(ids))
@@ -145,11 +169,10 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 }
 
 // sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age. It runs per-dir under the VM ops lock: the staging name is fixed, so without it a fresh restore could recreate the dir between the age check and the removal (ABA) and lose its staging mid-flight.
-func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirNames []string) []error {
+func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) []error {
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	var errs []error
-	for _, name := range runDirNames {
-		dir := filepath.Join(b.Conf.RunDir(), name)
+	for _, dir := range runDirs {
 		b.withOpsTryLock(ctx, dir, func() {
 			errs = append(errs, utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
 				if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {

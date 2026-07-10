@@ -2,6 +2,7 @@ package hypervisor
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -73,5 +74,27 @@ func TestQuarantineVMSurvivesCanceledContext(t *testing.T) {
 	}
 	if rec.Quarantine != "test-reason" || rec.State != types.VMStateError {
 		t.Fatalf("quarantine lost under canceled ctx: quarantine=%q state=%s", rec.Quarantine, rec.State)
+	}
+}
+
+func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	oldRunDir := t.TempDir()
+	stale := filepath.Join(oldRunDir, restoreStagingName)
+	if err := os.Mkdir(stale, 0o750); err != nil {
+		t.Fatalf("mk staging: %v", err)
+	}
+	past := time.Now().Add(-25 * time.Hour)
+	if err := os.Chtimes(stale, past, past); err != nil {
+		t.Fatalf("age staging: %v", err)
+	}
+
+	// A --run-dir migration leaves crash leftovers in roots the config no longer names; the persisted record dir must still be swept.
+	snap := VMGCSnapshot{recRunDirs: []string{oldRunDir}}
+	for _, err := range b.sweepStaleCaptureDirs(t.Context(), snap.sweepDirs(b.Conf.RunDir())) {
+		t.Fatalf("sweep: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("stale staging in a migrated run dir must be reclaimed")
 	}
 }

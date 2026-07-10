@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,17 +63,6 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, in
 	if err := ejectOrphanNICs(ctx, hc, info, rec.NetworkConfigs); err != nil {
 		return res, err
 	}
-	// Rollbacks survive Ctrl-C: an abandoned half-add is exactly the divergence this reconcile exists for.
-	rollback := func(fn func(rctx context.Context)) {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
-		defer cancel()
-		fn(rctx)
-	}
-	rollbackPlumbing := func(rctx context.Context, i int) {
-		if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
-			logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-		}
-	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
 		ncs, err := plumbing.Add(ctx, vmID, &rec.Config, network.AddSpec{Index: i})
@@ -85,25 +75,44 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, in
 		nc := ncs[0]
 		chID, err := addCocoonNIC(ctx, hc, nc)
 		if err != nil {
-			rollback(func(rctx context.Context) { rollbackPlumbing(rctx, i) })
+			// Survives Ctrl-C: an abandoned half-add is exactly the divergence the reconcile above exists for.
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
+			if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
+				logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+			}
+			cancel()
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
-			rollback(func(rctx context.Context) {
-				// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
-				if rmErr := removeDeviceVM(rctx, hc, chID); rmErr != nil {
-					logger.Warnf(rctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
-				} else if wErr := waitDeviceEjected(rctx, hc, chID); wErr != nil {
-					logger.Warnf(rctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
-				}
-				rollbackPlumbing(rctx, i)
-			})
-			return res, fmt.Errorf("persist nic %d: %w", i, err)
+			if !ch.resolveFailedPersist(ctx, hc, plumbing, vmID, nc, chID, i) {
+				return res, fmt.Errorf("persist nic %d: %w", i, err)
+			}
+			logger.Warnf(ctx, "persist nic %d reported %v but committed; keeping device", i, err)
 		}
 		res.Added = append(res.Added, netresize.NIC{Index: i, TAP: nc.TAP, MAC: nc.MAC})
 		res.After = i + 1
 	}
 	return res, nil
+}
+
+// resolveFailedPersist re-reads the record after a failed NIC persist: fsync can fail after the rename landed, and tearing down a committed NIC would strand record-without-device where a same-target retry returns at target==current without healing. True means committed (device kept); otherwise CH device and plumbing are torn down on a detached bounded context.
+func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) bool {
+	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
+	defer cancel()
+	if fresh, loadErr := ch.LoadRecord(rctx, vmID); loadErr == nil && nicPersisted(&fresh, nc.MAC) {
+		return true
+	}
+	// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
+	if rmErr := removeDeviceVM(rctx, hc, chID); rmErr != nil {
+		logger.Warnf(rctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
+	} else if wErr := waitDeviceEjected(rctx, hc, chID); wErr != nil {
+		logger.Warnf(rctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
+	}
+	if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
+		logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+	}
+	return false
 }
 
 func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing, current, target int, res netresize.Result) (netresize.Result, error) {
@@ -162,6 +171,13 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 			r.NetworkConfigs = r.NetworkConfigs[:length]
 		}
 		return nil
+	})
+}
+
+// nicPersisted reports whether rec already carries a NIC with mac — resolves the commit-ambiguity of a failed persist (fsync can fail after the rename landed).
+func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
+	return rec != nil && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
+		return nc != nil && strings.EqualFold(nc.MAC, mac)
 	})
 }
 

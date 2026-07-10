@@ -155,3 +155,20 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 		t.Errorf("got %d, want 0", len(got))
 	}
 }
+
+func TestValidateMetaPathsTrustsPersistedRecord(t *testing.T) {
+	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
+		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
+	}}
+	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+		t.Fatal("a migrated path must stay untrusted without the record (clone keeps strict roots)")
+	}
+	rec := &VMRecord{RunDir: "/old-run/firecracker/vm1"}
+	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run", rec); err != nil {
+		t.Fatalf("same-VM restore must trust the persisted run dir: %v", err)
+	}
+	recByPath := &VMRecord{VM: types.VM{StorageConfigs: []*types.StorageConfig{{Path: "/old-run/firecracker/vm1/cow.raw"}}}}
+	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run", recByPath); err != nil {
+		t.Fatalf("exact recorded disk path must be trusted: %v", err)
+	}
+}

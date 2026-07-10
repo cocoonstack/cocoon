@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -72,5 +73,16 @@ func TestEjectOrphanNICs(t *testing.T) {
 	}
 	if len(removed) != 1 || removed[0] != "cocoon-net-aabbccddee02" {
 		t.Fatalf("removed = %v, want only the unrecorded cocoon NIC", removed)
+	}
+}
+
+func TestNICPersisted(t *testing.T) {
+	rec := &hypervisor.VMRecord{}
+	rec.NetworkConfigs = []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
+	if !nicPersisted(rec, "aa:bb:cc:dd:ee:01") {
+		t.Fatal("committed NIC must be detected case-insensitively (keep device, do not tear down)")
+	}
+	if nicPersisted(rec, "aa:bb:cc:dd:ee:02") {
+		t.Fatal("an unpersisted MAC must roll back")
 	}
 }

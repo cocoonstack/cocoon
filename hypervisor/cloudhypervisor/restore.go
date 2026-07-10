@@ -63,7 +63,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
-	meta, metaErr := ch.conf.LoadAndValidateMeta(rec.RunDir)
+	meta, metaErr := ch.conf.LoadAndValidateMetaForVM(rec.RunDir, rec)
 	if metaErr != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", metaErr)
 	}

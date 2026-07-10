@@ -71,6 +71,11 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 	return LoadAndValidateMeta(dir, c.RootDir, c.Config.RunDir)
 }
 
+// LoadAndValidateMetaForVM additionally trusts rec's persisted run dir and recorded disk paths (same-VM restore after a --run-dir migration).
+func (c *BaseConfig) LoadAndValidateMetaForVM(dir string, rec *VMRecord) (*SnapshotMeta, error) {
+	return LoadAndValidateMetaForVM(dir, c.RootDir, c.Config.RunDir, rec)
+}
+
 // PreflightRestore runs the shared restore preflight against this backend's managed roots.
 func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
 	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)

@@ -215,11 +215,16 @@ func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
 }
 
 func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
+	return LoadAndValidateMetaForVM(dir, rootDir, runDir, nil)
+}
+
+// LoadAndValidateMetaForVM is LoadAndValidateMeta with the restore target's persisted record as an extra trusted source: after a --run-dir migration the VM's own snapshots carry old-run-dir paths that the config roots no longer cover.
+func LoadAndValidateMetaForVM(dir, rootDir, runDir string, rec *VMRecord) (*SnapshotMeta, error) {
 	meta, err := LoadSnapshotMeta(dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
+	if err := validateMetaPaths(meta, rootDir, runDir, rec); err != nil {
 		return nil, err
 	}
 	return meta, nil
@@ -238,7 +243,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 
 // PreflightRestore: load+validate sidecar, run backend-specific integrity, assert snapshot role sequence is a prefix of rec.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
-	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
+	meta, err := LoadAndValidateMetaForVM(srcDir, rootDir, runDir, rec)
 	if err != nil {
 		return err
 	}
@@ -273,13 +278,32 @@ func IsUnderDir(path, dir string) bool {
 // ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
 // External volumes never reach a snapshot (snapshot/hibernate refuse them), so every sidecar path must be under a managed root.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
+	return validateMetaPaths(meta, rootDir, runDir, nil)
+}
+
+// validateMetaPaths additionally trusts the restore target's persisted run dir and exact recorded disk paths when rec is non-nil — our own DB, not sidecar data; clone paths (no rec) stay strict.
+func validateMetaPaths(meta *SnapshotMeta, rootDir, runDir string, rec *VMRecord) error {
+	recPaths := map[string]struct{}{}
+	recRunDir := ""
+	if rec != nil {
+		recRunDir = rec.RunDir
+		for _, sc := range rec.StorageConfigs {
+			if sc != nil {
+				recPaths[filepath.Clean(sc.Path)] = struct{}{}
+			}
+		}
+	}
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
 		}
-		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
-			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
+		if IsUnderDir(sc.Path, rootDir) || IsUnderDir(sc.Path, runDir) || IsUnderDir(sc.Path, recRunDir) {
+			continue
 		}
+		if _, ok := recPaths[filepath.Clean(sc.Path)]; ok {
+			continue
+		}
+		return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 	}
 	if b := meta.BootConfig; b != nil {
 		if b.KernelPath != "" && !IsUnderDir(b.KernelPath, rootDir) {
