@@ -52,9 +52,20 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 
 func (b *Bridge) Type() string { return typ }
 
-func (b *Bridge) Verify(_ context.Context, vmID string) error {
-	if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
-		return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
+func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
+	if len(expected) == 0 {
+		if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
+			return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
+		}
+		return nil
+	}
+	for _, nc := range expected {
+		if nc == nil || nc.TAP == "" {
+			continue
+		}
+		if _, err := netlink.LinkByName(nc.TAP); err != nil {
+			return fmt.Errorf("tap %s: %w", nc.TAP, err)
+		}
 	}
 	return nil
 }

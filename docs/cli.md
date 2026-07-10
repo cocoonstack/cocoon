@@ -234,7 +234,7 @@ Applies to `cocoon vm debug`:
 ```
 $ cocoon vm exec myvm -- uname -n
 myvm
-$ echo hello | cocoon vm exec myvm -- cat
+$ echo hello | cocoon vm exec -i myvm -- cat
 hello
 $ cocoon vm exec -e FOO=bar myvm -- sh -c 'echo $FOO'
 bar

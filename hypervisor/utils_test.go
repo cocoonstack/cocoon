@@ -230,3 +230,17 @@ func TestBuildBaseCmdline(t *testing.T) {
 		})
 	}
 }
+
+func TestDiskPathByRole(t *testing.T) {
+	configs := []*types.StorageConfig{
+		{Path: "/r/layer.erofs", Role: types.StorageRoleLayer},
+		{Path: "/r/cow.raw", Role: types.StorageRoleCOW},
+		{Path: "/r/data-a.raw", Role: types.StorageRoleData},
+	}
+	if got := DiskPathByRole(configs, types.StorageRoleCOW); got != "/r/cow.raw" {
+		t.Fatalf("cow path = %q", got)
+	}
+	if got := DiskPathByRole(configs, types.StorageRoleCidata); got != "" {
+		t.Fatalf("missing role must return empty, got %q", got)
+	}
+}

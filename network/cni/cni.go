@@ -34,6 +34,8 @@ var (
 	deleteNetnsFn     = deleteNetns
 	ensureNetnsFn     = ensureNetns
 	setupTCRedirectFn = setupTCRedirect
+	tapPresentFn      = tapPresentInNetns
+	statNetnsFn       = os.Stat
 )
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
@@ -85,11 +87,19 @@ func New(conf *config.Config) (*CNI, error) {
 // Type returns the network provider identifier.
 func (c *CNI) Type() string { return typ }
 
-// Verify checks whether the network namespace for a VM exists.
-func (c *CNI) Verify(_ context.Context, vmID string) error {
+// Verify checks the netns and every expected TAP inside it.
+func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
 	nsPath := netnsPath(vmID)
-	if _, err := os.Stat(nsPath); err != nil {
+	if _, err := statNetnsFn(nsPath); err != nil {
 		return fmt.Errorf("netns %s: %w", nsPath, err)
+	}
+	for _, nc := range expected {
+		if nc == nil || nc.TAP == "" {
+			continue
+		}
+		if err := tapPresentFn(nsPath, nc.TAP); err != nil {
+			return err
+		}
 	}
 	return nil
 }

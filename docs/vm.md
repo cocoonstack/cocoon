@@ -96,8 +96,11 @@ Restore preflight verifies sidecar integrity, file presence (vmstate, memory, CO
 `cocoon vm status` provides real-time VM state monitoring with two modes:
 
 ```bash
-# Refresh mode (default) — clears and redraws like `watch`
+# One-shot snapshot (default)
 cocoon vm status
+
+# Refresh mode — clears and redraws like `watch`
+cocoon vm status --watch
 
 # Event stream mode — appends state changes (for scripting / vk-cocoon)
 cocoon vm status --event

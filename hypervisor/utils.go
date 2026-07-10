@@ -301,6 +301,16 @@ func IsDataDiskFile(name string) bool {
 	return strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw")
 }
 
+// DiskPathByRole returns the recorded path of the first disk with the given role, or "".
+func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) string {
+	for _, sc := range configs {
+		if sc.Role == role {
+			return sc.Path
+		}
+	}
+	return ""
+}
+
 // CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}

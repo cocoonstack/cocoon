@@ -192,9 +192,9 @@ func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }
 
-// waitDeviceEjected blocks until id is gone from CH's device_tree.
-func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string, timeout time.Duration) error {
-	return utils.WaitFor(ctx, timeout, 100*time.Millisecond, func() (bool, error) {
+// waitDeviceEjected blocks until id is gone from CH's device_tree (bounded by ejectWaitTimeout: Linux acks B0EJ < 1 s, Windows can take 10–20 s).
+func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) error {
+	return utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
 		info, err := getVMInfo(ctx, hc)
 		if err != nil {
 			return false, err

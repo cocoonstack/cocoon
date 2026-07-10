@@ -42,7 +42,11 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			return hypervisor.CopyWritableDisks(ctx, tmpDir, fc.conf.COWRawPath(rec.ID), rec.StorageConfigs)
+			cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+			if cowPath == "" {
+				return fmt.Errorf("no COW disk recorded for %s", rec.ID)
+			}
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
 		// Lock writable disks in dictionary order so a concurrent clone's rename+symlink can't race the reflink.
 		Wrap: func(rec *hypervisor.VMRecord, fn func() error) error {

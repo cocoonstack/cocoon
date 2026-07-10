@@ -22,7 +22,8 @@ type AddSpec struct {
 // Network is the per-VM host-side networking provider (CNI, bridge, ...).
 type Network interface {
 	Type() string
-	Verify(ctx context.Context, vmID string) error
+	// Verify checks the VM's plumbing against its recorded NICs (netns and each TAP), not just container existence: a half-rolled-back recovery leaves the netns without TAPs.
+	Verify(ctx context.Context, vmID string, expected []*types.NetworkConfig) error
 	// Prepare provisions per-VM state; returns the netns path or "".
 	Prepare(ctx context.Context, vmID string, vmCfg *types.VMConfig) (string, error)
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...AddSpec) ([]*types.NetworkConfig, error)

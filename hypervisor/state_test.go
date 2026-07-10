@@ -606,6 +606,9 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
 				FirstBooted: firstBooted,
 			},
+			// Real dirs by default: sequences write markers into RunDir, and an empty path would land them in the package dir.
+			RunDir: t.TempDir(),
+			LogDir: t.TempDir(),
 		}
 		return nil
 	}); err != nil {

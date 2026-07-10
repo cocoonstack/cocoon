@@ -215,6 +215,24 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	}
 }
 
+func TestVerifyDetectsMissingTAP(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	origStat, origTap := statNetnsFn, tapPresentFn
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
+	tapPresentFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
+	t.Cleanup(func() { statNetnsFn, tapPresentFn = origStat, origTap })
+
+	// A half-rolled-back recovery leaves the netns without TAPs; Verify must read that as broken, not healthy.
+	expected := []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
+	if err := c.Verify(t.Context(), "vm1", expected); err == nil {
+		t.Fatal("Verify must fail when an expected TAP is missing")
+	}
+	tapPresentFn = func(_, _ string) error { return nil }
+	if err := c.Verify(t.Context(), "vm1", expected); err != nil {
+		t.Fatalf("Verify with all TAPs present: %v", err)
+	}
+}
+
 func TestReclaimStaleNIC(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

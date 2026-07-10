@@ -30,6 +30,8 @@ const (
 
 	// leaseRetryDelay is the shared-lease poll cadence; contended only while a delete briefly holds the exclusive lock.
 	leaseRetryDelay = 2 * time.Millisecond
+
+	rollbackTimeout = 30 * time.Second
 )
 
 var (
@@ -372,6 +374,9 @@ func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *sna
 
 // rollbackCreate removes a placeholder snapshot record from the DB.
 func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
+	// Survives Ctrl-C: a pending record left behind blocks same-name retries until GC.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
 	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
 		delete(idx.Snapshots, id)
 		if name != "" && idx.Names[name] == id {

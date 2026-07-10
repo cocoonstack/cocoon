@@ -279,7 +279,7 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			continue
 		}
 		recoverOne := func(vm *types.VM) {
-			if netProvider.Verify(ctx, vm.ID) == nil {
+			if netProvider.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
 				return
 			}
 			logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)

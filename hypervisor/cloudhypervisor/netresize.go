@@ -50,22 +50,32 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	case spec.Target == current:
 		return res, nil
 	case spec.Target > current:
-		return ch.netResizeAdd(ctx, hc, vmID, &rec.Config, plumbing, current, spec.Target, res)
+		return ch.netResizeAdd(ctx, hc, info, vmID, &rec, plumbing, current, spec.Target, res)
 	default:
 		return ch.netResizeRemove(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing, current, spec.Target, res)
 	}
 }
 
-func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, vmCfg *types.VMConfig, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
+func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, rec *hypervisor.VMRecord, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
-	rollbackPlumbing := func(i int) {
-		if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-			logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+	// An interrupted prior resize can leave a CH device whose DB/plumbing halves never landed; eject it first or the guest keeps a ghost NIC alongside the retry.
+	if err := ejectOrphanNICs(ctx, hc, info, rec.NetworkConfigs); err != nil {
+		return res, err
+	}
+	// Rollbacks survive Ctrl-C: an abandoned half-add is exactly the divergence this reconcile exists for.
+	rollback := func(fn func(rctx context.Context)) {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
+		defer cancel()
+		fn(rctx)
+	}
+	rollbackPlumbing := func(rctx context.Context, i int) {
+		if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
+			logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
 		}
 	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
-		ncs, err := plumbing.Add(ctx, vmID, vmCfg, network.AddSpec{Index: i})
+		ncs, err := plumbing.Add(ctx, vmID, &rec.Config, network.AddSpec{Index: i})
 		if err != nil {
 			return res, fmt.Errorf("nic %d host plumbing: %w", i, err)
 		}
@@ -75,17 +85,19 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 		nc := ncs[0]
 		chID, err := addCocoonNIC(ctx, hc, nc)
 		if err != nil {
-			rollbackPlumbing(i)
+			rollback(func(rctx context.Context) { rollbackPlumbing(rctx, i) })
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
-			// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
-			if rmErr := removeDeviceVM(ctx, hc, chID); rmErr != nil {
-				logger.Warnf(ctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
-			} else if wErr := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); wErr != nil {
-				logger.Warnf(ctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
-			}
-			rollbackPlumbing(i)
+			rollback(func(rctx context.Context) {
+				// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
+				if rmErr := removeDeviceVM(rctx, hc, chID); rmErr != nil {
+					logger.Warnf(rctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
+				} else if wErr := waitDeviceEjected(rctx, hc, chID); wErr != nil {
+					logger.Warnf(rctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
+				}
+				rollbackPlumbing(rctx, i)
+			})
 			return res, fmt.Errorf("persist nic %d: %w", i, err)
 		}
 		res.Added = append(res.Added, netresize.NIC{Index: i, TAP: nc.TAP, MAC: nc.MAC})
@@ -108,13 +120,15 @@ func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client,
 		}
 		chID := macToID[strings.ToLower(nc.MAC)]
 		if chID == "" {
-			return res, fmt.Errorf("nic %d MAC %s: no live device", i, nc.MAC)
-		}
-		if err := removeDeviceVM(ctx, hc, chID); err != nil {
-			return res, fmt.Errorf("vm.remove-device nic %d (%s): %w", i, chID, err)
-		}
-		if err := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); err != nil {
-			return res, fmt.Errorf("wait eject nic %d (%s): %w", i, chID, err)
+			// Already ejected by an interrupted prior resize: resume with the host/DB halves so retries converge instead of wedging on "no live device".
+			logger.Warnf(ctx, "nic %d MAC %s: no live device, resuming interrupted remove", i, nc.MAC)
+		} else {
+			if err := removeDeviceVM(ctx, hc, chID); err != nil {
+				return res, fmt.Errorf("vm.remove-device nic %d (%s): %w", i, chID, err)
+			}
+			if err := waitDeviceEjected(ctx, hc, chID); err != nil {
+				return res, fmt.Errorf("wait eject nic %d (%s): %w", i, chID, err)
+			}
 		}
 		plumbingErr := plumbing.Remove(ctx, vmID, i)
 		if err := ch.truncateNetworkConfigs(ctx, vmID, i); err != nil {
@@ -149,4 +163,29 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 		}
 		return nil
 	})
+}
+
+// ejectOrphanNICs removes cocoon-managed CH devices whose MAC the record does not know — leftovers of a resize interrupted between vm.add-net and the DB write.
+func ejectOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoResponse, ncs []*types.NetworkConfig) error {
+	known := make(map[string]struct{}, len(ncs))
+	for _, nc := range ncs {
+		if nc != nil {
+			known[strings.ToLower(nc.MAC)] = struct{}{}
+		}
+	}
+	for _, n := range info.Config.Nets {
+		if !strings.HasPrefix(n.ID, cocoonNetIDPrefix) {
+			continue
+		}
+		if _, ok := known[strings.ToLower(n.MAC)]; ok {
+			continue
+		}
+		if err := removeDeviceVM(ctx, hc, n.ID); err != nil {
+			return fmt.Errorf("eject orphan NIC %s: %w", n.ID, err)
+		}
+		if err := waitDeviceEjected(ctx, hc, n.ID); err != nil {
+			return fmt.Errorf("wait orphan eject %s: %w", n.ID, err)
+		}
+	}
+	return nil
 }

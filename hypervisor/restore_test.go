@@ -72,8 +72,10 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			b, _ := newMeteringTestBackend(t)
 			const id = "vm-direct-fail"
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
+			runDir := t.TempDir()
 			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
 				idx.VMs[id].State = tt.origin
+				idx.VMs[id].RunDir = runDir
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -242,6 +243,26 @@ func TestImportEmitsSnapStorageStart(t *testing.T) {
 	if e.Kind != metering.KindSnapStorageStart || e.SnapshotID != id ||
 		e.Hypervisor != "cloud-hypervisor" || e.Shape.StorageBytes <= 0 {
 		t.Errorf("entry wrong: %+v", e)
+	}
+}
+
+func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "pending-snap"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	lf.rollbackCreate(cctx, id, "pending-snap")
+
+	if _, err := lf.Inspect(ctx, id); err == nil {
+		t.Fatal("pending record must be rolled back even under a canceled context")
+	}
+	if _, err := lf.Inspect(ctx, "pending-snap"); err == nil {
+		t.Fatal("name mapping must be released even under a canceled context")
 	}
 }
 
