@@ -10,7 +10,9 @@ import (
 	"github.com/cocoonstack/cocoon/lock"
 )
 
-const retryDelay = 100 * time.Millisecond
+// retryDelay quantizes every contended acquire; at 100ms it stalled a ~40ms
+// clone for a full quantum. 2ms polling is noise even against a long holder.
+const retryDelay = 2 * time.Millisecond
 
 var _ lock.Locker = (*Lock)(nil)
 
