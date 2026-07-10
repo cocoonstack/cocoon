@@ -36,6 +36,10 @@ const (
 	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
 	OpsLockName = "ops.lock"
 
+	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix.
+	restoreStagingName = ".restore-staging"
+	captureDirPrefix   = "snapshot-"
+
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
 
@@ -246,7 +250,8 @@ func ValidateHostCPU(cpu int) error {
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
-	out, err := exec.CommandContext(ctx, //nolint:gosec
+	out, err := exec.CommandContext(
+		ctx, //nolint:gosec
 		"mkfs.ext4", "-F", "-m", "0", "-q",
 		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
 		path,

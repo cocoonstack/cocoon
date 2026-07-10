@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -43,8 +44,8 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	if err != nil {
 		return "", nil, err
 	}
-	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one.
-	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped {
+	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Quarantined VMs are allowed through — restore rebuilding the run dir is exactly the recovery path.
+	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.Quarantine == "" {
 		return "", nil, fmt.Errorf("vm %s is %s, must be running or stopped to restore", vmID, rec.State)
 	}
 	return vmID, &rec, nil
@@ -55,6 +56,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
+		r.Quarantine = ""
 		r.StartedAt = &now
 		r.StoppedAt = nil
 		r.UpdatedAt = now
@@ -109,7 +111,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
 			// A partial merge leaves mixed-vintage files in the run dir;
 			// quarantine regardless of origin so vm start cannot boot them.
-			b.MarkError(ctx, vmID)
+			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
 		var afterErr error
@@ -149,7 +151,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
 			// Populate cleans then clones with no rollback; a partial run
 			// dir must quarantine regardless of origin, like the merge.
-			b.MarkError(ctx, vmID)
+			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
 		var afterErr error
@@ -224,8 +226,9 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }
 
+// PrepareStagingDir extracts the snapshot into a staging dir INSIDE the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
-	stagingDir = runDir + ".restore-staging"
+	stagingDir = filepath.Join(runDir, restoreStagingName)
 	if err = os.RemoveAll(stagingDir); err != nil {
 		return "", nil, fmt.Errorf("clear staging dir: %w", err)
 	}

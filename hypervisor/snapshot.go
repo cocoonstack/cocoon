@@ -174,7 +174,7 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
-	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
+	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), captureDirPrefix)
 	if err != nil {
 		return fail(fmt.Errorf("create temp dir: %w", err))
 	}
