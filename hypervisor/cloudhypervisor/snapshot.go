@@ -37,12 +37,8 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
-			cowPath := ch.cowPath(rec.ID, directBoot)
-			if err := utils.ReflinkCopy(filepath.Join(tmpDir, filepath.Base(cowPath)), cowPath); err != nil {
-				return fmt.Errorf("copy COW: %w", err)
-			}
-			return hypervisor.ReflinkDataDisks(tmpDir, rec.StorageConfigs)
+			cowPath := ch.cowPath(rec.ID, hypervisor.IsDirectBoot(rec.BootConfig))
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
 		AfterCapture: func(rec *hypervisor.VMRecord, tmpDir string) error {
 			if hypervisor.IsDirectBoot(rec.BootConfig) || rec.Config.Windows {

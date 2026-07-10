@@ -45,16 +45,20 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 	if err != nil {
 		return fmt.Errorf("read snapshot dir: %w", err)
 	}
+	var names []string
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
+		if entry.Type().IsRegular() {
+			names = append(names, entry.Name())
 		}
-		name := entry.Name()
-		src := filepath.Join(dataDir, name)
-		dst := filepath.Join(dir, name)
-		if err = utils.ReflinkCopy(dst, src); err != nil {
-			return fmt.Errorf("copy %s: %w", name, err)
+	}
+	// Fan out: snapshot dirs hold a few large files (memory, COW, data disks), so wall time is the longest copy, not the sum.
+	if _, err = utils.Map(ctx, names, func(_ context.Context, _ int, name string) (struct{}, error) {
+		if copyErr := utils.ReflinkCopy(filepath.Join(dir, name), filepath.Join(dataDir, name)); copyErr != nil {
+			return struct{}{}, fmt.Errorf("copy %s: %w", name, copyErr)
 		}
+		return struct{}{}, nil
+	}); err != nil {
+		return err
 	}
 	if err = snapshot.WriteSnapshotEnvelope(dir, cfg); err != nil {
 		return fmt.Errorf("write envelope: %w", err)

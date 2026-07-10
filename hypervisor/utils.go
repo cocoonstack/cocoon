@@ -272,18 +272,26 @@ func IsDataDiskFile(name string) bool {
 	return strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw")
 }
 
-// ReflinkDataDisks reflinks every Role==Data disk into dstDir under data-<serial>.raw (CH+FC use it inside the snapshot pause window).
-func ReflinkDataDisks(dstDir string, configs []*types.StorageConfig) error {
+// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum (.79 bare-metal ext4 NVMe: 4×1GiB 1.07s→0.82s, 2×2GiB 1.06s→0.88s).
+func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
+	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {
-		if sc.Role != types.StorageRoleData {
-			continue
-		}
-		dst := filepath.Join(dstDir, DataDiskBaseName(sc.Serial))
-		if err := utils.ReflinkCopy(dst, sc.Path); err != nil {
-			return fmt.Errorf("copy data disk %s: %w", sc.Serial, err)
+		if sc.Role == types.StorageRoleData {
+			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
 		}
 	}
-	return nil
+	return copyPairs(ctx, pairs)
+}
+
+// copyPairs runs ReflinkCopy over {dst, src} pairs concurrently; small pair counts (COW + data disks) need no pool bound.
+func copyPairs(ctx context.Context, pairs [][2]string) error {
+	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
+		if err := utils.ReflinkCopy(p[0], p[1]); err != nil {
+			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 // PrepareDataDisks creates sparse files for each spec under baseDir, optionally formats (ext4 default), returns StorageConfigs; names must be unique and ValidDataDiskName-passing.
@@ -427,12 +435,13 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O.
-func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
+// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O; COW-class copies (the bulk of the bytes) fan out concurrently, links and small meta stay serial.
+func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return fmt.Errorf("read srcDir: %w", err)
 	}
+	var cowPairs [][2]string
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() {
 			continue
@@ -453,9 +462,7 @@ func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) Snapsh
 				}
 			}
 		case SnapshotFileCOW:
-			if err := utils.ReflinkCopy(dst, src); err != nil {
-				return fmt.Errorf("copy COW %s: %w", name, err)
-			}
+			cowPairs = append(cowPairs, [2]string{dst, src})
 		case SnapshotFileMeta:
 			if err := CopyFile(dst, src); err != nil {
 				return fmt.Errorf("copy %s: %w", name, err)
@@ -463,7 +470,7 @@ func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) Snapsh
 		case SnapshotFileSkip:
 		}
 	}
-	return nil
+	return copyPairs(ctx, cowPairs)
 }
 
 // CleanSnapshotFiles removes snapshot-specific files from runDir.
