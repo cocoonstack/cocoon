@@ -34,7 +34,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 }
 
 func (ch *CloudHypervisor) preflightRestore(srcDir string, rec *hypervisor.VMRecord) error {
-	return hypervisor.PreflightRestore(srcDir, ch.conf.RootDir, ch.conf.Config.RunDir, rec, validateSnapshotIntegrity)
+	return ch.conf.PreflightRestore(srcDir, rec, validateSnapshotIntegrity)
 }
 
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
@@ -53,7 +53,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
-	meta, metaErr := hypervisor.LoadAndValidateMeta(rec.RunDir, ch.conf.RootDir, ch.conf.Config.RunDir)
+	meta, metaErr := ch.conf.LoadAndValidateMeta(rec.RunDir)
 	if metaErr != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", metaErr)
 	}
