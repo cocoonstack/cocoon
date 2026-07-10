@@ -98,3 +98,33 @@ func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
 		t.Fatal("stale staging in a migrated run dir must be reclaimed")
 	}
 }
+
+func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	leftover := t.TempDir()
+	if err := os.WriteFile(filepath.Join(leftover, "cow.raw"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		idx.OrphanDirs = append(idx.OrphanDirs, leftover)
+		return nil
+	}); err != nil {
+		t.Fatalf("seed intent: %v", err)
+	}
+
+	for _, err := range b.sweepOrphanDirs(ctx, []string{leftover}) {
+		t.Fatalf("sweep: %v", err)
+	}
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Fatal("migrated leftover dir must be reclaimed")
+	}
+	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+		if len(idx.OrphanDirs) != 0 {
+			t.Fatalf("intent must be cleared, got %v", idx.OrphanDirs)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+}

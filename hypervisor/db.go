@@ -27,6 +27,8 @@ type VMRecord struct {
 type VMIndex struct {
 	VMs   map[string]*VMRecord `json:"vms"`
 	Names map[string]string    `json:"names"` // name → VM ID
+	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them (the orphan scan only covers the configured roots).
+	OrphanDirs []string `json:"orphan_dirs,omitempty"`
 }
 
 func (idx *VMIndex) Init() {

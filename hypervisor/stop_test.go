@@ -124,3 +124,34 @@ func shortTempDir(t *testing.T) string {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
 }
+
+func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-migrated"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir, logDir := shortTempDir(t), shortTempDir(t)
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = logDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+		if len(idx.OrphanDirs) != 0 {
+			t.Fatalf("successful delete must clear its cleanup intent, got %v", idx.OrphanDirs)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
+		t.Fatal("migrated run dir must be removed")
+	}
+}

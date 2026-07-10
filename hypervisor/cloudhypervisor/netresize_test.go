@@ -17,26 +17,31 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// TestEjectOrphanNICs covers the interrupted-resize fault window: a CH device
-// whose MAC the VM record does not know must be ejected before a retry adds
-// alongside it; recorded and boot-time (_net*) devices must survive.
-func TestEjectOrphanNICs(t *testing.T) {
+// TestReconcileOrphanNICs covers the interrupted-resize fault window: a CH
+// device whose MAC the VM record does not know must be ejected AND its host
+// TAP slot reclaimed before a retry adds alongside it (a leftover bridge TAP
+// wedges every retry); recorded and boot-time (_net*) devices must survive.
+func TestReconcileOrphanNICs(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
-		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01"},
-		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02"},
-		{ID: "_net0", MAC: "aa:bb:cc:dd:ee:99"},
+		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
+		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
+		{ID: "_net0", MAC: "aa:bb:cc:dd:ee:99", TAP: "tapvm1beef-9"},
 	})
+	plumbing := &stubPlumbing{}
 
 	info, err := getVMInfo(t.Context(), hc)
 	if err != nil {
 		t.Fatalf("vm.info: %v", err)
 	}
 	recorded := []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}} // case-insensitive match
-	if err := ejectOrphanNICs(t.Context(), hc, info, recorded); err != nil {
-		t.Fatalf("ejectOrphanNICs: %v", err)
+	if err := reconcileOrphanNICs(t.Context(), hc, info, "vm1", recorded, plumbing); err != nil {
+		t.Fatalf("reconcileOrphanNICs: %v", err)
 	}
 	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee02" {
 		t.Fatalf("removed = %v, want only the unrecorded cocoon NIC", got)
+	}
+	if len(plumbing.removed) != 1 || plumbing.removed[0] != 1 {
+		t.Fatalf("plumbing.removed = %v, want the orphan's host slot 1 reclaimed", plumbing.removed)
 	}
 }
 

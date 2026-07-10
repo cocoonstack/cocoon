@@ -3,6 +3,8 @@ package network
 import (
 	"cmp"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -43,4 +45,17 @@ func VMIDPrefix(vmID string) string {
 // TAPName composes the shared TAP device name scheme: prefix + 8-char VM-ID prefix + NIC index.
 func TAPName(prefix, vmID string, nic int) string {
 	return fmt.Sprintf("%s%s-%d", prefix, VMIDPrefix(vmID), nic)
+}
+
+// TAPIndex parses the NIC index back out of a TAPName-scheme device name.
+func TAPIndex(tapName string) (int, bool) {
+	i := strings.LastIndexByte(tapName, '-')
+	if i < 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(tapName[i+1:])
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }

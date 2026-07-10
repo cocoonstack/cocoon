@@ -47,22 +47,22 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	}
 	current := len(rec.NetworkConfigs)
 	res := netresize.Result{Before: current, After: current}
+	// Reconcile before comparing counts: an interrupted resize leaves a ghost device/TAP that target==current would otherwise never heal.
+	if err = reconcileOrphanNICs(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing); err != nil {
+		return res, err
+	}
 	switch {
 	case spec.Target == current:
 		return res, nil
 	case spec.Target > current:
-		return ch.netResizeAdd(ctx, hc, info, vmID, &rec, plumbing, current, spec.Target, res)
+		return ch.netResizeAdd(ctx, hc, vmID, &rec, plumbing, current, spec.Target, res)
 	default:
 		return ch.netResizeRemove(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing, current, spec.Target, res)
 	}
 }
 
-func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, rec *hypervisor.VMRecord, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
+func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, rec *hypervisor.VMRecord, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
-	// An interrupted prior resize can leave a CH device whose DB/plumbing halves never landed; eject it first or the guest keeps a ghost NIC alongside the retry.
-	if err := ejectOrphanNICs(ctx, hc, info, rec.NetworkConfigs); err != nil {
-		return res, err
-	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
 		ncs, err := plumbing.Add(ctx, vmID, &rec.Config, network.AddSpec{Index: i})
@@ -192,8 +192,9 @@ func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
 	})
 }
 
-// ejectOrphanNICs removes cocoon-managed CH devices whose MAC the record does not know — leftovers of a resize interrupted between vm.add-net and the DB write.
-func ejectOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoResponse, ncs []*types.NetworkConfig) error {
+// reconcileOrphanNICs removes cocoon-managed CH devices whose MAC the record does not know — leftovers of a resize interrupted between vm.add-net and the DB write — and best-effort reclaims their host slot (bridge TAPs have no DB record, and a leftover TAP wedges every retry at CreateTAP).
+func reconcileOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing) error {
+	logger := log.WithFunc("cloudhypervisor.NetResize.reconcile")
 	known := make(map[string]struct{}, len(ncs))
 	for _, nc := range ncs {
 		if nc != nil {
@@ -212,6 +213,11 @@ func ejectOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoRespons
 		}
 		if err := waitDeviceEjected(ctx, hc, n.ID); err != nil {
 			return fmt.Errorf("wait orphan eject %s: %w", n.ID, err)
+		}
+		if idx, ok := network.TAPIndex(n.TAP); ok {
+			if rmErr := plumbing.Remove(ctx, vmID, idx); rmErr != nil {
+				logger.Warnf(ctx, "reclaim host slot for orphan NIC %s (tap %s): %v", n.ID, n.TAP, rmErr)
+			}
 		}
 	}
 	return nil

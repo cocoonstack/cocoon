@@ -156,19 +156,17 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 	}
 }
 
-func TestValidateMetaPathsTrustsPersistedRecord(t *testing.T) {
+func TestValidateMetaPathsResidentExemption(t *testing.T) {
+	// Resident disks travel inside the snapshot: a pre-migration COW path must not block restore/clone of the VM's own history.
 	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
 		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
 	}}
+	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
+		t.Fatalf("resident path must be provenance-only: %v", err)
+	}
+	// Dereferenced paths stay strict.
+	meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{Path: "/elsewhere/layer.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"})
 	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
-		t.Fatal("a migrated path must stay untrusted without the record (clone keeps strict roots)")
-	}
-	rec := &VMRecord{RunDir: "/old-run/firecracker/vm1"}
-	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run", rec); err != nil {
-		t.Fatalf("same-VM restore must trust the persisted run dir: %v", err)
-	}
-	recByPath := &VMRecord{VM: types.VM{StorageConfigs: []*types.StorageConfig{{Path: "/old-run/firecracker/vm1/cow.raw"}}}}
-	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run", recByPath); err != nil {
-		t.Fatalf("exact recorded disk path must be trusted: %v", err)
+		t.Fatal("a layer outside the blob store must stay untrusted")
 	}
 }

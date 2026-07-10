@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ type VMGCSnapshot struct {
 	runDirs     []string
 	logDirs     []string
 	recRunDirs  []string
+	orphanDirs  []string
 	reasons     map[string]string
 }
 
@@ -64,6 +66,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 			if err := b.DB.ReadRaw(func(idx *VMIndex) error {
 				snap.blobIDs = make(map[string]struct{}, len(idx.VMs))
 				snap.vmIDs = make(map[string]struct{}, len(idx.VMs))
+				snap.orphanDirs = slices.Clone(idx.OrphanDirs)
 				for id, rec := range idx.VMs {
 					if rec == nil {
 						continue
@@ -131,6 +134,7 @@ func (b *Backend) WatchPath() string {
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
+	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM
 	// would strand a live VMM/dirs with no owner and let network GC tear it down.
 	safeToUnrecord := make([]string, 0, len(ids))
@@ -181,6 +185,32 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 				info, err := e.Info()
 				return err == nil && info.ModTime().Before(cutoff)
 			})...)
+		})
+	}
+	return errs
+}
+
+// sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
+func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
+	logger := log.WithFunc("gc." + b.Typ)
+	var errs []error
+	for _, dir := range dirs {
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			b.clearOrphanDirs(ctx, []string{dir})
+			continue
+		}
+		b.withOpsTryLock(ctx, dir, func() {
+			// Fail closed: a still-live VMM in the leftover dir must not lose its sockets.
+			if err := b.ensureOrphanVMMDead(ctx, dir); err != nil {
+				errs = append(errs, fmt.Errorf("orphan vmm in %s: %w (kept)", dir, err))
+				return
+			}
+			if err := os.RemoveAll(dir); err != nil {
+				errs = append(errs, fmt.Errorf("remove orphan dir %s: %w", dir, err))
+				return
+			}
+			logger.Infof(ctx, "collected dir=%s reason=migrated-delete-retry", dir)
+			b.clearOrphanDirs(ctx, []string{dir})
 		})
 	}
 	return errs
