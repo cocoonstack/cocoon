@@ -3,7 +3,6 @@ package cloudhypervisor
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,8 +13,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Snapshot pauses, captures CH state+COW, resumes, and streams the result.
-func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, io.ReadCloser, error) {
+// Snapshot pauses, captures CH state+COW, resumes, and returns the capture dir.
+func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
 	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
 }
 

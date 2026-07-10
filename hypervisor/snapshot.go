@@ -3,7 +3,6 @@ package hypervisor
 import (
 	"context"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -63,11 +62,11 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	return cfg
 }
 
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside.
-func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ io.ReadCloser, err error) {
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside. It returns the finalized capture dir, which the caller consumes (PersistSnapshotDir).
+func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ string, err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", err
 	}
 	defer unlock()
 	defer func() {
@@ -85,13 +84,13 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 		})
 	}
 	if err = runWrapped(&rec, spec.Wrap, captureWindow); err != nil {
-		return nil, nil, fmt.Errorf("snapshot VM %s: %w", vmID, err)
+		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", err
 	}
-	return cfg, utils.TarDirStreamWithRemove(tmpDir), nil
+	return cfg, tmpDir, nil
 }
 
 // HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.

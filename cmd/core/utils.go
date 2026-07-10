@@ -243,18 +243,18 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 	return nil
 }
 
-// CaptureSnapshot checks the --name preflight, runs capture, and persists the stream, returning the stored snapshot id.
-func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, io.ReadCloser, error)) (string, error) {
+// CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
+func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	if err := EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
 		return "", err
 	}
-	cfg, stream, err := capture()
+	cfg, srcDir, err := capture()
 	if err != nil {
 		return "", err
 	}
-	return PersistSnapshotStream(ctx, snapBackend, cfg, stream, name, description)
+	return PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 }
 
 // PersistSnapshotDir stores a finalized capture dir, preferring a direct in-place move (DirectCreator) when srcDir shares a filesystem with the backend's data dir, and falling back to a tar stream otherwise (cross-filesystem, or a backend without DirectCreator such as a remote store). srcDir is consumed on every path.
