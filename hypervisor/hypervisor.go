@@ -41,7 +41,7 @@ type Watchable interface {
 
 // Reserver pre-claims a VM ID before host resources (network) are provisioned, closing the window where GC would see ownerless TAP/netns. Callers hold LockVMOps from the claim through Create/Clone so a concurrent rm/start cannot interleave with the half-built VM.
 type Reserver interface {
-	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig) error
+	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error
 	RollbackCreate(ctx context.Context, id, name string)
 	LockVMOps(ctx context.Context, vmID string) (func(), error)
 }

@@ -303,7 +303,11 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
 				continue
 			}
-			recoverOne()
+			// Recheck under the lock: the pre-lock List snapshot may predate a
+			// completed rm, and recovering a deleted VM would rebuild ownerless plumbing.
+			if _, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
+				recoverOne()
+			}
 			unlock()
 		} else {
 			recoverOne()

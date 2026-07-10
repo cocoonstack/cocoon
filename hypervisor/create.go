@@ -43,9 +43,9 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 	})
 }
 
-// PrereserveVM claims id before host resources (network) are provisioned, so GC always sees an owner for them; CreateSequence/CloneSetup later adopts the placeholder.
-func (b *Backend) PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig) error {
-	return b.ReserveVM(ctx, id, vmCfg, nil, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
+// PrereserveVM claims id before host resources (network) are provisioned, so GC always sees an owner for them; CreateSequence/CloneSetup later adopts the placeholder. blobIDs pins the resolved image blobs so image GC cannot sweep them pre-adoption.
+func (b *Backend) PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error {
+	return b.ReserveVM(ctx, id, vmCfg, blobIDs, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
 }
 
 // RollbackCreate removes the placeholder record and its name mapping after a failed create.
@@ -134,8 +134,10 @@ func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *type
 	logDir = b.Conf.VMLogDir(id)
 
 	cleanup = func() {
-		_ = RemoveVMDirs(runDir, logDir)
+		// Record first: dir removal deletes the held ops.lock inode, and a
+		// concurrent rm on the recreated file must not find a live placeholder.
 		b.RollbackCreate(ctx, id, vmCfg.Name)
+		_ = RemoveVMDirs(runDir, logDir)
 	}
 
 	if err = b.ReserveVM(ctx, id, vmCfg, blobIDs, runDir, logDir); err != nil {
