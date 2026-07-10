@@ -16,14 +16,13 @@ import (
 )
 
 type chDebugSpec struct {
-	Configs    []*types.StorageConfig
-	Boot       *types.BootConfig
-	VMCfg      *types.VMConfig
-	CowPath    string
-	CHBin      string
-	MaxCPU     int
-	Balloon    int
-	DirectBoot bool
+	Configs []*types.StorageConfig
+	Boot    *types.BootConfig
+	VMCfg   *types.VMConfig
+	CowPath string
+	CHBin   string
+	MaxCPU  int
+	Balloon int
 }
 
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
@@ -62,11 +61,9 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--fc requires OCI images (direct kernel boot)")
 		}
 		// FC requires uncompressed ELF kernel — resolve vmlinux path for debug output.
-		vmlinuxPath, extractErr := firecracker.EnsureVmlinux(boot.KernelPath)
-		if extractErr != nil {
-			return fmt.Errorf("extract vmlinux: %w", extractErr)
+		if err := firecracker.EnsureVmlinuxBoot(boot); err != nil {
+			return err
 		}
-		boot.KernelPath = vmlinuxPath
 		printFCDebug(storageConfigs, boot, vmCfg, conf.FCBinary)
 		return nil
 	}
@@ -93,9 +90,8 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	}
 	cowDev := firecracker.DevPath(nLayers)
 
-	cmdline := fmt.Sprintf(
-		"console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
-		strings.Join(layerDevs, ","), cowDev)
+	cmdline := hypervisor.BuildBaseCmdline("console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1",
+		strings.Join(layerDevs, ","), cowDev, nil, vmCfg.Name, nil)
 
 	fmt.Println("# Prepare COW disk")
 	fmt.Printf("truncate -s %dG %s\n", cowSizeGB, cowPath)
@@ -157,14 +153,13 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 		balloon = int(size >> 20) //nolint:mnd
 	}
 	return chDebugSpec{
-		Configs:    storageConfigs,
-		Boot:       boot,
-		VMCfg:      vmCfg,
-		CowPath:    cowPath,
-		CHBin:      chBin,
-		MaxCPU:     maxCPU,
-		Balloon:    balloon,
-		DirectBoot: boot.KernelPath != "",
+		Configs: storageConfigs,
+		Boot:    boot,
+		VMCfg:   vmCfg,
+		CowPath: cowPath,
+		CHBin:   chBin,
+		MaxCPU:  maxCPU,
+		Balloon: balloon,
 	}
 }
 
@@ -173,7 +168,7 @@ func printCHDebug(s chDebugSpec) {
 	diskQueueSize := s.VMCfg.DiskQueueSize
 	noDirectIO := s.VMCfg.NoDirectIO
 
-	if s.DirectBoot {
+	if hypervisor.IsDirectBoot(s.Boot) {
 		if s.CowPath == "" {
 			s.CowPath = fmt.Sprintf("cow-%s.raw", s.VMCfg.Name)
 		}
@@ -182,9 +177,8 @@ func printCHDebug(s chDebugSpec) {
 		})
 		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO)
 		cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(s.Configs), ",")
-		cmdline := fmt.Sprintf(
-			"console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw",
-			cocoonLayers, hypervisor.CowSerial)
+		cmdline := hypervisor.BuildBaseCmdline("console=hvc0 loglevel=3",
+			cocoonLayers, hypervisor.CowSerial, nil, s.VMCfg.Name, nil)
 
 		fmt.Println("# Prepare COW disk")
 		fmt.Printf("truncate -s %dG %s\n", s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
