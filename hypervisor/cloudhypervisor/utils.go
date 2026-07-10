@@ -2,11 +2,9 @@ package cloudhypervisor
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -68,12 +66,17 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 
 // validateSnapshotIntegrity (CH): common checks + sidecar/config.json shape + state.json + memory-range-* presence.
 func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
-	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
-		return err
-	}
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
 		return fmt.Errorf("parse snapshot config: %w", err)
+	}
+	return validateSnapshotIntegrityParsed(srcDir, sidecar, chCfg)
+}
+
+// validateSnapshotIntegrityParsed is validateSnapshotIntegrity for callers that already hold the parsed config.json (clone parses it once for the whole sequence).
+func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
+	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
+		return err
 	}
 	if len(sidecar) != len(chCfg.Disks) {
 		return fmt.Errorf("sidecar/config.json mismatch: %d vs %d disks", len(sidecar), len(chCfg.Disks))
@@ -116,13 +119,9 @@ func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string, body []byt
 	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, body, successCodes...)
 }
 
-// vmPutJSON marshals payload and PUTs to endpoint via vmAPIOnce. Mirrors firecracker.putJSON so per-endpoint helpers stay one-line wrappers.
+// vmPutJSON marshals payload and PUTs it to a non-idempotent CH endpoint (no retry).
 func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind string, payload T, successCodes ...int) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", kind, err)
-	}
-	_, err = vmAPIOnce(ctx, hc, endpoint, body, successCodes...)
+	_, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, kind, payload, successCodes...)
 	return err
 }
 
@@ -286,17 +285,16 @@ func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, dir
 	return consoleSock
 }
 
-// qemuExpandImage grows a disk to targetSize iff smaller; truncate for raw (directBoot), qemu-img resize for qcow2.
-func qemuExpandImage(ctx context.Context, path string, targetSize int64, directBoot bool) error {
-	if directBoot {
-		return hypervisor.ExpandRawImage(path, targetSize)
-	}
-
-	virtualSize, err := readQcow2VirtualSize(path)
+// qemuExpandImage grows a qcow2 disk to targetSize iff its virtual size is smaller.
+func qemuExpandImage(ctx context.Context, path string, targetSize int64) error {
+	hdr, ok, err := utils.ReadQcow2Header(path)
 	if err != nil {
-		return fmt.Errorf("read qcow2 virtual size %s: %w", path, err)
+		return fmt.Errorf("read qcow2 header %s: %w", path, err)
 	}
-	if targetSize <= virtualSize {
+	if !ok {
+		return fmt.Errorf("%s is not a qcow2 image", path)
+	}
+	if targetSize <= hdr.VirtualSize {
 		return nil
 	}
 	// shell out: qemu-img is the authoritative qcow2 tool (see utils/qemuimg.go).
@@ -304,18 +302,4 @@ func qemuExpandImage(ctx context.Context, path string, targetSize int64, directB
 		return fmt.Errorf("resize %s: %w", path, err)
 	}
 	return nil
-}
-
-// readQcow2VirtualSize reads the big-endian uint64 virtual size at qcow2 header offset 24.
-func readQcow2VirtualSize(path string) (int64, error) {
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close() //nolint:errcheck
-	var hdr [32]byte
-	if _, err := io.ReadFull(f, hdr[:]); err != nil {
-		return 0, fmt.Errorf("read header: %w", err)
-	}
-	return int64(binary.BigEndian.Uint64(hdr[24:32])), nil //nolint:gosec // qcow2 virtual size fits int64
 }

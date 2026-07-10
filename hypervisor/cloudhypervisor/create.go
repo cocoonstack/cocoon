@@ -58,7 +58,7 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	}
 
 	if vmCfg.Storage > 0 {
-		if err := qemuExpandImage(ctx, overlayPath, vmCfg.Storage, false); err != nil {
+		if err := qemuExpandImage(ctx, overlayPath, vmCfg.Storage); err != nil {
 			return nil, fmt.Errorf("expand overlay: %w", err)
 		}
 	}
