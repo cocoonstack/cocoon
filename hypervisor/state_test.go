@@ -576,6 +576,10 @@ type meteringStubConfig struct {
 
 func (c meteringStubConfig) VMRunDir(string) string { return c.vmRunRoot }
 
+func (c meteringStubConfig) VMLogDir(string) string { return c.vmRunRoot }
+
+func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
+
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
 	dir := t.TempDir()

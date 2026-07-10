@@ -14,7 +14,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -166,7 +165,10 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirNames []strin
 
 // withOpsTryLock runs fn holding the VM ops lock, reporting false (fn skipped) when an in-flight operation owns it; GC never blocks on ops locks, so the reversed order vs. the ops-outer/index-inner convention cannot deadlock.
 func (b *Backend) withOpsTryLock(ctx context.Context, runDir string, fn func()) bool {
-	l := flock.New(filepath.Join(runDir, OpsLockName))
+	l, err := opsLock(runDir)
+	if err != nil {
+		return false
+	}
 	if ok, err := l.TryLock(ctx); err != nil || !ok {
 		return false
 	}

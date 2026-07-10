@@ -55,11 +55,18 @@ type SnapshotFileKind int
 // The flock dies with the process, so a crashed holder never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
-	// Recreate if missing so stop/delete on a crash-leftover VM can still lock.
-	if err := os.MkdirAll(runDir, 0o750); err != nil {
-		return nil, fmt.Errorf("ops lock dir: %w", err)
+	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.
+	// Lockless read: RunDir is immutable after create, and a locked read would stall every ops verb behind an in-flight GC cycle's index lock.
+	_ = b.DB.ReadRaw(func(idx *VMIndex) error {
+		if r := idx.VMs[vmID]; r != nil && r.RunDir != "" {
+			runDir = r.RunDir
+		}
+		return nil
+	})
+	l, err := opsLock(runDir)
+	if err != nil {
+		return nil, err
 	}
-	l := flock.New(filepath.Join(runDir, OpsLockName))
 	if err := l.Lock(ctx); err != nil {
 		return nil, err
 	}
@@ -96,6 +103,14 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn fun
 		logger.Warnf(ctx, "%s: %v", op, err)
 	}
 	return result.Succeeded, result.Err()
+}
+
+// opsLock recreates runDir if missing (crash leftovers, logDir-only orphans) and returns the per-VM ops flock.
+func opsLock(runDir string) (*flock.Lock, error) {
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		return nil, fmt.Errorf("ops lock dir: %w", err)
+	}
+	return flock.New(filepath.Join(runDir, OpsLockName)), nil
 }
 
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
