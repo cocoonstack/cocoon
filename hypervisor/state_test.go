@@ -620,3 +620,33 @@ func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage in
 		t.Fatalf("set running: %v", err)
 	}
 }
+
+func TestPrepareStartRefusesQuarantined(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
+
+	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM")
+	}
+
+	// Stop's state flip must not lift the quarantine.
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
+	}
+}
+
+func TestPrepareStartRefusesCreating(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
+		t.Fatalf("ReserveVM: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a creating placeholder")
+	}
+}

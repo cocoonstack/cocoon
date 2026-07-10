@@ -642,7 +642,7 @@ func TestDataDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dataDir, got, err := lf.DataDir(ctx, "datadir")
+	dataDir, got, _, err := lf.DataDir(ctx, "datadir")
 	if err != nil {
 		t.Fatalf("DataDir: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestDataDir_NotFound(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	_, _, err := lf.DataDir(ctx, "nonexistent")
+	_, _, _, err := lf.DataDir(ctx, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -689,14 +689,14 @@ func TestDataDir_ImageBlobIDsIsolation(t *testing.T) {
 	}
 
 	// Get config via DataDir, mutate the returned ImageBlobIDs.
-	_, got1, err := lf.DataDir(ctx, id)
+	_, got1, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got1.ImageBlobIDs["injected"] = struct{}{}
 
 	// Get config again — mutation should NOT be visible.
-	_, got2, err := lf.DataDir(ctx, id)
+	_, got2, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}

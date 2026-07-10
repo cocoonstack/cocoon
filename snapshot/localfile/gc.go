@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	gofrsflock "github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
@@ -141,10 +142,26 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 					errs = append(errs, err)
 					break
 				}
+				// Exclusive lease: an active clone/restore/export holds it shared; skip and retry next cycle.
+				fl := gofrsflock.New(conf.LeasePath(id))
+				locked, lockErr := fl.TryLock()
+				if lockErr != nil {
+					_ = fl.Close()
+					errs = append(errs, fmt.Errorf("lease snapshot %s: %w", id, lockErr))
+					continue
+				}
+				if !locked {
+					_ = fl.Close()
+					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
+					continue
+				}
 				if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
+					_ = fl.Close()
 					errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
 					continue
 				}
+				_ = os.Remove(conf.LeasePath(id))
+				_ = fl.Close()
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
 				removed = append(removed, id)
 				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.

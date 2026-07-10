@@ -27,6 +27,9 @@ func (c *Config) DataDir() string { return filepath.Join(c.dir(), "localfile") }
 
 func (c *Config) SnapshotDataDir(id string) string { return filepath.Join(c.DataDir(), id) }
 
+// LeasePath is the per-snapshot read-lease flock, a sibling of the data dir so removing the dir leaves the held inode alone.
+func (c *Config) LeasePath(id string) string { return c.SnapshotDataDir(id) + ".lease" }
+
 func (c *Config) IndexFile() string { return filepath.Join(c.dbDir(), "snapshots.json") }
 
 func (c *Config) IndexLock() string { return filepath.Join(c.dbDir(), "snapshots.lock") }

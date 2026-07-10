@@ -14,6 +14,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -115,13 +116,24 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			}
 			return nil
 		})
-		b.killOrphanProcess(ctx, runDir)
-		if err := RemoveVMDirs(runDir, logDir); err != nil {
-			errs = append(errs, fmt.Errorf("remove vm %s: %w", id, err))
-			continue
+		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs the run
+		// dir before its DB record lands, so an unlocked "orphan" may be seconds old.
+		ok := b.withOpsTryLock(ctx, runDir, func() {
+			// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
+			if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {
+				errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
+				return
+			}
+			if err := RemoveVMDirs(runDir, logDir); err != nil {
+				errs = append(errs, fmt.Errorf("remove vm %s: %w", id, err))
+				return
+			}
+			logger.Infof(ctx, "collected id=%s runDir=%s logDir=%s reason=%s",
+				id, runDir, logDir, snap.reasons[id])
+		})
+		if !ok {
+			logger.Warnf(ctx, "skip %s: ops lock busy (in-flight operation)", id)
 		}
-		logger.Infof(ctx, "collected id=%s runDir=%s logDir=%s reason=%s",
-			id, runDir, logDir, snap.reasons[id])
 	}
 	if err := b.CleanStalePlaceholders(ctx, ids); err != nil {
 		errs = append(errs, fmt.Errorf("clean stale placeholders: %w", err))
@@ -129,31 +141,52 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	return errors.Join(errs...)
 }
 
-// sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age; an in-flight capture keeps its dir young (files land continuously), and restores finish long before the cutoff.
+// sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age. It runs per-dir under the VM ops lock: the staging name is fixed, so without it a fresh restore could recreate the dir between the age check and the removal (ABA) and lose its staging mid-flight.
 func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirNames []string) []error {
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	var errs []error
 	for _, name := range runDirNames {
-		errs = append(errs, utils.RemoveMatching(ctx, filepath.Join(b.Conf.RunDir(), name), func(e os.DirEntry) bool {
-			if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {
-				return false
-			}
-			info, err := e.Info()
-			return err == nil && info.ModTime().Before(cutoff)
-		})...)
+		dir := filepath.Join(b.Conf.RunDir(), name)
+		b.withOpsTryLock(ctx, dir, func() {
+			errs = append(errs, utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
+				if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {
+					return false
+				}
+				info, err := e.Info()
+				return err == nil && info.ModTime().Before(cutoff)
+			})...)
+		})
 	}
 	return errs
 }
 
-// killOrphanProcess terminates a leftover hypervisor process if PID matches the binary.
-func (b *Backend) killOrphanProcess(ctx context.Context, runDir string) {
-	pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir))
-	if err != nil {
-		return
+// withOpsTryLock runs fn holding the VM ops lock, reporting false (fn skipped) when an in-flight operation owns it; GC never blocks on ops locks, so the reversed order vs. the ops-outer/index-inner convention cannot deadlock.
+func (b *Backend) withOpsTryLock(ctx context.Context, runDir string, fn func()) bool {
+	l := flock.New(filepath.Join(runDir, OpsLockName))
+	if ok, err := l.TryLock(ctx); err != nil || !ok {
+		return false
 	}
+	defer func() { _ = l.Unlock(ctx) }()
+	fn()
+	return true
+}
+
+// ensureOrphanVMMDead terminates any VMM bound to runDir's socket and errors unless none survive; a missing pidfile is not proof of death, so it also scans /proc by socket path.
+func (b *Backend) ensureOrphanVMMDead(ctx context.Context, runDir string) error {
 	sockPath := SocketPath(runDir)
-	if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
-		return
+	if pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir)); err == nil {
+		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+			return termErr
+		}
 	}
-	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
+	pids, err := utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
+	if err != nil {
+		return fmt.Errorf("/proc scan: %w", err)
+	}
+	for _, pid := range pids {
+		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+			return termErr
+		}
+	}
+	return nil
 }

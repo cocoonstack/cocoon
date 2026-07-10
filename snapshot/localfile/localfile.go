@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	gofrsflock "github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/config"
@@ -24,7 +25,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const typ = "localfile"
+const (
+	typ = "localfile"
+
+	// leaseRetryDelay is the shared-lease poll cadence; contended only while a delete briefly holds the exclusive lock.
+	leaseRetryDelay = 2 * time.Millisecond
+)
 
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
@@ -76,13 +82,37 @@ func New(conf *config.Config, rec metering.Recorder, opts ...Option) (*LocalFile
 
 func (lf *LocalFile) Type() string { return typ }
 
-// DataDir returns the local data directory and snapshot config for direct file access.
-func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, error) {
+// DataDir returns the local data directory, snapshot config, and a read-lease release for direct file access.
+func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, func(), error) {
 	rec, err := lf.lookupRecord(ctx, ref, true)
 	if err != nil {
-		return "", types.SnapshotConfig{}, err
+		return "", types.SnapshotConfig{}, nil, err
 	}
-	return rec.DataDir, snapshotRecordToConfig(rec), nil
+	release, err := lf.acquireReadLease(ctx, rec.ID)
+	if err != nil {
+		return "", types.SnapshotConfig{}, nil, err
+	}
+	// Re-verify under the lease: a delete may have completed between lookup and acquire.
+	if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
+		release()
+		return "", types.SnapshotConfig{}, nil, err
+	}
+	return rec.DataDir, snapshotRecordToConfig(rec), release, nil
+}
+
+// acquireReadLease holds a shared flock on the snapshot's lease file so delete/GC (exclusive) cannot reap the data dir mid-read; lock/flock has no shared mode, hence gofrs directly.
+func (lf *LocalFile) acquireReadLease(ctx context.Context, id string) (func(), error) {
+	fl := gofrsflock.New(lf.conf.LeasePath(id))
+	ok, err := fl.TryRLockContext(ctx, leaseRetryDelay)
+	if err != nil {
+		_ = fl.Close()
+		return nil, fmt.Errorf("lease snapshot %s: %w", id, err)
+	}
+	if !ok {
+		_ = fl.Close()
+		return nil, fmt.Errorf("lease snapshot %s: %w", id, ctx.Err())
+	}
+	return func() { _ = fl.Close() }, nil
 }
 
 // Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
@@ -198,11 +228,11 @@ func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error
 }
 
 func (lf *LocalFile) Restore(ctx context.Context, ref string) (types.SnapshotConfig, io.ReadCloser, error) {
-	rec, err := lf.lookupRecord(ctx, ref, true)
+	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return types.SnapshotConfig{}, nil, err
 	}
-	return snapshotRecordToConfig(rec), utils.TarDirStream(rec.DataDir, nil), nil
+	return cfg, utils.TarDirStream(dataDir, release), nil
 }
 
 func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
@@ -211,6 +241,16 @@ func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 
 // deleteOne is idempotent under concurrent rm; the rival's emit is skipped so the ledger keeps exactly one stop per snapshot.
 func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
+	fl := gofrsflock.New(lf.conf.LeasePath(id))
+	locked, err := fl.TryLock()
+	if err != nil {
+		return fmt.Errorf("lease snapshot %s: %w", id, err)
+	}
+	if !locked {
+		_ = fl.Close()
+		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
+	}
+	defer fl.Close() //nolint:errcheck
 	if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
 		return fmt.Errorf("remove data dir %s: %w", id, err)
 	}
@@ -236,6 +276,7 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	if deletedRecord {
 		emitSnapStop(ctx, lf.metering, id, hypType)
 	}
+	_ = os.Remove(lf.conf.LeasePath(id))
 	return nil
 }
 

@@ -26,10 +26,11 @@ func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadC
 
 // ExportToDir reflinks snapshot data into dir + writes snapshot.json last so its presence is the all-data-ready marker for --from-dir.
 func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
-	dataDir, cfg, err := lf.DataDir(ctx, ref)
+	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return err
 	}
+	defer release()
 	if err = utils.EnsureDirs(dir); err != nil {
 		return err
 	}
@@ -67,13 +68,14 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 }
 
 func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.ReadCloser, error) {
-	dataDir, cfg, err := lf.DataDir(ctx, ref)
+	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
 
 	jsonData, err := snapshot.MarshalEnvelope(cfg)
 	if err != nil {
+		release()
 		return nil, err
 	}
 
@@ -128,5 +130,5 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		}
 	}()
 
-	return utils.NewPipeStreamReader(pr, done, nil), nil
+	return utils.NewPipeStreamReader(pr, done, release), nil
 }

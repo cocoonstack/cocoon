@@ -224,13 +224,16 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
-// MergeDirInto renames entries from src to dst, overwriting existing files.
+// MergeDirInto renames entries from src to dst, overwriting existing files; lock files never move (see isLockFile).
 func MergeDirInto(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("read staging dir: %w", err)
 	}
 	for _, e := range entries {
+		if isLockFile(e.Name()) {
+			continue
+		}
 		srcPath := filepath.Join(src, e.Name())
 		dstPath := filepath.Join(dst, e.Name())
 		if err := os.Rename(srcPath, dstPath); err != nil {
@@ -238,6 +241,11 @@ func MergeDirInto(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+// isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.
+func isLockFile(name string) bool {
+	return name == OpsLockName || strings.HasSuffix(name, ".clone.lock")
 }
 
 func ValidateHostCPU(cpu int) error {
@@ -443,7 +451,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 	}
 	var cowPairs [][2]string
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
+		if !entry.Type().IsRegular() || isLockFile(entry.Name()) {
 			continue
 		}
 		name := entry.Name()
