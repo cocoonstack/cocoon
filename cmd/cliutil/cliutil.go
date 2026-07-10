@@ -67,8 +67,9 @@ func OutputFormattedStr(format string, data any, tableFn func(w *tabwriter.Write
 	return w.Flush()
 }
 
+// FormatSize renders bytes in binary units (KiB/MiB/GiB) — the one convention for every table and progress line.
 func FormatSize(bytes int64) string {
-	return units.HumanSize(float64(bytes))
+	return units.BytesSize(float64(bytes))
 }
 
 func IsURL(ref string) bool {

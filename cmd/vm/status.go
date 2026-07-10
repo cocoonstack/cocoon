@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/docker/go-units"
 	"github.com/moby/term"
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
@@ -285,7 +284,7 @@ func takeSnapshot(vm *types.VM, state string) vmSnapshot {
 func printEventRow(w *tabwriter.Writer, event string, snap vmSnapshot) {
 	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", //nolint:errcheck
 		event, snap.id, snap.name, snap.state,
-		snap.cpu, units.BytesSize(float64(snap.memory)),
+		snap.cpu, cliutil.FormatSize(snap.memory),
 		snap.ip, snap.image)
 }
 
@@ -336,8 +335,8 @@ func printVMTable(w *tabwriter.Writer, vms []*types.VM) {
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 			vm.ID, vm.Config.Name, cmdcore.ReconcileState(vm),
-			vm.Config.CPU, units.BytesSize(float64(vm.Config.Memory)),
-			units.BytesSize(float64(vm.Config.Storage)),
+			vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory),
+			cliutil.FormatSize(vm.Config.Storage),
 			vmIPs(vm), vm.Config.Image,
 			vm.CreatedAt.Local().Format(time.DateTime))
 	}
