@@ -404,6 +404,10 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		if fname == "" {
 			continue
 		}
+		// A degenerate name would stat a directory and vacuously pass.
+		if fname == "." || fname == ".." || fname == string(filepath.Separator) {
+			return fmt.Errorf("invalid snapshot disk name %q", fname)
+		}
 		if _, err := os.Stat(filepath.Join(srcDir, fname)); err != nil {
 			return fmt.Errorf("snapshot file %s missing: %w", fname, err)
 		}

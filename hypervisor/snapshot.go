@@ -277,9 +277,9 @@ func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
 		}
-		// An empty path would make the resident basename "." and integrity would stat the snapshot dir itself.
-		if sc.Path == "" {
-			return fmt.Errorf("empty storage path in snapshot metadata (disk %d)", i)
+		// A degenerate path would make the resident basename "." or ".." and integrity would stat a directory instead of the disk.
+		if base := filepath.Base(sc.Path); sc.Path == "" || base == "." || base == ".." || base == string(filepath.Separator) {
+			return fmt.Errorf("invalid storage path in snapshot metadata (disk %d): %q", i, sc.Path)
 		}
 		if snapshotResidentBasename(sc) != "" {
 			continue
