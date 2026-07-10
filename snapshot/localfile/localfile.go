@@ -159,6 +159,9 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	if err = utils.ExtractTar(dataDir, stream); err != nil {
 		return "", fmt.Errorf("extract snapshot data: %w", err)
 	}
+	if err = utils.SyncTree(dataDir); err != nil {
+		return "", fmt.Errorf("sync snapshot to disk: %w", err)
+	}
 	if err = lf.finalizeCreate(ctx, cfg, dataDir); err != nil {
 		return "", err
 	}
@@ -205,7 +208,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (MkdirAll in Create)
 		return "", false, fmt.Errorf("chmod data dir: %w", err)
 	}
-	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize (the tar path fsyncs per file in ExtractTar).
+	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize.
 	if err = utils.SyncTree(dataDir); err != nil {
 		return "", false, fmt.Errorf("sync snapshot to disk: %w", err)
 	}
