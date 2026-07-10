@@ -196,9 +196,10 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// vm rm stays best-effort, but the failed NIC's record must survive for GC to retry.
-	if err := c.deleteVM(ctx, "vm1"); err != nil {
-		t.Fatalf("deleteVM: %v", err)
+	// A failed NIC release keeps its record AND the netns, surfaced as an error so rm reports the retryable leftover.
+	err := c.deleteVM(ctx, "vm1")
+	if err == nil || !strings.Contains(err.Error(), "netns kept") {
+		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 }

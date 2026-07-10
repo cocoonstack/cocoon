@@ -139,12 +139,19 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
 	nsPath := netnsPath(vmID)
 	// Sweep only released records: a failed DEL keeps its record so GC retries the release.
-	downIDs, _ := c.tearDownNICs(ctx, vmID, nsPath, records, false)
+	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, false)
+	if err := c.deleteRecords(ctx, downIDs); err != nil {
+		return errors.Join(tdErr, err)
+	}
+	if tdErr != nil {
+		// Keep the netns: the retried DEL (GC) runs with its full context intact.
+		return fmt.Errorf("nic release incomplete, netns kept for gc retry: %w", tdErr)
+	}
 	nsName := netnsName(vmID)
 	if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove netns %s: %w", nsPath, err)
 	}
-	return c.deleteRecords(ctx, downIDs)
+	return nil
 }
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.

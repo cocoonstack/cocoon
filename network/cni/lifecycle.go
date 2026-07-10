@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/containernetworking/cni/libcni"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
@@ -16,6 +17,8 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const rollbackTimeout = 30 * time.Second
 
 // Prepare creates the per-VM netns; returns "" with no conflist.
 func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string, error) {
@@ -65,111 +68,93 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		return nil, fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
 
-	addedIdx := make([]int, 0, len(specs))
+	type addedNIC struct {
+		index int
+		recID string // "" for recovered NICs whose records pre-exist
+	}
+	added := make([]addedNIC, 0, len(specs))
+	var recIDs map[int]string
 	defer func() {
 		if retErr == nil {
 			return
 		}
-		for _, i := range addedIdx {
-			ifn := fmt.Sprintf("eth%d", i)
-			if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifn); delErr != nil {
-				logger.Warnf(ctx, "rollback CNI DEL %s/%s: %v", vmID, ifn, delErr)
+		// Survives caller cancellation, bounded so a hung plugin can't wedge the caller; a failed DEL keeps its intent record so GC can release the lease later.
+		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		defer rcancel()
+		var releasedIDs []string
+		// Intents whose ADD never started need no DEL.
+		attempted := make(map[string]struct{}, len(added))
+		for _, a := range added {
+			attempted[a.recID] = struct{}{}
+		}
+		for _, id := range recIDs {
+			if _, ok := attempted[id]; !ok {
+				releasedIDs = append(releasedIDs, id)
+			}
+		}
+		kept := false
+		for _, a := range added {
+			ifn := fmt.Sprintf("eth%d", a.index)
+			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
+				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept for GC)", vmID, ifn, delErr)
+				kept = true
+				continue
 			}
 			// setupTCRedirect creates the TAP; it would leak if the netns persists.
 			if !createdNetns {
-				if delErr := deleteTAPInNetns(nsPath, tapNameForVM(vmID, i)); delErr != nil {
-					logger.Warnf(ctx, "rollback tap delete %s: %v", tapNameForVM(vmID, i), delErr)
+				if delErr := deleteTAPInNetns(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
+					logger.Warnf(rctx, "rollback tap delete %s: %v", tapNameForVM(vmID, a.index), delErr)
 				}
 			}
+			if a.recID != "" {
+				releasedIDs = append(releasedIDs, a.recID)
+			}
 		}
-		if createdNetns {
-			_ = deleteNetns(ctx, nsName)
+		if delErr := c.deleteRecords(rctx, releasedIDs); delErr != nil {
+			logger.Warnf(rctx, "rollback records: %v", delErr)
+		}
+		// A kept record needs the netns for GC's retried DEL.
+		if createdNetns && !kept {
+			_ = deleteNetns(rctx, nsName)
 		}
 	}()
 
 	type freshNIC struct {
 		index int
+		recID string
 		cfg   *types.NetworkConfig
 	}
+	recIDs, err = c.stageNICIntents(ctx, confList, vmID, nsPath, specs, stale)
+	if err != nil {
+		return nil, err
+	}
+
 	configs = make([]*types.NetworkConfig, 0, len(specs))
 	fresh := make([]freshNIC, 0, len(specs))
 	for _, spec := range specs {
-		ifName := fmt.Sprintf("eth%d", spec.Index)
-		tapName := tapNameForVM(vmID, spec.Index)
+		rt := c.nicRuntime(ctx, confList, vmID, nsPath, spec)
+		// Registered before ADD so a mid-ADD failure still gets a cleanup DEL.
+		added = append(added, addedNIC{index: spec.Index, recID: recIDs[spec.Index]})
 
-		rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
-		if spec.Existing != nil {
-			if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifName); delErr != nil {
-				logger.Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
-			}
-			if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
-				rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
-			}
-		} else if rec, ok := stale[ifName]; ok {
-			// The index is reusable only after a full reclaim: proceeding would double-allocate
-			// on lenient IPAM plugins or bury the root cause under the ADD failure on strict ones.
-			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
-				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
-			}
-		}
-
-		cniResult, addErr := c.cniConf.AddNetworkList(ctx, confList, rt)
+		cfg, addErr := c.provisionNIC(ctx, confList, rt, vmID, nsPath, vmCfg, spec)
 		if addErr != nil {
-			return nil, fmt.Errorf("cni add %s/%s: %w", vmID, ifName, addErr)
-		}
-		addedIdx = append(addedIdx, spec.Index)
-
-		netInfo, parseErr := extractNetworkInfo(cniResult)
-		if parseErr != nil {
-			return nil, fmt.Errorf("parse CNI result: %w", parseErr)
-		}
-
-		var overrideMAC string
-		if spec.Existing != nil {
-			overrideMAC = spec.Existing.MAC
-		}
-		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-		mac, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
-		if setupErr != nil {
-			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
-		}
-
-		cfg := &types.NetworkConfig{
-			TAP:       tapName,
-			MAC:       mac,
-			NumQueues: queues,
-			QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
-			Backend:   types.BackendCNI,
-			NetnsPath: nsPath,
-			Network:   netInfo,
+			return nil, addErr
 		}
 		configs = append(configs, cfg)
 		if spec.Existing == nil {
-			fresh = append(fresh, freshNIC{index: spec.Index, cfg: cfg})
+			fresh = append(fresh, freshNIC{index: spec.Index, recID: recIDs[spec.Index], cfg: cfg})
 		}
-
-		var logIP, logGW string
-		if netInfo != nil {
-			logIP = netInfo.IP
-			logGW = netInfo.Gateway
-		}
-		logger.Debugf(ctx, "NIC %d: %s ip=%s gw=%s tap=%s mac=%s",
-			spec.Index, ifName, logIP, logGW, tapName, mac)
 	}
 
 	return configs, c.store.Update(ctx, func(idx *networkIndex) error {
 		for _, f := range fresh {
-			netID := utils.GenerateID()
-			var net types.Network
-			if f.cfg.Network != nil {
-				net = *f.cfg.Network
+			rec := idx.Networks[f.recID]
+			if rec == nil { // intent vanished (concurrent sweep): reinsert
+				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: fmt.Sprintf("eth%d", f.index)}
+				idx.Networks[f.recID] = rec
 			}
-			idx.Networks[netID] = &networkRecord{
-				ID:      netID,
-				Type:    confList.Name,
-				Network: net,
-				VMID:    vmID,
-				IfName:  fmt.Sprintf("eth%d", f.index),
+			if f.cfg.Network != nil {
+				rec.Network = *f.cfg.Network
 			}
 		}
 		return nil
@@ -209,6 +194,98 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	}
 	downIDs, err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
 	return errors.Join(err, c.deleteRecords(ctx, downIDs))
+}
+
+// stageNICIntents reclaims stale slots and lands every fresh NIC's intent record in one write before any plugin ADD: GC gets per-NIC release context at the cost of a single fsync on the claim path.
+func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, specs []network.AddSpec, stale map[string]networkRecord) (map[int]string, error) {
+	recIDs := make(map[int]string, len(specs))
+	var intents []*networkRecord
+	for _, spec := range specs {
+		if spec.Existing != nil {
+			continue
+		}
+		ifName := fmt.Sprintf("eth%d", spec.Index)
+		if rec, ok := stale[ifName]; ok {
+			// The index is reusable only after a full reclaim: proceeding would double-allocate
+			// on lenient IPAM plugins or bury the root cause under the ADD failure on strict ones.
+			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
+				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
+			}
+		}
+		recID := utils.GenerateID()
+		recIDs[spec.Index] = recID
+		intents = append(intents, &networkRecord{ID: recID, Type: confList.Name, VMID: vmID, IfName: ifName})
+	}
+	if len(intents) == 0 {
+		return recIDs, nil
+	}
+	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+		for _, rec := range intents {
+			idx.Networks[rec.ID] = rec
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("record NIC intents for %s: %w", vmID, err)
+	}
+	return recIDs, nil
+}
+
+// nicRuntime builds one NIC's runtime conf; recovered NICs get a pre-DEL and their persisted IP pinned.
+func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) *libcni.RuntimeConf {
+	ifName := fmt.Sprintf("eth%d", spec.Index)
+	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
+	if spec.Existing != nil {
+		if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifName); delErr != nil {
+			log.WithFunc("cni.Add").Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
+		}
+		if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
+			rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
+		}
+	}
+	return rt
+}
+
+// provisionNIC runs the plugin ADD and wires the TAP via TC redirect, returning the NIC's host-side config.
+func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigList, rt *libcni.RuntimeConf, vmID, nsPath string, vmCfg *types.VMConfig, spec network.AddSpec) (*types.NetworkConfig, error) {
+	ifName := fmt.Sprintf("eth%d", spec.Index)
+	tapName := tapNameForVM(vmID, spec.Index)
+
+	cniResult, addErr := c.cniConf.AddNetworkList(ctx, confList, rt)
+	if addErr != nil {
+		return nil, fmt.Errorf("cni add %s/%s: %w", vmID, ifName, addErr)
+	}
+	netInfo, parseErr := extractNetworkInfo(cniResult)
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse CNI result: %w", parseErr)
+	}
+
+	var overrideMAC string
+	if spec.Existing != nil {
+		overrideMAC = spec.Existing.MAC
+	}
+	queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
+	mac, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
+	if setupErr != nil {
+		return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
+	}
+
+	var logIP, logGW string
+	if netInfo != nil {
+		logIP = netInfo.IP
+		logGW = netInfo.Gateway
+	}
+	log.WithFunc("cni.Add").Debugf(ctx, "NIC %d: %s ip=%s gw=%s tap=%s mac=%s",
+		spec.Index, ifName, logIP, logGW, tapName, mac)
+
+	return &types.NetworkConfig{
+		TAP:       tapName,
+		MAC:       mac,
+		NumQueues: queues,
+		QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
+		Backend:   types.BackendCNI,
+		NetnsPath: nsPath,
+		Network:   netInfo,
+	}, nil
 }
 
 func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifName string) error {

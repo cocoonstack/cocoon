@@ -73,13 +73,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 				}
 
 				// CNI DEL per NIC — a failed release keeps its record for the next GC cycle.
-				downIDs, _ := c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
-
-				nsName := netnsName(vmID)
-				if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
-					continue
-				}
+				downIDs, tdErr := c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
 
 				// Lockless write.
 				if len(downIDs) > 0 {
@@ -92,6 +86,17 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 						errs = append(errs, fmt.Errorf("clean DB for %s: %w", vmID, err))
 						continue
 					}
+				}
+				if tdErr != nil {
+					// Keep the netns: the next cycle's retried DEL runs with its context intact.
+					errs = append(errs, fmt.Errorf("nic release incomplete for %s, netns kept: %w", vmID, tdErr))
+					continue
+				}
+
+				nsName := netnsName(vmID)
+				if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
+					continue
 				}
 				logger.Infof(ctx, "collected id=%s netns=%s nics=%d/%d reason=orphan",
 					vmID, nsName, len(downIDs), len(records))
