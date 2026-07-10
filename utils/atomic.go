@@ -15,8 +15,7 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 }
 
 // AtomicWriteFileNoSync is AtomicWriteFile without the fsyncs, for transient
-// run-dir files regenerated on the next launch — durability buys nothing
-// there and each fsync costs clone latency.
+// run-dir files regenerated on the next launch.
 func AtomicWriteFileNoSync(path string, data []byte, perm os.FileMode) error {
 	return atomicWriteFile(path, data, perm, false)
 }
