@@ -23,9 +23,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
-type SnapshotFileKind int
-
 const (
 	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
@@ -45,6 +42,9 @@ const (
 	// socketReadyPollInterval is the WaitForSocket poll cadence — VMM socket usually appears within a few ms after process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 )
+
+// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
+type SnapshotFileKind int
 
 // LockVMOps serializes mutating verbs on one VM across processes (#103):
 // device attach/detach, net resize, snapshot, hibernate, restore, stop.

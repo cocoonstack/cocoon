@@ -13,13 +13,13 @@ import (
 	"strings"
 )
 
-// ProcScan caches /proc cmdlines for one binaryName. Batch callers scan once then Find per id, replacing N /proc walks with one.
-type ProcScan []procEntry
-
 type procEntry struct {
 	pid     int
 	cmdline string
 }
+
+// ProcScan caches /proc cmdlines for one binaryName. Batch callers scan once then Find per id, replacing N /proc walks with one.
+type ProcScan []procEntry
 
 // ScanProcsByBinary walks /proc once, capturing argv[0]-basename matches. ENOENT (process exited mid-scan) is skipped; other read errors fail closed.
 func ScanProcsByBinary(binaryName string) (ProcScan, error) {
