@@ -224,8 +224,17 @@ func TestReclaimStaleNIC(t *testing.T) {
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
-	// DEL success releases and sweeps the record, freeing the index for re-add.
+	// TAP-delete failure also keeps the record: sweeping would leave a live TAP
+	// that collides with the re-add's CreateTAP, with nothing left to retry it.
 	exec.failIf = ""
+	deleteTAPFn = func(string, string) error { return fmt.Errorf("device busy") }
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", "tapvm1-1", rec); err == nil {
+		t.Fatal("reclaimStaleNIC: want error on failed TAP delete")
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+
+	// Both succeed: the record is released and swept, freeing the index for re-add.
+	deleteTAPFn = func(string, string) error { return nil }
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", "tapvm1-1", rec); err != nil {
 		t.Fatalf("reclaimStaleNIC: %v", err)
 	}

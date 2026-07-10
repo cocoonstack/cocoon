@@ -216,7 +216,7 @@ func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vm
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
 }
 
-// reclaimStaleNIC releases a record left by a failed detach before its index is reused: CNI DEL (by the record's own conflist), best-effort TAP delete, then the record sweep.
+// reclaimStaleNIC releases a record left by a failed detach before its index is reused: CNI DEL (by the record's own conflist), TAP delete, then the record sweep — any failure keeps the record so the next re-add retries (both ops are idempotent).
 func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath, tapName string, rec networkRecord) error {
 	cl, err := c.confListByName(rec.Type)
 	if err != nil {
@@ -225,7 +225,9 @@ func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath, tapName string,
 	if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
 		return fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err)
 	}
-	_ = deleteTAPFn(nsPath, tapName)
+	if err := deleteTAPFn(nsPath, tapName); err != nil {
+		return fmt.Errorf("delete tap %s: %w", tapName, err)
+	}
 	return c.deleteRecords(ctx, []string{rec.ID})
 }
 
