@@ -203,7 +203,7 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 }
 
 func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
-	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta)
+	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta, utils.Sync)
 }
 
 func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {

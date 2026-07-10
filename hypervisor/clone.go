@@ -59,7 +59,7 @@ func (b *Backend) CloneFromStream(
 		}
 	}()
 
-	if err = utils.ExtractTar(runDir, snapshot, isLockFile); err != nil {
+	if err = utils.ExtractTar(runDir, snapshot, utils.NoSync, isLockFile); err != nil {
 		return nil, fmt.Errorf("extract snapshot: %w", err)
 	}
 

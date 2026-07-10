@@ -247,7 +247,7 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 		return "", nil, fmt.Errorf("create staging dir: %w", err)
 	}
 	cleanup = func() { os.RemoveAll(stagingDir) } //nolint:errcheck,gosec
-	if err = utils.ExtractTar(stagingDir, snapshot, isLockFile); err != nil {
+	if err = utils.ExtractTar(stagingDir, snapshot, utils.NoSync, isLockFile); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("extract snapshot: %w", err)
 	}

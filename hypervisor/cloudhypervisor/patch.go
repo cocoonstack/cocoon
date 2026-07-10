@@ -60,7 +60,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		}
 	}
 
-	return utils.AtomicWriteJSONNoSync(path, raw)
+	return utils.AtomicWriteJSON(path, raw, utils.NoSync)
 }
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {

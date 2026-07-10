@@ -43,7 +43,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 		}
 	}()
 
-	if err = utils.ExtractTar(dataDir, tarReader); err != nil {
+	if err = utils.ExtractTar(dataDir, tarReader, utils.Sync); err != nil {
 		return "", fmt.Errorf("extract archive: %w", err)
 	}
 	// Verify gzip checksum (CRC32 + size) when the input was gzip-wrapped.

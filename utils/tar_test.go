@@ -177,7 +177,7 @@ func TestExtractTar(t *testing.T) {
 	buf := makeTar(t, files)
 
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
@@ -203,7 +203,7 @@ func TestExtractTar_SkipsDirectories(t *testing.T) {
 	tw.Close()                                                                                 //nolint:errcheck
 
 	dir := t.TempDir()
-	if err := ExtractTar(dir, &buf); err != nil {
+	if err := ExtractTar(dir, &buf, Sync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
@@ -225,7 +225,7 @@ func TestExtractTar_PathTraversal(t *testing.T) {
 	buf := makeTar(t, files)
 
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
@@ -251,7 +251,7 @@ func TestExtractTar_SkipsDotNames(t *testing.T) {
 	tw.Close()                                                                               //nolint:errcheck
 
 	dir := t.TempDir()
-	if err := ExtractTar(dir, &buf); err != nil {
+	if err := ExtractTar(dir, &buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(dir)
@@ -263,7 +263,7 @@ func TestExtractTar_SkipsDotNames(t *testing.T) {
 func TestExtractTar_Empty(t *testing.T) {
 	buf := makeTar(t, nil)
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 	entries, _ := os.ReadDir(dir)
@@ -273,7 +273,7 @@ func TestExtractTar_Empty(t *testing.T) {
 }
 
 func TestExtractTar_InvalidData(t *testing.T) {
-	if err := ExtractTar(t.TempDir(), strings.NewReader("not a tar")); err == nil {
+	if err := ExtractTar(t.TempDir(), strings.NewReader("not a tar"), Sync); err == nil {
 		t.Fatal("expected error for invalid tar")
 	}
 }
@@ -299,7 +299,7 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 	tw.Close() //nolint:errcheck
 
 	dstDir := t.TempDir()
-	if err := ExtractTar(dstDir, &buf); err != nil {
+	if err := ExtractTar(dstDir, &buf, NoSync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
 
 	buf := makeTarSparse(t, "sparse.bin", realSize, segments, dataContent)
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -368,7 +368,7 @@ func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
 
 	buf := makeTarSparse(t, "multi.bin", realSize, segments, data)
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -406,7 +406,7 @@ func TestExtractTar_Sparse_EntireFileIsHole(t *testing.T) {
 	const realSize = 32 * 1024
 	buf := makeTarSparse(t, "allhole.bin", realSize, nil, nil)
 	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
+	if err := ExtractTar(dir, buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -437,7 +437,7 @@ func TestExtractTar_Sparse_InvalidMapJSON(t *testing.T) {
 	})
 	tw.Close() //nolint:errcheck
 
-	if err := ExtractTar(t.TempDir(), &buf); err == nil {
+	if err := ExtractTar(t.TempDir(), &buf, Sync); err == nil {
 		t.Fatal("expected error for invalid sparse map JSON")
 	}
 }
@@ -458,7 +458,7 @@ func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
 	})
 	tw.Close() //nolint:errcheck
 
-	if err := ExtractTar(t.TempDir(), &buf); err == nil {
+	if err := ExtractTar(t.TempDir(), &buf, Sync); err == nil {
 		t.Fatal("expected error for invalid sparse size")
 	}
 }
@@ -490,7 +490,7 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 	tw.Close()            //nolint:errcheck
 
 	dir := t.TempDir()
-	if err := ExtractTar(dir, &buf); err != nil {
+	if err := ExtractTar(dir, &buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -523,7 +523,7 @@ func TestExtractFile_AllZeroBlocks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "zeros.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, NoSync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -545,7 +545,7 @@ func TestExtractFile_NoZeroBlocks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dense.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -567,7 +567,7 @@ func TestExtractFile_MixedZeroAndData(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mixed.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -589,7 +589,7 @@ func TestExtractFile_EndsWithHole(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "endhole.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, NoSync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -608,7 +608,7 @@ func TestExtractFile_PartialBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "partial.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -627,7 +627,7 @@ func TestExtractFile_PartialZeroBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pzero.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -647,7 +647,7 @@ func TestExtractFile_EmptyInput(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.bin")
 
-	if err := extractFile(path, bytes.NewReader(nil), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(nil), 0o644, NoSync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -664,7 +664,7 @@ func TestExtractFile_SingleByte(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "single.bin")
 
-	if err := extractFile(path, bytes.NewReader([]byte{0x42}), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader([]byte{0x42}), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -682,7 +682,7 @@ func TestExtractFile_SingleZeroByte(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "onezero.bin")
 
-	if err := extractFile(path, bytes.NewReader([]byte{0x00}), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader([]byte{0x00}), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -792,7 +792,7 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	tw.Close() //nolint:errcheck
 
 	dstDir := t.TempDir()
-	if err := ExtractTar(dstDir, &buf); err != nil {
+	if err := ExtractTar(dstDir, &buf, Sync); err != nil {
 		t.Fatal(err)
 	}
 

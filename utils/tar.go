@@ -55,7 +55,7 @@ func TarDir(tw *tar.Writer, dir string) error {
 }
 
 // ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped.
-func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
+func ExtractTar(dir string, r io.Reader, sync SyncMode, skip ...func(name string) bool) error {
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
@@ -82,11 +82,11 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 			if parseErr != nil {
 				return fmt.Errorf("parse sparse size for %s: %w", name, parseErr)
 			}
-			if err := extractFileSparse(outPath, tr, hdr.FileInfo().Mode(), realSize, mapJSON); err != nil {
+			if err := extractFileSparse(outPath, tr, hdr.FileInfo().Mode(), realSize, mapJSON, sync); err != nil {
 				return fmt.Errorf("extract sparse %s: %w", name, err)
 			}
 		} else {
-			if err := extractFile(outPath, tr, hdr.FileInfo().Mode()); err != nil {
+			if err := extractFile(outPath, tr, hdr.FileInfo().Mode(), sync); err != nil {
 				return fmt.Errorf("extract %s: %w", name, err)
 			}
 		}
@@ -112,7 +112,7 @@ func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) e
 }
 
 // extractFileSparse restores a sparse file from its segment map.
-func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string) error {
+func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string, sync SyncMode) error {
 	var segments []sparseSegment
 	if err := json.Unmarshal([]byte(mapJSON), &segments); err != nil {
 		return fmt.Errorf("decode sparse map: %w", err)
@@ -137,10 +137,13 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 		}
 	}
 
+	if !sync {
+		return nil
+	}
 	return f.Sync()
 }
 
-func extractFile(path string, r io.Reader, perm os.FileMode) error {
+func extractFile(path string, r io.Reader, perm os.FileMode, sync SyncMode) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm) //nolint:gosec
 	if err != nil {
 		return err
@@ -178,6 +181,9 @@ func extractFile(path string, r io.Reader, perm os.FileMode) error {
 		}
 	}
 
+	if !sync {
+		return nil
+	}
 	return f.Sync()
 }
 

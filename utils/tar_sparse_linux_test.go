@@ -65,7 +65,7 @@ func TestTarFileMaybeSparse_FallbackRoundTrip(t *testing.T) {
 	}
 
 	dst := t.TempDir()
-	if err := ExtractTar(dst, &buf); err != nil {
+	if err := ExtractTar(dst, &buf, Sync); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 

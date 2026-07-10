@@ -46,7 +46,7 @@ type chRestoreConfig struct {
 
 func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRecord, args []string) {
 	line := ch.conf.CHBinary + " " + strings.Join(args, " ")
-	if err := utils.AtomicWriteFileNoSync(filepath.Join(rec.RunDir, cmdlineFileName), []byte(line), 0o600); err != nil {
+	if err := utils.AtomicWriteFile(filepath.Join(rec.RunDir, cmdlineFileName), []byte(line), 0o600, utils.NoSync); err != nil {
 		log.WithFunc("cloudhypervisor.saveCmdline").Warnf(ctx, "save cmdline: %v", err)
 	}
 }

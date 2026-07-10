@@ -50,5 +50,5 @@ func WriteSnapshotEnvelope(dir string, cfg types.SnapshotConfig) error {
 	if err != nil {
 		return err
 	}
-	return utils.AtomicWriteFile(filepath.Join(dir, SnapshotJSONName), data, 0o644)
+	return utils.AtomicWriteFile(filepath.Join(dir, SnapshotJSONName), data, 0o644, utils.Sync)
 }

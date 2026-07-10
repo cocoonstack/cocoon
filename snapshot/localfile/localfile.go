@@ -156,7 +156,7 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	if err = os.MkdirAll(dataDir, 0o750); err != nil {
 		return "", fmt.Errorf("create data dir: %w", err)
 	}
-	if err = utils.ExtractTar(dataDir, stream); err != nil {
+	if err = utils.ExtractTar(dataDir, stream, utils.NoSync); err != nil {
 		return "", fmt.Errorf("extract snapshot data: %w", err)
 	}
 	if err = utils.SyncTree(dataDir); err != nil {
