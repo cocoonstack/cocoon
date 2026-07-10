@@ -101,6 +101,14 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
 		}
+		// The DB says this index is free (caller holds the ops lock), so a
+		// same-name TAP is an interrupted-resize leftover; without the reclaim
+		// it wedges every retry here.
+		if old, lErr := netlink.LinkByName(name); lErr == nil {
+			if delErr := netlink.LinkDel(old); delErr != nil {
+				return nil, fmt.Errorf("reclaim stale tap %s: %w", name, delErr)
+			}
+		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
 		if cErr := network.CreateTAP(name, queues); cErr != nil {
 			return nil, cErr

@@ -193,10 +193,19 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 // sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
 func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 	logger := log.WithFunc("gc." + b.Typ)
+	// Lockless write: the orchestrator already holds the index flock for the whole cycle; a locked Update here would self-deadlock.
+	clearIntent := func(dir string) {
+		if err := b.DB.WriteRaw(func(idx *VMIndex) error {
+			idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return d == dir })
+			return nil
+		}); err != nil {
+			logger.Warnf(ctx, "clear cleanup intent %s: %v", dir, err)
+		}
+	}
 	var errs []error
 	for _, dir := range dirs {
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			b.clearOrphanDirs(ctx, []string{dir})
+			clearIntent(dir)
 			continue
 		}
 		b.withOpsTryLock(ctx, dir, func() {
@@ -210,7 +219,7 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 				return
 			}
 			logger.Infof(ctx, "collected dir=%s reason=migrated-delete-retry", dir)
-			b.clearOrphanDirs(ctx, []string{dir})
+			clearIntent(dir)
 		})
 	}
 	return errs

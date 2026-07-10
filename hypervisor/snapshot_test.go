@@ -164,6 +164,12 @@ func TestValidateMetaPathsResidentExemption(t *testing.T) {
 	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
 		t.Fatalf("resident path must be provenance-only: %v", err)
 	}
+	// An empty resident path must not degrade integrity into statting the snapshot dir.
+	meta.StorageConfigs[0].Path = ""
+	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+		t.Fatal("empty storage path must be rejected")
+	}
+	meta.StorageConfigs[0].Path = "/old-run/firecracker/vm1/cow.raw"
 	// Dereferenced paths stay strict.
 	meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{Path: "/elsewhere/layer.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"})
 	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
