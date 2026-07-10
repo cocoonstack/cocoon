@@ -97,7 +97,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// statusOnce prints one snapshot; propagates ListAllVMs error (loop callers swallow). Shared by vm list and one-shot vm status.
+// statusOnce prints one snapshot; propagates ListAllVMs error (loop callers swallow).
 func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format string) error {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {

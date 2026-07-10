@@ -226,7 +226,7 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }
 
-// PrepareStagingDir extracts the snapshot into a staging dir INSIDE the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
+// PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
 	if err = os.RemoveAll(stagingDir); err != nil {

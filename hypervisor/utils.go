@@ -272,7 +272,7 @@ func IsDataDiskFile(name string) bool {
 	return strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw")
 }
 
-// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum (.79 bare-metal ext4 NVMe: 4×1GiB 1.07s→0.82s, 2×2GiB 1.06s→0.88s).
+// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {

@@ -126,7 +126,7 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
-// QuarantineVM is MarkError plus a persisted reason: start refuses a quarantined VM even after stop rewrites the state, and only a successful restore lifts it.
+// QuarantineVM marks the VM error and persists the quarantine reason (see VMRecord.Quarantine).
 func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	now := time.Now()
 	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
