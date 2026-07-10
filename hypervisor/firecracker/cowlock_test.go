@@ -9,21 +9,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func newTestFC(t *testing.T) *Firecracker {
-	t.Helper()
-	dir := t.TempDir()
-	fc, err := New(&config.Config{
-		RootDir: dir,
-		RunDir:  filepath.Join(dir, "run"),
-		LogDir:  filepath.Join(dir, "log"),
-	}, nil)
-	if err != nil {
-		t.Fatalf("new firecracker: %v", err)
-	}
-	return fc
-}
-
-// A lock acquired after a concurrent rm sees the record gone and must abort.
 func TestEnsureSourceAliveAbortsOnDeletedSource(t *testing.T) {
 	fc := newTestFC(t)
 	const srcID = "SRCVM"
@@ -52,7 +37,6 @@ func TestEnsureSourceAliveSkipsWithoutWritableDisks(t *testing.T) {
 	}
 }
 
-// Lock files live next to the disk they guard, so vm rm reclaims them with the run dir.
 func TestCloneLockLivesNextToDisk(t *testing.T) {
 	cow := filepath.Join(t.TempDir(), "cow.raw")
 	called := false
@@ -68,4 +52,18 @@ func TestCloneLockLivesNextToDisk(t *testing.T) {
 	if _, err := os.Stat(cow + ".clone.lock"); err != nil {
 		t.Fatalf("lock file not beside the disk: %v", err)
 	}
+}
+
+func newTestFC(t *testing.T) *Firecracker {
+	t.Helper()
+	dir := t.TempDir()
+	fc, err := New(&config.Config{
+		RootDir: dir,
+		RunDir:  filepath.Join(dir, "run"),
+		LogDir:  filepath.Join(dir, "log"),
+	}, nil)
+	if err != nil {
+		t.Fatalf("new firecracker: %v", err)
+	}
+	return fc
 }

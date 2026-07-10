@@ -237,13 +237,6 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }
 
-func markRestoreDirty(runDir string) error {
-	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
-		return fmt.Errorf("mark restore dirty: %w", err)
-	}
-	return nil
-}
-
 // PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
@@ -259,4 +252,11 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 		return "", nil, fmt.Errorf("extract snapshot: %w", err)
 	}
 	return stagingDir, cleanup, nil
+}
+
+func markRestoreDirty(runDir string) error {
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		return fmt.Errorf("mark restore dirty: %w", err)
+	}
+	return nil
 }

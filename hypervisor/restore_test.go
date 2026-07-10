@@ -264,24 +264,6 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 	}
 }
 
-func tarWithFiles(t *testing.T, names ...string) io.Reader {
-	t.Helper()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for _, name := range names {
-		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: 1}); err != nil {
-			t.Fatalf("tar hdr %s: %v", name, err)
-		}
-		if _, err := tw.Write([]byte("y")); err != nil {
-			t.Fatalf("tar body %s: %v", name, err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("tar close: %v", err)
-	}
-	return &buf
-}
-
 func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-sweep-fail"
@@ -318,4 +300,22 @@ func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr != nil {
 		t.Error("the restore-dirty tombstone must survive a failed destructive phase")
 	}
+}
+
+func tarWithFiles(t *testing.T, names ...string) io.Reader {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, name := range names {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: 1}); err != nil {
+			t.Fatalf("tar hdr %s: %v", name, err)
+		}
+		if _, err := tw.Write([]byte("y")); err != nil {
+			t.Fatalf("tar body %s: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	return &buf
 }
