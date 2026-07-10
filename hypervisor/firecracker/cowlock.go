@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -29,7 +30,7 @@ func (fc *Firecracker) withSourceWritableDisksLocked(ctx context.Context, config
 }
 
 func (fc *Firecracker) cloneLockDir() string {
-	return filepath.Join(fc.Conf.RunDir(), "clone-locks")
+	return filepath.Join(fc.Conf.RunDir(), hypervisor.CloneLocksDirName)
 }
 
 func withPathsLocked(ctx context.Context, lockDir string, paths []string, fn func() error) error {

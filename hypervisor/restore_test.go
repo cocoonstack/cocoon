@@ -311,4 +311,7 @@ func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	if rec.Quarantine == "" || rec.State != types.VMStateError {
 		t.Errorf("partial cleanup must quarantine even a stopped origin: quarantine=%q state=%s", rec.Quarantine, rec.State)
 	}
+	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr != nil {
+		t.Error("the restore-dirty tombstone must survive a failed destructive phase")
+	}
 }

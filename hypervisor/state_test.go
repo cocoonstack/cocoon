@@ -645,7 +645,7 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	}
 }
 
-func TestPrepareStartRefusesRestoreStaging(t *testing.T) {
+func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-staging"
@@ -659,11 +659,11 @@ func TestPrepareStartRefusesRestoreStaging(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(runDir, restoreStagingName), 0o750); err != nil {
-		t.Fatalf("mk staging: %v", err)
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		t.Fatalf("mk tombstone: %v", err)
 	}
 	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
-		t.Fatal("PrepareStart must refuse a run dir with leftover restore staging")
+		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
 	}
 }
 

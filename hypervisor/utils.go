@@ -36,8 +36,12 @@ const (
 	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
 	OpsLockName = "ops.lock"
 
-	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix.
+	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir so rm/GC cannot unlink a held inode.
+	CloneLocksDirName = "clone-locks"
+
+	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix. restoreDirtyName is the tombstone marking the destructive restore phase — cleared only by FinalizeRestore, never by GC.
 	restoreStagingName = ".restore-staging"
+	restoreDirtyName   = ".restore-dirty"
 	captureDirPrefix   = "snapshot-"
 
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.

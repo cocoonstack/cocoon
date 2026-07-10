@@ -64,6 +64,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
 	}
+	_ = os.Remove(filepath.Join(rec.RunDir, restoreDirtyName))
 
 	info := rec.VM
 	info.Config = *vmCfg
@@ -103,6 +104,10 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 
 	var result *types.VM
 	inner := func() error {
+		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
+		if err := markRestoreDirty(rec.RunDir); err != nil {
+			return err
+		}
 		if spec.BeforeMerge != nil {
 			if err := spec.BeforeMerge(rec); err != nil {
 				// The sweep may have deleted some snapshot files already; a
@@ -151,6 +156,9 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 
 	var result *types.VM
 	inner := func() error {
+		if err := markRestoreDirty(rec.RunDir); err != nil {
+			return err
+		}
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
 			// Populate cleans then clones with no rollback; a partial run
 			// dir must quarantine regardless of origin, like the merge.
@@ -227,6 +235,13 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	now := time.Now()
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, vm.ID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
+}
+
+func markRestoreDirty(runDir string) error {
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		return fmt.Errorf("mark restore dirty: %w", err)
+	}
+	return nil
 }
 
 // PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -78,9 +79,11 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	if rec.State == types.VMStateCreating {
 		return nil, fmt.Errorf("vm %s is still being created", id)
 	}
-	// Filesystem sentinel: leftover staging means an interrupted restore whose quarantine write may have been lost; the mixed run dir must not boot.
-	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreStagingName)); statErr == nil {
-		return nil, fmt.Errorf("vm %s has a partial restore staging dir; recover with vm restore or delete with vm rm", id)
+	// Tombstone survives lost quarantine writes and process death mid-restore; the mixed run dir must not boot.
+	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr == nil {
+		return nil, fmt.Errorf("vm %s has an interrupted restore; recover with vm restore or delete with vm rm", id)
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
 	}
 
 	runErr := b.WithRunningVM(ctx, &rec, func(_ int) error { return nil })

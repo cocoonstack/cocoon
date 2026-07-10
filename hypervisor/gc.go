@@ -67,8 +67,8 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 			return snap, nil
 		},
 		Resolve: func(_ context.Context, snap VMGCSnapshot, _ map[string]any) []string {
-			// "db" holds vms.json/vms.lock — exclude from orphan scan when RootDir == RunDir.
-			reserved := map[string]struct{}{"db": {}}
+			// "db" holds vms.json/vms.lock (when RootDir == RunDir); clone-locks holds live FC clone flocks.
+			reserved := map[string]struct{}{"db": {}, CloneLocksDirName: {}}
 			runOrphans := utils.FilterUnreferenced(snap.runDirs, snap.vmIDs, reserved)
 			logOrphans := utils.FilterUnreferenced(snap.logDirs, snap.vmIDs, reserved)
 			for _, id := range snap.staleCreate {
