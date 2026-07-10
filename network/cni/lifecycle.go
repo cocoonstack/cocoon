@@ -106,10 +106,11 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 				rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
 			}
 		} else if rec, ok := stale[ifName]; ok {
-			// A failed detach left this index's record: release it first, or the IPAM
-			// plugin refuses the duplicate container+ifname allocation.
+			// A failed detach left this index's record: the index is reusable only after a
+			// full reclaim — proceeding would double-allocate on lenient IPAM plugins, or
+			// bury the root cause under the ADD failure on strict ones.
 			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, tapName, rec); rcErr != nil {
-				logger.Warnf(ctx, "reclaim stale NIC %s/%s: %v (continuing)", vmID, ifName, rcErr)
+				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
 			}
 		}
 
