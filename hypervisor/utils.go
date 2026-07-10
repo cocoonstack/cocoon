@@ -56,13 +56,15 @@ type SnapshotFileKind int
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
 	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.
-	// Lockless read: RunDir is immutable after create, and a locked read would stall every ops verb behind an in-flight GC cycle's index lock.
-	_ = b.DB.ReadRaw(func(idx *VMIndex) error {
+	// Lockless read: RunDir is immutable after create, and a locked read would stall every ops verb behind an in-flight GC cycle's index lock. Fail closed on a real read error (ENOENT reads as empty) — guessing the path could split the lock domain.
+	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
 		if r := idx.VMs[vmID]; r != nil && r.RunDir != "" {
 			runDir = r.RunDir
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("resolve run dir for %s: %w", vmID, err)
+	}
 	l, err := opsLock(runDir)
 	if err != nil {
 		return nil, err

@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -641,6 +642,28 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	}
 	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
+	}
+}
+
+func TestPrepareStartRefusesRestoreStaging(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-staging"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir := t.TempDir()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = runDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(runDir, restoreStagingName), 0o750); err != nil {
+		t.Fatalf("mk staging: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
+		t.Fatal("PrepareStart must refuse a run dir with leftover restore staging")
 	}
 }
 

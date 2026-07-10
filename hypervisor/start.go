@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/projecteru2/core/log"
 
@@ -76,6 +77,10 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	}
 	if rec.State == types.VMStateCreating {
 		return nil, fmt.Errorf("vm %s is still being created", id)
+	}
+	// Filesystem sentinel: leftover staging means an interrupted restore whose quarantine write may have been lost; the mixed run dir must not boot.
+	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreStagingName)); statErr == nil {
+		return nil, fmt.Errorf("vm %s has a partial restore staging dir; recover with vm restore or delete with vm rm", id)
 	}
 
 	runErr := b.WithRunningVM(ctx, &rec, func(_ int) error { return nil })
