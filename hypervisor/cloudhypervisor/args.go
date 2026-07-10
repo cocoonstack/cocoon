@@ -56,13 +56,7 @@ func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath 
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},
 	}
 
-	if hypervisor.IsDirectBoot(rec.BootConfig) {
-		cfg.Serial = &chRuntimeFile{Mode: "Off"}
-		cfg.Console = &chRuntimeFile{Mode: "Pty"}
-	} else {
-		cfg.Serial = &chRuntimeFile{Mode: "Socket", Socket: consoleSockPath}
-		cfg.Console = &chRuntimeFile{Mode: "Off"}
-	}
+	cfg.Serial, cfg.Console = serialConsoleFor(hypervisor.IsDirectBoot(rec.BootConfig), consoleSockPath)
 
 	if size, ok := hypervisor.BalloonSize(mem, rec.Config.Windows); ok {
 		cfg.Balloon = &chBalloon{
@@ -184,6 +178,22 @@ func cocoonNetID(mac string) string {
 	return cocoonNetIDPrefix + strings.ReplaceAll(mac, ":", "")
 }
 
+// serialConsoleFor returns the serial/console devices for the boot mode: direct-boot gets a CH-allocated PTY, UEFI the console socket. Launch args and restore-time config.json patching must agree on this rule.
+func serialConsoleFor(directBoot bool, consoleSock string) (serial, console *chRuntimeFile) {
+	if directBoot {
+		return &chRuntimeFile{Mode: "Off"}, &chRuntimeFile{Mode: "Pty"}
+	}
+	return &chRuntimeFile{Mode: "Socket", Socket: consoleSock}, &chRuntimeFile{Mode: "Off"}
+}
+
+// effectiveDirectIO applies the per-disk override, else the VM-level default (writable disks get O_DIRECT unless disabled).
+func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
+	if sc.DirectIO != nil {
+		return *sc.DirectIO
+	}
+	return !sc.RO && !noDirectIO
+}
+
 func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool) chDisk {
 	if diskQueueSize <= 0 {
 		diskQueueSize = defaultDiskQueueSize
@@ -194,11 +204,7 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 		Serial:    storageConfig.Serial,
 		NumQueues: cpuCount,
 		QueueSize: diskQueueSize,
-	}
-	if storageConfig.DirectIO != nil {
-		d.DirectIO = *storageConfig.DirectIO
-	} else {
-		d.DirectIO = !storageConfig.RO && !noDirectIO
+		DirectIO:  effectiveDirectIO(storageConfig, noDirectIO),
 	}
 
 	switch {

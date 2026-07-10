@@ -222,7 +222,7 @@ func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
 
 // inspectRunning gates on a live VM and returns a fresh vm.info for conflict/memory/device-id lookups.
 func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, error) {
-	hc, err := ch.runningVMClient(ctx, vmRef)
+	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -329,12 +329,7 @@ func (ch *CloudHypervisor) detachWith(
 	return nil
 }
 
-// runningVMClient asserts the CH process is alive and returns an http.Client on its API socket.
-func (ch *CloudHypervisor) runningVMClient(ctx context.Context, vmRef string) (*http.Client, error) {
-	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
-	return hc, err
-}
-
+// runningVMClientWithRecord asserts the CH process is alive and returns an http.Client on its API socket plus the resolved record.
 func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef string) (*http.Client, string, hypervisor.VMRecord, error) {
 	vmID, rec, err := ch.ResolveAndLoad(ctx, vmRef)
 	if err != nil {
