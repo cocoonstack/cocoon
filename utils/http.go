@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -114,8 +115,7 @@ func DoWithRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 
 // IsRetryable returns true for transient errors (connection failures, 5xx, 429).
 func IsRetryable(err error) bool {
-	var ae *APIError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*APIError](err); ok {
 		return ae.Code >= 500 || ae.Code == http.StatusTooManyRequests
 	}
 	// Non-APIError = connection-level failure, always retry.
@@ -134,6 +134,24 @@ func DoAPIOnce(ctx context.Context, hc *http.Client, method, url string, body []
 	return doAPI(ctx, hc, method, url, body, successCodes...)
 }
 
+// DoJSONOnce marshals payload and sends it via DoAPIOnce; kind names the payload in the marshal error.
+func DoJSONOnce[T any](ctx context.Context, hc *http.Client, method, url, kind string, payload T, successCodes ...int) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s: %w", kind, err)
+	}
+	return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
+}
+
+// DoJSONWithRetry is DoJSONOnce over DoAPIWithRetry, for idempotent endpoints.
+func DoJSONWithRetry[T any](ctx context.Context, hc *http.Client, method, url, kind string, payload T, successCodes ...int) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s: %w", kind, err)
+	}
+	return DoAPIWithRetry(ctx, hc, method, url, body, successCodes...)
+}
+
 // doAPI is DoAPI with successCodes defaulting to 204; codes[1:] are tolerated alts (return nil body).
 func doAPI(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
 	primary := http.StatusNoContent
@@ -144,8 +162,7 @@ func doAPI(ctx context.Context, hc *http.Client, method, url string, body []byte
 	if apiErr == nil {
 		return resp, nil
 	}
-	var ae *APIError
-	if errors.As(apiErr, &ae) && len(successCodes) > 1 && slices.Contains(successCodes[1:], ae.Code) {
+	if ae, ok := errors.AsType[*APIError](apiErr); ok && len(successCodes) > 1 && slices.Contains(successCodes[1:], ae.Code) {
 		return nil, nil
 	}
 	return nil, apiErr

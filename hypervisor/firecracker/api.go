@@ -99,34 +99,22 @@ type fcSnapshotMemBE struct {
 	BackendType string `json:"backend_type"`
 }
 
-// fcAPI PUTs body to an idempotent FC REST endpoint with retry; expects 204. Use DoAPIWithRetry for non-204 responses.
+// fcAPI PUTs body to an idempotent FC REST endpoint with retry; expects 204.
 func fcAPI(ctx context.Context, hc *http.Client, endpoint string, body []byte) error {
 	_, err := utils.DoAPIWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, body)
 	return err
 }
 
-// fcAPIOnce is no-retry for non-idempotent state transitions (instance-start, pause/resume) — retry would hit wrong-state.
-func fcAPIOnce(ctx context.Context, hc *http.Client, method, endpoint string, body []byte, successCodes ...int) error {
-	_, err := utils.DoAPIOnce(ctx, hc, method, "http://localhost"+endpoint, body, successCodes...)
+// putJSON marshals payload and PUTs it to an idempotent FC endpoint with retry.
+func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
+	_, err := utils.DoJSONWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, kind, payload)
 	return err
 }
 
-// putJSON marshals payload and PUTs it to endpoint via fcAPI.
-func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", kind, err)
-	}
-	return fcAPI(ctx, hc, endpoint, body)
-}
-
-// sendJSONOnce is putJSON's no-retry twin over fcAPIOnce for non-idempotent endpoints.
+// sendJSONOnce is putJSON's no-retry twin for non-idempotent state transitions (instance-start, pause/resume) — retry would hit wrong-state.
 func sendJSONOnce[T any](ctx context.Context, hc *http.Client, method, endpoint string, payload T, kind string, successCodes ...int) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", kind, err)
-	}
-	return fcAPIOnce(ctx, hc, method, endpoint, body, successCodes...)
+	_, err := utils.DoJSONOnce(ctx, hc, method, "http://localhost"+endpoint, kind, payload, successCodes...)
+	return err
 }
 
 func putMachineConfig(ctx context.Context, hc *http.Client, cfg fcMachineConfig) error {

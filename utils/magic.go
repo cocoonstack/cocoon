@@ -7,4 +7,7 @@ var (
 
 	// GzipMagic is the gzip stream signature.
 	GzipMagic = []byte{0x1f, 0x8b}
+
+	// ZstdMagic is the zstd frame signature.
+	ZstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
 )
