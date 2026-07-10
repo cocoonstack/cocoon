@@ -39,6 +39,12 @@ type Watchable interface {
 	WatchPath() string
 }
 
+// Reserver pre-claims a VM ID before host resources (network) are provisioned, closing the window where GC would see ownerless TAP/netns.
+type Reserver interface {
+	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig) error
+	RollbackCreate(ctx context.Context, id, name string)
+}
+
 // Direct is an optional interface for hypervisors that support clone/restore from a local snapshot directory.
 type Direct interface {
 	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)
