@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -264,6 +265,7 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 	if dc, ok := snapBackend.(snapshot.DirectCreator); ok {
 		id, done, err := dc.CreateFromDir(ctx, cfg, srcDir)
 		if err != nil {
+			os.RemoveAll(srcDir) //nolint:errcheck,gosec // consume srcDir on every path: a failed direct save must not leave the GB capture dir behind
 			return "", fmt.Errorf("save snapshot: %w", err)
 		}
 		if done {
