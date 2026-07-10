@@ -204,6 +204,17 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	assertRecordIDs(t, c, []string{"n-eth1"})
 }
 
+func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	c.cniConf = nil
+	stubLifecycleSeams(t)
+
+	// A VM resized to 0 NICs has no lease needing a plugin DEL; a missing conflist must not wedge its netns removal.
+	if err := c.deleteVM(t.Context(), "vm1"); err != nil {
+		t.Fatalf("deleteVM with zero records: %v", err)
+	}
+}
+
 func TestReclaimStaleNIC(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

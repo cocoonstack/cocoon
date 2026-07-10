@@ -103,7 +103,9 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			// setupTCRedirect creates the TAP; it would leak if the netns persists.
 			if !createdNetns {
 				if delErr := deleteTAPInNetns(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
-					logger.Warnf(rctx, "rollback tap delete %s: %v", tapNameForVM(vmID, a.index), delErr)
+					logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, a.index), delErr)
+					kept = true
+					continue
 				}
 			}
 			if a.recID != "" {

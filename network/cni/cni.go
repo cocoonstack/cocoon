@@ -157,6 +157,10 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {
 	logger := log.WithFunc("cni.tearDownNICs")
+	// Zero records need no plugin: a missing conflist must not wedge a 0-NIC VM's netns removal.
+	if len(records) == 0 {
+		return nil, nil
+	}
 	if c.cniConf == nil {
 		return nil, c.errNoConflist()
 	}
