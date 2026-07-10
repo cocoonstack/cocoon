@@ -364,7 +364,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 		case SnapshotFileSkip:
 		}
 	}
-	return copyPairs(ctx, cowPairs)
+	return copyPairs(ctx, cowPairs, utils.Sync)
 }
 
 // CleanSnapshotFiles removes snapshot-specific files from runDir.

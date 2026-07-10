@@ -26,7 +26,7 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 	}
 	f.Close()
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestSparseCopy_PartialData(t *testing.T) {
 	writeAt(t, f, 4096, data)
 	f.Close()
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestSparseCopy_NonSparse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestSparseCopy_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestSparseCopy_EmptyFile(t *testing.T) {
 
 func TestSparseCopy_SrcNotExist(t *testing.T) {
 	dir := t.TempDir()
-	err := SparseCopy(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"))
+	err := SparseCopy(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent src")
 	}
@@ -156,7 +156,7 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 	writeAt(t, f, 128*1024, seg2)
 	f.Close()
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 

@@ -12,11 +12,11 @@ import (
 const ficlone = 0x40049409
 
 // ReflinkCopy copies a single file, preferring FICLONE (O(1) CoW on btrfs/xfs/bcachefs) and falling back to SparseCopy on any error.
-func ReflinkCopy(dst, src string) error {
+func ReflinkCopy(dst, src string, sync SyncMode) error {
 	if err := tryFiclone(dst, src); err == nil {
 		return nil
 	}
-	return SparseCopy(dst, src)
+	return SparseCopy(dst, src, sync)
 }
 
 func tryFiclone(dst, src string) error {

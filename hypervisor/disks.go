@@ -46,7 +46,7 @@ func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) stri
 	return ""
 }
 
-// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum.
+// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum. Durability is paid at persist (SyncTree / store ingestion), not here.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {
@@ -54,7 +54,7 @@ func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*t
 			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
 		}
 	}
-	return copyPairs(ctx, pairs)
+	return copyPairs(ctx, pairs, utils.NoSync)
 }
 
 // PrepareDataDisks creates sparse files for each spec under baseDir, optionally formats (ext4 default), returns StorageConfigs; names must be unique and ValidDataDiskName-passing.
@@ -133,9 +133,9 @@ func ExpandRawImage(path string, targetSize int64) error {
 	return nil
 }
 
-func copyPairs(ctx context.Context, pairs [][2]string) error {
+func copyPairs(ctx context.Context, pairs [][2]string, sync utils.SyncMode) error {
 	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
-		if err := utils.ReflinkCopy(p[0], p[1]); err != nil {
+		if err := utils.ReflinkCopy(p[0], p[1], sync); err != nil {
 			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
 		}
 		return struct{}{}, nil
