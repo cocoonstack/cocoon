@@ -132,16 +132,18 @@ func (lf *LocalFile) acquireReadLease(ctx context.Context, id string) (func(), e
 
 // Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
 func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stream io.Reader) (_ string, err error) {
+	if cfg.ID == "" {
+		return "", fmt.Errorf("snapshot ID is required (must be set by caller)")
+	}
+	release, err := lf.acquireBuildLease(cfg.ID)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	dataDir, err := lf.beginCreate(ctx, cfg)
 	if err != nil {
 		return "", err
 	}
-	release, err := lf.acquireBuildLease(cfg.ID)
-	if err != nil {
-		lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
-		return "", err
-	}
-	defer release()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(dataDir) //nolint:errcheck,gosec
@@ -171,16 +173,18 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 		return "", false, nil
 	}
 
+	if cfg.ID == "" {
+		return "", false, fmt.Errorf("snapshot ID is required (must be set by caller)")
+	}
+	release, err := lf.acquireBuildLease(cfg.ID)
+	if err != nil {
+		return "", false, err
+	}
+	defer release()
 	dataDir, err := lf.beginCreate(ctx, cfg)
 	if err != nil {
 		return "", false, err
 	}
-	release, err := lf.acquireBuildLease(cfg.ID)
-	if err != nil {
-		lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
-		return "", false, err
-	}
-	defer release()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(dataDir) //nolint:errcheck,gosec
@@ -309,9 +313,6 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 
 // beginCreate validates cfg and inserts the pending placeholder record, returning the data dir.
 func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig) (string, error) {
-	if cfg.ID == "" {
-		return "", fmt.Errorf("snapshot ID is required (must be set by caller)")
-	}
 	if err := cfg.Validate(); err != nil {
 		return "", err
 	}
@@ -352,6 +353,10 @@ func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConf
 // insertRecord adds rec under id with name-collision check; both Create (Pending) and Import (finalized) go through here.
 func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *snapshot.SnapshotRecord) error {
 	return lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+		// Reject an existing ID: a same-ID retry must not adopt (and later roll back) a finalized snapshot.
+		if idx.Snapshots[id] != nil {
+			return fmt.Errorf("snapshot id %q already exists", id)
+		}
 		if name != "" {
 			if existingID, ok := idx.Names[name]; ok {
 				return fmt.Errorf("snapshot name %q already in use by %s", name, existingID)
@@ -369,7 +374,7 @@ func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *sna
 func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
 		delete(idx.Snapshots, id)
-		if name != "" {
+		if name != "" && idx.Names[name] == id {
 			delete(idx.Names, name)
 		}
 		return nil

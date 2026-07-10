@@ -1408,3 +1408,53 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 	}
 	return id
 }
+
+func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "orig"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "retry"},
+		makeTar(t, map[string][]byte{"x": []byte("2")})); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("same-ID retry must be rejected, got: %v", err)
+	}
+
+	rec, err := lf.lookupRecord(ctx, id, false)
+	if err != nil || rec.Name != "orig" {
+		t.Fatalf("original record must survive the retry: rec=%+v err=%v", rec, err)
+	}
+	if _, err := os.Stat(filepath.Join(rec.DataDir, "x")); err != nil {
+		t.Fatalf("original data dir must survive the retry: %v", err)
+	}
+}
+
+func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "leased"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	release, err := lf.acquireReadLease(ctx, id)
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if _, err := lf.Delete(ctx, []string{id}); err == nil || !strings.Contains(err.Error(), "in use") {
+		release()
+		t.Fatalf("delete must fail while a reader holds the lease, got: %v", err)
+	}
+	if _, err := lf.lookupRecord(ctx, id, false); err != nil {
+		release()
+		t.Fatalf("record must survive the refused delete: %v", err)
+	}
+	release()
+	if _, err := lf.Delete(ctx, []string{id}); err != nil {
+		t.Fatalf("delete after release: %v", err)
+	}
+}
