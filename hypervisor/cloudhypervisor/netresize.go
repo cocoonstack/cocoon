@@ -84,7 +84,11 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, in
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
-			if !ch.resolveFailedPersist(ctx, hc, plumbing, vmID, nc, chID, i) {
+			committed, verifyErr := ch.resolveFailedPersist(ctx, hc, plumbing, vmID, nc, chID, i)
+			if verifyErr != nil {
+				return res, fmt.Errorf("persist nic %d: %w; commit state inconclusive: %v (device kept, rerun vm net to reconcile)", i, err, verifyErr)
+			}
+			if !committed {
 				return res, fmt.Errorf("persist nic %d: %w", i, err)
 			}
 			logger.Warnf(ctx, "persist nic %d reported %v but committed; keeping device", i, err)
@@ -95,14 +99,21 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, in
 	return res, nil
 }
 
-// resolveFailedPersist re-reads the record after a failed NIC persist: fsync can fail after the rename landed, and tearing down a committed NIC would strand record-without-device where a same-target retry returns at target==current without healing. True means committed (device kept); otherwise CH device and plumbing are torn down on a detached bounded context.
-func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) bool {
+// resolveFailedPersist re-reads the record after a failed NIC persist: fsync can fail after the rename landed, and tearing down a committed NIC would strand record-without-device where a same-target retry returns at target==current without healing. Teardown happens only on a conclusive miss; a failed re-read keeps the device and plumbing (ejectOrphanNICs reconciles a genuine orphan on the next resize). The read is lockless so an in-flight GC cycle's index lock cannot time it out into a false miss.
+func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
+	var rec *hypervisor.VMRecord
+	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
+		rec = idx.VMs[vmID]
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	if nicPersisted(rec, nc.MAC) {
+		return true, nil
+	}
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
 	defer cancel()
-	if fresh, loadErr := ch.LoadRecord(rctx, vmID); loadErr == nil && nicPersisted(&fresh, nc.MAC) {
-		return true
-	}
 	// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
 	if rmErr := removeDeviceVM(rctx, hc, chID); rmErr != nil {
 		logger.Warnf(rctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
@@ -112,7 +123,7 @@ func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Cl
 	if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
 		logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
 	}
-	return false
+	return false, nil
 }
 
 func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing, current, target int, res netresize.Result) (netresize.Result, error) {
