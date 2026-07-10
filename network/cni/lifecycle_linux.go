@@ -52,15 +52,22 @@ func deleteNetns(ctx context.Context, name string) error {
 	})
 }
 
-// deleteTAPInNetns deletes a named TAP device inside target netns.
+// deleteTAPInNetns is idempotent: an absent TAP or an already-deleted netns is success, or every teardown retry after a partial failure would wedge on the missing device.
 func deleteTAPInNetns(nsPath, tapName string) error {
-	return cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
+	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
 		link, err := netlink.LinkByName(tapName)
 		if err != nil {
+			if _, ok := errors.AsType[netlink.LinkNotFoundError](err); ok {
+				return nil
+			}
 			return fmt.Errorf("find %s: %w", tapName, err)
 		}
 		return netlink.LinkDel(link)
 	})
+	if _, ok := errors.AsType[cns.NSPathNotExistErr](err); ok {
+		return nil
+	}
+	return err
 }
 
 // setupTCRedirect wires ifName <-> tapName inside target netns, returns MAC.

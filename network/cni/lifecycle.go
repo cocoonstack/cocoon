@@ -48,7 +48,19 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	nsName := netnsName(vmID)
 	nsPath := netnsPath(vmID)
 
-	createdNetns, err := ensureNetns(nsName, nsPath)
+	var stale map[string]networkRecord
+	if err = c.store.With(ctx, func(idx *networkIndex) error {
+		records := idx.byVMID(vmID)
+		stale = make(map[string]networkRecord, len(records))
+		for _, r := range records {
+			stale[r.IfName] = r
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("read network index: %w", err)
+	}
+
+	createdNetns, err := ensureNetnsFn(nsName, nsPath)
 	if err != nil {
 		return nil, fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
@@ -93,6 +105,12 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
 				rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
 			}
+		} else if rec, ok := stale[ifName]; ok {
+			// The index is reusable only after a full reclaim: proceeding would double-allocate
+			// on lenient IPAM plugins or bury the root cause under the ADD failure on strict ones.
+			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
+				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
+			}
 		}
 
 		cniResult, addErr := c.cniConf.AddNetworkList(ctx, confList, rt)
@@ -111,7 +129,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			overrideMAC = spec.Existing.MAC
 		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, queues, overrideMAC)
+		mac, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
 		if setupErr != nil {
 			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 		}
@@ -158,8 +176,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// Remove tears down NIC plumbing for the given indices; preserves the netns.
-// Always sweeps DB records for picked indices so resize-up to the same index isn't stale; CNI/TAP errors still propagate.
+// Remove tears down NIC plumbing for the given indices; preserves the netns. A failed NIC keeps its DB record so retry / vm rm / GC can still release its CNI resources.
 func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	if len(indices) == 0 {
 		return nil
@@ -171,28 +188,41 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
-	byIfName := make(map[string]networkRecord, len(records))
-	for _, r := range records {
-		byIfName[r.IfName] = r
-	}
-	picked := make([]networkRecord, 0, len(indices))
-	pickedIDs := make([]string, 0, len(indices))
+	wanted := make(map[string]bool, len(indices))
 	for _, i := range indices {
-		ifName := fmt.Sprintf("eth%d", i)
-		rec, ok := byIfName[ifName]
-		if !ok {
+		wanted[fmt.Sprintf("eth%d", i)] = true
+	}
+	// Pick every matching record, not one per ifname: a failed reclaim can leave
+	// duplicates, and DEL is idempotent — skipping one would strand it as a phantom.
+	picked := make([]networkRecord, 0, len(indices))
+	found := make(map[string]bool, len(indices))
+	for _, r := range records {
+		if wanted[r.IfName] {
+			picked = append(picked, r)
+			found[r.IfName] = true
+		}
+	}
+	for _, i := range indices {
+		if ifName := fmt.Sprintf("eth%d", i); !found[ifName] {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
-		picked = append(picked, rec)
-		pickedIDs = append(pickedIDs, rec.ID)
 	}
-	err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true, false)
-	return errors.Join(err, c.deleteRecords(ctx, pickedIDs))
+	downIDs, err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
+	return errors.Join(err, c.deleteRecords(ctx, downIDs))
 }
 
 func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifName string) error {
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
+}
+
+// reclaimStaleNIC releases a record left by a failed detach before its index is reused; any failure keeps the record so the next re-add retries (the teardown is idempotent).
+func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath string, rec networkRecord) error {
+	downIDs, err := c.tearDownNICs(ctx, vmID, nsPath, []networkRecord{rec}, true)
+	if err != nil {
+		return err
+	}
+	return c.deleteRecords(ctx, downIDs)
 }
 
 func tapNameForVM(vmID string, nic int) string {

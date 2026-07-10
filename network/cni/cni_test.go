@@ -1,10 +1,22 @@
 package cni
 
 import (
+	"context"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/containernetworking/cni/libcni"
+	"github.com/containernetworking/cni/pkg/version"
+
+	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/network"
+	storejson "github.com/cocoonstack/cocoon/storage/json"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 const (
@@ -100,6 +112,253 @@ func TestLoadConfLists(t *testing.T) {
 			t.Fatalf("expected parse error, got nil")
 		}
 	})
+}
+
+func TestTearDownNICsAttemptsAllRecords(t *testing.T) {
+	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := &recordingExec{failIf: "eth1"}
+	c := &CNI{
+		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
+		defaultName: "cni-bridge",
+		cniConf:     libcni.NewCNIConfig([]string{"/nonexistent"}, exec),
+	}
+	records := []networkRecord{
+		{ID: "n0", Type: "cni-bridge", VMID: "vm1", IfName: "eth0"},
+		{ID: "n1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"},
+		{ID: "n2", Type: "cni-bridge", VMID: "vm1", IfName: "eth2"},
+	}
+
+	downIDs, err := c.tearDownNICs(t.Context(), "vm1", "/run/netns/vm1", records, false)
+	if err == nil || !strings.Contains(err.Error(), "eth1") {
+		t.Fatalf("tearDownNICs err = %v, want eth1 failure", err)
+	}
+	want := []string{"eth0", "eth1", "eth2"}
+	if !slices.Equal(exec.attempted, want) {
+		t.Fatalf("DEL attempted on %v, want %v (a mid-list failure must not skip later records)", exec.attempted, want)
+	}
+	if wantDown := []string{"n0", "n2"}; !slices.Equal(downIDs, wantDown) {
+		t.Fatalf("downIDs = %v, want %v (only fully-torn-down records are sweepable)", downIDs, wantDown)
+	}
+}
+
+func TestRemoveKeepsFailedNICRecords(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	exec.failIf = "eth1"
+	stubLifecycleSeams(t)
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+
+	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can
+	// still release the IPAM lease; eth0's record must be swept.
+	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
+		t.Fatalf("Remove err = %v, want eth1 failure", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+
+	// Retry after the fault clears: the kept record lets Remove finish the release.
+	exec.failIf = ""
+	if err := c.Remove(ctx, "vm1", 1); err != nil {
+		t.Fatalf("retry Remove: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
+func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+
+	ctx := t.Context()
+	// A failed reclaim can leave two records for one ifname; Remove must tear down
+	// and sweep both (DEL is idempotent), not strand one as a phantom.
+	seedRecords(t, c, "vm1", "eth1")
+	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+		idx.Networks["n-eth1-dup"] = &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Remove(ctx, "vm1", 1); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
+func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	exec.failIf = "eth1"
+	stubLifecycleSeams(t)
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+
+	// vm rm stays best-effort, but the failed NIC's record must survive for GC to retry.
+	if err := c.deleteVM(ctx, "vm1"); err != nil {
+		t.Fatalf("deleteVM: %v", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+}
+
+func TestReclaimStaleNIC(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth1")
+	rec := networkRecord{ID: "n-eth1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
+
+	// DEL failure keeps the record (nothing was released).
+	exec.failIf = "eth1"
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
+		t.Fatal("reclaimStaleNIC: want error on failed DEL")
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+
+	// TAP-delete failure also keeps the record: sweeping would leave a live TAP
+	// that collides with the re-add's CreateTAP, with nothing left to retry it.
+	exec.failIf = ""
+	deleteTAPFn = func(string, string) error { return fmt.Errorf("device busy") }
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
+		t.Fatal("reclaimStaleNIC: want error on failed TAP delete")
+	}
+	assertRecordIDs(t, c, []string{"n-eth1"})
+
+	// Both succeed: the record is released and swept, freeing the index for re-add.
+	deleteTAPFn = func(string, string) error { return nil }
+	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err != nil {
+		t.Fatalf("reclaimStaleNIC: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
+func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0")
+
+	// The stale record's DEL fails: Add must fail instead of double-allocating (lenient
+	// IPAM) or burying the root cause under the ADD failure (strict IPAM).
+	exec.failIf = "eth0"
+	if _, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 0}); err == nil || !strings.Contains(err.Error(), "reclaim stale NIC") {
+		t.Fatalf("Add err = %v, want reclaim failure", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth0"})
+
+	// Retry after the fault clears: reclaim succeeds, the fresh add replaces the record.
+	exec.failIf = ""
+	configs, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 0})
+	if err != nil {
+		t.Fatalf("retry Add: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	var got []networkRecord
+	if err := c.store.With(ctx, func(idx *networkIndex) error {
+		got = idx.byVMID("vm1")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID == "n-eth0" || got[0].IfName != "eth0" {
+		t.Fatalf("records = %+v, want one fresh eth0 record", got)
+	}
+}
+
+// newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
+func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
+	t.Helper()
+	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := &recordingExec{}
+	dir := t.TempDir()
+	return &CNI{
+		store:       storejson.New[networkIndex](filepath.Join(dir, "net.json"), flock.New(filepath.Join(dir, "net.lock"))),
+		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
+		defaultName: "cni-bridge",
+		cniConf:     libcni.NewCNIConfigWithCacheDir([]string{"/nonexistent"}, filepath.Join(dir, "cache"), exec),
+	}, exec
+}
+
+// stubLifecycleSeams replaces the linux-only netns/TAP seams with success stubs, matching the real absent-is-success semantics; t.Cleanup restores them.
+func stubLifecycleSeams(t *testing.T) {
+	t.Helper()
+	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn
+	deleteTAPFn = func(string, string) error { return nil }
+	deleteNetnsFn = func(context.Context, string) error { return nil }
+	ensureNetnsFn = func(string, string) (bool, error) { return false, nil }
+	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, error) { return "aa:bb:cc:dd:ee:01", nil }
+	t.Cleanup(func() {
+		deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn = origTAP, origNetns, origEnsure, origTC
+	})
+}
+
+func testVMCfg() *types.VMConfig {
+	return &types.VMConfig{Config: types.Config{CPU: 2, Network: "cni-bridge"}}
+}
+
+// seedRecords inserts one record per ifName, with ID "n-<ifName>".
+func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
+	t.Helper()
+	if err := c.store.Update(t.Context(), func(idx *networkIndex) error {
+		for _, ifName := range ifNames {
+			id := "n-" + ifName
+			idx.Networks[id] = &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertRecordIDs(t *testing.T, c *CNI, want []string) {
+	t.Helper()
+	var got []string
+	if err := c.store.With(t.Context(), func(idx *networkIndex) error {
+		got = slices.Sorted(maps.Keys(idx.Networks))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("records = %v, want %v", got, want)
+	}
+}
+
+// recordingExec fakes CNI plugin execution, recording each DEL's CNI_IFNAME and failing one.
+type recordingExec struct {
+	attempted []string
+	failIf    string
+}
+
+func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
+	var ifName string
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
+			ifName = v
+		}
+	}
+	e.attempted = append(e.attempted, ifName)
+	if ifName == e.failIf {
+		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
+	}
+	return []byte(`{"cniVersion":"1.0.0"}`), nil
+}
+
+func (e *recordingExec) FindInPath(plugin string, _ []string) (string, error) {
+	return "/fake/" + plugin, nil
+}
+
+func (e *recordingExec) Decode([]byte) (version.PluginInfo, error) {
+	return version.PluginSupports("0.3.1", "0.4.0", "1.0.0"), nil
 }
 
 func writeFile(t *testing.T, path, content string) {
