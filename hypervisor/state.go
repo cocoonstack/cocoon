@@ -16,7 +16,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const socketProbeTimeout = 500 * time.Millisecond
+const (
+	socketProbeTimeout = 500 * time.Millisecond
+
+	// persistTimeout bounds uncancelable bookkeeping writes (quarantine, rollback): losing them to Ctrl-C leaves half-cleaned state authoritative.
+	persistTimeout = 30 * time.Second
+)
 
 // WithRunningVM calls fn if rec still points to a live VM process.
 func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid int) error) error {
@@ -126,6 +131,25 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
+// QuarantineVM marks the VM error and persists the quarantine reason (see VMRecord.Quarantine).
+func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
+	now := time.Now()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[id]
+		if r == nil {
+			return nil
+		}
+		r.State = types.VMStateError
+		r.Quarantine = reason
+		r.UpdatedAt = now
+		return nil
+	}); err != nil {
+		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
+	}
+}
+
 // BatchMarkStarted flips ids to VMStateRunning; entrants with an open compute interval are stale-running (close stop-crash, then open fresh).
 func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
@@ -166,7 +190,8 @@ func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error 
 	}
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	return b.DB.WriteRaw(func(idx *VMIndex) error {
-		utils.CleanStaleRecords(idx.VMs, idx.Names, ids,
+		utils.CleanStaleRecords(
+			idx.VMs, idx.Names, ids,
 			func(r *VMRecord) string { return r.Config.Name },
 			func(r *VMRecord) bool {
 				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
@@ -237,6 +262,11 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 	if emit {
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 	}
+}
+
+// detachedWrite returns a context for bookkeeping writes that must survive caller cancellation, bounded by persistTimeout.
+func detachedWrite(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
 }
 
 // hasOpenComputeInterval reports whether the VM's record shows an unmatched compute.start (StoppedAt is the ledger-close sentinel; transitions to Running clear it).

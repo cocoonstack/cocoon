@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -43,8 +44,8 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	if err != nil {
 		return "", nil, err
 	}
-	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one.
-	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped {
+	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Quarantined VMs are allowed through — restore rebuilding the run dir is exactly the recovery path.
+	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.Quarantine == "" {
 		return "", nil, fmt.Errorf("vm %s is %s, must be running or stopped to restore", vmID, rec.State)
 	}
 	return vmID, &rec, nil
@@ -55,6 +56,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
+		r.Quarantine = ""
 		r.StartedAt = &now
 		r.StoppedAt = nil
 		r.UpdatedAt = now
@@ -62,6 +64,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
 	}
+	_ = os.Remove(filepath.Join(rec.RunDir, restoreDirtyName))
 
 	info := rec.VM
 	info.Config = *vmCfg
@@ -101,15 +104,22 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 
 	var result *types.VM
 	inner := func() error {
+		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
+		if err := markRestoreDirty(rec.RunDir); err != nil {
+			return err
+		}
 		if spec.BeforeMerge != nil {
 			if err := spec.BeforeMerge(rec); err != nil {
+				// The sweep may have deleted some snapshot files already; a
+				// stopped origin would otherwise stay startable on mixed state.
+				b.QuarantineVM(ctx, vmID, "partial restore cleanup")
 				return err
 			}
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
 			// A partial merge leaves mixed-vintage files in the run dir;
 			// quarantine regardless of origin so vm start cannot boot them.
-			b.MarkError(ctx, vmID)
+			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
 		var afterErr error
@@ -146,10 +156,13 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 
 	var result *types.VM
 	inner := func() error {
+		if err := markRestoreDirty(rec.RunDir); err != nil {
+			return err
+		}
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
 			// Populate cleans then clones with no rollback; a partial run
 			// dir must quarantine regardless of origin, like the merge.
-			b.MarkError(ctx, vmID)
+			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
 		var afterErr error
@@ -224,8 +237,16 @@ func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }
 
+func markRestoreDirty(runDir string) error {
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		return fmt.Errorf("mark restore dirty: %w", err)
+	}
+	return nil
+}
+
+// PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
-	stagingDir = runDir + ".restore-staging"
+	stagingDir = filepath.Join(runDir, restoreStagingName)
 	if err = os.RemoveAll(stagingDir); err != nil {
 		return "", nil, fmt.Errorf("clear staging dir: %w", err)
 	}
@@ -233,7 +254,7 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 		return "", nil, fmt.Errorf("create staging dir: %w", err)
 	}
 	cleanup = func() { os.RemoveAll(stagingDir) } //nolint:errcheck,gosec
-	if err = utils.ExtractTar(stagingDir, snapshot); err != nil {
+	if err = utils.ExtractTar(stagingDir, snapshot, isLockFile); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("extract snapshot: %w", err)
 	}

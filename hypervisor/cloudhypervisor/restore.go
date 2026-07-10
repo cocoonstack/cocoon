@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/projecteru2/core/log"
 
@@ -34,7 +35,16 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 }
 
 func (ch *CloudHypervisor) preflightRestore(srcDir string, rec *hypervisor.VMRecord) error {
-	return hypervisor.PreflightRestore(srcDir, ch.conf.RootDir, ch.conf.Config.RunDir, rec, validateSnapshotIntegrity)
+	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
+	if err != nil {
+		return fmt.Errorf("parse snapshot config: %w", err)
+	}
+	if err := ch.conf.PreflightRestore(srcDir, rec, func(dir string, sidecar []*types.StorageConfig) error {
+		return validateSnapshotIntegrityParsed(dir, sidecar, chCfg)
+	}); err != nil {
+		return err
+	}
+	return validateRestoreNICs(chCfg, rec)
 }
 
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
@@ -53,7 +63,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
-	meta, metaErr := hypervisor.LoadAndValidateMeta(rec.RunDir, ch.conf.RootDir, ch.conf.Config.RunDir)
+	meta, metaErr := ch.conf.LoadAndValidateMeta(rec.RunDir)
 	if metaErr != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", metaErr)
 	}
@@ -99,4 +109,17 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	logger.Infof(ctx, "VM %s restored from snapshot", vmID)
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
+}
+
+// validateRestoreNICs rejects restore when the VM's NIC identity drifted since capture (net resize): vm.restore replays the snapshot's guest MACs verbatim, which would diverge from the live CNI/DB identity.
+func validateRestoreNICs(chCfg *chVMConfig, rec *hypervisor.VMRecord) error {
+	if len(chCfg.Nets) != len(rec.NetworkConfigs) {
+		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(chCfg.Nets), len(rec.NetworkConfigs))
+	}
+	for i, n := range chCfg.Nets {
+		if !strings.EqualFold(n.MAC, rec.NetworkConfigs[i].MAC) {
+			return fmt.Errorf("nic %d MAC drifted since snapshot (%s -> %s, net resize?); recreate via clone instead", i, n.MAC, rec.NetworkConfigs[i].MAC)
+		}
+	}
+	return nil
 }

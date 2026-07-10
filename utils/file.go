@@ -61,8 +61,20 @@ func FileHead(f *os.File, n int) ([]byte, error) {
 
 // ValidFile returns true if path is a regular file with size > 0.
 func ValidFile(path string) bool {
+	_, err := ValidFileSize(path)
+	return err == nil
+}
+
+// ValidFileSize returns the size of path when it is a regular non-empty file.
+func ValidFileSize(path string) (int64, error) {
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular() && info.Size() > 0
+	if err != nil {
+		return 0, err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return 0, fmt.Errorf("invalid file: %s", path)
+	}
+	return info.Size(), nil
 }
 
 // ScanFileStems returns the name-without-suffix of every file in dir whose name ends with suffix.

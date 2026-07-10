@@ -8,7 +8,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -43,14 +42,15 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			if err := utils.ReflinkCopy(filepath.Join(tmpDir, hypervisor.COWRawFileName), fc.conf.COWRawPath(rec.ID)); err != nil {
-				return fmt.Errorf("copy COW: %w", err)
+			cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+			if cowPath == "" {
+				return fmt.Errorf("no COW disk recorded for %s", rec.ID)
 			}
-			return hypervisor.ReflinkDataDisks(tmpDir, rec.StorageConfigs)
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
 		// Lock writable disks in dictionary order so a concurrent clone's rename+symlink can't race the reflink.
 		Wrap: func(rec *hypervisor.VMRecord, fn func() error) error {
-			return withSourceWritableDisksLocked(rec.StorageConfigs, fn)
+			return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
 		},
 		BuildMeta: buildSnapshotMeta,
 	}

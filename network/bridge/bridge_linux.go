@@ -52,9 +52,20 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 
 func (b *Bridge) Type() string { return typ }
 
-func (b *Bridge) Verify(_ context.Context, vmID string) error {
-	if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
-		return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
+func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
+	if len(expected) == 0 {
+		if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
+			return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
+		}
+		return nil
+	}
+	for _, nc := range expected {
+		if nc == nil || nc.TAP == "" {
+			continue
+		}
+		if _, err := netlink.LinkByName(nc.TAP); err != nil {
+			return fmt.Errorf("tap %s: %w", nc.TAP, err)
+		}
 	}
 	return nil
 }
@@ -89,6 +100,17 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		mac := generateMAC()
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
+		}
+		// Fresh adds only: the DB says this index is free (caller holds the
+		// ops lock), so a same-name TAP is an interrupted-resize leftover and
+		// without the reclaim it wedges every retry here. Recovery specs keep
+		// the EEXIST failure — their slot is occupied, possibly by a live VMM's TAP.
+		if spec.Existing == nil {
+			if old, lErr := netlink.LinkByName(name); lErr == nil {
+				if delErr := netlink.LinkDel(old); delErr != nil {
+					return nil, fmt.Errorf("reclaim stale tap %s: %w", name, delErr)
+				}
+			}
 		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
 		if cErr := network.CreateTAP(name, queues); cErr != nil {
@@ -189,7 +211,7 @@ func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
 }
 
 func tapName(vmID string, nic int) string {
-	return fmt.Sprintf("%s%s-%d", tapPrefix, network.VMIDPrefix(vmID), nic)
+	return network.TAPName(tapPrefix, vmID, nic)
 }
 
 func generateMAC() string {

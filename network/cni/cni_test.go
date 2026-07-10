@@ -196,11 +196,41 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// vm rm stays best-effort, but the failed NIC's record must survive for GC to retry.
-	if err := c.deleteVM(ctx, "vm1"); err != nil {
-		t.Fatalf("deleteVM: %v", err)
+	// A failed NIC release keeps its record AND the netns, surfaced as an error so rm reports the retryable leftover.
+	err := c.deleteVM(ctx, "vm1")
+	if err == nil || !strings.Contains(err.Error(), "netns kept") {
+		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
+}
+
+func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	c.cniConf = nil
+	stubLifecycleSeams(t)
+
+	// A VM resized to 0 NICs has no lease needing a plugin DEL; a missing conflist must not wedge its netns removal.
+	if err := c.deleteVM(t.Context(), "vm1"); err != nil {
+		t.Fatalf("deleteVM with zero records: %v", err)
+	}
+}
+
+func TestVerifyDetectsMissingTAP(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	origStat, origTap := statNetnsFn, tapPresentFn
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
+	tapPresentFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
+	t.Cleanup(func() { statNetnsFn, tapPresentFn = origStat, origTap })
+
+	// A half-rolled-back recovery leaves the netns without TAPs; Verify must read that as broken, not healthy.
+	expected := []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
+	if err := c.Verify(t.Context(), "vm1", expected); err == nil {
+		t.Fatal("Verify must fail when an expected TAP is missing")
+	}
+	tapPresentFn = func(_, _ string) error { return nil }
+	if err := c.Verify(t.Context(), "vm1", expected); err != nil {
+		t.Fatalf("Verify with all TAPs present: %v", err)
+	}
 }
 
 func TestReclaimStaleNIC(t *testing.T) {

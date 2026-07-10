@@ -31,7 +31,7 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
 		t.Fatal("stopLocked must not run for a stopped VM")
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
 
-	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }); err == nil ||
+	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err == nil ||
 		!strings.Contains(err.Error(), "running (force required)") {
 		t.Fatalf("DeleteAll without force: %v, want running-requires-force error", err)
 	}
@@ -72,7 +72,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 			},
 		})
 	}
-	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
+	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked, nil)
 	if err != nil {
 		t.Fatalf("DeleteAll --force: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 	defer ln.Close() //nolint:errcheck
 
-	_, err = b.DeleteAll(ctx, []string{id}, true, func(context.Context, string) error { return nil })
+	_, err = b.DeleteAll(ctx, []string{id}, true, func(context.Context, string) error { return nil }, nil)
 	if err == nil || !strings.Contains(err.Error(), "still responsive") {
 		t.Fatalf("DeleteAll: %v, want live-socket refusal", err)
 	}
@@ -123,4 +123,35 @@ func shortTempDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-migrated"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir, logDir := shortTempDir(t), shortTempDir(t)
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = logDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+		if len(idx.OrphanDirs) != 0 {
+			t.Fatalf("successful delete must clear its cleanup intent, got %v", idx.OrphanDirs)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
+		t.Fatal("migrated run dir must be removed")
+	}
 }

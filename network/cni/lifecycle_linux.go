@@ -52,6 +52,15 @@ func deleteNetns(ctx context.Context, name string) error {
 	})
 }
 
+func tapPresentInNetns(nsPath, tapName string) error {
+	return cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
+		if _, err := netlink.LinkByName(tapName); err != nil {
+			return fmt.Errorf("tap %s: %w", tapName, err)
+		}
+		return nil
+	})
+}
+
 // deleteTAPInNetns is idempotent: an absent TAP or an already-deleted netns is success, or every teardown retry after a partial failure would wedge on the missing device.
 func deleteTAPInNetns(nsPath, tapName string) error {
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {

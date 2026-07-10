@@ -62,10 +62,9 @@ func (o *OCI) Type() string { return typ }
 
 // Pull downloads an OCI image, extracts boot files, and converts each layer to EROFS concurrently.
 func (o *OCI) Pull(ctx context.Context, image string, _ bool, tracker progress.Tracker) error {
-	_, err, _ := o.pullGroup.Do(image, func() (any, error) {
-		return nil, pull(ctx, o.conf, o.store, image, tracker)
+	return images.SingleflightDo(&o.pullGroup, image, func() error {
+		return pull(ctx, o.conf, o.store, image, tracker)
 	})
-	return err
 }
 
 // Import: each tar file becomes one EROFS layer in the order of the files slice.

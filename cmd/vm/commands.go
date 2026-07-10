@@ -168,8 +168,7 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.Hibernate,
 	}
-	hibernateCmd.Flags().String("name", "", "snapshot name")
-	hibernateCmd.Flags().String("description", "", "snapshot description")
+	cliutil.AddSnapshotNameFlags(hibernateCmd)
 
 	debugCmd := &cobra.Command{
 		Use:   "debug [flags] IMAGE",

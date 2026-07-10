@@ -3,6 +3,8 @@ package images
 import (
 	"context"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -47,4 +49,10 @@ func (ops Ops[I, E]) Delete(ctx context.Context, ids []string) (deleted []string
 		return nil
 	})
 	return deleted, err
+}
+
+// SingleflightDo collapses concurrent same-key operations (e.g. pulls) into one execution.
+func SingleflightDo(g *singleflight.Group, key string, fn func() error) error {
+	_, err, _ := g.Do(key, func() (any, error) { return nil, fn() })
+	return err
 }

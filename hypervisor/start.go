@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/projecteru2/core/log"
 
@@ -43,31 +45,45 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 		b.MarkError(ctx, id)
 		return fmt.Errorf("network invariants violated: %w", vErr)
 	}
-	sockPath := SocketPath(rec.RunDir)
-	pid, err := spec.Launch(ctx, rec, sockPath)
-	if err != nil {
-		b.MarkError(ctx, id)
-		return fmt.Errorf("launch VM: %w", err)
-	}
-	if spec.PostLaunch != nil {
-		if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
-			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
+	return runWrapped(rec, spec.Wrap, func() error {
+		sockPath := SocketPath(rec.RunDir)
+		pid, err := spec.Launch(ctx, rec, sockPath)
+		if err != nil {
 			b.MarkError(ctx, id)
-			return fmt.Errorf("configure VM: %w", err)
+			return fmt.Errorf("launch VM: %w", err)
 		}
-	}
-	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
-	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
-		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
-	}
-	return nil
+		if spec.PostLaunch != nil {
+			if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
+				b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
+				b.MarkError(ctx, id)
+				return fmt.Errorf("configure VM: %w", err)
+			}
+		}
+		// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
+		if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
+			log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
+		}
+		return nil
+	})
 }
 
-// PrepareStart loads the record, verifies not-running, ensures dirs exist.
+// PrepareStart loads the record, refuses quarantined VMs, verifies not-running, ensures dirs exist.
 func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if rec.Quarantine != "" {
+		return nil, fmt.Errorf("vm %s is quarantined (%s); recover with vm restore or delete with vm rm", id, rec.Quarantine)
+	}
+	if rec.State == types.VMStateCreating {
+		return nil, fmt.Errorf("vm %s is still being created", id)
+	}
+	// Tombstone survives lost quarantine writes and process death mid-restore; the mixed run dir must not boot.
+	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr == nil {
+		return nil, fmt.Errorf("vm %s has an interrupted restore; recover with vm restore or delete with vm rm", id)
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
 	}
 
 	runErr := b.WithRunningVM(ctx, &rec, func(_ int) error { return nil })

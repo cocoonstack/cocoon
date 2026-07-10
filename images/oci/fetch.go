@@ -31,7 +31,8 @@ func fetchImage(ctx context.Context, imageRef string) (ref, digestHex string, la
 
 	logger.Debugf(ctx, "Pulling image: %s", ref)
 
-	img, fetchErr := remote.Image(parsedRef,
+	img, fetchErr := remote.Image(
+		parsedRef,
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 		remote.WithContext(ctx),
 		remote.WithPlatform(platform),

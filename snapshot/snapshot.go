@@ -8,9 +8,9 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Direct is an optional interface for snapshot backends that expose the local data directory for per-file handling (hardlink, reflink, etc.).
+// Direct is an optional interface for snapshot backends that expose the local data directory for per-file handling (hardlink, reflink, etc.). The returned release ends the read lease that keeps delete/GC from reaping the directory mid-use; callers must invoke it exactly once.
 type Direct interface {
-	DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, error)
+	DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, func(), error)
 }
 
 // DirectCreator is an optional interface for snapshot backends that can ingest a capture directory in place — moving it into the store instead of a tar round-trip — when srcDir shares a filesystem with the store's data dir. ok is false (srcDir left intact) when the direct path is unavailable, so the caller falls back to Create with a stream.

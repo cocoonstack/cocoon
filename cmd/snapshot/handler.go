@@ -35,6 +35,11 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
+	// Pin the inspected ID: a same-name delete+recreate between resolve and capture would snapshot the impostor.
+	vm, err := hyper.Inspect(ctx, vmRef)
+	if err != nil {
+		return fmt.Errorf("inspect VM %s: %w", vmRef, err)
+	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -42,7 +47,7 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 
 	logger.Infof(ctx, "snapshotting VM %s ...", vmRef)
 	snapID, err := cmdcore.CaptureSnapshot(ctx, cmd, snapBackend, func() (*types.SnapshotConfig, string, error) {
-		return hyper.Snapshot(ctx, vmRef)
+		return hyper.Snapshot(ctx, vm.ID)
 	})
 	if err != nil {
 		return err

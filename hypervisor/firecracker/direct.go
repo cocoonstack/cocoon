@@ -10,7 +10,9 @@ import (
 
 // DirectClone clones from a local snapshot dir. Per-type: hardlink mem, reflink/copy COW, plain copy metadata.
 func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
-	return fc.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, cloneSnapshotFiles, fc.cloneAfterExtract)
+	return fc.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, func(dstDir, srcDir string) error {
+		return cloneSnapshotFiles(ctx, dstDir, srcDir)
+	}, fc.cloneAfterExtract)
 }
 
 // DirectRestore restores a VM in place from a local snapshot dir.
@@ -21,16 +23,20 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		Wrap:             fc.wrapSourceLocked,
+		Wrap: func(rec *hypervisor.VMRecord, inner func() error) error {
+			return fc.wrapSourceLocked(ctx, rec, inner)
+		},
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
-			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, cloneSnapshotFiles)
+			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, func(dstDir, srcDir string) error {
+				return cloneSnapshotFiles(ctx, dstDir, srcDir)
+			})
 		},
 		AfterExtract: fc.restoreAfterExtractCOW,
 	})
 }
 
-func cloneSnapshotFiles(dstDir, srcDir string) error {
-	return hypervisor.CloneSnapshotFiles(dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
+func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) error {
+	return hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case name == snapshotMemFile:
 			return hypervisor.SnapshotFileMemory

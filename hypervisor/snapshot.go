@@ -174,7 +174,7 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
 	}
-	tmpDir, err := os.MkdirTemp(b.Conf.VMRunDir(vmID), "snapshot-")
+	tmpDir, err := os.MkdirTemp(rec.RunDir, captureDirPrefix)
 	if err != nil {
 		return fail(fmt.Errorf("create temp dir: %w", err))
 	}
@@ -270,12 +270,19 @@ func IsUnderDir(path, dir string) bool {
 	return strings.HasPrefix(cleaned, root+string(filepath.Separator))
 }
 
-// ValidateMetaPaths rejects sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
-// External volumes never reach a snapshot (snapshot/hibernate refuse them), so every sidecar path must be under a managed root.
+// ValidateMetaPaths rejects dereferenced sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
+// Snapshot-resident disks (COW/cidata/data) are exempt: their bytes travel inside the snapshot and the recorded path is provenance only — restore and clone resolve them from the record or rewrite them — so a --run-dir migration must not reject the VM's own history. Layers and boot files are dereferenced from the blob store and stay strict.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
+		}
+		// A degenerate path would make the resident basename "." or ".." and integrity would stat a directory instead of the disk.
+		if base := filepath.Base(sc.Path); sc.Path == "" || base == "." || base == ".." || base == string(filepath.Separator) {
+			return fmt.Errorf("invalid storage path in snapshot metadata (disk %d): %q", i, sc.Path)
+		}
+		if snapshotResidentBasename(sc) != "" {
+			continue
 		}
 		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)

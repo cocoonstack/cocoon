@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -242,6 +243,26 @@ func TestImportEmitsSnapStorageStart(t *testing.T) {
 	if e.Kind != metering.KindSnapStorageStart || e.SnapshotID != id ||
 		e.Hypervisor != "cloud-hypervisor" || e.Shape.StorageBytes <= 0 {
 		t.Errorf("entry wrong: %+v", e)
+	}
+}
+
+func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "pending-snap"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	lf.rollbackCreate(cctx, id, "pending-snap")
+
+	if _, err := lf.Inspect(ctx, id); err == nil {
+		t.Fatal("pending record must be rolled back even under a canceled context")
+	}
+	if _, err := lf.Inspect(ctx, "pending-snap"); err == nil {
+		t.Fatal("name mapping must be released even under a canceled context")
 	}
 }
 
@@ -642,7 +663,7 @@ func TestDataDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dataDir, got, err := lf.DataDir(ctx, "datadir")
+	dataDir, got, _, err := lf.DataDir(ctx, "datadir")
 	if err != nil {
 		t.Fatalf("DataDir: %v", err)
 	}
@@ -664,7 +685,7 @@ func TestDataDir_NotFound(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	_, _, err := lf.DataDir(ctx, "nonexistent")
+	_, _, _, err := lf.DataDir(ctx, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -689,14 +710,14 @@ func TestDataDir_ImageBlobIDsIsolation(t *testing.T) {
 	}
 
 	// Get config via DataDir, mutate the returned ImageBlobIDs.
-	_, got1, err := lf.DataDir(ctx, id)
+	_, got1, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got1.ImageBlobIDs["injected"] = struct{}{}
 
 	// Get config again — mutation should NOT be visible.
-	_, got2, err := lf.DataDir(ctx, id)
+	_, got2, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1407,4 +1428,54 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		t.Fatalf("Create: %v", err)
 	}
 	return id
+}
+
+func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "orig"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "retry"},
+		makeTar(t, map[string][]byte{"x": []byte("2")})); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("same-ID retry must be rejected, got: %v", err)
+	}
+
+	rec, err := lf.lookupRecord(ctx, id, false)
+	if err != nil || rec.Name != "orig" {
+		t.Fatalf("original record must survive the retry: rec=%+v err=%v", rec, err)
+	}
+	if _, err := os.Stat(filepath.Join(rec.DataDir, "x")); err != nil {
+		t.Fatalf("original data dir must survive the retry: %v", err)
+	}
+}
+
+func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "leased"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	release, err := lf.acquireReadLease(ctx, id)
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if _, err := lf.Delete(ctx, []string{id}); err == nil || !strings.Contains(err.Error(), "in use") {
+		release()
+		t.Fatalf("delete must fail while a reader holds the lease, got: %v", err)
+	}
+	if _, err := lf.lookupRecord(ctx, id, false); err != nil {
+		release()
+		t.Fatalf("record must survive the refused delete: %v", err)
+	}
+	release()
+	if _, err := lf.Delete(ctx, []string{id}); err != nil {
+		t.Fatalf("delete after release: %v", err)
+	}
 }

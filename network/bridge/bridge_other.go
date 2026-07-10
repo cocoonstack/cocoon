@@ -22,8 +22,11 @@ func New(_ *config.Config, _ string) (*Bridge, error) {
 	return nil, errUnsupported
 }
 
-func (b *Bridge) Type() string                             { return "bridge" }
-func (b *Bridge) Verify(_ context.Context, _ string) error { return errUnsupported }
+func (b *Bridge) Type() string { return "bridge" }
+func (b *Bridge) Verify(_ context.Context, _ string, _ []*types.NetworkConfig) error {
+	return errUnsupported
+}
+
 func (b *Bridge) Remove(_ context.Context, _ string, _ ...int) error {
 	return errUnsupported
 }

@@ -43,13 +43,9 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		raw["disks"] = patched
 	}
 
-	if opts.directBoot {
-		_ = setField(raw, "serial", &chRuntimeFile{Mode: "Off"})
-		_ = setField(raw, "console", &chRuntimeFile{Mode: "Pty"})
-	} else {
-		_ = setField(raw, "serial", &chRuntimeFile{Mode: "Socket", Socket: opts.consoleSock})
-		_ = setField(raw, "console", &chRuntimeFile{Mode: "Off"})
-	}
+	serial, console := serialConsoleFor(opts.directBoot, opts.consoleSock)
+	_ = setField(raw, "serial", serial)
+	_ = setField(raw, "console", console)
 
 	if opts.vsockSock != "" {
 		if vsockRaw, ok := raw["vsock"]; ok && rawObjectPresent(vsockRaw) {
@@ -80,14 +76,7 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 		if e := setField(elem, "queue_size", diskQueueSize); e != nil {
 			return e
 		}
-		// Per-disk override wins over VM-level NoDirectIO.
-		var directIO bool
-		if sc.DirectIO != nil {
-			directIO = *sc.DirectIO
-		} else {
-			directIO = !sc.RO && !opts.noDirectIO
-		}
-		return setField(elem, "direct", directIO)
+		return setField(elem, "direct", effectiveDirectIO(sc, opts.noDirectIO))
 	})
 }
 

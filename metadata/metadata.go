@@ -19,7 +19,8 @@ var (
 	}
 
 	metaDataTmpl = template.Must(template.New("meta-data").Parse(
-		"instance-id: {{.InstanceID}}\nlocal-hostname: {{.Hostname}}\n"))
+		"instance-id: {{.InstanceID}}\nlocal-hostname: {{.Hostname}}\n",
+	))
 
 	// userDataTmpl renders cloud-config; also writes systemd-networkd fallback units so clone reinit survives netplan PERM-MAC mismatch.
 	userDataTmpl = template.Must(template.New("user-data").Funcs(tmplFuncs).Parse(`#cloud-config

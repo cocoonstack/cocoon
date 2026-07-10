@@ -155,3 +155,26 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 		t.Errorf("got %d, want 0", len(got))
 	}
 }
+
+func TestValidateMetaPathsResidentExemption(t *testing.T) {
+	// Resident disks travel inside the snapshot: a pre-migration COW path must not block restore/clone of the VM's own history.
+	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
+		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
+	}}
+	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
+		t.Fatalf("resident path must be provenance-only: %v", err)
+	}
+	// Degenerate resident paths must not degrade integrity into statting a directory.
+	for _, bad := range []string{"", ".", "..", "/", "/old-run/.."} {
+		meta.StorageConfigs[0].Path = bad
+		if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+			t.Fatalf("degenerate storage path %q must be rejected", bad)
+		}
+	}
+	meta.StorageConfigs[0].Path = "/old-run/firecracker/vm1/cow.raw"
+	// Dereferenced paths stay strict.
+	meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{Path: "/elsewhere/layer.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"})
+	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+		t.Fatal("a layer outside the blob store must stay untrusted")
+	}
+}

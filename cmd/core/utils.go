@@ -130,10 +130,11 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 }
 
 func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, error) {
-	return resolveOwner(backends, ref, func(b imagebackend.Images) (bool, error) {
-		img, err := b.Inspect(ctx, ref)
-		return img != nil, err
-	},
+	return resolveOwner(
+		backends, ref, func(b imagebackend.Images) (bool, error) {
+			img, err := b.Inspect(ctx, ref)
+			return img != nil, err
+		},
 		fmt.Errorf("image %q: not found in any backend", ref),
 		fmt.Errorf("image %s: %w", ref, imagebackend.ErrAmbiguous),
 	)
@@ -211,17 +212,18 @@ func digestPullRef(image, digest, imageType string) string {
 // resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
 func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	var resolved *types.VM
-	owner, err := resolveOwner(hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
-		vm, err := h.Inspect(ctx, ref)
-		if err == nil && vm != nil {
-			resolved = vm
-			return true, nil
-		}
-		if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
-			return false, err
-		}
-		return false, nil
-	},
+	owner, err := resolveOwner(
+		hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
+			vm, err := h.Inspect(ctx, ref)
+			if err == nil && vm != nil {
+				resolved = vm
+				return true, nil
+			}
+			if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
+				return false, err
+			}
+			return false, nil
+		},
 		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound),
 		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
 	)
@@ -244,11 +246,20 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 	return nil
 }
 
+// SnapshotNameFlags reads the --name/--description pair and rejects a taken name.
+func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
+	name, _ = cmd.Flags().GetString("name")
+	description, _ = cmd.Flags().GetString("description")
+	if err = EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+		return "", "", err
+	}
+	return name, description, nil
+}
+
 // CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
 func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
-	name, _ := cmd.Flags().GetString("name")
-	description, _ := cmd.Flags().GetString("description")
-	if err := EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+	name, description, err := SnapshotNameFlags(ctx, cmd, snapBackend)
+	if err != nil {
 		return "", err
 	}
 	cfg, srcDir, err := capture()

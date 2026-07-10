@@ -20,6 +20,16 @@ import (
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
 func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, bootCfg *types.BootConfig) (*types.VM, error) {
+	// Backend-owned capability limits; cmd/ repeats them only as flag-specific fast-fails.
+	if vmCfg.Windows {
+		return nil, fmt.Errorf("firecracker does not support Windows guests")
+	}
+	if vmCfg.SharedMemory {
+		return nil, fmt.Errorf("firecracker does not support shared memory (vhost-user-fs)")
+	}
+	if !hypervisor.IsDirectBoot(bootCfg) {
+		return nil, fmt.Errorf("firecracker requires direct kernel boot (OCI image)")
+	}
 	return fc.CreateSequence(ctx, id, hypervisor.CreateSpec{
 		VMCfg:          vmCfg,
 		StorageConfigs: storageConfigs,
@@ -41,22 +51,26 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 		return nil, err
 	}
 	storageConfigs = append(storageConfigs, dataDisks...)
-	// FC needs an uncompressed ELF kernel.
-	if boot != nil && boot.KernelPath != "" {
-		vmlinuxPath, extractErr := EnsureVmlinux(boot.KernelPath)
-		if extractErr != nil {
-			return nil, fmt.Errorf("extract vmlinux: %w", extractErr)
-		}
-		boot.KernelPath = vmlinuxPath
+	if err := EnsureVmlinuxBoot(boot); err != nil {
+		return nil, err
+	}
+	if err := fc.setBootCmdline(boot, storageConfigs, networkConfigs, vmCfg.Name); err != nil {
+		return nil, err
+	}
+	return storageConfigs, nil
+}
+
+// setBootCmdline rebuilds boot.Cmdline from the final disk/NIC layout; nil boot is a no-op.
+func (fc *Firecracker) setBootCmdline(boot *types.BootConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string) error {
+	if boot == nil {
+		return nil
 	}
 	dns, err := fc.conf.DNSServers()
 	if err != nil {
-		return nil, fmt.Errorf("parse DNS servers: %w", err)
+		return fmt.Errorf("parse DNS servers: %w", err)
 	}
-	if boot != nil {
-		boot.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
-	}
-	return storageConfigs, nil
+	boot.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmName, dns)
+	return nil
 }
 
 // DevPath maps idx to vda..vdz, vdaa..vdaz, vdba..vdbz, ...
@@ -66,6 +80,19 @@ func DevPath(idx int) string {
 		return fmt.Sprintf("/dev/vd%c", 'a'+idx)
 	}
 	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
+}
+
+// EnsureVmlinuxBoot swaps boot.KernelPath for the uncompressed ELF FC requires; no-op without a kernel path.
+func EnsureVmlinuxBoot(boot *types.BootConfig) error {
+	if boot == nil || boot.KernelPath == "" {
+		return nil
+	}
+	vmlinuxPath, err := EnsureVmlinux(boot.KernelPath)
+	if err != nil {
+		return fmt.Errorf("extract vmlinux: %w", err)
+	}
+	boot.KernelPath = vmlinuxPath
+	return nil
 }
 
 // EnsureVmlinux decompresses kernelPath if needed and returns the ELF path.
@@ -112,7 +139,8 @@ func decompressKernel(data []byte) ([]byte, error) {
 		decode func([]byte) ([]byte, error)
 	}
 	formats := []kernelCodec{
-		{"zstd", []byte{0x28, 0xb5, 0x2f, 0xfd}, decompressZstd},
+		{"zstd", utils.ZstdMagic, decompressZstd},
+		// 3-byte gzip magic (deflate method byte included): bytes.Index scans the whole bzImage, so the 2-byte utils.GzipMagic would false-positive.
 		{"gzip", []byte{0x1f, 0x8b, 0x08}, decompressGzip},
 	}
 

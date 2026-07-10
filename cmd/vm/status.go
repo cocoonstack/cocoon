@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/docker/go-units"
 	"github.com/moby/term"
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
@@ -51,13 +50,8 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	vms, err := cmdcore.ListAllVMs(ctx, hypers)
-	if err != nil {
-		return fmt.Errorf("list: %w", err)
-	}
-	sortVMs(vms)
 	format, _ := cmd.Flags().GetString("format")
-	return renderVMList(vms, format)
+	return statusOnce(ctx, hypers, nil, format)
 }
 
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
@@ -107,7 +101,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format string) error {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {
-		return fmt.Errorf("status: %w", err)
+		return err
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
@@ -125,9 +119,9 @@ func renderVMList(vms []*types.VM, format string) error {
 		fmt.Println("No VMs found.")
 		return nil
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	printVMTable(w, vms)
-	return w.Flush()
+	return cliutil.OutputFormattedStr(format, vms, func(w *tabwriter.Writer) {
+		printVMTable(w, vms)
+	})
 }
 
 func mergeWatchChannels(ctx context.Context, hypers []hypervisor.Hypervisor) <-chan struct{} {
@@ -290,7 +284,7 @@ func takeSnapshot(vm *types.VM, state string) vmSnapshot {
 func printEventRow(w *tabwriter.Writer, event string, snap vmSnapshot) {
 	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", //nolint:errcheck
 		event, snap.id, snap.name, snap.state,
-		snap.cpu, units.BytesSize(float64(snap.memory)),
+		snap.cpu, cliutil.FormatSize(snap.memory),
 		snap.ip, snap.image)
 }
 
@@ -341,8 +335,8 @@ func printVMTable(w *tabwriter.Writer, vms []*types.VM) {
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 			vm.ID, vm.Config.Name, cmdcore.ReconcileState(vm),
-			vm.Config.CPU, units.BytesSize(float64(vm.Config.Memory)),
-			units.BytesSize(float64(vm.Config.Storage)),
+			vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory),
+			cliutil.FormatSize(vm.Config.Storage),
 			vmIPs(vm), vm.Config.Image,
 			vm.CreatedAt.Local().Format(time.DateTime))
 	}

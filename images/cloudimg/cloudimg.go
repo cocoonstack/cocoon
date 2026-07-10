@@ -57,10 +57,9 @@ func New(ctx context.Context, rootDir string, pullConns int) (*CloudImg, error) 
 func (c *CloudImg) Type() string { return typ }
 
 func (c *CloudImg) Pull(ctx context.Context, url string, force bool, tracker progress.Tracker) error {
-	_, err, _ := c.pullGroup.Do(url, func() (any, error) {
-		return nil, pull(ctx, c.conf, c.store, url, force, tracker)
+	return images.SingleflightDo(&c.pullGroup, url, func() error {
+		return pull(ctx, c.conf, c.store, url, force, tracker)
 	})
-	return err
 }
 
 func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {

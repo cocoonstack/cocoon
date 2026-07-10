@@ -12,7 +12,9 @@ import (
 
 // DirectClone clones from a local snapshot dir. Per-type: hardlink memory-range-*, reflink/copy COW, plain copy metadata; cidata is regenerated.
 func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
-	return ch.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, cloneSnapshotFiles, ch.cloneAfterExtract)
+	return ch.DirectCloneBase(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, func(dstDir, srcDir string) error {
+		return cloneSnapshotFiles(ctx, dstDir, srcDir)
+	}, ch.cloneAfterExtract)
 }
 
 // DirectRestore restores a VM in place from a local snapshot dir.
@@ -24,7 +26,9 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 		Preflight:        ch.preflightRestore,
 		Kill:             ch.killForRestore,
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
-			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, cloneSnapshotFiles)
+			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, func(dstDir, srcDir string) error {
+				return cloneSnapshotFiles(ctx, dstDir, srcDir)
+			})
 		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
@@ -33,13 +37,13 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 	})
 }
 
-func cloneSnapshotFiles(dstDir, srcDir string) error {
+func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) error {
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
 	}
 	cowFiles := identifyCOWFiles(chCfg)
-	return hypervisor.CloneSnapshotFiles(dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
+	return hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case strings.HasPrefix(name, memoryRangeFile):
 			return hypervisor.SnapshotFileMemory

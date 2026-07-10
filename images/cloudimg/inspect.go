@@ -3,11 +3,9 @@ package cloudimg
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 
@@ -27,7 +25,7 @@ var nonImageSignatures = []struct {
 	{[]byte("\xfd7zXZ\x00"), "content is xz-compressed (cloudimg does not auto-decompress)"},
 
 	{[]byte("BZh"), "content is bzip2-compressed (cloudimg does not auto-decompress)"},
-	{[]byte{0x28, 0xb5, 0x2f, 0xfd}, "content is zstd-compressed (cloudimg does not auto-decompress)"},
+	{utils.ZstdMagic, "content is zstd-compressed (cloudimg does not auto-decompress)"},
 	{[]byte("PK"), "content is a zip archive, not a disk image"},
 	{[]byte{0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c}, "content is a 7z archive, not a disk image"},
 }
@@ -89,32 +87,25 @@ func inspectImage(ctx context.Context, path string) (*sourceImageInfo, error) {
 
 // inspectQcow2Header parses qcow2 header fields without forking qemu-img; (info, true, nil) on qcow2, (nil, false, nil) if not qcow2.
 func inspectQcow2Header(path string) (*sourceImageInfo, bool, error) {
-	f, err := os.Open(path) //nolint:gosec // path is caller-controlled
+	hdr, ok, err := utils.ReadQcow2Header(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close() //nolint:errcheck
-
-	// qcow2 header: magic(4) + version(4) + backing_file_offset(8) = 16 bytes.
-	var header [16]byte
-	if _, err := io.ReadFull(f, header[:]); err != nil {
-		return nil, false, nil
-	}
-	if !bytes.Equal(header[:4], utils.Qcow2Magic) {
+	if !ok {
 		return nil, false, nil
 	}
 	var compat string
-	switch version := binary.BigEndian.Uint32(header[4:8]); version {
+	switch hdr.Version {
 	case 2:
 		compat = "0.10"
 	case 3:
 		compat = "1.1"
 	default:
-		return nil, true, fmt.Errorf("unsupported qcow2 version %d", version)
+		return nil, true, fmt.Errorf("unsupported qcow2 version %d", hdr.Version)
 	}
 	return &sourceImageInfo{
 		Format:         "qcow2",
 		Compat:         compat,
-		HasBackingFile: binary.BigEndian.Uint64(header[8:16]) != 0,
+		HasBackingFile: hdr.HasBackingFile,
 	}, true, nil
 }

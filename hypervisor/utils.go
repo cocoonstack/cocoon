@@ -23,9 +23,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
-type SnapshotFileKind int
-
 const (
 	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
@@ -39,6 +36,14 @@ const (
 	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
 	OpsLockName = "ops.lock"
 
+	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir so rm/GC cannot unlink a held inode.
+	CloneLocksDirName = "clone-locks"
+
+	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix. restoreDirtyName is the tombstone marking the destructive restore phase — cleared only by FinalizeRestore, never by GC.
+	restoreStagingName = ".restore-staging"
+	restoreDirtyName   = ".restore-dirty"
+	captureDirPrefix   = "snapshot-"
+
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
 
@@ -46,16 +51,28 @@ const (
 	socketReadyPollInterval = 1 * time.Millisecond
 )
 
+// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
+type SnapshotFileKind int
+
 // LockVMOps serializes mutating verbs on one VM across processes (#103):
 // device attach/detach, net resize, snapshot, hibernate, restore, stop.
 // The flock dies with the process, so a crashed holder never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
-	// Recreate if missing so stop/delete on a crash-leftover VM can still lock.
-	if err := os.MkdirAll(runDir, 0o750); err != nil {
-		return nil, fmt.Errorf("ops lock dir: %w", err)
+	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.
+	// Lockless read: RunDir is immutable after create, and a locked read would stall every ops verb behind an in-flight GC cycle's index lock. Fail closed on a real read error (ENOENT reads as empty) — guessing the path could split the lock domain.
+	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+		if r := idx.VMs[vmID]; r != nil && r.RunDir != "" {
+			runDir = r.RunDir
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("resolve run dir for %s: %w", vmID, err)
 	}
-	l := flock.New(filepath.Join(runDir, OpsLockName))
+	l, err := opsLock(runDir)
+	if err != nil {
+		return nil, err
+	}
 	if err := l.Lock(ctx); err != nil {
 		return nil, err
 	}
@@ -92,6 +109,14 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn fun
 		logger.Warnf(ctx, "%s: %v", op, err)
 	}
 	return result.Succeeded, result.Err()
+}
+
+// opsLock recreates runDir if missing (crash leftovers, logDir-only orphans) and returns the per-VM ops flock.
+func opsLock(runDir string) (*flock.Lock, error) {
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		return nil, fmt.Errorf("ops lock dir: %w", err)
+	}
+	return flock.New(filepath.Join(runDir, OpsLockName)), nil
 }
 
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
@@ -220,13 +245,16 @@ func CopyFile(dst, src string) (err error) {
 	return err
 }
 
-// MergeDirInto renames entries from src to dst, overwriting existing files.
+// MergeDirInto renames entries from src to dst, overwriting existing files; lock files never move (see isLockFile).
 func MergeDirInto(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("read staging dir: %w", err)
 	}
 	for _, e := range entries {
+		if isLockFile(e.Name()) {
+			continue
+		}
 		srcPath := filepath.Join(src, e.Name())
 		dstPath := filepath.Join(dst, e.Name())
 		if err := os.Rename(srcPath, dstPath); err != nil {
@@ -234,6 +262,11 @@ func MergeDirInto(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+// isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.
+func isLockFile(name string) bool {
+	return name == OpsLockName || strings.HasSuffix(name, ".clone.lock")
 }
 
 func ValidateHostCPU(cpu int) error {
@@ -246,7 +279,8 @@ func ValidateHostCPU(cpu int) error {
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
-	out, err := exec.CommandContext(ctx, //nolint:gosec
+	out, err := exec.CommandContext(
+		ctx, //nolint:gosec
 		"mkfs.ext4", "-F", "-m", "0", "-q",
 		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
 		path,
@@ -267,18 +301,36 @@ func IsDataDiskFile(name string) bool {
 	return strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw")
 }
 
-// ReflinkDataDisks reflinks every Role==Data disk into dstDir under data-<serial>.raw (CH+FC use it inside the snapshot pause window).
-func ReflinkDataDisks(dstDir string, configs []*types.StorageConfig) error {
+// DiskPathByRole returns the recorded path of the first disk with the given role, or "".
+func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) string {
 	for _, sc := range configs {
-		if sc.Role != types.StorageRoleData {
-			continue
-		}
-		dst := filepath.Join(dstDir, DataDiskBaseName(sc.Serial))
-		if err := utils.ReflinkCopy(dst, sc.Path); err != nil {
-			return fmt.Errorf("copy data disk %s: %w", sc.Serial, err)
+		if sc.Role == role {
+			return sc.Path
 		}
 	}
-	return nil
+	return ""
+}
+
+// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum.
+func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
+	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
+	for _, sc := range configs {
+		if sc.Role == types.StorageRoleData {
+			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
+		}
+	}
+	return copyPairs(ctx, pairs)
+}
+
+// copyPairs runs ReflinkCopy over {dst, src} pairs concurrently; small pair counts (COW + data disks) need no pool bound.
+func copyPairs(ctx context.Context, pairs [][2]string) error {
+	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
+		if err := utils.ReflinkCopy(p[0], p[1]); err != nil {
+			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 // PrepareDataDisks creates sparse files for each spec under baseDir, optionally formats (ext4 default), returns StorageConfigs; names must be unique and ValidDataDiskName-passing.
@@ -352,6 +404,10 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		if fname == "" {
 			continue
 		}
+		// A degenerate name would stat a directory and vacuously pass.
+		if fname == "." || fname == ".." || fname == string(filepath.Separator) {
+			return fmt.Errorf("invalid snapshot disk name %q", fname)
+		}
 		if _, err := os.Stat(filepath.Join(srcDir, fname)); err != nil {
 			return fmt.Errorf("snapshot file %s missing: %w", fname, err)
 		}
@@ -422,14 +478,15 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O.
-func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
+// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O; COW-class copies (the bulk of the bytes) fan out concurrently, links and small meta stay serial.
+func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return fmt.Errorf("read srcDir: %w", err)
 	}
+	var cowPairs [][2]string
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
+		if !entry.Type().IsRegular() || isLockFile(entry.Name()) {
 			continue
 		}
 		name := entry.Name()
@@ -448,9 +505,7 @@ func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) Snapsh
 				}
 			}
 		case SnapshotFileCOW:
-			if err := utils.ReflinkCopy(dst, src); err != nil {
-				return fmt.Errorf("copy COW %s: %w", name, err)
-			}
+			cowPairs = append(cowPairs, [2]string{dst, src})
 		case SnapshotFileMeta:
 			if err := CopyFile(dst, src); err != nil {
 				return fmt.Errorf("copy %s: %w", name, err)
@@ -458,7 +513,7 @@ func CloneSnapshotFiles(dstDir, srcDir string, classify func(name string) Snapsh
 		case SnapshotFileSkip:
 		}
 	}
-	return nil
+	return copyPairs(ctx, cowPairs)
 }
 
 // CleanSnapshotFiles removes snapshot-specific files from runDir.

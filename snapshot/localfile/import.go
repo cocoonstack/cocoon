@@ -27,6 +27,13 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	id := utils.GenerateID()
 	dataDir := lf.conf.SnapshotDataDir(id)
 
+	// Import writes the data dir before any DB record exists; the build lease keeps GC's orphan sweep off it.
+	release, err := lf.acquireBuildLease(id)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
 	if err = os.MkdirAll(dataDir, 0o750); err != nil {
 		return "", fmt.Errorf("create data dir: %w", err)
 	}

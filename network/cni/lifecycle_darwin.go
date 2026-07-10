@@ -22,3 +22,7 @@ func setupTCRedirect(_, _, _ string, _ int, _ string) (string, error) {
 func deleteTAPInNetns(_, _ string) error {
 	return errNotSupported
 }
+
+func tapPresentInNetns(_, _ string) error {
+	return errNotSupported
+}

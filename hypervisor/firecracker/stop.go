@@ -37,7 +37,8 @@ func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
 
 // gracefulStop sends SendCtrlAltDel with poll-and-escalate handled by the shared GracefulStop helper.
 func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, sockPath string, pid int, timeout time.Duration) error {
-	return fc.GracefulStop(ctx, vmID, pid, timeout,
+	return fc.GracefulStop(
+		ctx, vmID, pid, timeout,
 		func() error { return sendCtrlAltDel(ctx, hc) },
 		func() error { return fc.forceTerminate(ctx, sockPath, pid) },
 	)

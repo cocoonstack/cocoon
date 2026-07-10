@@ -18,12 +18,17 @@ type VMRecord struct {
 	// RunDir/LogDir are persisted absolute paths so cleanup still finds them if --run-dir / --log-dir change later.
 	RunDir string `json:"run_dir,omitempty"`
 	LogDir string `json:"log_dir,omitempty"`
+
+	// Quarantine names why start must refuse (e.g. partial restore merge); only a successful restore clears it — stop's state flip cannot.
+	Quarantine string `json:"quarantine,omitempty"`
 }
 
 // VMIndex is the top-level DB structure for a hypervisor backend.
 type VMIndex struct {
 	VMs   map[string]*VMRecord `json:"vms"`
 	Names map[string]string    `json:"names"` // name → VM ID
+	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them (the orphan scan only covers the configured roots).
+	OrphanDirs []string `json:"orphan_dirs,omitempty"`
 }
 
 func (idx *VMIndex) Init() {

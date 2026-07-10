@@ -72,8 +72,10 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			b, _ := newMeteringTestBackend(t)
 			const id = "vm-direct-fail"
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
+			runDir := t.TempDir()
 			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
 				idx.VMs[id].State = tt.origin
+				idx.VMs[id].RunDir = runDir
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -276,4 +278,42 @@ func tarWithFiles(t *testing.T, names ...string) io.Reader {
 		t.Fatalf("tar close: %v", err)
 	}
 	return &buf
+}
+
+func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	const id = "vm-sweep-fail"
+	seedVMRecord(t, b, id, 1, 512, 1024, true)
+	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = t.TempDir()
+		return nil
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	spec := RestoreSpec{
+		VMCfg:       &types.VMConfig{Config: types.Config{CPU: 1, Memory: 512, Storage: 1024}},
+		Snapshot:    tarWithFiles(t, "a"),
+		Preflight:   func(string, *VMRecord) error { return nil },
+		Kill:        func(context.Context, string, *VMRecord) error { return nil },
+		BeforeMerge: func(*VMRecord) error { return errors.New("sweep boom") },
+		AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
+			t.Fatal("AfterExtract must not run after a failed sweep")
+			return nil, nil
+		},
+	}
+	if _, err := b.RestoreSequence(t.Context(), id, spec); err == nil {
+		t.Fatal("expected sweep failure")
+	}
+	rec, err := b.LoadRecord(t.Context(), id)
+	if err != nil {
+		t.Fatalf("load record: %v", err)
+	}
+	if rec.Quarantine == "" || rec.State != types.VMStateError {
+		t.Errorf("partial cleanup must quarantine even a stopped origin: quarantine=%q state=%s", rec.Quarantine, rec.State)
+	}
+	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr != nil {
+		t.Error("the restore-dirty tombstone must survive a failed destructive phase")
+	}
 }

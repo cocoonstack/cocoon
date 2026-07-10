@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -560,9 +561,12 @@ func (c stubBackendConfig) IndexFile() string                 { return c.indexFi
 func (c stubBackendConfig) IndexLock() string                 { return c.indexLock }
 func (stubBackendConfig) EnsureDirs() error                   { return nil }
 func (stubBackendConfig) RunDir() string                      { panic("RunDir: not implemented in stub") }
-func (stubBackendConfig) LogDir() string                      { panic("LogDir: not implemented in stub") }
-func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
-func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
+
+func (stubBackendConfig) LogDir() string { panic("LogDir: not implemented in stub") }
+
+func (stubBackendConfig) VMRunDir(string) string { panic("VMRunDir: not implemented in stub") }
+
+func (stubBackendConfig) VMLogDir(string) string { panic("VMLogDir: not implemented in stub") }
 
 // meteringStubConfig gives the metering stub a real VMRunDir so sequences
 // can take the per-VM ops lock and MkdirTemp under it.
@@ -572,6 +576,10 @@ type meteringStubConfig struct {
 }
 
 func (c meteringStubConfig) VMRunDir(string) string { return c.vmRunRoot }
+
+func (c meteringStubConfig) VMLogDir(string) string { return c.vmRunRoot }
+
+func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
 
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
@@ -598,6 +606,9 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
 				FirstBooted: firstBooted,
 			},
+			// Real dirs by default: sequences write markers into RunDir, and an empty path would land them in the package dir.
+			RunDir: t.TempDir(),
+			LogDir: t.TempDir(),
 		}
 		return nil
 	}); err != nil {
@@ -615,5 +626,57 @@ func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage in
 		return nil
 	}); err != nil {
 		t.Fatalf("set running: %v", err)
+	}
+}
+
+func TestPrepareStartRefusesQuarantined(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
+
+	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM")
+	}
+
+	// Stop's state flip must not lift the quarantine.
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
+	}
+}
+
+func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-staging"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir := t.TempDir()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = runDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		t.Fatalf("mk tombstone: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
+		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
+	}
+}
+
+func TestPrepareStartRefusesCreating(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
+		t.Fatalf("ReserveVM: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a creating placeholder")
 	}
 }

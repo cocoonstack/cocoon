@@ -4,6 +4,7 @@ package bridge
 
 import (
 	"context"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -55,12 +56,7 @@ func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 				activePrefixes[network.VMIDPrefix(id)] = struct{}{}
 			}
 
-			var orphans []string
-			for prefix := range snap.prefixes {
-				if _, ok := activePrefixes[prefix]; !ok {
-					orphans = append(orphans, prefix)
-				}
-			}
+			orphans := utils.FilterUnreferenced(slices.Collect(maps.Keys(snap.prefixes)), activePrefixes)
 			slices.Sort(orphans)
 			return orphans
 		},

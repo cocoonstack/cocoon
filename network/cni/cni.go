@@ -34,6 +34,8 @@ var (
 	deleteNetnsFn     = deleteNetns
 	ensureNetnsFn     = ensureNetns
 	setupTCRedirectFn = setupTCRedirect
+	tapPresentFn      = tapPresentInNetns
+	statNetnsFn       = os.Stat
 )
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
@@ -85,11 +87,19 @@ func New(conf *config.Config) (*CNI, error) {
 // Type returns the network provider identifier.
 func (c *CNI) Type() string { return typ }
 
-// Verify checks whether the network namespace for a VM exists.
-func (c *CNI) Verify(_ context.Context, vmID string) error {
+// Verify checks the netns and every expected TAP inside it.
+func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
 	nsPath := netnsPath(vmID)
-	if _, err := os.Stat(nsPath); err != nil {
+	if _, err := statNetnsFn(nsPath); err != nil {
 		return fmt.Errorf("netns %s: %w", nsPath, err)
+	}
+	for _, nc := range expected {
+		if nc == nil || nc.TAP == "" {
+			continue
+		}
+		if err := tapPresentFn(nsPath, nc.TAP); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -139,17 +149,28 @@ func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
 	nsPath := netnsPath(vmID)
 	// Sweep only released records: a failed DEL keeps its record so GC retries the release.
-	downIDs, _ := c.tearDownNICs(ctx, vmID, nsPath, records, false)
+	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, false)
+	if err := c.deleteRecords(ctx, downIDs); err != nil {
+		return errors.Join(tdErr, err)
+	}
+	if tdErr != nil {
+		// Keep the netns: the retried DEL (GC) runs with its full context intact.
+		return fmt.Errorf("nic release incomplete, netns kept for gc retry: %w", tdErr)
+	}
 	nsName := netnsName(vmID)
 	if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove netns %s: %w", nsPath, err)
 	}
-	return c.deleteRecords(ctx, downIDs)
+	return nil
 }
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {
 	logger := log.WithFunc("cni.tearDownNICs")
+	// Zero records need no plugin: a missing conflist must not wedge a 0-NIC VM's netns removal.
+	if len(records) == 0 {
+		return nil, nil
+	}
 	if c.cniConf == nil {
 		return nil, c.errNoConflist()
 	}

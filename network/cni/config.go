@@ -11,6 +11,8 @@ const (
 	netnsBasePath = "/var/run/netns"
 	// netnsPrefix scopes GC to cocoon-owned netns (so docker/containerd entries survive).
 	netnsPrefix = "cocoon-"
+
+	tapPrefix = "tap"
 )
 
 type Config struct {
@@ -28,7 +30,7 @@ func (c *Config) dir() string       { return filepath.Join(c.RootDir, "cni") }
 func (c *Config) dbDir() string     { return filepath.Join(c.dir(), "db") }
 
 func netnsPath(vmID string) string {
-	return filepath.Join(netnsBasePath, netnsPrefix+vmID)
+	return filepath.Join(netnsBasePath, netnsName(vmID))
 }
 
 func netnsName(vmID string) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,26 +47,25 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	}
 	current := len(rec.NetworkConfigs)
 	res := netresize.Result{Before: current, After: current}
+	// Reconcile before comparing counts: an interrupted resize leaves a ghost device/TAP that target==current would otherwise never heal.
+	if err = reconcileOrphanNICs(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing); err != nil {
+		return res, err
+	}
 	switch {
 	case spec.Target == current:
 		return res, nil
 	case spec.Target > current:
-		return ch.netResizeAdd(ctx, hc, vmID, &rec.Config, plumbing, current, spec.Target, res)
+		return ch.netResizeAdd(ctx, hc, vmID, &rec, plumbing, current, spec.Target, res)
 	default:
 		return ch.netResizeRemove(ctx, hc, info, vmID, rec.NetworkConfigs, plumbing, current, spec.Target, res)
 	}
 }
 
-func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, vmCfg *types.VMConfig, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
+func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, rec *hypervisor.VMRecord, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")
-	rollbackPlumbing := func(i int) {
-		if rmErr := plumbing.Remove(ctx, vmID, i); rmErr != nil {
-			logger.Warnf(ctx, "rollback host plumbing for nic %d: %v", i, rmErr)
-		}
-	}
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
-		ncs, err := plumbing.Add(ctx, vmID, vmCfg, network.AddSpec{Index: i})
+		ncs, err := plumbing.Add(ctx, vmID, &rec.Config, network.AddSpec{Index: i})
 		if err != nil {
 			return res, fmt.Errorf("nic %d host plumbing: %w", i, err)
 		}
@@ -75,23 +75,55 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 		nc := ncs[0]
 		chID, err := addCocoonNIC(ctx, hc, nc)
 		if err != nil {
-			rollbackPlumbing(i)
+			// Survives Ctrl-C: an abandoned half-add is exactly the divergence the reconcile above exists for.
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
+			if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
+				logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+			}
+			cancel()
 			return res, fmt.Errorf("vm.add-net nic %d: %w", i, err)
 		}
 		if err := ch.appendNetworkConfig(ctx, vmID, nc); err != nil {
-			// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
-			if rmErr := removeDeviceVM(ctx, hc, chID); rmErr != nil {
-				logger.Warnf(ctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
-			} else if wErr := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); wErr != nil {
-				logger.Warnf(ctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
+			committed, verifyErr := ch.resolveFailedPersist(ctx, hc, plumbing, vmID, nc, chID, i)
+			if verifyErr != nil {
+				return res, fmt.Errorf("persist nic %d: %w; commit state inconclusive: %v (device kept, rerun vm net to reconcile)", i, err, verifyErr)
 			}
-			rollbackPlumbing(i)
-			return res, fmt.Errorf("persist nic %d: %w", i, err)
+			if !committed {
+				return res, fmt.Errorf("persist nic %d: %w", i, err)
+			}
+			logger.Warnf(ctx, "persist nic %d reported %v but committed; keeping device", i, err)
 		}
 		res.Added = append(res.Added, netresize.NIC{Index: i, TAP: nc.TAP, MAC: nc.MAC})
 		res.After = i + 1
 	}
 	return res, nil
+}
+
+// resolveFailedPersist re-reads the record after a failed NIC persist: fsync can fail after the rename landed, and tearing down a committed NIC would strand record-without-device where a same-target retry returns at target==current without healing. Teardown happens only on a conclusive miss; a failed re-read keeps the device and plumbing (ejectOrphanNICs reconciles a genuine orphan on the next resize). The read is lockless so an in-flight GC cycle's index lock cannot time it out into a false miss.
+func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
+	var rec *hypervisor.VMRecord
+	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
+		rec = idx.VMs[vmID]
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	if nicPersisted(rec, nc.MAC) {
+		return true, nil
+	}
+	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
+	defer cancel()
+	// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
+	if rmErr := removeDeviceVM(rctx, hc, chID); rmErr != nil {
+		logger.Warnf(rctx, "rollback vm.remove-device %s after persist failure: %v", chID, rmErr)
+	} else if wErr := waitDeviceEjected(rctx, hc, chID); wErr != nil {
+		logger.Warnf(rctx, "rollback wait eject %s after persist failure: %v", chID, wErr)
+	}
+	if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
+		logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
+	}
+	return false, nil
 }
 
 func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing, current, target int, res netresize.Result) (netresize.Result, error) {
@@ -108,13 +140,15 @@ func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client,
 		}
 		chID := macToID[strings.ToLower(nc.MAC)]
 		if chID == "" {
-			return res, fmt.Errorf("nic %d MAC %s: no live device", i, nc.MAC)
-		}
-		if err := removeDeviceVM(ctx, hc, chID); err != nil {
-			return res, fmt.Errorf("vm.remove-device nic %d (%s): %w", i, chID, err)
-		}
-		if err := waitDeviceEjected(ctx, hc, chID, ejectWaitTimeout); err != nil {
-			return res, fmt.Errorf("wait eject nic %d (%s): %w", i, chID, err)
+			// Already ejected by an interrupted prior resize: resume with the host/DB halves so retries converge instead of wedging on "no live device".
+			logger.Warnf(ctx, "nic %d MAC %s: no live device, resuming interrupted remove", i, nc.MAC)
+		} else {
+			if err := removeDeviceVM(ctx, hc, chID); err != nil {
+				return res, fmt.Errorf("vm.remove-device nic %d (%s): %w", i, chID, err)
+			}
+			if err := waitDeviceEjected(ctx, hc, chID); err != nil {
+				return res, fmt.Errorf("wait eject nic %d (%s): %w", i, chID, err)
+			}
 		}
 		plumbingErr := plumbing.Remove(ctx, vmID, i)
 		if err := ch.truncateNetworkConfigs(ctx, vmID, i); err != nil {
@@ -149,4 +183,42 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 		}
 		return nil
 	})
+}
+
+// nicPersisted reports whether rec already carries a NIC with mac — resolves the commit-ambiguity of a failed persist (fsync can fail after the rename landed).
+func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
+	return rec != nil && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
+		return nc != nil && strings.EqualFold(nc.MAC, mac)
+	})
+}
+
+// reconcileOrphanNICs removes cocoon-managed CH devices whose MAC the record does not know — leftovers of a resize interrupted between vm.add-net and the DB write — and best-effort reclaims their host slot (bridge TAPs have no DB record, and a leftover TAP wedges every retry at CreateTAP).
+func reconcileOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing) error {
+	logger := log.WithFunc("cloudhypervisor.NetResize.reconcile")
+	known := make(map[string]struct{}, len(ncs))
+	for _, nc := range ncs {
+		if nc != nil {
+			known[strings.ToLower(nc.MAC)] = struct{}{}
+		}
+	}
+	for _, n := range info.Config.Nets {
+		if !strings.HasPrefix(n.ID, cocoonNetIDPrefix) {
+			continue
+		}
+		if _, ok := known[strings.ToLower(n.MAC)]; ok {
+			continue
+		}
+		if err := removeDeviceVM(ctx, hc, n.ID); err != nil {
+			return fmt.Errorf("eject orphan NIC %s: %w", n.ID, err)
+		}
+		if err := waitDeviceEjected(ctx, hc, n.ID); err != nil {
+			return fmt.Errorf("wait orphan eject %s: %w", n.ID, err)
+		}
+		if idx, ok := network.TAPIndex(n.TAP); ok {
+			if rmErr := plumbing.Remove(ctx, vmID, idx); rmErr != nil {
+				logger.Warnf(ctx, "reclaim host slot for orphan NIC %s (tap %s): %v", n.ID, n.TAP, rmErr)
+			}
+		}
+	}
+	return nil
 }

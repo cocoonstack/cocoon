@@ -213,12 +213,13 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		})
 
 	if len(allDeleted) > 0 {
+		// Before the error check: a partial CNI failure must not suppress bridge TAP cleanup for the rest of the batch.
+		bridgenet.CleanupTAPs(allDeleted)
 		if netProvider, initErr := cmdcore.InitNetwork(conf); initErr == nil {
 			if _, delErr := netProvider.Delete(ctx, allDeleted); delErr != nil {
 				return fmt.Errorf("vm(s) deleted but network cleanup failed: %w", delErr)
 			}
 		}
-		bridgenet.CleanupTAPs(allDeleted)
 	}
 
 	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
@@ -277,19 +278,39 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			logger.Warnf(ctx, "skip recovery for VM %s: %v", vm.ID, provErr)
 			continue
 		}
-		if netProvider.Verify(ctx, vm.ID) == nil {
-			continue
+		recoverOne := func(vm *types.VM) {
+			if netProvider.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
+				return
+			}
+			logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
+			if _, prepErr := netProvider.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
+				logger.Warnf(ctx, "prepare netns for VM %s: %v (start will fail)", vm.ID, prepErr)
+				return
+			}
+			if len(vm.NetworkConfigs) == 0 {
+				return
+			}
+			if _, recoverErr := netProvider.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...); recoverErr != nil {
+				logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
+			}
 		}
-		logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
-		if _, prepErr := netProvider.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
-			logger.Warnf(ctx, "prepare netns for VM %s: %v (start will fail)", vm.ID, prepErr)
-			continue
-		}
-		if len(vm.NetworkConfigs) == 0 {
-			continue
-		}
-		if _, recoverErr := netProvider.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...); recoverErr != nil {
-			logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
+		// Ops lock serializes the verify-and-rebuild: two concurrent starts would
+		// otherwise both see missing plumbing, double-ADD, and the loser's
+		// rollback DEL would tear down the winner's fresh network.
+		if locker, ok := hyper.(hypervisor.Reserver); ok {
+			unlock, lockErr := locker.LockVMOps(ctx, vm.ID)
+			if lockErr != nil {
+				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
+				continue
+			}
+			// Recheck under the lock and rebuild from the fresh record: the
+			// pre-lock List snapshot may predate a completed rm or net resize.
+			if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
+				recoverOne(fresh)
+			}
+			unlock()
+		} else {
+			recoverOne(vm)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -25,22 +26,20 @@ const (
 	dirEntrySize   = 32
 	fatEntryEOC    = 0xFFF
 	mediaDesc      = 0xF8
-)
 
-type dataEntry struct {
-	data        []byte
-	numClusters int
-}
+	// writeBufSize coalesces the per-sector writes in writeTo into few write(2) calls.
+	writeBufSize = 64 << 10
+)
 
 // fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
 type fat12Builder struct {
 	label       string
-	fat         []byte      // single FAT copy (written twice)
-	rootDir     []byte      // root directory area
-	data        []dataEntry // file data in cluster-allocation order
-	nextCluster uint16      // next free cluster (starts at 2)
-	rootUsed    int         // root directory entries consumed
-	shortSeq    int         // counter for ~N short-name suffixes
+	fat         []byte   // single FAT copy (written twice)
+	rootDir     []byte   // root directory area
+	data        [][]byte // file data in cluster-allocation order
+	nextCluster uint16   // next free cluster (starts at 2)
+	rootUsed    int      // root directory entries consumed
+	shortSeq    int      // counter for ~N short-name suffixes
 }
 
 // CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
@@ -97,7 +96,7 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 				setFATEntry(b.fat, c, uint16(c+1)) //nolint:gosec
 			}
 		}
-		b.data = append(b.data, dataEntry{data: content, numClusters: numClusters})
+		b.data = append(b.data, content)
 		b.nextCluster += uint16(numClusters)
 	}
 
@@ -141,28 +140,30 @@ func (b *fat12Builder) writeDirEntry(entry []byte) (int, error) {
 
 // writeTo streams: boot sector → FAT ×2 → root directory → data → zero padding.
 func (b *fat12Builder) writeTo(w io.Writer) error {
-	if _, err := w.Write(b.makeBootSector()); err != nil {
+	bw := bufio.NewWriterSize(w, writeBufSize)
+	if _, err := bw.Write(b.makeBootSector()); err != nil {
 		return err
 	}
 	for range numFATs {
-		if _, err := w.Write(b.fat); err != nil {
+		if _, err := bw.Write(b.fat); err != nil {
 			return err
 		}
 	}
-	if _, err := w.Write(b.rootDir); err != nil {
+	if _, err := bw.Write(b.rootDir); err != nil {
 		return err
 	}
 
 	sector := make([]byte, sectorSize)
 	dataSectors := 0
-	for _, e := range b.data {
-		for i := range e.numClusters {
+	for _, content := range b.data {
+		numClusters := (len(content) + sectorSize - 1) / sectorSize
+		for i := range numClusters {
 			clear(sector)
 			start := i * sectorSize
-			if start < len(e.data) {
-				copy(sector, e.data[start:min(start+sectorSize, len(e.data))])
+			if start < len(content) {
+				copy(sector, content[start:min(start+sectorSize, len(content))])
 			}
-			if _, err := w.Write(sector); err != nil {
+			if _, err := bw.Write(sector); err != nil {
 				return err
 			}
 			dataSectors++
@@ -172,11 +173,11 @@ func (b *fat12Builder) writeTo(w io.Writer) error {
 	// Zero-fill the remaining data area.
 	clear(sector)
 	for range totalSectors - firstDataSec - dataSectors {
-		if _, err := w.Write(sector); err != nil {
+		if _, err := bw.Write(sector); err != nil {
 			return err
 		}
 	}
-	return nil
+	return bw.Flush()
 }
 
 func (b *fat12Builder) makeBootSector() []byte {

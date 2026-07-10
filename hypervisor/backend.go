@@ -125,11 +125,12 @@ type DirectRestoreSpec struct {
 	AfterExtract     func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 }
 
-// StartSpec carries StartSequence inputs.
+// StartSpec carries StartSequence inputs; Wrap (optional) encloses launch through the Running flip, inside the ops lock.
 type StartSpec struct {
 	RuntimeFiles []string
 	Launch       func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
 	PostLaunch   func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
+	Wrap         func(rec *VMRecord, fn func() error) error
 }
 
 // StopSpec carries StopOneSequence inputs.

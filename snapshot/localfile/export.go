@@ -26,10 +26,11 @@ func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadC
 
 // ExportToDir reflinks snapshot data into dir + writes snapshot.json last so its presence is the all-data-ready marker for --from-dir.
 func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
-	dataDir, cfg, err := lf.DataDir(ctx, ref)
+	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return err
 	}
+	defer release()
 	if err = utils.EnsureDirs(dir); err != nil {
 		return err
 	}
@@ -45,16 +46,20 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 	if err != nil {
 		return fmt.Errorf("read snapshot dir: %w", err)
 	}
+	var names []string
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
+		if entry.Type().IsRegular() {
+			names = append(names, entry.Name())
 		}
-		name := entry.Name()
-		src := filepath.Join(dataDir, name)
-		dst := filepath.Join(dir, name)
-		if err = utils.ReflinkCopy(dst, src); err != nil {
-			return fmt.Errorf("copy %s: %w", name, err)
+	}
+	// Fan out: snapshot dirs hold a few large files (memory, COW, data disks), so wall time is the longest copy, not the sum.
+	if _, err = utils.Map(ctx, names, func(_ context.Context, _ int, name string) (struct{}, error) {
+		if copyErr := utils.ReflinkCopy(filepath.Join(dir, name), filepath.Join(dataDir, name)); copyErr != nil {
+			return struct{}{}, fmt.Errorf("copy %s: %w", name, copyErr)
 		}
+		return struct{}{}, nil
+	}); err != nil {
+		return err
 	}
 	if err = snapshot.WriteSnapshotEnvelope(dir, cfg); err != nil {
 		return fmt.Errorf("write envelope: %w", err)
@@ -63,13 +68,14 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 }
 
 func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.ReadCloser, error) {
-	dataDir, cfg, err := lf.DataDir(ctx, ref)
+	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
 
 	jsonData, err := snapshot.MarshalEnvelope(cfg)
 	if err != nil {
+		release()
 		return nil, err
 	}
 
@@ -124,5 +130,5 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		}
 	}()
 
-	return utils.NewPipeStreamReader(pr, done, nil), nil
+	return utils.NewPipeStreamReader(pr, done, release), nil
 }

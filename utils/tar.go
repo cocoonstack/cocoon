@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 )
@@ -53,8 +54,8 @@ func TarDir(tw *tar.Writer, dir string) error {
 	return nil
 }
 
-// ExtractTar extracts flat tar entries into dir.
-func ExtractTar(dir string, r io.Reader) error {
+// ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped.
+func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
@@ -70,7 +71,7 @@ func ExtractTar(dir string, r io.Reader) error {
 		}
 
 		name := filepath.Base(hdr.Name)
-		if name == "." || name == ".." {
+		if name == "." || name == ".." || slices.ContainsFunc(skip, func(fn func(string) bool) bool { return fn(name) }) {
 			continue
 		}
 

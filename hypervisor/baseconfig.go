@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -63,6 +64,16 @@ func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 		return time.Duration(c.TerminateGracePeriodSeconds) * time.Second
 	}
 	return defaultTerminateGracePeriod
+}
+
+// LoadAndValidateMeta loads dir's snapshot sidecar and validates its paths against this backend's managed roots.
+func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
+	return LoadAndValidateMeta(dir, c.RootDir, c.Config.RunDir)
+}
+
+// PreflightRestore runs the shared restore preflight against this backend's managed roots.
+func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
+	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
 }
 
 func (c *BaseConfig) dir() string   { return filepath.Join(c.RootDir, c.backendName) }

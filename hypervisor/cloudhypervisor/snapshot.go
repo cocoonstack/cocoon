@@ -37,18 +37,21 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
-			cowPath := ch.cowPath(rec.ID, directBoot)
-			if err := utils.ReflinkCopy(filepath.Join(tmpDir, filepath.Base(cowPath)), cowPath); err != nil {
-				return fmt.Errorf("copy COW: %w", err)
+			// Recorded path, not conf-derived: after a --run-dir change the disks stay where the record says.
+			cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+			if cowPath == "" {
+				return fmt.Errorf("no COW disk recorded for %s", rec.ID)
 			}
-			return hypervisor.ReflinkDataDisks(tmpDir, rec.StorageConfigs)
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
 		AfterCapture: func(rec *hypervisor.VMRecord, tmpDir string) error {
 			if hypervisor.IsDirectBoot(rec.BootConfig) || rec.Config.Windows {
 				return nil
 			}
-			cidataSrc := ch.conf.CidataPath(rec.ID)
+			cidataSrc := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCidata)
+			if cidataSrc == "" { // pre-first-boot: file exists but is not yet a recorded disk
+				cidataSrc = filepath.Join(rec.RunDir, cidataFile)
+			}
 			if _, statErr := os.Stat(cidataSrc); statErr != nil {
 				return nil
 			}

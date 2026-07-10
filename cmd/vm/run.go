@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
@@ -19,6 +20,8 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const rollbackTimeout = 30 * time.Second
 
 type nicHint struct {
 	mac, ip, gw string
@@ -103,29 +106,33 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Pin the inspected ID: names are mutable, and a delete+reuse between Inspect and open would swap the source.
+	snapID := snapInfo.ID
 	if da, ok := snapBackend.(snapshot.Direct); ok {
 		if dcr, ok := hyper.(hypervisor.Direct); ok {
-			return h.cloneDirect(ctx, cmd, conf, hyper, dcr, da, snapRef, logger)
+			return h.cloneDirect(ctx, cmd, conf, hyper, dcr, da, snapID, logger)
 		}
 	}
 
-	cfg, stream, err := snapBackend.Restore(ctx, snapRef)
+	cfg, stream, err := snapBackend.Restore(ctx, snapID)
 	if err != nil {
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
 	defer stream.Close() //nolint:errcheck
 	defer cmdcore.CloseOnCancel(ctx, stream)()
 
-	vmCfg, vmID, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, cfg)
+	vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
-	logger.Infof(ctx, "cloning VM from snapshot %s ...", snapRef)
+	logger.Infof(ctx, "cloning VM from snapshot %s ...", snapID)
 
 	vm, cloneErr := hyper.Clone(ctx, vmID, vmCfg, netSetup, &cfg, stream)
 	if cloneErr != nil {
 		rollbackNetwork(ctx, netProvider, vmID)
+		rollbackReserve()
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 	h.reseedAfterResume(ctx, hyper, vm, true)
@@ -181,12 +188,13 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	done, directErr := h.restoreDirect(ctx, cmd, snapRef, vmRef, vmCfg, snapBackend, hyper, logger)
+	// Pin the inspected IDs: re-resolving mutable names here would let a delete+reuse bypass the ownership check above.
+	done, directErr := h.restoreDirect(ctx, cmd, snapInfo.ID, vm.ID, vmCfg, snapBackend, hyper, logger)
 	if done {
 		return directErr
 	}
 
-	_, stream, err := snapBackend.Restore(ctx, snapRef)
+	_, stream, err := snapBackend.Restore(ctx, snapInfo.ID)
 	if err != nil {
 		return fmt.Errorf("open snapshot: %w", err)
 	}
@@ -195,7 +203,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 
 	logger.Infof(ctx, "restoring VM %s from snapshot %s ...", vmRef, snapRef)
 
-	result, err := hyper.Restore(ctx, vmRef, vmCfg, stream, snapInfo.ID)
+	result, err := hyper.Restore(ctx, vm.ID, vmCfg, stream, snapInfo.ID)
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
@@ -240,15 +248,16 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
-	return h.runDirectRestore(ctx, cmd, hyper, dcr, vmRef, vmCfg, dir, cfg.ID,
+	return h.runDirectRestore(ctx, cmd, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
 func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, da snapshot.Direct, snapRef string, logger *log.Fields) error {
-	dataDir, cfg, err := da.DataDir(ctx, snapRef)
+	dataDir, cfg, release, err := da.DataDir(ctx, snapRef)
 	if err != nil {
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
+	defer release()
 	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, dcr, cfg, dataDir,
 		fmt.Sprintf("snapshot %s (direct)", snapRef), logger)
 }
@@ -280,10 +289,11 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 }
 
 func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
-	vmCfg, vmID, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, cfg)
+	vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
@@ -293,6 +303,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	vm, cloneErr := dcr.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
 	if cloneErr != nil {
 		rollbackNetwork(ctx, netProvider, vmID)
+		rollbackReserve()
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 	h.reseedAfterResume(ctx, hyper, vm, true)
@@ -305,23 +316,32 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	return nil
 }
 
-func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, cfg types.SnapshotConfig) (*types.VMConfig, string, network.Network, types.NetSetup, error) {
+func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (*types.VMConfig, string, func(), func(), network.Network, types.NetSetup, error) {
 	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
 	if err != nil {
-		return nil, "", nil, types.NetSetup{}, err
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
 	vmID := utils.GenerateID()
 	if vmCfg.Name == "" {
 		vmCfg.Name = "cocoon-clone-" + network.VMIDPrefix(vmID)
 	}
 	if err = vmCfg.Validate(); err != nil {
-		return nil, "", nil, types.NetSetup{}, err
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
+	}
+	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, cfg.ImageBlobIDs)
+	if err != nil {
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
+	}
+	fail := func(err error) (*types.VMConfig, string, func(), func(), network.Network, types.NetSetup, error) {
+		rollbackReserve()
+		unlock()
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
 
 	if pull, _ := cmd.Flags().GetBool("pull"); pull && vmCfg.Image != "" && vmCfg.ImageType != "" {
 		backends, initErr := cmdcore.InitImageBackends(ctx, conf)
 		if initErr != nil {
-			return nil, "", nil, types.NetSetup{}, fmt.Errorf("init image backends: %w", initErr)
+			return fail(fmt.Errorf("init image backends: %w", initErr))
 		}
 		cmdcore.EnsureImage(ctx, backends, vmCfg)
 	}
@@ -330,20 +350,20 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	nics := cfg.NICs
 	if cmd.Flags().Changed("nics") {
 		if conf.UseFirecracker {
-			return nil, "", nil, types.NetSetup{}, fmt.Errorf("--nics override on clone is Cloud Hypervisor only (FC network_overrides retargets existing NICs, not resize)")
+			return fail(fmt.Errorf("--nics override on clone is Cloud Hypervisor only (FC network_overrides retargets existing NICs, not resize)"))
 		}
 		nics, _ = cmd.Flags().GetInt("nics")
 	}
 	// Pre-extract fast-fail; fc's clone-extract guard stays as the library backstop.
 	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker {
-		return nil, "", nil, types.NetSetup{}, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend)
+		return fail(fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend))
 	}
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
 	if err != nil {
-		return nil, "", nil, types.NetSetup{}, err
+		return fail(err)
 	}
 
-	return vmCfg, vmID, netProvider, netSetup, nil
+	return vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, nil
 }
 
 func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
@@ -355,10 +375,11 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 	if !ok {
 		return false, nil
 	}
-	dataDir, snapCfg, err := da.DataDir(ctx, snapRef)
+	dataDir, snapCfg, release, err := da.DataDir(ctx, snapRef)
 	if err != nil {
 		return true, fmt.Errorf("open snapshot: %w", err)
 	}
+	defer release()
 	return true, h.runDirectRestore(ctx, cmd, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
@@ -425,19 +446,46 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
 	vmID := utils.GenerateID()
+	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, hypervisor.ExtractBlobIDs(storageConfigs, bootCfg))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer unlock()
 
 	nics, _ := cmd.Flags().GetInt("nics")
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
 	if err != nil {
+		rollbackReserve()
 		return nil, nil, nil, err
 	}
 
 	info, createErr := hyper.Create(ctx, vmID, vmCfg, storageConfigs, netSetup, bootCfg)
 	if createErr != nil {
 		rollbackNetwork(ctx, netProvider, vmID)
+		// Idempotent belt over Create's own rollback: pre-adoption failures (e.g. CPU validation) leave the placeholder squatting the name until GC.
+		rollbackReserve()
 		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
 	}
 	return ctx, info, hyper, nil
+}
+
+// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until the backend finalizes. rollback covers failures before the backend adopts the placeholder; unlock is deferred past Create/Clone by the caller.
+func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
+	r, ok := hyper.(hypervisor.Reserver)
+	if !ok {
+		return func() {}, func() {}, nil
+	}
+	unlock, err = r.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := r.PrereserveVM(ctx, vmID, vmCfg, blobIDs); err != nil {
+		// The write may have committed despite the error (fsync after rename); rollback is idempotent either way.
+		r.RollbackCreate(ctx, vmID, vmCfg.Name)
+		unlock()
+		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
+	}
+	return func() { r.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
 }
 
 // snapshotSource picks the clone/restore source: --from-dir or args[baseArgs]. Exactly one of (fromDir, snapRef) is non-empty.
@@ -505,6 +553,9 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 	if netProvider == nil {
 		return
 	}
+	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
 	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
 		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
