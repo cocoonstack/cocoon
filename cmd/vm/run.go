@@ -480,6 +480,8 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 		return nil, nil, err
 	}
 	if err := r.PrereserveVM(ctx, vmID, vmCfg, blobIDs); err != nil {
+		// The write may have committed despite the error (fsync after rename); rollback is idempotent either way.
+		r.RollbackCreate(ctx, vmID, vmCfg.Name)
 		unlock()
 		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
 	}

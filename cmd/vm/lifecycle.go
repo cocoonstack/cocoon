@@ -278,7 +278,7 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			logger.Warnf(ctx, "skip recovery for VM %s: %v", vm.ID, provErr)
 			continue
 		}
-		recoverOne := func() {
+		recoverOne := func(vm *types.VM) {
 			if netProvider.Verify(ctx, vm.ID) == nil {
 				return
 			}
@@ -303,14 +303,14 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
 				continue
 			}
-			// Recheck under the lock: the pre-lock List snapshot may predate a
-			// completed rm, and recovering a deleted VM would rebuild ownerless plumbing.
-			if _, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
-				recoverOne()
+			// Recheck under the lock and rebuild from the fresh record: the
+			// pre-lock List snapshot may predate a completed rm or net resize.
+			if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
+				recoverOne(fresh)
 			}
 			unlock()
 		} else {
-			recoverOne()
+			recoverOne(vm)
 		}
 	}
 }

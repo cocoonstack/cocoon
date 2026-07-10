@@ -27,7 +27,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("vm net: %w", err)
 	}
 	target, _ := cmd.Flags().GetInt("nics")
-	res, err := resizer.NetResize(ctx, args[0], netresize.Spec{Target: target}, plumbing)
+	res, err := resizer.NetResize(ctx, vm.ID, netresize.Spec{Target: target}, plumbing)
 	if err != nil {
 		return classifyAttachErr(err)
 	}
