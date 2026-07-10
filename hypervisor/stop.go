@@ -72,8 +72,8 @@ func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(conte
 	return b.ForEachVM(ctx, ids, "Stop", stopOne)
 }
 
-// DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.
-func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error) ([]string, error) {
+// DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it. wrap (optional) encloses the locked per-VM deletion — FC passes its writable-disk locks so a clone's symlink-redirect window cannot be deleted from under it.
+func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error, wrap func(rec *VMRecord, fn func() error) error) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -93,70 +93,77 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 		if loadErr != nil {
 			return loadErr
 		}
-		sockPath := SocketPath(rec.RunDir)
-		stoppedByUs := false
-		if runningErr := b.WithRunningVM(ctx, &rec, func(_ int) error {
-			if !force {
-				return fmt.Errorf("running (force required)")
-			}
-			stoppedByUs = true
-			return stopLocked(ctx, id)
-		}); runningErr != nil && !errors.Is(runningErr, ErrNotRunning) {
-			return fmt.Errorf("stop before delete: %w", runningErr)
-		}
-		// Probe fires unconditionally: AF_UNIX has no TIME_WAIT, and catches false-negative pidfile/cmdline shortcuts.
-		if live, probeErr := b.IsAPISocketLive(ctx, &rec); live {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if probeErr != nil {
-				return fmt.Errorf("refuse delete: api socket %s probe inconclusive: %w (resolve the host issue or kill the vmm process then retry)", sockPath, probeErr)
-			}
-			return fmt.Errorf("refuse delete: api socket %s still responsive (suspected orphan vmm; kill the vmm process then retry)", sockPath)
-		}
-		for _, pid := range procScan.Find(sockPath) {
-			// procScan is a pre-stop snapshot: a just-force-stopped VM is already gone.
-			// Only a still-live match is a real orphan worth killing and logging.
-			if !utils.IsProcessAlive(pid) {
-				continue
-			}
-			if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
-				return fmt.Errorf("terminate orphan VMM pid=%d for VM %s: %w", pid, id, termErr)
-			}
-			log.WithFunc(b.Typ+".Delete").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
-		}
-		var (
-			shape              metering.Shape
-			hadRunningInterval bool
-		)
-		// Record goes first: dir removal deletes the ops.lock file, and a later
-		// locker on the recreated file is a fresh inode that does not contend —
-		// with the record already gone its resolve fails instead of reviving the
-		// VM. Capture in the same transaction so a concurrent UpdateStates can't
-		// shift the truth; a failed dir removal below leaves orphans for GC.
-		if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-			r := idx.VMs[id]
-			if r == nil {
-				return ErrNotFound
-			}
-			hadRunningInterval = hasOpenComputeInterval(r)
-			shape = shapeFromConfig(r.Config)
-			delete(idx.Names, r.Config.Name)
-			delete(idx.VMs, id)
-			return nil
-		}); err != nil {
-			return err
-		}
-		computeReason := metering.ReasonStopCrash
-		if stoppedByUs {
-			computeReason = metering.ReasonStopUser
-		}
-		b.emitDeleteClose(ctx, id, shape, computeReason, hadRunningInterval)
-		if rmErr := RemoveVMDirs(rec.RunDir, rec.LogDir); rmErr != nil {
-			return fmt.Errorf("cleanup VM dirs: %w", rmErr)
-		}
-		return nil
+		return runWrapped(&rec, wrap, func() error {
+			return b.deleteOneLocked(ctx, id, force, stopLocked, &rec, procScan)
+		})
 	})
+}
+
+// deleteOneLocked is DeleteAll's per-VM body, run under the ops lock (and the backend wrap).
+func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked func(context.Context, string) error, rec *VMRecord, procScan utils.ProcScan) error {
+	sockPath := SocketPath(rec.RunDir)
+	stoppedByUs := false
+	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {
+		if !force {
+			return fmt.Errorf("running (force required)")
+		}
+		stoppedByUs = true
+		return stopLocked(ctx, id)
+	}); runningErr != nil && !errors.Is(runningErr, ErrNotRunning) {
+		return fmt.Errorf("stop before delete: %w", runningErr)
+	}
+	// Probe fires unconditionally: AF_UNIX has no TIME_WAIT, and catches false-negative pidfile/cmdline shortcuts.
+	if live, probeErr := b.IsAPISocketLive(ctx, rec); live {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if probeErr != nil {
+			return fmt.Errorf("refuse delete: api socket %s probe inconclusive: %w (resolve the host issue or kill the vmm process then retry)", sockPath, probeErr)
+		}
+		return fmt.Errorf("refuse delete: api socket %s still responsive (suspected orphan vmm; kill the vmm process then retry)", sockPath)
+	}
+	for _, pid := range procScan.Find(sockPath) {
+		// procScan is a pre-stop snapshot: a just-force-stopped VM is already gone.
+		// Only a still-live match is a real orphan worth killing and logging.
+		if !utils.IsProcessAlive(pid) {
+			continue
+		}
+		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+			return fmt.Errorf("terminate orphan VMM pid=%d for VM %s: %w", pid, id, termErr)
+		}
+		log.WithFunc(b.Typ+".Delete").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
+	}
+	var (
+		shape              metering.Shape
+		hadRunningInterval bool
+	)
+	// Record goes first: dir removal deletes the ops.lock file, and a later
+	// locker on the recreated file is a fresh inode that does not contend —
+	// with the record already gone its resolve fails instead of reviving the
+	// VM. Capture in the same transaction so a concurrent UpdateStates can't
+	// shift the truth; a failed dir removal below leaves orphans for GC.
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[id]
+		if r == nil {
+			return ErrNotFound
+		}
+		hadRunningInterval = hasOpenComputeInterval(r)
+		shape = shapeFromConfig(r.Config)
+		delete(idx.Names, r.Config.Name)
+		delete(idx.VMs, id)
+		return nil
+	}); err != nil {
+		return err
+	}
+	computeReason := metering.ReasonStopCrash
+	if stoppedByUs {
+		computeReason = metering.ReasonStopUser
+	}
+	b.emitDeleteClose(ctx, id, shape, computeReason, hadRunningInterval)
+	if rmErr := RemoveVMDirs(rec.RunDir, rec.LogDir); rmErr != nil {
+		return fmt.Errorf("cleanup VM dirs: %w", rmErr)
+	}
+	return nil
 }
 
 func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {

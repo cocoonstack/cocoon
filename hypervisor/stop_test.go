@@ -31,7 +31,7 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
 		t.Fatal("stopLocked must not run for a stopped VM")
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
 
-	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }); err == nil ||
+	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err == nil ||
 		!strings.Contains(err.Error(), "running (force required)") {
 		t.Fatalf("DeleteAll without force: %v, want running-requires-force error", err)
 	}
@@ -72,7 +72,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 			},
 		})
 	}
-	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
+	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked, nil)
 	if err != nil {
 		t.Fatalf("DeleteAll --force: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 	defer ln.Close() //nolint:errcheck
 
-	_, err = b.DeleteAll(ctx, []string{id}, true, func(context.Context, string) error { return nil })
+	_, err = b.DeleteAll(ctx, []string{id}, true, func(context.Context, string) error { return nil }, nil)
 	if err == nil || !strings.Contains(err.Error(), "still responsive") {
 		t.Fatalf("DeleteAll: %v, want live-socket refusal", err)
 	}

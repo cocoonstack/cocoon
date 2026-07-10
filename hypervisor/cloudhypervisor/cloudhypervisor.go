@@ -38,5 +38,5 @@ func New(conf *config.Config, rec metering.Recorder) (*CloudHypervisor, error) {
 
 // Delete removes VMs. Running VMs require force=true (stops them first).
 func (ch *CloudHypervisor) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
-	return ch.DeleteAll(ctx, refs, force, ch.stopOneLocked)
+	return ch.DeleteAll(ctx, refs, force, ch.stopOneLocked, nil)
 }
