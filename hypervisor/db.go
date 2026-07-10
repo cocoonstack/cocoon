@@ -18,6 +18,9 @@ type VMRecord struct {
 	// RunDir/LogDir are persisted absolute paths so cleanup still finds them if --run-dir / --log-dir change later.
 	RunDir string `json:"run_dir,omitempty"`
 	LogDir string `json:"log_dir,omitempty"`
+
+	// Quarantine names why start must refuse (e.g. partial restore merge); only a successful restore clears it — stop's state flip cannot.
+	Quarantine string `json:"quarantine,omitempty"`
 }
 
 // VMIndex is the top-level DB structure for a hypervisor backend.

@@ -126,6 +126,23 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
+// QuarantineVM is MarkError plus a persisted reason: start refuses a quarantined VM even after stop rewrites the state, and only a successful restore lifts it.
+func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
+	now := time.Now()
+	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[id]
+		if r == nil {
+			return nil
+		}
+		r.State = types.VMStateError
+		r.Quarantine = reason
+		r.UpdatedAt = now
+		return nil
+	}); err != nil {
+		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
+	}
+}
+
 // BatchMarkStarted flips ids to VMStateRunning; entrants with an open compute interval are stale-running (close stop-crash, then open fresh).
 func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
@@ -166,7 +183,8 @@ func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error 
 	}
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	return b.DB.WriteRaw(func(idx *VMIndex) error {
-		utils.CleanStaleRecords(idx.VMs, idx.Names, ids,
+		utils.CleanStaleRecords(
+			idx.VMs, idx.Names, ids,
 			func(r *VMRecord) string { return r.Config.Name },
 			func(r *VMRecord) bool {
 				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)

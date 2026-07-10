@@ -63,11 +63,14 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	return nil
 }
 
-// PrepareStart loads the record, verifies not-running, ensures dirs exist.
+// PrepareStart loads the record, refuses quarantined VMs, verifies not-running, ensures dirs exist.
 func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if rec.Quarantine != "" {
+		return nil, fmt.Errorf("vm %s is quarantined (%s); recover with vm restore or delete with vm rm", id, rec.Quarantine)
 	}
 
 	runErr := b.WithRunningVM(ctx, &rec, func(_ int) error { return nil })
