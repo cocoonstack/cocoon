@@ -10,7 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/lock"
 )
 
-const retryDelay = 100 * time.Millisecond
+const retryDelay = 2 * time.Millisecond
 
 var _ lock.Locker = (*Lock)(nil)
 
