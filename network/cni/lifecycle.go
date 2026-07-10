@@ -60,7 +60,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		return nil, fmt.Errorf("read network index: %w", err)
 	}
 
-	createdNetns, err := ensureNetns(nsName, nsPath)
+	createdNetns, err := ensureNetnsFn(nsName, nsPath)
 	if err != nil {
 		return nil, fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
@@ -106,10 +106,9 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 				rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
 			}
 		} else if rec, ok := stale[ifName]; ok {
-			// A failed detach left this index's record: the index is reusable only after a
-			// full reclaim — proceeding would double-allocate on lenient IPAM plugins, or
-			// bury the root cause under the ADD failure on strict ones.
-			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, tapName, rec); rcErr != nil {
+			// The index is reusable only after a full reclaim: proceeding would double-allocate
+			// on lenient IPAM plugins or bury the root cause under the ADD failure on strict ones.
+			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
 				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
 			}
 		}
@@ -130,7 +129,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			overrideMAC = spec.Existing.MAC
 		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-		mac, setupErr := setupTCRedirect(nsPath, ifName, tapName, queues, overrideMAC)
+		mac, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
 		if setupErr != nil {
 			return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 		}
@@ -217,19 +216,13 @@ func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vm
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
 }
 
-// reclaimStaleNIC releases a record left by a failed detach before its index is reused: CNI DEL (by the record's own conflist), TAP delete, then the record sweep — any failure keeps the record so the next re-add retries (both ops are idempotent).
-func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath, tapName string, rec networkRecord) error {
-	cl, err := c.confListByName(rec.Type)
+// reclaimStaleNIC releases a record left by a failed detach before its index is reused; any failure keeps the record so the next re-add retries (the teardown is idempotent).
+func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath string, rec networkRecord) error {
+	downIDs, err := c.tearDownNICs(ctx, vmID, nsPath, []networkRecord{rec}, true)
 	if err != nil {
 		return err
 	}
-	if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
-		return fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err)
-	}
-	if err := deleteTAPFn(nsPath, tapName); err != nil {
-		return fmt.Errorf("delete tap %s: %w", tapName, err)
-	}
-	return c.deleteRecords(ctx, []string{rec.ID})
+	return c.deleteRecords(ctx, downIDs)
 }
 
 func tapNameForVM(vmID string, nic int) string {

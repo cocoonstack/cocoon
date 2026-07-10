@@ -29,9 +29,11 @@ const typ = "cni"
 var (
 	_ network.Network = (*CNI)(nil)
 
-	// Seams for cross-platform teardown tests (netns/TAP ops are linux-only).
-	deleteTAPFn   = deleteTAPInNetns
-	deleteNetnsFn = deleteNetns
+	// Seams for cross-platform lifecycle tests (netns/TAP ops are linux-only).
+	deleteTAPFn       = deleteTAPInNetns
+	deleteNetnsFn     = deleteNetns
+	ensureNetnsFn     = ensureNetns
+	setupTCRedirectFn = setupTCRedirect
 )
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
