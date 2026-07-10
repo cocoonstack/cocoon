@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -100,10 +103,10 @@ func (b *Backend) WatchPath() string {
 	return b.Conf.IndexFile()
 }
 
-// gcCollect kills leftover hypervisor processes and removes orphan dirs/records under the orchestrator's flock.
+// gcCollect kills leftover hypervisor processes, removes orphan dirs/records, and sweeps stale capture/staging leftovers under the orchestrator's flock.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
-	var errs []error
+	errs := b.sweepStaleCaptureDirs(ctx, snap.runDirs)
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
 		_ = b.DB.ReadRaw(func(idx *VMIndex) error {
@@ -124,6 +127,22 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 		errs = append(errs, fmt.Errorf("clean stale placeholders: %w", err))
 	}
 	return errors.Join(errs...)
+}
+
+// sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age; an in-flight capture keeps its dir young (files land continuously), and restores finish long before the cutoff.
+func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirNames []string) []error {
+	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	var errs []error
+	for _, name := range runDirNames {
+		errs = append(errs, utils.RemoveMatching(ctx, filepath.Join(b.Conf.RunDir(), name), func(e os.DirEntry) bool {
+			if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {
+				return false
+			}
+			info, err := e.Info()
+			return err == nil && info.ModTime().Before(cutoff)
+		})...)
+	}
+	return errs
 }
 
 // killOrphanProcess terminates a leftover hypervisor process if PID matches the binary.

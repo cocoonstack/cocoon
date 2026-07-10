@@ -1,9 +1,11 @@
 package localfile
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -47,6 +49,7 @@ type snapshotGCSnapshot struct {
 	snapshotIDs  map[string]struct{}
 	dataDirs     []string
 	stalePending []string
+	missingDir   []string // finalized records whose data dir vanished (rm dir-deleted, DB update failed)
 	records      map[string]snapshotMeta
 	reasons      map[string]string
 	policy       EvictionPolicy
@@ -77,6 +80,9 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 						}
 						continue
 					}
+					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
+						snap.missingDir = append(snap.missingDir, id)
+					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
 						hypervisor:   rec.Hypervisor,
@@ -105,7 +111,10 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 			for _, id := range snap.stalePending {
 				snap.reasons[id] = "stale-pending"
 			}
-			candidates := slices.Concat(orphans, snap.stalePending)
+			for _, id := range snap.missingDir {
+				snap.reasons[id] = "missing-dir"
+			}
+			candidates := slices.Concat(orphans, snap.stalePending, snap.missingDir)
 
 			if snap.policy.Enabled {
 				lruReasons := pickLRU(snap.records, snap.policy)
@@ -125,6 +134,7 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 			var (
 				errs    []error
 				removed = make([]string, 0, len(ids))
+				emits   = make([]string, 0, len(ids))
 			)
 			for _, id := range ids {
 				if err := ctx.Err(); err != nil {
@@ -138,12 +148,18 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
 				removed = append(removed, id)
 				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
-				if m, ok := snap.records[id]; ok {
-					emitSnapStop(ctx, recorder, id, m.hypervisor)
+				if _, ok := snap.records[id]; ok {
+					emits = append(emits, id)
 				}
 			}
+			// Emit only after the record deletion lands: a persistently failing DB
+			// would otherwise re-candidate these ids and double-close the interval.
 			if err := cleanResolvedRecords(store, removed); err != nil {
 				errs = append(errs, fmt.Errorf("clean DB records: %w", err))
+			} else {
+				for _, id := range emits {
+					emitSnapStop(ctx, recorder, id, snap.records[id].hypervisor)
+				}
 			}
 			return errors.Join(errs...)
 		},
@@ -263,7 +279,8 @@ func cleanResolvedRecords(store storage.Store[snapshot.SnapshotIndex], ids []str
 	}
 	cutoff := time.Now().Add(-pendingGCGrace)
 	return store.WriteRaw(func(idx *snapshot.SnapshotIndex) error {
-		utils.CleanStaleRecords(idx.Snapshots, idx.Names, ids,
+		utils.CleanStaleRecords(
+			idx.Snapshots, idx.Names, ids,
 			func(r *snapshot.SnapshotRecord) string { return r.Name },
 			func(r *snapshot.SnapshotRecord) bool {
 				if r.Pending {
