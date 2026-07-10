@@ -108,6 +108,9 @@ func (b *Backend) WatchPath() string {
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.runDirs)
+	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM
+	// would strand a live VMM/dirs with no owner and let network GC tear it down.
+	safeToUnrecord := make([]string, 0, len(ids))
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
 		_ = b.DB.ReadRaw(func(idx *VMIndex) error {
@@ -130,12 +133,13 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			}
 			logger.Infof(ctx, "collected id=%s runDir=%s logDir=%s reason=%s",
 				id, runDir, logDir, snap.reasons[id])
+			safeToUnrecord = append(safeToUnrecord, id)
 		})
 		if !ok {
 			logger.Warnf(ctx, "skip %s: ops lock busy (in-flight operation)", id)
 		}
 	}
-	if err := b.CleanStalePlaceholders(ctx, ids); err != nil {
+	if err := b.CleanStalePlaceholders(ctx, safeToUnrecord); err != nil {
 		errs = append(errs, fmt.Errorf("clean stale placeholders: %w", err))
 	}
 	return errors.Join(errs...)

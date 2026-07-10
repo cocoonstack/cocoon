@@ -100,6 +100,21 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 	return rec.DataDir, snapshotRecordToConfig(rec), release, nil
 }
 
+// acquireBuildLease exclusively leases id while its data dir is being built (Create/Import), so rm/GC cannot resolve-and-delete the half-written dir.
+func (lf *LocalFile) acquireBuildLease(id string) (func(), error) {
+	fl := gofrsflock.New(lf.conf.LeasePath(id))
+	locked, err := fl.TryLock()
+	if err != nil {
+		_ = fl.Close()
+		return nil, fmt.Errorf("lease snapshot %s: %w", id, err)
+	}
+	if !locked {
+		_ = fl.Close()
+		return nil, fmt.Errorf("snapshot %s is in use", id)
+	}
+	return func() { _ = fl.Close() }, nil
+}
+
 // acquireReadLease holds a shared flock on the snapshot's lease file so delete/GC (exclusive) cannot reap the data dir mid-read; lock/flock has no shared mode, hence gofrs directly.
 func (lf *LocalFile) acquireReadLease(ctx context.Context, id string) (func(), error) {
 	fl := gofrsflock.New(lf.conf.LeasePath(id))
@@ -121,6 +136,12 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	if err != nil {
 		return "", err
 	}
+	release, err := lf.acquireBuildLease(cfg.ID)
+	if err != nil {
+		lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
+		return "", err
+	}
+	defer release()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(dataDir) //nolint:errcheck,gosec
@@ -154,6 +175,12 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 	if err != nil {
 		return "", false, err
 	}
+	release, err := lf.acquireBuildLease(cfg.ID)
+	if err != nil {
+		lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
+		return "", false, err
+	}
+	defer release()
 	defer func() {
 		if err != nil {
 			os.RemoveAll(dataDir) //nolint:errcheck,gosec

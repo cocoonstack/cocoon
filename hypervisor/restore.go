@@ -105,6 +105,9 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	inner := func() error {
 		if spec.BeforeMerge != nil {
 			if err := spec.BeforeMerge(rec); err != nil {
+				// The sweep may have deleted some snapshot files already; a
+				// stopped origin would otherwise stay startable on mixed state.
+				b.QuarantineVM(ctx, vmID, "partial restore cleanup")
 				return err
 			}
 		}
