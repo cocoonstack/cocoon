@@ -57,17 +57,6 @@ func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*t
 	return copyPairs(ctx, pairs)
 }
 
-// copyPairs runs ReflinkCopy over {dst, src} pairs concurrently; small pair counts (COW + data disks) need no pool bound.
-func copyPairs(ctx context.Context, pairs [][2]string) error {
-	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
-		if err := utils.ReflinkCopy(p[0], p[1]); err != nil {
-			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
-		}
-		return struct{}{}, nil
-	})
-	return err
-}
-
 // PrepareDataDisks creates sparse files for each spec under baseDir, optionally formats (ext4 default), returns StorageConfigs; names must be unique and ValidDataDiskName-passing.
 func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDiskSpec) ([]*types.StorageConfig, error) {
 	if len(specs) == 0 {
@@ -142,6 +131,16 @@ func ExpandRawImage(path string, targetSize int64) error {
 		return fmt.Errorf("truncate %s to %d: %w", path, targetSize, err)
 	}
 	return nil
+}
+
+func copyPairs(ctx context.Context, pairs [][2]string) error {
+	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
+		if err := utils.ReflinkCopy(p[0], p[1]); err != nil {
+			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 // createSparseFile creates path truncated to size; os.Truncate alone won't create a missing file.

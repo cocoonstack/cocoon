@@ -64,7 +64,7 @@ func streamLog(ctx context.Context, path string, follow bool, tail int) error {
 	}
 }
 
-// seekToLastNLines positions f so a subsequent read returns the last n lines. A final trailing '\n' is not counted as a line separator.
+// A final trailing '\n' is not counted as a line separator.
 func seekToLastNLines(f *os.File, n int) error {
 	info, err := f.Stat()
 	if err != nil {

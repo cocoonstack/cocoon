@@ -107,14 +107,6 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn fun
 	return result.Succeeded, result.Err()
 }
 
-// opsLock recreates runDir if missing (crash leftovers, logDir-only orphans) and returns the per-VM ops flock.
-func opsLock(runDir string) (*flock.Lock, error) {
-	if err := os.MkdirAll(runDir, 0o750); err != nil {
-		return nil, fmt.Errorf("ops lock dir: %w", err)
-	}
-	return flock.New(filepath.Join(runDir, OpsLockName)), nil
-}
-
 func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketName) }
 
 func ConsoleSockPath(runDir string) string { return filepath.Join(runDir, ConsoleSockName) }
@@ -258,11 +250,6 @@ func MergeDirInto(src, dst string) error {
 		}
 	}
 	return nil
-}
-
-// isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.
-func isLockFile(name string) bool {
-	return name == OpsLockName || strings.HasSuffix(name, ".clone.lock")
 }
 
 func ValidateHostCPU(cpu int) error {
@@ -440,6 +427,19 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 		_ = orig.Close()
 		runtime.UnlockOSThread()
 	}, nil
+}
+
+// opsLock recreates runDir if missing (crash leftovers, logDir-only orphans) and returns the per-VM ops flock.
+func opsLock(runDir string) (*flock.Lock, error) {
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		return nil, fmt.Errorf("ops lock dir: %w", err)
+	}
+	return flock.New(filepath.Join(runDir, OpsLockName)), nil
+}
+
+// isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.
+func isLockFile(name string) bool {
+	return name == OpsLockName || strings.HasSuffix(name, ".clone.lock")
 }
 
 // snapshotResidentBasename returns the basename for sidecar entries inside srcDir; "" for shared base layers (not in tar).
