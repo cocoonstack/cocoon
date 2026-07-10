@@ -244,11 +244,20 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 	return nil
 }
 
+// SnapshotNameFlags reads the --name/--description pair and rejects a taken name.
+func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
+	name, _ = cmd.Flags().GetString("name")
+	description, _ = cmd.Flags().GetString("description")
+	if err = EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+		return "", "", err
+	}
+	return name, description, nil
+}
+
 // CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
 func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
-	name, _ := cmd.Flags().GetString("name")
-	description, _ := cmd.Flags().GetString("description")
-	if err := EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+	name, description, err := SnapshotNameFlags(ctx, cmd, snapBackend)
+	if err != nil {
 		return "", err
 	}
 	cfg, srcDir, err := capture()

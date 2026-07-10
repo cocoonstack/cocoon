@@ -27,6 +27,12 @@ func AddOutputFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("output", "o", "", `emit "json" for machine-readable output`)
 }
 
+// AddSnapshotNameFlags registers the --name/--description pair shared by snapshot-creating commands.
+func AddSnapshotNameFlags(cmd *cobra.Command) {
+	cmd.Flags().String("name", "", "snapshot name")
+	cmd.Flags().String("description", "", "snapshot description")
+}
+
 func WantJSON(cmd *cobra.Command) bool {
 	out, _ := cmd.Flags().GetString("output")
 	return out == "json"
@@ -48,6 +54,11 @@ func MaybeOutputJSON(cmd *cobra.Command, v any) (bool, error) {
 
 func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Writer)) error {
 	format, _ := cmd.Flags().GetString("format")
+	return OutputFormattedStr(format, data, tableFn)
+}
+
+// OutputFormattedStr renders data as JSON when format=="json", else as a table via tableFn.
+func OutputFormattedStr(format string, data any, tableFn func(w *tabwriter.Writer)) error {
 	if format == "json" {
 		return OutputJSON(data)
 	}

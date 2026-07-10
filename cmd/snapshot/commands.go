@@ -27,8 +27,7 @@ func Command(h Actions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.Save,
 	}
-	saveCmd.Flags().String("name", "", "snapshot name")
-	saveCmd.Flags().String("description", "", "snapshot description")
+	cliutil.AddSnapshotNameFlags(saveCmd)
 
 	listCmd := &cobra.Command{
 		Use:     "list",

@@ -34,10 +34,9 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name, _ := cmd.Flags().GetString("name")
-	description, _ := cmd.Flags().GetString("description")
 	// Fail on a taken name before the VM is even paused.
-	if err = cmdcore.EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+	name, description, err := cmdcore.SnapshotNameFlags(ctx, cmd, snapBackend)
+	if err != nil {
 		return err
 	}
 

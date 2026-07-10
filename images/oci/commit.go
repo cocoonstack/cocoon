@@ -6,19 +6,8 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/images"
+	"github.com/cocoonstack/cocoon/utils"
 )
-
-// validFileSize returns file size, validating it's a regular non-empty file.
-func validFileSize(path string) (int64, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	if !info.Mode().IsRegular() || info.Size() == 0 {
-		return 0, fmt.Errorf("invalid file: %s", path)
-	}
-	return info.Size(), nil
-}
 
 func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	if src == "" || src == dst {
@@ -88,7 +77,7 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 
 	var totalSize int64
 	addSize := func(path, desc string) error {
-		size, err := validFileSize(path)
+		size, err := utils.ValidFileSize(path)
 		if err != nil {
 			return fmt.Errorf("%s (concurrent GC?): %w", desc, err)
 		}

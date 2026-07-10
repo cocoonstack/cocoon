@@ -51,13 +51,8 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	vms, err := cmdcore.ListAllVMs(ctx, hypers)
-	if err != nil {
-		return fmt.Errorf("list: %w", err)
-	}
-	sortVMs(vms)
 	format, _ := cmd.Flags().GetString("format")
-	return renderVMList(vms, format)
+	return statusOnce(ctx, hypers, nil, format)
 }
 
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
@@ -103,11 +98,11 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// statusOnce prints one snapshot; propagates ListAllVMs error (loop callers swallow).
+// statusOnce prints one snapshot; propagates ListAllVMs error (loop callers swallow). Shared by vm list and one-shot vm status.
 func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format string) error {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {
-		return fmt.Errorf("status: %w", err)
+		return err
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
@@ -125,9 +120,9 @@ func renderVMList(vms []*types.VM, format string) error {
 		fmt.Println("No VMs found.")
 		return nil
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	printVMTable(w, vms)
-	return w.Flush()
+	return cliutil.OutputFormattedStr(format, vms, func(w *tabwriter.Writer) {
+		printVMTable(w, vms)
+	})
 }
 
 func mergeWatchChannels(ctx context.Context, hypers []hypervisor.Hypervisor) <-chan struct{} {

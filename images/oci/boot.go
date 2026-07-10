@@ -31,12 +31,8 @@ func healCachedBootFiles(ctx context.Context, conf *Config, layers []v1.Layer, r
 			continue
 		}
 		kp, ip := recoverBootFiles(ctx, layer, workDir, i, digestHex)
-		if results[i].kernelPath == "" && kp != "" {
-			results[i].kernelPath = kp
-		}
-		if results[i].initrdPath == "" && ip != "" {
-			results[i].initrdPath = ip
-		}
+		results[i].kernelPath = cmp.Or(results[i].kernelPath, kp)
+		results[i].initrdPath = cmp.Or(results[i].initrdPath, ip)
 	}
 }
 
