@@ -35,7 +35,7 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 
 // wrapSourceLocked holds the source writable-disk locks across inner so recoverStaleBackup heals stale data-*.raw.cocoon-clone-backup before restore overwrites them; otherwise a future clone renames backup over restored data.
 func (fc *Firecracker) wrapSourceLocked(ctx context.Context, rec *hypervisor.VMRecord, inner func() error) error {
-	return withSourceWritableDisksLocked(ctx, rec.StorageConfigs, inner)
+	return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, inner)
 }
 
 // restoreAfterExtractCOW adapts restoreAfterExtract to the RestoreSpec/DirectRestoreSpec AfterExtract signature using the VM's default COW path.

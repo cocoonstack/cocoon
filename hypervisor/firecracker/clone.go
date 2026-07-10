@@ -69,7 +69,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	// FC snapshot/load wants source-absolute drive paths; symlink-redirect the source COW.
 	sockPath := hypervisor.SocketPath(runDir)
 	var pid int
-	if cloneErr := withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
+	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
 		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 		if redirectErr != nil {
 			return fmt.Errorf("drive redirect: %w", redirectErr)

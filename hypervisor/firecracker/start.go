@@ -34,7 +34,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 		},
 		// A clone symlink-redirects the source COW to its own writable disk (createDriveRedirects); launching through that window would open the clone's disk.
 		Wrap: func(rec *hypervisor.VMRecord, fn func() error) error {
-			return withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
+			return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
 		},
 	})
 }
