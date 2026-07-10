@@ -156,7 +156,9 @@ func TestResolveForRestoreStates(t *testing.T) {
 	}{
 		{"running restorable", types.VMStateRunning, ""},
 		{"stopped restorable (hibernate resume)", types.VMStateStopped, ""},
-		{"error rejected", types.VMStateError, "must be running or stopped"},
+		{"error restorable (crashed-restore recovery path)", types.VMStateError, ""},
+		{"creating rejected", types.VMStateCreating, "cannot be restored"},
+		{"created rejected", types.VMStateCreated, "cannot be restored"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
