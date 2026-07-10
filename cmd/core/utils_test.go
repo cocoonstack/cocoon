@@ -203,7 +203,7 @@ func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	if _, err := PersistSnapshotDir(context.Background(), directErrSnap{}, &types.SnapshotConfig{}, srcDir, "s", ""); err == nil {
+	if _, err := PersistSnapshotDir(t.Context(), directErrSnap{}, &types.SnapshotConfig{}, srcDir, "s", ""); err == nil {
 		t.Fatal("want error from a failed direct save")
 	}
 	if _, err := os.Stat(srcDir); !os.IsNotExist(err) {
