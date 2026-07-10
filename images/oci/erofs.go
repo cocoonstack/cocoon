@@ -36,7 +36,8 @@ func startErofsConversion(ctx context.Context, uuid, outputPath string) (cmd *ex
 		return nil, nil, nil, err
 	}
 	// shell out because no Go EROFS writer library; mkfs.erofs is authoritative.
-	cmd = exec.CommandContext(ctx, "mkfs.erofs", //nolint:gosec
+	cmd = exec.CommandContext( //nolint:gosec
+		ctx, "mkfs.erofs",
 		"--tar=f",
 		fmt.Sprintf("-z%s", erofsCompression),
 		fmt.Sprintf("-C%d", erofsBlockSize),

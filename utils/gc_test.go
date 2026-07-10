@@ -21,7 +21,8 @@ func TestCleanStaleRecords_RemovesStale(t *testing.T) {
 		"vm3": "id3",
 	}
 
-	CleanStaleRecords(items, names, []string{"id1", "id2", "id3"},
+	CleanStaleRecords(
+		items, names, []string{"id1", "id2", "id3"},
 		func(r *rec) string { return r.Name },
 		func(r *rec) bool { return r.Stale },
 	)
@@ -46,7 +47,8 @@ func TestCleanStaleRecords_NilRecord(t *testing.T) {
 	names := map[string]string{"vm1": "id1"}
 
 	// Target includes a nil entry.
-	CleanStaleRecords(items, names, []string{"id1", "id_nil"},
+	CleanStaleRecords(
+		items, names, []string{"id1", "id_nil"},
 		func(r *rec) string { return r.Name },
 		func(_ *rec) bool { return false },
 	)
@@ -64,7 +66,8 @@ func TestCleanStaleRecords_EmptyName(t *testing.T) {
 	}
 	names := map[string]string{}
 
-	CleanStaleRecords(items, names, []string{"id1"},
+	CleanStaleRecords(
+		items, names, []string{"id1"},
 		func(r *rec) string { return r.Name },
 		func(_ *rec) bool { return true },
 	)
@@ -83,7 +86,8 @@ func TestCleanStaleRecords_NoTargets(t *testing.T) {
 	items := map[string]*rec{"id1": {Name: "vm1"}}
 	names := map[string]string{"vm1": "id1"}
 
-	CleanStaleRecords(items, names, nil,
+	CleanStaleRecords(
+		items, names, nil,
 		func(r *rec) string { return r.Name },
 		func(_ *rec) bool { return true },
 	)

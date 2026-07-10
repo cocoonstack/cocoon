@@ -560,9 +560,12 @@ func (c stubBackendConfig) IndexFile() string                 { return c.indexFi
 func (c stubBackendConfig) IndexLock() string                 { return c.indexLock }
 func (stubBackendConfig) EnsureDirs() error                   { return nil }
 func (stubBackendConfig) RunDir() string                      { panic("RunDir: not implemented in stub") }
-func (stubBackendConfig) LogDir() string                      { panic("LogDir: not implemented in stub") }
-func (stubBackendConfig) VMRunDir(string) string              { panic("VMRunDir: not implemented in stub") }
-func (stubBackendConfig) VMLogDir(string) string              { panic("VMLogDir: not implemented in stub") }
+
+func (stubBackendConfig) LogDir() string { panic("LogDir: not implemented in stub") }
+
+func (stubBackendConfig) VMRunDir(string) string { panic("VMRunDir: not implemented in stub") }
+
+func (stubBackendConfig) VMLogDir(string) string { panic("VMLogDir: not implemented in stub") }
 
 // meteringStubConfig gives the metering stub a real VMRunDir so sequences
 // can take the per-VM ops lock and MkdirTemp under it.

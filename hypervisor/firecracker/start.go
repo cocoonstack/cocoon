@@ -135,7 +135,8 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 	defer slave.Close() //nolint:errcheck
 
 	// shell out: the firecracker binary is the authoritative VMM.
-	fcCmd := exec.Command(fc.conf.FCBinary, //nolint:gosec
+	fcCmd := exec.Command( //nolint:gosec
+		fc.conf.FCBinary,
 		"--api-sock", sockPath,
 		"--log-path", fcLog,
 		"--level", "Warning",
