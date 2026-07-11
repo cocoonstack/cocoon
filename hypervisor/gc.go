@@ -15,6 +15,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -95,7 +96,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 		},
 		Resolve: func(_ context.Context, snap VMGCSnapshot, _ map[string]any) []string {
 			// "db" holds vms.json/vms.lock (when RootDir == RunDir).
-			reserved := map[string]struct{}{"db": {}}
+			reserved := map[string]struct{}{"db": {}, CloneLocksDirName: {}}
 			runOrphans := utils.FilterUnreferenced(snap.runDirs, snap.vmIDs, reserved)
 			logOrphans := utils.FilterUnreferenced(snap.logDirs, snap.vmIDs, reserved)
 			for _, id := range snap.staleCreate {
@@ -135,6 +136,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
+	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
 	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM would strand a live VMM/dirs with no owner and let network GC tear it down.
 	safeToUnrecord := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -184,6 +186,34 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 				return err == nil && info.ModTime().Before(cutoff)
 			})...)
 		})
+	}
+	return errs
+}
+
+// sweepStaleCloneLocks reclaims crash-orphaned lock files past the grace age via TryLock+Unlock, not a bare remove, so a live waiter can't be split onto a fresh inode.
+func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
+	dir := filepath.Join(b.Conf.RunDir(), CloneLocksDirName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	logger := log.WithFunc("gc." + b.Typ)
+	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	var errs []error
+	for _, e := range entries {
+		info, infoErr := e.Info()
+		if infoErr != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		l := flock.NewTransient(filepath.Join(dir, e.Name()))
+		if ok, tryErr := l.TryLock(ctx); tryErr != nil || !ok {
+			continue
+		}
+		if unlockErr := l.Unlock(ctx); unlockErr != nil {
+			errs = append(errs, unlockErr)
+			continue
+		}
+		logger.Infof(ctx, "collected clone lock %s reason=stale-clone-lock", e.Name())
 	}
 	return errs
 }

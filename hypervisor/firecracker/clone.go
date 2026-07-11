@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -70,9 +71,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	sockPath := hypervisor.SocketPath(runDir)
 	var pid int
 	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
-		if aliveErr := fc.ensureSourceAlive(ctx, meta.StorageConfigs); aliveErr != nil {
-			return aliveErr
-		}
 		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 		if redirectErr != nil {
 			return fmt.Errorf("drive redirect: %w", redirectErr)
@@ -138,21 +136,6 @@ func (fc *Firecracker) restoreAndResumeClone(
 		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), dstConfigs[i].Path); err != nil {
 			return fmt.Errorf("re-anchor drive %d: %w", i, err)
 		}
-	}
-	return nil
-}
-
-// ensureSourceAlive re-checks the source VM record under the writable-disk locks: rm deletes the record before unlinking any file, so a lock acquired on a fresh inode after a concurrent rm always observes the record gone and must abort instead of racing the deletion.
-func (fc *Firecracker) ensureSourceAlive(ctx context.Context, configs []*types.StorageConfig) error {
-	for _, sc := range configs {
-		if sc.Role != types.StorageRoleCOW && sc.Role != types.StorageRoleData {
-			continue
-		}
-		srcID := filepath.Base(filepath.Dir(sc.Path))
-		if _, err := fc.LoadRecord(ctx, srcID); err != nil {
-			return fmt.Errorf("clone source VM %s: %w", srcID, err)
-		}
-		return nil
 	}
 	return nil
 }
@@ -223,8 +206,9 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driv
 	return redirects, nil
 }
 
+// cleanupDriveRedirects unwinds in reverse so a shared dir is removed only after its sibling symlinks are gone.
 func cleanupDriveRedirects(redirects []driveRedirect) {
-	for _, r := range redirects {
+	for _, r := range slices.Backward(redirects) {
 		_ = os.Remove(r.symlinkPath)
 		if r.backupPath != "" {
 			_ = os.Rename(r.backupPath, r.symlinkPath)

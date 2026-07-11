@@ -1,6 +1,8 @@
 package firecracker
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,22 +44,15 @@ func TestRedirectedDriveIndices(t *testing.T) {
 // it — a symlink appears exactly where the shared function says.
 func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
 	dir := t.TempDir()
-	mk := func(name, content string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatalf("setup %s: %v", name, err)
-		}
-		return p
-	}
 	src := []*types.StorageConfig{
 		{Path: filepath.Join(dir, "gone", "layer.img")}, // shared layer, same both sides
 		{Path: filepath.Join(dir, "gone", "cow.raw")},   // source path no longer exists
-		{Path: mk("data.img", "data")},                  // source still present: backed up
+		{Path: writeTestFile(t, dir, "data.img")},       // source still present: backed up
 	}
 	dst := []*types.StorageConfig{
 		{Path: src[0].Path},
-		{Path: mk("clone-cow.raw", "cow")},
-		{Path: mk("clone-data.img", "data2")},
+		{Path: writeTestFile(t, dir, "clone-cow.raw")},
+		{Path: writeTestFile(t, dir, "clone-data.img")},
 	}
 
 	redirects, err := createDriveRedirects(src, dst)
@@ -82,4 +77,36 @@ func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
 			t.Errorf("drive %d links to %q, want %q", i, target, dst[i].Path)
 		}
 	}
+}
+
+func TestCleanupDriveRedirectsRemovesRecreatedDir(t *testing.T) {
+	dir := t.TempDir()
+	gone := filepath.Join(dir, "gone")
+	src := []*types.StorageConfig{
+		{Path: filepath.Join(gone, "cow.raw")},
+		{Path: filepath.Join(gone, "data-x.raw")},
+	}
+	dst := []*types.StorageConfig{
+		{Path: writeTestFile(t, dir, "clone-cow.raw")},
+		{Path: writeTestFile(t, dir, "clone-data-x.raw")},
+	}
+
+	redirects, err := createDriveRedirects(src, dst)
+	if err != nil {
+		t.Fatalf("createDriveRedirects: %v", err)
+	}
+	cleanupDriveRedirects(redirects)
+
+	if _, err := os.Stat(gone); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("recreated source dir not removed on unwind: %v", err)
+	}
+}
+
+func writeTestFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(name), 0o600); err != nil {
+		t.Fatalf("setup %s: %v", name, err)
+	}
+	return p
 }
