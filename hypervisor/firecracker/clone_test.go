@@ -1,11 +1,15 @@
 package firecracker
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -37,29 +41,25 @@ func TestRedirectedDriveIndices(t *testing.T) {
 	}
 }
 
-// The redirect set and the re-anchor set must be the same drives: both loops
-// derive from redirectedDriveIndices, and this pins createDriveRedirects to
-// it — a symlink appears exactly where the shared function says.
+// Pins createDriveRedirects to redirectedDriveIndices: a symlink appears exactly where the shared function says.
 func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
 	dir := t.TempDir()
-	mk := func(name, content string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatalf("setup %s: %v", name, err)
-		}
-		return p
-	}
 	src := []*types.StorageConfig{
 		{Path: filepath.Join(dir, "gone", "layer.img")}, // shared layer, same both sides
 		{Path: filepath.Join(dir, "gone", "cow.raw")},   // source path no longer exists
-		{Path: mk("data.img", "data")},                  // source still present: backed up
+		{Path: writeTestFile(t, dir, "data.img")},       // source still present: backed up
 	}
 	dst := []*types.StorageConfig{
 		{Path: src[0].Path},
-		{Path: mk("clone-cow.raw", "cow")},
-		{Path: mk("clone-data.img", "data2")},
+		{Path: writeTestFile(t, dir, "clone-cow.raw")},
+		{Path: writeTestFile(t, dir, "clone-data.img")},
 	}
 
+	release, err := holdRedirectDirs(t.Context(), src, dst)
+	if err != nil {
+		t.Fatalf("holdRedirectDirs: %v", err)
+	}
+	defer release()
 	redirects, err := createDriveRedirects(src, dst)
 	if err != nil {
 		t.Fatalf("createDriveRedirects: %v", err)
@@ -82,4 +82,97 @@ func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
 			t.Errorf("drive %d links to %q, want %q", i, target, dst[i].Path)
 		}
 	}
+}
+
+// The recreated source dir is recordless: while redirects live, its held ops lock is the only thing keeping the GC orphan scan from reaping it mid-clone.
+func TestHoldRedirectDirsFencesGCAndCleansUp(t *testing.T) {
+	dir := t.TempDir()
+	gone := filepath.Join(dir, "gone")
+	src := []*types.StorageConfig{
+		{Path: filepath.Join(gone, "cow.raw")},
+		{Path: filepath.Join(gone, "data-x.raw")},
+	}
+	dst := []*types.StorageConfig{
+		{Path: writeTestFile(t, dir, "clone-cow.raw")},
+		{Path: writeTestFile(t, dir, "clone-data-x.raw")},
+	}
+
+	release, err := holdRedirectDirs(t.Context(), src, dst)
+	if err != nil {
+		t.Fatalf("holdRedirectDirs: %v", err)
+	}
+	gcLock := flock.New(filepath.Join(gone, hypervisor.OpsLockName))
+	if got, tryErr := gcLock.TryLock(t.Context()); tryErr != nil || got {
+		t.Fatalf("GC ops TryLock must fail while redirect dirs are held: got=%v err=%v", got, tryErr)
+	}
+
+	release()
+	if _, err := os.Stat(gone); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("recreated source dir not removed on release: %v", err)
+	}
+}
+
+// A clone killed mid-window leaves a dangling redirect symlink with no backup; the next acquire must clear it or every later clone fails with EEXIST.
+func TestRecoverStaleBackupClearsDanglingRedirect(t *testing.T) {
+	runRoot := t.TempDir()
+	srcDir := filepath.Join(runRoot, "GONE")
+	if err := os.Mkdir(srcDir, 0o750); err != nil {
+		t.Fatalf("setup src dir: %v", err)
+	}
+	cow := filepath.Join(srcDir, "cow.raw")
+	if err := os.Symlink(filepath.Join(runRoot, "CLONE", "cow.raw"), cow); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+
+	recoverStaleBackup(runRoot, cow)
+
+	if _, err := os.Lstat(cow); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("dangling redirect not cleared: %v", err)
+	}
+	if err := os.Symlink("target", cow); err != nil {
+		t.Fatalf("path not reusable after recovery: %v", err)
+	}
+}
+
+// Imported metadata can name any path; a symlink outside the run root must survive recovery even when its target points into the run root.
+func TestRecoverStaleBackupPreservesForeignSymlink(t *testing.T) {
+	dir := t.TempDir()
+	runRoot := filepath.Join(dir, "run")
+	cow := filepath.Join(dir, "current-cow")
+	if err := os.Symlink(filepath.Join(runRoot, "LIVE", "cow.raw"), cow); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+
+	recoverStaleBackup(runRoot, cow)
+
+	if fi, err := os.Lstat(cow); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("foreign symlink must be preserved: fi=%v err=%v", fi, err)
+	}
+}
+
+func TestRecoverStaleBackupRestoresBackup(t *testing.T) {
+	dir := t.TempDir()
+	cow := filepath.Join(dir, "cow.raw")
+	backup := writeTestFile(t, dir, "cow.raw"+cloneBackupSuffix)
+	if err := os.Symlink("dangling-target", cow); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+
+	recoverStaleBackup(filepath.Join(dir, "run"), cow)
+
+	if fi, err := os.Lstat(cow); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("backup not restored over redirect: fi=%v err=%v", fi, err)
+	}
+	if _, err := os.Stat(backup); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("backup file left behind: %v", err)
+	}
+}
+
+func writeTestFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(name), 0o600); err != nil {
+		t.Fatalf("setup %s: %v", name, err)
+	}
+	return p
 }

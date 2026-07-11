@@ -2,6 +2,9 @@ package flock
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -145,10 +148,8 @@ func TestConcurrentLockUnlock(t *testing.T) {
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(50)
 	for range 50 {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := l.Lock(ctx); err != nil {
 				t.Errorf("Lock: %v", err)
 				return
@@ -159,7 +160,7 @@ func TestConcurrentLockUnlock(t *testing.T) {
 			if err := l.Unlock(ctx); err != nil {
 				t.Errorf("Unlock: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -174,6 +175,61 @@ func TestUnlockWithoutLock(t *testing.T) {
 
 	if err := l.Unlock(ctx); err != nil {
 		t.Fatalf("Unlock on unheld lock should not error, got: %v", err)
+	}
+}
+
+func TestTransientUnlinksOnUnlock(t *testing.T) {
+	path := lockPath(t)
+	l := NewTransient(path)
+	ctx := t.Context()
+
+	if err := l.Lock(ctx); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("lock file missing while held: %v", err)
+	}
+	if err := l.Unlock(ctx); err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("lock file not unlinked after Unlock: %v", err)
+	}
+}
+
+func TestTransientWaiterRequeuesAcrossUnlink(t *testing.T) {
+	path := lockPath(t)
+	ctx := t.Context()
+	l1, l2 := NewTransient(path), NewTransient(path)
+
+	if err := l1.Lock(ctx); err != nil {
+		t.Fatalf("l1 Lock: %v", err)
+	}
+
+	acquired := make(chan error, 1)
+	go func() { acquired <- l2.Lock(ctx) }()
+
+	select {
+	case err := <-acquired:
+		t.Fatalf("l2 Lock should block while l1 holds, got: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if err := l1.Unlock(ctx); err != nil {
+		t.Fatalf("l1 Unlock: %v", err)
+	}
+	if err := <-acquired; err != nil {
+		t.Fatalf("l2 Lock across unlink: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("path not rebound while l2 holds: %v", err)
+	}
+
+	if err := l2.Unlock(ctx); err != nil {
+		t.Fatalf("l2 Unlock: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("residue after final Unlock: %v", err)
 	}
 }
 

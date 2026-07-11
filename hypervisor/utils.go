@@ -35,6 +35,9 @@ const (
 	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
 	OpsLockName = "ops.lock"
 
+	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
+	CloneLocksDirName = "clone-locks"
+
 	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix. restoreDirtyName is the tombstone marking the destructive restore phase — cleared only by FinalizeRestore, never by GC.
 	restoreStagingName = ".restore-staging"
 	restoreDirtyName   = ".restore-dirty"

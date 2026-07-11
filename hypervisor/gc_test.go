@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -96,6 +97,16 @@ func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatal("stale staging in a migrated run dir must be reclaimed")
+	}
+}
+
+// A reserved dir swept as a VM run dir would get an ops.lock planted inside it by withOpsTryLock.
+func TestSweepDirsSkipsReservedNames(t *testing.T) {
+	snap := VMGCSnapshot{runDirs: []string{"db", CloneLocksDirName, "SOMEVM"}}
+	got := snap.sweepDirs("/root")
+	want := []string{"/root/SOMEVM"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("sweepDirs = %v, want %v", got, want)
 	}
 }
 

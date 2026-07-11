@@ -2,16 +2,20 @@ package firecracker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -21,7 +25,6 @@ const cloneBackupSuffix = ".cocoon-clone-backup"
 type driveRedirect struct {
 	symlinkPath string
 	backupPath  string
-	createdDir  bool
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -70,9 +73,11 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	sockPath := hypervisor.SocketPath(runDir)
 	var pid int
 	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
-		if aliveErr := fc.ensureSourceAlive(ctx, meta.StorageConfigs); aliveErr != nil {
-			return aliveErr
+		releaseDirs, holdErr := holdRedirectDirs(ctx, meta.StorageConfigs, storageConfigs)
+		if holdErr != nil {
+			return holdErr
 		}
+		defer releaseDirs()
 		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 		if redirectErr != nil {
 			return fmt.Errorf("drive redirect: %w", redirectErr)
@@ -142,21 +147,6 @@ func (fc *Firecracker) restoreAndResumeClone(
 	return nil
 }
 
-// ensureSourceAlive re-checks the source VM record under the writable-disk locks: rm deletes the record before unlinking any file, so a lock acquired on a fresh inode after a concurrent rm always observes the record gone and must abort instead of racing the deletion.
-func (fc *Firecracker) ensureSourceAlive(ctx context.Context, configs []*types.StorageConfig) error {
-	for _, sc := range configs {
-		if sc.Role != types.StorageRoleCOW && sc.Role != types.StorageRoleData {
-			continue
-		}
-		srcID := filepath.Base(filepath.Dir(sc.Path))
-		if _, err := fc.LoadRecord(ctx, srcID); err != nil {
-			return fmt.Errorf("clone source VM %s: %w", srcID, err)
-		}
-		return nil
-	}
-	return nil
-}
-
 // rebuildCloneStorage rewrites paths per role (Layer→source, COW→cowPath, Data→runDir); cidata rejected.
 func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
 	runDir := filepath.Dir(cowPath)
@@ -203,14 +193,6 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driv
 			r.backupPath = backup
 		}
 
-		if _, err := os.Stat(filepath.Dir(src.Path)); err != nil {
-			if mkErr := os.MkdirAll(filepath.Dir(src.Path), 0o700); mkErr != nil {
-				cleanupDriveRedirects(redirects)
-				return nil, fmt.Errorf("create dir for drive redirect %s: %w", src.Path, mkErr)
-			}
-			r.createdDir = true
-		}
-
 		if linkErr := os.Symlink(dstConfigs[i].Path, src.Path); linkErr != nil {
 			if r.backupPath != "" {
 				_ = os.Rename(r.backupPath, src.Path)
@@ -229,21 +211,66 @@ func cleanupDriveRedirects(redirects []driveRedirect) {
 		if r.backupPath != "" {
 			_ = os.Rename(r.backupPath, r.symlinkPath)
 		}
-		if r.createdDir {
-			_ = os.Remove(filepath.Dir(r.symlinkPath))
+	}
+}
+
+// holdRedirectDirs recreates missing parents of redirected source paths and holds their ops locks: the dirs are recordless, and the GC orphan scan reaps any unlocked recordless dir mid-clone.
+func holdRedirectDirs(ctx context.Context, srcConfigs, dstConfigs []*types.StorageConfig) (func(), error) {
+	var dirs []string
+	seen := make(map[string]struct{})
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
+		dir := filepath.Dir(srcConfigs[i].Path)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			dirs = append(dirs, dir)
+		}
+	}
+	slices.Sort(dirs)
+	locks := make([]*flock.Lock, 0, len(dirs))
+	release := func() {
+		for i := len(locks) - 1; i >= 0; i-- {
+			_ = locks[i].Unlock(ctx)
+			_ = os.Remove(dirs[i])
+		}
+	}
+	for _, dir := range dirs {
+		l, err := lockRecreatedDir(ctx, dir)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		locks = append(locks, l)
+	}
+	return release, nil
+}
+
+// lockRecreatedDir mkdirs+locks with retry: a concurrent GC collect can remove the still-empty dir between MkdirAll and the flock open.
+func lockRecreatedDir(ctx context.Context, dir string) (*flock.Lock, error) {
+	for {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return nil, fmt.Errorf("recreate source dir: %w", err)
+		}
+		l := flock.NewTransient(filepath.Join(dir, hypervisor.OpsLockName))
+		switch err := l.Lock(ctx); {
+		case err == nil:
+			return l, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
 		}
 	}
 }
 
-// recoverStaleBackup restores a crashed-clone backup; caller must hold the COW lock.
-func recoverStaleBackup(cowPath string) {
+// recoverStaleBackup clears a crashed clone's redirect symlink and restores its backup; caller must hold the COW lock. Imported metadata paths are untrusted: a symlink is removed only with a backup beside it or when it sits inside the managed run root, where every cocoon redirect lives and nothing foreign does.
+func recoverStaleBackup(runRoot, cowPath string) {
 	backup := cowPath + cloneBackupSuffix
-	if _, err := os.Stat(backup); err != nil {
-		return
-	}
-	fi, err := os.Lstat(cowPath)
-	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		_ = os.Remove(cowPath)
+	_, backupErr := os.Lstat(backup)
+	if fi, err := os.Lstat(cowPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if backupErr == nil || hypervisor.IsUnderDir(cowPath, runRoot) {
+			_ = os.Remove(cowPath)
+		}
 	}
 	_ = os.Rename(backup, cowPath)
 }
