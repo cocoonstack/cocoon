@@ -137,6 +137,10 @@ func (fc *Firecracker) loadCloneSnapshot(
 				fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 				return 0, fmt.Errorf("snapshot/load: %w", loadErr)
 			}
+			if verifyErr := verifyDriveFDs(pid, binds); verifyErr != nil {
+				fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+				return 0, fmt.Errorf("bind redirect lost during load (source mutated concurrently, retry): %w", verifyErr)
+			}
 			return pid, nil
 		case !errors.Is(err, errBindSetup):
 			return 0, fmt.Errorf("launch FC: %w", err)

@@ -49,8 +49,8 @@ func (s *Store[T]) Update(ctx context.Context, fn func(*T) error) error {
 	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.Sync) })
 }
 
-// UpdateNoSync runs fn read-modify-write under the store lock, persisting without fsync.
-func (s *Store[T]) UpdateNoSync(ctx context.Context, fn func(*T) error) error {
+// UpdateNoDirSync runs fn read-modify-write under the store lock, fsyncing the file but not the parent dir.
+func (s *Store[T]) UpdateNoDirSync(ctx context.Context, fn func(*T) error) error {
 	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) })
 }
 
@@ -73,7 +73,7 @@ func (s *Store[T]) writeRaw(fn func(*T) error, sync utils.SyncMode) error {
 	if sync == utils.Sync {
 		return utils.AtomicWriteJSON(s.filePath, data)
 	}
-	return utils.AtomicWriteJSONNoSync(s.filePath, data)
+	return utils.AtomicWriteJSONNoDirSync(s.filePath, data)
 }
 
 func (s *Store[T]) load() (*T, error) {

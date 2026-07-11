@@ -4,7 +4,10 @@ package firecracker
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"golang.org/x/sys/unix"
 )
@@ -38,4 +41,31 @@ func launchWithBinds(binds [][2]string, launch func() (int, error)) (int, error)
 	}()
 	r := <-ch
 	return r.pid, r.err
+}
+
+// verifyDriveFDs confirms pid holds an open fd for every bind's clone-side inode: unlinking a mountpoint path from another namespace detaches the bind (mount_namespaces(7)), so a concurrent source restore/delete inside the bind→load window would silently hand FC the source's writable disk.
+func verifyDriveFDs(pid int, binds [][2]string) error {
+	fdDir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
+	entries, err := os.ReadDir(fdDir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", fdDir, err)
+	}
+	open := make(map[[2]uint64]struct{}, len(entries))
+	for _, e := range entries {
+		var st unix.Stat_t
+		if statErr := unix.Stat(filepath.Join(fdDir, e.Name()), &st); statErr != nil {
+			continue
+		}
+		open[[2]uint64{st.Dev, st.Ino}] = struct{}{}
+	}
+	for _, b := range binds {
+		var st unix.Stat_t
+		if statErr := unix.Stat(b[1], &st); statErr != nil {
+			return fmt.Errorf("stat %s: %w", b[1], statErr)
+		}
+		if _, ok := open[[2]uint64{st.Dev, st.Ino}]; !ok {
+			return fmt.Errorf("%s is not held open by the VMM", b[1])
+		}
+	}
+	return nil
 }

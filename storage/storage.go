@@ -15,8 +15,8 @@ type Store[T any] interface {
 	With(ctx context.Context, fn func(*T) error) error
 	// Update performs a read-modify-write under lock; persists only if fn returns nil.
 	Update(ctx context.Context, fn func(*T) error) error
-	// UpdateNoSync is Update without fsync, for placeholder states GC re-derives after power loss.
-	UpdateNoSync(ctx context.Context, fn func(*T) error) error
+	// UpdateNoDirSync is Update without the rename's parent-dir fsync: content is never torn, only the mutation may roll back on power failure — for placeholder states GC re-derives.
+	UpdateNoDirSync(ctx context.Context, fn func(*T) error) error
 
 	// ReadRaw deserializes and passes to fn without locking; caller must already hold the lock via TryLock.
 	ReadRaw(fn func(*T) error) error

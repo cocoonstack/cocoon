@@ -15,8 +15,8 @@ import (
 // ReserveVM inserts a "creating" placeholder under id, failing on id/name collision. Re-reserving the placeholder this same create claimed via PrereserveVM adopts it (refreshing blob pins and dirs).
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := time.Now()
-	// NoSync: a placeholder lost to power failure only re-exposes resources the GC orphan sweep already reclaims.
-	return b.DB.UpdateNoSync(ctx, func(idx *VMIndex) error {
+	// NoDirSync: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
+	return b.DB.UpdateNoDirSync(ctx, func(idx *VMIndex) error {
 		if existing := idx.VMs[id]; existing != nil {
 			if existing.State == types.VMStateCreating && existing.Config.Name == vmCfg.Name {
 				existing.ImageBlobIDs = blobIDs
