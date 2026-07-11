@@ -159,19 +159,6 @@ func (fc *Firecracker) loadCloneSnapshot(
 	return pid, nil
 }
 
-// bindableRedirects returns dst-over-src bind pairs; ok=false when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
-func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, bool) {
-	var binds [][2]string
-	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
-		fi, err := os.Lstat(srcConfigs[i].Path)
-		if err != nil || !fi.Mode().IsRegular() {
-			return nil, false
-		}
-		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
-	}
-	return binds, len(binds) > 0
-}
-
 func (fc *Firecracker) resumeAndReanchorClone(
 	ctx context.Context,
 	pid int,
@@ -226,6 +213,19 @@ func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int
 		}
 	}
 	return indices
+}
+
+// bindableRedirects returns dst-over-src bind pairs; ok=false when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
+func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, bool) {
+	var binds [][2]string
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
+		fi, err := os.Lstat(srcConfigs[i].Path)
+		if err != nil || !fi.Mode().IsRegular() {
+			return nil, false
+		}
+		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
+	}
+	return binds, len(binds) > 0
 }
 
 func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driveRedirect, error) {
