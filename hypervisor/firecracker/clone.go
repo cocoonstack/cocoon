@@ -79,15 +79,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 			LogDir: logDir,
 		}, sockPath, net.NetnsPath)
 	}
-	pid, cloneErr := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
+	pid, cloneErr := fc.startCloneVM(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
 	if cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
-	}
-
-	if resumeErr := fc.resumeAndReanchorClone(ctx, pid, sockPath, runDir, meta.StorageConfigs, storageConfigs); resumeErr != nil {
-		fc.MarkError(ctx, vmID)
-		return nil, resumeErr
 	}
 
 	info := &types.VM{
@@ -106,7 +101,24 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	return info, nil
 }
 
-// loadCloneSnapshot launches FC and drives snapshot/load. Fast path bind-mounts the clone disks over the source-absolute paths in a private mount namespace (no host mutation, siblings run parallel); a missing/symlinked source or denied unshare falls back to symlink-redirects under the source-disk locks.
+// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors. The load fast path bind-mounts the clone disks over the source-absolute paths in a private mount namespace (no host mutation, siblings run parallel); a missing/symlinked source or denied unshare falls back to symlink-redirects under the source-disk locks.
+func (fc *Firecracker) startCloneVM(
+	ctx context.Context,
+	launch func() (int, error),
+	sockPath, runDir string,
+	networkConfigs []*types.NetworkConfig,
+	srcConfigs, dstConfigs []*types.StorageConfig,
+) (int, error) {
+	pid, err := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, srcConfigs, dstConfigs)
+	if err != nil {
+		return 0, err
+	}
+	if err := fc.resumeAndReanchorClone(ctx, pid, sockPath, runDir, srcConfigs, dstConfigs); err != nil {
+		return 0, err
+	}
+	return pid, nil
+}
+
 func (fc *Firecracker) loadCloneSnapshot(
 	ctx context.Context,
 	launch func() (int, error),
@@ -117,7 +129,7 @@ func (fc *Firecracker) loadCloneSnapshot(
 	netOverrides := buildNetworkOverrides(networkConfigs)
 	vsockPath := hypervisor.VsockSockPath(runDir)
 
-	if binds, ok := bindableRedirects(srcConfigs, dstConfigs); ok {
+	if binds := bindableRedirects(srcConfigs, dstConfigs); len(binds) > 0 {
 		pid, err := launchWithBinds(binds, launch)
 		switch {
 		case err == nil:
@@ -215,17 +227,17 @@ func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int
 	return indices
 }
 
-// bindableRedirects returns dst-over-src bind pairs; ok=false when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
-func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, bool) {
+// bindableRedirects returns dst-over-src bind pairs; nil when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
+func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) [][2]string {
 	var binds [][2]string
 	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
 		fi, err := os.Lstat(srcConfigs[i].Path)
 		if err != nil || !fi.Mode().IsRegular() {
-			return nil, false
+			return nil
 		}
 		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
 	}
-	return binds, len(binds) > 0
+	return binds
 }
 
 func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driveRedirect, error) {

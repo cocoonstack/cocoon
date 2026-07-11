@@ -182,18 +182,16 @@ func TestBindableRedirects(t *testing.T) {
 		name     string
 		src, dst []*types.StorageConfig
 		want     [][2]string
-		wantOK   bool
 	}{
-		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}, true},
-		{"missing source", sc(filepath.Join(dir, "gone.raw")), sc(dst), nil, false},
-		{"symlinked source", sc(linked), sc(dst), nil, false},
-		{"no redirects", sc(regular), sc(regular), nil, false},
+		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}},
+		{"missing source", sc(filepath.Join(dir, "gone.raw")), sc(dst), nil},
+		{"symlinked source", sc(linked), sc(dst), nil},
+		{"no redirects", sc(regular), sc(regular), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := bindableRedirects(tt.src, tt.dst)
-			if ok != tt.wantOK || !slices.Equal(got, tt.want) {
-				t.Errorf("got (%v, %v), want (%v, %v)", got, ok, tt.want, tt.wantOK)
+			if got := bindableRedirects(tt.src, tt.dst); !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
