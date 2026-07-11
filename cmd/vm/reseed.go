@@ -35,17 +35,12 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	return reseedVM(ctx, vm, regenMachineID)
 }
 
-// reseedAfterResume re-inspects then fires the best-effort reseed. Clone/Restore return a
-// *types.VM built in-process that never passed through ToVM, so its VsockSocket is zero;
-// pairing refresh with signal keeps a caller from silently no-op-ing on a stale value.
+// reseedAfterResume re-inspects then fires the best-effort reseed: Clone/Restore return an in-process *types.VM whose VsockSocket is zero, and a stale value would silently no-op.
 func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
 	signalReseed(ctx, refreshVM(ctx, hyper, vm), regenMachineID)
 }
 
-// reseedVM pushes fresh entropy and a CRNG reseed order over vsock. Only a failed
-// dial is retried — the guest agent re-listens shortly after a clone/restore resume;
-// once a live agent answers, its reply (success, version-skew rejection, or failure)
-// is final, so an old agent isn't billed the whole retry budget.
+// reseedVM pushes fresh entropy and a CRNG reseed order over vsock; only a failed dial retries (the agent re-listens shortly after resume) — a live agent's reply is final.
 func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 	if vm.VsockSocket == "" {
 		return fmt.Errorf("reseed: %w (recreate the VM to enable agent reseed)", ErrVsockNotConfigured)
@@ -82,9 +77,7 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 	return fmt.Errorf("reseed: dial agent: %w", dialErr)
 }
 
-// signalReseed is the non-fatal wrapper for clone/restore paths: it reports whether a reseed
-// was attempted (false = skipped for a Windows guest or a legacy VM without vsock) and never
-// fails the calling command on agent version skew.
+// signalReseed is the non-fatal clone/restore wrapper: reports whether a reseed was attempted (false = Windows or no vsock) and never fails the calling command.
 func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
 	logger := log.WithFunc("cmd.vm.reseed")
 	if vm.Config.Windows {
@@ -102,8 +95,7 @@ func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
 	return true
 }
 
-// refreshVM re-inspects to recover runtime-only fields (VsockSocket, PID, SocketPath) that
-// ToVM sets but Clone/Restore's in-process return value lacks; keeps the original on error.
+// refreshVM re-inspects to recover runtime-only fields Clone/Restore's in-process return value lacks; keeps the original on error.
 func refreshVM(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM) *types.VM {
 	info, err := hyper.Inspect(ctx, vm.ID)
 	if err != nil {

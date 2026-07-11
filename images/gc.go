@@ -82,8 +82,7 @@ func BuildGCModule[I any](cfg GCModuleConfig[I]) gc.Module[ImageGCSnapshot] {
 	}
 }
 
-// gcStaleTemp removes temp entries older than StaleTempAge; dirOnly=true skips files.
-// .lock files are never removed — flock syncs on inode, so deleting one races with a current holder.
+// gcStaleTemp removes temp entries older than StaleTempAge (dirOnly=true skips files); .lock files stay — flock syncs on inode, so deleting one races a current holder.
 func gcStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {

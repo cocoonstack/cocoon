@@ -29,8 +29,7 @@ const (
 
 	chAPIBase = "http://localhost/api/v1/"
 
-	// chMemoryRestoreOnDemand uses userfaultfd (UFFD) to lazily page in
-	// guest memory from the snapshot file, avoiding a full upfront copy.
+	// chMemoryRestoreOnDemand lazily pages in guest memory via userfaultfd instead of a full upfront copy.
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
 )
 

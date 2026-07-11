@@ -9,9 +9,7 @@ import (
 
 // SplitRanges divides [0,size) into up to n contiguous, inclusive-ended byte ranges.
 func SplitRanges(size int64, n int) [][2]int64 {
-	if n < 1 {
-		n = 1
-	}
+	n = max(n, 1)
 	chunk := (size + int64(n) - 1) / int64(n)
 	ranges := make([][2]int64, 0, n)
 	for start := int64(0); start < size; start += chunk {
@@ -24,11 +22,7 @@ func SplitRanges(size int64, n int) [][2]int64 {
 	return ranges
 }
 
-// CopyRangeBody validates resp as the answer to a bytes=start-end Range request
-// (206 status, matching Content-Range span, full-length body) and copies exactly
-// the requested bytes into w. A mismatched span would land bytes at the wrong
-// offsets; a short body would leave a zero hole — both would otherwise surface
-// only when a later digest pass re-hashes the assembled file.
+// CopyRangeBody validates resp against the requested bytes=start-end range (status, span, length) and copies it into w — a mismatch would otherwise surface only at the later digest pass.
 func CopyRangeBody(resp *http.Response, w io.Writer, start, end int64) error {
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("range %d-%d: unexpected status %s", start, end, resp.Status)

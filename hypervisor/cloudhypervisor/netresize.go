@@ -33,8 +33,7 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 		return netresize.Result{}, err
 	}
 	defer unlock()
-	// Reload under the lock: a resize that won the lock first may have
-	// changed the NIC set after this one loaded the record.
+	// Reload under the lock: a resize that won the lock first may have changed the NIC set after this one loaded the record.
 	if rec, err = ch.LoadRecord(ctx, vmID); err != nil {
 		return netresize.Result{}, err
 	}

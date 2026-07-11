@@ -78,8 +78,7 @@ write_files:
 {{- end}}
 `))
 
-	// networkConfigTmpl renders cloud-init network-config (netplan v2 → systemd-networkd).
-	// Clone reinit fallback for netplan PERM-MAC mismatch is wired in via user-data write_files.
+	// networkConfigTmpl renders cloud-init network-config (netplan v2); the clone-reinit fallback for netplan PERM-MAC mismatch is wired via user-data write_files.
 	networkConfigTmpl = template.Must(template.New("network-config").Parse(`version: 2
 ethernets:
 {{- range $i, $n := .Networks}}

@@ -134,8 +134,7 @@ func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *type
 	logDir = b.Conf.VMLogDir(id)
 
 	cleanup = func() {
-		// Record first: dir removal deletes the held ops.lock inode, and a
-		// concurrent rm on the recreated file must not find a live placeholder.
+		// Record first: dir removal deletes the held ops.lock inode, and a concurrent rm on the recreated file must not find a live placeholder.
 		b.RollbackCreate(ctx, id, vmCfg.Name)
 		_ = RemoveVMDirs(runDir, logDir)
 	}

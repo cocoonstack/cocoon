@@ -125,8 +125,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		return fmt.Errorf("refuse delete: api socket %s still responsive (suspected orphan vmm; kill the vmm process then retry)", sockPath)
 	}
 	for _, pid := range procScan.Find(sockPath) {
-		// procScan is a pre-stop snapshot: a just-force-stopped VM is already gone.
-		// Only a still-live match is a real orphan worth killing and logging.
+		// procScan predates the stop: only a still-live match is a real orphan worth killing.
 		if !utils.IsProcessAlive(pid) {
 			continue
 		}
@@ -139,15 +138,9 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		shape              metering.Shape
 		hadRunningInterval bool
 	)
-	// Dirs outside the configured roots (--run-dir migration) escape the GC
-	// orphan scan; persist a cleanup intent in the same transaction so a
-	// failed dir removal below stays reclaimable after the record is gone.
+	// Dirs outside the configured roots escape the GC orphan scan; persist a cleanup intent in the same transaction so a failed removal stays reclaimable.
 	migrated := migratedDirs(rec, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
-	// Record goes first: dir removal deletes the ops.lock file, and a later
-	// locker on the recreated file is a fresh inode that does not contend —
-	// with the record already gone its resolve fails instead of reviving the
-	// VM. Capture in the same transaction so a concurrent UpdateStates can't
-	// shift the truth; a failed dir removal below leaves orphans for GC.
+	// Record first: dir removal deletes the ops.lock inode, and a fresh-inode locker must resolve a gone record instead of reviving the VM.
 	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
 		r := idx.VMs[id]
 		if r == nil {

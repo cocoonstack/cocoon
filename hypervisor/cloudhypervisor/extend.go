@@ -41,9 +41,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 		return "", err
 	}
 	id := disk.DeriveID(spec.Name)
-	// The CH fork refuses disks without an explicit image_type; DirectIO/queue
-	// semantics must match create-path data disks, so the disk is built from
-	// the record reloaded under the ops lock (restore rewrites Config in there).
+	// The CH fork refuses disks without an explicit image_type; build from the record reloaded under the ops lock so DirectIO/queue semantics match create-path data disks (restore rewrites Config).
 	makeBody := func(rec *hypervisor.VMRecord) any {
 		d := storageConfigToDisk(&types.StorageConfig{
 			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
@@ -56,8 +54,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 			if ex.ID == id {
 				return fmt.Errorf("disk name %q already attached", spec.Name)
 			}
-			// Record data disks carry CH auto ids — match serials too, else two
-			// devices race for one /dev/disk/by-id/virtio-<name>.
+			// Record data disks carry CH auto ids — match serials too, else two devices race for one /dev/disk/by-id/virtio-<name>.
 			if ex.Serial == spec.Name {
 				return fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
 			}
@@ -199,11 +196,7 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	})
 }
 
-// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence)
-// and refuses anything inside a cocoon-managed root: vm rm / GC delete those
-// trees, breaking the never-deletes contract, and a symlink must not smuggle a
-// managed path past the check. Returns the resolved path so the duplicate
-// precheck and CH both see one canonical name per volume.
+// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence) and refuses cocoon-managed roots — vm rm / GC delete those trees, and a symlink must not smuggle one past the check.
 func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -233,11 +226,7 @@ func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*h
 	return hc, info, nil
 }
 
-// lockedDeviceOp serializes device-set mutations per VM across processes and
-// hands back the record and a vm.info snapshot taken UNDER the lock, so
-// precheck-then-call is atomic against concurrent attach/detach and the
-// record's Config can't be a pre-restore vintage (restore rewrites it while
-// holding this lock). The flock dies with the process, so no stale locks.
+// lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, making precheck-then-call atomic against concurrent attach/detach/restore.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
 	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
 	if err != nil {
@@ -320,9 +309,7 @@ func (ch *CloudHypervisor) detachWith(
 	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
 	}
-	// Block until the guest acks the ACPI eject (B0EJ): only then has CH freed
-	// the slot, the id, and the backing file — a caller reusing either right
-	// after detach must not race a still-live device (Windows can take 10-20s).
+	// Block until the guest acks the ACPI eject (B0EJ): only then has CH freed the slot, id, and backing file (Windows can take 10-20s).
 	if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 	}
@@ -349,8 +336,7 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// ensureNotPaused refuses device-set mutations while a capture window is open
-// (snapshot/hibernate/fork): mutating mid-capture would desync config and memory.
+// ensureNotPaused refuses device-set mutations while a capture window is open — mutating mid-capture would desync config and memory.
 func ensureNotPaused(info *chVMInfoResponse) error {
 	if info.State == chStatePaused {
 		return fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")

@@ -292,17 +292,14 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 				logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
 			}
 		}
-		// Ops lock serializes the verify-and-rebuild: two concurrent starts would
-		// otherwise both see missing plumbing, double-ADD, and the loser's
-		// rollback DEL would tear down the winner's fresh network.
+		// Ops lock serializes verify-and-rebuild: two concurrent starts would both see missing plumbing, double-ADD, and the loser's rollback DEL would tear down the winner's network.
 		if locker, ok := hyper.(hypervisor.Reserver); ok {
 			unlock, lockErr := locker.LockVMOps(ctx, vm.ID)
 			if lockErr != nil {
 				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
 				continue
 			}
-			// Recheck under the lock and rebuild from the fresh record: the
-			// pre-lock List snapshot may predate a completed rm or net resize.
+			// Recheck under the lock from the fresh record: the pre-lock List snapshot may predate a completed rm or net resize.
 			if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
 				recoverOne(fresh)
 			}
@@ -313,9 +310,7 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 	}
 }
 
-// applyStopFlags maps --force (-1 = immediate kill, docker-style; #82: FC
-// guests without i8042 never answer CtrlAltDel) and --timeout onto the stop
-// window for stop and rm; rm has no --timeout flag, that read no-ops.
+// applyStopFlags maps --force (-1 = immediate kill; #82: FC guests without i8042 never answer CtrlAltDel) and --timeout onto the stop window; rm has no --timeout flag, that read no-ops.
 func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 	force, _ := cmd.Flags().GetBool("force")
 	timeout, _ := cmd.Flags().GetInt("timeout")

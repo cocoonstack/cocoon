@@ -25,8 +25,7 @@ type bridgeSnapshot struct {
 	prefixes map[string]struct{}
 }
 
-// GCModule returns a GC module that reclaims orphan bt* TAP devices.
-// It does not require a Bridge instance — only rootDir for the lock file.
+// GCModule returns a GC module reclaiming orphan bt* TAP devices; it needs no Bridge instance, only rootDir for the lock file.
 func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 	lockPath := filepath.Join(rootDir, "bridge", "gc.lock")
 	_ = utils.EnsureDirs(filepath.Dir(lockPath))

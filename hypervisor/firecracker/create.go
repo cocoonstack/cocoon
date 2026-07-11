@@ -144,7 +144,9 @@ func decompressKernel(data []byte) ([]byte, error) {
 		{"gzip", []byte{0x1f, 0x8b, 0x08}, decompressGzip},
 	}
 
+	var tried []string
 	for _, f := range formats {
+		tried = append(tried, f.name)
 		offset := bytes.Index(data, f.magic)
 		if offset < 0 {
 			continue
@@ -155,11 +157,6 @@ func decompressKernel(data []byte) ([]byte, error) {
 		}
 		return decompressed, nil
 	}
-
-	tried := make([]string, len(formats))
-	for i, f := range formats {
-		tried[i] = f.name
-	}
 	return nil, fmt.Errorf("no supported compression format found (tried %s)", strings.Join(tried, ", "))
 }
 
@@ -169,8 +166,7 @@ func decompressZstd(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("new zstd reader: %w", err)
 	}
 	defer dec.Close()
-	// DecodeAll may error on trailing data after the first frame; any prefix
-	// already in out is valid — caller validates via ELF magic.
+	// DecodeAll may error on trailing data after the first frame; any decoded prefix is valid — caller validates via ELF magic.
 	out, err := dec.DecodeAll(data, nil)
 	if len(out) == 0 {
 		return nil, fmt.Errorf("zstd decode: %w", err)

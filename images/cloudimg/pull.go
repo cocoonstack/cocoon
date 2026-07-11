@@ -32,8 +32,7 @@ const (
 	progressInterval = 1 << 20
 )
 
-// progressCounter emits PhaseDownload events every ~1 MiB; mutex-guarded so it
-// serves both the serial writer and parallel range workers.
+// progressCounter emits PhaseDownload events every ~1 MiB; mutex-guarded so it serves both the serial writer and parallel range workers.
 type progressCounter struct {
 	mu         sync.Mutex
 	written    int64
@@ -51,8 +50,7 @@ func (pc *progressCounter) add(n int64) {
 	}
 	done := pc.written
 	pc.mu.Unlock()
-	// Emit outside the lock: the tracker callback is user-supplied and must not
-	// serialize the range workers.
+	// Emit outside the lock: the tracker callback is user-supplied and must not serialize the range workers.
 	if report {
 		pc.tracker.OnEvent(cloudimgProgress.Event{
 			Phase:      cloudimgProgress.PhaseDownload,
@@ -84,7 +82,6 @@ type rangeProbe struct {
 func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], url string, force bool, tracker progress.Tracker) error {
 	logger := log.WithFunc("cloudimg.pull")
 
-	// URL-level idempotency check (skipped when force is true).
 	if !force {
 		var skip bool
 		if err := store.With(ctx, func(idx *imageIndex) error {
@@ -137,8 +134,7 @@ func withDownload(
 	return fn(tmpFile, tmpPath, digestHex)
 }
 
-// downloadToFile probes whether url supports HTTP Range requests and downloads it into dst
-// accordingly: pullConns concurrent range connections when supported, a single stream otherwise.
+// downloadToFile downloads url into dst: pullConns concurrent Range connections when supported, a single stream otherwise.
 func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progress.Tracker, pullConns int) (string, error) {
 	logger := log.WithFunc("cloudimg.downloadToFile")
 	client := &http.Client{Timeout: urlDownloadTimeout}
@@ -162,8 +158,7 @@ func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progr
 	return hashDigest(dst)
 }
 
-// downloadSerial streams url into dst over a single connection; used when the server doesn't
-// support Range requests or doesn't report a usable size.
+// downloadSerial streams url into dst over one connection when the server lacks Range support or a usable size.
 func downloadSerial(ctx context.Context, client *http.Client, url string, dst *os.File, tracker progress.Tracker) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -206,9 +201,7 @@ func downloadSerial(ctx context.Context, client *http.Client, url string, dst *o
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// probeRangeSupport issues a GET with Range: bytes=0-0; nil means no usable Range support
-// (fall back to serial). The probe URL is resp.Request.URL (post-redirect) so each range
-// request hits the resolved location without re-following the redirect chain.
+// probeRangeSupport GETs Range: bytes=0-0 (nil = no usable Range support); the returned URL is post-redirect so range requests skip the redirect chain.
 func probeRangeSupport(ctx context.Context, client *http.Client, url string) (*rangeProbe, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -232,8 +225,7 @@ func probeRangeSupport(ctx context.Context, client *http.Client, url string) (*r
 	return &rangeProbe{finalURL: resp.Request.URL.String(), size: size}, nil
 }
 
-// downloadRangesParallel splits [0,size) into pullConns contiguous ranges and downloads them
-// concurrently into disjoint offsets of dst.
+// downloadRangesParallel splits [0,size) into pullConns contiguous ranges downloaded concurrently into disjoint offsets of dst.
 func downloadRangesParallel(ctx context.Context, client *http.Client, url string, dst *os.File, size int64, pullConns int, tracker progress.Tracker) error {
 	if err := dst.Truncate(size); err != nil {
 		return fmt.Errorf("truncate temp file: %w", err)
@@ -275,8 +267,7 @@ func downloadRange(ctx context.Context, client *http.Client, url string, dst *os
 	return utils.CopyRangeBody(resp, w, start, end)
 }
 
-// hashDigest re-reads dst from disk: scattered parallel writes can't feed a streaming
-// hasher, and hashing the file itself verifies what actually landed.
+// hashDigest re-reads dst from disk: scattered parallel writes can't feed a streaming hasher, and hashing the file verifies what actually landed.
 func hashDigest(dst *os.File) (string, error) {
 	if _, err := dst.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("seek temp file: %w", err)

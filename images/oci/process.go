@@ -51,8 +51,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 
 	logger.Debugf(ctx, "Layer %d: sha256:%s -> erofs (single-pass)", j.idx, digestHex[:12])
 
-	// Hoisted out of the retried region: a too-old mkfs.erofs is permanent,
-	// retrying it would burn attempts, backoff sleeps, and aborted blob GETs.
+	// Hoisted out of the retried region: a too-old mkfs.erofs is permanent — retrying burns attempts, backoff sleeps, and aborted blob GETs.
 	if err = checkErofsVersion(ctx); err != nil {
 		return err
 	}
@@ -81,9 +80,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 	return nil
 }
 
-// convertLayer downloads and converts one layer into a fresh layerDir; the
-// remote stream cannot resume, so each attempt redoes the whole layer and
-// must not see a previous attempt's partial erofs or scanned boot files.
+// convertLayer downloads and converts one layer into a fresh layerDir; the remote stream cannot resume, so each attempt redoes the layer and must not see a prior attempt's partial output.
 func convertLayer(ctx context.Context, j layerJob, layerDir, digestHex, layerUUID, erofsPath string) (kernelPath, initrdPath string, err error) {
 	if err = os.RemoveAll(layerDir); err != nil {
 		return "", "", fmt.Errorf("reset layer work dir: %w", err)
@@ -118,9 +115,7 @@ func applyCachedLayerPaths(conf *Config, result *pullLayerResult, digestHex stri
 	}
 }
 
-// retryLayer runs fn up to attempts times, sleeping backoff between failures;
-// every error retries — a mid-stream break is indistinguishable from bad input
-// by the time mkfs or the boot scan reports it.
+// retryLayer runs fn up to attempts times with backoff; every error retries — a mid-stream break is indistinguishable from bad input by the time mkfs reports it.
 func retryLayer(ctx context.Context, attempts int, backoff time.Duration, fn func() error) error {
 	var err error
 	for attempt := 1; ; attempt++ {

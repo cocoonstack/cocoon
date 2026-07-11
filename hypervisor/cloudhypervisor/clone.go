@@ -70,8 +70,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	if err != nil {
 		return nil, err
 	}
-	// The patch list is taken before the new --data-disk configs are appended:
-	// they are not in the snapshot's device tree and are hot-added post-restore.
+	// The patch list predates the new --data-disk configs: they are not in the snapshot's device tree and are hot-added post-restore.
 	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
 	newDataDisks, err := ch.prepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
 	if err != nil {
@@ -166,8 +165,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 	}
 
 	if !opts.directBoot && !opts.vmCfg.Windows && !opts.hadCidataInSnapshot {
-		// Select by role, not position: new --data-disk configs are appended after
-		// the cidata entry, so the last element is not necessarily cidata.
+		// Select by role, not position: new --data-disk configs land after the cidata entry, so the last element is not necessarily cidata.
 		i := slices.IndexFunc(opts.storageConfigs, hasCidataRole)
 		if i < 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
@@ -188,9 +186,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(
 	return nil
 }
 
-// prepareCloneDataDisks creates the --data-disk files requested for a clone;
-// a name colliding with an inherited disk's serial would overwrite its
-// backing file in the clone run dir, hence the pre-create scan.
+// prepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
 func (ch *CloudHypervisor) prepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
 	if len(vmCfg.DataDisks) == 0 {
 		return nil, nil

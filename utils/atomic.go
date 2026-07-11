@@ -23,8 +23,7 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	return atomicWriteFile(path, data, perm, true)
 }
 
-// AtomicWriteFileNoSync is AtomicWriteFile without the fsyncs, for transient
-// run-dir files regenerated on the next launch.
+// AtomicWriteFileNoSync is AtomicWriteFile without fsyncs, for transient run-dir files regenerated on the next launch.
 func AtomicWriteFileNoSync(path string, data []byte, perm os.FileMode) error {
 	return atomicWriteFile(path, data, perm, false)
 }
@@ -34,8 +33,7 @@ func AtomicWriteJSON(path string, v any) error {
 	return atomicWriteJSON(path, v, true)
 }
 
-// AtomicWriteJSONNoSync marshals v and writes it atomically without fsync
-// (see AtomicWriteFileNoSync).
+// AtomicWriteJSONNoSync marshals v and writes it atomically without fsync (see AtomicWriteFileNoSync).
 func AtomicWriteJSONNoSync(path string, v any) error {
 	return atomicWriteJSON(path, v, false)
 }

@@ -50,9 +50,7 @@ const (
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
 
-// LockVMOps serializes mutating verbs on one VM across processes (#103):
-// device attach/detach, net resize, snapshot, hibernate, restore, stop.
-// The flock dies with the process, so a crashed holder never wedges the VM.
+// LockVMOps serializes mutating verbs on one VM across processes (#103); the flock dies with the holder, so a crash never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
 	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.

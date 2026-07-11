@@ -24,8 +24,7 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		Wrap: func(rec *hypervisor.VMRecord, inner func() error) error {
 			return fc.wrapSourceLocked(ctx, rec, inner)
 		},
-		// Same sweep as DirectRestore's Populate: stale vmstate/mem/data-*.raw
-		// from a previous incarnation must not survive the merge.
+		// Same sweep as DirectRestore's Populate: stale snapshot files from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
 			return cleanSnapshotFiles(rec.RunDir)
 		},

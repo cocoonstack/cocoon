@@ -9,12 +9,10 @@ import (
 )
 
 const (
-	// tapTxQueueLen absorbs traffic bursts (especially UDP) without
-	// dropping; the kernel default of 1000 is too small for VM workloads.
+	// tapTxQueueLen absorbs traffic bursts (especially UDP) without dropping; the kernel default of 1000 is too small for VM workloads.
 	tapTxQueueLen = 10000
 
-	// groMaxSize matches the maximum virtio-net segment size, allowing
-	// the kernel to aggregate inbound packets before CH reads them.
+	// groMaxSize matches the maximum virtio-net segment size so the kernel aggregates inbound packets before CH reads them.
 	groMaxSize = 65536
 )
 
