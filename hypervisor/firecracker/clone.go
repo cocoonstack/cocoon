@@ -2,8 +2,10 @@ package firecracker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -22,7 +25,6 @@ const cloneBackupSuffix = ".cocoon-clone-backup"
 type driveRedirect struct {
 	symlinkPath string
 	backupPath  string
-	createdDir  bool
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -71,6 +73,11 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	sockPath := hypervisor.SocketPath(runDir)
 	var pid int
 	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
+		releaseDirs, holdErr := holdRedirectDirs(ctx, meta.StorageConfigs, storageConfigs)
+		if holdErr != nil {
+			return holdErr
+		}
+		defer releaseDirs()
 		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
 		if redirectErr != nil {
 			return fmt.Errorf("drive redirect: %w", redirectErr)
@@ -186,14 +193,6 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driv
 			r.backupPath = backup
 		}
 
-		if _, err := os.Stat(filepath.Dir(src.Path)); err != nil {
-			if mkErr := os.MkdirAll(filepath.Dir(src.Path), 0o700); mkErr != nil {
-				cleanupDriveRedirects(redirects)
-				return nil, fmt.Errorf("create dir for drive redirect %s: %w", src.Path, mkErr)
-			}
-			r.createdDir = true
-		}
-
 		if linkErr := os.Symlink(dstConfigs[i].Path, src.Path); linkErr != nil {
 			if r.backupPath != "" {
 				_ = os.Rename(r.backupPath, src.Path)
@@ -206,30 +205,68 @@ func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driv
 	return redirects, nil
 }
 
-// cleanupDriveRedirects unwinds in reverse so a shared dir is removed only after its sibling symlinks are gone.
 func cleanupDriveRedirects(redirects []driveRedirect) {
-	for _, r := range slices.Backward(redirects) {
+	for _, r := range redirects {
 		_ = os.Remove(r.symlinkPath)
 		if r.backupPath != "" {
 			_ = os.Rename(r.backupPath, r.symlinkPath)
 		}
-		if r.createdDir {
-			_ = os.Remove(filepath.Dir(r.symlinkPath))
+	}
+}
+
+// holdRedirectDirs recreates missing parents of redirected source paths and holds their ops locks: the dirs are recordless, and the GC orphan scan reaps any unlocked recordless dir mid-clone. Release drops the locks and removes the dirs.
+func holdRedirectDirs(ctx context.Context, srcConfigs, dstConfigs []*types.StorageConfig) (func(), error) {
+	var dirs []string
+	seen := make(map[string]struct{})
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
+		dir := filepath.Dir(srcConfigs[i].Path)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			dirs = append(dirs, dir)
+		}
+	}
+	slices.Sort(dirs)
+	locks := make([]*flock.Lock, 0, len(dirs))
+	release := func() {
+		for i := len(locks) - 1; i >= 0; i-- {
+			_ = locks[i].Unlock(ctx)
+			_ = os.Remove(dirs[i])
+		}
+	}
+	for _, dir := range dirs {
+		l, err := lockRecreatedDir(ctx, dir)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		locks = append(locks, l)
+	}
+	return release, nil
+}
+
+// lockRecreatedDir mkdirs+locks with retry: a concurrent GC collect can remove the still-empty dir between MkdirAll and the flock open.
+func lockRecreatedDir(ctx context.Context, dir string) (*flock.Lock, error) {
+	for {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return nil, fmt.Errorf("recreate source dir: %w", err)
+		}
+		l := flock.NewTransient(filepath.Join(dir, hypervisor.OpsLockName))
+		err := l.Lock(ctx)
+		if err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return l, err
 		}
 	}
 }
 
-// recoverStaleBackup restores a crashed-clone backup; caller must hold the COW lock.
+// recoverStaleBackup clears a crashed clone's redirect symlink and restores its backup; caller must hold the COW lock. A symlink at a source drive path can only be a redirect leftover, and a dead source leaves no backup.
 func recoverStaleBackup(cowPath string) {
-	backup := cowPath + cloneBackupSuffix
-	if _, err := os.Stat(backup); err != nil {
-		return
-	}
-	fi, err := os.Lstat(cowPath)
-	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+	if fi, err := os.Lstat(cowPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		_ = os.Remove(cowPath)
 	}
-	_ = os.Rename(backup, cowPath)
+	_ = os.Rename(cowPath+cloneBackupSuffix, cowPath)
 }
 
 func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOverride {
