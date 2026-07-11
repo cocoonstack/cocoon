@@ -35,8 +35,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 	return hypervisor.SnapshotSpec{
 		Pause:  func(_ *hypervisor.VMRecord, hc *http.Client) error { return pauseVM(ctx, hc) },
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
-		// createSnapshotFC builds its own client with VMMemTransferTimeout
-		// (multi-GiB memory transfer); it cannot share hc.
+		// createSnapshotFC builds its own client with VMMemTransferTimeout (multi-GiB memory transfer); it cannot share hc.
 		Capture: func(rec *hypervisor.VMRecord, _ *http.Client, tmpDir string) error {
 			sockPath := hypervisor.SocketPath(rec.RunDir)
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {

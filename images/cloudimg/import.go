@@ -33,7 +33,6 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 		return fmt.Errorf("import %s: %w", filePath, err)
 	}
 
-	// First pass: hash the source file.
 	h := sha256.New()
 	if _, err = io.Copy(h, srcFile); err != nil {
 		return fmt.Errorf("hash %s: %w", filePath, err)
@@ -41,7 +40,6 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 	digestHex := hex.EncodeToString(h.Sum(nil))
 	logger.Debugf(ctx, "hashed %s -> sha256:%s", filePath, digestHex[:12])
 
-	// Cached fast path: just add the ref.
 	if utils.ValidFile(conf.BlobPath(digestHex)) {
 		if err = commit(ctx, conf, store, name, tracker, "", digestHex); err != nil {
 			return err
@@ -50,7 +48,6 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 		return nil
 	}
 
-	// Second pass: copy into a cocoon temp file.
 	if _, err = srcFile.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("seek %s: %w", filePath, err)
 	}

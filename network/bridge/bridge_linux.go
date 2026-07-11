@@ -101,10 +101,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
 		}
-		// Fresh adds only: the DB says this index is free (caller holds the
-		// ops lock), so a same-name TAP is an interrupted-resize leftover and
-		// without the reclaim it wedges every retry here. Recovery specs keep
-		// the EEXIST failure — their slot is occupied, possibly by a live VMM's TAP.
+		// Fresh adds only: a same-name TAP is an interrupted-resize leftover that would wedge every retry; recovery specs keep the EEXIST failure (their slot may hold a live VMM's TAP).
 		if spec.Existing == nil {
 			if old, lErr := netlink.LinkByName(name); lErr == nil {
 				if delErr := netlink.LinkDel(old); delErr != nil {

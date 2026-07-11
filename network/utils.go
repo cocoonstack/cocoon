@@ -14,8 +14,7 @@ const (
 	NetQueueSize = 512
 )
 
-// NetNumQueues returns the virtio-net queue count for the given CPU count.
-// CH uses queue pairs (TX+RX), so the result is always even (≥ 2).
+// NetNumQueues returns the virtio-net queue count for cpu; CH uses TX+RX pairs, so the result is always even (>= 2).
 func NetNumQueues(cpu int) int {
 	if cpu <= 1 {
 		return 2 //nolint:mnd
@@ -24,7 +23,6 @@ func NetNumQueues(cpu int) int {
 }
 
 // ResolveQueueSize returns qs if non-zero, otherwise the default NetQueueSize.
-// Negative values aren't reachable from validated callers.
 func ResolveQueueSize(qs int) int {
 	return cmp.Or(qs, NetQueueSize)
 }

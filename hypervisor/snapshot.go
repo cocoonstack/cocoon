@@ -270,8 +270,7 @@ func IsUnderDir(path, dir string) bool {
 	return strings.HasPrefix(cleaned, root+string(filepath.Separator))
 }
 
-// ValidateMetaPaths rejects dereferenced sidecar paths escaping cocoon-managed roots; an imported snapshot's cocoon.json is otherwise untrusted.
-// Snapshot-resident disks (COW/cidata/data) are exempt: their bytes travel inside the snapshot and the recorded path is provenance only — restore and clone resolve them from the record or rewrite them — so a --run-dir migration must not reject the VM's own history. Layers and boot files are dereferenced from the blob store and stay strict.
+// ValidateMetaPaths rejects dereferenced sidecar/boot paths escaping cocoon-managed roots (an imported cocoon.json is untrusted); snapshot-resident disks are exempt — their recorded path is provenance only, resolved from the record or rewritten.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {

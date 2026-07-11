@@ -19,8 +19,7 @@ import (
 func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
-		// A stopped origin has no live VMM, so a transient liveness-scan error
-		// here must not brick the wake — nothing was mutated, retry converges.
+		// A stopped origin has no live VMM: a transient liveness-scan error must not brick the wake — nothing was mutated, retry converges.
 		b.FailRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
@@ -28,10 +27,7 @@ func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord
 	return nil
 }
 
-// FailRestore marks the VM error after a restore-path failure; a stopped
-// origin is spared so hibernate wake stays retryable. Run-dir-mutating steps
-// (staged merge, direct populate) quarantine unconditionally at their own
-// site; origin is the pre-kill state — the DB may read stopped after the kill.
+// FailRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
 func (b *Backend) FailRestore(ctx context.Context, vmID string, origin types.VMState) {
 	if origin == types.VMStateStopped {
 		return
@@ -110,15 +106,13 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		}
 		if spec.BeforeMerge != nil {
 			if err := spec.BeforeMerge(rec); err != nil {
-				// The sweep may have deleted some snapshot files already; a
-				// stopped origin would otherwise stay startable on mixed state.
+				// The sweep may already have deleted snapshot files; a stopped origin would otherwise stay startable on mixed state.
 				b.QuarantineVM(ctx, vmID, "partial restore cleanup")
 				return err
 			}
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
-			// A partial merge leaves mixed-vintage files in the run dir;
-			// quarantine regardless of origin so vm start cannot boot them.
+			// A partial merge leaves mixed-vintage files in the run dir; quarantine regardless of origin so vm start cannot boot them.
 			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
@@ -160,8 +154,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 			return err
 		}
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
-			// Populate cleans then clones with no rollback; a partial run
-			// dir must quarantine regardless of origin, like the merge.
+			// Populate cleans then clones with no rollback; a partial run dir must quarantine regardless of origin, like the merge.
 			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
@@ -191,8 +184,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 		unlock()
 		return "", nil, nil, err
 	}
-	// Revalidate under the lock: the pre-lock record may predate a concurrent
-	// mutating verb, and preflight anchors the external trust set to it.
+	// Revalidate under the lock: the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.
 	vmID, rec, err := b.ResolveForRestore(ctx, vmID)
 	if err != nil {
 		return fail(err)

@@ -12,8 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
-// Console returns a bidirectional stream to the VM console: console.sock (UEFI) or the CH-allocated PTY (OCI).
-// Caller closes the returned ReadWriteCloser.
+// Console returns a caller-closed bidirectional stream to the VM console: console.sock (UEFI) or the CH-allocated PTY (OCI).
 func (ch *CloudHypervisor) Console(ctx context.Context, ref string) (io.ReadWriteCloser, error) {
 	id, rec, err := ch.ResolveAndLoad(ctx, ref)
 	if err != nil {

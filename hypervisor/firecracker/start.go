@@ -171,8 +171,7 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 
 	go func() {
 		_ = fcCmd.Wait()
-		// If relay failed, master fd was kept open to preserve ttyS0.
-		// Close it now that FC has exited to avoid permanent fd leak.
+		// A failed relay kept master open to preserve ttyS0; close it now that FC exited or the fd leaks forever.
 		if relayErr != nil {
 			_ = master.Close()
 		}

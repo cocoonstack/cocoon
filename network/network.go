@@ -13,8 +13,7 @@ var ErrNotConfigured = errors.New("network provider not configured")
 // AddSpec is one NIC's add request; Existing != nil reuses MAC/IP for recovery.
 type AddSpec struct {
 	Index int
-	// Queues is the TAP queue count; 0 derives NetNumQueues(vmCfg.CPU). Callers with a
-	// backend-specific size (FC opens the TAP single-queue) set it explicitly.
+	// Queues is the TAP queue count; 0 derives NetNumQueues(vmCfg.CPU), backend-specific callers (FC opens single-queue) set it explicitly.
 	Queues   int
 	Existing *types.NetworkConfig
 }

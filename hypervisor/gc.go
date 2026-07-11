@@ -135,8 +135,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
-	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM
-	// would strand a live VMM/dirs with no owner and let network GC tear it down.
+	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM would strand a live VMM/dirs with no owner and let network GC tear it down.
 	safeToUnrecord := make([]string, 0, len(ids))
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
@@ -146,8 +145,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			}
 			return nil
 		})
-		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs the run
-		// dir before its DB record lands, so an unlocked "orphan" may be seconds old.
+		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, runDir, func() {
 			// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
 			if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {

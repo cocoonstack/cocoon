@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -127,16 +128,10 @@ func FilterUnreferenced(candidates []string, refs map[string]struct{}, exclude .
 		if _, ok := refs[s]; ok {
 			continue
 		}
-		excluded := false
-		for _, ex := range exclude {
-			if _, ok := ex[s]; ok {
-				excluded = true
-				break
-			}
+		if slices.ContainsFunc(exclude, func(ex map[string]struct{}) bool { _, ok := ex[s]; return ok }) {
+			continue
 		}
-		if !excluded {
-			out = append(out, s)
-		}
+		out = append(out, s)
 	}
 	return out
 }

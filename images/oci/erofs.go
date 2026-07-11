@@ -16,9 +16,7 @@ const (
 	erofsBlockSize   = 4096
 	erofsCompression = "lz4hc"
 
-	// erofs-utils 1.7.x tar mode writes corrupt compressed clusters for some
-	// inputs and still exits 0; the corruption surfaces only as EUCLEAN at
-	// read time (#94). 1.8 is the first safe series.
+	// erofs-utils < 1.8 tar mode writes corrupt compressed clusters yet exits 0, surfacing only as EUCLEAN at read time (#94).
 	erofsMinMajor = 1
 	erofsMinMinor = 8
 )
@@ -61,9 +59,7 @@ func startErofsConversion(ctx context.Context, uuid, outputPath string) (cmd *ex
 	return cmd, stdin, output, nil
 }
 
-// runErofsConversion streams src into mkfs.erofs at outPath while scanning for boot files under scanDir.
-// The scan→drain→close→wait order is load-bearing: mkfs.erofs (and any hasher upstream of src) must
-// see the full stream before Wait, and stdin must close before Wait or mkfs.erofs blocks.
+// runErofsConversion streams src into mkfs.erofs while scanning boot files; the scan→drain→close→wait order is load-bearing (full stream before Wait, stdin closed or mkfs.erofs blocks).
 func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix, uuid, outPath string) (kernelPath, initrdPath string, err error) {
 	cmd, stdin, output, err := startErofsConversion(ctx, uuid, outPath)
 	if err != nil {
@@ -88,9 +84,7 @@ func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix,
 	return kernelPath, initrdPath, nil
 }
 
-// checkErofsVersion refuses conversion when mkfs.erofs predates the floor.
-// Only success is cached: a transient probe failure or an in-place
-// erofs-utils upgrade is re-probed on the next conversion.
+// checkErofsVersion refuses conversion when mkfs.erofs predates the floor; only success is cached so transient probe failures re-probe on the next conversion.
 func checkErofsVersion(ctx context.Context) error {
 	erofsCheckMu.Lock()
 	defer erofsCheckMu.Unlock()
@@ -108,8 +102,7 @@ func checkErofsVersion(ctx context.Context) error {
 	return nil
 }
 
-// erofsVersionAtLeast parses the leading "X.Y" from `mkfs.erofs --version`
-// output ("mkfs.erofs (erofs-utils) 1.8.10") and compares it to the floor.
+// erofsVersionAtLeast parses the leading "X.Y" from `mkfs.erofs --version` output and compares it to the floor.
 func erofsVersionAtLeast(output string) error {
 	m := erofsVersionRe.FindStringSubmatch(output)
 	if m == nil {

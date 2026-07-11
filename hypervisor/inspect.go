@@ -107,8 +107,7 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VM
 	})
 }
 
-// SetRunningSockets fills a running VM's live sockets (CH API socket, vsock UDS
-// when bound) from runDir — for clone/restore records that skip ToVM.
+// SetRunningSockets fills a running VM's live sockets (API socket, bound vsock UDS) from runDir — for clone/restore records that skip ToVM.
 func SetRunningSockets(info *types.VM, runDir string) {
 	info.SocketPath = SocketPath(runDir)
 	if p := VsockSockPath(runDir); isVsockBound(p) {

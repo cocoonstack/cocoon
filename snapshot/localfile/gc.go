@@ -169,8 +169,7 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 					emits = append(emits, id)
 				}
 			}
-			// Emit only after the record deletion lands: a persistently failing DB
-			// would otherwise re-candidate these ids and double-close the interval.
+			// Emit only after the record deletion lands: a persistently failing DB would re-candidate these ids and double-close the interval.
 			if err := cleanResolvedRecords(store, removed); err != nil {
 				errs = append(errs, fmt.Errorf("clean DB records: %w", err))
 			} else {

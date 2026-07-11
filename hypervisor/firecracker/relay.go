@@ -26,8 +26,7 @@ const (
 	relayBufSize      = 4096
 )
 
-// broadcaster fans out PTY master reads to the active console session.
-// Only one session is active at a time; the subscriber is swapped atomically.
+// broadcaster fans out PTY master reads to the single active console session, swapped atomically.
 type broadcaster struct {
 	master io.Reader
 	mu     sync.Mutex
@@ -64,8 +63,7 @@ func IsRelayMode() bool {
 	return os.Getenv(relayEnvKey) == "1"
 }
 
-// RunRelay runs the console relay loop. Inherits fd 3 (PTY master), fd 4 (console.sock listener), $_COCOON_FC_PID.
-// A single persistent goroutine reads the PTY and broadcasts to the active session so disconnects don't strand readers.
+// RunRelay runs the console relay loop over inherited fd 3 (PTY master), fd 4 (console.sock listener), and $_COCOON_FC_PID; one persistent PTY reader broadcasts so disconnects don't strand readers.
 func RunRelay(ctx context.Context) {
 	master := os.NewFile(relayMasterFD, "pty-master")
 	defer master.Close() //nolint:errcheck

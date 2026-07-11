@@ -48,10 +48,7 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 	return refs
 }
 
-// LookupOne resolves id to a single entry via LookupRefs' matching rules (exact
-// ref, normalizers, digest exact/prefix). Multiple refs are fine only while they
-// name the same image (tag aliases of one digest); a prefix spanning distinct
-// digests resolves to nothing rather than to map-iteration luck.
+// LookupOne resolves id to a single entry via LookupRefs' rules; multiple refs must all name one digest (tag aliases) — a prefix spanning distinct digests resolves to nothing rather than map-iteration luck.
 func LookupOne[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) (string, *E, bool) {
 	refs := LookupRefs(images, id, normalizers...)
 	if len(refs) == 0 {

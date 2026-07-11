@@ -15,8 +15,7 @@ const (
 	seekHole = 4 // SEEK_HOLE
 )
 
-// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA.
-// dst is created as a new file (truncated to src size, then only data segments written).
+// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA; dst is truncated to src size and only data segments are written.
 func SparseCopy(dst, src string, sync SyncMode) error {
 	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		fi, err := srcFile.Stat()

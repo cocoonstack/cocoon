@@ -16,8 +16,7 @@ type bridgeSnapshot struct{}
 func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: "bridge",
-		// /dev/null is world-writable and supports flock on all Unix platforms,
-		// so TryLock always succeeds without creating a real lock file.
+		// /dev/null supports flock everywhere, so TryLock always succeeds without creating a real lock file.
 		Locker: flock.New("/dev/null"),
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			return bridgeSnapshot{}, nil

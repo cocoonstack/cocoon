@@ -8,10 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// withSourceWritableDisksLocked locks the source VM's writable disks (COW + data) in sorted order so concurrent clones can't deadlock.
-// Each acquire runs recoverStaleBackup to finish any interrupted prior swap.
-// Lock files sit next to the disks and die with the VM dir; the fresh-inode
-// window after a concurrent rm is closed by ensureSourceAlive under the lock.
+// withSourceWritableDisksLocked locks the source's writable disks in sorted order (deadlock-free), self-healing interrupted swaps on acquire; the fresh-inode window after a concurrent rm is closed by ensureSourceAlive under the lock.
 func (*Firecracker) withSourceWritableDisksLocked(ctx context.Context, configs []*types.StorageConfig, fn func() error) error {
 	paths := make([]string, 0, len(configs))
 	for _, sc := range configs {
@@ -38,8 +35,7 @@ func withCOWPathLocked(ctx context.Context, cowPath string, fn func() error) err
 	if lockErr := l.Lock(ctx); lockErr != nil {
 		return lockErr
 	}
-	// Do NOT remove the lock file after unlock — flock synchronizes on
-	// the inode, not the pathname.
+	// Do NOT remove the lock file after unlock — flock synchronizes on the inode, not the pathname.
 	defer func() { _ = l.Unlock(ctx) }()
 
 	return fn()

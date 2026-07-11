@@ -7,8 +7,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// VMRecord is the persisted record for a single VM.
-// JSON tags live on the embedded types.VM — duplicating them here would shadow the promoted fields.
+// VMRecord is the persisted record for a single VM; JSON tags live on the embedded types.VM (duplicates would shadow the promoted fields).
 type VMRecord struct {
 	types.VM
 
@@ -27,7 +26,7 @@ type VMRecord struct {
 type VMIndex struct {
 	VMs   map[string]*VMRecord `json:"vms"`
 	Names map[string]string    `json:"names"` // name → VM ID
-	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them (the orphan scan only covers the configured roots).
+	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them since the orphan scan only covers configured roots.
 	OrphanDirs []string `json:"orphan_dirs,omitempty"`
 }
 

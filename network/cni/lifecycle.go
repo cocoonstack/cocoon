@@ -179,8 +179,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	for _, i := range indices {
 		wanted[fmt.Sprintf("eth%d", i)] = true
 	}
-	// Pick every matching record, not one per ifname: a failed reclaim can leave
-	// duplicates, and DEL is idempotent — skipping one would strand it as a phantom.
+	// Pick every matching record, not one per ifname: a failed reclaim can leave duplicates, and DEL is idempotent — skipping one would strand a phantom.
 	picked := make([]networkRecord, 0, len(indices))
 	found := make(map[string]bool, len(indices))
 	for _, r := range records {
@@ -208,8 +207,7 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 		}
 		ifName := fmt.Sprintf("eth%d", spec.Index)
 		if rec, ok := stale[ifName]; ok {
-			// The index is reusable only after a full reclaim: proceeding would double-allocate
-			// on lenient IPAM plugins or bury the root cause under the ADD failure on strict ones.
+			// The index is reusable only after a full reclaim: proceeding would double-allocate on lenient IPAM plugins or bury the root cause on strict ones.
 			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
 				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifName, rcErr)
 			}
