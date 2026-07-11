@@ -36,14 +36,7 @@ func (s *Store[T]) ReadRaw(fn func(*T) error) error {
 
 // WriteRaw loads, mutates, atomically writes back — unlocked.
 func (s *Store[T]) WriteRaw(fn func(*T) error) error {
-	data, err := s.load()
-	if err != nil {
-		return err
-	}
-	if err := fn(data); err != nil {
-		return err
-	}
-	return utils.AtomicWriteJSON(s.filePath, data)
+	return s.writeRaw(fn, utils.Sync)
 }
 
 // With runs fn read-only under the store lock.
@@ -53,7 +46,12 @@ func (s *Store[T]) With(ctx context.Context, fn func(*T) error) error {
 
 // Update runs fn read-modify-write under the store lock.
 func (s *Store[T]) Update(ctx context.Context, fn func(*T) error) error {
-	return s.withLocked(ctx, func() error { return s.WriteRaw(fn) })
+	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.Sync) })
+}
+
+// UpdateNoSync runs fn read-modify-write under the store lock, persisting without fsync.
+func (s *Store[T]) UpdateNoSync(ctx context.Context, fn func(*T) error) error {
+	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) })
 }
 
 func (s *Store[T]) TryLock(ctx context.Context) (bool, error) {
@@ -62,6 +60,20 @@ func (s *Store[T]) TryLock(ctx context.Context) (bool, error) {
 
 func (s *Store[T]) Unlock(ctx context.Context) error {
 	return s.locker.Unlock(ctx)
+}
+
+func (s *Store[T]) writeRaw(fn func(*T) error, sync utils.SyncMode) error {
+	data, err := s.load()
+	if err != nil {
+		return err
+	}
+	if err := fn(data); err != nil {
+		return err
+	}
+	if sync == utils.Sync {
+		return utils.AtomicWriteJSON(s.filePath, data)
+	}
+	return utils.AtomicWriteJSONNoSync(s.filePath, data)
 }
 
 func (s *Store[T]) load() (*T, error) {
