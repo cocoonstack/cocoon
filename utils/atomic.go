@@ -9,6 +9,15 @@ import (
 	"syscall"
 )
 
+const (
+	// Sync fsyncs the written output; NoSync skips that for transient artifacts rebuilt from a durable source on retry.
+	Sync   SyncMode = true
+	NoSync SyncMode = false
+)
+
+// SyncMode selects whether a write helper fsyncs its output.
+type SyncMode bool
+
 // AtomicWriteFile writes data via temp + fsync + rename so readers never see a partial file.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	return atomicWriteFile(path, data, perm, true)

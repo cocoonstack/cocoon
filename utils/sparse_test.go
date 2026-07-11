@@ -19,7 +19,7 @@ func TestSparseCopy_BasicContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestSparseCopy_EmptyFile_CrossPlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestSparseCopy_LargeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestSparseCopy_LargeFile(t *testing.T) {
 
 func TestSparseCopy_SrcNotExist_CrossPlatform(t *testing.T) {
 	dir := t.TempDir()
-	err := SparseCopy(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"))
+	err := SparseCopy(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent src")
 	}
@@ -93,7 +93,7 @@ func TestSparseCopy_DstDirNotExist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := SparseCopy(filepath.Join(dir, "nodir", "dst"), src)
+	err := SparseCopy(filepath.Join(dir, "nodir", "dst"), src, Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent dst directory")
 	}
@@ -113,7 +113,7 @@ func TestSparseCopy_OverwritesExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, NoSync); err != nil {
 		t.Fatalf("SparseCopy: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestSparseCopy_PreservesSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SparseCopy(dst, src); err != nil {
+	if err := SparseCopy(dst, src, Sync); err != nil {
 		t.Fatal(err)
 	}
 

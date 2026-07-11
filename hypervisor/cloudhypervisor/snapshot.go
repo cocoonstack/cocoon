@@ -55,7 +55,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if _, statErr := os.Stat(cidataSrc); statErr != nil {
 				return nil
 			}
-			if cpErr := utils.SparseCopy(filepath.Join(tmpDir, cidataFile), cidataSrc); cpErr != nil {
+			if cpErr := utils.SparseCopy(filepath.Join(tmpDir, cidataFile), cidataSrc, utils.NoSync); cpErr != nil {
 				return fmt.Errorf("copy cidata: %w", cpErr)
 			}
 			return nil
