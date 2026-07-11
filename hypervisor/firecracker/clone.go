@@ -231,14 +231,19 @@ func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int
 	return indices
 }
 
-// bindableRedirects returns dst-over-src bind pairs; nil when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
+// bindableRedirects returns dst-over-src bind pairs; nil when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing) or a dst repeats — a shared dst inode would mask a detached sibling bind in verifyDriveFDs.
 func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) [][2]string {
 	var binds [][2]string
+	seen := make(map[string]struct{})
 	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
 		fi, err := os.Lstat(srcConfigs[i].Path)
 		if err != nil || !fi.Mode().IsRegular() {
 			return nil
 		}
+		if _, dup := seen[dstConfigs[i].Path]; dup {
+			return nil
+		}
+		seen[dstConfigs[i].Path] = struct{}{}
 		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
 	}
 	return binds
