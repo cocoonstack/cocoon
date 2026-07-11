@@ -30,20 +30,20 @@ func (fc *Firecracker) withSourceWritableDisksLocked(ctx context.Context, config
 	if mkErr := os.MkdirAll(lockDir, 0o700); mkErr != nil {
 		return fmt.Errorf("create clone lock dir: %w", mkErr)
 	}
-	return withPathsLocked(ctx, lockDir, paths, fn)
+	return withPathsLocked(ctx, fc.Conf.RunDir(), lockDir, paths, fn)
 }
 
 func (fc *Firecracker) cloneLockDir() string {
 	return filepath.Join(fc.Conf.RunDir(), hypervisor.CloneLocksDirName)
 }
 
-func withPathsLocked(ctx context.Context, lockDir string, paths []string, fn func() error) error {
+func withPathsLocked(ctx context.Context, runRoot, lockDir string, paths []string, fn func() error) error {
 	if len(paths) == 0 {
 		return fn()
 	}
 	return withCOWPathLocked(ctx, lockDir, paths[0], func() error {
-		recoverStaleBackup(paths[0])
-		return withPathsLocked(ctx, lockDir, paths[1:], fn)
+		recoverStaleBackup(runRoot, paths[0])
+		return withPathsLocked(ctx, runRoot, lockDir, paths[1:], fn)
 	})
 }
 

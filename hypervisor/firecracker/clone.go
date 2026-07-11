@@ -261,12 +261,28 @@ func lockRecreatedDir(ctx context.Context, dir string) (*flock.Lock, error) {
 	}
 }
 
-// recoverStaleBackup clears a crashed clone's redirect symlink and restores its backup; caller must hold the COW lock. A symlink at a source drive path can only be a redirect leftover, and a dead source leaves no backup.
-func recoverStaleBackup(cowPath string) {
+// recoverStaleBackup clears a crashed clone's redirect symlink and restores its backup; caller must hold the COW lock. Imported metadata paths are untrusted, so only a symlink with a backup beside it or a target under the managed run root — the two shapes cocoon's own redirects take — is removed.
+func recoverStaleBackup(runRoot, cowPath string) {
+	backup := cowPath + cloneBackupSuffix
+	_, backupErr := os.Lstat(backup)
 	if fi, err := os.Lstat(cowPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		_ = os.Remove(cowPath)
+		if backupErr == nil || redirectsInto(runRoot, cowPath) {
+			_ = os.Remove(cowPath)
+		}
 	}
-	_ = os.Rename(cowPath+cloneBackupSuffix, cowPath)
+	_ = os.Rename(backup, cowPath)
+}
+
+// redirectsInto reports whether the symlink at path targets the managed run root.
+func redirectsInto(runRoot, path string) bool {
+	target, err := os.Readlink(path)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(path), target)
+	}
+	return hypervisor.IsUnderDir(target, runRoot)
 }
 
 func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOverride {
