@@ -41,9 +41,7 @@ func TestRedirectedDriveIndices(t *testing.T) {
 	}
 }
 
-// The redirect set and the re-anchor set must be the same drives: both loops
-// derive from redirectedDriveIndices, and this pins createDriveRedirects to
-// it — a symlink appears exactly where the shared function says.
+// Pins createDriveRedirects to redirectedDriveIndices: a symlink appears exactly where the shared function says.
 func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
 	dir := t.TempDir()
 	src := []*types.StorageConfig{

@@ -214,7 +214,7 @@ func cleanupDriveRedirects(redirects []driveRedirect) {
 	}
 }
 
-// holdRedirectDirs recreates missing parents of redirected source paths and holds their ops locks: the dirs are recordless, and the GC orphan scan reaps any unlocked recordless dir mid-clone. Release drops the locks and removes the dirs.
+// holdRedirectDirs recreates missing parents of redirected source paths and holds their ops locks: the dirs are recordless, and the GC orphan scan reaps any unlocked recordless dir mid-clone.
 func holdRedirectDirs(ctx context.Context, srcConfigs, dstConfigs []*types.StorageConfig) (func(), error) {
 	var dirs []string
 	seen := make(map[string]struct{})

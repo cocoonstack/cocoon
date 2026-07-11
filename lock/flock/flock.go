@@ -58,7 +58,6 @@ func (l *Lock) Lock(ctx context.Context) error {
 	}
 }
 
-// TryLock returns (false, nil) if the lock is currently held by another caller.
 func (l *Lock) TryLock(_ context.Context) (bool, error) {
 	select {
 	case l.ch <- struct{}{}:
