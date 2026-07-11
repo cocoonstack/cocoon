@@ -20,6 +20,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs: "db" holds vms.json/vms.lock (when RootDir == RunDir), clone-locks/ holds FC clone flocks.
+var gcReservedDirNames = map[string]struct{}{"db": {}, CloneLocksDirName: {}}
+
 // VMGCSnapshot is the ReadDB-phase data for any hypervisor GC module (CH + FC share the shape).
 type VMGCSnapshot struct {
 	blobIDs     map[string]struct{}
@@ -48,6 +51,9 @@ func (s VMGCSnapshot) sweepDirs(runRoot string) []string {
 		}
 	}
 	for _, name := range s.runDirs {
+		if _, ok := gcReservedDirNames[name]; ok {
+			continue
+		}
 		add(filepath.Join(runRoot, name))
 	}
 	for _, dir := range s.recRunDirs {
@@ -95,10 +101,8 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 			return snap, nil
 		},
 		Resolve: func(_ context.Context, snap VMGCSnapshot, _ map[string]any) []string {
-			// "db" holds vms.json/vms.lock (when RootDir == RunDir).
-			reserved := map[string]struct{}{"db": {}, CloneLocksDirName: {}}
-			runOrphans := utils.FilterUnreferenced(snap.runDirs, snap.vmIDs, reserved)
-			logOrphans := utils.FilterUnreferenced(snap.logDirs, snap.vmIDs, reserved)
+			runOrphans := utils.FilterUnreferenced(snap.runDirs, snap.vmIDs, gcReservedDirNames)
+			logOrphans := utils.FilterUnreferenced(snap.logDirs, snap.vmIDs, gcReservedDirNames)
 			for _, id := range snap.staleCreate {
 				snap.reasons[id] = "stale-creating"
 			}
