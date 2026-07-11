@@ -116,9 +116,12 @@ func TestHoldRedirectDirsFencesGCAndCleansUp(t *testing.T) {
 
 // A clone killed mid-window leaves a dangling redirect symlink with no backup; the next acquire must clear it or every later clone fails with EEXIST.
 func TestRecoverStaleBackupClearsDanglingRedirect(t *testing.T) {
-	dir := t.TempDir()
-	runRoot := filepath.Join(dir, "run")
-	cow := filepath.Join(dir, "cow.raw")
+	runRoot := t.TempDir()
+	srcDir := filepath.Join(runRoot, "GONE")
+	if err := os.Mkdir(srcDir, 0o750); err != nil {
+		t.Fatalf("setup src dir: %v", err)
+	}
+	cow := filepath.Join(srcDir, "cow.raw")
 	if err := os.Symlink(filepath.Join(runRoot, "CLONE", "cow.raw"), cow); err != nil {
 		t.Fatalf("setup symlink: %v", err)
 	}
@@ -133,15 +136,16 @@ func TestRecoverStaleBackupClearsDanglingRedirect(t *testing.T) {
 	}
 }
 
-// Imported metadata can name any path; a symlink that is not one of cocoon's own redirects must survive recovery.
+// Imported metadata can name any path; a symlink outside the run root must survive recovery even when its target points into the run root.
 func TestRecoverStaleBackupPreservesForeignSymlink(t *testing.T) {
 	dir := t.TempDir()
-	cow := filepath.Join(dir, "cow.raw")
-	if err := os.Symlink("/etc/hosts", cow); err != nil {
+	runRoot := filepath.Join(dir, "run")
+	cow := filepath.Join(dir, "current-cow")
+	if err := os.Symlink(filepath.Join(runRoot, "LIVE", "cow.raw"), cow); err != nil {
 		t.Fatalf("setup symlink: %v", err)
 	}
 
-	recoverStaleBackup(filepath.Join(dir, "run"), cow)
+	recoverStaleBackup(runRoot, cow)
 
 	if fi, err := os.Lstat(cow); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("foreign symlink must be preserved: fi=%v err=%v", fi, err)
