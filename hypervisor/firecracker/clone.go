@@ -69,9 +69,18 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, err
 	}
 
-	// FC snapshot/load wants source-absolute drive paths; symlink-redirect the source COW.
 	sockPath := hypervisor.SocketPath(runDir)
-	var pid int
+	pid, launchErr := fc.launchProcess(ctx, &hypervisor.VMRecord{
+		VM:     types.VM{ID: vmID},
+		RunDir: runDir,
+		LogDir: logDir,
+	}, sockPath, net.NetnsPath)
+	if launchErr != nil {
+		fc.MarkError(ctx, vmID)
+		return nil, fmt.Errorf("launch FC: %w", launchErr)
+	}
+
+	// FC snapshot/load wants source-absolute drive paths; symlink-redirect the source COW. The lock covers only the redirect window — FC holds the drive fds once load returns, so resume and re-anchor run lock-free.
 	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
 		releaseDirs, holdErr := holdRedirectDirs(ctx, meta.StorageConfigs, storageConfigs)
 		if holdErr != nil {
@@ -84,20 +93,19 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		}
 		defer cleanupDriveRedirects(redirects)
 
-		var launchErr error
-		pid, launchErr = fc.launchProcess(ctx, &hypervisor.VMRecord{
-			VM:     types.VM{ID: vmID},
-			RunDir: runDir,
-			LogDir: logDir,
-		}, sockPath, net.NetnsPath)
-		if launchErr != nil {
-			return fmt.Errorf("launch FC: %w", launchErr)
+		if loadErr := loadSnapshotFC(ctx, sockPath, runDir, buildNetworkOverrides(networkConfigs), hypervisor.VsockSockPath(runDir)); loadErr != nil {
+			return fmt.Errorf("snapshot/load: %w", loadErr)
 		}
-
-		return fc.restoreAndResumeClone(ctx, pid, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
+		return nil
 	}); cloneErr != nil {
+		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
+	}
+
+	if resumeErr := fc.resumeAndReanchorClone(ctx, pid, sockPath, runDir, meta.StorageConfigs, storageConfigs); resumeErr != nil {
+		fc.MarkError(ctx, vmID)
+		return nil, resumeErr
 	}
 
 	info := &types.VM{
@@ -116,11 +124,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	return info, nil
 }
 
-func (fc *Firecracker) restoreAndResumeClone(
+func (fc *Firecracker) resumeAndReanchorClone(
 	ctx context.Context,
 	pid int,
 	sockPath, runDir string,
-	networkConfigs []*types.NetworkConfig,
 	srcConfigs, dstConfigs []*types.StorageConfig,
 ) (err error) {
 	defer func() {
@@ -129,11 +136,6 @@ func (fc *Firecracker) restoreAndResumeClone(
 		}
 	}()
 
-	// network_overrides repoints FC at the clone's TAP; vsock_override retargets the snapshot UDS.
-	netOverrides := buildNetworkOverrides(networkConfigs)
-	if err = loadSnapshotFC(ctx, sockPath, runDir, netOverrides, hypervisor.VsockSockPath(runDir)); err != nil {
-		return fmt.Errorf("snapshot/load: %w", err)
-	}
 	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)
