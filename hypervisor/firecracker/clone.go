@@ -254,9 +254,11 @@ func lockRecreatedDir(ctx context.Context, dir string) (*flock.Lock, error) {
 			return nil, fmt.Errorf("recreate source dir: %w", err)
 		}
 		l := flock.NewTransient(filepath.Join(dir, hypervisor.OpsLockName))
-		err := l.Lock(ctx)
-		if err == nil || !errors.Is(err, fs.ErrNotExist) {
-			return l, err
+		switch err := l.Lock(ctx); {
+		case err == nil:
+			return l, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
 		}
 	}
 }
