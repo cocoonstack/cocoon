@@ -22,6 +22,8 @@ import (
 
 const cloneBackupSuffix = ".cocoon-clone-backup"
 
+var errBindSetup = errors.New("bind-mount clone redirect unavailable")
+
 type driveRedirect struct {
 	symlinkPath string
 	backupPath  string
@@ -70,35 +72,15 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
-	pid, launchErr := fc.launchProcess(ctx, &hypervisor.VMRecord{
-		VM:     types.VM{ID: vmID},
-		RunDir: runDir,
-		LogDir: logDir,
-	}, sockPath, net.NetnsPath)
-	if launchErr != nil {
-		fc.MarkError(ctx, vmID)
-		return nil, fmt.Errorf("launch FC: %w", launchErr)
+	launch := func() (int, error) {
+		return fc.launchProcess(ctx, &hypervisor.VMRecord{
+			VM:     types.VM{ID: vmID},
+			RunDir: runDir,
+			LogDir: logDir,
+		}, sockPath, net.NetnsPath)
 	}
-
-	// FC snapshot/load wants source-absolute drive paths; symlink-redirect the source COW. The lock covers only the redirect window — FC holds the drive fds once load returns, so resume and re-anchor run lock-free.
-	if cloneErr := fc.withSourceWritableDisksLocked(ctx, meta.StorageConfigs, func() error {
-		releaseDirs, holdErr := holdRedirectDirs(ctx, meta.StorageConfigs, storageConfigs)
-		if holdErr != nil {
-			return holdErr
-		}
-		defer releaseDirs()
-		redirects, redirectErr := createDriveRedirects(meta.StorageConfigs, storageConfigs)
-		if redirectErr != nil {
-			return fmt.Errorf("drive redirect: %w", redirectErr)
-		}
-		defer cleanupDriveRedirects(redirects)
-
-		if loadErr := loadSnapshotFC(ctx, sockPath, runDir, buildNetworkOverrides(networkConfigs), hypervisor.VsockSockPath(runDir)); loadErr != nil {
-			return fmt.Errorf("snapshot/load: %w", loadErr)
-		}
-		return nil
-	}); cloneErr != nil {
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+	pid, cloneErr := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
+	if cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
 	}
@@ -122,6 +104,72 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 
 	logger.Infof(ctx, "VM %s cloned from snapshot", vmID)
 	return info, nil
+}
+
+// loadCloneSnapshot launches FC and drives snapshot/load. Fast path bind-mounts the clone disks over the source-absolute paths in a private mount namespace (no host mutation, siblings run parallel); a missing/symlinked source or denied unshare falls back to symlink-redirects under the source-disk locks.
+func (fc *Firecracker) loadCloneSnapshot(
+	ctx context.Context,
+	launch func() (int, error),
+	sockPath, runDir string,
+	networkConfigs []*types.NetworkConfig,
+	srcConfigs, dstConfigs []*types.StorageConfig,
+) (int, error) {
+	netOverrides := buildNetworkOverrides(networkConfigs)
+	vsockPath := hypervisor.VsockSockPath(runDir)
+
+	if binds, ok := bindableRedirects(srcConfigs, dstConfigs); ok {
+		pid, err := launchWithBinds(binds, launch)
+		switch {
+		case err == nil:
+			if loadErr := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); loadErr != nil {
+				fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+				return 0, fmt.Errorf("snapshot/load: %w", loadErr)
+			}
+			return pid, nil
+		case !errors.Is(err, errBindSetup):
+			return 0, fmt.Errorf("launch FC: %w", err)
+		}
+	}
+
+	pid, err := launch()
+	if err != nil {
+		return 0, fmt.Errorf("launch FC: %w", err)
+	}
+	// FC holds the drive fds once load returns, so the locks cover only the redirect window; resume and re-anchor run lock-free.
+	if lockErr := fc.withSourceWritableDisksLocked(ctx, srcConfigs, func() error {
+		releaseDirs, holdErr := holdRedirectDirs(ctx, srcConfigs, dstConfigs)
+		if holdErr != nil {
+			return holdErr
+		}
+		defer releaseDirs()
+		redirects, redirectErr := createDriveRedirects(srcConfigs, dstConfigs)
+		if redirectErr != nil {
+			return fmt.Errorf("drive redirect: %w", redirectErr)
+		}
+		defer cleanupDriveRedirects(redirects)
+
+		if loadErr := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); loadErr != nil {
+			return fmt.Errorf("snapshot/load: %w", loadErr)
+		}
+		return nil
+	}); lockErr != nil {
+		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		return 0, lockErr
+	}
+	return pid, nil
+}
+
+// bindableRedirects returns dst-over-src bind pairs; ok=false when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing).
+func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, bool) {
+	var binds [][2]string
+	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
+		fi, err := os.Lstat(srcConfigs[i].Path)
+		if err != nil || !fi.Mode().IsRegular() {
+			return nil, false
+		}
+		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
+	}
+	return binds, len(binds) > 0
 }
 
 func (fc *Firecracker) resumeAndReanchorClone(
