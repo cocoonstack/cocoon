@@ -26,8 +26,18 @@ Multi-arch (`linux/amd64`, `linux/arm64`).
 |-------|-----|------------|
 | Android 14 | `14.0` | `ghcr.io/cocoonstack/cocoon/android:14.0` |
 | Android 15 | `15.0` | `ghcr.io/cocoonstack/cocoon/android:15.0` |
+| Android 15 + GMS + ARM translation | `15.0-gms` | `ghcr.io/cocoonstack/cocoon/android:15.0-gms` |
 
 Access via `adb connect <vm-ip>:5555` or `scrcpy -s <vm-ip>:5555 --no-audio`.
+
+The `15.0-gms` variant adds Google Play services (GmsCore, Play Store, GSF)
+and `libndk_translation` so arm64-only APKs run on the x86_64 host. It runs
+ordinary arm64 apps (verified with Meituan). It does **not** run apps whose
+native layer hooks JNI or self-checks for tampering (WeChat, QQ, Alipay,
+banking, most anti-cheat games): the translator's proxied JNIEnv breaks those
+assumptions and they crash at startup — an x86 binary-translation limit, not a
+config gap. Hardened arm64 apps need an arm64 host running the plain `15.0`
+image (no translation). See [`os-image/android/15.0-gms/README.md`](../os-image/android/15.0-gms/README.md).
 
 ### Windows
 
