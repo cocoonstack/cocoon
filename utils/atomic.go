@@ -20,27 +20,22 @@ type SyncMode bool
 
 // AtomicWriteFile writes data via temp + fsync + rename so readers never see a partial file.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	return atomicWriteFile(path, data, perm, true, true)
+	return atomicWriteFile(path, data, perm, true)
 }
 
 // AtomicWriteFileNoSync is AtomicWriteFile without fsyncs, for transient run-dir files regenerated on the next launch.
 func AtomicWriteFileNoSync(path string, data []byte, perm os.FileMode) error {
-	return atomicWriteFile(path, data, perm, false, false)
+	return atomicWriteFile(path, data, perm, false)
 }
 
 // AtomicWriteJSON marshals v to JSON and writes it atomically.
 func AtomicWriteJSON(path string, v any) error {
-	return atomicWriteJSON(path, v, true, true)
+	return atomicWriteJSON(path, v, true)
 }
 
 // AtomicWriteJSONNoSync marshals v and writes it atomically without fsync (see AtomicWriteFileNoSync).
 func AtomicWriteJSONNoSync(path string, v any) error {
-	return atomicWriteJSON(path, v, false, false)
-}
-
-// AtomicWriteJSONNoDirSync fsyncs the file but not the parent dir: content is never torn on any filesystem, only the rename may be lost to power failure.
-func AtomicWriteJSONNoDirSync(path string, v any) error {
-	return atomicWriteJSON(path, v, true, false)
+	return atomicWriteJSON(path, v, false)
 }
 
 // ReadJSONFile loads path and unmarshals it into v.
@@ -70,6 +65,16 @@ func SyncParentDir(dir string) error {
 	return nil
 }
 
+// SyncFile fsyncs path.
+func SyncFile(path string) (err error) {
+	f, err := os.Open(path) //nolint:gosec // path is a cocoon-managed snapshot file
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	return f.Sync()
+}
+
 // SyncTree fsyncs every regular file directly under dir (snapshot dirs are flat), then dir and its parent — the durable-before-kill barrier hibernate needs, since a bare rename fsyncs nothing.
 func SyncTree(dir string) error {
 	entries, err := os.ReadDir(dir)
@@ -80,7 +85,7 @@ func SyncTree(dir string) error {
 		if !e.Type().IsRegular() {
 			continue
 		}
-		if err := syncFile(filepath.Join(dir, e.Name())); err != nil {
+		if err := SyncFile(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}
 	}
@@ -90,7 +95,7 @@ func SyncTree(dir string) error {
 	return SyncParentDir(filepath.Dir(dir))
 }
 
-func atomicWriteFile(path string, data []byte, perm os.FileMode, fileSync, dirSync bool) error {
+func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
@@ -108,7 +113,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, fileSync, dirSy
 	if _, err = tmp.Write(data); err != nil {
 		return fmt.Errorf("write temp file: %w", err)
 	}
-	if fileSync {
+	if sync {
 		if err = tmp.Sync(); err != nil {
 			return fmt.Errorf("sync temp file: %w", err)
 		}
@@ -122,7 +127,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, fileSync, dirSy
 	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename temp to target: %w", err)
 	}
-	if dirSync {
+	if sync {
 		if err = SyncParentDir(dir); err != nil {
 			return fmt.Errorf("sync parent dir: %w", err)
 		}
@@ -130,20 +135,11 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, fileSync, dirSy
 	return nil
 }
 
-func atomicWriteJSON(path string, v any, fileSync, dirSync bool) error {
+func atomicWriteJSON(path string, v any, sync bool) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}
 	data = append(data, '\n')
-	return atomicWriteFile(path, data, 0o644, fileSync, dirSync)
-}
-
-func syncFile(path string) (err error) {
-	f, err := os.Open(path) //nolint:gosec // path is a cocoon-managed snapshot file
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, f.Close()) }()
-	return f.Sync()
+	return atomicWriteFile(path, data, 0o644, sync)
 }

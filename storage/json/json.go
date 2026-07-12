@@ -2,8 +2,12 @@ package json
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 
 	"github.com/projecteru2/core/log"
 
@@ -11,6 +15,8 @@ import (
 	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const prevSuffix = ".prev"
 
 var _ storage.Store[struct{}] = (*Store[struct{}])(nil)
 
@@ -27,7 +33,7 @@ func New[T any](filePath string, locker lock.Locker) *Store[T] {
 
 // ReadRaw loads the JSON file unlocked.
 func (s *Store[T]) ReadRaw(fn func(*T) error) error {
-	data, err := s.load()
+	data, _, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -44,14 +50,27 @@ func (s *Store[T]) With(ctx context.Context, fn func(*T) error) error {
 	return s.withLocked(ctx, func() error { return s.ReadRaw(fn) })
 }
 
-// Update runs fn read-modify-write under the store lock.
+// Update runs fn read-modify-write under the store lock; both fsyncs run after release so waiters never queue behind stable-storage flushes, and load falls back to the .prev generation if a crash tears the unsynced rename.
 func (s *Store[T]) Update(ctx context.Context, fn func(*T) error) error {
-	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.Sync) })
+	if err := s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) }); err != nil {
+		return err
+	}
+	if err := utils.SyncFile(s.filePath); err != nil {
+		return err
+	}
+	return utils.SyncParentDir(filepath.Dir(s.filePath))
 }
 
-// UpdateNoDirSync runs fn read-modify-write under the store lock, fsyncing the file but not the parent dir.
+// UpdateNoDirSync is Update without the parent-dir fsync, for placeholder states GC re-derives after power loss.
 func (s *Store[T]) UpdateNoDirSync(ctx context.Context, fn func(*T) error) error {
-	return s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) })
+	if err := s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) }); err != nil {
+		return err
+	}
+	// Syncing .prev too closes the double-tear window when the previous writer died before its own post-release fsync; on an already-durable inode this is near-free.
+	if err := utils.SyncFile(s.filePath + prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return utils.SyncFile(s.filePath)
 }
 
 func (s *Store[T]) TryLock(ctx context.Context) (bool, error) {
@@ -63,7 +82,7 @@ func (s *Store[T]) Unlock(ctx context.Context) error {
 }
 
 func (s *Store[T]) writeRaw(fn func(*T) error, sync utils.SyncMode) error {
-	data, err := s.load()
+	data, recovered, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -73,16 +92,40 @@ func (s *Store[T]) writeRaw(fn func(*T) error, sync utils.SyncMode) error {
 	if sync == utils.Sync {
 		return utils.AtomicWriteJSON(s.filePath, data)
 	}
-	return utils.AtomicWriteJSONNoDirSync(s.filePath, data)
+	// Keep the durable previous generation reachable: the caller fsyncs only after release, and a crash in between may tear the fresh file on filesystems without rename-over data ordering. A recovered main is the torn one — rotating it in would destroy the only good generation.
+	if !recovered {
+		if err := os.Remove(s.filePath + prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := os.Link(s.filePath, s.filePath+prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return utils.AtomicWriteJSONNoSync(s.filePath, data)
 }
 
-func (s *Store[T]) load() (*T, error) {
+// load reads the store; recovered reports that main was undecodable and the .prev generation was served instead. Read errors fail closed — only a decode failure of successfully read bytes is eligible for fallback.
+func (s *Store[T]) load() (*T, bool, error) {
 	var data T
-	if err := utils.ReadJSONFile(s.filePath, &data); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	recovered := false
+	raw, err := os.ReadFile(s.filePath) //nolint:gosec
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return nil, false, fmt.Errorf("read %s: %w", s.filePath, err)
+	default:
+		if decodeErr := stdjson.Unmarshal(raw, &data); decodeErr != nil {
+			var prev T
+			if prevErr := utils.ReadJSONFile(s.filePath+prevSuffix, &prev); prevErr != nil {
+				return nil, false, fmt.Errorf("decode %s: %w", s.filePath, decodeErr)
+			}
+			data = prev
+			recovered = true
+			log.WithFunc("storage.json.load").Warnf(context.Background(), "%s undecodable (%v); recovered the previous generation", s.filePath, decodeErr)
+		}
 	}
 	initData(&data)
-	return &data, nil
+	return &data, recovered, nil
 }
 
 func (s *Store[T]) withLocked(ctx context.Context, fn func() error) error {

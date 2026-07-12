@@ -182,3 +182,112 @@ func newTestStore(t *testing.T, dir, name string) *Store[testData] {
 	lockPath := filepath.Join(dir, name+".lock")
 	return New[testData](dataPath, flock.New(lockPath))
 }
+
+func TestLoadRecoversPrevGeneration(t *testing.T) {
+	dir := t.TempDir()
+	dataPath := filepath.Join(dir, "data.json")
+	s := New[testData](dataPath, flock.New(filepath.Join(dir, "data.lock")))
+
+	for i := 1; i <= 2; i++ {
+		if err := s.Update(t.Context(), func(d *testData) error {
+			d.Count = i
+			return nil
+		}); err != nil {
+			t.Fatalf("update %d: %v", i, err)
+		}
+	}
+	if err := os.WriteFile(dataPath, []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ReadRaw(func(d *testData) error {
+		if d.Count != 1 {
+			t.Fatalf("recovered Count = %d, want previous generation 1", d.Count)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read after tear: %v", err)
+	}
+}
+
+func TestUpdateAfterRecoveryKeepsGoodPrev(t *testing.T) {
+	dir := t.TempDir()
+	dataPath := filepath.Join(dir, "data.json")
+	s := New[testData](dataPath, flock.New(filepath.Join(dir, "data.lock")))
+
+	for i := 1; i <= 2; i++ {
+		if err := s.Update(t.Context(), func(d *testData) error {
+			d.Count = i
+			return nil
+		}); err != nil {
+			t.Fatalf("update %d: %v", i, err)
+		}
+	}
+	if err := os.WriteFile(dataPath, []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The recovery update must not rotate the torn main into .prev.
+	if err := s.Update(t.Context(), func(d *testData) error {
+		d.Count += 10
+		return nil
+	}); err != nil {
+		t.Fatalf("recovery update: %v", err)
+	}
+	if err := s.ReadRaw(func(d *testData) error {
+		if d.Count != 11 {
+			t.Fatalf("post-recovery Count = %d, want 11", d.Count)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second tear must still find a decodable generation behind it.
+	if err := os.WriteFile(dataPath, []byte("{torn again"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReadRaw(func(d *testData) error {
+		if d.Count != 1 {
+			t.Fatalf("second recovery Count = %d, want 1", d.Count)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("second recovery: %v", err)
+	}
+}
+
+func TestLoadReadErrorFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	dataPath := filepath.Join(dir, "data.json")
+	s := New[testData](dataPath, flock.New(filepath.Join(dir, "data.lock")))
+
+	if err := s.Update(t.Context(), func(d *testData) error { d.Count = 1; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(t.Context(), func(d *testData) error { d.Count = 2; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	// Replace main with a directory: the read itself fails, so .prev must NOT be served.
+	if err := os.Remove(dataPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dataPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReadRaw(func(*testData) error { return nil }); err == nil {
+		t.Fatal("want error for unreadable main even with a valid .prev")
+	}
+}
+
+func TestLoadTornWithoutPrevFails(t *testing.T) {
+	dir := t.TempDir()
+	dataPath := filepath.Join(dir, "data.json")
+	if err := os.WriteFile(dataPath, []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New[testData](dataPath, flock.New(filepath.Join(dir, "data.lock")))
+	if err := s.ReadRaw(func(*testData) error { return nil }); err == nil {
+		t.Fatal("want error for torn file without a previous generation")
+	}
+}
