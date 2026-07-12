@@ -50,12 +50,9 @@ func (s *Store[T]) With(ctx context.Context, fn func(*T) error) error {
 	return s.withLocked(ctx, func() error { return s.ReadRaw(fn) })
 }
 
-// Update runs fn read-modify-write under the store lock; both fsyncs run after release so waiters never queue behind stable-storage flushes, and load falls back to the .prev generation if a crash tears the unsynced rename.
+// Update runs fn read-modify-write under the store lock; all fsyncs run after release so waiters never queue behind stable-storage flushes, and load falls back to the .prev generation if a crash tears the unsynced rename.
 func (s *Store[T]) Update(ctx context.Context, fn func(*T) error) error {
-	if err := s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) }); err != nil {
-		return err
-	}
-	if err := utils.SyncFile(s.filePath); err != nil {
+	if err := s.UpdateNoDirSync(ctx, fn); err != nil {
 		return err
 	}
 	return utils.SyncParentDir(filepath.Dir(s.filePath))
@@ -92,13 +89,20 @@ func (s *Store[T]) writeRaw(fn func(*T) error, sync utils.SyncMode) error {
 	if sync == utils.Sync {
 		return utils.AtomicWriteJSON(s.filePath, data)
 	}
-	// Keep the durable previous generation reachable: the caller fsyncs only after release, and a crash in between may tear the fresh file on filesystems without rename-over data ordering. A recovered main is the torn one — rotating it in would destroy the only good generation.
+	// Keep the durable previous generation reachable: the caller fsyncs only after release, and a crash in between may tear the fresh file on filesystems without rename-over data ordering. A recovered main is the torn one — rotating it in would destroy the only good generation — and the rotation goes link+rename so a .prev exists at every instant.
 	if !recovered {
-		if err := os.Remove(s.filePath + prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		tmp := s.filePath + prevSuffix + ".tmp"
+		if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		if err := os.Link(s.filePath, s.filePath+prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		switch err := os.Link(s.filePath, tmp); {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
 			return err
+		default:
+			if err := os.Rename(tmp, s.filePath+prevSuffix); err != nil {
+				return err
+			}
 		}
 	}
 	return utils.AtomicWriteJSONNoSync(s.filePath, data)
@@ -117,7 +121,7 @@ func (s *Store[T]) load() (*T, bool, error) {
 		if decodeErr := stdjson.Unmarshal(raw, &data); decodeErr != nil {
 			var prev T
 			if prevErr := utils.ReadJSONFile(s.filePath+prevSuffix, &prev); prevErr != nil {
-				return nil, false, fmt.Errorf("decode %s: %w", s.filePath, decodeErr)
+				return nil, false, errors.Join(fmt.Errorf("decode %s: %w", s.filePath, decodeErr), prevErr)
 			}
 			data = prev
 			recovered = true

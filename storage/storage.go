@@ -13,9 +13,9 @@ type Initer interface {
 type Store[T any] interface {
 	// With loads under lock and passes to fn; *T's Init() runs first if implemented; lock held for fn's duration.
 	With(ctx context.Context, fn func(*T) error) error
-	// Update performs a read-modify-write under lock; persists only if fn returns nil.
+	// Update performs a read-modify-write under lock; persists only if fn returns nil. Fsyncs run after the lock releases; a torn main heals from the .prev generation on load. Declared crash contract: with several relaxed writers all killed before their post-release fsyncs, surviving old-or-new content relies on ext4-class rename-over data ordering (auto_da_alloc).
 	Update(ctx context.Context, fn func(*T) error) error
-	// UpdateNoDirSync is Update without the rename's parent-dir fsync: content is never torn, only the mutation may roll back on power failure — for placeholder states GC re-derives. Requires a metadata-journaling filesystem (ext4/XFS) where a crashed rename resolves to the old or new entry, never to none.
+	// UpdateNoDirSync is Update without the rename's parent-dir fsync, for placeholder states GC re-derives after power loss.
 	UpdateNoDirSync(ctx context.Context, fn func(*T) error) error
 
 	// ReadRaw deserializes and passes to fn without locking; caller must already hold the lock via TryLock.
