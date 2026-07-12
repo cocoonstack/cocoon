@@ -35,9 +35,12 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	return reseedVM(ctx, vm, regenMachineID)
 }
 
-// reseedAfterResume re-inspects then fires the best-effort reseed: Clone/Restore return an in-process *types.VM whose VsockSocket is zero, and a stale value would silently no-op.
+// reseedAfterResume fires the best-effort reseed, re-inspecting only when the in-process record lacks VsockSocket — a zero value would silently no-op.
 func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
-	signalReseed(ctx, refreshVM(ctx, hyper, vm), regenMachineID)
+	if vm.VsockSocket == "" {
+		vm = refreshVM(ctx, hyper, vm)
+	}
+	signalReseed(ctx, vm, regenMachineID)
 }
 
 // reseedVM pushes fresh entropy and a CRNG reseed order over vsock; only a failed dial retries (the agent re-listens shortly after resume) — a live agent's reply is final.

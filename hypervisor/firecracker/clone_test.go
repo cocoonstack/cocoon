@@ -168,6 +168,42 @@ func TestRecoverStaleBackupRestoresBackup(t *testing.T) {
 	}
 }
 
+func TestBindableRedirects(t *testing.T) {
+	dir := t.TempDir()
+	regular := writeTestFile(t, dir, "cow.raw")
+	linked := filepath.Join(dir, "linked.raw")
+	if err := os.Symlink(regular, linked); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+	dst := writeTestFile(t, dir, "clone-cow.raw")
+	regular2 := writeTestFile(t, dir, "data.raw")
+	sc := func(p string) []*types.StorageConfig { return []*types.StorageConfig{{Path: p}} }
+
+	tests := []struct {
+		name     string
+		src, dst []*types.StorageConfig
+		want     [][2]string
+	}{
+		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}},
+		{"missing source", sc(filepath.Join(dir, "gone.raw")), sc(dst), nil},
+		{"symlinked source", sc(linked), sc(dst), nil},
+		{"no redirects", sc(regular), sc(regular), nil},
+		{
+			"duplicate dst",
+			[]*types.StorageConfig{{Path: regular}, {Path: regular2}},
+			[]*types.StorageConfig{{Path: dst}, {Path: dst}},
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := bindableRedirects(tt.src, tt.dst); !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func writeTestFile(t *testing.T, dir, name string) string {
 	t.Helper()
 	p := filepath.Join(dir, name)
