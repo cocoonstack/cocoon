@@ -147,6 +147,7 @@ func (fc *Firecracker) loadCloneSnapshot(
 		}
 	}
 
+	// TODO: retire this symlink fallback once mount-ns has soaked a release — dead sources need only the dir locks plus a placeholder mountpoint to bind over.
 	pid, err := launch()
 	if err != nil {
 		return 0, fmt.Errorf("launch FC: %w", err)
