@@ -63,11 +63,14 @@ func (s *Store[T]) UpdateNoDirSync(ctx context.Context, fn func(*T) error) error
 	if err := s.withLocked(ctx, func() error { return s.writeRaw(fn, utils.NoSync) }); err != nil {
 		return err
 	}
-	// Syncing .prev too closes the double-tear window when the previous writer died before its own post-release fsync; on an already-durable inode this is near-free.
+	// Main first so a .prev sync failure still leaves the caller's own generation durable; syncing .prev too closes the double-tear window when the previous writer died before its own post-release fsync, near-free on an already-durable inode.
+	if err := utils.SyncFile(s.filePath); err != nil {
+		return err
+	}
 	if err := utils.SyncFile(s.filePath + prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return utils.SyncFile(s.filePath)
+	return nil
 }
 
 func (s *Store[T]) TryLock(ctx context.Context) (bool, error) {
