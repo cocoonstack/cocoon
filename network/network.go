@@ -12,8 +12,7 @@ var ErrNotConfigured = errors.New("network provider not configured")
 
 // AddSpec is one NIC's add request; Existing != nil reuses MAC/IP for recovery.
 type AddSpec struct {
-	Index int
-	// Queues is the TAP queue count; 0 derives NetNumQueues(vmCfg.CPU), backend-specific callers (FC opens single-queue) set it explicitly.
+	Index    int
 	Queues   int
 	Existing *types.NetworkConfig
 }
@@ -21,13 +20,10 @@ type AddSpec struct {
 // Network is the per-VM host-side networking provider (CNI, bridge, ...).
 type Network interface {
 	Type() string
-	// Verify checks the VM's plumbing against its recorded NICs (netns and each TAP), not just container existence: a half-rolled-back recovery leaves the netns without TAPs.
 	Verify(ctx context.Context, vmID string, expected []*types.NetworkConfig) error
-	// Prepare provisions per-VM state; returns the netns path or "".
 	Prepare(ctx context.Context, vmID string, vmCfg *types.VMConfig) (string, error)
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...AddSpec) ([]*types.NetworkConfig, error)
 	Remove(ctx context.Context, vmID string, indices ...int) error
-	// Quiesce brings the VM's host-side NICs down when it stops so an idle TAP's TC redirect cannot storm softirqs (mirred-to-down-device); Unquiesce restores them before restart.
 	Quiesce(ctx context.Context, vmID string) error
 	Unquiesce(ctx context.Context, vmID string) error
 	Delete(context.Context, []string) ([]string, error)

@@ -131,6 +131,16 @@ func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
 	})
 }
 
+// Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its now-carrier-less TAP (mirred-to-down-device). The netns and TAP are kept for a fast restart, which Unquiesce re-enables.
+func (c *CNI) Quiesce(ctx context.Context, vmID string) error {
+	return c.setLinkState(ctx, vmID, false)
+}
+
+// Unquiesce restores the veths Quiesce brought down, run on start before the VMM re-opens the TAP.
+func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
+	return c.setLinkState(ctx, vmID, true)
+}
+
 // Delete tears down all NICs for each VM and removes the netns. Best-effort.
 func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
@@ -222,16 +232,6 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 		}
 		return nil
 	})
-}
-
-// Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its now-carrier-less TAP (mirred-to-down-device). The netns and TAP are kept for a fast restart, which Unquiesce re-enables.
-func (c *CNI) Quiesce(ctx context.Context, vmID string) error {
-	return c.setLinkState(ctx, vmID, false)
-}
-
-// Unquiesce restores the veths Quiesce brought down, run on start before the VMM re-opens the TAP.
-func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
-	return c.setLinkState(ctx, vmID, true)
 }
 
 func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {

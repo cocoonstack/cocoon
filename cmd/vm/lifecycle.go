@@ -84,8 +84,6 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 	}
 	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		stopped, err := hyper.Stop(ctx, refs)
-		// The TAP loses carrier when the VMM exits; bring the host NICs down so the
-		// kept-for-restart TC redirect can't storm softirqs against it (recoverNetwork undoes it).
 		h.quiesceNetwork(ctx, conf, hyper, stopped)
 		return stopped, err
 	})
@@ -282,8 +280,6 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 		}
 		recoverOne := func(vm *types.VM) {
 			if netProvider.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
-				// Plumbing intact (fast-restart path): undo Stop's quiesce so the host
-				// NICs forward again once the VMM re-opens the TAP.
 				if err := netProvider.Unquiesce(ctx, vm.ID); err != nil {
 					logger.Warnf(ctx, "unquiesce network for VM %s: %v", vm.ID, err)
 				}
