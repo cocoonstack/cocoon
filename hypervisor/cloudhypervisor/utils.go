@@ -31,6 +31,8 @@ const (
 
 	// chMemoryRestoreOnDemand lazily pages in guest memory via userfaultfd instead of a full upfront copy.
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
+	// chMemoryRestoreMmap maps the snapshot file copy-on-write, sharing page cache across clones of one snapshot.
+	chMemoryRestoreMmap chMemoryRestoreMode = "Mmap"
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, cmdlineFileName, hypervisor.VsockSockName}
@@ -163,14 +165,17 @@ func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
 	return err
 }
 
-func restoreVM(ctx context.Context, hc *http.Client, sourceDir string, onDemand bool) error {
+func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
 	cfg := chRestoreConfig{
 		SourceURL: "file://" + sourceDir,
 	}
-	if onDemand {
+	switch restoreMode {
+	case "ondemand":
 		cfg.MemoryRestoreMode = chMemoryRestoreOnDemand
+	case "mmap":
+		cfg.MemoryRestoreMode = chMemoryRestoreMmap
 	}
 	body, err := json.Marshal(cfg)
 	if err != nil {

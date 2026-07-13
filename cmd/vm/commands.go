@@ -157,7 +157,7 @@ func Command(h Actions) *cobra.Command {
 		},
 		RunE: h.Restore,
 	}
-	restoreCmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster restore (CH only; snapshot file must remain on disk)")
+	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; ondemand/mmap require the snapshot file to remain on disk)")
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
 	cliutil.AddOutputFlag(restoreCmd)
@@ -356,7 +356,7 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
-	cmd.Flags().Bool("on-demand", false, "use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk)")
+	cmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; ondemand/mmap require the snapshot file to remain on disk)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
 	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH only)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
