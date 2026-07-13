@@ -36,6 +36,7 @@ var (
 	setupTCRedirectFn = setupTCRedirect
 	tapPresentFn      = tapPresentInNetns
 	statNetnsFn       = os.Stat
+	setLinkStateFn    = setLinkStateInNetns
 )
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
@@ -130,6 +131,16 @@ func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
 	})
 }
 
+// Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its now-carrier-less TAP (mirred-to-down-device). The netns and TAP are kept for a fast restart, which Unquiesce re-enables.
+func (c *CNI) Quiesce(ctx context.Context, vmID string) error {
+	return c.setLinkState(ctx, vmID, false)
+}
+
+// Unquiesce restores the veths Quiesce brought down, run on start before the VMM re-opens the TAP.
+func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
+	return c.setLinkState(ctx, vmID, true)
+}
+
 // Delete tears down all NICs for each VM and removes the netns. Best-effort.
 func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
@@ -221,6 +232,24 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 		}
 		return nil
 	})
+}
+
+func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
+	var records []networkRecord
+	if err := c.store.With(ctx, func(idx *networkIndex) error {
+		records = idx.byVMID(vmID)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("read network index: %w", err)
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	ifNames := make([]string, 0, len(records))
+	for _, rec := range records {
+		ifNames = append(ifNames, rec.IfName)
+	}
+	return setLinkStateFn(netnsPath(vmID), ifNames, up)
 }
 
 // confListByName resolves a conflist by name; empty name returns the default (first alphabetically).

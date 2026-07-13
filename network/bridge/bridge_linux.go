@@ -151,6 +151,10 @@ func (b *Bridge) Remove(_ context.Context, vmID string, indices ...int) error {
 	return tearDownTAPs(vmID, indices, false)
 }
 
+// Quiesce and Unquiesce are no-ops: bridge TAPs sit directly on the host bridge, with no TC redirect to storm when the VM stops.
+func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
+func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
+
 func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
 	return CleanupTAPs(vmIDs), nil
 }

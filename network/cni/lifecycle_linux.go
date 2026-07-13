@@ -79,6 +79,33 @@ func deleteTAPInNetns(nsPath, tapName string) error {
 	return err
 }
 
+// setLinkStateInNetns brings ifNames up or down inside nsPath. A missing netns or link is success: Quiesce/Unquiesce run across stop/restart and partial teardown, where the plumbing may already be gone.
+func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
+	transition := netlink.LinkSetDown
+	if up {
+		transition = netlink.LinkSetUp
+	}
+	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
+		for _, name := range ifNames {
+			link, err := netlink.LinkByName(name)
+			if err != nil {
+				if _, ok := errors.AsType[netlink.LinkNotFoundError](err); ok {
+					continue
+				}
+				return fmt.Errorf("find %s: %w", name, err)
+			}
+			if err := transition(link); err != nil {
+				return fmt.Errorf("set %s state: %w", name, err)
+			}
+		}
+		return nil
+	})
+	if _, ok := errors.AsType[cns.NSPathNotExistErr](err); ok {
+		return nil
+	}
+	return err
+}
+
 // setupTCRedirect wires ifName <-> tapName inside target netns, returns MAC.
 func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, error) {
 	var mac string

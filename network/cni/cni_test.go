@@ -301,6 +301,56 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	}
 }
 
+func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	var gotNS string
+	var gotIfs []string
+	var gotUp []bool
+	origSet := setLinkStateFn
+	setLinkStateFn = func(nsPath string, ifNames []string, up bool) error {
+		gotNS, gotIfs = nsPath, ifNames
+		gotUp = append(gotUp, up)
+		return nil
+	}
+	t.Cleanup(func() { setLinkStateFn = origSet })
+
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+
+	if err := c.Quiesce(ctx, "vm1"); err != nil {
+		t.Fatalf("Quiesce: %v", err)
+	}
+	if gotNS != netnsPath("vm1") {
+		t.Fatalf("nsPath = %q, want %q", gotNS, netnsPath("vm1"))
+	}
+	slices.Sort(gotIfs)
+	if !slices.Equal(gotIfs, []string{"eth0", "eth1"}) {
+		t.Fatalf("ifNames = %v, want every NIC [eth0 eth1]", gotIfs)
+	}
+	if err := c.Unquiesce(ctx, "vm1"); err != nil {
+		t.Fatalf("Unquiesce: %v", err)
+	}
+	if !slices.Equal(gotUp, []bool{false, true}) {
+		t.Fatalf("state sequence = %v, want [false true] (Quiesce down, Unquiesce up)", gotUp)
+	}
+}
+
+func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	called := false
+	origSet := setLinkStateFn
+	setLinkStateFn = func(string, []string, bool) error { called = true; return nil }
+	t.Cleanup(func() { setLinkStateFn = origSet })
+
+	// A VM with no NIC records owns no plumbing to storm: never enter its netns.
+	if err := c.Quiesce(t.Context(), "ghost"); err != nil {
+		t.Fatalf("Quiesce: %v", err)
+	}
+	if called {
+		t.Fatal("setLinkStateFn called for a VM with no records")
+	}
+}
+
 // newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
@@ -322,12 +372,15 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 func stubLifecycleSeams(t *testing.T) {
 	t.Helper()
 	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn
+	origSet := setLinkStateFn
 	deleteTAPFn = func(string, string) error { return nil }
 	deleteNetnsFn = func(context.Context, string) error { return nil }
 	ensureNetnsFn = func(string, string) (bool, error) { return false, nil }
 	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, error) { return "aa:bb:cc:dd:ee:01", nil }
+	setLinkStateFn = func(string, []string, bool) error { return nil }
 	t.Cleanup(func() {
 		deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn = origTAP, origNetns, origEnsure, origTC
+		setLinkStateFn = origSet
 	})
 }
 
