@@ -83,9 +83,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-		stopped, err := hyper.Stop(ctx, refs)
-		h.quiesceNetwork(ctx, conf, hyper, stopped)
-		return stopped, err
+		return h.stopAndQuiesce(ctx, conf, hyper, refs)
 	})
 }
 
@@ -206,6 +204,12 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if force {
+		for hyper, refs := range routed {
+			_, _ = h.stopAndQuiesce(ctx, conf, hyper, refs)
+		}
+	}
+
 	const logTag = "cmd.vm.rm"
 	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cliutil.WantJSON(cmd), routed,
 		func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
@@ -313,6 +317,12 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			recoverOne(vm)
 		}
 	}
+}
+
+func (h Handler) stopAndQuiesce(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+	stopped, err := hyper.Stop(ctx, refs)
+	h.quiesceNetwork(ctx, conf, hyper, stopped)
+	return stopped, err
 }
 
 // quiesceNetwork brings each stopped VM's host NICs down — Stop's counterpart to Start's recoverNetwork — so an idle TAP's TC redirect can't storm softirqs. Best-effort: a quiesce failure never blocks the stop.
