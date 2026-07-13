@@ -47,14 +47,14 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	logger.Infof(ctx, "hibernating VM %s ...", vmRef)
 	// persist runs inside the pause window; the VMM dies only after it succeeds.
 	var snapID string
-	err = hib.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
+	if err := hib.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
 		id, pErr := cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 		snapID = id
 		return pErr
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
+	h.quiesceNetwork(ctx, conf, hyper, []string{vm.ID})
 	logger.Infof(ctx, "VM hibernated; snapshot %s (resume: cocoon vm restore %s %s)", snapID, vmRef, cmp.Or(name, snapID))
 	return nil
 }
