@@ -3,9 +3,7 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,8 +19,12 @@ type procEntry struct {
 // ProcScan caches /proc cmdlines for one binaryName. Batch callers scan once then Find per id, replacing N /proc walks with one.
 type ProcScan []procEntry
 
-// ScanProcsByBinary walks /proc once, capturing argv[0]-basename matches. ENOENT (process exited mid-scan) is skipped; other read errors fail closed.
+// ScanProcsByBinary walks /proc once, capturing argv[0]-basename matches. Read errors from processes that vanished mid-scan are skipped; errors on live processes fail closed.
 func ScanProcsByBinary(binaryName string) (ProcScan, error) {
+	return scanProcsByBinary(binaryName, os.ReadFile, IsProcessAlive)
+}
+
+func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error), alive func(int) bool) (ProcScan, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, err
@@ -34,10 +36,10 @@ func ScanProcsByBinary(binaryName string) (ProcScan, error) {
 		if atoiErr != nil || pid <= 0 {
 			continue
 		}
-		data, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		data, readErr := readFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 		if readErr != nil {
-			if !errors.Is(readErr, fs.ErrNotExist) && firstErr == nil {
-				firstErr = fmt.Errorf("read /proc/%d/cmdline: %w", pid, readErr)
+			if firstErr == nil && alive(pid) {
+				firstErr = readErr
 			}
 			continue
 		}
