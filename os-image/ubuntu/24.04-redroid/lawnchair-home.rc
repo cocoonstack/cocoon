@@ -1,0 +1,10 @@
+service lawnchair_home /system/bin/cmd package set-home-activity app.lawnchair/app.lawnchair.LawnchairLauncher
+    class late_start
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:su:s0
+
+on property:sys.boot_completed=1
+    start lawnchair_home

@@ -1,0 +1,15 @@
+[Unit]
+Description=Redroid remote view (scrcpy -> VNC :5900 + noVNC :6080)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=REDROID_ADB=127.0.0.1:5555
+ExecStart=/usr/local/bin/remoteview-run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
