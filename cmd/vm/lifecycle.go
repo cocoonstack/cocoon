@@ -83,7 +83,11 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-		return hyper.Stop(ctx, refs)
+		stopped, err := hyper.Stop(ctx, refs)
+		// The TAP loses carrier when the VMM exits; bring the host NICs down so the
+		// kept-for-restart TC redirect can't storm softirqs against it (recoverNetwork undoes it).
+		h.quiesceNetwork(ctx, conf, hyper, stopped)
+		return stopped, err
 	})
 }
 
@@ -278,6 +282,11 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 		}
 		recoverOne := func(vm *types.VM) {
 			if netProvider.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
+				// Plumbing intact (fast-restart path): undo Stop's quiesce so the host
+				// NICs forward again once the VMM re-opens the TAP.
+				if err := netProvider.Unquiesce(ctx, vm.ID); err != nil {
+					logger.Warnf(ctx, "unquiesce network for VM %s: %v", vm.ID, err)
+				}
 				return
 			}
 			logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
@@ -306,6 +315,42 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			unlock()
 		} else {
 			recoverOne(vm)
+		}
+	}
+}
+
+// quiesceNetwork brings each stopped VM's host NICs down — Stop's counterpart to Start's recoverNetwork — so an idle TAP's TC redirect can't storm softirqs. Best-effort: a quiesce failure never blocks the stop.
+func (h Handler) quiesceNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	logger := log.WithFunc("cmd.vm.quiesceNetwork")
+
+	var cniProvider network.Network
+	if p, err := cmdcore.InitNetwork(conf); err == nil {
+		cniProvider = p
+	}
+	bridgeProviders := map[string]network.Network{}
+
+	for _, id := range ids {
+		vm, err := hyper.Inspect(ctx, id)
+		if err != nil {
+			logger.Warnf(ctx, "inspect VM %s for quiesce: %v", id, err)
+			continue
+		}
+		if vm == nil {
+			continue
+		}
+		if vm.ResolvedNetBackend() == "" || len(vm.NetworkConfigs) == 0 {
+			continue
+		}
+		netProvider, provErr := providerForVM(conf, cniProvider, bridgeProviders, vm)
+		if provErr != nil {
+			logger.Warnf(ctx, "skip quiesce for VM %s: %v", id, provErr)
+			continue
+		}
+		if err := netProvider.Quiesce(ctx, id); err != nil {
+			logger.Warnf(ctx, "quiesce network for VM %s: %v", id, err)
 		}
 	}
 }

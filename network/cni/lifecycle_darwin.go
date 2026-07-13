@@ -23,6 +23,10 @@ func deleteTAPInNetns(_, _ string) error {
 	return errNotSupported
 }
 
+func setLinkStateInNetns(_ string, _ []string, _ bool) error {
+	return errNotSupported
+}
+
 func tapPresentInNetns(_, _ string) error {
 	return errNotSupported
 }

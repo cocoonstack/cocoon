@@ -27,6 +27,9 @@ type Network interface {
 	Prepare(ctx context.Context, vmID string, vmCfg *types.VMConfig) (string, error)
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...AddSpec) ([]*types.NetworkConfig, error)
 	Remove(ctx context.Context, vmID string, indices ...int) error
+	// Quiesce brings the VM's host-side NICs down when it stops so an idle TAP's TC redirect cannot storm softirqs (mirred-to-down-device); Unquiesce restores them before restart.
+	Quiesce(ctx context.Context, vmID string) error
+	Unquiesce(ctx context.Context, vmID string) error
 	Delete(context.Context, []string) ([]string, error)
 	Inspect(context.Context, string) (*types.Network, error)
 	List(context.Context) ([]*types.Network, error)

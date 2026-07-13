@@ -30,7 +30,9 @@ func (b *Bridge) Verify(_ context.Context, _ string, _ []*types.NetworkConfig) e
 func (b *Bridge) Remove(_ context.Context, _ string, _ ...int) error {
 	return errUnsupported
 }
-func (b *Bridge) RegisterGC(_ *gc.Orchestrator) {}
+func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
+func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
+func (b *Bridge) RegisterGC(_ *gc.Orchestrator)               {}
 
 func (b *Bridge) Prepare(_ context.Context, _ string, _ *types.VMConfig) (string, error) {
 	return "", errUnsupported
