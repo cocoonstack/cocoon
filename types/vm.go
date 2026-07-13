@@ -30,10 +30,10 @@ type VMConfig struct {
 	Config
 	Name string `json:"name"`
 
-	OnDemand  bool           `json:"-"` // use UFFD on-demand memory restore (CH only); transient, not persisted
-	User      string         `json:"-"`
-	Password  string         `json:"-"`
-	DataDisks []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
+	RestoreMode string         `json:"-"` // memory restore mode: copy|ondemand|mmap (CH only); transient, not persisted
+	User        string         `json:"-"`
+	Password    string         `json:"-"`
+	DataDisks   []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
 }
 
 // Validate checks that VMConfig fields are within acceptable ranges.

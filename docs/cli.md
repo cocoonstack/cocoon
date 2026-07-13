@@ -105,7 +105,7 @@ Applies to `cocoon vm clone`:
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
-| `--on-demand` | `false`             | Use UFFD on-demand memory loading for faster clone (CH only; snapshot file must remain on disk) |
+| `--restore-mode` | `copy`           | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require the snapshot file to remain on disk and a CH build with matching support — an older CH silently ignores the field and restores by copy |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH only; names must not collide with disks inherited from the snapshot) |
@@ -134,7 +134,7 @@ Applies to `cocoon vm restore`:
 
 | Flag          | Default | Description                                                                                            |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `--on-demand` | `false` | Use UFFD on-demand memory loading for faster restore (CH only; snapshot file must remain on disk)      |
+| `--restore-mode` | `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require the snapshot file to remain on disk and a CH build with matching support — an older CH silently ignores the field and restores by copy |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--force`     | `false` | Skip the snapshot-belongs-to-VM check (only meaningful with `--from-dir`)                              |
 

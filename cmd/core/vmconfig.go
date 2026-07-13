@@ -85,7 +85,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
 	}
 
-	onDemand, _ := cmd.Flags().GetBool("on-demand")
+	restoreMode, err := restoreModeFromFlags(cmd)
+	if err != nil {
+		return nil, err
+	}
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 	dataDisks, err := parseDataDiskFlags(dataDiskRaw)
 	if err != nil {
@@ -108,8 +111,8 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 		},
-		DataDisks: dataDisks,
-		OnDemand:  onDemand,
+		DataDisks:   dataDisks,
+		RestoreMode: restoreMode,
 	}, nil
 }
 
@@ -121,11 +124,14 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	cfg := snapCfg.Config
 	cfg.Network = vm.Config.Network
-	onDemand, _ := cmd.Flags().GetBool("on-demand")
+	restoreMode, err := restoreModeFromFlags(cmd)
+	if err != nil {
+		return nil, err
+	}
 	result := &types.VMConfig{
-		Config:   cfg,
-		Name:     vm.Config.Name,
-		OnDemand: onDemand,
+		Config:      cfg,
+		Name:        vm.Config.Name,
+		RestoreMode: restoreMode,
 	}
 	if err := result.Validate(); err != nil {
 		return nil, fmt.Errorf("snapshot config: %w", err)
@@ -285,4 +291,14 @@ func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
 		}
 	}
 	return nil
+}
+
+func restoreModeFromFlags(cmd *cobra.Command) (string, error) {
+	mode, _ := cmd.Flags().GetString("restore-mode")
+	switch mode {
+	case "", "copy", "ondemand", "mmap":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("--restore-mode must be copy, ondemand or mmap, got %q", mode)
+	}
 }
