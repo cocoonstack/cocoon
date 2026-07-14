@@ -39,8 +39,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: amd64, runs-on: ubuntu-24.04 }
-          - { arch: arm64, runs-on: ubuntu-24.04-arm }
+          - { arch: amd64, runs-on: ubuntu-24.04, abi: x86_64 }
+          - { arch: arm64, runs-on: ubuntu-24.04-arm, abi: arm64-v8a }
     runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
@@ -78,7 +78,8 @@ jobs:
             exit 1
           fi
           sudo modprobe binder_linux devices="binder,hwbinder,vndbinder"
-          test -e /dev/binder || { echo "::error::/dev/binder absent after modprobe" >&2; exit 1; }
+          # ReDroid mounts binderfs inside the container; the host only needs the module loaded.
+          test -d /sys/module/binder_linux || { echo "::error::binder_linux not loaded" >&2; exit 1; }
           sudo modprobe ashmem_linux 2>/dev/null || echo "ashmem absent (fine, use_memfd=1)"
           echo "binder OK"
 
@@ -91,21 +92,21 @@ jobs:
       #      API-36 Play Store system image, verifies it, extracts system.img, and
       #      emits gapps16-<arch>.tar. ----
       - name: Cache raw Google system image
-        if: ${{ inputs.gms }}
+        if: ${{ github.event_name == 'push' || inputs.gms }}
         uses: actions/cache@v4
         with:
           path: ${{ env.IMAGE_DIR }}/.cache-gapps16
           key: gapps16-sysimg-${{ matrix.arch }}-api36
       - name: Prepare gapps tar
-        if: ${{ inputs.gms }}
+        if: ${{ github.event_name == 'push' || inputs.gms }}
         run: |
           set -euo pipefail
           cd "${IMAGE_DIR}"
           ARCH=${{ matrix.arch }} bash prepare-gapps16.sh
-          test -f "gapps16-${{ matrix.arch }}.tar"
+          test -f "gapps16-${{ matrix.abi }}.tar"
 
       - name: Login to ghcr
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name == 'push' || inputs.push }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -117,10 +118,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "${IMAGE_DIR}"
-          if [ "${{ inputs.gms }}" = "true" ]; then
+          if [ "${{ github.event_name == 'push' || inputs.gms }}" = "true" ]; then
             docker buildx build --load --platform linux/${{ matrix.arch }} \
               --build-arg TARGETARCH=${{ matrix.arch }} \
-              --build-arg GAPPS_TAR=gapps16-${{ matrix.arch }}.tar \
+              --build-arg GAPPS_TAR=gapps16-${{ matrix.abi }}.tar \
               -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon .
           else
             printf 'FROM redroid/redroid:16.0.0_64only-latest@%s AS b\nFROM scratch\nCOPY --from=b / /\nWORKDIR /\nENTRYPOINT ["/init", "qemu=1", "androidboot.hardware=redroid"]\n' \
@@ -138,14 +139,14 @@ jobs:
           USE_MEMFD: "1"
           REGISTRY: ${{ env.REGISTRY_NS }}
           VM_TAG: redroid-16-gms-h264:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}
-          PUSH: ${{ inputs.push && '1' || '0' }}
+          PUSH: ${{ (github.event_name == 'push' || inputs.push) && '1' || '0' }}
         run: |
           cd "${IMAGE_DIR}"
           bash build.sh
 
       # ---- cocoon image pull hard-fails without these ----
       - name: Assert boot files present
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name == 'push' || inputs.push }}
         run: |
           set -euo pipefail
           REF="${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}"
@@ -157,7 +158,7 @@ jobs:
 
   manifest:
     needs: bake
-    if: ${{ inputs.push }}
+    if: ${{ github.event_name == 'push' || inputs.push }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
