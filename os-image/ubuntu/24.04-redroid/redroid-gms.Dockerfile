@@ -61,3 +61,4 @@ FROM redroid/redroid:15.0.0_64only-latest
 COPY --from=gapps /output/system/ /system/
 COPY --from=gapps /output/vendor/ /vendor/
 COPY lawnchair-home.rc /system/etc/init/lawnchair-home.rc
+COPY lawnchair-home.sh /system/etc/lawnchair-home.sh

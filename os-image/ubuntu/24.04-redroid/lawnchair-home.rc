@@ -1,4 +1,4 @@
-service lawnchair_home /system/bin/cmd package set-home-activity app.lawnchair/app.lawnchair.LawnchairLauncher
+service lawnchair_home /system/bin/sh /system/etc/lawnchair-home.sh
     class late_start
     user root
     group root

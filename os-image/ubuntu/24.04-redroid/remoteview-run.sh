@@ -17,9 +17,6 @@ for _ in $(seq 1 120); do
     sleep 3
 done
 
-# Make Lawnchair the default HOME (idempotent; the stock launcher3 otherwise wins).
-adb -s "$REDROID" shell "cmd package set-home-activity app.lawnchair/app.lawnchair.LawnchairLauncher; pm disable-user --user 0 com.android.launcher3; input keyevent KEYCODE_HOME" >/dev/null 2>&1 || true
-
 Xvfb "$DISP" -screen 0 "${RES}x24" -nolisten tcp &
 export DISPLAY="$DISP"
 export SDL_VIDEODRIVER=x11
