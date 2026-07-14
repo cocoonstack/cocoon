@@ -1,25 +1,40 @@
 #!/bin/bash
 # Local build + push for the Ubuntu+Docker+Redroid VM image.
 #
-# The redroid container is created AND started at BUILD time inside a privileged
-# DinD, then its /var/lib/docker (image + --restart unless-stopped container) is
-# baked into the VM image, so the VM's dockerd auto-runs redroid on boot with no
-# docker run at first start. amd64 only; run on a native amd64 docker host.
+# The flattened ReDroid image is loaded into a vfs DinD store. The container is
+# created once on the VM's first boot so its full vfs rootfs copy lands in the
+# writable Cocoon COW rather than the immutable EROFS image.
 #
 #   REDROID_SRC  redroid image to bake  (default plain redroid 15)
 #   REGISTRY     target namespace       (default docker.io/cmgs)
-#   VM_TAG       VM image tag           (default ubuntu-redroid:24.04)
+#   VM_TAG       VM image tag           (default ubuntu-redroid-gms-h264:22.04)
 #   PUSH         1=push, 0=load locally (default 1)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UBUNTU_CTX="$(dirname "$HERE")"
 REGISTRY="${REGISTRY:-docker.io/cmgs}"
-VM_TAG="${VM_TAG:-ubuntu-redroid:24.04}"
-REDROID_SRC="${REDROID_SRC:-redroid/redroid:15.0.0_64only-latest}"
+VM_TAG="${VM_TAG:-ubuntu-redroid-gms-h264:22.04}"
+REDROID_SRC="${REDROID_SRC:-local/redroid-gms:16.0-cocoon}"
 DIND_IMAGE="${DIND_IMAGE:-docker:dind}"
 PUSH="${PUSH:-1}"
 PLATFORM="linux/amd64"
+SCRCPY_RFB_REPO="${SCRCPY_RFB_REPO:-cocoonstack/libvncserver}"
+SCRCPY_RFB_TAG="${SCRCPY_RFB_TAG:-dev}"
+if [ -z "${SCRCPY_RFB_COMMIT:-}" ]; then
+    SCRCPY_RFB_COMMIT="$(
+        curl -fsSL \
+          "https://github.com/${SCRCPY_RFB_REPO}/releases/download/${SCRCPY_RFB_TAG}/build-info.json" \
+        | sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p'
+    )"
+fi
+if [ "${#SCRCPY_RFB_COMMIT}" -ne 40 ]; then
+    echo "invalid scrcpy-rfb release commit: $SCRCPY_RFB_COMMIT" >&2
+    exit 1
+fi
+case "$SCRCPY_RFB_COMMIT" in
+    *[!0-9a-f]*) echo "invalid scrcpy-rfb release commit: $SCRCPY_RFB_COMMIT" >&2; exit 1 ;;
+esac
 
 cleanup() {
     docker rm -f rd-gen >/dev/null 2>&1 || true
@@ -29,13 +44,13 @@ cleanup() {
 trap cleanup EXIT
 
 docker image inspect "$REDROID_SRC" >/dev/null 2>&1 || docker pull "$REDROID_SRC"
+test "$(docker image inspect --format '{{len .RootFS.Layers}}' "$REDROID_SRC")" = 1 || {
+    echo "ReDroid source must be flattened to one layer for the vfs image store" >&2
+    exit 1
+}
 docker save "$REDROID_SRC" -o "$HERE/redroid-image.tar"
 
-# redroid needs binder on the build host to boot cleanly inside the DinD, so the
-# baked container is captured in a stable "running" state for --restart replay.
-sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" 2>/dev/null || true
-
-echo ">> generating /var/lib/docker (build-time redroid run) via DinD"
+echo ">> generating image-only /var/lib/docker with vfs via DinD"
 docker rm -f rd-gen >/dev/null 2>&1 || true
 docker volume rm rd-vld >/dev/null 2>&1 || true
 docker run -d --privileged --name rd-gen \
@@ -43,21 +58,20 @@ docker run -d --privileged --name rd-gen \
     -v "$HERE/redroid-image.tar":/redroid.tar:ro \
     -v rd-vld:/var/lib/docker \
     "$DIND_IMAGE" >/dev/null
-docker exec rd-gen sh -c '
+docker exec -e REDROID_SRC="$REDROID_SRC" rd-gen sh -c '
     set -e
     for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
     docker info --format "storage-driver={{.Driver}}"
+    test "$(docker info --format "{{.Driver}}")" = vfs
     docker load -i /redroid.tar
-    IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -i redroid | head -1)
-    docker run -d --privileged --name redroid --restart unless-stopped \
-        -p 5555:5555 -v /var/lib/redroid-data:/data \
-        "$IMG" androidboot.use_memfd=1 androidboot.redroid_fps=60
-    sleep 20
-    docker ps --format "baked: {{.Names}} {{.Status}}"
+    docker tag "$REDROID_SRC" local/redroid:vm
+    if [ "$REDROID_SRC" != local/redroid:vm ]; then
+        docker image rm "$REDROID_SRC" >/dev/null
+    fi
+    test -z "$(docker container ls -aq)"
+    docker image inspect local/redroid:vm --format "baked: {{.Id}} layers={{len .RootFS.Layers}}"
 '
-# Graceful daemon stop (not kill): dockerd stops the container but keeps its
-# restart-policy state, so the VM's dockerd replays it. dockerd is PID 1 here, so
-# tar the data volume from a separate container, not from inside a killed DinD.
+# Gracefully stop dockerd before archiving its image-only graphdriver state.
 docker stop -t 40 rd-gen >/dev/null
 docker run --rm -v rd-vld:/vld -v "$HERE":/out ubuntu \
     tar --numeric-owner -C /vld -cf /out/docker-data.tar .
@@ -69,6 +83,9 @@ echo ">> building $REGISTRY/$VM_TAG"
 OUT=$([ "$PUSH" = 1 ] && echo --push || echo --load)
 docker buildx build --platform "$PLATFORM" "$OUT" \
     -f "$HERE/Dockerfile" -t "$REGISTRY/$VM_TAG" \
+    --build-arg SCRCPY_RFB_REPO="$SCRCPY_RFB_REPO" \
+    --build-arg SCRCPY_RFB_TAG="$SCRCPY_RFB_TAG" \
+    --build-arg SCRCPY_RFB_COMMIT="$SCRCPY_RFB_COMMIT" \
     --secret id=cocoon_overlay,src="$UBUNTU_CTX/overlay.sh" \
     --secret id=cocoon_network,src="$UBUNTU_CTX/network.sh" \
     --secret id=cocoon_install_agent,src="$UBUNTU_CTX/install-agent.sh" \

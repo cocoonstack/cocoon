@@ -7,7 +7,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UBUNTU_CTX="$(dirname "$HERE")"
 REDROID_SRC="${REDROID_SRC:-local/redroid-gms:16.0-cocoon}"
-VM_IMAGE="${VM_IMAGE:-local/ubuntu-redroid-gms:22.04-android16}"
+VM_IMAGE="${VM_IMAGE:-local/ubuntu-redroid-gms-h264:22.04-android16}"
 DIND_IMAGE="${DIND_IMAGE:-docker:29.4-dind}"
 PLATFORM=linux/amd64
 SCRCPY_RFB_REPO="${SCRCPY_RFB_REPO:-cocoonstack/libvncserver}"

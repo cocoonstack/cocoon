@@ -1,7 +1,7 @@
 [Unit]
-Description=Redroid remote view (scrcpy -> VNC :5900 + noVNC :6080)
-Requires=docker.service
-After=docker.service
+Description=Redroid remote view (scrcpy 4.1 H.264 -> RFB :5900)
+Requires=redroid.service
+After=redroid.service
 
 [Service]
 Type=simple

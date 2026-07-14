@@ -1,0 +1,4 @@
+{
+  "storage-driver": "vfs",
+  "features": { "containerd-snapshotter": false }
+}
