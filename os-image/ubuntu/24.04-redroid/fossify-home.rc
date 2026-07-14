@@ -1,0 +1,10 @@
+service fossify_home /system/bin/sh /system/etc/fossify-home.sh
+    class late_start
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:su:s0
+
+on property:sys.boot_completed=1
+    start fossify_home

@@ -1,40 +1,49 @@
-# Ubuntu 24.04 + Docker + Redroid — native redroid-in-container VM image.
+# Ubuntu 22.04 + Docker + Redroid — native redroid-in-container VM image.
 #
-# The redroid container is created AND started at BUILD time (build.sh, in a
-# privileged DinD) and baked into /var/lib/docker with `--restart unless-stopped`,
-# so the VM's dockerd auto-restarts it on boot — no docker run at first VM start.
+# The flattened ReDroid image is loaded at BUILD time, but the container is
+# created only on the first real VM boot. This keeps vfs's full container-rootfs
+# copy in the writable Cocoon COW instead of baking it into the immutable EROFS.
+# Later boots reuse that container and its `unless-stopped` policy.
 # Networking is docker bridge with a published 5555 (NOT --network host): host
 # net lets redroid's Android netd hijack the VM's netns routing and black-hole it.
 #
-# amd64 only (redroid + libndk are x86_64). daemon.json pins vfs + classic
-# graphdriver; the VM's docker must match the DinD that generated docker-data.tar.
-FROM ubuntu:24.04
+# amd64 only (redroid + libndk are x86_64). daemon.json pins the classic vfs
+# graphdriver because the Cocoon root is itself overlayfs and native overlay2
+# cannot be nested. fuse-overlayfs is intentionally avoided: ReDroid 16's
+# writable root becomes unbootable after a same-container restart on that path.
+FROM ubuntu:22.04
 
 ARG TARGETARCH
 ARG DOCKER_CHANNEL=stable
+ARG SCRCPY_RFB_REPO=cocoonstack/libvncserver
+ARG SCRCPY_RFB_TAG=dev
+ARG SCRCPY_RFB_COMMIT
+ARG SCRCPY_SERVER_SHA256=deacb991ed2509715160ffdc7907e47b4160eb30d1566217e9047fd5b8850cae
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN --mount=type=secret,id=cocoon_overlay \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=secret,id=cocoon_overlay \
     --mount=type=secret,id=cocoon_network \
     --mount=type=secret,id=cocoon_install_agent \
     --mount=type=secret,id=daemon_json \
-    apt-get update && apt-get install -y --no-install-recommends \
-    linux-image-generic \
+    APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
+    apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends \
+    linux-image-virtual \
     initramfs-tools \
-    systemd systemd-sysv systemd-timesyncd systemd-resolved \
+    systemd systemd-sysv systemd-timesyncd \
     udev kmod iproute2 iputils-ping curl wget ca-certificates gnupg \
     openssh-server \
     && \
-    apt-get install -y --no-install-recommends \
+    apt-get $APT_OPTS install -y --no-install-recommends \
         linux-modules-extra-"$(ls /lib/modules/ | sort -V | tail -1)" && \
     # --- Docker engine (latest stable) from Docker's official apt repo ---
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
-    echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble ${DOCKER_CHANNEL}" \
+    echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy ${DOCKER_CHANNEL}" \
         > /etc/apt/sources.list.d/docker.list && \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends \
         docker-ce docker-ce-cli containerd.io && \
     mkdir -p /etc/docker && \
     cp /run/secrets/daemon_json /etc/docker/daemon.json && \
@@ -44,7 +53,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
     #     devices= option; not in initramfs, where an early no-option load would
     #     make the modules-load.d modprobe a no-op ---
     echo 'options binder_linux devices="binder,hwbinder,vndbinder"' > /etc/modprobe.d/binder.conf && \
-    printf "binder_linux\nbinfmt_misc\nloop\n" > /etc/modules-load.d/redroid.conf && \
+    printf "ashmem_linux\nbinder_linux\nbinfmt_misc\nloop\n" > /etc/modules-load.d/redroid.conf && \
     KVER="$(ls /lib/modules | sort -V | tail -1)" && \
     for m in ip_tables iptable_filter iptable_nat iptable_mangle \
              ip6_tables ip6table_filter ip6table_nat \
@@ -72,23 +81,48 @@ RUN --mount=type=secret,id=cocoon_overlay \
     echo 'root:cocoon' | chpasswd && \
     rm -rf /var/lib/apt/lists/*
 
-# --- Remote view: scrcpy 4.1 (Android 15) + Xvfb + x11vnc + noVNC, a systemd
-#     service that mirrors the baked redroid container to VNC :5900 and browser
-#     noVNC :6080, and makes Lawnchair the default HOME once Android boots ---
+# --- Remote view: scrcpy 4.1 H.264 is passed through directly to RFB encoding
+#     50. Non-H.264 clients fall back to a lazily decoded
+#     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
+#     server or framebuffer scraping hop. ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb x11vnc novnc websockify openbox android-tools-adb \
-    libgl1 libgles2 libegl1 mesa-libgallium libx11-6 libxext6 libxfixes3 \
-    libsm6 libice6 libusb-1.0-0 && \
-    curl -fsSL https://github.com/Genymobile/scrcpy/releases/download/v4.1/scrcpy-linux-x86_64-v4.1.tar.gz \
-        | tar xz -C /opt && \
-    ln -s /opt/scrcpy-linux-x86_64-*/scrcpy /usr/local/bin/scrcpy && \
-    rm -rf /var/lib/apt/lists/*
+    adb libjpeg-turbo8 zlib1g && \
+    test -n "$SCRCPY_RFB_COMMIT" && \
+    case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
+    install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
+    curl -fsSL \
+      https://github.com/Genymobile/scrcpy/releases/download/v4.1/scrcpy-server-v4.1 \
+      -o /usr/local/share/scrcpy/scrcpy-server.jar && \
+    echo "$SCRCPY_SERVER_SHA256  /usr/local/share/scrcpy/scrcpy-server.jar" | sha256sum -c - && \
+    BASE="https://github.com/$SCRCPY_RFB_REPO/releases/download/$SCRCPY_RFB_TAG" && \
+    ARTIFACT="scrcpy-rfb-linux-$TARGETARCH" && \
+    curl -fsSL "$BASE/build-info.json?commit=$SCRCPY_RFB_COMMIT" -o /tmp/scrcpy-rfb/build-info.json && \
+    grep -Fq "\"commit\": \"$SCRCPY_RFB_COMMIT\"" /tmp/scrcpy-rfb/build-info.json && \
+    curl -fsSL "$BASE/$ARTIFACT?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT" && \
+    curl -fsSL "$BASE/$ARTIFACT.sha256?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT.sha256" && \
+    cd /tmp/scrcpy-rfb && sha256sum -c "$ARTIFACT.sha256" && \
+    install -m 0755 "$ARTIFACT" /usr/local/bin/scrcpy-rfb && \
+    cd / && rm -rf /tmp/scrcpy-rfb && \
+    apt-get purge -y --auto-remove curl wget gnupg && \
+    apt-get clean && \
+    rm -rf \
+      /var/lib/apt/lists/* \
+      /var/cache/apt/* \
+      /var/cache/debconf/* \
+      /usr/share/man/* \
+      /usr/share/info/* \
+      /tmp/* /var/tmp/* && \
+    find /var/log -type f -exec truncate -s 0 {} +
 COPY 24.04-redroid/remoteview-run.sh /usr/local/bin/remoteview-run.sh
 COPY 24.04-redroid/remoteview.service /etc/systemd/system/remoteview.service
-RUN chmod +x /usr/local/bin/remoteview-run.sh && systemctl enable remoteview.service
+COPY 24.04-redroid/redroid-ensure.sh /usr/local/sbin/redroid-ensure.sh
+COPY 24.04-redroid/redroid.service /etc/systemd/system/redroid.service
+RUN chmod +x /usr/local/bin/remoteview-run.sh /usr/local/sbin/redroid-ensure.sh && \
+    systemctl enable redroid.service remoteview.service
 
-# Baked docker state: the redroid image + a --restart unless-stopped container,
-# started at build time, so dockerd auto-runs it on boot (no boot-time docker run).
+# Baked Docker state contains only the single-layer ReDroid 16 GMS image. On the
+# first VM boot redroid.service creates the vfs container in Cocoon's COW layer;
+# it is then reused with --restart unless-stopped.
 ADD 24.04-redroid/docker-data.tar /var/lib/docker/
 
 CMD ["/sbin/init"]

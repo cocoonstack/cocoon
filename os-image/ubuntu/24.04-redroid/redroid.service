@@ -1,0 +1,16 @@
+[Unit]
+Description=Create ReDroid on first boot and ensure it is running
+Requires=docker.service
+After=docker.service
+Before=remoteview.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=0
+ExecStartPre=/sbin/modprobe ashmem_linux
+ExecStartPre=/sbin/modprobe binder_linux devices=binder,hwbinder,vndbinder
+ExecStart=/usr/local/sbin/redroid-ensure.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
