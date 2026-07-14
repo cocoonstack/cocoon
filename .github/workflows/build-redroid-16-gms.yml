@@ -1,0 +1,178 @@
+name: build-redroid-16-gms
+
+# Dedicated workflow for os-image/ubuntu/22.04-redroid-16.0-gms-h264: a privileged
+# DinD bakes an already-running ReDroid container into the VM image, so it needs a
+# native runner per arch (the bake executes Android /init) with binder_linux
+# loaded on the runner host. Not part of build-os-images.yml (that generic matrix
+# cannot produce docker-data.tar). Manual trigger only.
+on:
+  # On-branch testing: a push runs the probe (empty inputs -> gms=false, push=false).
+  # workflow_dispatch (with inputs) is for full/pushing runs once this is on master.
+  push:
+    branches: [feat/os-image-redroid-16.0-gms-h264]
+    paths:
+      - 'os-image/ubuntu/22.04-redroid-16.0-gms-h264/**'
+      - '.github/workflows/build-redroid-16-gms.yml'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "push per-arch images + a multi-arch manifest to ghcr"
+        type: boolean
+        default: false
+      gms:
+        description: "true = real GApps image (needs prepare-gapps16.sh); false = plain redroid 16 (pipeline probe)"
+        type: boolean
+        default: true
+      vm_tag:
+        description: "base VM image tag"
+        default: "16.0-gms-h264"
+
+env:
+  REGISTRY_NS: ghcr.io/cocoonstack/cocoon
+  IMAGE: ghcr.io/cocoonstack/cocoon/redroid-16-gms-h264
+  IMAGE_DIR: os-image/ubuntu/22.04-redroid-16.0-gms-h264
+  REDROID_DIGEST: sha256:7b1e389bd15f37af3bcd06138f5b2ffa7cfba4332bd5ef54c53e99c2f160a15b
+
+jobs:
+  bake:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runs-on: ubuntu-24.04 }
+          - { arch: arm64, runs-on: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      # DinD shares the runner-host kernel, so binder must load HERE for ReDroid's
+      # /init to survive the bake. binder_linux ships in linux-modules-extra for the
+      # exact azure kernel; that package intermittently lags in apt, so retry + fail
+      # loudly (this arch then needs a self-hosted runner with binder preloaded).
+      - name: Preflight binder_linux
+        run: |
+          set -euo pipefail
+          KREL="$(uname -r)"
+          echo "runner kernel: $KREL  arch: ${{ matrix.arch }}"
+          sudo apt-get update
+          ok=0
+          for i in 1 2 3; do
+            if sudo apt-get install -y "linux-modules-extra-${KREL}"; then ok=1; break; fi
+            echo "linux-modules-extra-${KREL} install attempt $i failed; retry"; sleep 5; sudo apt-get update || true
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::linux-modules-extra-${KREL} unavailable in apt (azure kernel/package skew). Move ${{ matrix.arch }} to a self-hosted runner with binder preloaded." >&2
+            exit 1
+          fi
+          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder"
+          test -e /dev/binder || { echo "::error::/dev/binder absent after modprobe" >&2; exit 1; }
+          sudo modprobe ashmem_linux 2>/dev/null || echo "ashmem absent (fine, use_memfd=1)"
+          echo "binder OK"
+
+      - name: Host build deps
+        run: |
+          sudo apt-get install -y curl ca-certificates unzip gzip \
+            erofs-utils android-sdk-libsparse-utils e2fsprogs
+
+      # ---- GApps overlay (real image only). prepare-gapps16.sh downloads the Google
+      #      API-36 Play Store system image, verifies it, extracts system.img, and
+      #      emits gapps16-<arch>.tar. ----
+      - name: Cache raw Google system image
+        if: ${{ inputs.gms }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.IMAGE_DIR }}/.cache-gapps16
+          key: gapps16-sysimg-${{ matrix.arch }}-api36
+      - name: Prepare gapps tar
+        if: ${{ inputs.gms }}
+        run: |
+          set -euo pipefail
+          cd "${IMAGE_DIR}"
+          ARCH=${{ matrix.arch }} bash prepare-gapps16.sh
+          test -f "gapps16-${{ matrix.arch }}.tar"
+
+      - name: Login to ghcr
+        if: ${{ inputs.push }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---- ReDroid source image (local/redroid-gms:16.0-cocoon), single layer ----
+      - name: Build ReDroid source image
+        run: |
+          set -euo pipefail
+          cd "${IMAGE_DIR}"
+          if [ "${{ inputs.gms }}" = "true" ]; then
+            docker buildx build --load --platform linux/${{ matrix.arch }} \
+              --build-arg TARGETARCH=${{ matrix.arch }} \
+              --build-arg GAPPS_TAR=gapps16-${{ matrix.arch }}.tar \
+              -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon .
+          else
+            printf 'FROM redroid/redroid:16.0.0_64only-latest@%s AS b\nFROM scratch\nCOPY --from=b / /\nWORKDIR /\nENTRYPOINT ["/init", "qemu=1", "androidboot.hardware=redroid"]\n' \
+              "${REDROID_DIGEST}" > /tmp/flat.Dockerfile
+            docker buildx build --load --platform linux/${{ matrix.arch }} \
+              -f /tmp/flat.Dockerfile -t local/redroid-gms:16.0-cocoon /tmp
+          fi
+          test "$(docker image inspect --format '{{len .RootFS.Layers}}' local/redroid-gms:16.0-cocoon)" = 1
+
+      # ---- Privileged DinD bake (running container) + VM image build (+ push) ----
+      - name: Bake VM image
+        env:
+          ARCH: ${{ matrix.arch }}
+          REDROID_SRC: local/redroid-gms:16.0-cocoon
+          USE_MEMFD: "1"
+          REGISTRY: ${{ env.REGISTRY_NS }}
+          VM_TAG: redroid-16-gms-h264:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}
+          PUSH: ${{ inputs.push && '1' || '0' }}
+        run: |
+          cd "${IMAGE_DIR}"
+          bash build.sh
+
+      # ---- cocoon image pull hard-fails without these ----
+      - name: Assert boot files present
+        if: ${{ inputs.push }}
+        run: |
+          set -euo pipefail
+          REF="${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}"
+          cid=$(docker create "$REF")
+          docker export "$cid" | tar -tf - \
+            | grep -E '(^|/)boot/(vmlinuz|initrd\.img)' | grep -v '\.old$' | head
+          docker rm "$cid" >/dev/null
+          echo "boot files OK in $REF"
+
+  manifest:
+    needs: bake
+    if: ${{ inputs.push }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Login to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # A real OCI index — two arch tags alone defeat cocoon's WithPlatform auto-select.
+      - name: Stitch multi-arch manifest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create -t "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}" \
+            "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-amd64" \
+            "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-arm64"
+          docker buildx imagetools inspect "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}"
