@@ -12,6 +12,9 @@ on:
         description: "Force rebuild without cache"
         type: boolean
         default: false
+      only:
+        description: "Restrict to one os-image dir <family>/<tag>, e.g. ubuntu/22.04-redroid-16.0-gms-h264; empty = all"
+        default: ""
 
 permissions:
   contents: read
@@ -39,6 +42,7 @@ jobs:
             declare -A names
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
+              [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
               name=$(echo "$dockerfile" | cut -d'/' -f2)
               names[$name]=1
             done <<< "$(find os-image -name Dockerfile -type f)"
@@ -50,6 +54,7 @@ jobs:
               declare -A names
               while IFS= read -r dockerfile; do
                 [[ -z "$dockerfile" ]] && continue
+                [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
                 name=$(echo "$dockerfile" | cut -d'/' -f2)
                 names[$name]=1
               done <<< "$(find os-image -name Dockerfile -type f)"
@@ -58,6 +63,8 @@ jobs:
               all_changed=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'os-image/' | sort -u)
               declare -A names
               for f in $all_changed; do
+                tag_dir=$(echo "$f" | cut -d'/' -f1-3)
+                [[ -f "$tag_dir/.skip-generic-build" ]] && continue
                 name=$(echo "$f" | cut -d'/' -f2)
                 if [[ -n "$name" ]]; then
                   names[$name]=1
@@ -96,12 +103,24 @@ jobs:
             # Find all Dockerfiles for this name
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
+              [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
               tag=$(echo "$dockerfile" | cut -d'/' -f3)
               if [[ -n "$tag" ]]; then
                 matrix_entries+=("{\"name\":\"$name\",\"tag\":\"$tag\",\"no_cache\":\"$needs_no_cache\",\"platforms\":\"$platforms\"}")
               fi
             done <<< "$(find "os-image/$name" -name Dockerfile -type f)"
           done
+
+          # Optional workflow_dispatch scoping: build only one <family>/<tag>.
+          ONLY="${{ github.event.inputs.only }}"
+          if [[ -n "$ONLY" ]]; then
+            want_name="${ONLY%%/*}"; want_tag="${ONLY#*/}"
+            filtered=()
+            for e in "${matrix_entries[@]}"; do
+              [[ "$e" == *"\"name\":\"$want_name\""* && "$e" == *"\"tag\":\"$want_tag\""* ]] && filtered+=("$e")
+            done
+            matrix_entries=("${filtered[@]}")
+          fi
 
           if [[ ${#matrix_entries[@]} -eq 0 ]]; then
             echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
@@ -136,14 +155,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # An image may repoint its published name/tag via a `publish-as` file
+      # (`<name>:<tag>`); without one it publishes as its own family/tag.
+      - name: Resolve publish target
+        id: publish
+        run: |
+          name="${{ matrix.name }}"
+          tag="${{ matrix.tag }}"
+          f="os-image/${{ matrix.name }}/${{ matrix.tag }}/publish-as"
+          if [[ -f "$f" ]]; then
+            spec="$(tr -d '[:space:]' < "$f")"
+            name="${spec%%:*}"
+            tag="${spec#*:}"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          images: ghcr.io/${{ github.repository }}/${{ steps.publish.outputs.name }}
+          # Canonical tag only from master; the always-on sha tag gives a pullable
+          # ref for pre-merge dispatch builds without clobbering the release tag.
           tags: |
-            type=raw,value=${{ matrix.tag }}
-            type=sha,prefix=${{ matrix.tag }}-
+            type=raw,value=${{ steps.publish.outputs.tag }},enable=${{ github.ref_name == 'master' }}
+            type=sha,prefix=${{ steps.publish.outputs.tag }}-
 
       - name: Discover secret files
         id: secrets
@@ -174,6 +211,33 @@ jobs:
             done
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # Optional per-image build-artifact hook: runs only for tag dirs that ship a
+      # ci-prepare.sh (currently only the ReDroid GMS image, which needs a
+      # privileged DinD bake to produce docker-data-<arch>.tar). No-op for every
+      # other image. Runs AFTER secret discovery so its multi-GB tars are not
+      # globbed as secrets, and after QEMU/Buildx so the arm64 bake can emulate.
+      - name: Free disk space
+        if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - name: Cache raw Google system images
+        if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
+        uses: actions/cache@v4
+        with:
+          path: os-image/${{ matrix.name }}/${{ matrix.tag }}/.cache-gapps16
+          key: gapps16-sysimg-${{ hashFiles(format('os-image/{0}/{1}/prepare-gapps16.sh', matrix.name, matrix.tag)) }}
+
+      - name: Run CI prepare hook
+        if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
+        run: bash "os-image/${{ matrix.name }}/${{ matrix.tag }}/ci-prepare.sh"
 
       - name: Build and push
         uses: docker/build-push-action@v7
