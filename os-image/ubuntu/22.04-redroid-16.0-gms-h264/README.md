@@ -101,6 +101,14 @@ not boot Android on the build host, so CI does not need binder or ashmem. The
 wrapper removes its marker from the created container's VFS root. When the VM's
 dockerd replays that same container, it immediately execs Android `/init`.
 
+On a new Android data volume, the boot-complete hook registers the bundled GMS
+Core APK once as a Package Manager update under `/data/app`. Google's Play
+emulator seeds GMS Core and its install-time Chimera splits in userdata, but the
+portable overlay above intentionally carves only `product` and `system_ext`.
+Without this one-time step the remaining system container APK reports no usable
+Chimera modules. The persisted `/var/lib/redroid-data` bind makes later VM
+stop/start cycles a path check only; GMS Core is not reinstalled on every boot.
+
 amd64 (x86_64 GMS + libndk ARM translation):
 
 ```bash

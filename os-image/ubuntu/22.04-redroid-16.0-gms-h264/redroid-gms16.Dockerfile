@@ -94,6 +94,8 @@ RUN rm -rf \
     test -f /redroid/system/system_ext/priv-app/GoogleServicesFramework/GoogleServicesFramework.apk && \
     test -f /redroid/system/product/app/Chrome/Chrome.apk && \
     test -f /redroid/system/product/app/TrichromeLibrary/TrichromeLibrary.apk && \
+    grep -Fq 'pm install -r -d --force-sdk "$GMS_APK"' \
+      /redroid/system/etc/fossify-home.sh && \
     test -x /redroid/cocoon-bake-init && \
     test -x /redroid/busybox && \
     test -f /redroid/.cocoon-bake-once
