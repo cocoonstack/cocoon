@@ -73,7 +73,7 @@ still require a WebView provider.
 ## Device identity masking
 
 `mask-device.rc` runs `mask-device.sh` as root on boot, using Magisk's
-`resetprop` (bundled as `/system/bin/magisk_rp`) to rewrite the redroid/emulator
+`resetprop` (installed as `/system/bin/resetprop`) to rewrite the redroid/emulator
 giveaway properties — `ro.product.*`, `ro.build.fingerprint`, `ro.hardware`,
 `ro.product.cpu.abilist`, `ro.dalvik.vm.native.bridge`, build type/tags — to a
 real device (Pixel 8). `build.prop` cannot change these: `ro.hardware` comes from

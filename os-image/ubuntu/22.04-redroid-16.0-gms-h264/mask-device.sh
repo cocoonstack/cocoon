@@ -8,8 +8,7 @@
 # This does NOT defeat SELinux-state (redroid runs SELinux disabled) or
 # Play-Integrity hardware attestation — apps enforcing those still detect the
 # container. It only clears the property-level tells.
-MG=/system/bin/magisk_rp
-RP="$MG resetprop -n"
+RP="/system/bin/resetprop -n"
 FP="google/shiba/shiba:16/AP41.240925.009/12345678:user/release-keys"
 
 for suf in "" .system .vendor .product .odm .system_ext; do

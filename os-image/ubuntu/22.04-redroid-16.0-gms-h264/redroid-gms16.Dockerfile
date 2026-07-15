@@ -46,15 +46,17 @@ RUN mkdir -p /output/system/app/FossifyLauncher && \
     curl -fsSL "$FOSSIFY_URL" -o /output/system/app/FossifyLauncher/FossifyLauncher.apk && \
     echo "${FOSSIFY_SHA256}  /output/system/app/FossifyLauncher/FossifyLauncher.apk" | sha256sum -c -
 
-# Magisk's resetprop (bundled as /system/bin/magisk_rp) is run as root at boot by
-# mask-device.rc to rewrite the redroid/emulator giveaway props to a real device.
+# Magisk's resetprop applet (installed as /system/bin/resetprop) is run as root at
+# boot by mask-device.rc to rewrite the redroid/emulator giveaway props to a real
+# device. The multi-call libmagisk.so dispatches its applet by argv[0], so the
+# binary must be named resetprop (not magisk_rp, which is "applet not found").
 RUN abi="$([ "$TARGETARCH" = arm64 ] && echo arm64-v8a || echo x86_64)" && \
     curl -fsSL "$MAGISK_URL" -o /tmp/magisk.apk && \
     echo "${MAGISK_SHA256}  /tmp/magisk.apk" | sha256sum -c - && \
     mkdir -p /output/system/bin /tmp/mgk && \
     unzip -o -j /tmp/magisk.apk "lib/$abi/libmagisk.so" -d /tmp/mgk && \
-    install -m 0755 /tmp/mgk/libmagisk.so /output/system/bin/magisk_rp && \
-    test -x /output/system/bin/magisk_rp && \
+    install -m 0755 /tmp/mgk/libmagisk.so /output/system/bin/resetprop && \
+    test -x /output/system/bin/resetprop && \
     rm -rf /tmp/magisk.apk /tmp/mgk
 
 COPY --from=redroid_base /system/build.prop /tmp/system-build.prop
@@ -111,7 +113,7 @@ RUN rm -rf \
     test -f /redroid/system/product/app/TrichromeLibrary/TrichromeLibrary.apk && \
     grep -Fq 'pm install -r -d --force-sdk "$GMS_APK"' \
       /redroid/system/etc/fossify-home.sh && \
-    test -x /redroid/system/bin/magisk_rp && \
+    test -x /redroid/system/bin/resetprop && \
     test -f /redroid/system/etc/init/mask-device.rc && \
     grep -Fq 'resetprop -n' /redroid/system/etc/mask-device.sh && \
     test -x /redroid/cocoon-bake-init && \
