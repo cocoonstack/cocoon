@@ -96,6 +96,8 @@ RUN rm -rf \
     test -f /redroid/system/product/app/TrichromeLibrary/TrichromeLibrary.apk && \
     grep -Fq 'pm install -r -d --force-sdk "$GMS_APK"' \
       /redroid/system/etc/fossify-home.sh && \
+    grep -Fq 'pm disable-user --user 0 com.android.launcher3' \
+      /redroid/system/etc/fossify-home.sh && \
     test -x /redroid/cocoon-bake-init && \
     test -x /redroid/busybox && \
     test -f /redroid/.cocoon-bake-once

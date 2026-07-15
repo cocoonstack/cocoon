@@ -1,6 +1,6 @@
 #!/system/bin/sh
-# Ensure the curated GMS/Chrome set is enabled for the primary user, then prefer
-# Fossify Launcher while keeping Launcher3 enabled as a recovery fallback.
+# Ensure the curated GMS/Chrome set is enabled for the primary user, then make
+# Fossify the sole HOME (Launcher3 disabled) so no home-picker chooser appears.
 TARGET=org.fossify.home/org.fossify.home.activities.MainActivity
 GMS_APK=/system/product/priv-app/PrebuiltGmsCore/PrebuiltGmsCore.apk
 
@@ -45,7 +45,12 @@ while [ "$i" -lt 90 ]; do
         -c android.intent.category.HOME \
         -a android.intent.action.MAIN 2>/dev/null | tail -n 1)
     case "$home" in
-        org.fossify.home/*) exit 0 ;;
+        org.fossify.home/*)
+            # Fossify is the resolved HOME; disable Launcher3 so it is the only
+            # HOME app and Android never shows the "Select Home app" chooser.
+            pm disable-user --user 0 com.android.launcher3 >/dev/null 2>&1 || true
+            exit 0
+            ;;
     esac
     i=$((i + 1))
     sleep 2
