@@ -96,9 +96,6 @@ docker exec -e REDROID_SRC="$REDROID_SRC" -e USE_MEMFD="$USE_MEMFD" rd-gen sh -c
         androidboot.redroid_dpi=320 \
         androidboot.redroid_fps=60 \
         androidboot.redroid_gpu_mode=guest \
-        androidboot.redroid_net_ndns=2 \
-        androidboot.redroid_net_dns1=10.104.195.101 \
-        androidboot.redroid_net_dns2=10.104.195.102 \
         ro.setupwizard.mode=DISABLED >/dev/null
     sleep 30
     if [ "$(docker inspect -f "{{.State.Running}}" redroid)" != true ]; then

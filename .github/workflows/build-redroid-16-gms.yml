@@ -29,7 +29,9 @@ on:
 
 env:
   REGISTRY_NS: ghcr.io/cocoonstack/cocoon
-  IMAGE: ghcr.io/cocoonstack/cocoon/redroid-16-gms-h264
+  # Aligned with the other Android/redroid images (android:14.0 / 15.0 / 15.0-gms);
+  # gms + h264 live in the tag.
+  IMAGE: ghcr.io/cocoonstack/cocoon/android
   IMAGE_DIR: os-image/ubuntu/22.04-redroid-16.0-gms-h264
   REDROID_DIGEST: sha256:7b1e389bd15f37af3bcd06138f5b2ffa7cfba4332bd5ef54c53e99c2f160a15b
 
@@ -138,7 +140,7 @@ jobs:
           REDROID_SRC: local/redroid-gms:16.0-cocoon
           USE_MEMFD: "1"
           REGISTRY: ${{ env.REGISTRY_NS }}
-          VM_TAG: redroid-16-gms-h264:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}
+          VM_TAG: android:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}
           PUSH: ${{ (github.event_name == 'push' || inputs.push) && '1' || '0' }}
         run: |
           cd "${IMAGE_DIR}"
