@@ -17,14 +17,17 @@ scrcpy H.264 stream.
 
 ## Boot and persistence
 
-The build creates AND starts the ReDroid container inside a privileged
-Docker-in-Docker daemon, then bakes the whole vfs `/var/lib/docker` (the
-single-layer image plus a `--restart unless-stopped` container) into the VM
-rootfs. On boot the VM's dockerd replays the container from its restart policy —
+The build creates the ReDroid container and starts only its one-shot bake
+wrapper inside a privileged Docker-in-Docker daemon. It then bakes the whole
+vfs `/var/lib/docker` (the single-layer image plus a restart-primed
+`--restart unless-stopped` container) into the VM rootfs. On boot the VM's
+dockerd replays the container from its restart policy —
 there is **no first-boot `docker create` and no launcher service**, so the
 multi-GB vfs create-copy is off the run/start path and the container is up as
-soon as dockerd starts. binder and ashmem load via `modules-load.d` at sysinit,
-before `docker.service`.
+soon as dockerd starts. The VM keeps binder and ashmem in `modules-load.d`, but
+its exported rootfs can run under container-detected virtualization where that
+loader is skipped. Explicit `docker.service` `ExecStartPre` hooks therefore
+load both modules before dockerd replays ReDroid.
 
 Because the container is baked into the immutable EROFS, its vfs rootfs copy is
 shared read-only across all VMs/clones of the image; the per-VM COW holds only
@@ -32,6 +35,16 @@ the container's runtime writes. Android's `/data` is a fresh per-VM bind volume
 (`/var/lib/redroid-data`), so Android itself cold-boots on the first start of
 each VM even though the container is already running. Later VM stop/start cycles
 reuse the same container and `/data`.
+
+The baked container defaults Android DNS to `8.8.8.8` and `1.1.1.1`. Override
+these at image-build time when the deployment needs internal resolvers:
+
+```bash
+REDROID_DNS1=<primary-dns> REDROID_DNS2=<secondary-dns> bash build.sh
+```
+
+The values are part of the baked container command; they are not runtime
+environment variables of an already-published VM image.
 
 Bridge mode is intentional. ReDroid's Android `netd` must not share the VM host
 network namespace, where its policy routing can make the VM itself unreachable.
@@ -82,18 +95,21 @@ vncviewer -Shared=1 <vm-ip>::5900
 
 ## Build
 
-Each architecture is built on a native host of that arch: the bake step runs the
-ReDroid container in a DinD (needs binder + ashmem), so there is no qemu
-emulation and no cross-arch bake.
+Each architecture uses its matching native GitHub runner. The DinD bake starts
+only a one-shot wrapper for long enough to arm Docker's restart policy; it does
+not boot Android on the build host, so CI does not need binder or ashmem. The
+wrapper removes its marker from the created container's VFS root. When the VM's
+dockerd replays that same container, it immediately execs Android `/init`.
 
 amd64 (x86_64 GMS + libndk ARM translation):
 
 ```bash
-# 1. prepare gapps16-x86_64.tar from Google's pinned API-36 Play Store system image
+# 1. prepare gapps16-x86_64.tar from Google's pinned API-36 r07 Play Store image
+ARCH=amd64 bash prepare-gapps16.sh
 # 2. build the ReDroid 16 GMS image
 docker buildx build --platform linux/amd64 --load \
   -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon .
-# 3. bake the running container and build the VM image (amd64 host with binder)
+# 3. prime the baked container's restart policy and build the VM image
 ARCH=amd64 REDROID_SRC=local/redroid-gms:16.0-cocoon \
   VM_TAG=ubuntu-redroid-16.0-gms-h264:22.04-android16 PUSH=0 bash build.sh
 ```
@@ -101,9 +117,9 @@ ARCH=amd64 REDROID_SRC=local/redroid-gms:16.0-cocoon \
 arm64 (native arm64 GMS, no translator):
 
 ```bash
-OUT_NAME=gapps16-arm64.tar ... prepare-gapps16-inner.sh   # from an arm64-v8a system image
+ARCH=arm64 bash prepare-gapps16.sh
 docker buildx build --platform linux/arm64 --load \
-  --build-arg GAPPS_TAR=gapps16-arm64.tar \
+  --build-arg GAPPS_TAR=gapps16-arm64-v8a.tar \
   -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon-arm64 .
 ARCH=arm64 REDROID_SRC=local/redroid-gms:16.0-cocoon-arm64 \
   VM_TAG=ubuntu-redroid-16.0-gms-h264:22.04-android16-arm64 PUSH=0 bash build.sh
@@ -111,8 +127,8 @@ ARCH=arm64 REDROID_SRC=local/redroid-gms:16.0-cocoon-arm64 \
 
 `build.sh` resolves the current `dev` release from `cocoonstack/libvncserver`,
 pins its 40-character source commit, verifies the release SHA, verifies that
-ReDroid is a single physical layer, bakes the running container into a vfs
-Docker store, and builds the `linux/$ARCH` VM image.
+ReDroid is a single physical layer, bakes the restart-primed container into a
+vfs Docker store, and builds the `linux/$ARCH` VM image.
 
 Export a Cocoon-importable rootfs (per arch):
 
@@ -143,7 +159,8 @@ match the arch. `scrcpy-rfb` and `scrcpy-server` are released for both arches.
 
 ## Verification
 
-Run `verify-vm-inner.sh` inside the built rootfs/VM. Runtime checks should also
+`verify-vm-inner.sh` runs during the VM Docker build and again against each
+published per-architecture image in CI. Runtime checks should additionally
 confirm `sys.boot_completed=1`, ports 5555/5900, the baked container coming up on
 boot with no launcher service, Docker restart policy and data mount, the enabled
 package set above, and concurrent H.264 plus ordinary RFB clients.

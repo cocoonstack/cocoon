@@ -5,8 +5,9 @@ set -euo pipefail
 test -e /boot/vmlinuz
 test -e /boot/initrd.img
 test -d /var/lib/redroid-data
-test -f /lib/modules/*/kernel/drivers/staging/android/ashmem_linux.ko
-test -f /lib/modules/*/kernel/drivers/android/binder_linux.ko
+KVER="$(ls /lib/modules | sort -V | tail -1)"
+modinfo -k "$KVER" ashmem_linux >/dev/null
+modinfo -k "$KVER" binder_linux >/dev/null
 test -f /etc/systemd/system/remoteview.service
 grep -Fq 'MAX_FPS="${MAX_FPS:-60}"' /usr/local/bin/remoteview-run.sh
 grep -Fq 'VIDEO_BIT_RATE="${VIDEO_BIT_RATE:-8000000}"' /usr/local/bin/remoteview-run.sh
@@ -53,9 +54,13 @@ grep -Fq '"Name":"unless-stopped"' "$host"
 grep -Fq '"5555/tcp"' "$host"
 grep -Fq '/var/lib/redroid-data:/data' "$host"
 grep -Fq 'local/redroid' /var/lib/docker/image/vfs/repositories.json
+grep -Fq 'androidboot.redroid_net_ndns=2' "$cfg"
+grep -Fq 'androidboot.redroid_net_dns1=' "$cfg"
+grep -Fq 'androidboot.redroid_net_dns2=' "$cfg"
+! grep -Eq 'androidboot\.redroid_net_dns[12]=10\.104\.' "$cfg"
 
 for value in \
-    androidboot.use_memfd=1 \
+    androidboot.use_memfd=0 \
     androidboot.redroid_fps=60 \
     androidboot.redroid_width=720 \
     androidboot.redroid_height=1280 \

@@ -134,5 +134,8 @@ RUN chmod +x /usr/local/bin/remoteview-run.sh && \
 # container-rootfs copy lives in the shared immutable EROFS (paid once per image,
 # not per VM); the per-VM COW holds only the container's runtime writes.
 ADD 22.04-redroid-16.0-gms-h264/docker-data.tar /var/lib/docker/
+COPY 22.04-redroid-16.0-gms-h264/verify-vm-inner.sh /usr/local/libexec/cocoon/verify-vm-inner.sh
+RUN chmod 0755 /usr/local/libexec/cocoon/verify-vm-inner.sh && \
+    /usr/local/libexec/cocoon/verify-vm-inner.sh
 
 CMD ["/sbin/init"]
