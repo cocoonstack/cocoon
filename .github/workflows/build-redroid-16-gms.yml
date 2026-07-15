@@ -1,15 +1,14 @@
 name: build-redroid-16-gms
 
 # Dedicated workflow for os-image/ubuntu/22.04-redroid-16.0-gms-h264: a privileged
-# DinD bakes an already-running ReDroid container into the VM image, so it needs a
-# native runner per arch (the bake executes Android /init) with binder_linux
-# loaded on the runner host. Not part of build-os-images.yml (that generic matrix
-# cannot produce docker-data.tar). Manual trigger only.
+# DinD bakes a restart-primed ReDroid container into the VM image. The one-shot
+# bake wrapper does not boot Android on the runner, so runner binder/ashmem are
+# not required. This is not part of build-os-images.yml because the generic
+# matrix cannot produce docker-data.tar. Feature-branch pushes publish immutable
+# dev-SHA tags; master/manual releases publish the requested canonical tag.
 on:
-  # On-branch testing: a push runs the probe (empty inputs -> gms=false, push=false).
-  # workflow_dispatch (with inputs) is for full/pushing runs once this is on master.
   push:
-    branches: [feat/os-image-redroid-16.0-gms-h264]
+    branches: [master, feat/os-image-redroid-16.0-gms-h264]
     paths:
       - 'os-image/ubuntu/22.04-redroid-16.0-gms-h264/**'
       - '.github/workflows/build-redroid-16-gms.yml'
@@ -34,6 +33,8 @@ env:
   IMAGE: ghcr.io/cocoonstack/cocoon/android
   IMAGE_DIR: os-image/ubuntu/22.04-redroid-16.0-gms-h264
   REDROID_DIGEST: sha256:7b1e389bd15f37af3bcd06138f5b2ffa7cfba4332bd5ef54c53e99c2f160a15b
+  BUSYBOX_DIGEST: sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+  PUBLISH_TAG: ${{ (github.event_name == 'push' && github.ref_name != 'master' && format('dev-{0}', github.sha)) || inputs.vm_tag || '16.0-gms-h264' }}
 
 jobs:
   bake:
@@ -50,6 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate workflow inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "${{ inputs.push }}" = "true" ] && [ "${{ inputs.gms }}" != "true" ]; then
+            echo "::error::Refusing to publish a non-GMS probe under a GMS image tag" >&2
+            exit 1
+          fi
+
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -59,31 +68,6 @@ jobs:
           haskell: true
           large-packages: true
           swap-storage: false
-
-      # DinD shares the runner-host kernel, so binder must load HERE for ReDroid's
-      # /init to survive the bake. binder_linux ships in linux-modules-extra for the
-      # exact azure kernel; that package intermittently lags in apt, so retry + fail
-      # loudly (this arch then needs a self-hosted runner with binder preloaded).
-      - name: Preflight binder_linux
-        run: |
-          set -euo pipefail
-          KREL="$(uname -r)"
-          echo "runner kernel: $KREL  arch: ${{ matrix.arch }}"
-          sudo apt-get update
-          ok=0
-          for i in 1 2 3; do
-            if sudo apt-get install -y "linux-modules-extra-${KREL}"; then ok=1; break; fi
-            echo "linux-modules-extra-${KREL} install attempt $i failed; retry"; sleep 5; sudo apt-get update || true
-          done
-          if [ "$ok" != 1 ]; then
-            echo "::error::linux-modules-extra-${KREL} unavailable in apt (azure kernel/package skew). Move ${{ matrix.arch }} to a self-hosted runner with binder preloaded." >&2
-            exit 1
-          fi
-          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder"
-          # ReDroid mounts binderfs inside the container; the host only needs the module loaded.
-          test -d /sys/module/binder_linux || { echo "::error::binder_linux not loaded" >&2; exit 1; }
-          sudo modprobe ashmem_linux 2>/dev/null || echo "ashmem absent (fine, use_memfd=1)"
-          echo "binder OK"
 
       - name: Host build deps
         run: |
@@ -98,7 +82,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.IMAGE_DIR }}/.cache-gapps16
-          key: gapps16-sysimg-${{ matrix.arch }}-api36
+          key: gapps16-sysimg-${{ matrix.arch }}-api36-r07
       - name: Prepare gapps tar
         if: ${{ github.event_name == 'push' || inputs.gms }}
         run: |
@@ -126,32 +110,33 @@ jobs:
               --build-arg GAPPS_TAR=gapps16-${{ matrix.abi }}.tar \
               -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon .
           else
-            printf 'FROM redroid/redroid:16.0.0_64only-latest@%s AS b\nFROM scratch\nCOPY --from=b / /\nWORKDIR /\nENTRYPOINT ["/init", "qemu=1", "androidboot.hardware=redroid"]\n' \
-              "${REDROID_DIGEST}" > /tmp/flat.Dockerfile
+            printf 'FROM redroid/redroid:16.0.0_64only-latest@%s AS b\nFROM busybox:1.37.0-musl@%s AS t\nFROM scratch\nCOPY --from=b / /\nCOPY --from=t /bin/busybox /busybox\nCOPY cocoon-bake-init.sh /cocoon-bake-init\nCOPY cocoon-bake-once /.cocoon-bake-once\nWORKDIR /\nENTRYPOINT ["/busybox", "sh", "/cocoon-bake-init", "qemu=1", "androidboot.hardware=redroid"]\n' \
+              "${REDROID_DIGEST}" "${BUSYBOX_DIGEST}" > /tmp/flat.Dockerfile
             docker buildx build --load --platform linux/${{ matrix.arch }} \
-              -f /tmp/flat.Dockerfile -t local/redroid-gms:16.0-cocoon /tmp
+              -f /tmp/flat.Dockerfile -t local/redroid-gms:16.0-cocoon .
           fi
           test "$(docker image inspect --format '{{len .RootFS.Layers}}' local/redroid-gms:16.0-cocoon)" = 1
 
-      # ---- Privileged DinD bake (running container) + VM image build (+ push) ----
+      # ---- Privileged DinD restart-policy bake + VM image build (+ push) ----
       - name: Bake VM image
         env:
           ARCH: ${{ matrix.arch }}
           REDROID_SRC: local/redroid-gms:16.0-cocoon
-          USE_MEMFD: "1"
+          USE_MEMFD: "0"
           REGISTRY: ${{ env.REGISTRY_NS }}
-          VM_TAG: android:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}
+          VM_TAG: android:${{ env.PUBLISH_TAG }}-${{ matrix.arch }}
           PUSH: ${{ (github.event_name == 'push' || inputs.push) && '1' || '0' }}
         run: |
           cd "${IMAGE_DIR}"
           bash build.sh
 
       # ---- cocoon image pull hard-fails without these ----
-      - name: Assert boot files present
+      - name: Validate published VM image
         if: ${{ github.event_name == 'push' || inputs.push }}
         run: |
           set -euo pipefail
-          REF="${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-${{ matrix.arch }}"
+          REF="${IMAGE}:${PUBLISH_TAG}-${{ matrix.arch }}"
+          docker run --rm --entrypoint /usr/local/libexec/cocoon/verify-vm-inner.sh "$REF"
           cid=$(docker create "$REF")
           docker export "$cid" | tar -tf - \
             | grep -E '(^|/)boot/(vmlinuz|initrd\.img)' | grep -v '\.old$' | head
@@ -175,7 +160,7 @@ jobs:
       - name: Stitch multi-arch manifest
         run: |
           set -euo pipefail
-          docker buildx imagetools create -t "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}" \
-            "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-amd64" \
-            "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}-arm64"
-          docker buildx imagetools inspect "${IMAGE}:${{ inputs.vm_tag || '16.0-gms-h264' }}"
+          docker buildx imagetools create -t "${IMAGE}:${PUBLISH_TAG}" \
+            "${IMAGE}:${PUBLISH_TAG}-amd64" \
+            "${IMAGE}:${PUBLISH_TAG}-arm64"
+          docker buildx imagetools inspect "${IMAGE}:${PUBLISH_TAG}"

@@ -39,6 +39,7 @@ jobs:
             declare -A names
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
+              [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
               name=$(echo "$dockerfile" | cut -d'/' -f2)
               names[$name]=1
             done <<< "$(find os-image -name Dockerfile -type f)"
@@ -50,6 +51,7 @@ jobs:
               declare -A names
               while IFS= read -r dockerfile; do
                 [[ -z "$dockerfile" ]] && continue
+                [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
                 name=$(echo "$dockerfile" | cut -d'/' -f2)
                 names[$name]=1
               done <<< "$(find os-image -name Dockerfile -type f)"
@@ -58,6 +60,8 @@ jobs:
               all_changed=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'os-image/' | sort -u)
               declare -A names
               for f in $all_changed; do
+                tag_dir=$(echo "$f" | cut -d'/' -f1-3)
+                [[ -f "$tag_dir/.skip-generic-build" ]] && continue
                 name=$(echo "$f" | cut -d'/' -f2)
                 if [[ -n "$name" ]]; then
                   names[$name]=1
@@ -96,6 +100,7 @@ jobs:
             # Find all Dockerfiles for this name
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
+              [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
               tag=$(echo "$dockerfile" | cut -d'/' -f3)
               if [[ -n "$tag" ]]; then
                 matrix_entries+=("{\"name\":\"$name\",\"tag\":\"$tag\",\"no_cache\":\"$needs_no_cache\",\"platforms\":\"$platforms\"}")

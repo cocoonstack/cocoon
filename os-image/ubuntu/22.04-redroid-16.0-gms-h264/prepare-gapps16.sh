@@ -13,8 +13,16 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ARCH="${ARCH:-amd64}"
 case "$ARCH" in
-  amd64) ABI=x86_64 ;;
-  arm64) ABI=arm64-v8a ;;
+  amd64)
+    ABI=x86_64
+    DEFAULT_ZIP=x86_64-36_r07.zip
+    DEFAULT_SHA1=16fa3c441d29fde6c9eea2f766eecf77032d68b4
+    ;;
+  arm64)
+    ABI=arm64-v8a
+    DEFAULT_ZIP=arm64-v8a-36_r07.zip
+    DEFAULT_SHA1=5b91ef80a5eb60d7b7167528db259c2a12d20e9c
+    ;;
   *) echo "unsupported ARCH: $ARCH" >&2; exit 1 ;;
 esac
 OUT="gapps16-${ABI}.tar"
@@ -26,27 +34,10 @@ mkdir -p "$CACHE"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo ">> resolving current ${ABI} API-36 Play Store system image"
-curl -fsSL "$REPO/sys-img/google_apis_playstore/sys-img2-3.xml" -o "$WORK/sys.xml"
-read -r ZIP SHA1 < <(python3 - "$WORK/sys.xml" "$ABI" <<'PY'
-import sys, re
-xml = open(sys.argv[1]).read(); abi = sys.argv[2]
-best = None  # pick the highest plain "<abi>-36_r<rev>.zip" (skip ext/36.1 variants)
-for m in re.finditer(r'<complete>(.*?)</complete>', xml, re.S):
-    blk = m.group(1)
-    u = re.search(r'<url>(' + re.escape(abi) + r'-36_r(\d+)\.zip)</url>', blk)
-    if not u:
-        continue
-    rev = int(u.group(2))
-    c = re.search(r'<checksum[^>]*>([0-9a-f]{40})</checksum>', blk)
-    if best is None or rev > best[0]:
-        best = (rev, u.group(1), c.group(1) if c else '')
-if not best:
-    sys.exit("no {}-36 playstore sysimg in manifest".format(abi))
-print(best[1], best[2])
-PY
-)
-echo ">> $ZIP sha1=$SHA1"
+ZIP="${GAPPS_ZIP:-$DEFAULT_ZIP}"
+SHA1="${GAPPS_SHA1:-$DEFAULT_SHA1}"
+[[ "$SHA1" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid GApps SHA-1: $SHA1" >&2; exit 1; }
+echo ">> pinned ${ABI} API-36 Play Store image: $ZIP sha1=$SHA1"
 
 ZIPPATH="$CACHE/$ZIP"
 if ! { [ -f "$ZIPPATH" ] && echo "$SHA1  $ZIPPATH" | sha1sum -c - >/dev/null 2>&1; }; then
@@ -78,8 +69,20 @@ for _ in range(num):
 PY
 )
 [ -n "${SIZE:-}" ] || { echo "no 'super' partition in system.img" >&2; exit 1; }
-dd if="$SYS" of="$WORK/super.img" bs=1M iflag=skip_bytes,count_bytes \
-   skip="$START" count="$SIZE" status=none
+python3 - "$SYS" "$WORK/super.img" "$START" "$SIZE" <<'PY'
+import shutil, sys
+
+src, dst, start, size = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+with open(src, 'rb') as source, open(dst, 'wb') as target:
+    source.seek(start)
+    remaining = size
+    while remaining:
+        chunk = source.read(min(8 * 1024 * 1024, remaining))
+        if not chunk:
+            raise EOFError("system.img ended before the super partition was complete")
+        target.write(chunk)
+        remaining -= len(chunk)
+PY
 
 echo ">> lpunpack super -> product.img + system_ext.img"
 curl -fsSL "$LPUNPACK_URL" -o "$WORK/lpunpack.py"

@@ -1,26 +1,24 @@
 #!/bin/bash
 # Build the Ubuntu 22.04 + Docker + ReDroid 16 GMS VM image with a baked,
-# already-running container.
+# restart-primed container.
 #
-# A privileged DinD (vfs) loads the flattened ReDroid image, `docker run`s the
-# container with `--restart unless-stopped`, then the DinD daemon is stopped
-# gracefully so the container's running state + restart policy survive in
-# /var/lib/docker. That whole store is baked into the VM image, so the VM's
-# dockerd replays the container on boot with NO first-boot docker create/run —
-# this removes the per-VM vfs create-copy from the run/start path.
-#
-# ReDroid must stay running in the DinD for a clean capture, so the BUILD HOST
-# needs binder (+ ashmem for use_memfd=0) and must be the target ARCH natively
-# (the container executes Android; no qemu emulation).
+# A privileged DinD (vfs) loads the flattened ReDroid image and starts its
+# one-shot bake wrapper for long enough to arm Docker's restart policy. The
+# wrapper removes a marker from this container's VFS root but does not boot
+# Android on the build host. DinD is then stopped gracefully so the created
+# container + restart state survive in /var/lib/docker. In the VM, dockerd
+# replays that container and the marker-free wrapper immediately execs /init:
+# no first-boot docker create/run and no per-VM vfs create-copy.
 #
 #   ARCH         amd64|arm64            (default amd64; must match the host arch)
 #   REDROID_SRC  ReDroid image to bake  (default local/redroid-gms:16.0-cocoon)
 #   REGISTRY     target namespace       (default docker.io/cmgs)
 #   VM_TAG       VM image tag           (default ubuntu-redroid-16.0-gms-h264:22.04)
-#   USE_MEMFD    redroid use_memfd      (default 1; portable — the bake host runs
-#                                        the container and modern kernels drop
-#                                        ashmem. use_memfd=1 also works on the
-#                                        VM's 5.15 kernel)
+#   USE_MEMFD    redroid use_memfd      (default 0; Android 16 still creates
+#                                        ashmem in system_server, and the VM's
+#                                        Jammy kernel provides ashmem_linux)
+#   REDROID_DNS1 first Android DNS       (default 8.8.8.8; baked into container)
+#   REDROID_DNS2 second Android DNS      (default 1.1.1.1; baked into container)
 #   PUSH         1=push, 0=load locally (default 1)
 set -euo pipefail
 
@@ -31,7 +29,9 @@ REGISTRY="${REGISTRY:-docker.io/cmgs}"
 VM_TAG="${VM_TAG:-ubuntu-redroid-16.0-gms-h264:22.04}"
 REDROID_SRC="${REDROID_SRC:-local/redroid-gms:16.0-cocoon}"
 DIND_IMAGE="${DIND_IMAGE:-docker:dind}"
-USE_MEMFD="${USE_MEMFD:-1}"
+USE_MEMFD="${USE_MEMFD:-0}"
+REDROID_DNS1="${REDROID_DNS1:-8.8.8.8}"
+REDROID_DNS2="${REDROID_DNS2:-1.1.1.1}"
 PUSH="${PUSH:-1}"
 PLATFORM="linux/$ARCH"
 SCRCPY_RFB_REPO="${SCRCPY_RFB_REPO:-cocoonstack/libvncserver}"
@@ -66,13 +66,7 @@ test "$(docker image inspect --format '{{len .RootFS.Layers}}' "$REDROID_SRC")" 
 }
 docker save "$REDROID_SRC" -o "$HERE/redroid-image.tar"
 
-# ReDroid needs binder (+ ashmem for use_memfd=0) on the build host to stay
-# running in the DinD, so the baked container is captured Running for --restart
-# replay on the VM.
-sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" 2>/dev/null || true
-[ "$USE_MEMFD" = 0 ] && sudo modprobe ashmem_linux 2>/dev/null || true
-
-echo ">> baking a running ReDroid container into /var/lib/docker (vfs) via DinD"
+echo ">> baking a restart-primed ReDroid container into /var/lib/docker (vfs) via DinD"
 docker rm -f rd-gen >/dev/null 2>&1 || true
 docker volume rm rd-vld >/dev/null 2>&1 || true
 docker run -d --privileged --name rd-gen \
@@ -80,7 +74,12 @@ docker run -d --privileged --name rd-gen \
     -v "$HERE/redroid-image.tar":/redroid.tar:ro \
     -v rd-vld:/var/lib/docker \
     "$DIND_IMAGE" >/dev/null
-docker exec -e REDROID_SRC="$REDROID_SRC" -e USE_MEMFD="$USE_MEMFD" rd-gen sh -c '
+docker exec \
+    -e REDROID_SRC="$REDROID_SRC" \
+    -e USE_MEMFD="$USE_MEMFD" \
+    -e REDROID_DNS1="$REDROID_DNS1" \
+    -e REDROID_DNS2="$REDROID_DNS2" \
+    rd-gen sh -c '
     set -e
     for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
     test "$(docker info --format "{{.Driver}}")" = vfs
@@ -96,13 +95,19 @@ docker exec -e REDROID_SRC="$REDROID_SRC" -e USE_MEMFD="$USE_MEMFD" rd-gen sh -c
         androidboot.redroid_dpi=320 \
         androidboot.redroid_fps=60 \
         androidboot.redroid_gpu_mode=guest \
+        androidboot.redroid_net_ndns=2 \
+        "androidboot.redroid_net_dns1=$REDROID_DNS1" \
+        "androidboot.redroid_net_dns2=$REDROID_DNS2" \
         ro.setupwizard.mode=DISABLED >/dev/null
-    sleep 30
+    # Docker only activates a restart policy after a container has stayed up
+    # for 10 seconds. The bake wrapper sleeps without starting Android.
+    sleep 20
     if [ "$(docker inspect -f "{{.State.Running}}" redroid)" != true ]; then
-        echo "baked ReDroid container is not Running (build host lacks binder/ashmem?)" >&2
+        echo "baked ReDroid restart-policy wrapper is not Running" >&2
         docker logs redroid 2>&1 | tail -40 >&2
         exit 1
     fi
+    docker exec redroid /busybox test ! -e /.cocoon-bake-once
     docker ps --format "baked: {{.Names}} {{.Status}}"
 '
 # Graceful daemon stop (not kill): dockerd stops the container but keeps its
