@@ -31,17 +31,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=secret,id=cocoon_install_agent \
     --mount=type=secret,id=daemon_json \
     APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
-    # The emulated arm64 apt (ports.ubuntu.com under QEMU) intermittently times
-    # out; retry every apt operation a few times before giving up.
-    aptget() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS "$@" && return 0; echo "apt retry $i: $*" >&2; sleep 20; done; return 1; } && \
-    aptget update && aptget install -y --no-install-recommends \
+    # The emulated arm64 apt hits ports.ubuntu.com, which times out intermittently
+    # from CI: apt-get update then only warns and exits 0, leaving an empty index
+    # so the install fails "Unable to locate package". Point arm64 at a CDN mirror
+    # and retry update+install as ONE unit, so a failed install re-runs update
+    # instead of hammering a stale/empty package list.
+    if [ "$TARGETARCH" = arm64 ]; then sed -i 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.edge.kernel.org/ubuntu-ports|g' /etc/apt/sources.list; fi && \
+    apt_ensure() { for i in 1 2 3 4 5 6 7 8; do apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends "$@" && return 0; echo "apt retry $i for: $*" >&2; sleep 15; done; return 1; } && \
+    apt_ensure \
     linux-image-virtual \
     initramfs-tools \
     systemd systemd-sysv systemd-timesyncd \
     udev kmod iproute2 iputils-ping curl wget ca-certificates gnupg \
     openssh-server \
     && \
-    aptget install -y --no-install-recommends \
+    apt_ensure \
         linux-modules-extra-"$(ls /lib/modules/ | sort -V | tail -1)" && \
     # --- Docker engine (latest stable) from Docker's official apt repo ---
     install -m 0755 -d /etc/apt/keyrings && \
@@ -50,7 +54,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy ${DOCKER_CHANNEL}" \
         > /etc/apt/sources.list.d/docker.list && \
-    aptget update && aptget install -y --no-install-recommends \
+    apt_ensure \
         docker-ce docker-ce-cli containerd.io && \
     mkdir -p /etc/docker && \
     cp /run/secrets/daemon_json /etc/docker/daemon.json && \
@@ -106,8 +110,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
 #     server or framebuffer scraping hop. ---
 RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
-    aptget() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS "$@" && return 0; echo "apt retry $i: $*" >&2; sleep 20; done; return 1; } && \
-    aptget update && aptget install -y --no-install-recommends \
+    if [ "$TARGETARCH" = arm64 ]; then sed -i 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.edge.kernel.org/ubuntu-ports|g' /etc/apt/sources.list; fi && \
+    apt_ensure() { for i in 1 2 3 4 5 6 7 8; do apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends "$@" && return 0; echo "apt retry $i for: $*" >&2; sleep 15; done; return 1; } && \
+    apt_ensure \
     adb libjpeg-turbo8 zlib1g && \
     case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
     install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
