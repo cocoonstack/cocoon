@@ -79,15 +79,19 @@ redroid stamps its identity on every partition, so the mask covers each scope
 (system/vendor/product/odm/system_ext/vendor_dlkm), not just the global props:
 `ro.product.*` (model/brand/manufacturer/device/name), `ro.*.build.fingerprint`,
 `build.id`/`type`/`tags`/`version.incremental`, global `build.flavor`/
-`description`/`display.id`/`product`, `ro.hardware`/`.egl`/`.vulkan`,
-`ro.bootloader`, `ro.board.platform`/`ro.product.board`, `ro.build.user`/`host`,
-verified-boot state; and it deletes the redroid-internal `ro.boot.redroid_*`
-hints. `build.prop` cannot carry these (`ro.hardware` comes from `androidboot`,
-the plain `ro.product.*` are precedence-set). The mask re-applies on every cold
-boot. This lets apps that only inspect identity properties run.
+`description`/`display.id`/`product`, `ro.hardware`, `ro.bootloader`,
+`ro.product.board`, `ro.build.user`/`host`, verified-boot state; and it deletes
+the redroid-internal `ro.boot.redroid_*` hints and the `ro.hardware.gralloc`
+redroid tag. `build.prop` cannot carry these (`ro.hardware` comes from
+`androidboot`, the plain `ro.product.*` are precedence-set). The mask re-applies
+on every cold boot. This lets apps that only inspect identity properties run.
 
 It only touches cosmetic identity props and does **not** defeat deeper checks:
 
+- **The GPU/driver props stay visible.** `ro.hardware.egl` (`angle`),
+  `ro.hardware.vulkan` (`pastel`), and `ro.board.platform` name the GL/Vulkan
+  driver `.so`; renaming them to a non-existent driver aborts OpenGL
+  (`couldn't find an OpenGL ES implementation`), so they are left as-is.
 - **The x86 runtime stays visible.** `ro.product.cpu.abi`/`abilist`,
   `ro.dalvik.vm.native.bridge`, `ro.bionic.arch`, and `dalvik.vm.isa.*` still
   report `x86_64` / `libndk`. These are deliberately left alone: they are

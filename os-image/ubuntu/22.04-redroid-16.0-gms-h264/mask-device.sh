@@ -5,12 +5,15 @@
 # cannot change these (ro.hardware comes from androidboot, the plain ro.product.*
 # are set with precedence).
 #
-# Only cosmetic identity props are touched. Runtime-consumed props are left as-is
-# on purpose: rewriting ro.product.cpu.abilist / ro.dalvik.vm.native.bridge would
-# break libndk ARM translation if zygote restarts, and ro.debuggable=0 tears down
-# the scrcpy/remoteview adb tunnel. Those, plus ro.bionic.arch and dalvik.vm.isa.*
-# (which report x86_64), remain visible — the x86 runtime is not maskable and,
-# like SELinux-disabled and no-TEE Play Integrity, still gives the container away.
+# Only cosmetic identity props are touched. Props that select a driver .so or that
+# the runtime consumes are left alone on purpose: ro.hardware.egl/.vulkan and
+# ro.board.platform name the GL/Vulkan driver (renaming them aborts OpenGL with
+# "couldn't find an OpenGL ES implementation"); rewriting ro.product.cpu.abilist /
+# ro.dalvik.vm.native.bridge would break libndk ARM translation if zygote restarts;
+# and ro.debuggable=0 tears down the scrcpy/remoteview adb tunnel. Those, plus
+# ro.bionic.arch and dalvik.vm.isa.* (x86_64), stay visible — the x86 runtime and
+# virtual GPU are not maskable and, like SELinux-disabled and no-TEE Play
+# Integrity, still give the container away.
 RP="/system/bin/resetprop -n"
 DEL="/system/bin/resetprop --delete"
 FP="google/shiba/shiba:16/AP41.240925.009/12345678:user/release-keys"
@@ -37,10 +40,7 @@ $RP ro.build.display.id AP41.240925.009
 $RP ro.build.product shiba
 $RP ro.hardware shiba
 $RP ro.boot.hardware shiba
-$RP ro.hardware.egl mali
-$RP ro.hardware.vulkan mali
 $RP ro.product.board zuma
-$RP ro.board.platform zuma
 $RP ro.bootloader shiba-1.4-11893630
 $RP ro.build.user android-build
 $RP ro.build.host abfarm-release.google.com
