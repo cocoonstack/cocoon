@@ -114,8 +114,15 @@ docker exec \
 # restart-policy state, so the VM dockerd replays it. dockerd is PID 1 here, so
 # tar the data volume from a separate container, not from inside the stopped DinD.
 docker stop -t 40 rd-gen >/dev/null
-docker run --rm -v rd-vld:/vld -v "$HERE":/out ubuntu \
-    tar --numeric-owner -C /vld -cf /out/docker-data.tar .
+# vfs stores the ReDroid image layer, the container, and its init layer as three
+# near-identical full copies (~1.3G each). Hardlink the identical files before tar
+# so the image ships them once. Safe: in the VM /var/lib/docker is a read-only
+# EROFS lower under overlayfs, so any container write copies up and never mutates
+# a shared inode.
+docker run --rm -v rd-vld:/vld -v "$HERE":/out ubuntu bash -c '
+    command -v hardlink >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq util-linux >/dev/null; }
+    hardlink /vld/vfs/dir
+    tar --numeric-owner -C /vld -cf /out/docker-data.tar .'
 docker rm -f rd-gen >/dev/null
 docker volume rm rd-vld >/dev/null
 echo ">> docker-data.tar $(du -h "$HERE/docker-data.tar" | cut -f1)"
