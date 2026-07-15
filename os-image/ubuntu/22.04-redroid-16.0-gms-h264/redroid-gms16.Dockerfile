@@ -20,6 +20,8 @@ ARG NDK_TRANSLATION_COMMIT=68734c52556d3d7a6db34c603dd9276915c29f2f
 ARG NDK_TRANSLATION_MD5=0b2207c490fcb400aa5c87fcf0d52d38
 ARG FOSSIFY_URL=https://github.com/FossifyOrg/Launcher/releases/download/1.10.0/launcher-16-foss-release.apk
 ARG FOSSIFY_SHA256=a603d3d510482feafd73d52a93a1ea9baefd2ca0aae329a14cbf0e21f43638e3
+ARG MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v28.1/Magisk-v28.1.apk
+ARG MAGISK_SHA256=8bfd3346b3da5814f82eff6f1b1b5fedd0ad585f39a25709b23eb54aac45691d
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip && \
@@ -44,6 +46,17 @@ RUN mkdir -p /output/system/app/FossifyLauncher && \
     curl -fsSL "$FOSSIFY_URL" -o /output/system/app/FossifyLauncher/FossifyLauncher.apk && \
     echo "${FOSSIFY_SHA256}  /output/system/app/FossifyLauncher/FossifyLauncher.apk" | sha256sum -c -
 
+# Magisk's resetprop (bundled as /system/bin/magisk_rp) is run as root at boot by
+# mask-device.rc to rewrite the redroid/emulator giveaway props to a real device.
+RUN abi="$([ "$TARGETARCH" = arm64 ] && echo arm64-v8a || echo x86_64)" && \
+    curl -fsSL "$MAGISK_URL" -o /tmp/magisk.apk && \
+    echo "${MAGISK_SHA256}  /tmp/magisk.apk" | sha256sum -c - && \
+    mkdir -p /output/system/bin /tmp/mgk && \
+    unzip -o -j /tmp/magisk.apk "lib/$abi/libmagisk.so" -d /tmp/mgk && \
+    install -m 0755 /tmp/mgk/libmagisk.so /output/system/bin/magisk_rp && \
+    test -x /output/system/bin/magisk_rp && \
+    rm -rf /tmp/magisk.apk /tmp/mgk
+
 COPY --from=redroid_base /system/build.prop /tmp/system-build.prop
 COPY --from=redroid_base /vendor/build.prop /tmp/vendor-build.prop
 # amd64: point the Dalvik native bridge at libndk_translation so ARM apps run
@@ -66,6 +79,8 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 
 COPY fossify-home.rc /output/system/etc/init/fossify-home.rc
 COPY fossify-home.sh /output/system/etc/fossify-home.sh
+COPY mask-device.rc /output/system/etc/init/mask-device.rc
+COPY mask-device.sh /output/system/etc/mask-device.sh
 COPY cocoon-bake-init.sh /output/cocoon-bake-init
 COPY cocoon-bake-once /output/.cocoon-bake-once
 COPY --from=bake_tools /bin/busybox /output/busybox
@@ -96,6 +111,9 @@ RUN rm -rf \
     test -f /redroid/system/product/app/TrichromeLibrary/TrichromeLibrary.apk && \
     grep -Fq 'pm install -r -d --force-sdk "$GMS_APK"' \
       /redroid/system/etc/fossify-home.sh && \
+    test -x /redroid/system/bin/magisk_rp && \
+    test -f /redroid/system/etc/init/mask-device.rc && \
+    grep -Fq 'resetprop -n' /redroid/system/etc/mask-device.sh && \
     test -x /redroid/cocoon-bake-init && \
     test -x /redroid/busybox && \
     test -f /redroid/.cocoon-bake-once

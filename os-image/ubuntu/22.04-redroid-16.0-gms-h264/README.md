@@ -68,7 +68,24 @@ SystemUI navigation bar and recents — disabling it removes the on-screen butto
 
 The Camera2 application and Chromium WebView test shell (`Browser2`) are removed
 physically. Android System WebView is retained because Chrome and other apps
-still require a WebView provider. Meituan and Damai are not included.
+still require a WebView provider.
+
+## Device identity masking
+
+`mask-device.rc` runs `mask-device.sh` as root on boot, using Magisk's
+`resetprop` (bundled as `/system/bin/magisk_rp`) to rewrite the redroid/emulator
+giveaway properties — `ro.product.*`, `ro.build.fingerprint`, `ro.hardware`,
+`ro.product.cpu.abilist`, `ro.dalvik.vm.native.bridge`, build type/tags — to a
+real device (Pixel 8). `build.prop` cannot change these: `ro.hardware` comes from
+`androidboot`, the plain `ro.product.*` are set with precedence, and abilist /
+native.bridge are runtime. This lets apps that only inspect properties run.
+
+It does **not** defeat deeper checks: redroid runs with SELinux disabled (real
+devices are enforcing) and cannot pass Play Integrity hardware attestation (no
+TEE, uncertified GMS). Apps enforcing those — e.g. Meituan — still detect the
+container regardless of masking; they need real ARM hardware. On x86, ARM apps
+also run under `libndk` translation, which some native anti-tamper SDKs detect
+directly (e.g. Damai crashes in `libndk`); a native arm64 build avoids that.
 
 ## VNC clients
 

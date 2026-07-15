@@ -31,6 +31,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=secret,id=cocoon_install_agent \
     --mount=type=secret,id=daemon_json \
     APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
+    # GitHub runners are on Azure; ports.ubuntu.com (arm64) is slow/flaky under
+    # QEMU emulation. Fetch from the Azure mirror, which is local to the runner.
+    sed -i -e 's|http://ports.ubuntu.com/ubuntu-ports|http://azure.ports.ubuntu.com/ubuntu-ports|g' \
+           -e 's|http://archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu|g' \
+           -e 's|http://security.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu|g' \
+           /etc/apt/sources.list && \
     apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends \
     linux-image-virtual \
     initramfs-tools \
@@ -102,7 +108,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     50. Non-H.264 clients fall back to a lazily decoded
 #     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
 #     server or framebuffer scraping hop. ---
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
+    apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends \
     adb libjpeg-turbo8 zlib1g && \
     case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
     install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
