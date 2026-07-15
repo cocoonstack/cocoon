@@ -8,8 +8,9 @@
 # Only cosmetic identity props are touched. Props that select a driver .so or that
 # the runtime consumes are left alone on purpose: ro.hardware.egl/.vulkan and
 # ro.board.platform name the GL/Vulkan driver (renaming them aborts OpenGL with
-# "couldn't find an OpenGL ES implementation"); rewriting ro.product.cpu.abilist /
-# ro.dalvik.vm.native.bridge would break libndk ARM translation if zygote restarts;
+# "couldn't find an OpenGL ES implementation"); rewriting ro.product.cpu.abi /
+# abilist / ro.dalvik.vm.native.bridge would break libndk translation if zygote
+# restarts;
 # and ro.debuggable=0 tears down the scrcpy/remoteview adb tunnel. Those, plus
 # ro.bionic.arch and dalvik.vm.isa.* (x86_64), stay visible — the x86 runtime and
 # virtual GPU are not maskable and, like SELinux-disabled and no-TEE Play
