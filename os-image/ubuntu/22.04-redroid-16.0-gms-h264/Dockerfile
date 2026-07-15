@@ -32,16 +32,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=secret,id=daemon_json \
     APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     # The emulated arm64 apt (ports.ubuntu.com under QEMU) intermittently times
-    # out refreshing indices; retry the update a few times before giving up.
-    aptup() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS update && return 0; echo "apt update retry $i" >&2; sleep 20; done; return 1; } && \
-    aptup && apt-get $APT_OPTS install -y --no-install-recommends \
+    # out; retry every apt operation a few times before giving up.
+    aptget() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS "$@" && return 0; echo "apt retry $i: $*" >&2; sleep 20; done; return 1; } && \
+    aptget update && aptget install -y --no-install-recommends \
     linux-image-virtual \
     initramfs-tools \
     systemd systemd-sysv systemd-timesyncd \
     udev kmod iproute2 iputils-ping curl wget ca-certificates gnupg \
     openssh-server \
     && \
-    apt-get $APT_OPTS install -y --no-install-recommends \
+    aptget install -y --no-install-recommends \
         linux-modules-extra-"$(ls /lib/modules/ | sort -V | tail -1)" && \
     # --- Docker engine (latest stable) from Docker's official apt repo ---
     install -m 0755 -d /etc/apt/keyrings && \
@@ -50,7 +50,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy ${DOCKER_CHANNEL}" \
         > /etc/apt/sources.list.d/docker.list && \
-    aptup && apt-get $APT_OPTS install -y --no-install-recommends \
+    aptget update && aptget install -y --no-install-recommends \
         docker-ce docker-ce-cli containerd.io && \
     mkdir -p /etc/docker && \
     cp /run/secrets/daemon_json /etc/docker/daemon.json && \
@@ -106,8 +106,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
 #     server or framebuffer scraping hop. ---
 RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
-    aptup() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS update && return 0; echo "apt update retry $i" >&2; sleep 20; done; return 1; } && \
-    aptup && apt-get $APT_OPTS install -y --no-install-recommends \
+    aptget() { for i in 1 2 3 4 5 6; do apt-get $APT_OPTS "$@" && return 0; echo "apt retry $i: $*" >&2; sleep 20; done; return 1; } && \
+    aptget update && aptget install -y --no-install-recommends \
     adb libjpeg-turbo8 zlib1g && \
     case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
     install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
