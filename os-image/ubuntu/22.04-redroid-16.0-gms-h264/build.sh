@@ -1,61 +1,37 @@
 #!/bin/bash
-# Build the Ubuntu 22.04 + Docker + ReDroid 16 GMS VM image with a baked,
-# restart-primed container.
+# Bake a restart-primed ReDroid 16 GMS container into docker-data-<arch>.tar.
 #
 # A privileged DinD (vfs) loads the flattened ReDroid image and starts its
 # one-shot bake wrapper for long enough to arm Docker's restart policy. The
 # wrapper removes a marker from this container's VFS root but does not boot
 # Android on the build host. DinD is then stopped gracefully so the created
-# container + restart state survive in /var/lib/docker. In the VM, dockerd
-# replays that container and the marker-free wrapper immediately execs /init:
-# no first-boot docker create/run and no per-VM vfs create-copy.
+# container + restart state survive in /var/lib/docker, which is hardlink-deduped
+# and tarred to docker-data-<arch>.tar. The VM's Dockerfile ADDs that tar; the VM
+# dockerd replays the container and the marker-free wrapper execs /init.
 #
-#   ARCH         amd64|arm64            (default amd64; must match the host arch)
+#   ARCH         amd64|arm64            (default amd64; the REDROID_SRC arch)
 #   REDROID_SRC  ReDroid image to bake  (default local/redroid-gms:16.0-cocoon)
-#   REGISTRY     target namespace       (default docker.io/cmgs)
-#   VM_TAG       VM image tag           (default ubuntu-redroid-16.0-gms-h264:22.04)
 #   USE_MEMFD    redroid use_memfd      (default 0; Android 16 still creates
 #                                        ashmem in system_server, and the VM's
 #                                        Jammy kernel provides ashmem_linux)
 #   REDROID_DNS1 first Android DNS       (default 8.8.8.8; baked into container)
 #   REDROID_DNS2 second Android DNS      (default 1.1.1.1; baked into container)
-#   PUSH         1=push, 0=load locally (default 1)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-UBUNTU_CTX="$(dirname "$HERE")"
 ARCH="${ARCH:-amd64}"
-REGISTRY="${REGISTRY:-docker.io/cmgs}"
-VM_TAG="${VM_TAG:-ubuntu-redroid-16.0-gms-h264:22.04}"
 REDROID_SRC="${REDROID_SRC:-local/redroid-gms:16.0-cocoon}"
 DIND_IMAGE="${DIND_IMAGE:-docker:dind}"
 USE_MEMFD="${USE_MEMFD:-0}"
 REDROID_DNS1="${REDROID_DNS1:-8.8.8.8}"
 REDROID_DNS2="${REDROID_DNS2:-1.1.1.1}"
-PUSH="${PUSH:-1}"
 PLATFORM="linux/$ARCH"
-SCRCPY_RFB_REPO="${SCRCPY_RFB_REPO:-cocoonstack/libvncserver}"
-SCRCPY_RFB_TAG="${SCRCPY_RFB_TAG:-dev}"
 case "$ARCH" in amd64|arm64) ;; *) echo "unsupported ARCH: $ARCH" >&2; exit 1 ;; esac
-if [ -z "${SCRCPY_RFB_COMMIT:-}" ]; then
-    SCRCPY_RFB_COMMIT="$(
-        curl -fsSL \
-          "https://github.com/${SCRCPY_RFB_REPO}/releases/download/${SCRCPY_RFB_TAG}/build-info.json" \
-        | sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p'
-    )"
-fi
-if [ "${#SCRCPY_RFB_COMMIT}" -ne 40 ]; then
-    echo "invalid scrcpy-rfb release commit: $SCRCPY_RFB_COMMIT" >&2
-    exit 1
-fi
-case "$SCRCPY_RFB_COMMIT" in
-    *[!0-9a-f]*) echo "invalid scrcpy-rfb release commit: $SCRCPY_RFB_COMMIT" >&2; exit 1 ;;
-esac
 
 cleanup() {
     docker rm -f rd-gen >/dev/null 2>&1 || true
     docker volume rm rd-vld >/dev/null 2>&1 || true
-    rm -f "$HERE/redroid-image.tar" "$HERE/docker-data.tar"
+    rm -f "$HERE/redroid-image.tar"
 }
 trap cleanup EXIT
 
@@ -119,24 +95,10 @@ docker stop -t 40 rd-gen >/dev/null
 # so the image ships them once. Safe: in the VM /var/lib/docker is a read-only
 # EROFS lower under overlayfs, so any container write copies up and never mutates
 # a shared inode.
-docker run --rm -v rd-vld:/vld -v "$HERE":/out ubuntu bash -c '
+docker run --rm -e ARCH="$ARCH" -v rd-vld:/vld -v "$HERE":/out ubuntu bash -c '
     command -v hardlink >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq util-linux >/dev/null; }
     hardlink /vld/vfs/dir
-    tar --numeric-owner -C /vld -cf /out/docker-data.tar .'
+    tar --numeric-owner -C /vld -cf "/out/docker-data-$ARCH.tar" .'
 docker rm -f rd-gen >/dev/null
 docker volume rm rd-vld >/dev/null
-echo ">> docker-data.tar $(du -h "$HERE/docker-data.tar" | cut -f1)"
-
-echo ">> building $REGISTRY/$VM_TAG ($PLATFORM)"
-OUT=$([ "$PUSH" = 1 ] && echo --push || echo --load)
-docker buildx build --platform "$PLATFORM" "$OUT" \
-    -f "$HERE/Dockerfile" -t "$REGISTRY/$VM_TAG" \
-    --build-arg SCRCPY_RFB_REPO="$SCRCPY_RFB_REPO" \
-    --build-arg SCRCPY_RFB_TAG="$SCRCPY_RFB_TAG" \
-    --build-arg SCRCPY_RFB_COMMIT="$SCRCPY_RFB_COMMIT" \
-    --secret id=cocoon_overlay,src="$UBUNTU_CTX/overlay.sh" \
-    --secret id=cocoon_network,src="$UBUNTU_CTX/network.sh" \
-    --secret id=cocoon_install_agent,src="$UBUNTU_CTX/install-agent.sh" \
-    --secret id=daemon_json,src="$HERE/daemon.json" \
-    "$UBUNTU_CTX"
-echo ">> done: $REGISTRY/$VM_TAG"
+echo ">> docker-data-$ARCH.tar $(du -h "$HERE/docker-data-$ARCH.tar" | cut -f1)"

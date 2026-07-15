@@ -98,11 +98,16 @@ vncviewer -Shared=1 <vm-ip>::5900
 
 ## Build
 
-Each architecture uses its matching native GitHub runner. The DinD bake starts
-only a one-shot wrapper for long enough to arm Docker's restart policy; it does
-not boot Android on the build host, so CI does not need binder or ashmem. The
-wrapper removes its marker from the created container's VFS root. When the VM's
-dockerd replays that same container, it immediately execs Android `/init`.
+This image is built by the shared `build-os-images.yml` workflow via an optional
+`ci-prepare.sh` hook (no dedicated workflow). On one amd64 runner the hook bakes
+both arches — amd64 native, arm64 emulated under QEMU — because the DinD bake
+only arms a one-shot wrapper that sleeps for long enough to activate Docker's
+restart policy; it does not boot Android on the build host, so no binder, ashmem,
+or native arm64 runner is needed. The wrapper removes its marker from the created
+container's VFS root; when the VM's dockerd replays that container, it execs
+Android `/init`. `build-push-action` then builds the multi-arch VM image, each
+platform ADDing its own `docker-data-<arch>.tar`, and publishes `android:16.0-gms-h264`
+(`publish-as`) — the canonical tag only from master, an `-<sha>` tag on every run.
 
 On a new Android data volume, the boot-complete hook registers the bundled GMS
 Core APK once as a Package Manager update under `/data/app`. Google's Play
@@ -112,34 +117,30 @@ Without this one-time step the remaining system container APK reports no usable
 Chimera modules. The persisted `/var/lib/redroid-data` bind makes later VM
 stop/start cycles a path check only; GMS Core is not reinstalled on every boot.
 
-amd64 (x86_64 GMS + libndk ARM translation):
+A local build (amd64 shown; use `arm64`/`arm64-v8a` for arm64) mirrors what
+`ci-prepare.sh` and the shared build step do — carve GApps, build the flattened
+ReDroid source image, bake `docker-data-<arch>.tar`, then build the VM image from
+the ubuntu family dir:
 
 ```bash
-# 1. prepare gapps16-x86_64.tar from Google's pinned API-36 r07 Play Store image
-ARCH=amd64 bash prepare-gapps16.sh
-# 2. build the ReDroid 16 GMS image
-docker buildx build --platform linux/amd64 --load \
-  -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon .
-# 3. prime the baked container's restart policy and build the VM image
-ARCH=amd64 REDROID_SRC=local/redroid-gms:16.0-cocoon \
-  VM_TAG=ubuntu-redroid-16.0-gms-h264:22.04-android16 PUSH=0 bash build.sh
+cd os-image/ubuntu/22.04-redroid-16.0-gms-h264
+ARCH=amd64 bash prepare-gapps16.sh                       # -> gapps16-x86_64.tar
+docker buildx build --load --platform linux/amd64 \
+  --build-arg TARGETARCH=amd64 --build-arg GAPPS_TAR=gapps16-x86_64.tar \
+  -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon-amd64 .
+ARCH=amd64 REDROID_SRC=local/redroid-gms:16.0-cocoon-amd64 bash build.sh   # -> docker-data-amd64.tar
+docker buildx build --load --platform linux/amd64 -t local/android:16.0-gms-h264 \
+  --secret id=cocoon_overlay,src=../overlay.sh \
+  --secret id=cocoon_network,src=../network.sh \
+  --secret id=cocoon_install_agent,src=../install-agent.sh \
+  --secret id=daemon_json,src=daemon.json \
+  -f Dockerfile ..
 ```
 
-arm64 (native arm64 GMS, no translator):
-
-```bash
-ARCH=arm64 bash prepare-gapps16.sh
-docker buildx build --platform linux/arm64 --load \
-  --build-arg GAPPS_TAR=gapps16-arm64-v8a.tar \
-  -f redroid-gms16.Dockerfile -t local/redroid-gms:16.0-cocoon-arm64 .
-ARCH=arm64 REDROID_SRC=local/redroid-gms:16.0-cocoon-arm64 \
-  VM_TAG=ubuntu-redroid-16.0-gms-h264:22.04-android16-arm64 PUSH=0 bash build.sh
-```
-
-`build.sh` resolves the current `dev` release from `cocoonstack/libvncserver`,
-pins its 40-character source commit, verifies the release SHA, verifies that
-ReDroid is a single physical layer, bakes the restart-primed container into a
-vfs Docker store, and builds the `linux/$ARCH` VM image.
+`build.sh` is a bake-only worker: it verifies ReDroid is a single physical layer,
+bakes the restart-primed container into a vfs Docker store, and hardlink-dedups +
+tars it to `docker-data-<arch>.tar`. The VM Dockerfile resolves the scrcpy-rfb
+release itself (no build-arg from the shared step).
 
 Export a Cocoon-importable rootfs (per arch):
 

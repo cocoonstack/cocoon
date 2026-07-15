@@ -104,7 +104,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     server or framebuffer scraping hop. ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     adb libjpeg-turbo8 zlib1g && \
-    test -n "$SCRCPY_RFB_COMMIT" && \
     case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
     install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
     curl -fsSL \
@@ -113,8 +112,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     echo "$SCRCPY_SERVER_SHA256  /usr/local/share/scrcpy/scrcpy-server.jar" | sha256sum -c - && \
     BASE="https://github.com/$SCRCPY_RFB_REPO/releases/download/$SCRCPY_RFB_TAG" && \
     ARTIFACT="scrcpy-rfb-linux-$TARGETARCH" && \
-    curl -fsSL "$BASE/build-info.json?commit=$SCRCPY_RFB_COMMIT" -o /tmp/scrcpy-rfb/build-info.json && \
-    grep -Fq "\"commit\": \"$SCRCPY_RFB_COMMIT\"" /tmp/scrcpy-rfb/build-info.json && \
+    curl -fsSL "$BASE/build-info.json" -o /tmp/scrcpy-rfb/build-info.json && \
+    if [ -z "$SCRCPY_RFB_COMMIT" ]; then \
+      SCRCPY_RFB_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)"; \
+    fi && \
+    printf '%s' "$SCRCPY_RFB_COMMIT" | grep -Eq '^[0-9a-f]{40}$' && \
     curl -fsSL "$BASE/$ARTIFACT?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT" && \
     curl -fsSL "$BASE/$ARTIFACT.sha256?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT.sha256" && \
     cd /tmp/scrcpy-rfb && sha256sum -c "$ARTIFACT.sha256" && \
@@ -140,7 +142,7 @@ RUN chmod +x /usr/local/bin/remoteview-run.sh && \
 # VM's dockerd replays it on boot with no docker create/run at VM start. The vfs
 # container-rootfs copy lives in the shared immutable EROFS (paid once per image,
 # not per VM); the per-VM COW holds only the container's runtime writes.
-ADD 22.04-redroid-16.0-gms-h264/docker-data.tar /var/lib/docker/
+ADD 22.04-redroid-16.0-gms-h264/docker-data-${TARGETARCH}.tar /var/lib/docker/
 COPY 22.04-redroid-16.0-gms-h264/verify-vm-inner.sh /usr/local/libexec/cocoon/verify-vm-inner.sh
 RUN chmod 0755 /usr/local/libexec/cocoon/verify-vm-inner.sh && \
     /usr/local/libexec/cocoon/verify-vm-inner.sh

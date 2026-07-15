@@ -1,5 +1,4 @@
 redroid-image.tar
-docker-data.tar
 docker-data-*.tar
 gapps16-*.tar
 .cache-gapps16/
