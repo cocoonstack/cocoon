@@ -2,6 +2,28 @@
 # Ensure the curated GMS/Chrome set is enabled for the primary user, then prefer
 # Fossify Launcher while keeping Launcher3 enabled as a recovery fallback.
 TARGET=org.fossify.home/org.fossify.home.activities.MainActivity
+GMS_APK=/system/product/priv-app/PrebuiltGmsCore/PrebuiltGmsCore.apk
+
+# Google's Play emulator seeds GMS Core in userdata as a /data/app package with
+# its install-time Chimera splits. Our portable overlay deliberately carves only
+# product/system_ext, leaving just the GMS container APK; as a system app alone,
+# it finds no usable modules. Register the identical signed container APK once
+# as a Package Manager update in /data/app so FileApkMgr stages its embedded
+# modules. The /data bind persists, so later VM boots take only this path check.
+i=0
+while [ "$i" -lt 60 ]; do
+    gms_path=$(pm path com.google.android.gms 2>/dev/null | head -n 1)
+    case "$gms_path" in
+        package:/data/app/*) break ;;
+        package:*)
+            pm install -r -d --force-sdk "$GMS_APK" >/dev/null 2>&1 || \
+                log -t cocoon-gms "failed to stage GMS Core in /data/app"
+            break
+            ;;
+    esac
+    i=$((i + 1))
+    sleep 2
+done
 
 for package in \
     com.google.android.gms \
