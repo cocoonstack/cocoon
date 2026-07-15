@@ -72,20 +72,28 @@ still require a WebView provider.
 
 ## Device identity masking
 
-`mask-device.rc` runs `mask-device.sh` as root on boot, using Magisk's
-`resetprop` (installed as `/system/bin/resetprop`) to rewrite the redroid/emulator
-giveaway properties — `ro.product.*`, `ro.build.fingerprint`, `ro.hardware`,
-`ro.product.cpu.abilist`, `ro.dalvik.vm.native.bridge`, build type/tags — to a
-real device (Pixel 8). `build.prop` cannot change these: `ro.hardware` comes from
-`androidboot`, the plain `ro.product.*` are set with precedence, and abilist /
-native.bridge are runtime. This lets apps that only inspect properties run.
+`mask-device.rc` runs `mask-device.sh` as root on `boot_completed`, using
+Magisk's `resetprop` (installed as `/system/bin/resetprop`) to rewrite the
+redroid giveaway properties to a real device (Pixel 8 / Tensor "zuma"). redroid
+stamps its identity on every partition, so the mask covers each scope
+(system/vendor/product/odm/system_ext/vendor_dlkm), not just the global props:
+`ro.product.*` identity, `ro.*.build.fingerprint`, `build.id`/`type`/`tags`/
+`flavor`/`description`, `ro.*.product.cpu.abi`/`abilist`, `ro.hardware*`,
+`ro.bootloader`, `ro.board.platform`, `ro.build.user`/`host`, verified-boot
+state; and it deletes the redroid-internal `ro.boot.redroid_*` hints. `build.prop`
+cannot carry these: `ro.hardware` comes from `androidboot`, the plain
+`ro.product.*` are set with precedence, and abilist / native.bridge are runtime.
+The mask re-applies on every cold boot. This lets apps that only inspect
+properties run.
 
-It does **not** defeat deeper checks: redroid runs with SELinux disabled (real
+It does **not** defeat deeper checks. redroid runs with SELinux disabled (real
 devices are enforcing) and cannot pass Play Integrity hardware attestation (no
-TEE, uncertified GMS). Apps enforcing those — e.g. Meituan — still detect the
-container regardless of masking; they need real ARM hardware. On x86, ARM apps
-also run under `libndk` translation, which some native anti-tamper SDKs detect
-directly (e.g. Damai crashes in `libndk`); a native arm64 build avoids that.
+TEE, uncertified GMS). On x86 the runtime itself stays visible — `ro.bionic.arch`
+and `dalvik.vm.isa.*` still report `x86_64`, and ARM apps run under `libndk`
+translation, which some native anti-tamper SDKs detect directly (e.g. Damai
+crashes in `libndk`; a native arm64 build avoids that). Apps enforcing any of
+these — e.g. Meituan — still detect the container regardless of masking and need
+real ARM hardware.
 
 ## VNC clients
 

@@ -9,28 +9,50 @@
 # Play-Integrity hardware attestation — apps enforcing those still detect the
 # container. It only clears the property-level tells.
 RP="/system/bin/resetprop -n"
+DEL="/system/bin/resetprop --delete"
 FP="google/shiba/shiba:16/AP41.240925.009/12345678:user/release-keys"
 
-for suf in "" .system .vendor .product .odm .system_ext; do
+# redroid stamps identity and build descriptors on EVERY partition
+# (system/vendor/product/odm/system_ext/vendor_dlkm), so a naive getprop scan of
+# any one partition must not reveal redroid/userdebug/test-keys.
+for suf in "" .system .vendor .product .odm .system_ext .vendor_dlkm; do
     $RP "ro.product${suf}.model" "Pixel 8"
     $RP "ro.product${suf}.brand" google
     $RP "ro.product${suf}.manufacturer" Google
     $RP "ro.product${suf}.device" shiba
     $RP "ro.product${suf}.name" shiba
+    $RP "ro${suf}.build.fingerprint" "$FP"
+    $RP "ro${suf}.build.type" user
+    $RP "ro${suf}.build.tags" release-keys
+    $RP "ro${suf}.build.id" AP41.240925.009
+    $RP "ro${suf}.product.cpu.abilist" arm64-v8a
+    $RP "ro${suf}.product.cpu.abilist64" arm64-v8a
 done
-for k in ro.build.fingerprint ro.system.build.fingerprint ro.vendor.build.fingerprint \
-         ro.product.build.fingerprint ro.bootimage.build.fingerprint; do
-    $RP "$k" "$FP"
-done
-$RP ro.build.type user
-$RP ro.build.tags release-keys
+$RP ro.bootimage.build.fingerprint "$FP"
 $RP ro.build.flavor shiba-user
+$RP ro.build.description "shiba-user 16 AP41.240925.009 12345678 release-keys"
+$RP ro.build.display.id AP41.240925.009
+$RP ro.build.version.incremental 12345678
+$RP ro.build.product shiba
 $RP ro.hardware shiba
 $RP ro.boot.hardware shiba
 $RP ro.hardware.egl mali
 $RP ro.dalvik.vm.native.bridge 0
-$RP ro.product.cpu.abilist arm64-v8a
-$RP ro.product.cpu.abilist64 arm64-v8a
+$RP ro.product.cpu.abi arm64-v8a
+$RP ro.product.board zuma
+$RP ro.board.platform zuma
+$RP ro.bootloader shiba-1.4-11893630
+$RP ro.build.user android-build
+$RP ro.build.host abfarm-release.google.com
 $RP ro.boot.verifiedbootstate green
 $RP ro.boot.flash.locked 1
 $RP ro.boot.veritymode enforcing
+
+# Drop the redroid-internal boot hints (their names literally contain "redroid")
+# and the redroid gralloc tag; they are consumed at boot and cosmetic afterwards.
+for p in ro.boot.redroid_dpi ro.boot.redroid_fps ro.boot.redroid_gpu_mode \
+         ro.boot.redroid_height ro.boot.redroid_width ro.boot.redroid_net_dns1 \
+         ro.boot.redroid_net_dns2 ro.boot.redroid_net_ndns ro.boot.use_redroid_c2 \
+         ro.hardware.gralloc; do
+    $DEL "$p"
+done
