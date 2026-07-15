@@ -61,8 +61,10 @@ start while `vfs` restarted correctly.
 
 The Android 16 image enables Google Play services, Google Services Framework,
 Play Store, Chrome, Trichrome Library, Android System WebView, and Fossify Home.
-Fossify Home is the sole launcher: the first-boot hook disables Launcher3 once
-Fossify is the resolved HOME, so Android never shows the home-picker chooser.
+Fossify Home is the default launcher; the first-boot hook sets it as HOME early
+(before the GMS staging step) so Android does not show the home-picker chooser.
+Launcher3/Quickstep stays enabled as a fallback and because it provides the
+SystemUI navigation bar and recents — disabling it removes the on-screen buttons.
 
 The Camera2 application and Chromium WebView test shell (`Browser2`) are removed
 physically. Android System WebView is retained because Chrome and other apps

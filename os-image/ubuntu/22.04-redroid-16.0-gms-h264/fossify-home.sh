@@ -1,8 +1,16 @@
 #!/system/bin/sh
-# Ensure the curated GMS/Chrome set is enabled for the primary user, then make
-# Fossify the sole HOME (Launcher3 disabled) so no home-picker chooser appears.
+# Ensure the curated GMS/Chrome set is enabled for the primary user, then set
+# Fossify as the default HOME. Launcher3/Quickstep stays enabled because it also
+# provides the SystemUI navigation bar and recents; disabling it removes the
+# on-screen back/home/recents buttons. set-home-activity persists in /data, so
+# after the first boot HOME resolves to Fossify with no picker chooser.
 TARGET=org.fossify.home/org.fossify.home.activities.MainActivity
 GMS_APK=/system/product/priv-app/PrebuiltGmsCore/PrebuiltGmsCore.apk
+
+# Set Fossify as HOME first — before the GMS staging install below, which can take
+# a few seconds. Otherwise Android launches HOME during that window with no default
+# set and shows the "Select Home app" chooser.
+cmd package set-home-activity "$TARGET" 2>/dev/null || true
 
 # Google's Play emulator seeds GMS Core in userdata as a /data/app package with
 # its install-time Chimera splits. Our portable overlay deliberately carves only
@@ -45,12 +53,7 @@ while [ "$i" -lt 90 ]; do
         -c android.intent.category.HOME \
         -a android.intent.action.MAIN 2>/dev/null | tail -n 1)
     case "$home" in
-        org.fossify.home/*)
-            # Fossify is the resolved HOME; disable Launcher3 so it is the only
-            # HOME app and Android never shows the "Select Home app" chooser.
-            pm disable-user --user 0 com.android.launcher3 >/dev/null 2>&1 || true
-            exit 0
-            ;;
+        org.fossify.home/*) exit 0 ;;
     esac
     i=$((i + 1))
     sleep 2
