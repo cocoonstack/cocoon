@@ -31,7 +31,10 @@ load both modules before dockerd replays ReDroid.
 
 Because the container is baked into the immutable EROFS, its vfs rootfs copy is
 shared read-only across all VMs/clones of the image; the per-VM COW holds only
-the container's runtime writes. Android's `/data` is a fresh per-VM bind volume
+the container's runtime writes. vfs otherwise stores the image layer, the
+container, and its init layer as three near-identical copies, so `build.sh`
+hardlinks the identical files before taring — safe because the EROFS lower is
+read-only and overlay copy-up isolates every write. Android's `/data` is a fresh per-VM bind volume
 (`/var/lib/redroid-data`), so Android itself cold-boots on the first start of
 each VM even though the container is already running. Later VM stop/start cycles
 reuse the same container and `/data`.
@@ -58,8 +61,8 @@ start while `vfs` restarted correctly.
 
 The Android 16 image enables Google Play services, Google Services Framework,
 Play Store, Chrome, Trichrome Library, Android System WebView, and Fossify Home.
-Fossify Home is the default launcher; Launcher3 remains installed as a recovery
-HOME implementation.
+Fossify Home is the sole launcher: the first-boot hook disables Launcher3 once
+Fossify is the resolved HOME, so Android never shows the home-picker chooser.
 
 The Camera2 application and Chromium WebView test shell (`Browser2`) are removed
 physically. Android System WebView is retained because Chrome and other apps

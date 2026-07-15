@@ -1,10 +1,12 @@
 # Ubuntu 22.04 + Docker + ReDroid 16 GMS — native redroid-in-container VM image.
 #
-# The ReDroid container is created AND started at BUILD time (build.sh, in a
-# privileged DinD) and baked into /var/lib/docker with `--restart unless-stopped`,
-# so the VM's dockerd auto-restarts it on boot — no first-boot docker create and
-# no launcher service. binder+ashmem load via modules-load.d at sysinit, before
-# docker.service replays the container. Networking is docker bridge with a
+# The ReDroid container is created at BUILD time (build.sh, in a privileged DinD)
+# with its `--restart unless-stopped` policy armed by a one-shot wrapper that
+# sleeps instead of booting Android, then baked into /var/lib/docker. The VM's
+# dockerd replays it on boot and the wrapper execs Android /init — no first-boot
+# docker create and no launcher service. binder+ashmem load via a docker.service
+# ExecStartPre drop-in (the exported rootfs is container-detected, so
+# modules-load.d is skipped). Networking is docker bridge with a
 # published 5555 (NOT --network host): host net lets redroid's Android netd hijack
 # the VM's netns routing and black-hole it.
 #
