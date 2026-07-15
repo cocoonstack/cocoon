@@ -1,20 +1,23 @@
 #!/system/bin/sh
-# Rewrite the redroid/emulator giveaway properties to a real device (Pixel 8) via
+# Rewrite the redroid/emulator IDENTITY properties to a real device (Pixel 8) via
 # Magisk's resetprop, so anti-emulator apps that only inspect properties do not
 # bail on launch. Runs as root from mask-device.rc on boot_completed; build.prop
 # cannot change these (ro.hardware comes from androidboot, the plain ro.product.*
-# are set with precedence, native.bridge/abilist are runtime).
+# are set with precedence).
 #
-# This does NOT defeat SELinux-state (redroid runs SELinux disabled) or
-# Play-Integrity hardware attestation — apps enforcing those still detect the
-# container. It only clears the property-level tells.
+# Only cosmetic identity props are touched. Runtime-consumed props are left as-is
+# on purpose: rewriting ro.product.cpu.abilist / ro.dalvik.vm.native.bridge would
+# break libndk ARM translation if zygote restarts, and ro.debuggable=0 tears down
+# the scrcpy/remoteview adb tunnel. Those, plus ro.bionic.arch and dalvik.vm.isa.*
+# (which report x86_64), remain visible — the x86 runtime is not maskable and,
+# like SELinux-disabled and no-TEE Play Integrity, still gives the container away.
 RP="/system/bin/resetprop -n"
 DEL="/system/bin/resetprop --delete"
 FP="google/shiba/shiba:16/AP41.240925.009/12345678:user/release-keys"
 
 # redroid stamps identity and build descriptors on EVERY partition
 # (system/vendor/product/odm/system_ext/vendor_dlkm), so a naive getprop scan of
-# any one partition must not reveal redroid/userdebug/test-keys.
+# any one partition must not reveal redroid/userdebug/test-keys/eng.root.
 for suf in "" .system .vendor .product .odm .system_ext .vendor_dlkm; do
     $RP "ro.product${suf}.model" "Pixel 8"
     $RP "ro.product${suf}.brand" google
@@ -25,20 +28,17 @@ for suf in "" .system .vendor .product .odm .system_ext .vendor_dlkm; do
     $RP "ro${suf}.build.type" user
     $RP "ro${suf}.build.tags" release-keys
     $RP "ro${suf}.build.id" AP41.240925.009
-    $RP "ro${suf}.product.cpu.abilist" arm64-v8a
-    $RP "ro${suf}.product.cpu.abilist64" arm64-v8a
+    $RP "ro${suf}.build.version.incremental" 12345678
 done
 $RP ro.bootimage.build.fingerprint "$FP"
 $RP ro.build.flavor shiba-user
 $RP ro.build.description "shiba-user 16 AP41.240925.009 12345678 release-keys"
 $RP ro.build.display.id AP41.240925.009
-$RP ro.build.version.incremental 12345678
 $RP ro.build.product shiba
 $RP ro.hardware shiba
 $RP ro.boot.hardware shiba
 $RP ro.hardware.egl mali
-$RP ro.dalvik.vm.native.bridge 0
-$RP ro.product.cpu.abi arm64-v8a
+$RP ro.hardware.vulkan mali
 $RP ro.product.board zuma
 $RP ro.board.platform zuma
 $RP ro.bootloader shiba-1.4-11893630

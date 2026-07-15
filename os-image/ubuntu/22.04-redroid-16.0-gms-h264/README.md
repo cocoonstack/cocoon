@@ -74,26 +74,35 @@ still require a WebView provider.
 
 `mask-device.rc` runs `mask-device.sh` as root on `boot_completed`, using
 Magisk's `resetprop` (installed as `/system/bin/resetprop`) to rewrite the
-redroid giveaway properties to a real device (Pixel 8 / Tensor "zuma"). redroid
-stamps its identity on every partition, so the mask covers each scope
+redroid **identity** properties to a real device (Pixel 8 / Tensor "zuma").
+redroid stamps its identity on every partition, so the mask covers each scope
 (system/vendor/product/odm/system_ext/vendor_dlkm), not just the global props:
-`ro.product.*` identity, `ro.*.build.fingerprint`, `build.id`/`type`/`tags`/
-`flavor`/`description`, `ro.*.product.cpu.abi`/`abilist`, `ro.hardware*`,
-`ro.bootloader`, `ro.board.platform`, `ro.build.user`/`host`, verified-boot
-state; and it deletes the redroid-internal `ro.boot.redroid_*` hints. `build.prop`
-cannot carry these: `ro.hardware` comes from `androidboot`, the plain
-`ro.product.*` are set with precedence, and abilist / native.bridge are runtime.
-The mask re-applies on every cold boot. This lets apps that only inspect
-properties run.
+`ro.product.*` (model/brand/manufacturer/device/name), `ro.*.build.fingerprint`,
+`build.id`/`type`/`tags`/`version.incremental`, global `build.flavor`/
+`description`/`display.id`/`product`, `ro.hardware`/`.egl`/`.vulkan`,
+`ro.bootloader`, `ro.board.platform`/`ro.product.board`, `ro.build.user`/`host`,
+verified-boot state; and it deletes the redroid-internal `ro.boot.redroid_*`
+hints. `build.prop` cannot carry these (`ro.hardware` comes from `androidboot`,
+the plain `ro.product.*` are precedence-set). The mask re-applies on every cold
+boot. This lets apps that only inspect identity properties run.
 
-It does **not** defeat deeper checks. redroid runs with SELinux disabled (real
-devices are enforcing) and cannot pass Play Integrity hardware attestation (no
-TEE, uncertified GMS). On x86 the runtime itself stays visible — `ro.bionic.arch`
-and `dalvik.vm.isa.*` still report `x86_64`, and ARM apps run under `libndk`
-translation, which some native anti-tamper SDKs detect directly (e.g. Damai
-crashes in `libndk`; a native arm64 build avoids that). Apps enforcing any of
-these — e.g. Meituan — still detect the container regardless of masking and need
-real ARM hardware.
+It only touches cosmetic identity props and does **not** defeat deeper checks:
+
+- **The x86 runtime stays visible.** `ro.product.cpu.abi`/`abilist`,
+  `ro.dalvik.vm.native.bridge`, `ro.bionic.arch`, and `dalvik.vm.isa.*` still
+  report `x86_64` / `libndk`. These are deliberately left alone: they are
+  consumed by the runtime, so faking them would break libndk ARM translation if
+  zygote restarts, and they only add cross-check inconsistencies (bionic/ISA
+  would still say x86). ARM apps run under `libndk`, which some native anti-tamper
+  SDKs detect directly (e.g. Damai crashes in `libndk`; a native arm64 build
+  avoids that).
+- **`ro.debuggable=1` stays.** A real user build reports `0`, but setting `0`
+  tears down the scrcpy/remoteview adb tunnel, so it is left enabled.
+- **SELinux is disabled** (real devices are enforcing) and the container cannot
+  pass **Play Integrity** hardware attestation (no TEE, uncertified GMS).
+
+Apps enforcing any of these — e.g. Meituan — still detect the container
+regardless of masking and need real ARM hardware.
 
 ## VNC clients
 
