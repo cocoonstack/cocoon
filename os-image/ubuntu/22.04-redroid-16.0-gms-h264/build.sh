@@ -59,6 +59,10 @@ docker exec \
     set -e
     for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
     test "$(docker info --format "{{.Driver}}")" = vfs
+    # Register qemu binfmt (F-flag) inside THIS docker daemon so a cross-arch
+    # ReDroid image (e.g. arm64 baked on an amd64 runner) can run the sleep
+    # wrapper; the host registration is not always visible to a nested daemon.
+    docker run --privileged --rm tonistiigi/binfmt --install all >/dev/null 2>&1 || true
     docker load -i /redroid.tar
     docker tag "$REDROID_SRC" local/redroid:vm
     [ "$REDROID_SRC" = local/redroid:vm ] || docker image rm "$REDROID_SRC" >/dev/null
@@ -78,9 +82,10 @@ docker exec \
     # Docker only activates a restart policy after a container has stayed up
     # for 10 seconds. The bake wrapper sleeps without starting Android.
     sleep 20
-    if [ "$(docker inspect -f "{{.State.Running}}" redroid)" != true ]; then
-        echo "baked ReDroid restart-policy wrapper is not Running" >&2
-        docker logs redroid 2>&1 | tail -40 >&2
+    state="$(docker inspect -f "{{.State.Running}} {{.RestartCount}}" redroid 2>&1)"
+    if [ "$state" != "true 0" ]; then
+        echo "baked ReDroid wrapper not cleanly Running (state=$state)" >&2
+        docker logs redroid 2>&1 | tail -60 >&2
         exit 1
     fi
     docker exec redroid /busybox test ! -e /.cocoon-bake-once
