@@ -68,7 +68,48 @@ SystemUI navigation bar and recents — disabling it removes the on-screen butto
 
 The Camera2 application and Chromium WebView test shell (`Browser2`) are removed
 physically. Android System WebView is retained because Chrome and other apps
-still require a WebView provider. Meituan and Damai are not included.
+still require a WebView provider.
+
+## Device identity masking
+
+`mask-device.rc` runs `mask-device.sh` as root on `boot_completed`, using
+Magisk's `resetprop` (installed as `/system/bin/resetprop`) to rewrite the
+redroid **identity** properties to a real device (Pixel 8 / Tensor "zuma").
+redroid stamps its identity on every partition, so the mask covers each scope
+(system/vendor/product/odm/system_ext/vendor_dlkm), not just the global props:
+`ro.product.*` (model/brand/manufacturer/device/name), `ro.*.build.fingerprint`,
+`build.id`/`type`/`tags`/`version.incremental`, global `build.flavor`/
+`description`/`display.id`/`product`, `ro.hardware`, `ro.bootloader`,
+`ro.product.board`, `ro.build.user`/`host`, verified-boot state; and it deletes
+the redroid-internal `ro.boot.redroid_*` hints and the `ro.hardware.gralloc`
+redroid tag. `build.prop` cannot carry these (`ro.hardware` comes from
+`androidboot`, the plain `ro.product.*` are precedence-set). The mask re-applies
+on every cold boot. This lets apps that only inspect identity properties run.
+
+It only touches cosmetic identity props and does **not** defeat deeper checks:
+
+- **The virtual GPU stays visible.** `ro.hardware.egl` (`angle`),
+  `ro.hardware.vulkan` (`pastel`), and `ro.board.platform` name the GL/Vulkan
+  driver `.so`; renaming them to a non-existent driver aborts OpenGL
+  (`couldn't find an OpenGL ES implementation`), so they are left as-is. The
+  renderer is unmaskable regardless: the stack is ANGLE on SwiftShader (software),
+  so `glGetString(GL_RENDERER)` reports `ANGLE … SwiftShader` — a louder emulator
+  tell than these props.
+- **The x86 runtime stays visible.** `ro.product.cpu.abi`/`abilist`,
+  `ro.dalvik.vm.native.bridge`, `ro.bionic.arch`, and `dalvik.vm.isa.*` still
+  report `x86_64` / `libndk`. These are deliberately left alone: they are
+  consumed by the runtime, so faking them would break libndk ARM translation if
+  zygote restarts, and they only add cross-check inconsistencies (bionic/ISA
+  would still say x86). ARM apps run under `libndk`, which some native anti-tamper
+  SDKs detect directly (e.g. Damai crashes in `libndk`; a native arm64 build
+  avoids that).
+- **`ro.debuggable=1` stays.** A real user build reports `0`, but setting `0`
+  tears down the scrcpy/remoteview adb tunnel, so it is left enabled.
+- **SELinux is disabled** (real devices are enforcing) and the container cannot
+  pass **Play Integrity** hardware attestation (no TEE, uncertified GMS).
+
+Apps enforcing any of these — e.g. Meituan — still detect the container
+regardless of masking and need real ARM hardware.
 
 ## VNC clients
 

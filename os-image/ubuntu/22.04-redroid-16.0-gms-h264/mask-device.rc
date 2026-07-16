@@ -1,0 +1,10 @@
+service mask_device /system/bin/sh /system/etc/mask-device.sh
+    class late_start
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:su:s0
+
+on property:sys.boot_completed=1
+    start mask_device
