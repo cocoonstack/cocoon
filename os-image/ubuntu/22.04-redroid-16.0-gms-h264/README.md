@@ -88,10 +88,13 @@ on every cold boot. This lets apps that only inspect identity properties run.
 
 It only touches cosmetic identity props and does **not** defeat deeper checks:
 
-- **The GPU/driver props stay visible.** `ro.hardware.egl` (`angle`),
+- **The virtual GPU stays visible.** `ro.hardware.egl` (`angle`),
   `ro.hardware.vulkan` (`pastel`), and `ro.board.platform` name the GL/Vulkan
   driver `.so`; renaming them to a non-existent driver aborts OpenGL
-  (`couldn't find an OpenGL ES implementation`), so they are left as-is.
+  (`couldn't find an OpenGL ES implementation`), so they are left as-is. The
+  renderer is unmaskable regardless: the stack is ANGLE on SwiftShader (software),
+  so `glGetString(GL_RENDERER)` reports `ANGLE … SwiftShader` — a louder emulator
+  tell than these props.
 - **The x86 runtime stays visible.** `ro.product.cpu.abi`/`abilist`,
   `ro.dalvik.vm.native.bridge`, `ro.bionic.arch`, and `dalvik.vm.isa.*` still
   report `x86_64` / `libndk`. These are deliberately left alone: they are
