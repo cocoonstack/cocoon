@@ -42,22 +42,30 @@ done
 # scrcpy needs the system uid (1000) to create a FLAG_SECURE mirror display, so
 # FLAG_SECURE app windows (bank/login/pay) render instead of going black; su1000
 # drops root->1000, which needs adbd running as root (also lets cleanup kill the
-# uid-1000 server on restart).
+# uid-1000 server on restart). If root is unavailable, fall back to a plain run:
+# the view still works, only FLAG_SECURE windows stay black.
+rooted=false
 adb -s "$REDROID" root >/dev/null 2>&1 || true
 for _ in $(seq 1 30); do
     adb connect "$REDROID" >/dev/null 2>&1 || true
-    [ "$(adb -s "$REDROID" shell id -u 2>/dev/null | tr -d '\r\n ')" = "0" ] && break
+    [ "$(adb -s "$REDROID" shell id -u 2>/dev/null | tr -d '\r\n ')" = "0" ] && { rooted=true; break; }
     sleep 1
 done
 
 cleanup
 adb -s "$REDROID" push "$SCRCPY_SERVER" /data/local/tmp/scrcpy-server.jar >/dev/null
-adb -s "$REDROID" push "$SU1000" /data/local/tmp/su1000 >/dev/null
-adb -s "$REDROID" shell chmod 0755 /data/local/tmp/su1000
+launch=(app_process)
+if [ "$rooted" = true ]; then
+    adb -s "$REDROID" push "$SU1000" /data/local/tmp/su1000 >/dev/null
+    adb -s "$REDROID" shell chmod 0755 /data/local/tmp/su1000
+    launch=(/data/local/tmp/su1000 app_process)
+else
+    echo "adb root unavailable; FLAG_SECURE windows will render black" >&2
+fi
 adb -s "$REDROID" forward "tcp:$SCRCPY_PORT" "localabstract:scrcpy_$SCRCPY_SCID"
 adb -s "$REDROID" shell \
     CLASSPATH=/data/local/tmp/scrcpy-server.jar \
-    /data/local/tmp/su1000 app_process / com.genymobile.scrcpy.Server 4.1 \
+    "${launch[@]}" / com.genymobile.scrcpy.Server 4.1 \
     "scid=$SCRCPY_SCID" log_level=info tunnel_forward=true \
     audio=false send_device_meta=false send_dummy_byte=false \
     video_codec=h264 "video_bit_rate=$VIDEO_BIT_RATE" "max_fps=$MAX_FPS" \
