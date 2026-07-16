@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/projecteru2/core/log"
+	"golang.org/x/sys/unix"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
@@ -36,6 +37,7 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 		defer logFile.Close() //nolint:errcheck
 	}
 
+	raiseVMMRlimits(ctx)
 	// shell out: the cloud-hypervisor binary is the authoritative VMM.
 	cmd := exec.Command(ch.conf.CHBinary, args...) //nolint:gosec
 	// Setpgid so CH survives if this process exits.
@@ -58,4 +60,23 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 	// Daemon mode: parent must wait() or zombie blocks IsProcessAlive on stop/delete.
 	go cmd.Wait() //nolint:errcheck
 	return pid, nil
+}
+
+// raiseVMMRlimits lifts the limits the forked VMM inherits: CH allocates an io_uring
+// ring plus eventfds per virtio-blk queue, and num_queues scales with vCPU, so a
+// high-vCPU multi-disk guest otherwise exhausts the default RLIMIT_MEMLOCK/NOFILE and
+// fails to activate its disks.
+func raiseVMMRlimits(ctx context.Context) {
+	logger := log.WithFunc("cloudhypervisor.raiseVMMRlimits")
+	inf := unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}
+	if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &inf); err != nil {
+		logger.Warnf(ctx, "raise RLIMIT_MEMLOCK: %v", err)
+	}
+	var nofile unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &nofile); err == nil && nofile.Cur < nofile.Max {
+		nofile.Cur = nofile.Max
+		if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &nofile); err != nil {
+			logger.Warnf(ctx, "raise RLIMIT_NOFILE: %v", err)
+		}
+	}
 }
