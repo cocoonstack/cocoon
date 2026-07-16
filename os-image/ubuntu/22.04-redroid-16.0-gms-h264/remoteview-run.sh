@@ -9,6 +9,7 @@ REDROID="${REDROID_ADB:-127.0.0.1:5555}"
 VNC_PW="${VNC_PASSWORD:-redroid}"
 RFB_PORT="${RFB_PORT:-5900}"
 SCRCPY_SERVER="${SCRCPY_SERVER:-/usr/local/share/scrcpy/scrcpy-server.jar}"
+SU1000="${SU1000:-/usr/local/share/scrcpy/su1000}"
 SCRCPY_PORT=27183
 SCRCPY_SCID="${SCRCPY_SCID:-4a264fb0}"
 VIDEO_BIT_RATE="${VIDEO_BIT_RATE:-8000000}"
@@ -38,12 +39,25 @@ for _ in $(seq 1 120); do
 done
 [ "$boot_completed" = true ] || { echo "Android boot timed out" >&2; exit 1; }
 
+# scrcpy needs the system uid (1000) to create a FLAG_SECURE mirror display, so
+# FLAG_SECURE app windows (bank/login/pay) render instead of going black; su1000
+# drops root->1000, which needs adbd running as root (also lets cleanup kill the
+# uid-1000 server on restart).
+adb -s "$REDROID" root >/dev/null 2>&1 || true
+for _ in $(seq 1 30); do
+    adb connect "$REDROID" >/dev/null 2>&1 || true
+    [ "$(adb -s "$REDROID" shell id -u 2>/dev/null | tr -d '\r\n ')" = "0" ] && break
+    sleep 1
+done
+
 cleanup
 adb -s "$REDROID" push "$SCRCPY_SERVER" /data/local/tmp/scrcpy-server.jar >/dev/null
+adb -s "$REDROID" push "$SU1000" /data/local/tmp/su1000 >/dev/null
+adb -s "$REDROID" shell chmod 0755 /data/local/tmp/su1000
 adb -s "$REDROID" forward "tcp:$SCRCPY_PORT" "localabstract:scrcpy_$SCRCPY_SCID"
 adb -s "$REDROID" shell \
     CLASSPATH=/data/local/tmp/scrcpy-server.jar \
-    app_process / com.genymobile.scrcpy.Server 4.1 \
+    /data/local/tmp/su1000 app_process / com.genymobile.scrcpy.Server 4.1 \
     "scid=$SCRCPY_SCID" log_level=info tunnel_forward=true \
     audio=false send_device_meta=false send_dummy_byte=false \
     video_codec=h264 "video_bit_rate=$VIDEO_BIT_RATE" "max_fps=$MAX_FPS" \
