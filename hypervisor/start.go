@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/projecteru2/core/log"
+	"golang.org/x/sys/unix"
 
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -137,6 +138,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		defer restore()
 	}
 
+	raiseVMMRlimits(ctx)
 	if err = spec.Cmd.Start(); err != nil {
 		return 0, fmt.Errorf("exec %s: %w", binaryName, err)
 	}
@@ -158,4 +160,19 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+}
+
+func raiseVMMRlimits(ctx context.Context) {
+	logger := log.WithFunc("hypervisor.raiseVMMRlimits")
+	inf := unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}
+	if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &inf); err != nil {
+		logger.Warnf(ctx, "raise RLIMIT_MEMLOCK: %v", err)
+	}
+	var nofile unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &nofile); err == nil && nofile.Cur < nofile.Max {
+		nofile.Cur = nofile.Max
+		if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &nofile); err != nil {
+			logger.Warnf(ctx, "raise RLIMIT_NOFILE: %v", err)
+		}
+	}
 }
