@@ -18,6 +18,9 @@ import (
 	"github.com/projecteru2/core/log"
 )
 
+// maxKernelBytes bounds arm64 gzip decompression against a bomb; real kernels are under 100 MiB.
+const maxKernelBytes = 512 << 20
+
 func healCachedBootFiles(ctx context.Context, conf *Config, layers []v1.Layer, results []pullLayerResult, workDir string) {
 	logger := log.WithFunc("oci.healCachedBootFiles")
 
@@ -142,16 +145,19 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 					_ = f.Close()
 					return "", "", fmt.Errorf("gunzip %s: %w", filepath.Base(dstPath), gzErr)
 				}
-				src = gz
+				src = io.LimitReader(gz, maxKernelBytes+1)
 			}
 		}
-		_, copyErr := io.Copy(f, src) //nolint:gosec
+		written, copyErr := io.Copy(f, src) //nolint:gosec
 		if gz != nil {
 			_ = gz.Close()
 		}
 		_ = f.Close()
 		if copyErr != nil {
 			return "", "", fmt.Errorf("write %s: %w", filepath.Base(dstPath), copyErr)
+		}
+		if gz != nil && written > maxKernelBytes {
+			return "", "", fmt.Errorf("decompressed kernel %s exceeds %d bytes", filepath.Base(dstPath), maxKernelBytes)
 		}
 
 		if isKernel {
