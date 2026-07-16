@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -23,7 +25,6 @@ var nonImageSignatures = []struct {
 	{[]byte("<H"), "content looks like HTML, not a disk image"},
 	{utils.GzipMagic, "content is gzip-compressed (cloudimg does not auto-decompress)"},
 	{[]byte("\xfd7zXZ\x00"), "content is xz-compressed (cloudimg does not auto-decompress)"},
-
 	{[]byte("BZh"), "content is bzip2-compressed (cloudimg does not auto-decompress)"},
 	{utils.ZstdMagic, "content is zstd-compressed (cloudimg does not auto-decompress)"},
 	{[]byte("PK"), "content is a zip archive, not a disk image"},
@@ -68,6 +69,7 @@ func inspectImage(ctx context.Context, path string) (*sourceImageInfo, error) {
 		return info, nil
 	}
 	// Not qcow2: shell out to qemu-img to distinguish raw from unsupported (vmdk/vdi/vhd/etc.) — treating non-qcow2 as raw would corrupt convertToQcow2 output.
+	log.WithFunc("cloudimg.inspectImage").Debugf(ctx, "exec qemu-img info %s", path)
 	cmd := exec.CommandContext(ctx, "qemu-img", "info", "--output=json", path) //nolint:gosec // path is controlled
 	out, err := cmd.Output()
 	if err != nil {

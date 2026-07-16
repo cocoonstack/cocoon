@@ -55,9 +55,7 @@ func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 				activePrefixes[network.VMIDPrefix(id)] = struct{}{}
 			}
 
-			orphans := utils.FilterUnreferenced(slices.Collect(maps.Keys(snap.prefixes)), activePrefixes)
-			slices.Sort(orphans)
-			return orphans
+			return utils.FilterUnreferenced(slices.Sorted(maps.Keys(snap.prefixes)), activePrefixes)
 		},
 		Collect: func(ctx context.Context, prefixes []string, _ bridgeSnapshot) error {
 			logger := log.WithFunc("gc.bridge")

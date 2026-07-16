@@ -21,6 +21,21 @@ import (
 // maxKernelBytes bounds arm64 gzip decompression against a bomb; real kernels are under 100 MiB.
 const maxKernelBytes = 512 << 20
 
+func bootFilesPresent(results []pullLayerResult) (hasKernel, hasInitrd bool) {
+	for i := range results {
+		if results[i].kernelPath != "" {
+			hasKernel = true
+		}
+		if results[i].initrdPath != "" {
+			hasInitrd = true
+		}
+		if hasKernel && hasInitrd {
+			return hasKernel, hasInitrd
+		}
+	}
+	return hasKernel, hasInitrd
+}
+
 func healCachedBootFiles(ctx context.Context, conf *Config, layers []v1.Layer, results []pullLayerResult, workDir string) {
 	logger := log.WithFunc("oci.healCachedBootFiles")
 

@@ -44,8 +44,12 @@ func patchCHConfig(path string, opts *patchOptions) error {
 	}
 
 	serial, console := serialConsoleFor(opts.directBoot, opts.consoleSock)
-	_ = setField(raw, "serial", serial)
-	_ = setField(raw, "console", console)
+	if err := setField(raw, "serial", serial); err != nil {
+		return fmt.Errorf("patch serial: %w", err)
+	}
+	if err := setField(raw, "console", console); err != nil {
+		return fmt.Errorf("patch console: %w", err)
+	}
 
 	if opts.vsockSock != "" {
 		if vsockRaw, ok := raw["vsock"]; ok && rawObjectPresent(vsockRaw) {
@@ -86,9 +90,6 @@ func rawObjectPresent(raw json.RawMessage) bool {
 }
 
 func rawArrayLen(raw json.RawMessage) int {
-	if raw == nil {
-		return 0
-	}
 	var arr []json.RawMessage
 	if json.Unmarshal(raw, &arr) != nil {
 		return 0

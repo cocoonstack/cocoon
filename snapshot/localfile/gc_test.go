@@ -345,9 +345,7 @@ func TestGCModule_OrphanDirCleaned(t *testing.T) {
 }
 
 func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
-	// Real (non-pending, non-orphan) records that get LRU-evicted must emit
-	// snap.storage.stop so the ledger interval closes; otherwise GC silently
-	// leaks an open snapshot interval forever.
+	// LRU-evicting a real record must close its ledger interval (snap.storage.stop).
 	lf := newTestLF(t)
 	ctx := t.Context()
 
@@ -391,9 +389,7 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 }
 
 func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
-	// Neither orphan dirs (no DB record at all) nor stale-pending (record
-	// exists but never reached snap.storage.start) opened a ledger interval;
-	// GC must not emit a phantom snap.storage.stop for them.
+	// Orphan and stale-pending records never opened a ledger interval, so GC must not emit a phantom stop.
 	lf := newTestLF(t)
 	ctx := t.Context()
 

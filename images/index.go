@@ -2,6 +2,7 @@ package images
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -51,17 +52,25 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 // LookupOne resolves id to a single entry via LookupRefs' rules; multiple refs must all name one digest (tag aliases) — a prefix spanning distinct digests resolves to nothing rather than map-iteration luck.
 func LookupOne[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) (string, *E, bool) {
 	refs := LookupRefs(images, id, normalizers...)
-	if len(refs) == 0 {
+	if len(refs) == 0 || !refsShareDigest(images, refs) {
 		return "", nil, false
 	}
+	return refs[0], images[refs[0]], true
+}
+
+// refsShareDigest reports whether every ref names the same digest (tag aliases of one image).
+func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
 	first := images[refs[0]]
+	if first == nil {
+		return false
+	}
 	for _, ref := range refs[1:] {
 		e := images[ref]
 		if e == nil || (*e).EntryID() != (*first).EntryID() {
-			return "", nil, false
+			return false
 		}
 	}
-	return refs[0], first, true
+	return true
 }
 
 // LookupRefs returns all ref keys matching id by exact key, normalizer, or digest prefix.
@@ -98,8 +107,10 @@ func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(st
 	return refs
 }
 
-// deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps all refs pointing at it.
-func deleteByID[E any](ctx context.Context, logPrefix string, images map[string]*E, lookup func(string) []string, ids []string) []string {
+// deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps
+// all refs pointing at it. A prefix spanning distinct digests is rejected —
+// guessing on a destructive op would delete unrelated images.
+func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[string]*E, lookup func(string) []string, ids []string) ([]string, error) {
 	logger := log.WithFunc(logPrefix)
 	var deleted []string
 	for _, id := range ids {
@@ -108,13 +119,16 @@ func deleteByID[E any](ctx context.Context, logPrefix string, images map[string]
 			logger.Debugf(ctx, "image %q not found, skipping", id)
 			continue
 		}
+		if !refsShareDigest(images, refs) {
+			return deleted, fmt.Errorf("image ref %q is ambiguous (matches multiple digests), use a longer prefix", id)
+		}
 		for _, ref := range refs {
 			delete(images, ref)
 			deleted = append(deleted, ref)
 			logger.Debugf(ctx, "deleted from index: %s", ref)
 		}
 	}
-	return deleted
+	return deleted, nil
 }
 
 // entryToImage converts a single index entry to *types.Image.

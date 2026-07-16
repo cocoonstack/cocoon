@@ -10,7 +10,6 @@ type chVMConfig struct {
 	Console *chRuntimeFile `json:"console,omitempty"`
 	Vsock   *chVsock       `json:"vsock,omitempty"`
 
-	// Required.
 	CPUs     chCPUs   `json:"cpus"`
 	Memory   chMemory `json:"memory"`
 	Disks    []chDisk `json:"disks,omitempty"`

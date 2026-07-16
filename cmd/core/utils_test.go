@@ -187,17 +187,6 @@ func TestNormalizeDataDiskSpecs(t *testing.T) {
 	})
 }
 
-// directErrSnap is a DirectCreator whose CreateFromDir always fails; the
-// embedded interface panics on any other call, so the test proves the failure
-// path alone.
-type directErrSnap struct {
-	snapshot.Snapshot
-}
-
-func (directErrSnap) CreateFromDir(context.Context, *types.SnapshotConfig, string) (string, bool, error) {
-	return "", false, errors.New("disk full")
-}
-
 func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 	srcDir, err := os.MkdirTemp(t.TempDir(), "capture-*")
 	if err != nil {
@@ -209,4 +198,15 @@ func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 	if _, err := os.Stat(srcDir); !os.IsNotExist(err) {
 		t.Errorf("capture dir survived a failed direct save: %v", err)
 	}
+}
+
+// directErrSnap is a DirectCreator whose CreateFromDir always fails; the
+// embedded interface panics on any other call, so the test proves the failure
+// path alone.
+type directErrSnap struct {
+	snapshot.Snapshot
+}
+
+func (directErrSnap) CreateFromDir(context.Context, *types.SnapshotConfig, string) (string, bool, error) {
+	return "", false, errors.New("disk full")
 }

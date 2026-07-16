@@ -26,6 +26,10 @@ func (fc *Firecracker) withSourceWritableDisksLocked(ctx context.Context, config
 		return fn()
 	}
 	slices.Sort(paths)
+	// Dedupe adjacent equal paths: a duplicate would recurse into the same
+	// lock twice from one goroutine, and the transient flock polls forever
+	// against a lock this goroutine already holds — a self-deadlock.
+	paths = slices.Compact(paths)
 	lockDir := fc.cloneLockDir()
 	if mkErr := os.MkdirAll(lockDir, 0o700); mkErr != nil {
 		return fmt.Errorf("create clone lock dir: %w", mkErr)

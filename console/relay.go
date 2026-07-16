@@ -79,6 +79,6 @@ func isCleanExit(err error) bool {
 	if err == nil {
 		return true
 	}
-	var escErr term.EscapeError
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || errors.As(err, &escErr)
+	_, isEsc := errors.AsType[term.EscapeError](err)
+	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || isEsc
 }

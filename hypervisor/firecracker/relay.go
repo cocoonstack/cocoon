@@ -33,7 +33,6 @@ type broadcaster struct {
 	sink   io.Writer // current session's conn; nil when no session
 }
 
-// setSink sets (or clears) the active session writer.
 func (b *broadcaster) setSink(w io.Writer) {
 	b.mu.Lock()
 	b.sink = w

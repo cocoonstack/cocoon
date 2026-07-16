@@ -26,10 +26,8 @@ import (
 
 const typ = "cni"
 
+// Seams for cross-platform lifecycle tests (netns/TAP ops are linux-only).
 var (
-	_ network.Network = (*CNI)(nil)
-
-	// Seams for cross-platform lifecycle tests (netns/TAP ops are linux-only).
 	deleteTAPFn       = deleteTAPInNetns
 	deleteNetnsFn     = deleteNetns
 	ensureNetnsFn     = ensureNetns
@@ -38,6 +36,8 @@ var (
 	statNetnsFn       = os.Stat
 	setLinkStateFn    = setLinkStateInNetns
 )
+
+var _ network.Network = (*CNI)(nil)
 
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {

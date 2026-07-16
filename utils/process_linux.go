@@ -30,7 +30,6 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 		return nil, err
 	}
 	var scan ProcScan
-	var firstErr error
 	for _, e := range entries {
 		pid, atoiErr := strconv.Atoi(e.Name())
 		if atoiErr != nil || pid <= 0 {
@@ -38,8 +37,10 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 		}
 		data, readErr := readFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 		if readErr != nil {
-			if firstErr == nil && alive(pid) {
-				firstErr = readErr
+			// A vanished (dead) process is expected churn; a read failure on a
+			// live one poisons the scan.
+			if alive(pid) {
+				return nil, readErr
 			}
 			continue
 		}
@@ -48,9 +49,6 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 			continue
 		}
 		scan = append(scan, procEntry{pid: pid, cmdline: string(data)})
-	}
-	if firstErr != nil {
-		return nil, firstErr
 	}
 	return scan, nil
 }

@@ -7,12 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type Actions interface {
-	GC(cmd *cobra.Command, args []string) error
-	Version(cmd *cobra.Command, args []string) error
-}
-
-func Commands(h Actions) []*cobra.Command {
+func Commands(h Handler) []*cobra.Command {
 	gcCmd := &cobra.Command{
 		Use:   "gc",
 		Short: "Remove unreferenced blobs, boot files, VM dirs, and optionally evict snapshots",

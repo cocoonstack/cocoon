@@ -10,8 +10,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -42,6 +44,34 @@ func TestReconcileOrphanNICs(t *testing.T) {
 	}
 	if len(plumbing.removed) != 1 || plumbing.removed[0] != 1 {
 		t.Fatalf("plumbing.removed = %v, want the orphan's host slot 1 reclaimed", plumbing.removed)
+	}
+}
+
+// TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout pins the slow-guest path:
+// a timed-out B0EJ wait must still reclaim the orphan's host TAP slot — after
+// a late eject the device vanishes from vm.info and no later reconcile could
+// ever see this TAP again.
+func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
+	hc, removed := newCHStubClient(t, []chNet{
+		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
+	}, "cocoon-net-aabbccddee02")
+	plumbing := &stubPlumbing{}
+
+	info, err := getVMInfo(t.Context(), hc)
+	if err != nil {
+		t.Fatalf("vm.info: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	err = reconcileOrphanNICs(ctx, hc, info, "vm1", nil, plumbing)
+	if err == nil {
+		t.Fatal("a timed-out eject wait must surface an error")
+	}
+	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee02" {
+		t.Fatalf("removed = %v, want the orphan ejected", got)
+	}
+	if len(plumbing.removed) != 1 || plumbing.removed[0] != 1 {
+		t.Fatalf("plumbing.removed = %v, want host slot 1 reclaimed despite the timeout", plumbing.removed)
 	}
 }
 
@@ -88,6 +118,41 @@ func TestResolveFailedPersist(t *testing.T) {
 	}
 }
 
+// TestNetResizeRemoveResumesWithoutLiveDevice covers issue #104: a NIC the
+// record still carries but CH has already ejected (an interrupted prior
+// remove) must be truncated from the record, not wedge the retry forever.
+func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
+	ch := newTestCH(t)
+	ctx := t.Context()
+	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
+	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
+		rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm7", Hypervisor: ch.Typ}}
+		rec.NetworkConfigs = []*types.NetworkConfig{nc}
+		idx.VMs["vm7"] = rec
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// vm.info reports no live nets, so macToID can't resolve nc's MAC.
+	hc, _ := newCHStubClient(t, nil)
+	plumbing := &stubPlumbing{}
+
+	res, err := ch.netResizeRemove(ctx, hc, &chVMInfoResponse{}, "vm7", []*types.NetworkConfig{nc}, plumbing, 1, 0, netresize.Result{Before: 1, After: 1})
+	if err != nil {
+		t.Fatalf("resume remove must not error on a missing live device: %v", err)
+	}
+	if res.After != 0 || len(res.Removed) != 1 {
+		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
+	}
+	var rec *hypervisor.VMRecord
+	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error { rec = idx.VMs["vm7"]; return nil }); err != nil {
+		t.Fatalf("read record: %v", err)
+	}
+	if len(rec.NetworkConfigs) != 0 {
+		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(rec.NetworkConfigs))
+	}
+}
+
 func TestNICPersisted(t *testing.T) {
 	rec := &hypervisor.VMRecord{}
 	rec.NetworkConfigs = []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
@@ -126,8 +191,10 @@ func newTestCH(t *testing.T) *CloudHypervisor {
 	return &CloudHypervisor{Backend: backend, conf: cfg}
 }
 
-// newCHStubClient serves vm.info and vm.remove-device over an httptest server; removed() snapshots the eject calls.
-func newCHStubClient(t *testing.T, nets []chNet) (*http.Client, func() []string) {
+// newCHStubClient serves vm.info and vm.remove-device over an httptest server;
+// removed() snapshots the eject calls. stickyIDs stay in the device tree after
+// removal, simulating a guest that never acks B0EJ.
+func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Client, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var removed []string
@@ -152,6 +219,9 @@ func newCHStubClient(t *testing.T, nets []chNet) (*http.Client, func() []string)
 		tree := map[string]json.RawMessage{}
 		for _, n := range nets {
 			if slices.Contains(removed, n.ID) {
+				if slices.Contains(stickyIDs, n.ID) {
+					tree[n.ID] = json.RawMessage("{}")
+				}
 				continue
 			}
 			live = append(live, n)

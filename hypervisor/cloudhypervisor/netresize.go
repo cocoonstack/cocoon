@@ -98,7 +98,10 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 	return res, nil
 }
 
-// resolveFailedPersist re-reads the record after a failed NIC persist: fsync can fail after the rename landed, and tearing down a committed NIC would strand record-without-device where a same-target retry returns at target==current without healing. Teardown happens only on a conclusive miss; a failed re-read keeps the device and plumbing (ejectOrphanNICs reconciles a genuine orphan on the next resize). The read is lockless so an in-flight GC cycle's index lock cannot time it out into a false miss.
+// resolveFailedPersist re-reads the record after a failed NIC persist (fsync
+// can fail after the rename landed) and tears down only on a conclusive miss:
+// removing a committed NIC would strand record-without-device, unhealable by a
+// same-target retry. Lockless read so a GC index lock can't fake a miss.
 func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
 	var rec *hypervisor.VMRecord
 	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
@@ -210,13 +213,18 @@ func reconcileOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoRes
 		if err := removeDeviceVM(ctx, hc, n.ID); err != nil {
 			return fmt.Errorf("eject orphan NIC %s: %w", n.ID, err)
 		}
-		if err := waitDeviceEjected(ctx, hc, n.ID); err != nil {
-			return fmt.Errorf("wait orphan eject %s: %w", n.ID, err)
-		}
+		// Reclaim the host slot even when the eject wait times out (same
+		// pattern as resolveFailedPersist's rollback): once the guest finishes
+		// a late eject the device vanishes from vm.info, so no later reconcile
+		// would ever see this TAP again and it would wedge retries at CreateTAP.
+		ejectErr := waitDeviceEjected(ctx, hc, n.ID)
 		if idx, ok := network.TAPIndex(n.TAP); ok {
 			if rmErr := plumbing.Remove(ctx, vmID, idx); rmErr != nil {
 				logger.Warnf(ctx, "reclaim host slot for orphan NIC %s (tap %s): %v", n.ID, n.TAP, rmErr)
 			}
+		}
+		if ejectErr != nil {
+			return fmt.Errorf("wait orphan eject %s: %w", n.ID, ejectErr)
 		}
 	}
 	return nil

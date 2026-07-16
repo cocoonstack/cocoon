@@ -29,8 +29,6 @@ type tarImportJob struct {
 }
 
 func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
-	logger := log.WithFunc("oci.importTarLayers")
-
 	if len(file) == 0 {
 		return fmt.Errorf("no tar files provided")
 	}
@@ -62,22 +60,11 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 			return fmt.Errorf("process layers: %w", mapErr)
 		}
 
-		manifestDigest := computeManifestDigest(results)
-
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: len(results)})
-		if err := commitAndRecord(conf, idx, name, manifestDigest, results); err != nil {
-			return err
-		}
-
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: len(results)})
-		logger.Infof(ctx, "Imported: %s (digest: %s, layers: %d)", name, manifestDigest, len(results))
-		return nil
+		return finishImport(ctx, conf, idx, name, computeManifestDigest(results), results, tracker, "Imported")
 	})
 }
 
 func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
-	logger := log.WithFunc("oci.importTarFromReader")
-
 	return store.Update(ctx, func(idx *imageIndex) error {
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
 
@@ -95,16 +82,8 @@ func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[
 			return fmt.Errorf("process layer: %w", err)
 		}
 
-		manifestDigest := computeManifestDigest([]pullLayerResult{result})
-
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: 1})
-		if err := commitAndRecord(conf, idx, name, manifestDigest, []pullLayerResult{result}); err != nil {
-			return err
-		}
-
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: 1})
-		logger.Infof(ctx, "Imported: %s (digest: %s, layers: 1)", name, manifestDigest)
-		return nil
+		results := []pullLayerResult{result}
+		return finishImport(ctx, conf, idx, name, computeManifestDigest(results), results, tracker, "Imported")
 	})
 }
 

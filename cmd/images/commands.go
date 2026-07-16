@@ -6,15 +6,7 @@ import (
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
-type Actions interface {
-	Pull(cmd *cobra.Command, args []string) error
-	Import(cmd *cobra.Command, args []string) error
-	List(cmd *cobra.Command, args []string) error
-	RM(cmd *cobra.Command, args []string) error
-	Inspect(cmd *cobra.Command, args []string) error
-}
-
-func Command(h Actions) *cobra.Command {
+func Command(h Handler) *cobra.Command {
 	imageCmd := &cobra.Command{
 		Use:   "image",
 		Short: "Manage images",

@@ -118,21 +118,6 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 	}), nil
 }
 
-// ExpandRawImage truncates path up to targetSize; no-op if path already meets it.
-func ExpandRawImage(path string, targetSize int64) error {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("stat %s: %w", path, err)
-	}
-	if targetSize <= fi.Size() {
-		return nil
-	}
-	if err := os.Truncate(path, targetSize); err != nil {
-		return fmt.Errorf("truncate %s to %d: %w", path, targetSize, err)
-	}
-	return nil
-}
-
 func copyPairs(ctx context.Context, pairs [][2]string, sync utils.SyncMode) error {
 	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
 		if err := utils.ReflinkCopy(p[0], p[1], sync); err != nil {

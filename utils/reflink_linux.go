@@ -13,16 +13,24 @@ const ficlone = 0x40049409
 
 // ReflinkCopy copies a single file, preferring FICLONE (O(1) CoW on btrfs/xfs/bcachefs) and falling back to SparseCopy on any error.
 func ReflinkCopy(dst, src string, sync SyncMode) error {
-	if err := tryFiclone(dst, src); err == nil {
+	if err := tryFiclone(dst, src, sync); err == nil {
 		return nil
 	}
 	return SparseCopy(dst, src, sync)
 }
 
-func tryFiclone(dst, src string) error {
+func tryFiclone(dst, src string, sync SyncMode) error {
 	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd()); errno != 0 {
 			return fmt.Errorf("ficlone: %w", errno)
+		}
+		// FICLONE only shares extents; honor the caller's durability request
+		// like SparseCopy does, or a Sync export is silently non-durable on
+		// the CoW filesystems where the fast path succeeds.
+		if sync == Sync {
+			if err := dstFile.Sync(); err != nil {
+				return fmt.Errorf("sync dst: %w", err)
+			}
 		}
 		return nil
 	})

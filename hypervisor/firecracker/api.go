@@ -26,8 +26,8 @@ const (
 	ioEngineAsync = "Async" // io_uring
 )
 
-// Firecracker REST API request types — pre-boot config model: start empty, configure via PUT/PATCH, InstanceStart.
-
+// fcMachineConfig and the request types below follow Firecracker's pre-boot
+// config model: start empty, configure via PUT/PATCH, then InstanceStart.
 type fcMachineConfig struct {
 	VCPUCount  int    `json:"vcpu_count"`
 	MemSizeMiB int    `json:"mem_size_mib"`

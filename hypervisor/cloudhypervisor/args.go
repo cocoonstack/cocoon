@@ -1,7 +1,6 @@
 package cloudhypervisor
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -42,7 +41,7 @@ func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueue
 	return args
 }
 
-func buildVMConfig(_ context.Context, rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig {
+func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 

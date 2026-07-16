@@ -54,9 +54,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			for _, name := range snap.netnsNames {
 				candidates[name] = struct{}{}
 			}
-			orphans := utils.FilterUnreferenced(slices.Collect(maps.Keys(candidates)), active)
-			slices.Sort(orphans)
-			return orphans
+			return utils.FilterUnreferenced(slices.Sorted(maps.Keys(candidates)), active)
 		},
 		Collect: func(ctx context.Context, ids []string, _ cniSnapshot) error {
 			logger := log.WithFunc("gc.cni")

@@ -1,11 +1,16 @@
 package oci
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/images"
+	"github.com/cocoonstack/cocoon/progress"
+	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,19 +27,16 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	return nil
 }
 
-func bootFilesPresent(results []pullLayerResult) (hasKernel, hasInitrd bool) {
-	for i := range results {
-		if results[i].kernelPath != "" {
-			hasKernel = true
-		}
-		if results[i].initrdPath != "" {
-			hasInitrd = true
-		}
-		if hasKernel && hasInitrd {
-			return hasKernel, hasInitrd
-		}
+// finishImport commits results under name and emits the shared commit/done
+// progress + log tail; verb names the operation ("Pulled"/"Imported").
+func finishImport(ctx context.Context, conf *Config, idx *imageIndex, name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
+	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: len(results)})
+	if err := commitAndRecord(conf, idx, name, manifestDigest, results); err != nil {
+		return err
 	}
-	return hasKernel, hasInitrd
+	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: len(results)})
+	log.WithFunc("oci.finishImport").Infof(ctx, "%s: %s (digest: %s, layers: %d)", verb, name, manifestDigest, len(results))
+	return nil
 }
 
 func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest images.Digest, results []pullLayerResult) error {

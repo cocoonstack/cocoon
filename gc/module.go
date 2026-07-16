@@ -1,3 +1,6 @@
+// Package gc runs modular, lock-safe garbage collection: each subsystem
+// registers a Module and cross-module reference protocols keep live
+// resources pinned.
 package gc
 
 import (

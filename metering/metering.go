@@ -16,15 +16,14 @@ const (
 	KindSnapStorageStart Kind = "snap.storage.start"
 	KindSnapStorageStop  Kind = "snap.storage.stop"
 
-	ReasonBoot          Reason = "boot"
-	ReasonRestart       Reason = "restart"
-	ReasonClone         Reason = "clone"
-	ReasonRestore       Reason = "restore"
-	ReasonHibernateWake Reason = "hibernate-wake"
-	ReasonStopUser      Reason = "stop-user"
-	ReasonStopCrash     Reason = "stop-crash"
-	ReasonVMRemove      Reason = "vm-rm"
-	ReasonSnapRemove    Reason = "snap-rm"
+	ReasonBoot       Reason = "boot"
+	ReasonRestart    Reason = "restart"
+	ReasonClone      Reason = "clone"
+	ReasonRestore    Reason = "restore"
+	ReasonStopUser   Reason = "stop-user"
+	ReasonStopCrash  Reason = "stop-crash"
+	ReasonVMRemove   Reason = "vm-rm"
+	ReasonSnapRemove Reason = "snap-rm"
 )
 
 // Kind identifies a lifecycle endpoint; downstream pairs *.start with *.stop by id.

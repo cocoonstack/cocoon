@@ -20,10 +20,6 @@ func (r BatchResult[T]) Err() error { return errors.Join(r.Errors...) }
 
 // ForEach runs fn concurrently on each item, best-effort.
 func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) error, concurrency ...int) BatchResult[T] {
-	if len(items) == 0 {
-		return BatchResult[T]{}
-	}
-
 	limit := pickLimit(concurrency)
 
 	type result struct {

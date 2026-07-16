@@ -1,4 +1,3 @@
-// Cross-module GC protocols: snapshots opt in via the matching method; this file imports nothing concrete.
 package gc
 
 import "maps"

@@ -53,15 +53,7 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], im
 
 		healCachedBootFiles(ctx, conf, layers, results, workDir)
 
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: len(results)})
-		manifestDigest := images.NewDigest(digestHex)
-		if err := commitAndRecord(conf, idx, ref, manifestDigest, results); err != nil {
-			return err
-		}
-
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: len(results)})
-		logger.Infof(ctx, "Pulled: %s (digest: sha256:%s, layers: %d)", ref, digestHex, len(results))
-		return nil
+		return finishImport(ctx, conf, idx, ref, images.NewDigest(digestHex), results, tracker, "Pulled")
 	})
 }
 

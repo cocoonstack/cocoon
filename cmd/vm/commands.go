@@ -8,33 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
-type Actions interface {
-	Create(cmd *cobra.Command, args []string) error
-	Run(cmd *cobra.Command, args []string) error
-	Clone(cmd *cobra.Command, args []string) error
-	Start(cmd *cobra.Command, args []string) error
-	Stop(cmd *cobra.Command, args []string) error
-	List(cmd *cobra.Command, args []string) error
-	Inspect(cmd *cobra.Command, args []string) error
-	Console(cmd *cobra.Command, args []string) error
-	Exec(cmd *cobra.Command, args []string) error
-	Logs(cmd *cobra.Command, args []string) error
-	RM(cmd *cobra.Command, args []string) error
-	Restore(cmd *cobra.Command, args []string) error
-	Hibernate(cmd *cobra.Command, args []string) error
-	Debug(cmd *cobra.Command, args []string) error
-	Status(cmd *cobra.Command, args []string) error
-	FsAttach(cmd *cobra.Command, args []string) error
-	FsDetach(cmd *cobra.Command, args []string) error
-	DiskAttach(cmd *cobra.Command, args []string) error
-	DiskDetach(cmd *cobra.Command, args []string) error
-	DeviceAttach(cmd *cobra.Command, args []string) error
-	DeviceDetach(cmd *cobra.Command, args []string) error
-	NetResize(cmd *cobra.Command, args []string) error
-	Reseed(cmd *cobra.Command, args []string) error
-}
-
-func Command(h Actions) *cobra.Command {
+func Command(h Handler) *cobra.Command {
 	vmCmd := &cobra.Command{
 		Use:   "vm",
 		Short: "Manage virtual machines",
@@ -217,20 +191,20 @@ func Command(h Actions) *cobra.Command {
 	return vmCmd
 }
 
-func buildNetCommand(h Actions) *cobra.Command {
+func buildNetCommand(h Handler) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "net VM",
 		Short: "Resize a running VM's NIC count (CH only); quiesce in-guest NIC state before reducing",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.NetResize,
 	}
-	cmd.Flags().Int("nics", -1, "target NIC count (required, >= 0)")
+	cmd.Flags().Int("nics", 0, "target NIC count (required, >= 0)")
 	_ = cmd.MarkFlagRequired("nics")
 	cliutil.AddOutputFlag(cmd)
 	return cmd
 }
 
-func buildDiskCommand(h Actions) *cobra.Command {
+func buildDiskCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "disk",
 		Short: "Attach/detach an extra raw data disk to a running VM (CH only)",
@@ -264,7 +238,7 @@ func buildDiskCommand(h Actions) *cobra.Command {
 	return parent
 }
 
-func buildFsCommand(h Actions) *cobra.Command {
+func buildFsCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "fs",
 		Short: "Attach/detach a vhost-user-fs share to a running VM (CH only)",
@@ -298,7 +272,7 @@ func buildFsCommand(h Actions) *cobra.Command {
 	return parent
 }
 
-func buildDeviceCommand(h Actions) *cobra.Command {
+func buildDeviceCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "device",
 		Short: "Attach/detach a VFIO PCI passthrough device to a running VM (CH only)",

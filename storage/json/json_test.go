@@ -164,25 +164,6 @@ func TestInitCalledOnDeserialize(t *testing.T) {
 	}
 }
 
-type testData struct {
-	Name  string            `json:"name"`
-	Count int               `json:"count"`
-	Tags  map[string]string `json:"tags"`
-}
-
-func (d *testData) Init() {
-	if d.Tags == nil {
-		d.Tags = make(map[string]string)
-	}
-}
-
-func newTestStore(t *testing.T, dir, name string) *Store[testData] {
-	t.Helper()
-	dataPath := filepath.Join(dir, name+".json")
-	lockPath := filepath.Join(dir, name+".lock")
-	return New[testData](dataPath, flock.New(lockPath))
-}
-
 func TestLoadRecoversPrevGeneration(t *testing.T) {
 	dir := t.TempDir()
 	dataPath := filepath.Join(dir, "data.json")
@@ -290,4 +271,23 @@ func TestLoadTornWithoutPrevFails(t *testing.T) {
 	if err := s.ReadRaw(func(*testData) error { return nil }); err == nil {
 		t.Fatal("want error for torn file without a previous generation")
 	}
+}
+
+type testData struct {
+	Name  string            `json:"name"`
+	Count int               `json:"count"`
+	Tags  map[string]string `json:"tags"`
+}
+
+func (d *testData) Init() {
+	if d.Tags == nil {
+		d.Tags = make(map[string]string)
+	}
+}
+
+func newTestStore(t *testing.T, dir, name string) *Store[testData] {
+	t.Helper()
+	dataPath := filepath.Join(dir, name+".json")
+	lockPath := filepath.Join(dir, name+".lock")
+	return New[testData](dataPath, flock.New(lockPath))
 }

@@ -53,6 +53,8 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 func (b *Bridge) Type() string { return typ }
 
 func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
+	// Legacy records persisted no NetworkConfigs, so empty means "assume tap0"
+	// — callers that legitimately resized to zero NICs must not call Verify.
 	if len(expected) == 0 {
 		if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
 			return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
@@ -124,11 +126,19 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, mErr)
 		}
 
-		_ = netlink.LinkSetLearning(tap, false)
-		if mtu := br.Attrs().MTU; mtu > 0 {
-			_ = netlink.LinkSetMTU(tap, mtu)
+		// Best-effort tuning, but leave a trace: a silently failed MTU sync
+		// surfaces later as a connectivity symptom with no trail back here.
+		if lErr := netlink.LinkSetLearning(tap, false); lErr != nil {
+			logger.Debugf(ctx, "disable learning on %s: %v", name, lErr)
 		}
-		_ = network.TuneTAP(tap)
+		if mtu := br.Attrs().MTU; mtu > 0 {
+			if mErr := netlink.LinkSetMTU(tap, mtu); mErr != nil {
+				logger.Debugf(ctx, "sync mtu %d to %s: %v", mtu, name, mErr)
+			}
+		}
+		if tErr := network.TuneTAP(tap); tErr != nil {
+			logger.Debugf(ctx, "tune tap %s: %v", name, tErr)
+		}
 
 		if uErr := netlink.LinkSetUp(tap); uErr != nil {
 			return nil, fmt.Errorf("set %s up: %w", name, uErr)

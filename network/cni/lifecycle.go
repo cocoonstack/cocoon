@@ -254,7 +254,7 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 	if addErr != nil {
 		return nil, fmt.Errorf("cni add %s/%s: %w", vmID, ifName, addErr)
 	}
-	netInfo, parseErr := extractNetworkInfo(cniResult)
+	netInfo, parseErr := extractNetworkInfo(ctx, cniResult)
 	if parseErr != nil {
 		return nil, fmt.Errorf("parse CNI result: %w", parseErr)
 	}
@@ -320,7 +320,7 @@ func ensureNetns(name, nsPath string) (bool, error) {
 }
 
 // extractNetworkInfo converts a CNI ADD result into types.Network.
-func extractNetworkInfo(result cnitypes.Result) (*types.Network, error) {
+func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Network, error) {
 	newResult, err := current.NewResultFromResult(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert CNI result: %w", err)
@@ -342,5 +342,9 @@ func extractNetworkInfo(result cnitypes.Result) (*types.Network, error) {
 			return info, nil
 		}
 	}
+	// IPv6-only plugin results are not persisted; surface the drop instead of
+	// silently recording Network: nil.
+	log.WithFunc("cni.extractNetworkInfo").Warnf(ctx,
+		"CNI result has %d IPs but no IPv4; skipping network info (IPv6-only is unsupported)", len(newResult.IPs))
 	return nil, nil
 }

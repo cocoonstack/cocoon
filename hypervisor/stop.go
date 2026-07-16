@@ -132,7 +132,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
 			return fmt.Errorf("terminate orphan VMM pid=%d for VM %s: %w", pid, id, termErr)
 		}
-		log.WithFunc(b.Typ+".Delete").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
+		log.WithFunc(b.Typ+".deleteOneLocked").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
 	}
 	var (
 		shape              metering.Shape

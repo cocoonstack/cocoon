@@ -80,12 +80,8 @@ func TestCreateAndDeleteEmitMetering(t *testing.T) {
 }
 
 func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
-	// Two cocoon processes racing snapshot rm: flock serializes the store.Update
-	// closures, so the loser's closure sees a nil rec. The loser must still
-	// report success to its caller (the data is gone), but must NOT emit a
-	// phantom snap.storage.stop with an empty Hypervisor field. We exercise this
-	// by calling deleteOne twice on the same id (idempotent), simulating the
-	// loser running its loop body after the winner already committed.
+	// Racing rm: the loser's closure sees a nil rec and must report success
+	// without emitting a phantom stop. deleteOne twice on one id simulates it.
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
@@ -1076,6 +1072,40 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 	}
 }
 
+func TestImport_CorruptGzipTrailerRejected(t *testing.T) {
+	lf := newTestLF(t)
+
+	jsonData, err := json.Marshal(types.SnapshotExport{
+		Version: 1,
+		Config:  types.SnapshotConfig{Name: "corrupt-snap", Config: types.Config{CPU: 1, Memory: 256 << 20}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(jsonData); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close()
+	gw.Close()
+
+	// Flip a bit in the gzip ISIZE trailer: tar extraction still succeeds, so
+	// only the drain-to-EOF integrity check can catch it.
+	raw := buf.Bytes()
+	raw[len(raw)-1] ^= 0xff
+
+	if _, err := lf.Import(t.Context(), bytes.NewReader(raw), "", ""); err == nil {
+		t.Fatal("corrupted gzip trailer must fail the import")
+	}
+}
+
 func TestImport_FromRawTarReader(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -1318,6 +1348,56 @@ func TestExportToDir_RejectNonEmpty(t *testing.T) {
 }
 
 // testID generates a random snapshot ID for tests.
+func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "orig"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "retry"},
+		makeTar(t, map[string][]byte{"x": []byte("2")})); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("same-ID retry must be rejected, got: %v", err)
+	}
+
+	rec, err := lf.lookupRecord(ctx, id, false)
+	if err != nil || rec.Name != "orig" {
+		t.Fatalf("original record must survive the retry: rec=%+v err=%v", rec, err)
+	}
+	if _, err := os.Stat(filepath.Join(rec.DataDir, "x")); err != nil {
+		t.Fatalf("original data dir must survive the retry: %v", err)
+	}
+}
+
+func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "leased"},
+		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	release, err := lf.acquireReadLease(ctx, id)
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if _, err := lf.Delete(ctx, []string{id}); err == nil || !strings.Contains(err.Error(), "in use") {
+		release()
+		t.Fatalf("delete must fail while a reader holds the lease, got: %v", err)
+	}
+	if _, err := lf.lookupRecord(ctx, id, false); err != nil {
+		release()
+		t.Fatalf("record must survive the refused delete: %v", err)
+	}
+	release()
+	if _, err := lf.Delete(ctx, []string{id}); err != nil {
+		t.Fatalf("delete after release: %v", err)
+	}
+}
+
 func testID(t *testing.T) string {
 	t.Helper()
 	return utils.GenerateID()
@@ -1428,54 +1508,4 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		t.Fatalf("Create: %v", err)
 	}
 	return id
-}
-
-func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-	id := testID(t)
-	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "orig"},
-		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
-		t.Fatalf("first create: %v", err)
-	}
-
-	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "retry"},
-		makeTar(t, map[string][]byte{"x": []byte("2")})); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("same-ID retry must be rejected, got: %v", err)
-	}
-
-	rec, err := lf.lookupRecord(ctx, id, false)
-	if err != nil || rec.Name != "orig" {
-		t.Fatalf("original record must survive the retry: rec=%+v err=%v", rec, err)
-	}
-	if _, err := os.Stat(filepath.Join(rec.DataDir, "x")); err != nil {
-		t.Fatalf("original data dir must survive the retry: %v", err)
-	}
-}
-
-func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-	id := testID(t)
-	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "leased"},
-		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	release, err := lf.acquireReadLease(ctx, id)
-	if err != nil {
-		t.Fatalf("lease: %v", err)
-	}
-	if _, err := lf.Delete(ctx, []string{id}); err == nil || !strings.Contains(err.Error(), "in use") {
-		release()
-		t.Fatalf("delete must fail while a reader holds the lease, got: %v", err)
-	}
-	if _, err := lf.lookupRecord(ctx, id, false); err != nil {
-		release()
-		t.Fatalf("record must survive the refused delete: %v", err)
-	}
-	release()
-	if _, err := lf.Delete(ctx, []string{id}); err != nil {
-		t.Fatalf("delete after release: %v", err)
-	}
 }
