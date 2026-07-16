@@ -62,10 +62,6 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 	return pid, nil
 }
 
-// raiseVMMRlimits lifts the limits the forked VMM inherits: CH allocates an io_uring
-// ring plus eventfds per virtio-blk queue, and num_queues scales with vCPU, so a
-// high-vCPU multi-disk guest otherwise exhausts the default RLIMIT_MEMLOCK/NOFILE and
-// fails to activate its disks.
 func raiseVMMRlimits(ctx context.Context) {
 	logger := log.WithFunc("cloudhypervisor.raiseVMMRlimits")
 	inf := unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}
