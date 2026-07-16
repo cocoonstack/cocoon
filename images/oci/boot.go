@@ -2,13 +2,16 @@ package oci
 
 import (
 	"archive/tar"
+	"bufio"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -126,11 +129,30 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 		if createErr != nil {
 			return "", "", fmt.Errorf("create %s: %w", filepath.Base(dstPath), createErr)
 		}
-		if _, copyErr := io.Copy(f, tr); copyErr != nil { //nolint:gosec
-			_ = f.Close()
-			return "", "", fmt.Errorf("write %s: %w", filepath.Base(dstPath), copyErr)
+		// CH on arm64 direct-boots only a raw kernel Image, but Ubuntu ships the
+		// arm64 vmlinuz gzip-compressed; decompress it (x86 bzImage is not gzip).
+		src := io.Reader(tr)
+		var gz *gzip.Reader
+		if isKernel && runtime.GOARCH == "arm64" {
+			br := bufio.NewReader(tr)
+			src = br
+			if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+				var gzErr error
+				if gz, gzErr = gzip.NewReader(br); gzErr != nil {
+					_ = f.Close()
+					return "", "", fmt.Errorf("gunzip %s: %w", filepath.Base(dstPath), gzErr)
+				}
+				src = gz
+			}
+		}
+		_, copyErr := io.Copy(f, src) //nolint:gosec
+		if gz != nil {
+			_ = gz.Close()
 		}
 		_ = f.Close()
+		if copyErr != nil {
+			return "", "", fmt.Errorf("write %s: %w", filepath.Base(dstPath), copyErr)
+		}
 
 		if isKernel {
 			kernelPath = dstPath
