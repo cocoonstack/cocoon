@@ -96,7 +96,14 @@ generate_cni_conflist() {
     local gateway
     gateway=$(echo "$network_part" | awk -F. '{printf "%s.%s.%s.1", $1, $2, $3}')
 
-    info "generating CNI conflist: subnet=${subnet} gateway=${gateway}"
+    # Match the host egress MTU (GCP is 1460, not 1500) so the bridge and TAPs do not
+    # blackhole large packets on the way out.
+    local host_iface host_mtu
+    host_iface=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+    host_mtu=$(ip link show "$host_iface" 2>/dev/null | sed -n 's/.* mtu \([0-9]\{1,\}\).*/\1/p')
+    host_mtu=${host_mtu:-1500}
+
+    info "generating CNI conflist: subnet=${subnet} gateway=${gateway} mtu=${host_mtu}"
     mkdir -p "$COCOON_CNI_CONF_DIR"
     cat > "$CNI_CONFLIST" <<CNIEOF
 {
@@ -106,6 +113,7 @@ generate_cni_conflist() {
     {
       "type": "bridge",
       "bridge": "cni0",
+      "mtu": ${host_mtu},
       "isGateway": true,
       "ipMasq": true,
       "hairpinMode": true,
@@ -317,6 +325,19 @@ check_iptables_rule "FORWARD -i cni0 -j ACCEPT" \
     FORWARD -i cni0 -j ACCEPT
 check_iptables_rule "FORWARD -o cni0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT" \
     FORWARD -o cni0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+# Clamp TCP MSS to the path MTU: on a host whose egress MTU is below the bridge's
+# (e.g. GCP's 1460), guests otherwise blackhole large TLS/data packets that carry DF.
+mss_desc="mangle FORWARD TCPMSS clamp-mss-to-pmtu"
+if iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; then
+    pass "$mss_desc"
+else
+    fail "$mss_desc"
+    if $FIX; then
+        iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+            && fixed "$mss_desc" || warn "failed to add MSS clamp"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 7. CNI configuration
