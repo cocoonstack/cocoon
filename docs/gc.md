@@ -20,11 +20,11 @@ Every collected item is logged at INFO level with a structured `key=value` paylo
 ```
 INFO gc.snapshot          collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=3221225472 last_accessed=2026-04-12T10:30:00Z reason=lru-age
 INFO gc.snapshot          collected id=2GQVEA... name= bytes=0 last_accessed=never reason=orphan
-INFO gc.cloudhypervisor   collected id=ABC123 runDir=/var/lib/cocoon/run/cloudhypervisor/ABC123 logDir=/var/log/cocoon/cloudhypervisor/ABC123 reason=orphan-runDir
+INFO gc.cloud-hypervisor  collected id=ABC123 runDir=/var/lib/cocoon/run/cloudhypervisor/ABC123 logDir=/var/log/cocoon/cloudhypervisor/ABC123 reason=orphan-runDir
 INFO gc.oci               collected blob=b40150c1c2717d... reason=unreferenced
 INFO gc.cni               collected id=JKLMN netns=cocoon-JKLMN nics=2/2 reason=orphan
 INFO gc.bridge            collected id=MNOPQ iface=btMNOPQ-0 reason=orphan-tap
-INFO gc.Run               completed: cloudhypervisor=1 cni=1 oci=4 snapshot=3 (failures: 0, duration: 230ms)
+INFO gc.Run               completed: cloud-hypervisor=1 cni=1 oci=4 snapshot=3 (failures: 0, duration: 230ms)
 ```
 
 Filter with `awk` / `grep`:
@@ -36,7 +36,7 @@ journalctl -u cocoon-gc.service --since today | awk '/gc.Run completed/'
 
 Reasons:
 - **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (Create crashed >24h ago), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
-- **cloudhypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating`
+- **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating`
 - **images (oci, cloudimg)**: `unreferenced`
 - **cni**: `orphan` (netns without active VM)
 - **bridge**: `orphan-tap`

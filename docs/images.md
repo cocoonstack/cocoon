@@ -39,6 +39,8 @@ cocoon image inspect ubuntu:24.04
 cocoon image rm sha256:abc123
 ```
 
+A digest prefix must be unambiguous: `image rm` errors on a short prefix that matches more than one image (use a longer prefix), and `image inspect` treats an ambiguous prefix as not-found.
+
 ## OS Images
 
 Pre-built OCI VM images (Ubuntu 22.04, 24.04) are published to GHCR and auto-built by GitHub Actions when `os-image/` changes:

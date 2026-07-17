@@ -22,6 +22,7 @@ cocoon
 │   ├── inspect VM                 Show detailed VM info (JSON)
 │   ├── console [flags] VM         Attach interactive console
 │   ├── exec [flags] VM -- CMD     Run a command in a running VM via cocoon-agent (vsock)
+│   ├── reseed [--machine-id] VM   Force a CRNG reseed inside the guest (fresh entropy over vsock)
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
 │   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
@@ -193,6 +194,14 @@ cocoon vm restore my-vm --from-dir /unrelated/lineage --force
 ```
 
 The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image's blobs may not be present locally — `EnsureImage` reads `image_blob_ids` from the envelope and pulls as needed.
+
+### Reseed Flags
+
+Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--machine-id` | `false` | Also regenerate `/etc/machine-id` (use after clone, not restore) |
 
 ### Status Flags
 
