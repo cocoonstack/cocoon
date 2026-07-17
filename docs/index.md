@@ -72,10 +72,4 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 
 Source and issue tracker:
 [github.com/cocoonstack/cocoon](https://github.com/cocoonstack/cocoon).
-Related projects:
-[sandbox](https://github.com/cocoonstack/sandbox) (MicroVM sandboxes for
-AI agents built on cocoon),
-[cocoon-agent](https://github.com/cocoonstack/cocoon-agent) (in-guest
-vsock agent),
-[windows](https://github.com/cocoonstack/windows) (Windows image build
-automation).
+Part of the [cocoonstack](https://cocoonstack.github.io/) MicroVM platform.
