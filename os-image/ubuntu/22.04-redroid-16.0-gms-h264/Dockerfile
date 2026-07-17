@@ -22,7 +22,6 @@ ARG DOCKER_CHANNEL=stable
 ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
 ARG SCRCPY_RFB_TAG=master
 ARG SCRCPY_RFB_COMMIT
-ARG SCRCPY_SERVER_SHA256=deacb991ed2509715160ffdc7907e47b4160eb30d1566217e9047fd5b8850cae
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -117,10 +116,6 @@ RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     adb libjpeg-turbo8 zlib1g && \
     case "$TARGETARCH" in amd64|arm64) ;; *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; esac && \
     install -d /usr/local/share/scrcpy /tmp/scrcpy-rfb && \
-    curl -fsSL \
-      https://github.com/Genymobile/scrcpy/releases/download/v4.1/scrcpy-server-v4.1 \
-      -o /usr/local/share/scrcpy/scrcpy-server.jar && \
-    echo "$SCRCPY_SERVER_SHA256  /usr/local/share/scrcpy/scrcpy-server.jar" | sha256sum -c - && \
     BASE="https://github.com/$SCRCPY_RFB_REPO/releases/download/$SCRCPY_RFB_TAG" && \
     ARTIFACT="scrcpy-rfb-linux-$TARGETARCH" && \
     curl -fsSL "$BASE/build-info.json" -o /tmp/scrcpy-rfb/build-info.json && \
@@ -128,10 +123,15 @@ RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
       SCRCPY_RFB_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)"; \
     fi && \
     printf '%s' "$SCRCPY_RFB_COMMIT" | grep -Eq '^[0-9a-f]{40}$' && \
-    curl -fsSL "$BASE/$ARTIFACT?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT" && \
-    curl -fsSL "$BASE/$ARTIFACT.sha256?commit=$SCRCPY_RFB_COMMIT" -o "/tmp/scrcpy-rfb/$ARTIFACT.sha256" && \
-    cd /tmp/scrcpy-rfb && sha256sum -c "$ARTIFACT.sha256" && \
+    cd /tmp/scrcpy-rfb && \
+    for f in "$ARTIFACT" scrcpy-server-secure.jar "su1000-linux-$TARGETARCH"; do \
+      curl -fsSL "$BASE/$f?commit=$SCRCPY_RFB_COMMIT" -o "$f" && \
+      curl -fsSL "$BASE/$f.sha256?commit=$SCRCPY_RFB_COMMIT" -o "$f.sha256" && \
+      sha256sum -c "$f.sha256"; \
+    done && \
     install -m 0755 "$ARTIFACT" /usr/local/bin/scrcpy-rfb && \
+    install -m 0644 scrcpy-server-secure.jar /usr/local/share/scrcpy/scrcpy-server.jar && \
+    install -m 0755 "su1000-linux-$TARGETARCH" /usr/local/share/scrcpy/su1000 && \
     cd / && rm -rf /tmp/scrcpy-rfb && \
     apt-get purge -y --auto-remove curl wget gnupg && \
     apt-get clean && \
