@@ -32,7 +32,7 @@ const (
 	// chMemoryRestoreOnDemand lazily pages in guest memory via userfaultfd instead of a full upfront copy.
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
 	// chMemoryRestoreMmap maps the snapshot file copy-on-write, sharing page cache across clones of one snapshot.
-	chMemoryRestoreMmap chMemoryRestoreMode = "Mmap"
+	chMemoryRestoreMmap chMemoryRestoreMode = "CopyOnWrite"
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, cmdlineFileName, hypervisor.VsockSockName}
