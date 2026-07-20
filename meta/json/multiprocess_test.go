@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	mpWorkers = 32
+	mpWorkers = 256
 	mpOps     = 15
 )
 
