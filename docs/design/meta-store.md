@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.6)
+# Meta store: unified metadata layer (design v2.7)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -148,8 +148,11 @@ representation of today's records is a hard requirement** — the fixtures gate
 in §9 enforces it.
 
 ```sql
+-- Set ONLY when creating a fresh DB; on every open they are READ and verified,
+-- never rewritten (§6: wrong application_id or a newer user_version fails closed).
 PRAGMA application_id = 0x434F434E;  -- "COCN"
-PRAGMA user_version   = 1;
+PRAGMA user_version   = 1;           -- schema version; upgrades run as explicit
+                                     -- transactional migrations, never implicit
 
 CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL,
                          source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT);
@@ -161,11 +164,11 @@ CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NUL
 -- namespace vms_firecracker (same shape for vms_cloudhypervisor)
 CREATE TABLE vms_firecracker            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
 CREATE TABLE vms_firecracker_orphandirs (path TEXT NOT NULL PRIMARY KEY);
-CREATE TABLE vms_firecracker_tombstones (id TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE vms_firecracker_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 
 -- namespace snapshots
 CREATE TABLE snapshots            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 
 -- namespace networks
 CREATE TABLE networks (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
@@ -175,7 +178,7 @@ CREATE INDEX networks_by_vm ON networks(vm_id);
 CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE image_oci_refs        (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest), data TEXT NOT NULL);
 CREATE INDEX image_oci_refs_digest ON image_oci_refs(digest);
-CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 ```
 
 Representation rules (each has a round-trip fixture in §9):
@@ -239,11 +242,16 @@ Representation rules (each has a round-trip fixture in §9):
 
 ## 5. GC: revalidating tombstone protocol (replaces lock-all — phase-gated)
 
-Hybrid phase rule: while any cross-referencing namespace still lives in the
-legacy path, `gc.Module.Locker` and lock-all orchestration REMAIN as today
-(meta-backed modules join via a locker shim honoring the same order). The
-protocol below activates only once every namespace participating in
-cross-references is on the meta API (start of P3).
+No hybrid phase exists: the conversion moves EVERY namespace at once (§6,
+§10), so GC never reasons across a split authority. This is a correctness
+requirement, not a convenience — the cross-reference graph is effectively
+connected (VMs pin image blobs, own networks, and carry snapshot IDs), so a
+partial migration would let a GC snapshot taken from the legacy side race a
+committed write on the meta side (image GC deleting a blob a just-reserved VM
+pinned). The alternative — a compatibility gate every meta write must take —
+would serialize exactly what this design exists to parallelize; it is
+recorded as the fallback if a partial migration is ever forced, with that
+cost stated up front.
 
 Per candidate:
 
@@ -251,12 +259,20 @@ Per candidate:
 2. Acquire the entity's operational lock (ops flock — unchanged).
 3. Short `Update` on the target namespace (Durable): re-read every relevant
    namespace, verify state/references/UpdatedAt still qualify, insert the
-   tombstone with `phase='leased'`, commit.
-4. Short `Update`: flip the tombstone to `phase='deleting'` and commit
-   **before touching the filesystem**.
+   tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
+4. Short `Update`: flip the tombstone to `phase='deleting'` **before touching
+   the filesystem**, guarded by `WHERE id=? AND lease_id=?`.
 5. Slow file/directory cleanup outside any transaction.
-6. Short `Update`: verify the tombstone is still owned and in `deleting` →
-   delete the record rows + the tombstone.
+6. Short `Update`: delete the record rows + the tombstone, again guarded by
+   `WHERE id=? AND lease_id=?`. Zero rows affected means the lease was
+   reclaimed while this worker was slow — abort without deleting anything.
+
+**The `lease_id` is a fencing token.** Every mutating statement after step 3
+carries it, so a worker that stalled past its TTL and resumed after another
+worker reclaimed the lease affects zero rows instead of deleting the new
+lease's target or a reference re-established in the meantime (the ABA case).
+Stale-lease reclamation must hold the same entity ops lock as the original
+worker, so reclaim and resume cannot interleave.
 
 **Crash recovery is phase-directed — never blind rollback.** A `leased`
 tombstone provably predates any filesystem mutation and may be rolled back
@@ -277,9 +293,17 @@ initialization is an ops step — never implicit library behavior racing
 concurrent CLIs. Deployments staying on the json engine (the default) never
 convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 
-- **Initialization is explicit.** Creating a store writes a `meta_state` row
-  per namespace (`state='initialized'`, `records=0`). Absence of a row means
-  UNINITIALIZED, never empty — see the open check below.
+- **Initialization is explicit.** `cocoon meta init --backend sqlite`
+  creates the DB on a fresh root: it sets `application_id`/`user_version`
+  (the only time either is written) and writes a `meta_state` row per
+  namespace (`state='initialized'`, `records=0`). Absence of a row means
+  UNINITIALIZED, never empty — see the open check below. On an existing
+  legacy root, `meta convert` performs init and import in one action.
+- **Identity and version are verified on every open, never rewritten.**
+  A wrong `application_id` (not this application's file) or a `user_version`
+  NEWER than the binary understands fails closed with a clear message; an
+  older `user_version` is upgraded only by an explicit, transactional schema
+  migration, never implicitly at open time.
 - **`cocoon meta convert --to sqlite|json`** performs a cutover into a
   **fresh target**: advisory check that no cocoon activity is present (legacy
   locks free); refuse if the target already exists with data (the operator
@@ -310,11 +334,14 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 DB barely changes between checkpoints. `Store.Events` replaces it: fsnotify
 on the meta directory filtered to the engine's files (`meta.db{,-wal,-shm}`
 for sqlite, the namespace files for json), debounced, and — for sqlite —
-confirmed via `PRAGMA data_version` **on one pinned notifier connection**.
-That pin is mandatory, not an optimization: `data_version` is only comparable
-across calls on the same connection and never changes for that connection's
-own commits, so polling it from a shared reader pool both misses and invents
-events. The notifier connection never writes. Contract tests cover
+confirmed via `PRAGMA data_version` on a **dedicated `*sql.Conn` held for the
+notifier's lifetime**. This is mandatory, not an optimization: `data_version`
+is only comparable across successive calls on the SAME connection and never
+changes for that connection's own commits, so polling it through a pool
+(where connections may be replaced under churn) both misses and invents
+events. The notifier connection never writes, so every commit it must report
+comes from another connection or another process and is therefore visible to
+it. Contract tests cover
 same-process and external-process commits.
 `Watchable.WatchPath`, `BackendConfig.IndexFile()/IndexLock()` retire together.
 
@@ -368,6 +395,18 @@ Engine-scoped, because the engines have deliberately different cost models.
   mutation test (clause 4), write-scope violation rejection (clause 2),
   `ErrDurabilityContract` structural check (clause 5), and the ctx-vs-held-writer
   deadline test (clause 6 / §4).
+- **Commit atomicity under crash** (all engines): kill the process at every
+  step of a multi-record single-namespace `Update` (json: mid-rewrite, between
+  temp write and rename, between rename and `.prev` rotation; sqlite: mid-WAL
+  append, pre/post commit-frame); reopening must show the transaction wholly
+  applied or wholly absent — never partially. Isolation tests alone do not
+  prove this.
+- **Tombstone fencing / ABA**: worker A leases and stalls past TTL → worker B
+  reclaims under the same ops lock and finalizes → A resumes and its guarded
+  statements affect zero rows, deleting nothing that B or a subsequent
+  reference re-established.
+- **Schema identity**: wrong `application_id` and newer `user_version` both
+  fail closed on open; no open path ever rewrites either.
 - **Round-trip fixtures per namespace**: legacy json corpus → engine → export,
   asserting field-level equality including multi-ref-per-digest payloads,
   unnamed (sparse-name) records, orphan dirs, and quarantine fields.
@@ -380,8 +419,11 @@ Engine-scoped, because the engines have deliberately different cost models.
   with files already partially removed.
 - Conversion: crash-and-rerun idempotence at each step; name-mismatch abort;
   uninitialized-namespace refusal; sqlite→json→writes→sqlite content diff.
-- `status --event` regression incl. external-process commits; unsupported-fs
-  refusal.
+- `status --event` regression: same-process commits, external-process
+  commits, connection-pool churn (the notifier must keep observing across it),
+  and fsnotify queue overflow (a dropped watch event must degrade to a
+  data_version-confirmed poll, not a permanently missed change);
+  unsupported-fs refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
   consistency, directory ownership.
@@ -417,15 +459,17 @@ implementation on the same host.
 - **P0 (now, no release):** `meta` package + json AND sqlite engines +
   contract-test suite + fixtures + microbenches; `VMRepository` prototype
   behind a build tag. Legacy path untouched.
-- **P1:** VM index moves onto the meta API — json engine as default (internal
-  refactor, zero user-visible change, fixtures prove it), sqlite +
-  `meta convert`/`meta init` shipping in the same release; scale deployments
-  opt in during a downtime window; GC in hybrid lock-all mode.
-- **P2:** snapshots → networks → images(+refs) move onto the meta API with
-  conversion support, same pattern.
-- **P3:** with every cross-referencing namespace on the meta API, GC switches
-  to the tombstone protocol and `gc.Module.Locker` is removed.
-- **P4:** metering Log (optional); retire the OLD `storage/json` + `Store[T]`
+- **P1:** ALL namespaces move onto the meta API in one release — VMs,
+  snapshots, networks, images(+refs). json engine stays the default (internal
+  refactor, zero user-visible change, fixtures prove it); sqlite +
+  `meta init`/`meta convert` ship alongside, and scale deployments convert
+  everything in one downtime window. GC switches to the tombstone protocol in
+  the same step and `gc.Module.Locker` is removed. Splitting this across
+  releases is not an option: a partial migration splits the cross-reference
+  graph and reintroduces the GC race (§5).
+- **P2:** measurement and tuning against the §9 gates on the testbed;
+  Relaxed-set widening decided per operation with data.
+- **P3:** metering Log (optional); retire the OLD `storage/json` + `Store[T]`
   code paths, `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak —
   the json ENGINE behind `meta.Store` remains a supported first-class backend.
 - Revertibility: P0 trivially; P1+ only via `meta convert --to json`. The
