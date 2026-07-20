@@ -477,6 +477,7 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 		unlock()
 		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
 	}
+	vmCfg.PreReserved = true
 	return func() { r.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
 }
 

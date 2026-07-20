@@ -14,8 +14,11 @@ import (
 // AfterExtractFn finalizes a cloned VM after snapshot files are in place; sourceSnapshotID flows through for metering lineage.
 type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error)
 
-// CloneSetup is the shared pre-clone sequence: validate CPU, reserve a placeholder, ensure dirs, return a cleanup that rolls back both.
+// CloneSetup is the shared pre-clone sequence: validate CPU, reserve a placeholder, ensure dirs, return a cleanup that rolls back both. A pre-reserved caller already stored an identical placeholder, so adoption skips the redundant index rewrite after a read-only ownership check; any mismatch falls back to the reserving path.
 func (b *Backend) CloneSetup(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotConfig *types.SnapshotConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
+	if vmCfg.PreReserved && b.ownsPlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs) {
+		return b.adoptPlaceholder(ctx, vmID, vmCfg)
+	}
 	return b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
 }
 

@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -123,6 +124,46 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 	return info, nil
+}
+
+// ownsPlaceholder reports whether id holds the exact placeholder a PrereserveVM by this caller would have written; any drift sends the caller down the reserving path instead.
+func (b *Backend) ownsPlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) bool {
+	owns := false
+	if err := b.DB.With(ctx, func(idx *VMIndex) error {
+		existing := idx.VMs[id]
+		owns = existing != nil &&
+			existing.State == types.VMStateCreating &&
+			existing.Config.Name == vmCfg.Name &&
+			existing.RunDir == b.Conf.VMRunDir(id) &&
+			existing.LogDir == b.Conf.VMLogDir(id) &&
+			maps.Equal(existing.ImageBlobIDs, blobIDs)
+		return nil
+	}); err != nil {
+		return false
+	}
+	return owns
+}
+
+// adoptPlaceholder is reservePlaceholder for a verified pre-reserved record: same validation, dirs, and cleanup, without the redundant index rewrite.
+func (b *Backend) adoptPlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
+	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
+		return "", "", time.Time{}, nil, err
+	}
+	now = time.Now()
+	runDir = b.Conf.VMRunDir(id)
+	logDir = b.Conf.VMLogDir(id)
+
+	cleanup = func() {
+		// Record first: dir removal deletes the held ops.lock inode, and a concurrent rm on the recreated file must not find a live placeholder.
+		b.RollbackCreate(ctx, id, vmCfg.Name)
+		_ = RemoveVMDirs(runDir, logDir)
+	}
+
+	if err = utils.EnsureDirs(runDir, logDir); err != nil {
+		cleanup()
+		return "", "", time.Time{}, nil, fmt.Errorf("ensure dirs: %w", err)
+	}
+	return runDir, logDir, now, cleanup, nil
 }
 
 // reservePlaceholder validates host CPU, reserves a "creating" VM record, and ensures its run/log dirs exist; shared by CreateSequence and CloneSetup. On failure it rolls back internally (if needed) and returns a nil cleanup; on success cleanup removes the dirs and rolls back the reservation — the caller decides when to run it.

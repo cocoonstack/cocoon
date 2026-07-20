@@ -31,6 +31,7 @@ type VMConfig struct {
 	Name string `json:"name"`
 
 	RestoreMode string         `json:"-"` // memory restore mode: copy|ondemand|mmap (CH only); transient, not persisted
+	PreReserved bool           `json:"-"` // caller already inserted this VM's placeholder via PrereserveVM; transient, not persisted
 	User        string         `json:"-"`
 	Password    string         `json:"-"`
 	DataDisks   []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
