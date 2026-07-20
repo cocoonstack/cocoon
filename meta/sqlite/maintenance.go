@@ -33,8 +33,8 @@ func Backup(dbPath, destPath string) (err error) {
 	if exists(destPath) {
 		return fmt.Errorf("%s already exists; refusing to overwrite", destPath)
 	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
-		return err
+	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
+		return merr
 	}
 	tmp := destPath + ".tmp"
 	defer func() {

@@ -93,8 +93,8 @@ func runCreate(engine string, workers, per, resident int, dir string) error {
 	}
 	for i := range resident {
 		id := fmt.Sprintf("SEED%022d", i)
-		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); err != nil {
-			return err
+		if rerr := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); rerr != nil {
+			return rerr
 		}
 	}
 	self, err := os.Executable()

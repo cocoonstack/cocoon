@@ -30,8 +30,8 @@ func InitForRecovery(dbPath string, namespaces ...Namespace) error {
 }
 
 func initStore(dbPath string, namespaces []Namespace) (err error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
-		return err
+	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
+		return merr
 	}
 	if exists(dbPath) {
 		partial, perr := failedInit(dbPath)
@@ -41,8 +41,8 @@ func initStore(dbPath string, namespaces []Namespace) (err error) {
 		if !partial {
 			return fmt.Errorf("%s already exists; refusing to reinitialize", dbPath)
 		}
-		if err := os.Remove(dbPath); err != nil {
-			return err
+		if rerr := os.Remove(dbPath); rerr != nil {
+			return rerr
 		}
 	}
 	db, err := open(dbPath, "FULL", true)
@@ -100,11 +100,11 @@ func failedInit(dbPath string) (bool, error) {
 	}
 	defer db.Close() //nolint:errcheck
 	var appID int64
-	if err := db.QueryRow("PRAGMA application_id").Scan(&appID); err != nil {
-		if strings.Contains(err.Error(), "not a database") {
+	if serr := db.QueryRow("PRAGMA application_id").Scan(&appID); serr != nil {
+		if strings.Contains(serr.Error(), "not a database") {
 			return false, fmt.Errorf("%s is not a sqlite database: %w", dbPath, meta.ErrCorrupt)
 		}
-		return false, mapErr(err)
+		return false, mapErr(serr)
 	}
 	if appID == 0 {
 		return true, nil

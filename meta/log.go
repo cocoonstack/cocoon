@@ -36,8 +36,8 @@ func (l *Log[R]) Append(ctx context.Context, w Writer, rec *R, opts ...WriteOpt)
 	}
 	var cur Seq
 	if ok {
-		if err := json.Unmarshal(raw, &cur); err != nil {
-			return 0, fmt.Errorf("%s/%s cursor: %v: %w", l.ns, l.table, err, ErrCorrupt)
+		if uerr := json.Unmarshal(raw, &cur); uerr != nil {
+			return 0, fmt.Errorf("%s/%s cursor: %v: %w", l.ns, l.table, uerr, ErrCorrupt)
 		}
 	}
 	next := cur + 1
@@ -45,15 +45,15 @@ func (l *Log[R]) Append(ctx context.Context, w Writer, rec *R, opts ...WriteOpt)
 	if err != nil {
 		return 0, fmt.Errorf("encode %s/%s seq %d: %w", l.ns, l.table, next, err)
 	}
-	if err := w.PutRaw(ctx, l.ns, l.table, seqID(next), data, relaxedOK(opts)); err != nil {
-		return 0, err
+	if perr := w.PutRaw(ctx, l.ns, l.table, seqID(next), data, relaxedOK(opts)); perr != nil {
+		return 0, perr
 	}
 	curRaw, err := json.Marshal(next)
 	if err != nil {
 		return 0, err
 	}
-	if err := w.PutRaw(ctx, l.ns, l.table, seqCursorID, curRaw, relaxedOK(opts)); err != nil {
-		return 0, err
+	if perr := w.PutRaw(ctx, l.ns, l.table, seqCursorID, curRaw, relaxedOK(opts)); perr != nil {
+		return 0, perr
 	}
 	return next, nil
 }

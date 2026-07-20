@@ -30,8 +30,10 @@ const (
 	ApplicationID = 0x434F434E
 	UserVersion   = 1
 
-	// DBFileName is the single database under the meta root.
-	DBFileName = "meta.db"
+	// DBFileName is the single database under the meta root; ManifestName
+	// beside it marks an in-flight conversion, which ordinary opens refuse (§6).
+	DBFileName   = "meta.db"
+	ManifestName = "meta-convert.manifest"
 
 	busyRetryCeiling = 5 * time.Second
 	busyRetryBase    = 2 * time.Millisecond
@@ -181,7 +183,7 @@ func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error)
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("writer contended past retry ceiling: %w", meta.ErrBusy)
 		}
-		jitter := time.Duration(rand.Int64N(int64(backoff)))
+		jitter := time.Duration(rand.Int64N(int64(backoff))) //nolint:gosec // retry jitter, not cryptographic
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -264,8 +266,7 @@ func open(dbPath, sync string, writer bool) (*sql.DB, error) {
 }
 
 func isBusy(err error) bool {
-	var se *sqlite3.Error
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*sqlite3.Error](err); ok {
 		code := se.Code() & 0xff
 		return code == sqlite3lib.SQLITE_BUSY || code == sqlite3lib.SQLITE_LOCKED
 	}
@@ -276,8 +277,8 @@ func mapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var se *sqlite3.Error
-	if !errors.As(err, &se) {
+	se, ok := errors.AsType[*sqlite3.Error](err)
+	if !ok {
 		return err
 	}
 	switch se.Code() & 0xff {
@@ -331,7 +332,7 @@ func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id str
 	if err := h.checkRead(ns); err != nil {
 		return err
 	}
-	rows, err := h.tx.QueryContext(ctx, "SELECT id, data FROM "+tableName(ns, table)+" ORDER BY rowid")
+	rows, err := h.tx.QueryContext(ctx, "SELECT id, data FROM "+tableName(ns, table)+" ORDER BY rowid") //nolint:gosec // table name via quoteIdent from root declarations
 	if err != nil {
 		return mapErr(err)
 	}
@@ -353,7 +354,7 @@ func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.Ra
 	if err := h.checkWrite(ns, relaxedOK); err != nil {
 		return err
 	}
-	_, err := h.tx.ExecContext(ctx, "INSERT INTO "+tableName(ns, table)+" (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data", id, []byte(raw))
+	_, err := h.tx.ExecContext(ctx, "INSERT INTO "+tableName(ns, table)+" (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data", id, []byte(raw)) //nolint:gosec // table name via quoteIdent from root declarations
 	return mapErr(err)
 }
 
@@ -361,7 +362,7 @@ func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedO
 	if err := h.checkWrite(ns, relaxedOK); err != nil {
 		return err
 	}
-	_, err := h.tx.ExecContext(ctx, "DELETE FROM "+tableName(ns, table)+" WHERE id = ?", id)
+	_, err := h.tx.ExecContext(ctx, "DELETE FROM "+tableName(ns, table)+" WHERE id = ?", id) //nolint:gosec // table name via quoteIdent from root declarations
 	return mapErr(err)
 }
 
@@ -383,10 +384,6 @@ func (h *txHandle) checkWrite(ns string, relaxedOK bool) error {
 	}
 	return nil
 }
-
-// ManifestName marks an in-flight conversion at the meta root; ordinary
-// opens refuse while it exists (§6).
-const ManifestName = "meta-convert.manifest"
 
 func refuseManifest(dbPath string) error {
 	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)

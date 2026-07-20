@@ -23,7 +23,14 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const asideSuffix = ".converted-"
+const (
+	asideSuffix = ".converted-"
+
+	// EngineJSON/EngineSQLite name the two engines; config meta_backend
+	// carries these values.
+	EngineJSON   = "json"
+	EngineSQLite = "sqlite"
+)
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
@@ -50,7 +57,7 @@ type NSRecord struct {
 
 // Run performs (or resumes) the cutover to target ("sqlite" or "json").
 func Run(ctx context.Context, spec Spec, target string) error {
-	if target != "sqlite" && target != "json" {
+	if target != EngineSQLite && target != EngineJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
 	m, err := loadManifest(spec.MetaRoot)
@@ -85,8 +92,8 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 			return err
 		}
 		// The manifest is durable before the first target byte (§6).
-		if err := saveManifest(spec.MetaRoot, m); err != nil {
-			return err
+		if serr := saveManifest(spec.MetaRoot, m); serr != nil {
+			return serr
 		}
 	}
 	dst, err := openTarget(spec, target)
@@ -125,7 +132,7 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 // means live cocoon processes, and converting under them would lose writes
 // landing after a namespace is copied.
 func checkQuiesced(ctx context.Context, spec Spec, target string) error {
-	if target != "sqlite" {
+	if target != EngineSQLite {
 		return nil
 	}
 	for _, jns := range spec.JSON {
@@ -148,7 +155,7 @@ func checkQuiesced(ctx context.Context, spec Spec, target string) error {
 
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
-	if target == "sqlite" {
+	if target == EngineSQLite {
 		return metajson.Open(spec.JSON...)
 	}
 	// The driver would create an empty file on first touch; a missing source
@@ -160,7 +167,7 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 }
 
 func openTarget(spec Spec, target string) (meta.Store, error) {
-	if target == "json" {
+	if target == EngineJSON {
 		return metajson.Open(spec.JSON...)
 	}
 	if !exists(spec.DBPath) {
@@ -179,33 +186,41 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 		return err
 	}
 	if dstDigest != rec.SHA256 || dstCount != rec.Records {
-		srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
-		if err != nil {
+		if err := copyAndVerify(ctx, src, dst, ns, rec); err != nil {
 			return err
-		}
-		if srcDigest != rec.SHA256 || srcCount != rec.Records {
-			return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and restart", rec.Records, srcCount)
-		}
-		if err := verifyNames(ctx, src, ns); err != nil {
-			return err
-		}
-		if err := copyNamespace(ctx, src, dst, ns); err != nil {
-			return err
-		}
-		if dstDigest, dstCount, err = canonicalDigest(ctx, dst, ns); err != nil {
-			return err
-		}
-		if dstDigest != rec.SHA256 || dstCount != rec.Records {
-			return fmt.Errorf("target verification failed (records %d, want %d); target was not fresh", dstCount, rec.Records)
 		}
 	}
-	if m.Target == "sqlite" {
+	if m.Target == EngineSQLite {
 		if err := metasqlite.MarkConverted(spec.DBPath, ns.Name, rec.Files[0], rec.SHA256, rec.Records); err != nil {
 			return err
 		}
 	}
 	rec.Done = true
 	return saveManifest(spec.MetaRoot, m)
+}
+
+func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord) error {
+	srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
+	if err != nil {
+		return err
+	}
+	if srcDigest != rec.SHA256 || srcCount != rec.Records {
+		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and restart", rec.Records, srcCount)
+	}
+	if verr := verifyNames(ctx, src, ns); verr != nil {
+		return verr
+	}
+	if cerr := copyNamespace(ctx, src, dst, ns); cerr != nil {
+		return cerr
+	}
+	gotDigest, gotCount, err := canonicalDigest(ctx, dst, ns)
+	if err != nil {
+		return err
+	}
+	if gotDigest != rec.SHA256 || gotCount != rec.Records {
+		return fmt.Errorf("target verification failed (records %d, want %d); target was not fresh", gotCount, rec.Records)
+	}
+	return nil
 }
 
 func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace) error {
@@ -276,7 +291,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 				return err
 			}
 			for _, id := range slices.Sorted(maps.Keys(collected)) {
-				fmt.Fprintf(h, "%s\x00%s\x00%s\x0a", tbl, id, collected[id])
+				_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s\x0a", tbl, id, collected[id])
 				if tbl == "records" {
 					count++
 				}
@@ -294,7 +309,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 // sqlite source checkpoints to a single file first (§6). Runs with both
 // engines closed; already-renamed files are skipped, so a crash here reruns.
 func retireSources(spec Spec, target string) error {
-	if target == "json" && exists(spec.DBPath) {
+	if target == EngineJSON && exists(spec.DBPath) {
 		if err := metasqlite.Checkpoint(spec.DBPath); err != nil {
 			return err
 		}
@@ -317,7 +332,7 @@ func retireSources(spec Spec, target string) error {
 }
 
 func sourceFiles(spec Spec, target, nsName string) []string {
-	if target == "json" {
+	if target == EngineJSON {
 		return []string{spec.DBPath}
 	}
 	for _, jns := range spec.JSON {
@@ -338,8 +353,12 @@ func allDone(m *Manifest) bool {
 	return true
 }
 
+func manifestPath(root string) string {
+	return filepath.Join(root, metasqlite.ManifestName)
+}
+
 func loadManifest(root string) (*Manifest, error) {
-	raw, err := os.ReadFile(filepath.Join(root, metasqlite.ManifestName))
+	raw, err := os.ReadFile(manifestPath(root))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -361,11 +380,11 @@ func saveManifest(root string, m *Manifest) error {
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return err
 	}
-	return utils.AtomicWriteFile(filepath.Join(root, metasqlite.ManifestName), raw, 0o644)
+	return utils.AtomicWriteFile(manifestPath(root), raw, 0o644)
 }
 
 func finishManifest(root string) error {
-	if err := os.Remove(filepath.Join(root, metasqlite.ManifestName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(manifestPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return utils.SyncParentDir(root)
