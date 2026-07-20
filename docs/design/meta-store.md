@@ -874,6 +874,13 @@ it before a line of sqlite exists. Cost of this ordering, stated plainly: P0
 and P1 deliver ZERO performance improvement — json is O(records) per write by
 contract — and the measured win arrives only in P2.
 
+P0 implementation boundaries (verified against source, to hold while coding):
+one `meta.Store` is constructed once at the command layer with a unified
+lifecycle and `Close`, injected into every backend — `cmd/core/init.go`
+builds a store per backend today; the json engine's `Events` watches the
+PARENT-DIR SET of every namespace file — `utils/watch.go` watches a single
+dir today; the bridge lane stays off the tombstone protocol (§1a).
+
 - **P0 — boundary only, semantics unchanged (releasable, zero user-visible
   change).** The `meta` package, its contract-test suite (including the
   forced-retry wrapper, which is how retry-safety is enforced even though the
