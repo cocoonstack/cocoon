@@ -175,7 +175,7 @@ Hybrid phase rule: while any cross-referencing namespace still lives in JSON,
 `gc.Module.Locker` and the lock-all orchestration REMAIN as today (DB-backed
 modules join via a locker shim honoring the same order). The protocol below
 activates only when all namespaces participating in cross-references are in
-the DB (end of P3). "Independently shippable" is scoped accordingly.
+the DB (start of P3). "Independently shippable" is scoped accordingly.
 
 Post-migration cycle, per candidate:
 
@@ -195,40 +195,34 @@ either finish the delete or roll the lease back). Concurrent GC runs
 tombstone insert means another worker owns the lease — the candidate is
 skipped, not treated as a GC error.
 
-## 6. Migration: explicit state machine, two-release sequence
+## 6. Migration: explicit offline cutover (operator-driven)
 
-State signals: `application_id` + `user_version` + `migrations` rows + a
-`<root>/meta.MIGRATED` marker file. "Table empty" is never a state.
+Maintainer decision: backward compatibility across the cutover is NOT a
+requirement. The migration is a one-time, operator-scheduled downtime action,
+and initialization is an ops step — never an implicit library behavior racing
+concurrent CLIs.
 
-- **Release A (compat):** binaries learn the marker: a JSON-engine binary that
-  sees `meta.MIGRATED` refuses to write (fail closed, with an upgrade
-  message). Doctor learns both states. No cutover yet.
-- **Release B (cutover):** on open — `BEGIN IMMEDIATE`; read migrations. If
-  unmigrated and legacy JSON exists: take the legacy flock(s); load via the
-  legacy loader (preserving `.prev` recovery); derive the name index from
-  records and VERIFY against the legacy Names map (mismatch → abort with a
-  report); insert everything in the one transaction; write the migrations row
-  {source path, sha256, record count, version}; commit (Durable). Then rename
-  `vms.json`→`.imported` (+`.prev`), fsync parent, write the marker.
-  - The marker write is itself durable: write to a temp file, fsync, atomic
-    rename, parent-dir sync.
-  - Crash windows (each an explicit entry in the crash-injection matrix):
-    before commit → JSON stays authoritative; after commit before rename →
-    startup sees migrations row + JSON present and completes the rename
-    idempotently; **after rename before marker** → startup self-repair:
-    migrations row present for the current version but marker absent →
-    rewrite the marker (durably) before any other work, so a stale Release-A
-    binary can never misread the renamed-away JSON as an empty store.
-  - Concurrent CLIs: losers of `BEGIN IMMEDIATE` wait, then re-read the
-    migrations row and proceed as already-migrated.
-- **Rollback** is a controlled `cocoon meta export --to-json` (DB→JSON +
-  marker removal) — never "run the old binary"; an old binary without Release
-  A fails closed via the marker it does not understand? No: pre-A binaries do
-  not know the marker, which is exactly why Release A ships first and the
-  fleet floor moves to it before B cuts over.
-- Tests: crash injection at every step boundary; two processes migrating
-  concurrently; old-binary(A) fail-closed; JSON hand-copied back after
-  migration → detected via migrations row and refused.
+- `cocoon meta migrate` (invocable standalone or via doctor) performs the
+  cutover explicitly: advisory check that no cocoon activity is present
+  (legacy flocks free), take the legacy flocks, load each namespace via the
+  legacy loader (preserving `.prev` recovery), derive the name index from
+  records and VERIFY it against the legacy Names map (mismatch → abort with a
+  report), insert everything in one Durable transaction, write the migrations
+  row {namespace, source, sha256, record count}, commit, then rename the JSON
+  files to `.imported` and sync the parent dir.
+- Crash handling is idempotent re-run under the downtime contract: the tool
+  re-checks migrations rows and completes pending renames. There is no
+  concurrent-open state machine and no marker choreography — those protected
+  mixed-version fleets, which are out of scope by decision.
+- Post-cutover binaries fail closed on open: a legacy JSON index present for
+  a namespace with no migrations row → refuse with "run cocoon meta migrate"
+  (read-only check). Running a pre-cutover binary after migration is
+  unsupported — the renamed `.imported` files and release notes are the
+  guard, not code.
+- Rollback, if ever needed, is the controlled `cocoon meta export --to-json`
+  tool — never an old binary.
+- Tests: crash-and-rerun idempotence at each step boundary; name-index
+  mismatch abort; unmigrated-JSON refusal.
 
 ## 7. Watch/events (retires the `Watchable.WatchPath` file-watch leak)
 
@@ -285,8 +279,8 @@ implementation, the legacy-JSON adapter its second (migration period only).
 - Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
   write.
 - Real multi-process: 256 separate CLI processes (not goroutines).
-- Functional: `status --event` regression; concurrent migration; Release-A
-  fail-closed; unsupported-filesystem refusal.
+- Functional: `status --event` regression; migrate crash-and-rerun
+  idempotence; unmigrated-JSON refusal; unsupported-filesystem refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone
   consistency, directory ownership.
@@ -306,16 +300,14 @@ implementation, the legacy-JSON adapter its second (migration period only).
 - **P0 (now, no release):** `meta` package + sqlite engine + contract-test
   suite + microbenches; `VMRepository` prototype behind a build tag. JSON path
   untouched.
-- **P1 = Release A:** marker awareness + doctor; JSON still authoritative.
-- **P2 = Release B:** VM-index cutover (migration machine); GC in hybrid
+- **P1:** first meta-capable release + `cocoon meta migrate` (VM index);
+  operator runs the offline cutover during the upgrade window; GC in hybrid
   lock-all mode.
-- **P3:** snapshots → networks → images(+refs) migrate; THEN GC switches to
-  the tombstone protocol and `gc.Module.Locker` is removed. No second
-  Release-A is needed: Release B is already the fleet floor, every deployed
-  binary understands the marker and the migrations table, so each P3
-  namespace cuts over with its own migrations row under the same single
-  marker and state machine.
+- **P2:** snapshots → networks → images(+refs) gain migrate support; each
+  cuts over as an operator-run migrate in its release's upgrade window.
+- **P3:** with all cross-referencing namespaces in the DB, GC switches to
+  the tombstone protocol and `gc.Module.Locker` is removed.
 - **P4:** metering Log (optional); retire `storage/json`, `Store[T]`,
   `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak.
-- Revertibility, stated precisely: P0–P1 trivially; P2+ only via the export
+- Revertibility, stated precisely: P0 trivially; P1+ only via the export
   tool. The earlier "every step revertible" claim is withdrawn.
