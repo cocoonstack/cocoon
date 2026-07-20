@@ -2,7 +2,6 @@ package hypervisor
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -35,33 +34,34 @@ func MetaNamespace(typ string, conf BackendConfig) metajson.Namespace {
 
 var _ metajson.Codec = vmIndexCodec{}
 
-// vmIndexCodec reproduces the legacy VMIndex file byte-for-byte: map-backed
-// tables re-marshal sorted (as encoding/json always wrote them) while
+// vmIndexCodec reproduces the legacy VMIndex file byte-for-byte. Records
+// cross as raw messages — one whole-file parse per load, no per-record
+// re-marshal — matching the legacy store's JSON work per write; the map
+// fields marshal sorted exactly as encoding/json always wrote them, and
 // orphan_dirs keeps its slice order.
 type vmIndexCodec struct{}
+
+// rawVMIndex mirrors VMIndex's field layout with pass-through record bytes.
+type rawVMIndex struct {
+	VMs        map[string]json.RawMessage `json:"vms"`
+	Names      map[string]json.RawMessage `json:"names"`
+	OrphanDirs []string                   `json:"orphan_dirs,omitempty"`
+}
 
 func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()
 	if data == nil {
 		return m, nil
 	}
-	var idx VMIndex
+	var idx rawVMIndex
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return nil, err
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.VMs)) {
-		raw, err := json.Marshal(idx.VMs[id])
-		if err != nil {
-			return nil, err
-		}
-		m.Put(tableRecords, id, raw)
+		m.Put(tableRecords, id, idx.VMs[id])
 	}
 	for _, name := range slices.Sorted(maps.Keys(idx.Names)) {
-		raw, err := json.Marshal(idx.Names[name])
-		if err != nil {
-			return nil, err
-		}
-		m.Put(tableNames, name, raw)
+		m.Put(tableNames, name, idx.Names[name])
 	}
 	for _, dir := range idx.OrphanDirs {
 		m.Put(tableOrphanDirs, dir, json.RawMessage(orphanDirEntry))
@@ -70,24 +70,15 @@ func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 }
 
 func (vmIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	idx := VMIndex{}
-	idx.Init()
+	idx := rawVMIndex{VMs: map[string]json.RawMessage{}, Names: map[string]json.RawMessage{}}
 	if err := m.Scan(tableRecords, func(id string, raw json.RawMessage) error {
-		var rec VMRecord
-		if err := json.Unmarshal(raw, &rec); err != nil {
-			return fmt.Errorf("decode vm record %s: %w", id, err)
-		}
-		idx.VMs[id] = &rec
+		idx.VMs[id] = raw
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 	if err := m.Scan(tableNames, func(name string, raw json.RawMessage) error {
-		var id string
-		if err := json.Unmarshal(raw, &id); err != nil {
-			return fmt.Errorf("decode name entry %s: %w", name, err)
-		}
-		idx.Names[name] = id
+		idx.Names[name] = raw
 		return nil
 	}); err != nil {
 		return nil, err

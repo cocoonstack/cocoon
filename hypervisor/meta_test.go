@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 // newTestMetaStore opens a meta store over conf's index paths for one backend type.
@@ -126,4 +129,77 @@ func writeBack(t *vmTx, before, after *VMIndex) error {
 		}
 	}
 	return nil
+}
+
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
+// and requires byte-identical output to what the LEGACY storage layer wrote
+// for the same operations (fixtures generated at master by cmd/fixturegen).
+func TestLegacyDifferentialTrace(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	baseline, err := os.ReadFile("testdata/legacy-vms.baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile("testdata/legacy-vms.after.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "vms.json")
+	if err := os.WriteFile(path, baseline, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := metajson.Open(metajson.Namespace{
+		Name: "vms_test", FilePath: path, LockPath: filepath.Join(dir, "vms.lock"), Codec: vmIndexCodec{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	b := &Backend{Typ: "test", NS: "vms_test", Meta: store}
+
+	// Fidelity: a no-op transaction must reproduce the legacy bytes exactly.
+	if err := b.update(ctx, func(*vmTx) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(baseline) {
+		t.Fatalf("round-trip not byte-identical to legacy baseline:\n got: %s\nwant: %s", got, baseline)
+	}
+
+	// Replay the exact op sequence fixturegen ran through the legacy store.
+	t2 := time.Date(2026, 7, 3, 12, 45, 0, 0, time.UTC)
+	if err := b.update(ctx, func(t *vmTx) error {
+		g, err := t.Get("VMCCCCCCCCCCCCCCCCCCCCCCCC")
+		if err != nil {
+			return err
+		}
+		g.State = types.VMStateCreated
+		g.UpdatedAt = t2
+		if err := t.Put("VMCCCCCCCCCCCCCCCCCCCCCCCC", g); err != nil {
+			return err
+		}
+		if err := t.NameDel("beta"); err != nil {
+			return err
+		}
+		if err := t.Del("VMBBBBBBBBBBBBBBBBBBBBBBBB"); err != nil {
+			return err
+		}
+		if err := t.removeOrphanDir("/mnt/zz-migrated/VMOLD1"); err != nil {
+			return err
+		}
+		return t.addOrphanDir("/mnt/mm-migrated/VMOLD3")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(after) {
+		t.Fatalf("differential trace diverged from legacy bytes:\n got: %s\nwant: %s", got, after)
+	}
 }
