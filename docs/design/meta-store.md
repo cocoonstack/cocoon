@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.10)
+# Meta store: unified metadata layer (design v2.11)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -201,7 +201,11 @@ CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT N
 -- namespace networks
 CREATE TABLE networks            (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
 CREATE INDEX networks_by_vm ON networks(vm_id);
-CREATE TABLE networks_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE networks_tombstones (vm_id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+-- Keyed by VM, not by NIC: network records are one row per NIC, but GC
+-- candidates, netns, TAPs and the ops lock are all per VM. A VM-keyed lease
+-- also covers the case where no network row survives but an orphan netns
+-- does. CNI Add checks this table by vm_id before creating anything.
 
 -- namespace images_oci (same shape for images_cloudimg)
 CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
@@ -301,16 +305,35 @@ Per candidate:
    per-digest lock file beside the blob, taken by GC and by any flow that
    materializes or re-pins that digest. Without it, step 2 and the recovery
    rule below are unimplementable for image GC once `gc.Module.Locker` is
-   gone.
+   gone. Two rules come with it: the lock file is NEVER removed by the
+   cleanup that deletes the blob it guards (unlinking a held lock recreates
+   the inode race described in step 4), and a flow pinning several digests
+   takes their locks in sorted digest order, so two concurrent multi-digest
+   pins cannot deadlock.
 3. Short `Update` on the target namespace (Durable): re-read every relevant
    namespace, verify state/references/UpdatedAt still qualify, insert the
    tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
-4. Short `Update`: flip the tombstone to `phase='deleting'` **before touching
-   the filesystem**, guarded by `WHERE id=? AND lease_id=?`.
-5. Slow file/directory cleanup outside any transaction.
-6. Short `Update`: delete the record rows + the tombstone, again guarded by
-   `WHERE id=? AND lease_id=?`. Zero rows affected means the lease was
-   reclaimed while this worker was slow — abort without deleting anything.
+4. Short `Update`, committed **before any filesystem work** and guarded by
+   `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'` and,
+   **for any entity whose operational lock lives inside the tree about to be
+   removed, delete the live record in the same transaction**, copying the
+   paths cleanup still needs into the tombstone. VMs are exactly this case:
+   `ops.lock` sits in the runDir, so `RemoveAll(runDir)` unlinks the very
+   inode this worker holds, after which another process can create a fresh
+   file at that path and believe it owns the lock. Today's code deletes the
+   record before the directories for precisely this reason, and the protocol
+   must not invert it: no live record may be visible once the lock inode is
+   destroyable. Entities whose lock lives OUTSIDE the deleted tree (images:
+   the per-digest lock file is never removed by blob deletion) keep their
+   record until step 6.
+5. Slow file/directory cleanup outside any transaction, driven by the
+   tombstone's payload so a recovering worker needs nothing from the deleted
+   record.
+6. Short `Update`: delete any remaining record rows and the tombstone,
+   guarded by `WHERE ... AND lease_id=?`. Zero rows affected means this
+   worker is a resumed or duplicated instance of work whose lease was already
+   recovered and finalized by another worker after the original owner's
+   process died — abort without deleting anything.
 
 **Lock lifetime: one owner, start to finish.** The entity ops lock taken in
 step 2 is held through step 6. A live-but-slow worker is therefore never
@@ -377,13 +400,24 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   cannot answer "is this mine?" in general, because `meta_state` is a
   sqlite-engine concept and a json target has no equivalent — so the tool
   keeps its own engine-independent manifest at the meta root
-  (`meta-convert.manifest`, fsynced): source identity (paths + per-namespace
-  sha256 + record counts), target engine, per-namespace completion marks, and
-  aside paths. A rerun with a manifest verifies each recorded namespace
-  against the target and resumes the remainder plus pending renames; a
-  populated target with no matching manifest entry is foreign and refused,
-  telling the operator to move it aside deliberately. The manifest is removed
-  (and its parent dir synced) only after the conversion is fully complete.
+  (`meta-convert.manifest`): source identity (paths + per-namespace sha256 +
+  record counts), target engine, per-namespace completion marks, and aside
+  paths. Because the manifest is the ONLY recovery authority for a json
+  target, it carries its own crash protocol:
+  - it is written and fsynced (temp → fsync → rename → parent-dir fsync)
+    **before the first byte is written to the target**, and every update uses
+    the same sequence;
+  - a namespace whose target data is committed but whose completion mark is
+    missing (the crash window between the two) is re-verified on rerun —
+    content hash and record count against the source — and claimed as
+    complete rather than redone or refused;
+  - verification is target-shaped: a sqlite target can additionally check its
+    `meta_state` row, a json target has none and is verified purely by
+    content hash and record count;
+  - a populated target with no matching manifest entry is foreign and
+    refused, telling the operator to move it aside deliberately;
+  - the manifest is removed, and its parent dir synced, only after the whole
+    conversion is complete.
 - **The old authority is retired, not left in place.** Conversion in either
   direction renames its source aside only after a fully committed, fully
   verified write, so a later reverse conversion can never find a stale
@@ -496,6 +530,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   append, pre/post commit-frame); reopening must show the transaction wholly
   applied or wholly absent — never partially. Isolation tests alone do not
   prove this.
+- **Lock-inode safety**: for every entity whose ops lock lives inside the
+  deleted tree, assert no live record is visible once cleanup begins, and
+  that a concurrent process creating a fresh lock file at the same path
+  cannot observe a live record for the entity being removed.
 - **Tombstone fencing / ABA**: kill worker A mid-`deleting` → B acquires the
   released ops lock, recovers under a NEW `lease_id` and finalizes → replaying
   A's exact finalize statement affects zero rows. Also assert the negative
@@ -518,7 +556,9 @@ Engine-scoped, because the engines have deliberately different cost models.
   and in `deleting` (rolls forward, never resurrects) — the latter asserted
   with files already partially removed.
 - Conversion: crash-and-rerun idempotence at each step, including a crash
-  between target commit and source rename (the rerun must RESUME, not refuse);
+  between target commit and source rename, and a crash between a namespace's
+  target commit and its manifest completion mark (the rerun must RESUME by
+  re-verifying hash/count, not redo or refuse);
   foreign-target refusal; name-mismatch abort; uninitialized-namespace
   refusal (sqlite); json-engine upgrade with no marker and no conversion;
   sqlite→json→writes→sqlite content diff.
