@@ -10,7 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,7 +21,7 @@ type pullLayerResult struct {
 	initrdPath string
 }
 
-func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], imageRef string, tracker progress.Tracker) error {
+func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], imageRef string, tracker progress.Tracker) error {
 	logger := log.WithFunc("oci.pull")
 
 	ref, digestHex, layers, err := fetchImage(ctx, imageRef)
@@ -30,7 +29,7 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], im
 		return err
 	}
 
-	return store.Update(ctx, func(idx *imageIndex) error {
+	return store.Publish(ctx, func(idx *imageIndex) error {
 		if isUpToDate(conf, idx, ref, digestHex) {
 			logger.Debugf(ctx, "Already up to date: %s (digest: sha256:%s)", ref, digestHex)
 			return nil

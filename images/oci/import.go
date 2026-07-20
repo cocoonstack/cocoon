@@ -14,7 +14,6 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -28,7 +27,7 @@ type tarImportJob struct {
 	result     *pullLayerResult
 }
 
-func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
+func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 0 {
 		return fmt.Errorf("no tar files provided")
 	}
@@ -38,7 +37,7 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 		}
 	}
 
-	return store.Update(ctx, func(idx *imageIndex) error {
+	return store.Publish(ctx, func(idx *imageIndex) error {
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(file)})
 
 		workDir, cleanup, err := newWorkDir(conf, "import-*")
@@ -64,8 +63,8 @@ func importTarLayers(ctx context.Context, conf *Config, store storage.Store[imag
 	})
 }
 
-func importTarFromReader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
-	return store.Update(ctx, func(idx *imageIndex) error {
+func importTarFromReader(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, r io.Reader) error {
+	return store.Publish(ctx, func(idx *imageIndex) error {
 		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
 
 		workDir, cleanup, err := newWorkDir(conf, "import-*")

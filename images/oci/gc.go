@@ -9,11 +9,11 @@ import (
 )
 
 func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
-	return images.BuildGCModule(images.GCModuleConfig[imageIndex]{
+	return images.BuildGCModule(images.GCModuleConfig[imageEntry]{
 		Name:      typ,
 		Locker:    o.locker,
 		Store:     o.store,
-		ReadRefs:  func(idx *imageIndex) map[string]struct{} { return images.ReferencedDigests(idx.Images) },
+		ReadRefs:  images.ReferencedDigests[imageEntry],
 		ScanDisk:  func() ([]string, error) { return utils.ScanFileStems(o.conf.BlobsDir(), o.conf.BlobExt) },
 		ExtraDisk: func() ([]string, error) { return utils.ScanSubdirs(o.conf.BootBaseDir()) },
 		Removers: []func(string) error{

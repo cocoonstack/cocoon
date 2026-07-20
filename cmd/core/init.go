@@ -61,11 +61,15 @@ func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend
 }
 
 func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OCI, *cloudimg.CloudImg, error) {
-	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, nil, err
+	}
+	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize(), store)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init oci backend: %w", err)
 	}
-	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns())
+	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns(), store)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init cloudimg backend: %w", err)
 	}

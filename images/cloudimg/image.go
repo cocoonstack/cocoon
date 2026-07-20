@@ -6,17 +6,15 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 )
 
-type imageIndex struct {
-	images.Index[imageEntry]
+type imageIndex = images.Index[imageEntry]
+
+// lookupOne finds an entry by URL or content digest (exact or prefix).
+func lookupOne(m map[string]*imageEntry, id string) (string, *imageEntry, bool) {
+	return images.LookupOne(m, id)
 }
 
-// Lookup finds an entry by URL or content digest (exact or prefix).
-func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
-	return images.LookupOne(idx.Images, id)
-}
-
-func (idx *imageIndex) LookupRefs(id string) []string {
-	return images.LookupRefs(idx.Images, id)
+func lookupRefs(m map[string]*imageEntry, id string) []string {
+	return images.LookupRefs(m, id)
 }
 
 type imageEntry struct {

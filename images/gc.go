@@ -14,7 +14,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -25,12 +24,12 @@ type ImageGCSnapshot struct {
 }
 
 // GCModuleConfig configures a generic image GC module.
-type GCModuleConfig[I any] struct {
+type GCModuleConfig[E any] struct {
 	Name   string
 	Locker lock.Locker
-	Store  storage.Store[I]
+	Store  *Store[E]
 	// ReadRefs extracts referenced digest hexes from the index.
-	ReadRefs func(*I) map[string]struct{}
+	ReadRefs func(map[string]*E) map[string]struct{}
 	// ScanDisk returns digest hexes found on disk (blobs).
 	ScanDisk func() ([]string, error)
 	// ExtraDisk returns additional hex IDs on disk (e.g., OCI boot dirs). Optional.
@@ -44,14 +43,15 @@ type GCModuleConfig[I any] struct {
 }
 
 // BuildGCModule constructs a gc.Module from the config.
-func BuildGCModule[I any](cfg GCModuleConfig[I]) gc.Module[ImageGCSnapshot] {
+func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 	return gc.Module[ImageGCSnapshot]{
 		Name:   cfg.Name,
 		Locker: cfg.Locker,
-		ReadDB: func(_ context.Context) (ImageGCSnapshot, error) {
+		ReadDB: func(ctx context.Context) (ImageGCSnapshot, error) {
 			var snap ImageGCSnapshot
-			if err := cfg.Store.ReadRaw(func(idx *I) error {
-				snap.refs = cfg.ReadRefs(idx)
+			// Lockless read: the orchestrator already holds the namespace lock.
+			if err := cfg.Store.LockedRead(ctx, func(idx *Index[E]) error {
+				snap.refs = cfg.ReadRefs(idx.Images)
 				return nil
 			}); err != nil {
 				return snap, err

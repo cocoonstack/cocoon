@@ -12,14 +12,13 @@ import (
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 func commit(
 	ctx context.Context,
 	conf *Config,
-	store storage.Store[imageIndex],
+	store *images.Store[imageEntry],
 	ref string,
 	tracker progress.Tracker,
 	sourcePath string,
@@ -47,7 +46,7 @@ func commit(
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
-	if err := store.Update(ctx, func(idx *imageIndex) error {
+	if err := store.Publish(ctx, func(idx *imageIndex) error {
 		if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
 			if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
 				return fmt.Errorf("rename blob: %w", renameErr)

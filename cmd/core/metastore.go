@@ -6,6 +6,8 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
+	"github.com/cocoonstack/cocoon/images/cloudimg"
+	"github.com/cocoonstack/cocoon/images/oci"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
@@ -24,6 +26,8 @@ func MetaStore(conf *config.Config) (*metajson.Store, error) {
 			cloudhypervisor.MetaNamespace(conf),
 			firecracker.MetaNamespace(conf),
 			localfile.MetaNamespace(conf),
+			oci.MetaNamespace(conf.RootDir),
+			cloudimg.MetaNamespace(conf.RootDir),
 		)
 	})
 	return metaStore, metaErr
