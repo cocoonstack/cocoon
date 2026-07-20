@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	reseedEntropyBytes = 32
-	reseedMaxAttempts  = 3
-	reseedRetryDelay   = 2 * time.Second
+	reseedEntropyBytes   = 32
+	reseedMaxAttempts    = 3
+	reseedRetryDelay     = 2 * time.Second
 	reseedAttemptTimeout = 4 * time.Second
 )
 
