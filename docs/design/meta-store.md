@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.23)
+# Meta store: unified metadata layer (design v2.24)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -570,8 +570,8 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
     content hash and record count;
   - a populated target with no matching manifest entry is foreign and
     refused, telling the operator to move it aside deliberately;
-  - **backend selection is the final manifest-tracked step, not a separate
-    operator chore.** Retiring the json source while `meta_backend` still
+  - **config selection is a precondition; target verification is the final
+    manifest-tracked step.** Retiring the json source while `meta_backend` still
     reads `json` (the default) would make the next open see missing files
     and call the namespaces empty. The conversion records the intended
     backend in the manifest. **Config stays the sole backend authority** —
@@ -621,8 +621,8 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 
 `vm status --watch/--event` currently watches `vms.json`; under WAL the main
 DB barely changes between checkpoints. `Store.Events` replaces it: fsnotify
-on the meta directory filtered to the engine's files (`meta.db{,-wal,-shm}`
-for sqlite, the namespace files for json), debounced, and — for sqlite —
+on the parent-directory set of the engine's files (`meta.db{,-wal,-shm}`
+for sqlite, every namespace file's parent dir for json), debounced, and — for sqlite —
 confirmed via `PRAGMA data_version` on a **dedicated `*sql.Conn` held for the
 notifier's lifetime**. This is mandatory, not an optimization: `data_version`
 is only comparable across successive calls on the SAME connection and never
@@ -934,7 +934,8 @@ dir today; the bridge lane stays off the tombstone protocol (§1a).
 - **P1 — protocol changes, still json-only (releasable).** Everything that
   alters behavior rather than structure: entity lock relocation out of
   cleanup sets, the tombstone phase protocol with
-  payloads, `...Locked` entrypoints, every destructive flow (not just GC) on
+  payloads, `...Locked` entrypoints, every metadata-backed destructive flow
+  (not just GC) on
   the protocol, the `vm rm` network-teardown restructure, and removal of
   `gc.Module.Locker` / `Watchable.WatchPath` / `IndexFile`/`IndexLock`. The
   GC design gets validated for real, on the engine we already trust.
