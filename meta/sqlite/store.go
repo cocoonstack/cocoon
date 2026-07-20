@@ -64,6 +64,16 @@ func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
 	if err := refuseManifest(dbPath); err != nil {
 		return nil, err
 	}
+	return openStore(dbPath, namespaces)
+}
+
+// OpenForRecovery is Open without the manifest guard, for the conversion
+// tool itself (§6) — never for ordinary callers.
+func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
+	return openStore(dbPath, namespaces)
+}
+
+func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	s := &Store{path: dbPath, nss: map[string]Namespace{}}
 	for _, ns := range namespaces {
 		if ns.Name == "" || len(ns.Tables) == 0 {

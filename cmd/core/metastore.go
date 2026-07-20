@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -63,6 +65,25 @@ func MetaNamespaces() []metasqlite.Namespace {
 	}
 }
 
+// MetaJSONNamespaces declares the json engine's namespace set: legacy file
+// locations and field mappings, consumed by open and by conversion.
+func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
+	chCfg := cloudhypervisor.NewConfig(conf)
+	fcCfg := firecracker.NewConfig(conf)
+	snapCfg := localfile.NewConfig(conf)
+	cniCfg := cni.NewConfig(conf)
+	ociCfg := oci.NewConfig(conf.RootDir, 0)
+	cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
+	return []metajson.Namespace{
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
+		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
+		{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
+		{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
+		{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
+	}
+}
+
 // MetaDBPath is the sqlite engine's database under the meta root.
 func MetaDBPath(conf *config.Config) string {
 	return filepath.Join(conf.RootDir, "meta", metasqlite.DBFileName)
@@ -73,24 +94,18 @@ func MetaDBPath(conf *config.Config) string {
 // The engine follows conf.MetaBackend: json (default) or sqlite.
 func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
+		// Ordinary opens of EITHER engine refuse while a conversion is in
+		// flight (§6); the json engine cannot see the manifest itself.
+		manifest := filepath.Join(filepath.Dir(MetaDBPath(conf)), metasqlite.ManifestName)
+		if _, err := os.Stat(manifest); err == nil {
+			metaErr = fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
+			return
+		}
 		if conf.MetaBackend == "sqlite" {
 			metaStore, metaErr = metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...)
 			return
 		}
-		chCfg := cloudhypervisor.NewConfig(conf)
-		fcCfg := firecracker.NewConfig(conf)
-		snapCfg := localfile.NewConfig(conf)
-		cniCfg := cni.NewConfig(conf)
-		ociCfg := oci.NewConfig(conf.RootDir, 0)
-		cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
-		metaStore, metaErr = metajson.Open(
-			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
-			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
-			metajson.Namespace{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
-			metajson.Namespace{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
-			metajson.Namespace{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
-			metajson.Namespace{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
-		)
+		metaStore, metaErr = metajson.Open(MetaJSONNamespaces(conf)...)
 	})
 	return metaStore, metaErr
 }
