@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.21)
+# Meta store: unified metadata layer (design v2.22)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -569,22 +569,25 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
     operator chore.** Retiring the json source while `meta_backend` still
     reads `json` (the default) would make the next open see missing files
     and call the namespaces empty. The conversion records the intended
-    backend in the manifest, switches the effective selection, and keeps the
-    manifest in place until a normal `Store.Open` has selected and verified
-    the new target;
-  - the manifest is removed, and its parent dir synced, only after that
-    verified open — at which point the conversion is complete in every
-    sense.
+    backend in the manifest and switches the effective selection. Removal
+    then needs a `ready` phase, because ordinary `Store.Open` refuses while
+    a manifest exists (below) — if removal waited on a *normal* open the two
+    would deadlock. Once every namespace is committed and verified the tool
+    marks the manifest `ready`; a `ready` manifest permits exactly one thing
+    an ordinary open cannot — a target-only verification open — after which
+    the tool (or the next open) removes the manifest and syncs the parent
+    dir.
 - **The old authority is retired, not left in place.** Conversion in either
   direction renames its source aside only after a fully committed, fully
   verified write, so a later reverse conversion can never find a stale
   authority and skip importing newer data. Test matrix includes
   sqlite→json→(writes)→sqlite with a diff assertion on the final content.
 - **A manifest present means a conversion is in flight.** Ordinary
-  `Store.Open` refuses while `meta-convert.manifest` exists, pointing the
-  operator at `meta convert`; only conversion recovery bypasses it. Without
-  that, a half-converted json target opens normally and its not-yet-written
-  namespaces read as empty.
+  `Store.Open` refuses while a non-`ready` `meta-convert.manifest` exists,
+  pointing the operator at `meta convert`; conversion recovery and the
+  `ready`-state verification open bypass it. Without this a half-converted
+  json target would open normally and its not-yet-written namespaces would
+  read as empty.
 - **Fail-closed open (sqlite engine only).** With `meta_backend: sqlite`,
   opening a namespace with no `meta_state` row refuses: "run
   `cocoon meta convert`" when a legacy source exists, "run `cocoon meta init`"
@@ -706,6 +709,11 @@ two-engine events) plus the performance block.
   cleanup leaves the entity's lock file intact (it is outside the cleanup
   set), that a worker holding it still holds the SAME inode afterwards, and
   that the reaper removes a lock file only when `TryLock` proves it unheld.
+- **Cross-component VM lock**: assert CH, FC and CNI resolve the same vmID
+  to the SAME lock path through the shared helper (one stale backend-specific
+  resolver would let CNI GC and VM lifecycle mutate one VM concurrently),
+  including the recordless orphan-netns case where the vmID comes from the
+  netns name.
 - **Shared-lease escalation**: an exporter holding a snapshot read lease that
   meets a `leased` or a `deleting` tombstone must release, re-acquire
   exclusively, recover, and revalidate — asserted for BOTH phases, and
@@ -762,7 +770,10 @@ two-engine events) plus the performance block.
   re-verifying hash/count, not redo or refuse);
   foreign-target refusal; name-mismatch abort; uninitialized-namespace
   refusal (sqlite); json-engine upgrade with no marker and no conversion;
-  sqlite→json→writes→sqlite content diff.
+  sqlite→json→writes→sqlite content diff; and a json→sqlite→json round trip
+  starting from DISTINCT main and `.prev` generations, after which the new
+  main is corrupted and the served generation is asserted to be the imported
+  one, never a stranded pre-conversion `.prev`.
 - `status --event` regression, run against BOTH engines: same-process
   commits, external-process commits, connection-pool churn (the notifier must
   keep observing across it), and fsnotify queue overflow (a dropped watch
@@ -810,7 +821,9 @@ two-engine events) plus the performance block.
 - Component metrics per round: writer wait, transaction/commit duration, WAL
   bytes, checkpoint duration, p99 around checkpoint boundaries.
 - Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
-  write.
+  write that must complete under a predeclared deadline (a p95 or absolute
+  ceiling), not merely eventually — seconds of writer starvation must fail
+  the gate, not pass it.
 - **Real multi-process correctness** (not just load): 256 separate CLI
   processes, not goroutines, asserting successful-operation counts against
   final record counts, name/ref index consistency, that every failure is a
@@ -873,7 +886,11 @@ contract — and the measured win arrives only in P2.
   P0 therefore ships an INTERNAL, json-engine-only legacy adapter with an
   explicit allowlist: `RawView` for exactly the two lockless read sites, and
   a namespace-lock (exactly-once) path for exactly the legacy GC modules and
-  the OCI/cloudimg publish steps. Nothing else may touch it, and it is
+  EVERY image publish critical section — OCI pull, OCI `importTarLayers` and
+  `importTarFromReader`, and cloudimg commit, each of which moves files
+  inside its `store.Update`. Each keeps its exact legacy critical section
+  through P0 (a retryable closure cannot contain the rename; hoisting it out
+  opens the GC-deletes-unindexed-blob window). Nothing else may touch it, and it is
   deleted in P1 once the stable VM lock, the per-digest image lock and the
   new GC land. The alternative — pulling the tombstone protocol forward into
   P0 — is rejected because it would make a fixture mismatch ambiguous again,
