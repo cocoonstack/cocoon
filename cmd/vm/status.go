@@ -21,8 +21,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-const statusWatchDebounce = 200 * time.Millisecond
-
 type vmEvent struct {
 	Event string   `json:"event"`
 	VM    types.VM `json:"vm"`
