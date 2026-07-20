@@ -51,14 +51,6 @@ func (t *vmTx) orphanDirs() ([]string, error) {
 	return dirs, nil
 }
 
-// addOrphanDir mirrors the contains-check append on idx.OrphanDirs.
-func (t *vmTx) addOrphanDir(dir string) error {
-	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, tableOrphanDirs, dir); err != nil || ok {
-		return err
-	}
-	return t.w.PutRaw(t.ctx, t.ns, tableOrphanDirs, dir, json.RawMessage(orphanDirEntry), false)
-}
-
 // removeOrphanDir mirrors slices.DeleteFunc on idx.OrphanDirs.
 func (t *vmTx) removeOrphanDir(dir string) error {
 	return t.w.DeleteRaw(t.ctx, t.ns, tableOrphanDirs, dir, false)

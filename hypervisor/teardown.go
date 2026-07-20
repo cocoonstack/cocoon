@@ -55,9 +55,9 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 		}
 		if existing != nil {
 			// A dead owner's lease: take it over and resume from its phase.
-			taken, err := ts.TakeOver(ctx, t.w, id)
-			if err != nil {
-				return err
+			taken, takeErr := ts.TakeOver(ctx, t.w, id)
+			if takeErr != nil {
+				return takeErr
 			}
 			leaseID = taken.LeaseID
 			return nil
@@ -124,9 +124,9 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown Ne
 		if err != nil || rec == nil {
 			return err
 		}
-		taken, err := ts.TakeOver(ctx, t.w, id)
-		if err != nil {
-			return err
+		taken, takeErr := ts.TakeOver(ctx, t.w, id)
+		if takeErr != nil {
+			return takeErr
 		}
 		leaseID = taken.LeaseID
 		if rec.Phase == tombstone.PhaseLeased {
