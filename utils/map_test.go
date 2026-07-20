@@ -4,45 +4,6 @@ import (
 	"testing"
 )
 
-func TestLookupCopy_Found(t *testing.T) {
-	type val struct {
-		Name string
-	}
-	m := map[string]*val{
-		"k1": {Name: "hello"},
-	}
-
-	got, err := LookupCopy(m, "k1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "hello" {
-		t.Errorf("got %q, want %q", got.Name, "hello")
-	}
-
-	// Verify it's a copy — modifying returned value shouldn't affect map.
-	got.Name = "modified"
-	if m["k1"].Name != "hello" {
-		t.Error("modifying copy affected original")
-	}
-}
-
-func TestLookupCopy_NotFound(t *testing.T) {
-	m := map[string]*int{}
-	_, err := LookupCopy(m, "missing")
-	if err == nil {
-		t.Fatal("expected error for missing key")
-	}
-}
-
-func TestLookupCopy_NilValue(t *testing.T) {
-	m := map[string]*int{"k": nil}
-	_, err := LookupCopy(m, "k")
-	if err == nil {
-		t.Fatal("expected error for nil value")
-	}
-}
-
 func TestMergeSets_Basic(t *testing.T) {
 	s1 := map[string]struct{}{"a": {}, "b": {}}
 	s2 := map[string]struct{}{"b": {}, "c": {}}

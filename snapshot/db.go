@@ -30,13 +30,3 @@ type SnapshotIndex struct {
 func (idx *SnapshotIndex) Init() {
 	utils.InitNamedIndex(&idx.Snapshots, &idx.Names)
 }
-
-// Resolve resolves a ref (exact ID, name, or ID prefix ≥3 chars) to a full snapshot ID.
-func (idx *SnapshotIndex) Resolve(ref string) (string, error) {
-	return utils.ResolveRef(idx.Snapshots, idx.Names, ref, ErrNotFound)
-}
-
-// ResolveMany batch-resolves refs to exact snapshot IDs, deduplicating results.
-func (idx *SnapshotIndex) ResolveMany(refs []string) ([]string, error) {
-	return utils.ResolveRefs(idx.Snapshots, idx.Names, refs, ErrNotFound)
-}

@@ -1,19 +1,8 @@
 package utils
 
 import (
-	"fmt"
 	"maps"
 )
-
-// LookupCopy returns a shallow copy at key. Pointer/slice/map fields inside T still alias the original — callers must not mutate them without deep-copying.
-func LookupCopy[T any](m map[string]*T, key string) (T, error) {
-	v := m[key]
-	if v == nil {
-		var zero T
-		return zero, fmt.Errorf("%q not found", key)
-	}
-	return *v, nil
-}
 
 // MergeSets unions any number of set maps into a new set.
 func MergeSets[K comparable](sets ...map[K]struct{}) map[K]struct{} {
