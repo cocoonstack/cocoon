@@ -7,6 +7,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -15,22 +16,28 @@ import (
 // ReserveVM inserts a "creating" placeholder under id, failing on id/name collision. Re-reserving the placeholder this same create claimed via PrereserveVM adopts it (refreshing blob pins and dirs).
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := time.Now()
-	// NoDirSync: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
-	return b.DB.UpdateNoDirSync(ctx, func(idx *VMIndex) error {
-		if existing := idx.VMs[id]; existing != nil {
+	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
+	return b.updateRelaxed(ctx, func(t *vmTx) error {
+		existing, err := t.get(id)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
 			if existing.State == types.VMStateCreating && existing.Config.Name == vmCfg.Name {
 				existing.ImageBlobIDs = blobIDs
 				existing.RunDir = runDir
 				existing.LogDir = logDir
 				existing.UpdatedAt = now
-				return nil
+				return t.put(id, existing, meta.RelaxedOK)
 			}
 			return fmt.Errorf("id collision %q (retry)", id)
 		}
-		if dup, ok := idx.Names[vmCfg.Name]; ok && dup != id {
+		if dup, ok, err := t.nameGet(vmCfg.Name); err != nil {
+			return err
+		} else if ok && dup != id {
 			return fmt.Errorf("vm name %q already exists (id: %s)", vmCfg.Name, dup)
 		}
-		idx.VMs[id] = &VMRecord{
+		if err := t.put(id, &VMRecord{
 			VM: types.VM{
 				ID: id, Hypervisor: b.Typ, State: types.VMStateCreating,
 				Config: *vmCfg, CreatedAt: now, UpdatedAt: now,
@@ -38,9 +45,10 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 			ImageBlobIDs: blobIDs,
 			RunDir:       runDir,
 			LogDir:       logDir,
+		}, meta.RelaxedOK); err != nil {
+			return err
 		}
-		idx.Names[vmCfg.Name] = id
-		return nil
+		return t.nameSet(vmCfg.Name, id, meta.RelaxedOK)
 	})
 }
 
@@ -53,10 +61,17 @@ func (b *Backend) PrereserveVM(ctx context.Context, id string, vmCfg *types.VMCo
 func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		delete(idx.VMs, id)
-		if name != "" && idx.Names[name] == id {
-			delete(idx.Names, name)
+	if err := b.update(ctx, func(t *vmTx) error {
+		if err := t.del(id); err != nil {
+			return err
+		}
+		if name == "" {
+			return nil
+		}
+		if cur, ok, err := t.nameGet(name); err != nil {
+			return err
+		} else if ok && cur == id {
+			return t.nameDel(name)
 		}
 		return nil
 	}); err != nil {
@@ -66,19 +81,18 @@ func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 
 // FinalizeCreate persists the populated VM record (replacing the placeholder) and emits metering vm.storage.start.
 func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		existing, err := idx.GetRecord(id)
+	if err := b.update(ctx, func(t *vmTx) error {
+		existing, err := t.getRecord(id)
 		if err != nil {
 			return err
 		}
-		idx.VMs[id] = &VMRecord{
+		return t.put(id, &VMRecord{
 			VM:           *info,
 			BootConfig:   bootCfg,
 			ImageBlobIDs: blobIDs,
 			RunDir:       existing.RunDir,
 			LogDir:       existing.LogDir,
-		}
-		return nil
+		})
 	}); err != nil {
 		return err
 	}

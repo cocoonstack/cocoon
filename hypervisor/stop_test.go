@@ -19,7 +19,7 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	const id = "vm-del"
 	seedVMRecord(t, b, id, 2, 1<<30, 10<<30, true)
 	runDir, logDir := shortTempDir(t), shortTempDir(t)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateStopped
 		idx.VMs[id].RunDir = runDir
 		idx.VMs[id].LogDir = logDir
@@ -90,7 +90,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	const id = "vm-live-sock"
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	runDir := shortTempDir(t)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateStopped
 		idx.VMs[id].RunDir = runDir
 		idx.VMs[id].LogDir = runDir
@@ -131,7 +131,7 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	const id = "vm-migrated"
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	runDir, logDir := shortTempDir(t), shortTempDir(t)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateStopped
 		idx.VMs[id].RunDir = runDir
 		idx.VMs[id].LogDir = logDir
@@ -143,7 +143,7 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
-	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+	if err := b.dbRead(context.Background(), func(idx *VMIndex) error {
 		if len(idx.OrphanDirs) != 0 {
 			t.Fatalf("successful delete must clear its cleanup intent, got %v", idx.OrphanDirs)
 		}

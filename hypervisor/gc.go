@@ -67,17 +67,18 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	return gc.Module[VMGCSnapshot]{
 		Name:   b.Typ,
 		Locker: b.Locker,
-		ReadDB: func(_ context.Context) (VMGCSnapshot, error) {
+		ReadDB: func(ctx context.Context) (VMGCSnapshot, error) {
 			snap := VMGCSnapshot{reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-CreatingStateGCGrace)
-			if err := b.DB.ReadRaw(func(idx *VMIndex) error {
-				snap.blobIDs = make(map[string]struct{}, len(idx.VMs))
-				snap.vmIDs = make(map[string]struct{}, len(idx.VMs))
-				snap.orphanDirs = slices.Clone(idx.OrphanDirs)
-				for id, rec := range idx.VMs {
-					if rec == nil {
-						continue
-					}
+			// Lockless read: the orchestrator already holds the namespace lock.
+			if err := b.rawView(ctx, func(t *vmTx) error {
+				snap.blobIDs = make(map[string]struct{})
+				snap.vmIDs = make(map[string]struct{})
+				var err error
+				if snap.orphanDirs, err = t.orphanDirs(); err != nil {
+					return err
+				}
+				return t.scan(func(id string, rec *VMRecord) error {
 					snap.vmIDs[id] = struct{}{}
 					if rec.RunDir != "" {
 						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
@@ -86,8 +87,8 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 					if rec.State == types.VMStateCreating && rec.UpdatedAt.Before(cutoff) {
 						snap.staleCreate = append(snap.staleCreate, id)
 					}
-				}
-				return nil
+					return nil
+				})
 			}); err != nil {
 				return snap, err
 			}
@@ -145,8 +146,8 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	safeToUnrecord := make([]string, 0, len(ids))
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
-		_ = b.DB.ReadRaw(func(idx *VMIndex) error {
-			if rec := idx.VMs[id]; rec != nil {
+		_ = b.rawView(ctx, func(t *vmTx) error {
+			if rec, err := t.get(id); err == nil && rec != nil {
 				runDir, logDir = rec.RunDir, rec.LogDir
 			}
 			return nil
@@ -225,11 +226,10 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 // sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
 func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 	logger := log.WithFunc("gc." + b.Typ)
-	// Lockless write: the orchestrator already holds the index flock for the whole cycle; a locked Update here would self-deadlock.
+	// Lockless write: the orchestrator already holds the namespace lock for the whole cycle; a locked Update here would self-deadlock.
 	clearIntent := func(dir string) {
-		if err := b.DB.WriteRaw(func(idx *VMIndex) error {
-			idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return d == dir })
-			return nil
+		if err := b.lockedUpdate(ctx, func(t *vmTx) error {
+			return t.removeOrphanDir(dir)
 		}); err != nil {
 			logger.Warnf(ctx, "clear cleanup intent %s: %v", dir, err)
 		}

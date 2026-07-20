@@ -5,6 +5,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
 
 // Config holds Cloud Hypervisor specific configuration.
@@ -31,4 +32,9 @@ func (c *Config) OverlayPath(vmID string) string {
 
 func (c *Config) CidataPath(vmID string) string {
 	return filepath.Join(c.VMRunDir(vmID), cidataFile)
+}
+
+// MetaNamespace declares this backend's namespace on the shared meta store.
+func MetaNamespace(conf *config.Config) metajson.Namespace {
+	return hypervisor.MetaNamespace(typ, NewConfig(conf))
 }

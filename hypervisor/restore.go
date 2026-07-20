@@ -202,8 +202,12 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldShape metering.Shape, sourceSnapshotID string) {
 	now := time.Now()
 	closed := false
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[vmID]
+	if err := b.update(ctx, func(t *vmTx) error {
+		closed = false
+		r, err := t.get(vmID)
+		if err != nil {
+			return err
+		}
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
@@ -211,7 +215,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		r.StoppedAt = &now
 		r.UpdatedAt = now
 		closed = true
-		return nil
+		return t.put(vmID, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".emitRestoreComputeStop").Warnf(ctx, "mark stopped after kill %s: %v", vmID, err)
 		return

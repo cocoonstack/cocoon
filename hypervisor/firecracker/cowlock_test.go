@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -73,11 +74,17 @@ func TestCloneLockHeldThenCleaned(t *testing.T) {
 func newTestFC(t *testing.T) *Firecracker {
 	t.Helper()
 	dir := t.TempDir()
-	fc, err := New(&config.Config{
+	conf := &config.Config{
 		RootDir: dir,
 		RunDir:  filepath.Join(dir, "run"),
 		LogDir:  filepath.Join(dir, "log"),
-	}, nil)
+	}
+	store, err := metajson.Open(MetaNamespace(conf))
+	if err != nil {
+		t.Fatalf("meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	fc, err := New(conf, nil, store)
 	if err != nil {
 		t.Fatalf("new firecracker: %v", err)
 	}

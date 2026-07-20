@@ -9,10 +9,8 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/metering"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -66,25 +64,33 @@ type BackendConfig interface {
 // Backend provides shared store operations for hypervisor backends.
 type Backend struct {
 	Typ      string
+	NS       string
 	Conf     BackendConfig
-	DB       storage.Store[VMIndex]
+	Meta     *metajson.Store
 	Locker   lock.Locker
 	Metering metering.Recorder
 }
 
-// NewBackend wires shared init: EnsureDirs, flock, JSON store, nil-recorder fallback.
-func NewBackend(typ string, conf BackendConfig, rec metering.Recorder) (*Backend, error) {
+// NewBackend wires shared init: EnsureDirs, the backend's namespace on the
+// injected meta store, nil-recorder fallback. Locker is the namespace lock
+// exposed for the legacy GC lock-all (P0 adapter; retires in P1).
+func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store *metajson.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	locker := flock.New(conf.IndexLock())
+	ns := VMNamespaceName(typ)
+	locker, err := store.NamespaceLocker(ns)
+	if err != nil {
+		return nil, err
+	}
 	return &Backend{
 		Typ:      typ,
+		NS:       ns,
 		Conf:     conf,
-		DB:       storejson.New[VMIndex](conf.IndexFile(), locker),
+		Meta:     store,
 		Locker:   locker,
 		Metering: rec,
 	}, nil

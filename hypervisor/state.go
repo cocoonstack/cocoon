@@ -102,10 +102,16 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 		return fmt.Errorf("UpdateStates(Running) not allowed; use BatchMarkStarted")
 	}
 	now := time.Now()
+	// Metering entries stage inside the closure and publish only on nil return,
+	// so a retried closure cannot double-emit (meta contract clause 1).
 	var stopped []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.update(ctx, func(t *vmTx) error {
+		staged := []metering.Entry{}
 		for _, id := range ids {
-			r := idx.VMs[id]
+			r, err := t.get(id)
+			if err != nil {
+				return err
+			}
 			if r == nil {
 				continue
 			}
@@ -113,9 +119,13 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 			r.UpdatedAt = now
 			if state == types.VMStateStopped && hasOpenComputeInterval(r) {
 				r.StoppedAt = &now
-				stopped = append(stopped, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
+				staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
+			}
+			if err := t.put(id, r); err != nil {
+				return err
 			}
 		}
+		stopped = staged
 		return nil
 	}); err != nil {
 		return err
@@ -136,15 +146,15 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
 	now := time.Now()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil {
-			return nil
+	if err := b.update(ctx, func(t *vmTx) error {
+		r, err := t.get(id)
+		if err != nil || r == nil {
+			return err
 		}
 		r.State = types.VMStateError
 		r.Quarantine = reason
 		r.UpdatedAt = now
-		return nil
+		return t.put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
 	}
@@ -156,25 +166,34 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 		return nil
 	}
 	now := time.Now()
+	// Staged-then-published like UpdateStates: closure purity under retry.
 	var emits []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.update(ctx, func(t *vmTx) error {
+		staged := []metering.Entry{}
 		for _, id := range ids {
-			r := idx.VMs[id]
+			r, err := t.get(id)
+			if err != nil {
+				return err
+			}
 			if r == nil {
 				continue
 			}
 			shape := shapeFromConfig(r.Config)
 			if hasOpenComputeInterval(r) {
-				emits = append(emits, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
+				staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 			}
 			reason := bootOrRestartReason(r.FirstBooted)
-			emits = append(emits, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
+			staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 			r.State = types.VMStateRunning
 			r.StartedAt = &now
 			r.StoppedAt = nil
 			r.UpdatedAt = now
 			r.FirstBooted = true
+			if err := t.put(id, r); err != nil {
+				return err
+			}
 		}
+		emits = staged
 		return nil
 	}); err != nil {
 		return err
@@ -184,19 +203,30 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 }
 
 // CleanStalePlaceholders removes "creating" records past GC grace period.
-func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error {
+func (b *Backend) CleanStalePlaceholders(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
-	return b.DB.WriteRaw(func(idx *VMIndex) error {
-		utils.CleanStaleRecords(
-			idx.VMs, idx.Names, ids,
-			func(r *VMRecord) string { return r.Config.Name },
-			func(r *VMRecord) bool {
-				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
-			},
-		)
+	// Runs while the GC orchestrator holds the namespace lock (legacy WriteRaw).
+	return b.lockedUpdate(ctx, func(t *vmTx) error {
+		for _, id := range ids {
+			r, err := t.get(id)
+			if err != nil {
+				return err
+			}
+			if r == nil || r.State != types.VMStateCreating || !r.UpdatedAt.Before(cutoff) {
+				continue
+			}
+			if n := r.Config.Name; n != "" {
+				if err := t.nameDel(n); err != nil {
+					return err
+				}
+			}
+			if err := t.del(id); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }
@@ -205,8 +235,12 @@ func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error 
 func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
 	now := time.Now()
 	closed := false
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[rec.ID]
+	if err := b.update(ctx, func(t *vmTx) error {
+		closed = false
+		r, err := t.get(rec.ID)
+		if err != nil {
+			return err
+		}
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
@@ -216,7 +250,7 @@ func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) 
 		r.StoppedAt = &now
 		r.UpdatedAt = now
 		closed = true
-		return nil
+		return t.put(rec.ID, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".closeStaleComputeInterval").Warnf(ctx, "close interval for %s: %v", rec.ID, err)
 		return
@@ -235,8 +269,12 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		shape  metering.Shape
 		reason metering.Reason
 	)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
+	if err := b.update(ctx, func(t *vmTx) error {
+		emit = false
+		r, err := t.get(id)
+		if err != nil {
+			return err
+		}
 		if r == nil || r.State == types.VMStateRunning {
 			return nil
 		}
@@ -244,7 +282,7 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 			r.State = types.VMStateRunning
 			r.StoppedAt = nil
 			r.UpdatedAt = now
-			return nil
+			return t.put(id, r)
 		}
 		emit = true
 		shape = shapeFromConfig(r.Config)
@@ -254,7 +292,7 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		r.StoppedAt = nil
 		r.UpdatedAt = now
 		r.FirstBooted = true
-		return nil
+		return t.put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".reconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
 		return

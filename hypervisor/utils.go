@@ -57,14 +57,12 @@ type SnapshotFileKind int
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	runDir := b.Conf.VMRunDir(vmID)
 	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.
-	// Lockless read: RunDir is immutable after create, and a locked read would stall every ops verb behind an in-flight GC cycle's index lock. Fail closed on a real read error (ENOENT reads as empty) — guessing the path could split the lock domain.
-	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
-		if r := idx.VMs[vmID]; r != nil && r.RunDir != "" {
-			runDir = r.RunDir
-		}
-		return nil
-	}); err != nil {
+	rec, err := b.RawLoadRecord(ctx, vmID)
+	if err != nil {
 		return nil, fmt.Errorf("resolve run dir for %s: %w", vmID, err)
+	}
+	if rec != nil && rec.RunDir != "" {
+		runDir = rec.RunDir
 	}
 	l, err := opsLock(runDir)
 	if err != nil {
@@ -74,6 +72,21 @@ func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 		return nil, err
 	}
 	return func() { _ = l.Unlock(ctx) }, nil
+}
+
+// RawLoadRecord reads the record LOCKLESSLY (nil when absent): ops verbs must
+// not stall behind an in-flight GC cycle's namespace lock, and a GC lock must
+// not fake a miss. P0 adapter allowlist; retires with the stable VM lock (P1).
+func (b *Backend) RawLoadRecord(ctx context.Context, vmID string) (*VMRecord, error) {
+	var rec *VMRecord
+	if err := b.rawView(ctx, func(t *vmTx) error {
+		var err error
+		rec, err = t.get(vmID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return rec, nil
 }
 
 func (b *Backend) PIDFilePath(runDir string) string {

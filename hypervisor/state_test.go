@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -108,7 +106,7 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	dir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs["vm1"].RunDir = dir
 		idx.VMs["vm1"].LogDir = dir
 		return nil
@@ -184,7 +182,7 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	dir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs["vm1"].RunDir = dir
 		idx.VMs["vm1"].LogDir = dir
 		return nil
@@ -523,7 +521,8 @@ func TestReconcileToRunningIdempotent(t *testing.T) {
 }
 
 func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
-	b, err := NewBackend("test-hv", newDiskStubConfig(t), nil)
+	cfg := newDiskStubConfig(t)
+	b, err := NewBackend("test-hv", cfg, nil, newTestMetaStore(t, "test-hv", cfg))
 	if err != nil {
 		t.Fatalf("NewBackend(rec=nil): %v", err)
 	}
@@ -583,14 +582,20 @@ func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
 
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
+	const typ = "test-hv"
 	dir := t.TempDir()
-	locker := flock.New(filepath.Join(dir, "index.lock"))
-	store := storejson.New[VMIndex](filepath.Join(dir, "index.json"), locker)
+	store := testNamespace(t, typ, dir)
+	ns := VMNamespaceName(typ)
+	locker, err := store.NamespaceLocker(ns)
+	if err != nil {
+		t.Fatalf("namespace locker: %v", err)
+	}
 	rec := meteringcapture.New()
 	return &Backend{
-		Typ:      "test-hv",
+		Typ:      typ,
+		NS:       ns,
 		Conf:     meteringStubConfig{vmRunRoot: dir},
-		DB:       store,
+		Meta:     store,
 		Locker:   locker,
 		Metering: rec,
 	}, rec
@@ -598,7 +603,7 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 
 func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int64, firstBooted bool) {
 	t.Helper()
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id] = &VMRecord{
 			VM: types.VM{
 				ID:          id,
@@ -619,7 +624,7 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage int64) {
 	t.Helper()
 	seedVMRecord(t, b, id, cpu, mem, storage, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		now := time.Now()
 		idx.VMs[id].State = types.VMStateRunning
 		idx.VMs[id].StartedAt = &now
@@ -654,7 +659,7 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	const id = "vm-staging"
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	runDir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateStopped
 		idx.VMs[id].RunDir = runDir
 		idx.VMs[id].LogDir = runDir

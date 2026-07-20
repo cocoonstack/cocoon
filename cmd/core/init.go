@@ -20,10 +20,18 @@ import (
 
 var hypervisorFactories = []hypervisorFactory{
 	{config.HypervisorCH, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		return cloudhypervisor.New(c, MeteringRecorder(ctx, c))
+		store, err := MetaStore(c)
+		if err != nil {
+			return nil, err
+		}
+		return cloudhypervisor.New(c, MeteringRecorder(ctx, c), store)
 	}},
 	{config.HypervisorFirecracker, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		return firecracker.New(c, MeteringRecorder(ctx, c))
+		store, err := MetaStore(c)
+		if err != nil {
+			return nil, err
+		}
+		return firecracker.New(c, MeteringRecorder(ctx, c), store)
 	}},
 }
 

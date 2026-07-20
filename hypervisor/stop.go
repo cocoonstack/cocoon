@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -141,18 +140,25 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	// Dirs outside the configured roots escape the GC orphan scan; persist a cleanup intent in the same transaction so a failed removal stays reclaimable.
 	migrated := migratedDirs(rec, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
 	// Record first: dir removal deletes the ops.lock inode, and a fresh-inode locker must resolve a gone record instead of reviving the VM.
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
+	if err := b.update(ctx, func(t *vmTx) error {
+		r, err := t.get(id)
+		if err != nil {
+			return err
+		}
 		if r == nil {
 			return ErrNotFound
 		}
 		hadRunningInterval = hasOpenComputeInterval(r)
 		shape = shapeFromConfig(r.Config)
-		delete(idx.Names, r.Config.Name)
-		delete(idx.VMs, id)
+		if err := t.nameDel(r.Config.Name); err != nil {
+			return err
+		}
+		if err := t.del(id); err != nil {
+			return err
+		}
 		for _, dir := range migrated {
-			if !slices.Contains(idx.OrphanDirs, dir) {
-				idx.OrphanDirs = append(idx.OrphanDirs, dir)
+			if err := t.addOrphanDir(dir); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -174,8 +180,12 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 }
 
 func (b *Backend) clearOrphanDirs(ctx context.Context, dirs []string) {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return slices.Contains(dirs, d) })
+	if err := b.update(ctx, func(t *vmTx) error {
+		for _, dir := range dirs {
+			if err := t.removeOrphanDir(dir); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		log.WithFunc(b.Typ+".clearOrphanDirs").Warnf(ctx, "clear cleanup intents %v: %v", dirs, err)

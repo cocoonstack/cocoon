@@ -122,7 +122,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	const id = "vm-hibernate-test"
 	runDir := shortTempDir(t)
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateRunning
 		idx.VMs[id].RunDir = runDir
 		return nil

@@ -15,6 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -84,14 +85,7 @@ func TestResolveFailedPersist(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{{ID: "cocoon-net-aabbccddee01", MAC: nc.MAC}})
 	plumbing := &stubPlumbing{}
 
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", Hypervisor: ch.Typ}}
-		rec.NetworkConfigs = []*types.NetworkConfig{nc}
-		idx.VMs["vm1"] = rec
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	seedNetVM(t, ch, "vm1", nc)
 	committed, err := ch.resolveFailedPersist(ctx, hc, plumbing, "vm1", nc, "cocoon-net-aabbccddee01", 0)
 	if err != nil || !committed {
 		t.Fatalf("committed write must keep the device: committed=%v err=%v", committed, err)
@@ -100,8 +94,8 @@ func TestResolveFailedPersist(t *testing.T) {
 		t.Fatal("no teardown may run when the record carries the NIC")
 	}
 
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		idx.VMs["vm1"].NetworkConfigs = nil
+	if err := ch.UpdateRecord(ctx, "vm1", func(r *hypervisor.VMRecord) error {
+		r.NetworkConfigs = nil
 		return nil
 	}); err != nil {
 		t.Fatalf("truncate: %v", err)
@@ -125,14 +119,7 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
 	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm7", Hypervisor: ch.Typ}}
-		rec.NetworkConfigs = []*types.NetworkConfig{nc}
-		idx.VMs["vm7"] = rec
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	seedNetVM(t, ch, "vm7", nc)
 	// vm.info reports no live nets, so macToID can't resolve nc's MAC.
 	hc, _ := newCHStubClient(t, nil)
 	plumbing := &stubPlumbing{}
@@ -144,8 +131,8 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	if res.After != 0 || len(res.Removed) != 1 {
 		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
 	}
-	var rec *hypervisor.VMRecord
-	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error { rec = idx.VMs["vm7"]; return nil }); err != nil {
+	rec, err := ch.RawLoadRecord(ctx, "vm7")
+	if err != nil {
 		t.Fatalf("read record: %v", err)
 	}
 	if len(rec.NetworkConfigs) != 0 {
@@ -180,11 +167,32 @@ func (p *stubPlumbing) Remove(_ context.Context, _ string, indices ...int) error
 	return nil
 }
 
+// seedNetVM plants a record carrying one NIC through the exported surface.
+func seedNetVM(t *testing.T, ch *CloudHypervisor, id string, nc *types.NetworkConfig) {
+	t.Helper()
+	ctx := t.Context()
+	if err := ch.ReserveVM(ctx, id, &types.VMConfig{}, nil, ch.Conf.VMRunDir(id), ch.Conf.VMLogDir(id)); err != nil {
+		t.Fatalf("seed reserve: %v", err)
+	}
+	if err := ch.UpdateRecord(ctx, id, func(r *hypervisor.VMRecord) error {
+		r.State = types.VMStateCreated
+		r.NetworkConfigs = []*types.NetworkConfig{nc}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed record: %v", err)
+	}
+}
+
 func newTestCH(t *testing.T) *CloudHypervisor {
 	t.Helper()
 	conf := &config.Config{RootDir: t.TempDir(), RunDir: t.TempDir(), LogDir: t.TempDir()}
 	cfg := NewConfig(conf)
-	backend, err := hypervisor.NewBackend(typ, cfg, nil)
+	store, err := metajson.Open(MetaNamespace(conf))
+	if err != nil {
+		t.Fatalf("meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	backend, err := hypervisor.NewBackend(typ, cfg, nil, store)
 	if err != nil {
 		t.Fatalf("backend: %v", err)
 	}
