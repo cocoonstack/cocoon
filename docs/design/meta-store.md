@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.20)
+# Meta store: unified metadata layer (design v2.21)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -436,15 +436,14 @@ adopts, uniform across namespaces:
 - lock files are reaped only by an explicit maintenance action (doctor /
   `gc --deep`) that requires a quiescent store, never during normal
   operation — entity locks are cheap to keep and expensive to get wrong;
-- and because unlink-versus-acquire can still split exclusion (a waiter
-  blocked on the old inode is granted it after the reaper unlinks the path,
-  while a new actor locks the freshly created file at the same path), EVERY
-  locker validates identity after acquiring: stat the path, compare
-  device+inode with the fstat of the descriptor it holds, and retry on
-  mismatch. This is the same hazard `hypervisor/gc.go`'s
-  `sweepStaleCloneLocks` documents ("a live waiter can't be split onto a
-  fresh inode") and that `images/gc.go` sidesteps by never deleting `.lock`
-  files at all.
+- no per-acquire identity revalidation. The unlink-versus-acquire split
+  (the hazard `sweepStaleCloneLocks` documents) can only occur while a
+  reaper unlinks a lock path, and reaping is confined to the quiescent
+  maintenance action above — so the split requires an operator running the
+  reaper against a live store, which is outside the deployment contract.
+  Per the design calibration that residual is ACCEPTED, not defended:
+  every-locker stat/fstat comparison would be a permanent tax on every
+  acquire to guard a contract violation.
 
 With that rule the protocol needs no per-namespace special case: the record
 is deleted at finalize (step 6) everywhere.
