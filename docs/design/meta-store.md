@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.8)
+# Meta store: unified metadata layer (design v2.9)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -109,8 +109,8 @@ Contract clauses (binding on every engine):
    retry interval (§4 bounds it for sqlite); a blocked writer never pins a
    caller past its deadline.
 7. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
-   `ErrCorrupt`, `ErrNoSpace`, `ErrDurabilityContract`; engine codes never
-   reach callers.
+   `ErrCorrupt`, `ErrNoSpace`, `ErrDurabilityContract`, `ErrScope`; engine
+   codes never reach callers.
 
 Collections and logs are storage primitives; lifecycle semantics live in
 domain repositories (§1a):
@@ -151,10 +151,17 @@ auto View/Update.
 
 Reserve/adopt/finalize, quarantine, state transitions and other
 compare-and-swap flows are methods on `hypervisor.VMRepository` (and peers),
-composed of primitives inside one `Update` with in-transaction revalidation.
-Business code never hand-rolls Get+Replace. Follow-up (separate change): with
-reserve+name-claim+finalize as one transaction, the `hypervisor.Reserver`
-choreography the CLI drives today can shrink or disappear.
+each composed of primitives inside ONE short `Update` with in-transaction
+revalidation. Business code never hand-rolls Get+Replace.
+
+Create/clone stays **two short transactions around slow external work**, not
+one: `reserve + name claim` → image prep, directories, CNI, VMM launch (none
+of which may sit inside a transaction) → `finalize`. The win is not fewer
+transactions but their cost: each becomes a row-level write instead of a
+whole-index rewrite, and the placeholder that makes GC's ownership window
+work is unchanged. Follow-up (separate change): with reserve and name claim
+atomic in one row-level transaction, the `hypervisor.Reserver` choreography
+the CLI drives today can shrink.
 
 ## 2. Schema (sqlite engine; one DB, namespace = table group)
 
@@ -192,8 +199,9 @@ CREATE TABLE snapshots            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQU
 CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 
 -- namespace networks
-CREATE TABLE networks (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
+CREATE TABLE networks            (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
 CREATE INDEX networks_by_vm ON networks(vm_id);
+CREATE TABLE networks_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 
 -- namespace images_oci (same shape for images_cloudimg)
 CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
@@ -214,6 +222,14 @@ Representation rules (each has a round-trip fixture in §9):
   unnamed record. Mapping is `name == "" ⇔ NULL` in both directions.
 - **Satellite sets stay in their namespace** (orphan dirs, tombstones), so
   every write a subsystem performs is single-namespace (§1 rule 2).
+- **Every GC'd namespace has tombstones, networks included.** Network
+  teardown does slow work outside any transaction (CNI DEL, TAP, netns), so
+  it needs the same phase marker as the others: without it, a crash mid-
+  teardown leaves a live network record pointing at half-released host
+  resources, and nothing records that teardown had begun. (The ID-reuse
+  variant of this race is not reachable — VM IDs are random 26-char and TAP
+  and netns names derive from them — but the crash variant is, and uniformity
+  costs nothing.)
 
 ## 3. Durability
 
@@ -288,12 +304,21 @@ Per candidate:
    `WHERE id=? AND lease_id=?`. Zero rows affected means the lease was
    reclaimed while this worker was slow — abort without deleting anything.
 
-**The `lease_id` is a fencing token.** Every mutating statement after step 3
-carries it, so a worker that stalled past its TTL and resumed after another
-worker reclaimed the lease affects zero rows instead of deleting the new
-lease's target or a reference re-established in the meantime (the ABA case).
-Stale-lease reclamation must hold the same entity ops lock as the original
-worker, so reclaim and resume cannot interleave.
+**Lock lifetime: one owner, start to finish.** The entity ops lock taken in
+step 2 is held through step 6. A live-but-slow worker is therefore never
+preempted — there is no TTL-based stealing, which would be unsound while the
+owner may still be writing. Another worker can only take over after the
+owner's process is gone and the OS has released the flock; it then finds a
+`leased` or `deleting` tombstone and recovers it (§ below) under the lock it
+now holds. No filesystem deletion ever happens without holding the lock AND
+re-verifying the lease in the same transaction.
+
+**The `lease_id` is a fencing token across process death, not across
+stalls.** Recovery takes a NEW `lease_id`, and every mutating statement
+carries the holder's own value, so a resumed or re-run instance of the dead
+owner's work (an interrupted tool invoked again, a duplicated recovery)
+affects zero rows instead of finalizing someone else's lease or deleting a
+target whose reference was re-established meanwhile.
 
 **Crash recovery is phase-directed — never blind rollback.** A `leased`
 tombstone provably predates any filesystem mutation and may be rolled back
@@ -334,14 +359,19 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   (`state='converted'`, source path, sha256, record count) in one Durable
   transaction per namespace; commit; then rename the source aside
   (`*.converted-<ts>`) and sync the parent dir.
-- **Resumable, never ambiguous.** A crash between "target committed" and
-  "source renamed aside" leaves a populated target; the rerun must finish the
-  job, not refuse it. On start the tool compares each namespace's target
-  `meta_state` row (source path, sha256, record count) against the pending
-  source: an exact match is THIS conversion, verified and resumed (remaining
-  namespaces + pending renames); a populated target that does not match any
-  pending source is a foreign store and is refused, telling the operator to
-  move it aside deliberately.
+- **Resumable, never ambiguous — via a standalone manifest.** A crash
+  between "target committed" and "source renamed aside" leaves a populated
+  target; the rerun must finish the job, not refuse it. Target-side state
+  cannot answer "is this mine?" in general, because `meta_state` is a
+  sqlite-engine concept and a json target has no equivalent — so the tool
+  keeps its own engine-independent manifest at the meta root
+  (`meta-convert.manifest`, fsynced): source identity (paths + per-namespace
+  sha256 + record counts), target engine, per-namespace completion marks, and
+  aside paths. A rerun with a manifest verifies each recorded namespace
+  against the target and resumes the remainder plus pending renames; a
+  populated target with no matching manifest entry is foreign and refused,
+  telling the operator to move it aside deliberately. The manifest is removed
+  (and its parent dir synced) only after the conversion is fully complete.
 - **The old authority is retired, not left in place.** Conversion in either
   direction renames its source aside only after a fully committed, fully
   verified write, so a later reverse conversion can never find a stale
@@ -448,10 +478,11 @@ Engine-scoped, because the engines have deliberately different cost models.
   append, pre/post commit-frame); reopening must show the transaction wholly
   applied or wholly absent — never partially. Isolation tests alone do not
   prove this.
-- **Tombstone fencing / ABA**: worker A leases and stalls past TTL → worker B
-  reclaims under the same ops lock and finalizes → A resumes and its guarded
-  statements affect zero rows, deleting nothing that B or a subsequent
-  reference re-established.
+- **Tombstone fencing / ABA**: kill worker A mid-`deleting` → B acquires the
+  released ops lock, recovers under a NEW `lease_id` and finalizes → replaying
+  A's exact finalize statement affects zero rows. Also assert the negative
+  case: while A is alive and slow, B cannot acquire the lock or steal the
+  lease at all.
 - **Schema identity**: wrong `application_id` and newer `user_version` both
   fail closed on open; no open path ever rewrites either.
 - **Round-trip fixtures per namespace**: legacy json corpus → engine → export,
