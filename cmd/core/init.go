@@ -24,15 +24,41 @@ var hypervisorFactories = []hypervisorFactory{
 		if err != nil {
 			return nil, err
 		}
-		return cloudhypervisor.New(c, MeteringRecorder(ctx, c), store)
+		h, err := cloudhypervisor.New(c, MeteringRecorder(ctx, c), store)
+		if err != nil {
+			return nil, err
+		}
+		h.SetNetCleanup(netCleanup(c))
+		return h, nil
 	}},
 	{config.HypervisorFirecracker, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)
 		if err != nil {
 			return nil, err
 		}
-		return firecracker.New(c, MeteringRecorder(ctx, c), store)
+		h, err := firecracker.New(c, MeteringRecorder(ctx, c), store)
+		if err != nil {
+			return nil, err
+		}
+		h.SetNetCleanup(netCleanup(c))
+		return h, nil
 	}},
+}
+
+// netCleanup releases a VM's host networking inside the delete protocol, so
+// record deletion and network teardown run under one VM lock (design §5).
+// A partial CNI failure keeps the tombstone; retry or GC resumes it.
+func netCleanup(c *config.Config) hypervisor.NetTeardown {
+	return func(ctx context.Context, vmID string) error {
+		bridgenet.CleanupTAPs([]string{vmID})
+		netProvider, initErr := InitNetwork(c)
+		if initErr != nil {
+			// Lazy CNI; OK to skip for bridge-only setups.
+			return nil
+		}
+		_, err := netProvider.Delete(ctx, []string{vmID})
+		return err
+	}
 }
 
 type hypervisorFactory struct {

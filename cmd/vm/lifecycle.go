@@ -20,7 +20,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
-	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -216,16 +215,8 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 			return hyper.Delete(ctx, refs, force)
 		})
 
-	if len(allDeleted) > 0 {
-		// Before the error check: a partial CNI failure must not suppress bridge TAP cleanup for the rest of the batch.
-		bridgenet.CleanupTAPs(allDeleted)
-		if netProvider, initErr := cmdcore.InitNetwork(conf); initErr == nil {
-			if _, delErr := netProvider.Delete(ctx, allDeleted); delErr != nil {
-				return fmt.Errorf("vm(s) deleted but network cleanup failed: %w", delErr)
-			}
-		}
-	}
-
+	// Network teardown now runs inside each VM's delete protocol, under its
+	// lock (design §5) — no post-hoc cleanup pass.
 	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
 }
 

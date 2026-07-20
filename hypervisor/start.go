@@ -70,6 +70,9 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 
 // PrepareStart loads the record, refuses quarantined VMs, verifies not-running, ensures dirs exist.
 func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
+	if err := b.entryGuard(ctx, id); err != nil {
+		return nil, err
+	}
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
 		return nil, err

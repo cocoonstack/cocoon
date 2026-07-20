@@ -70,6 +70,10 @@ type Backend struct {
 	Meta     *metajson.Store
 	Locker   lock.Locker
 	Metering metering.Recorder
+
+	// NetCleanup releases a VM's host networking during delete/recovery; the
+	// command layer injects it so both run under one VM lock (design §5).
+	NetCleanup NetTeardown
 }
 
 // NewBackend wires shared init: EnsureDirs, the backend's namespace on the
@@ -98,6 +102,9 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store *me
 }
 
 func (b *Backend) Type() string { return b.Typ }
+
+// SetNetCleanup injects the network teardown used by delete and recovery.
+func (b *Backend) SetNetCleanup(fn NetTeardown) { b.NetCleanup = fn }
 
 // LaunchSpec is the per-call input to Backend.LaunchVMProcess.
 type LaunchSpec struct {
