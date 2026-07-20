@@ -439,7 +439,11 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, fmt.Errorf("--bridge and --network are mutually exclusive")
 	}
 
-	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
+	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	hyper, err := cmdcore.InitHypervisor(ctx, conf)
 	if err != nil {
 		return nil, nil, nil, err
 	}

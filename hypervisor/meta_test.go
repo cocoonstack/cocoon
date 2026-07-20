@@ -13,6 +13,7 @@ import (
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // newTestMetaStore opens a meta store over conf's index paths for one backend type.
@@ -42,6 +43,17 @@ func testNamespace(t *testing.T, typ, dir string) *metajson.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
+}
+
+// VMIndex mirrors the legacy whole-index shape for shim-based tests.
+type VMIndex struct {
+	VMs        map[string]*VMRecord `json:"vms"`
+	Names      map[string]string    `json:"names"`
+	OrphanDirs []string             `json:"orphan_dirs,omitempty"`
+}
+
+func (idx *VMIndex) Init() {
+	utils.InitNamedIndex(&idx.VMs, &idx.Names)
 }
 
 // dbUpdate is the test-only whole-index shim: materialize, run fn, write the

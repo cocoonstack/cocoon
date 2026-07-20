@@ -72,7 +72,7 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 			return nil, err
 		}
 	}
-	n.refreshTokens()
+	n.checkAndBroadcast()
 	go n.loop()
 	return n, nil
 }
@@ -157,14 +157,6 @@ func (n *notifier) checkAndBroadcast() {
 		case ch <- struct{}{}:
 		default:
 		}
-	}
-}
-
-func (n *notifier) refreshTokens() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	for _, f := range n.files {
-		n.tokens[f] = statToken(f)
 	}
 }
 

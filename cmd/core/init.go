@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -12,6 +13,8 @@ import (
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/network"
 	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/network/cni"
@@ -20,30 +23,27 @@ import (
 )
 
 var hypervisorFactories = []hypervisorFactory{
-	{config.HypervisorCH, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
+	{config.HypervisorCH, wireHypervisor(cloudhypervisor.New)},
+	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
+}
+
+// wireHypervisor builds a backend factory over the shared store and recorder.
+func wireHypervisor[H interface {
+	hypervisor.Hypervisor
+	SetNetCleanup(hypervisor.NetTeardown)
+}](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
+	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)
 		if err != nil {
 			return nil, err
 		}
-		h, err := cloudhypervisor.New(c, MeteringRecorder(ctx, c), store)
+		h, err := newFn(c, MeteringRecorder(ctx, c), store)
 		if err != nil {
 			return nil, err
 		}
 		h.SetNetCleanup(netCleanup(c))
 		return h, nil
-	}},
-	{config.HypervisorFirecracker, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		store, err := MetaStore(c)
-		if err != nil {
-			return nil, err
-		}
-		h, err := firecracker.New(c, MeteringRecorder(ctx, c), store)
-		if err != nil {
-			return nil, err
-		}
-		h.SetNetCleanup(netCleanup(c))
-		return h, nil
-	}},
+	}
 }
 
 // netCleanup runs inside the delete protocol under the VM lock (design §5);
@@ -142,11 +142,11 @@ func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]stru
 }
 
 func InitHypervisor(ctx context.Context, conf *config.Config) (hypervisor.Hypervisor, error) {
-	ctor := findHypervisorFactory(conf.Hypervisor())
-	if ctor == nil {
+	i := slices.IndexFunc(hypervisorFactories, func(f hypervisorFactory) bool { return f.typ == conf.Hypervisor() })
+	if i < 0 {
 		return nil, fmt.Errorf("unknown hypervisor type: %s", conf.Hypervisor())
 	}
-	h, err := ctor(ctx, conf)
+	h, err := hypervisorFactories[i].ctor(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("init hypervisor: %w", err)
 	}
@@ -198,15 +198,6 @@ func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Op
 		return nil, fmt.Errorf("init snapshot backend: %w", err)
 	}
 	return s, nil
-}
-
-func findHypervisorFactory(typ config.HypervisorType) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
-	for _, f := range hypervisorFactories {
-		if f.typ == typ {
-			return f.ctor
-		}
-	}
-	return nil
 }
 
 // PinEnvelopeBlobs locks envelope-sourced pins (clone/restore --from-dir,

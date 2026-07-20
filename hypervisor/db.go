@@ -2,7 +2,6 @@ package hypervisor
 
 import (
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 // VMRecord is the persisted record for a single VM; JSON tags live on the embedded types.VM (duplicates would shadow the promoted fields).
@@ -18,16 +17,4 @@ type VMRecord struct {
 
 	// Quarantine names why start must refuse (e.g. partial restore merge); only a successful restore clears it — stop's state flip cannot.
 	Quarantine string `json:"quarantine,omitempty"`
-}
-
-// VMIndex is the top-level DB structure for a hypervisor backend.
-type VMIndex struct {
-	VMs   map[string]*VMRecord `json:"vms"`
-	Names map[string]string    `json:"names"` // name → VM ID
-	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them since the orphan scan only covers configured roots.
-	OrphanDirs []string `json:"orphan_dirs,omitempty"`
-}
-
-func (idx *VMIndex) Init() {
-	utils.InitNamedIndex(&idx.VMs, &idx.Names)
 }
