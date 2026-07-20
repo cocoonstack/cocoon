@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.9)
+# Meta store: unified metadata layer (design v2.10)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -293,7 +293,15 @@ cost stated up front.
 Per candidate:
 
 1. Short `View` builds candidates (never held across file IO).
-2. Acquire the entity's operational lock (ops flock — unchanged).
+2. Acquire the entity's operational lock (ops flock). The mapping is
+   explicit, because it is not uniform today: VMs use the existing per-VM
+   `ops.lock`; networks are covered by their owning VM's lock (teardown
+   belongs to that VM); snapshots use their existing read-lease mechanism in
+   exclusive mode; **images have no per-entity lock today and gain one** — a
+   per-digest lock file beside the blob, taken by GC and by any flow that
+   materializes or re-pins that digest. Without it, step 2 and the recovery
+   rule below are unimplementable for image GC once `gc.Module.Locker` is
+   gone.
 3. Short `Update` on the target namespace (Durable): re-read every relevant
    namespace, verify state/references/UpdatedAt still qualify, insert the
    tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
@@ -339,10 +347,14 @@ initialization is an ops step — never implicit library behavior racing
 concurrent CLIs. Deployments staying on the json engine (the default) never
 convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 
-- **Initialization is explicit.** `cocoon meta init --backend sqlite`
-  creates the DB on a fresh root: it sets `application_id`/`user_version`
-  (the only time either is written) and writes a `meta_state` row per
-  namespace (`state='initialized'`, `records=0`). Absence of a row means
+- **Initialization is explicit and atomic.** `cocoon meta init --backend
+  sqlite` creates the DB on a fresh root: schema DDL, `application_id`,
+  `user_version` and one `meta_state` row per namespace
+  (`state='initialized'`, `records=0`) all commit in ONE transaction —
+  SQLite's DDL is transactional, so a crash mid-init leaves either nothing or
+  a fully initialized store. A file that exists but carries no `meta_state`
+  row at all is recognized as a failed init and restarted (its content is by
+  definition worthless); anything else is left alone for the operator. Absence of a row means
   UNINITIALIZED, never empty — see the open check below. On an existing
   legacy root, `meta convert` performs init and import in one action.
 - **Identity and version are verified on every open, never rewritten.**
@@ -405,14 +417,18 @@ events. The notifier connection never writes, so every commit it must report
 comes from another connection or another process and is therefore visible to
 it.
 
-`data_version` is only consulted after a filesystem signal, so a lost signal
-would stall `status --event` indefinitely. Overflow and loss are handled
-explicitly: on fsnotify overflow or watch error the notifier immediately
-re-checks `data_version`, resubscribes, and signals if the value moved; and a
-bounded safety poll (low frequency, single `PRAGMA` on the pinned connection)
-runs unconditionally as a floor, so no missed inotify event can wedge a
-watcher. Contract tests cover same-process commits, external-process commits,
-pool churn, and forced overflow.
+The change token is only consulted after a filesystem signal, so a lost
+signal would stall `status --event` indefinitely. Overflow and loss are
+handled explicitly and **per engine, since the token differs**: sqlite uses
+`data_version` on the pinned connection; the json engine, which has no such
+counter, uses each namespace file's identity tuple (inode, size, mtime —
+already the thing its writers rotate atomically). On fsnotify overflow or
+watch error the notifier immediately re-reads its token, resubscribes, and
+signals if it moved; and a bounded low-frequency safety poll of the same
+token runs unconditionally as a floor, so no missed inotify event can wedge
+a watcher on either engine. Contract tests — same-process commits,
+external-process commits, pool churn, forced overflow — run against BOTH
+engines.
 `Watchable.WatchPath`, `BackendConfig.IndexFile()/IndexLock()` retire together.
 
 ## 8. Engines (json and sqlite today; redis/etcd/consul-shaped later)
@@ -470,8 +486,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   transactions (write A read B vs write B read A) across processes and must
   never deadlock or time out.
 - **Log cursor**: `Seq` unique and increasing over committed entries;
-  `Scan(after)` never duplicates or skips across a rolled-back append that
-  reused a number.
+  `Scan(after)` never duplicates or skips across a rolled-back append —
+  asserted for BOTH legal engine behaviours, the number reused by a later
+  append and the number burned as a gap, since the contract permits either
+  and a json engine will typically burn where sqlite reuses.
 - **Commit atomicity under crash** (all engines): kill the process at every
   step of a multi-record single-namespace `Update` (json: mid-rewrite, between
   temp write and rename, between rename and `.prev` rotation; sqlite: mid-WAL
@@ -485,6 +503,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   lease at all.
 - **Schema identity**: wrong `application_id` and newer `user_version` both
   fail closed on open; no open path ever rewrites either.
+- **Init atomicity**: crash injected during `meta init` leaves either no
+  store or a fully initialized one; a file with schema but zero `meta_state`
+  rows is recognized as a failed init and restarted, while any other
+  unexpected content is refused.
 - **Round-trip fixtures per namespace**: legacy json corpus → engine → export,
   asserting field-level equality including multi-ref-per-digest payloads,
   unnamed (sparse-name) records, orphan dirs, and quarantine fields.
@@ -500,11 +522,11 @@ Engine-scoped, because the engines have deliberately different cost models.
   foreign-target refusal; name-mismatch abort; uninitialized-namespace
   refusal (sqlite); json-engine upgrade with no marker and no conversion;
   sqlite→json→writes→sqlite content diff.
-- `status --event` regression: same-process commits, external-process
-  commits, connection-pool churn (the notifier must keep observing across it),
-  and fsnotify queue overflow (a dropped watch event must degrade to a
-  data_version-confirmed poll, not a permanently missed change);
-  unsupported-fs refusal.
+- `status --event` regression, run against BOTH engines: same-process
+  commits, external-process commits, connection-pool churn (the notifier must
+  keep observing across it), and fsnotify queue overflow (a dropped watch
+  event must degrade to a change-token-confirmed poll, not a permanently
+  missed change); unsupported-fs refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
   consistency, directory ownership.
