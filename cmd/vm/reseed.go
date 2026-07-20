@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	reseedEntropyBytes = 32
-	reseedMaxAttempts  = 3
-	reseedRetryDelay   = 2 * time.Second
+	reseedEntropyBytes   = 32
+	reseedMaxAttempts    = 3
+	reseedRetryDelay     = 2 * time.Second
+	reseedAttemptTimeout = 4 * time.Second
 )
 
 func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
@@ -58,8 +59,10 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		conn, err := dialHybridVsock(ctx, vm.VsockSocket, hypervisor.VsockAgentPort)
+		attemptCtx, cancel := context.WithTimeout(ctx, reseedAttemptTimeout)
+		conn, err := dialHybridVsock(attemptCtx, vm.VsockSocket, hypervisor.VsockAgentPort)
 		if err != nil {
+			cancel()
 			dialErr = err
 			if attempt < reseedMaxAttempts {
 				select {
@@ -70,8 +73,9 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 			}
 			continue
 		}
-		err = client.Reseed(ctx, conn, entropy, regenMachineID)
+		err = client.Reseed(attemptCtx, conn, entropy, regenMachineID)
 		conn.Close() //nolint:errcheck,gosec
+		cancel()
 		if err != nil {
 			return fmt.Errorf("reseed: %w", err)
 		}
