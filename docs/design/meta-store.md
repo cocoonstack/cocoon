@@ -1,6 +1,10 @@
-# Meta store: unified metadata layer (design v2.25)
+# Meta store: unified metadata layer (design v2.26)
 
-Status: frozen at v2.25; implementation in progress (issue #146).
+Status: frozen at v2.26; implementation in progress (issue #146).
+v2.26 (implementation calibration): recordless directory/blob GC candidates
+converge tombstone-free by idempotent re-discovery; `kind=orphan` is reserved
+for recordless flows whose cleanup needs resumable context (the orphan
+netns). §5 and the §9 power-loss invariant updated to match.
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
 
 ## Motivation (summary)
@@ -247,8 +251,12 @@ written at lease time (§5 step 3), never later, and its shape is fixed:
  "cleanup": { /* namespace-defined; see below */ }}
 ```
 
-`kind` distinguishes a record-backed candidate from a recordless orphan (GC
-legitimately collects directories and blobs that never had a row); `mode`
+`kind` distinguishes a record-backed candidate from a recordless orphan whose
+cleanup still needs resumable context — the orphan netns, whose conflist/NIC
+context would otherwise be unrecoverable mid-teardown. Recordless directory
+and blob candidates do NOT lease tombstones: their removal is a single
+idempotent operation with nothing to roll back, and an interrupted removal is
+simply re-discovered as the same candidate next cycle (v2.26); `mode`
 distinguishes a full teardown from an explicit subset, since recovering a
 subset as an aggregate would destroy healthy resources. **`cleanup` is
 namespace-defined, and each namespace must carry everything its teardown
@@ -269,7 +277,7 @@ VM cleanup carries its dirs and disk paths; image cleanup carries the blob
 path and digest. Steps 4–6 and every recovery read this and nothing else.
 To be precise about WHOSE record may be gone: a record-backed candidate keeps
 its row through `leased` and `deleting` and loses it only at finalize (§5
-step 6), so the payload serves recordless orphans and the finalize step
+step 6), so the payload serves the orphan-netns case and the finalize step
 itself — it is never licence to delete the row early, which would leave
 in-flight references dangling. That is why the payload must be complete at
 lease time.
@@ -804,9 +812,10 @@ two-engine events) plus the performance block.
   consistency, directory ownership. Tombstone legality is conditional on the
   payload's candidate kind, not absolute: for a RECORD-BACKED candidate the
   row stays live alongside a `leased` or `deleting` tombstone until finalize
-  (§5 step 6), so row-present is the normal in-flight state; for a RECORDLESS
-  orphan (a directory or blob GC collects that never had a row) there is no
-  row in any phase, and demanding one would fail a correct implementation.
+  (§5 step 6), so row-present is the normal in-flight state; a recordless
+  directory or blob candidate never leases a tombstone at all (v2.26) — it
+  converges by re-discovery — and the only recordless tombstones are the
+  orphan-netns kind, which have no row in any phase.
   The genuinely illegal states are a tombstone with an empty `lease_id` or
   payload, a record-backed tombstone whose row vanished before finalize, and
   a `deleting` tombstone that no recovery sweep can act on because its
