@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.17)
+# Meta store: unified metadata layer (design v2.18)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -121,7 +121,7 @@ func NewCollection[R any](s Store, ns, table string, opts ...Option[R]) *Collect
 func (c *Collection[R]) Get(ctx context.Context, r Reader, id string) (*R, error)          // detached copy
 func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id/unique collision
 func (c *Collection[R]) Replace(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error // ErrNotFound if absent
-func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ...WriteOpt) error
+func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ...WriteOpt) error // idempotent: absent id is success, never ErrNotFound
 func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn func(id string, rec *R) error) error
 func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, error)         // detached; small namespaces
 func (c *Collection[R]) Find(ctx context.Context, r Reader, index, value string) (string, *R, error)
@@ -142,6 +142,11 @@ independent allocator cannot write while the enclosing `BEGIN IMMEDIATE`
 holds the writer. `Scan(after)` is EXCLUSIVE of `after` and yields in
 increasing `Seq` order, so `after = lastSeen` resumes without duplication or
 loss. `Append` is bound by clause 5 exactly like collection writes.
+
+`Delete` on an absent id is idempotent SUCCESS, never `ErrNotFound`: that is
+today's json-map behaviour, retries of a partially applied closure depend on
+it, and recordless finalize deletes rows that may not exist. An engine whose
+natural answer differs (sqlite reports zero rows affected) must normalize.
 
 `Scan` is callback-shaped so iteration errors propagate and no lazy iterator
 escapes the read transaction. Single-op sugar (`c.Get1(ctx, s, id)`) wraps an
@@ -467,9 +472,15 @@ after acquiring the entity lock or read lease, check the tombstone:
   fail the current operation with `ErrConflict` (or `ErrNotFound` once
   finalized). Never operate on the record.
 
-The snapshot shared read lease is explicitly included: acquiring it obliges
-the holder to re-check record AND tombstone before using the data dir. This
-is protocol, not a test-only obligation. Concurrent GC runs (scheduled + manual) may pick the same
+The snapshot shared read lease is explicitly included, and it needs one extra
+step because a shared holder cannot drive recovery: recovery requires the
+EXCLUSIVE lock, so an exporter that finds a `deleting` tombstone while
+holding its own shared lease would deadlock trying to upgrade. The sequence
+is therefore RELEASE the shared lease → acquire the lock exclusively →
+recover → re-acquire shared → REVALIDATE record and tombstone before touching
+the data dir (the entity may have been finalized while unheld, in which case
+the operation fails `ErrNotFound`). This is protocol, not a test-only
+obligation. Concurrent GC runs (scheduled + manual) may pick the same
 candidate: `ErrConflict` on the tombstone insert means another worker owns
 the lease — skip the candidate, not an error.
 
@@ -664,6 +675,10 @@ two-engine events) plus the performance block.
   cleanup leaves the entity's lock file intact (it is outside the cleanup
   set), that a worker holding it still holds the SAME inode afterwards, and
   that the reaper removes a lock file only when `TryLock` proves it unheld.
+- **Shared-lease escalation**: an exporter holding a snapshot read lease that
+  meets a `leased` or a `deleting` tombstone must release, re-acquire
+  exclusively, recover, and revalidate — asserted for BOTH phases, and
+  asserted not to deadlock attempting an in-place upgrade.
 - **Entrypoint tombstone discipline**: kill a delete worker mid-`deleting`,
   do NOT run GC, then immediately attempt `vm start`, snapshot clone, snapshot
   export and NIC resize — each must drive recovery and refuse, never boot,
@@ -810,9 +825,15 @@ contract — and the measured win arrives only in P2.
   property P0 exists to have.
   Gate: byte-identical golden fixtures for every namespace file, the full
   contract suite green, `.prev` recovery and crash-boundary tests in the real
-  write order, and the paired-ratio non-regression gate. A fixture mismatch
-  here is unambiguous — it can only mean the boundary moved something it
-  should not have.
+  write order, the paired-ratio non-regression gate, and — the one that
+  actually proves "semantics unchanged" — a **differential trace**: run the
+  same operation sequences (create, reserve/adopt/finalize, name lookup and
+  collision, resize, delete, GC pass) against the legacy implementation and
+  against meta-json, comparing returned values, error identities, AND the
+  final namespace bytes. Static fixtures plus a generic engine contract would
+  let migrated domain-repository choreography change behaviour while every
+  other gate passes. A mismatch here is unambiguous — it can only mean the
+  boundary moved something it should not have.
 - **P1 — protocol changes, still json-only (releasable).** Everything that
   alters behavior rather than structure: entity lock relocation out of
   cleanup sets plus identity revalidation, the tombstone phase protocol with
