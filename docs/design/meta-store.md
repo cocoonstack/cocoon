@@ -690,23 +690,49 @@ meta/legacy latency ratio ≤ 1.15. An unqualified ±10% single-run threshold
 is tighter than the measured ±20% host noise and would both fail unchanged
 code and pass real regressions depending on run order.
 
-## 10. Phasing (coupling-honest)
+## 10. Phasing (one engine at a time; the boundary is proven before it is exploited)
 
-- **P0 (now, no release):** `meta` package + json AND sqlite engines +
-  contract-test suite + fixtures + microbenches; `VMRepository` prototype
-  behind a build tag. Legacy path untouched.
-- **P1:** ALL namespaces move onto the meta API in one release — VMs,
-  snapshots, networks, images(+refs). json engine stays the default (internal
-  refactor, zero user-visible change, fixtures prove it); sqlite +
-  `meta init`/`meta convert` ship alongside, and scale deployments convert
-  everything in one downtime window. GC switches to the tombstone protocol in
-  the same step and `gc.Module.Locker` is removed. Splitting this across
-  releases is not an option: a partial migration splits the cross-reference
-  graph and reintroduces the GC race (§5).
-- **P2:** measurement and tuning against the §9 gates on the testbed;
-  Relaxed-set widening decided per operation with data.
-- **P3:** metering Log (optional); retire the OLD `storage/json` + `Store[T]`
-  code paths, `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak —
-  the json ENGINE behind `meta.Store` remains a supported first-class backend.
-- Revertibility: P0 trivially; P1+ only via `meta convert --to json`. The
-  earlier "every step revertible" claim is withdrawn.
+Sequencing decision (maintainer): **do not build sqlite — or any networked
+engine — until the existing json implementation has been moved behind this
+API.** The premise of this design is that the old abstraction was drawn on
+the wrong axis; the cheapest possible test of that claim is to express the
+CURRENT implementation through the new interface. If json cannot sit behind
+`Scope`/`Collection`/`CommitMode` cleanly, the boundary is wrong and we learn
+it before a line of sqlite exists. Cost of this ordering, stated plainly: P0
+and P1 deliver ZERO performance improvement — json is O(records) per write by
+contract — and the measured win arrives only in P2.
+
+- **P0 — boundary only, semantics unchanged (releasable, zero user-visible
+  change).** The `meta` package, its contract-test suite (including the
+  forced-retry wrapper, which is how retry-safety is enforced even though the
+  json engine never retries), and ONE engine: today's json implementation
+  moved inside it — same files, same format, same `.prev` recovery, same
+  flocks. Every subsystem's index moves onto Collections and domain
+  repositories. `storage.Store[T]` and `storage/json` retire at the end of
+  P0, since nothing is left on them.
+  Gate: byte-identical golden fixtures for every namespace file, the full
+  contract suite green, `.prev` recovery and crash-boundary tests in the real
+  write order, and the paired-ratio non-regression gate. A fixture mismatch
+  here is unambiguous — it can only mean the boundary moved something it
+  should not have.
+- **P1 — protocol changes, still json-only (releasable).** Everything that
+  alters behavior rather than structure: entity lock relocation out of
+  cleanup sets plus identity revalidation, the tombstone phase protocol with
+  payloads, `...Locked` entrypoints, every destructive flow (not just GC) on
+  the protocol, the `vm rm` network-teardown restructure, and removal of
+  `gc.Module.Locker` / `Watchable.WatchPath` / `IndexFile`/`IndexLock`. The
+  GC design gets validated for real, on the engine we already trust.
+  Gate: the correctness block of §9 in full — lock-inode safety, tombstone
+  fencing/ABA, phase-directed recovery, commit atomicity under crash,
+  multi-process correctness.
+- **P2 — the sqlite engine (opt-in) and everything that exists only for it.**
+  Schema, runtime contract, `meta init`/`meta convert` with its manifest, the
+  per-engine event tokens, `meta_state`. Scale deployments convert ALL
+  namespaces in one downtime window (a partial migration splits the
+  cross-reference graph, §5). This is where the §9 performance gates and the
+  absolute anchors apply, and where the measured win lands.
+- **P3 — optional follow-ons**: metering `Log`; a networked engine if the
+  fleet ever wants one; widening the Relaxed set per operation with data.
+- Revertibility: P0 and P1 are ordinary code changes on one engine, revertible
+  by revert. P2's conversion is reversible only through
+  `meta convert --to json`.
