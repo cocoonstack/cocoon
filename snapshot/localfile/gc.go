@@ -19,8 +19,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// pendingGCGrace lets a slow-storage snapshot finish before GC reclaims a pending record.
-const pendingGCGrace = 24 * time.Hour
+const (
+	// pendingGCGrace lets a slow-storage snapshot finish before GC reclaims a pending record.
+	pendingGCGrace = 24 * time.Hour
+
+	reasonOrphan = "orphan"
+)
 
 // EvictionPolicy controls LRU snapshot eviction; Enabled with zero criteria evicts all non-pending.
 type EvictionPolicy struct {
@@ -102,7 +106,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		Resolve: func(ctx context.Context, snap snapshotGCSnapshot, _ map[string]any) []string {
 			orphans := utils.FilterUnreferenced(snap.dataDirs, snap.snapshotIDs)
 			for _, id := range orphans {
-				snap.reasons[id] = "orphan"
+				snap.reasons[id] = reasonOrphan
 			}
 			for _, id := range snap.stalePending {
 				snap.reasons[id] = "stale-pending"
@@ -159,7 +163,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					case "missing-dir":
 						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
 						return errors.Is(statErr, fs.ErrNotExist)
-					case "orphan":
+					case reasonOrphan:
 						return false // a record appeared for a dir orphaned at ReadDB
 					default: // LRU picks: a touch since ReadDB voids the eviction choice
 						m, ok := snap.records[id]
@@ -175,7 +179,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					continue
 				}
 				if !deleted {
-					if snap.reasons[id] != "orphan" || sawRecord {
+					if snap.reasons[id] != reasonOrphan || sawRecord {
 						_ = fl.Close() // candidacy voided under the lease; the next cycle re-picks
 						continue
 					}
