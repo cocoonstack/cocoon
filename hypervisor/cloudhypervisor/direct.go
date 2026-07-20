@@ -23,8 +23,10 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 		VMCfg:            vmCfg,
 		SrcDir:           srcDir,
 		SourceSnapshotID: sourceSnapshotID,
-		Preflight:        ch.preflightRestore,
-		Kill:             ch.killForRestore,
+		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
+			return ch.preflightRestore(srcDir, rec, vmCfg.RestoreMode)
+		},
+		Kill: ch.killForRestore,
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
 			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, func(dstDir, srcDir string) error {
 				return cloneSnapshotFiles(ctx, dstDir, srcDir)

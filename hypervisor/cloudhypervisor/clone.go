@@ -44,6 +44,10 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("parse CH config: %w", err)
 	}
 
+	if err = validateRestoreMode(vmCfg.RestoreMode, chCfg.Memory); err != nil {
+		return nil, err
+	}
+
 	meta, err := ch.conf.LoadAndValidateMeta(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", err)
