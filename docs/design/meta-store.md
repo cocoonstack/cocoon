@@ -1,6 +1,6 @@
-# Meta store: unified metadata layer (design v2)
+# Meta store: unified metadata layer (design v2.6)
 
-Status: design under review (issue #146; v2 after external review).
+Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
 
 ## Motivation (summary)
@@ -17,16 +17,17 @@ cost model; the consumer call profile is record-shaped.
 ## Goals / non-goals
 
 Goals: record-granularity metadata ops; per-transaction durability classes;
-cross-namespace consistent reads and short transactions; multi-process CLI
-safety; multiple engines behind one API — json and sqlite today, networked
-engines (redis/etcd/consul-shaped) later (§8); engine conversion as an
-explicit ops action (§6).
+short transactions; multi-process CLI safety; multiple engines behind one API
+— json and sqlite today, networked engines (redis/etcd/consul-shaped) later
+(§8); engine conversion as an explicit ops action (§6).
 
 Non-goals: per-VM runDir sidecars (`config.json` is read by the CH process;
 `cocoon.json` is dir-lifecycle-bound), blob/memory files, and operational
-flocks (`ops.lock`, clone-locks) — those guard long operations and directories,
-not data, and stay on `lock/flock`. No network-filesystem support for the
-sqlite engine (§4).
+flocks (`ops.lock`, clone-locks) — those guard long operations and
+directories, not data, and stay on `lock/flock`. No network-filesystem
+support for the sqlite engine (§4). **No cross-namespace atomic writes** (§1,
+rule 2) — a capability sqlite could offer but json cannot; the API refuses to
+expose what an engine cannot honor.
 
 Design calibration (maintainer): no overdesign, no defenses for contrived
 scenarios. Every guard in this document must map to an operational risk that
@@ -37,18 +38,25 @@ accepted without code.
 
 ## 1. API (package `meta`)
 
+A **namespace** is the unit of ownership and of write atomicity: one
+subsystem's record set plus its satellite sets (VM records + that engine's
+orphan dirs + its tombstones; images + their refs). It maps to one file in
+the json engine and one table group in sqlite — which is exactly today's file
+layout.
+
 ```go
 type CommitMode uint8
 
 const (
     CommitDurable CommitMode = iota // default: fsync-on-commit; matches today's Update
-    CommitRelaxed                   // may lose the un-checkpointed tail on power loss; DB stays consistent
+    CommitRelaxed                   // may lose the un-checkpointed tail on power loss; store stays consistent
 )
 
 type Store interface {
     View(ctx context.Context, fn func(Reader) error) error
-    Update(ctx context.Context, mode CommitMode, fn func(Writer) error) error
-    // Events delivers a coalesced change signal (see §7). release stops delivery.
+    // Update runs a write transaction scoped to ns: it may READ any
+    // namespace through the Writer, but may WRITE only ns.
+    Update(ctx context.Context, ns string, mode CommitMode, fn func(Writer) error) error
     Events(ctx context.Context) (ch <-chan struct{}, release func(), err error)
     Close() error
 }
@@ -56,108 +64,149 @@ type Store interface {
 
 Contract clauses (binding on every engine):
 
-1. **Closures are pure and retryable.** `fn` may be executed more than once by
-   an engine that resolves contention optimistically; all effects must go
-   through the Reader/Writer handle, none outside it. (This is what keeps a
-   future networked engine implementable behind the same API — §8.)
-2. **Isolation.** `Update` runs serializable; `View` sees a consistent
-   snapshot. `CommitMode` is a per-transaction property chosen before BEGIN.
-3. **Durability is enforced structurally, not by caller discipline.** Every
-   `Writer` carries its transaction's `CommitMode`; every collection write
-   defaults to requiring `CommitDurable`. The only way to write under a
-   Relaxed transaction is a per-operation opt-in
-   (`c.Insert(ctx, w, id, rec, meta.RelaxedOK)`), making every relaxed write
-   site explicit and greppable. A durable-default write invoked on a Relaxed
-   `Writer` fails with `ErrDurabilityContract` — a power-loss contract
-   violation is a test-time error, not an incident.
-4. **ctx wins.** Context cancellation/deadline preempts engine busy-waiting.
-5. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
+1. **Closures are pure and retryable.** `fn` may run more than once (optimistic
+   engines, busy retries). All effects go through the Reader/Writer handle.
+   Results must be accumulated in state created *inside* `fn` and published to
+   the caller only after the transaction returns nil — appending to a
+   caller-owned slice from inside `fn` duplicates output on retry. The
+   contract-test suite includes a forced-retry engine wrapper that runs every
+   closure twice.
+2. **Write scope.** A write transaction targets exactly one namespace; reads
+   inside it may span namespaces. This is what keeps the json engine a
+   correct first-class implementation (one file rewritten atomically per
+   commit; read-only namespaces locked in a fixed global order, so no
+   deadlock and no multi-file commit protocol). Flows needing atomicity across
+   subsystems must be redesigned as single-namespace transactions plus
+   idempotent reconciliation — this design does not promise cross-subsystem
+   atomicity to anyone.
+3. **Isolation.** `Update` is serializable within its namespace; `View` sees a
+   consistent snapshot of every namespace it touches.
+4. **Detached values.** `Get`/`List`/`Scan` hand back values the caller may
+   mutate freely; mutation never reaches the store. Engines must not expose
+   pointers into their own in-memory state (the json engine decodes per call).
+   Persisting a change requires `Replace`.
+5. **Durability is enforced structurally, not by caller discipline.** Every
+   `Writer` carries its transaction's `CommitMode`; every write defaults to
+   requiring `CommitDurable`; the only path to a relaxed write is a per-op
+   opt-in (`meta.RelaxedOK`), so every relaxed site is explicit and greppable.
+   A durable-default write under a Relaxed `Writer` fails with
+   `ErrDurabilityContract` — a contract violation is a test-time error, not a
+   power-loss incident.
+6. **ctx wins.** Cancellation/deadline preempts engine waiting within one
+   retry interval (§4 bounds it for sqlite); a blocked writer never pins a
+   caller past its deadline.
+7. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
    `ErrCorrupt`, `ErrNoSpace`, `ErrDurabilityContract`; engine codes never
    reach callers.
 
-Collections are storage primitives only; lifecycle semantics live in domain
-repositories (§1a):
+Collections and logs are storage primitives; lifecycle semantics live in
+domain repositories (§1a):
 
 ```go
-func NewCollection[R any](s Store, table string, opts ...Option[R]) *Collection[R]
+func NewCollection[R any](s Store, ns, table string, opts ...Option[R]) *Collection[R]
 
-func (c *Collection[R]) Get(ctx context.Context, r Reader, id string) (*R, error)
-func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id/unique-index collision
+func (c *Collection[R]) Get(ctx context.Context, r Reader, id string) (*R, error)          // detached copy
+func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id/unique collision
 func (c *Collection[R]) Replace(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error // ErrNotFound if absent
 func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ...WriteOpt) error
 func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn func(id string, rec *R) error) error
-func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, error) // detached; small namespaces
+func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, error)         // detached; small namespaces
 func (c *Collection[R]) Find(ctx context.Context, r Reader, index, value string) (string, *R, error)
+func (c *Collection[R]) FindAll(ctx context.Context, r Reader, index, value string, fn func(id string, rec *R) error) error // non-unique indexes
 
-func NewLog[E any](s Store, table string) *Log[E] // Append(ctx, w, e, opts...) / Scan(ctx, r, from, fn)
-// Log.Append is bound by the same Durable-default / RelaxedOK enforcement as
-// collection writes (contract clause 3); it is not exempt.
+type Seq uint64
+
+func NewLog[E any](s Store, ns, table string) *Log[E]
+func (l *Log[E]) Append(ctx context.Context, w Writer, e E, opts ...WriteOpt) (Seq, error)
+func (l *Log[E]) Scan(ctx context.Context, r Reader, after Seq, fn func(Seq, E) error) error
 ```
 
-`Scan` is callback-shaped so iteration errors propagate and the read
-transaction's lifetime never escapes to the caller (no lazy iterator pinning a
-WAL snapshot). Single-op sugar (`c.Get1(ctx, s, id)` etc.) wraps an auto
-View/Update.
+Log contract: `Seq` is assigned at append time, strictly increasing within a
+namespace, unique, and **may contain gaps** (a rolled-back transaction burns
+its number). `Scan(after)` is EXCLUSIVE of `after` and yields in increasing
+`Seq` order, so `after = lastSeen` resumes without duplication or loss.
+`Append` is bound by clause 5 exactly like collection writes.
+
+`Scan` is callback-shaped so iteration errors propagate and no lazy iterator
+escapes the read transaction. Single-op sugar (`c.Get1(ctx, s, id)`) wraps an
+auto View/Update.
 
 ### 1a. Domain repositories
 
 Reserve/adopt/finalize, quarantine, state transitions and other
 compare-and-swap flows are methods on `hypervisor.VMRepository` (and peers),
 composed of primitives inside one `Update` with in-transaction revalidation.
-Business code never hand-rolls Get+Put; that is how `Collection` avoids
-becoming a CRUD-mechanism abstraction. Follow-up (separate change): with
-reserve+name-claim+finalize as transactions, the `hypervisor.Reserver`
+Business code never hand-rolls Get+Replace. Follow-up (separate change): with
+reserve+name-claim+finalize as one transaction, the `hypervisor.Reserver`
 choreography the CLI drives today can shrink or disappear.
 
-## 2. Schema (sqlite engine; one DB, per-namespace tables)
+## 2. Schema (sqlite engine; one DB, namespace = table group)
 
 JSON payload column everywhere (existing struct tags; low schema churn);
-secondary keys extracted into real columns. Uniform template where it fits,
-explicit exceptions where it does not:
+secondary keys and per-row metadata extracted into real columns. **Lossless
+representation of today's records is a hard requirement** — the fixtures gate
+in §9 enforces it.
 
 ```sql
 PRAGMA application_id = 0x434F434E;  -- "COCN"
 PRAGMA user_version   = 1;
 
-CREATE TABLE migrations (version INTEGER NOT NULL, namespace TEXT NOT NULL,
-                         source TEXT, sha256 TEXT, records INTEGER,
-                         applied_at TEXT, PRIMARY KEY (version, namespace));
--- NOT NULL is explicit on every PK column: SQLite implies it only for a
--- lone INTEGER PRIMARY KEY (rowid alias); every other PK shape admits NULLs.
+CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL,
+                         source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT);
+-- state: 'initialized' (fresh, possibly zero records) | 'converted' (imported
+-- from json). A namespace with NO row is UNINITIALIZED — never "empty" (§6).
+-- NOT NULL is explicit on every PK column: SQLite implies it only for a lone
+-- INTEGER PRIMARY KEY (rowid alias); every other PK shape admits NULLs.
 
-CREATE TABLE vms_firecracker      (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE vms_cloudhypervisor  (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE vm_orphan_dirs       (engine TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (engine, path));
+-- namespace vms_firecracker (same shape for vms_cloudhypervisor)
+CREATE TABLE vms_firecracker            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
+CREATE TABLE vms_firecracker_orphandirs (path TEXT NOT NULL PRIMARY KEY);
+CREATE TABLE vms_firecracker_tombstones (id TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+
+-- namespace snapshots
 CREATE TABLE snapshots            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE networks             (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
+CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+
+-- namespace networks
+CREATE TABLE networks (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
 CREATE INDEX networks_by_vm ON networks(vm_id);
-CREATE TABLE images_oci           (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE image_oci_refs       (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest));
-CREATE TABLE images_cloudimg      (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE image_cloudimg_refs  (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_cloudimg(digest));
-CREATE TABLE tombstones           (ns TEXT NOT NULL, id TEXT NOT NULL, leased_at TEXT, PRIMARY KEY (ns, id));
+
+-- namespace images_oci (same shape for images_cloudimg)
+CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE image_oci_refs        (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest), data TEXT NOT NULL);
+CREATE INDEX image_oci_refs_digest ON image_oci_refs(digest);
+CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
 ```
 
-Notes: image refs are many-to-one on digest (ref list and digest-prefix
-lookups are real queries, not a unique `Find`); `vm_orphan_dirs` is its own
-set, not a field smuggled into a record row; `tombstones` carries the GC
-deletion leases (§5).
+Representation rules (each has a round-trip fixture in §9):
+
+- **Per-ref payload survives.** Several refs may share one digest and each
+  carries its own fields (ref string, CreatedAt, …) — hence `data` on the refs
+  table, not a bare (ref → digest) mapping. Digest-prefix lookup and "all refs
+  of a digest" are indexed queries.
+- **Sparse names.** An unnamed record (snapshots may legitimately have an
+  empty name) stores SQL `NULL`, never `''`: SQLite's UNIQUE treats NULLs as
+  distinct but `''` as a value, so empty strings would collide on the second
+  unnamed record. Mapping is `name == "" ⇔ NULL` in both directions.
+- **Satellite sets stay in their namespace** (orphan dirs, tombstones), so
+  every write a subsystem performs is single-namespace (§1 rule 2).
 
 ## 3. Durability
 
 - **Default is `CommitDurable`** (sqlite: dedicated `synchronous=FULL`
-  connection; fsync per commit). This preserves today's `Update` semantics for
-  VM finalize/rollback/state/name changes and all snapshot/image mutations.
+  connection; json: today's fsync behavior), preserving current `Update`
+  semantics for VM finalize/rollback/state/name changes and all
+  snapshot/image mutations.
 - **`CommitRelaxed`** (sqlite: `synchronous=NORMAL` connection) is used in
   phase 1 by exactly one flow: the creating-placeholder insert
   (`PrereserveVM`/`ReserveVM`) — the flow whose loss GC provably re-derives,
-  today's only `UpdateNoDirSync` user. Correction recorded from review:
+  today's only `UpdateNoDirSync` user. Recorded correction:
   `UpdateNoDirSync` still fsyncs main+`.prev` and skips only the parent-dir
-  sync, so mapping placeholders to Relaxed is a deliberate, GC-covered
-  relaxation, not an equivalence. VM records are not pure runtime cache
-  (config, blob pins, quarantine) — hence durable-by-default.
+  sync, so this is a deliberate, GC-covered relaxation, not an equivalence.
+  VM records are not pure runtime cache (config, blob pins, quarantine) —
+  hence durable-by-default.
 - Widening the Relaxed set (start/stop flips, GC deletes, network records) is
-  gated on row-granularity hardware measurements, per operation, later.
+  gated on later per-operation measurement.
 - Engine note (sqlite only, NOT part of the §1 contract): a FULL commit also
   flushes earlier NORMAL commits because they share one WAL. No caller may
   rely on this — see §8's independence rule.
@@ -165,179 +214,219 @@ deletion leases (§5).
 ## 4. sqlite runtime contract (modernc.org/sqlite — pure Go; CGO would break cross-compilation)
 
 - DSN-level per-connection config (survives pool growth):
-  `_pragma=journal_mode(WAL)`, `busy_timeout(5000)`, `foreign_keys(1)`,
+  `_pragma=journal_mode(WAL)`, `busy_timeout(50)`, `foreign_keys(1)`,
   `trusted_schema(0)`, `synchronous(FULL|NORMAL)`; `_txlock=immediate` on
   writer handles.
-- Handles: `writerDurable` and `writerRelaxed` `*sql.DB` each with
-  `MaxOpenConns=1`; reader pool bounded (≤ NumCPU). WAL admits ONE writer at a
-  time — `BEGIN IMMEDIATE` can still return busy under contention;
-  `busy_timeout` is a wait policy, not a guarantee; `ErrBusy` is a real,
-  mapped outcome and ctx deadline preempts the wait.
+- **Short busy_timeout + ctx-aware retry loop.** A long in-driver
+  `busy_timeout` would sleep past a caller's deadline (clause 6 is otherwise
+  unimplementable): the engine retries `BEGIN IMMEDIATE` in a loop bounded by
+  ctx, with jittered backoff, surfacing `ErrBusy` only when ctx still has
+  budget and the contention persists past the retry ceiling. Contract test:
+  a held writer + a 100ms ctx deadline must return a ctx error within ~150ms.
+- Handles: `writerDurable`, `writerRelaxed`, each `*sql.DB` with
+  `MaxOpenConns=1`; a bounded reader pool (≤ NumCPU); plus one **pinned
+  notifier connection** used by nothing else (§7). WAL admits ONE writer at a
+  time; `ErrBusy` is a real, mapped outcome.
 - Error mapping: SQLITE_BUSY/LOCKED→`ErrBusy`; constraint violations→
   `ErrConflict`; SQLITE_CORRUPT/NOTADB→`ErrCorrupt`; SQLITE_FULL/ENOSPC→
   `ErrNoSpace`; row-missing→`ErrNotFound`.
 - Filesystem: WAL requires shared memory; network filesystems are unsupported.
   `doctor` checks the meta dir's fs type and refuses NFS/CIFS/unknown-FUSE.
-- Observability: writer-wait duration, transaction duration, commit duration,
-  WAL bytes, checkpoint duration; slow-transaction warn threshold.
+- Observability: writer-wait, transaction duration, commit duration, WAL
+  bytes, checkpoint duration; slow-transaction warn threshold.
 - Backup: `VACUUM INTO` a temp path → `PRAGMA integrity_check` on the copy →
   fsync → atomic rename → parent-dir sync. `doctor` runs `integrity_check`.
 
 ## 5. GC: revalidating tombstone protocol (replaces lock-all — phase-gated)
 
-Hybrid phase rule: while any cross-referencing namespace still lives in JSON,
-`gc.Module.Locker` and the lock-all orchestration REMAIN as today (DB-backed
-modules join via a locker shim honoring the same order). The protocol below
-activates only when all namespaces participating in cross-references are in
-the DB (start of P3). "Independently shippable" is scoped accordingly.
+Hybrid phase rule: while any cross-referencing namespace still lives in the
+legacy path, `gc.Module.Locker` and lock-all orchestration REMAIN as today
+(meta-backed modules join via a locker shim honoring the same order). The
+protocol below activates only once every namespace participating in
+cross-references is on the meta API (start of P3).
 
-Post-migration cycle, per candidate:
+Per candidate:
 
 1. Short `View` builds candidates (never held across file IO).
 2. Acquire the entity's operational lock (ops flock — unchanged).
-3. Short `Update` (Durable): re-read all relevant namespaces; verify
-   state/references/UpdatedAt still qualify; insert `tombstones(ns,id)`
-   (deletion lease); commit.
-4. Slow file/directory cleanup outside any transaction.
-5. Short `Update`: verify the tombstone is still owned → delete rows + tombstone.
+3. Short `Update` on the target namespace (Durable): re-read every relevant
+   namespace, verify state/references/UpdatedAt still qualify, insert the
+   tombstone with `phase='leased'`, commit.
+4. Short `Update`: flip the tombstone to `phase='deleting'` and commit
+   **before touching the filesystem**.
+5. Slow file/directory cleanup outside any transaction.
+6. Short `Update`: verify the tombstone is still owned and in `deleting` →
+   delete the record rows + the tombstone.
 
-Reference-creating transactions (clone pinning an image, snapshot lease) check
-`tombstones` inside their own `Update` and fail `ErrConflict` if the target is
-being deleted. Startup sweeps stale tombstones by lease age (crash recovery:
-either finish the delete or roll the lease back). Concurrent GC runs
-(scheduled + manual) may select the same candidate: `ErrConflict` on the
-tombstone insert means another worker owns the lease — the candidate is
-skipped, not treated as a GC error.
+**Crash recovery is phase-directed — never blind rollback.** A `leased`
+tombstone provably predates any filesystem mutation and may be rolled back
+(record stays live). A `deleting` tombstone means cleanup may have started:
+recovery MUST roll forward (re-run idempotent cleanup, then finalize) and
+must keep the tombstone if cleanup fails, so a record whose backing files are
+partially gone is never resurrected as live metadata. Reference-creating
+transactions check tombstones in their own `Update` and fail `ErrConflict`
+for any phase. Concurrent GC runs (scheduled + manual) may pick the same
+candidate: `ErrConflict` on the tombstone insert means another worker owns
+the lease — skip the candidate, not an error.
 
 ## 6. Engine conversion: explicit, offline, operator-driven
 
 Maintainer decisions: backward compatibility across a conversion is NOT a
 requirement (one-time, operator-scheduled downtime action), and engine
-initialization is an ops step — never an implicit library behavior racing
-concurrent CLIs. Deployments that stay on the json engine (the default)
-never run a conversion at all: the meta refactor is behavior-preserving for
-them (§8).
+initialization is an ops step — never implicit library behavior racing
+concurrent CLIs. Deployments staying on the json engine (the default) never
+convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 
-- `cocoon meta convert --to sqlite` (invocable standalone or via doctor)
-  performs the cutover explicitly: advisory check that no cocoon activity is present
-  (legacy flocks free), take the legacy flocks, load each namespace via the
-  legacy loader (preserving `.prev` recovery), derive the name index from
-  records and VERIFY it against the legacy Names map (mismatch → abort with a
-  report), insert everything in one Durable transaction, write the migrations
-  row {namespace, source, sha256, record count}, commit, then rename the JSON
-  files to `.imported` and sync the parent dir.
-- Crash handling is idempotent re-run under the downtime contract: the tool
-  re-checks migrations rows and completes pending renames. There is no
-  concurrent-open state machine and no marker choreography — those protected
-  mixed-version fleets, which are out of scope by decision.
-- With `meta_backend: sqlite` configured, open fails closed when a legacy
-  JSON index exists for a namespace with no migrations row → refuse with
-  "run cocoon meta convert" (read-only check). Running a pre-cutover binary after migration is
-  unsupported — the renamed `.imported` files and release notes are the
-  guard, not code.
-- Rollback is the same tool in reverse (`cocoon meta convert --to json`) —
-  never an old binary.
-- Tests: crash-and-rerun idempotence at each step boundary; name-index
-  mismatch abort; unmigrated-JSON refusal.
+- **Initialization is explicit.** Creating a store writes a `meta_state` row
+  per namespace (`state='initialized'`, `records=0`). Absence of a row means
+  UNINITIALIZED, never empty — see the open check below.
+- **`cocoon meta convert --to sqlite|json`** performs a cutover into a
+  **fresh target**: advisory check that no cocoon activity is present (legacy
+  locks free); refuse if the target already exists with data (the operator
+  moves it aside deliberately); load each namespace via the source engine
+  (json source preserves `.prev` recovery); derive the name index from
+  records and VERIFY it against the source's own name map (mismatch → abort
+  with a report); write all records plus the `meta_state` row
+  (`state='converted'`, source path, sha256, record count) in one Durable
+  transaction per namespace; commit; then rename the source aside
+  (`*.converted-<ts>`) and sync the parent dir.
+- **The old authority is retired, not left in place.** Conversion in either
+  direction renames its source aside after a fully committed, fully verified
+  write, so a later reverse conversion can never find a stale authority and
+  skip importing newer data. Test matrix includes
+  sqlite→json→(writes)→sqlite with a diff assertion on the final content.
+- **Fail-closed open.** With `meta_backend: X`, opening a namespace with no
+  `meta_state` row refuses: "run `cocoon meta convert`" when a legacy source
+  exists, "run `cocoon meta init`" when it does not. An uninitialized
+  namespace is never silently treated as empty. Running a pre-cutover binary
+  after conversion is unsupported — the renamed-aside source and release
+  notes are the guard, not code.
+- Tests: crash-and-rerun idempotence at every step boundary; name-index
+  mismatch abort; uninitialized refusal; the round-trip matrix above.
 
 ## 7. Watch/events (retires the `Watchable.WatchPath` file-watch leak)
 
 `vm status --watch/--event` currently watches `vms.json`; under WAL the main
-DB barely changes between checkpoints. Replace with `Store.Events`: fsnotify
-on the meta directory filtered to `meta.db{,-wal,-shm}`, debounced, confirmed
-via `PRAGMA data_version` before signaling; one shared notifier per Store.
+DB barely changes between checkpoints. `Store.Events` replaces it: fsnotify
+on the meta directory filtered to the engine's files (`meta.db{,-wal,-shm}`
+for sqlite, the namespace files for json), debounced, and — for sqlite —
+confirmed via `PRAGMA data_version` **on one pinned notifier connection**.
+That pin is mandatory, not an optimization: `data_version` is only comparable
+across calls on the same connection and never changes for that connection's
+own commits, so polling it from a shared reader pool both misses and invents
+events. The notifier connection never writes. Contract tests cover
+same-process and external-process commits.
 `Watchable.WatchPath`, `BackendConfig.IndexFile()/IndexLock()` retire together.
 
 ## 8. Engines (json and sqlite today; redis/etcd/consul-shaped later)
 
 One API, several engines, chosen per deployment via config
 (`meta_backend: json | sqlite`, default `json`). The engine-agnostic
-contract-test suite (isolation, retryable closures, error taxonomy,
-constraint semantics, events) runs against every engine.
+contract-test suite (isolation, retryable closures, detached values, write
+scope, error taxonomy, constraint semantics, events) runs against every
+engine.
 
 - **json (first-class, default).** Today's per-namespace files, formats, and
-  `.prev` crash story move INSIDE the engine: every `Update` loads and
-  rewrites the namespace file under its flock. Documented cost profile is
-  O(records) per write — right for small and dev deployments, and the meta
-  refactor is behavior-preserving for them: json-engine users never convert.
+  `.prev` crash story move INSIDE the engine: an `Update` loads the target
+  namespace, applies primitives, and rewrites that one file atomically under
+  its flock; read-only namespaces are locked in a fixed global order. Cost
+  profile is explicitly O(records) per write — correct for small and dev
+  deployments, and behavior-preserving for existing users (§9 fixtures pin
+  the byte format and `.prev` recovery).
 - **sqlite (scale engine).** §2–§4; opt-in via config plus one offline
-  conversion (§6). This is the engine the C1M fleet runs.
-- **Networked engines later (redis / etcd / consul shaped).** The contract is
-  deliberately implementable by them without API change: retryable pure
-  closures → etcd STM / redis WATCH-MULTI-or-Lua; `CommitDurable/Relaxed` →
-  quorum-or-fsync policy vs default; `Events` → watch APIs / keyspace
-  notifications; tombstone leases (§5) → native leases; errors and ctx are
-  engine-neutral — nothing in the API names files, locks, fsync, or WAL.
+  conversion. This is the engine the C1M fleet runs.
+- **Networked engines later (redis / etcd / consul shaped).** Implementable
+  without API change: retryable pure closures → etcd STM / redis
+  WATCH-MULTI-or-Lua; `CommitDurable/Relaxed` → quorum-or-fsync policy vs
+  default; `Events` → watch APIs / keyspace notifications; tombstone leases →
+  native leases; single-namespace write scope → single-key-space transaction.
   Recorded caveat: a network store on the claim path conflicts with the
-  single-host no-daemon latency model; the realistic role is fleet-level,
-  but the boundary holds.
+  single-host no-daemon latency model; the realistic role is fleet-level, but
+  the boundary holds.
 
 Two portability rules binding on callers and engines:
 
 - **Relaxed independence.** Data written under `CommitRelaxed` must be
   independently acceptable to lose. Callers must never depend on a later
   unrelated Durable commit making earlier Relaxed data durable — that
-  ordering is a shared-WAL accident of the sqlite engine (§3 note) that a
-  sharded or per-key-queue engine will not honor.
+  ordering is a shared-WAL accident of the sqlite engine (§3) that a sharded
+  or per-key-queue engine will not honor.
 - **Constraints are semantics, not schema.** The unique-index and
   referential-integrity outcomes of §2 (`ErrConflict` on name/ref collision,
-  digest FK integrity) are part of the API contract; a non-relational engine
+  digest integrity) are part of the API contract; a non-relational engine
   must reimplement them transactionally, not merely store keys and values.
-  The contract-test suite encodes them engine-agnostically.
 
-What deliberately stays OUTSIDE the boundary for every engine: host-local
-operational locks (ops/clone flocks) and directory lifecycles — a networked
-engine does not change them.
+Outside the boundary for every engine: host-local operational locks
+(ops/clone flocks) and directory lifecycles.
 
-## 9. Acceptance gates (statistical, not single-run)
+## 9. Acceptance gates
 
-- Microbench (unit-level, per engine): single-record Insert/Replace/Delete/Get
-  at N = 1 / 100 / 1k / 10k — slope ≈ O(log N); enforced in CI.
-- Hardware storms: ≥5 rounds per point; report median, p95, variance.
-  Regression of wall vs resident-N with a bounded N-coefficient (target:
-  statistically indistinguishable from flat), replacing the earlier
-  "±10% between two runs" gate that contradicted measured ±20% host noise.
-- Per-round component metrics: writer wait, transaction duration, commit
-  duration, WAL bytes, checkpoint duration; p99 around checkpoint boundaries.
-- Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
-  write.
-- Real multi-process: 256 separate CLI processes (not goroutines).
-- Functional: `status --event` regression; convert crash-and-rerun
-  idempotence; unconverted-JSON refusal; unsupported-filesystem refusal;
-  ErrDurabilityContract structural check (durable-default write under a
-  Relaxed Writer fails; RelaxedOK sites succeed); concurrent-GC
-  same-candidate race (second worker's tombstone insert gets ErrConflict and
-  skips, GC cycle completes cleanly).
+Engine-scoped, because the engines have deliberately different cost models.
+
+**Correctness (all engines).**
+- Contract-test suite incl. the forced-retry wrapper (clause 1), detached-value
+  mutation test (clause 4), write-scope violation rejection (clause 2),
+  `ErrDurabilityContract` structural check (clause 5), and the ctx-vs-held-writer
+  deadline test (clause 6 / §4).
+- **Round-trip fixtures per namespace**: legacy json corpus → engine → export,
+  asserting field-level equality including multi-ref-per-digest payloads,
+  unnamed (sparse-name) records, orphan dirs, and quarantine fields.
+- **json format fidelity**: golden byte-level fixtures for every namespace
+  file, plus `.prev` recovery tests (corrupt main → previous generation
+  served) and crash-boundary tests — a behavior-breaking default engine must
+  fail here.
+- GC: concurrent-candidate `ErrConflict` skip; crash in `leased` (rolls back)
+  and in `deleting` (rolls forward, never resurrects) — the latter asserted
+  with files already partially removed.
+- Conversion: crash-and-rerun idempotence at each step; name-mismatch abort;
+  uninitialized-namespace refusal; sqlite→json→writes→sqlite content diff.
+- `status --event` regression incl. external-process commits; unsupported-fs
+  refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
-  bijection, image/ref integrity, network→VM references, tombstone
+  bijection, image/ref integrity, network→VM references, tombstone phase
   consistency, directory ownership.
-- **Absolute targets** (shape gates alone would admit a flat-but-slow
-  implementation; anchors from cocoonstack/sandbox#30, reference testbed
-  16-core NVMe, FC none-lane 512M golden):
-  - 3×B64 no-clean ladder: round-1 (N=0) wall ≤ 1.5s (json baseline 1009ms —
-    no regression at small N), every later round ≤ 1.3× round-1 (json
-    baseline: 3.6×/4.9×);
-  - phase decomposition at N=128 (t13 anchor method): the two index-attributed
-    segments combined p50 ≤ 300ms (json baseline: 2347ms + 867ms), i.e. the
-    metadata layer moves to within ~20× of the 14ms snapshot-load floor
-    instead of ~230×.
+
+**Performance, sqlite engine (the reason this design exists).**
+- Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k —
+  slope ≈ O(log N), enforced in CI.
+- Hardware storms, ≥5 rounds per point (median, p95, variance reported), with
+  a **predeclared numeric bound, judged by the upper bound of a 95% CI** —
+  not by failure to reject flatness: fitting wall ≈ a + b·N at B=64, the pass
+  rule is UCB95(b) ≤ 2 ms per resident record. A noisy O(N) implementation
+  fails because its confidence bound exceeds the threshold, which
+  "statistically indistinguishable from flat" would have let through.
+- Absolute anchors (cocoonstack/sandbox#30; reference testbed 16-core NVMe,
+  FC none-lane 512M golden): 3×B64 no-clean ladder round-1 (N=0) wall ≤ 1.5s
+  (legacy 1009ms — no small-N regression), later rounds ≤ 1.3× round-1
+  (legacy 3.6×/4.9×); phase decomposition at N=128 — the two index-attributed
+  segments combined p50 ≤ 300ms (legacy 2347+867ms), i.e. within ~20× of the
+  14ms snapshot-load floor instead of ~230×.
+- Component metrics per round: writer wait, transaction/commit duration, WAL
+  bytes, checkpoint duration, p99 around checkpoint boundaries.
+- Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
+  write. Real multi-process: 256 separate CLI processes, not goroutines.
+
+**Performance, json engine.** No slope gate — O(records) per write is its
+documented contract (§8), so an O(log N) requirement would fail a correct
+implementation. Gate is compatibility instead: at N = 1/100/1k, sequential
+and burst16 clone latency within 10% of the legacy `storage.Store[T]`
+implementation on the same host.
 
 ## 10. Phasing (coupling-honest)
 
 - **P0 (now, no release):** `meta` package + json AND sqlite engines +
-  contract-test suite + microbenches; `VMRepository` prototype behind a
-  build tag. Legacy path untouched.
-- **P1:** VM index moves onto the meta API — json engine as default (pure
-  internal refactor, zero user-visible change), sqlite + `meta convert`
-  shipping in the same release; scale deployments opt in during a downtime
-  window; GC in hybrid lock-all mode.
+  contract-test suite + fixtures + microbenches; `VMRepository` prototype
+  behind a build tag. Legacy path untouched.
+- **P1:** VM index moves onto the meta API — json engine as default (internal
+  refactor, zero user-visible change, fixtures prove it), sqlite +
+  `meta convert`/`meta init` shipping in the same release; scale deployments
+  opt in during a downtime window; GC in hybrid lock-all mode.
 - **P2:** snapshots → networks → images(+refs) move onto the meta API with
   conversion support, same pattern.
-- **P3:** with all cross-referencing namespaces in the DB, GC switches to
-  the tombstone protocol and `gc.Module.Locker` is removed.
-- **P4:** metering Log (optional); retire the OLD `storage/json` + 
-  `Store[T]` code paths, `Watchable`, `IndexFile/IndexLock` after ≥1 release
-  of soak — the json ENGINE behind `meta.Store` remains a supported
-  first-class backend.
-- Revertibility, stated precisely: P0 trivially; P1+ only via the export
-  tool. The earlier "every step revertible" claim is withdrawn.
+- **P3:** with every cross-referencing namespace on the meta API, GC switches
+  to the tombstone protocol and `gc.Module.Locker` is removed.
+- **P4:** metering Log (optional); retire the OLD `storage/json` + `Store[T]`
+  code paths, `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak —
+  the json ENGINE behind `meta.Store` remains a supported first-class backend.
+- Revertibility: P0 trivially; P1+ only via `meta convert --to json`. The
+  earlier "every step revertible" claim is withdrawn.
