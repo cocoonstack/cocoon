@@ -11,13 +11,21 @@ import (
 
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 )
 
 // newTestMetaStore opens a meta store over conf's index paths for one backend type.
+var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "vms", Table: TableRecords},
+	{Key: "names", Table: TableNames},
+	{Key: "orphan_dirs", Table: TableOrphanDirs, Optional: true, StringList: true},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
-	store, err := metajson.Open(MetaNamespace(typ, indexFile, lockPath))
+	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: indexFile, LockPath: lockPath, Codec: testVMTables})
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)
 	}
@@ -28,12 +36,7 @@ func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.S
 // testNamespace builds a standalone namespace under dir for shim-level tests.
 func testNamespace(t *testing.T, typ, dir string) *metajson.Store {
 	t.Helper()
-	store, err := metajson.Open(metajson.Namespace{
-		Name:     VMNamespaceName(typ),
-		FilePath: filepath.Join(dir, "index.json"),
-		LockPath: filepath.Join(dir, "index.lock"),
-		Codec:    vmIndexCodec{},
-	})
+	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: filepath.Join(dir, "index.json"), LockPath: filepath.Join(dir, "index.lock"), Codec: testVMTables})
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)
 	}
@@ -74,7 +77,7 @@ func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
 	if idx.VMs, err = t.All(); err != nil {
 		return nil, nil, err
 	}
-	if err := t.r.ScanRaw(t.ctx, t.ns, tableNames, func(name string, _ json.RawMessage) error {
+	if err := t.r.ScanRaw(t.ctx, t.ns, TableNames, func(name string, _ json.RawMessage) error {
 		id, ok, err := t.NameGet(name)
 		if err != nil || !ok {
 			return err
@@ -135,10 +138,10 @@ func writeBack(t *vmTx, before, after *VMIndex) error {
 // addOrphanDir survives only for fixtures/shims: production writes cleanup
 // intent through tombstone payloads now.
 func (t *vmTx) addOrphanDir(dir string) error {
-	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, tableOrphanDirs, dir); err != nil || ok {
+	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
 		return err
 	}
-	return t.w.PutRaw(t.ctx, t.ns, tableOrphanDirs, dir, json.RawMessage(orphanDirEntry), false)
+	return t.w.PutRaw(t.ctx, t.ns, TableOrphanDirs, dir, json.RawMessage(`{}`), false)
 }
 
 // TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
@@ -160,7 +163,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := metajson.Open(metajson.Namespace{
-		Name: "vms_test", FilePath: path, LockPath: filepath.Join(dir, "vms.lock"), Codec: vmIndexCodec{},
+		Name: "vms_test", FilePath: path, LockPath: filepath.Join(dir, "vms.lock"), Codec: testVMTables,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/images"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const metaNS = "images_oci"
+// NamespaceName is this backend's meta namespace.
+const NamespaceName = "images_oci"
 
 type Config struct {
 	images.BaseConfig
@@ -42,10 +42,4 @@ func (c *Config) KernelPath(layerDigestHex string) string {
 
 func (c *Config) InitrdPath(layerDigestHex string) string {
 	return filepath.Join(c.BootDir(layerDigestHex), "initrd.img")
-}
-
-// MetaNamespace declares this backend's namespace on the shared meta store.
-func MetaNamespace(rootDir string) metajson.Namespace {
-	cfg := NewConfig(rootDir, 0)
-	return images.MetaNamespace[imageEntry](metaNS, cfg.IndexFile(), cfg.IndexLock())
 }

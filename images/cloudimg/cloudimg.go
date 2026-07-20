@@ -37,7 +37,7 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 
 	log.WithFunc("cloudimg.New").Debugf(ctx, "cloud image backend initialized, pull conns: %d", cfg.PullConns)
 
-	store := images.NewMetaStore[imageEntry](metaStore, metaNS)
+	store := images.NewMetaStore[imageEntry](metaStore, NamespaceName)
 	c := &CloudImg{
 		conf:  cfg,
 		store: store,

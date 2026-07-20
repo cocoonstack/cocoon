@@ -13,6 +13,7 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -350,6 +351,11 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 }
 
 // newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
+var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: TableRecords},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
 	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
@@ -359,10 +365,10 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	exec := &recordingExec{}
 	dir := t.TempDir()
 	store, err := metajson.Open(metajson.Namespace{
-		Name:     metaNS,
+		Name:     NamespaceName,
 		FilePath: filepath.Join(dir, "net.json"),
 		LockPath: filepath.Join(dir, "net.lock"),
-		Codec:    netTables,
+		Codec:    testNetTables,
 	})
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)

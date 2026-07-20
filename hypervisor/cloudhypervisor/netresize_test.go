@@ -16,6 +16,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -187,7 +188,16 @@ func newTestCH(t *testing.T) *CloudHypervisor {
 	t.Helper()
 	conf := &config.Config{RootDir: t.TempDir(), RunDir: t.TempDir(), LogDir: t.TempDir()}
 	cfg := NewConfig(conf)
-	store, err := metajson.Open(MetaNamespace(conf))
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     hypervisor.VMNamespaceName(typ),
+		FilePath: NewConfig(conf).IndexFile(),
+		LockPath: NewConfig(conf).IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "vms", Table: hypervisor.TableRecords},
+			{Key: "names", Table: hypervisor.TableNames},
+			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("meta store: %v", err)
 	}

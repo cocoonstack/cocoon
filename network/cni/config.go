@@ -19,6 +19,9 @@ type Config struct {
 	*config.Config
 }
 
+// NewConfig wraps the shared config with the CNI path layout.
+func NewConfig(conf *config.Config) *Config { return &Config{Config: conf} }
+
 func (c *Config) EnsureDirs() error {
 	return utils.EnsureDirs(c.dbDir())
 }

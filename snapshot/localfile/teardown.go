@@ -24,7 +24,7 @@ type snapCleanup struct {
 }
 
 func (lf *LocalFile) tombstones() *tombstone.Table {
-	return tombstone.NewTable(lf.meta, metaNS)
+	return tombstone.NewTable(lf.meta, NamespaceName)
 }
 
 // deleteSnapshotProtocol runs the §5 phase protocol for one snapshot under

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -79,7 +81,16 @@ func newTestFC(t *testing.T) *Firecracker {
 		RunDir:  filepath.Join(dir, "run"),
 		LogDir:  filepath.Join(dir, "log"),
 	}
-	store, err := metajson.Open(MetaNamespace(conf))
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     hypervisor.VMNamespaceName(typ),
+		FilePath: NewConfig(conf).IndexFile(),
+		LockPath: NewConfig(conf).IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "vms", Table: hypervisor.TableRecords},
+			{Key: "names", Table: hypervisor.TableNames},
+			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("meta store: %v", err)
 	}

@@ -10,18 +10,11 @@ import (
 	gofrsflock "github.com/gofrs/flock"
 
 	"github.com/cocoonstack/cocoon/meta"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
 
 const (
-	tableRecords    = "records"
-	tableTombstones = "tombstones"
+	TableRecords = "records"
 )
-
-var imageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "images", Table: tableRecords},
-	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}}
 
 // Store is one image namespace on the shared meta engine, presenting the
 // legacy whole-index closure shape over record primitives: image lookups are
@@ -63,7 +56,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 	if err := fn(idx); err != nil {
 		return err
 	}
-	c := meta.NewCollection[E](s.meta, s.ns, tableRecords)
+	c := meta.NewCollection[E](s.meta, s.ns, TableRecords)
 	for id := range before {
 		if idx.Images[id] == nil {
 			if err := c.Delete(ctx, w, id); err != nil {
@@ -93,7 +86,7 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 	idx := &Index[E]{}
 	idx.Init()
 	before := map[string]json.RawMessage{}
-	if err := r.ScanRaw(ctx, s.ns, tableRecords, func(id string, raw json.RawMessage) error {
+	if err := r.ScanRaw(ctx, s.ns, TableRecords, func(id string, raw json.RawMessage) error {
 		var e E
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return fmt.Errorf("decode image entry %q: %w", id, err)
@@ -105,11 +98,6 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 		return nil, nil, err
 	}
 	return idx, before, nil
-}
-
-// MetaNamespace declares an image namespace over its legacy images.json.
-func MetaNamespace[E any](ns, indexFile, lockPath string) metajson.Namespace {
-	return metajson.Namespace{Name: ns, FilePath: indexFile, LockPath: lockPath, Codec: imageTables}
 }
 
 // BlobLocks holds per-digest blob locks for a publish critical section:

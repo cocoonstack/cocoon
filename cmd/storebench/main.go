@@ -22,7 +22,15 @@ func main() {
 	dir, _ := os.MkdirTemp("", "storebench-*")
 	defer os.RemoveAll(dir) //nolint:errcheck
 	ctx := context.Background()
-	store, err := metajson.Open(hypervisor.MetaNamespace("bench", filepath.Join(dir, "vms.json"), filepath.Join(dir, "vms.lock")))
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     hypervisor.VMNamespaceName("bench"),
+		FilePath: filepath.Join(dir, "vms.json"),
+		LockPath: filepath.Join(dir, "vms.lock"),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "vms", Table: hypervisor.TableRecords},
+			{Key: "names", Table: hypervisor.TableNames},
+		}},
+	})
 	if err != nil {
 		panic(err)
 	}

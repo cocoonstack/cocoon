@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	gofrsflock "github.com/gofrs/flock"
 	"time"
 
+	gofrsflock "github.com/gofrs/flock"
+
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
 type gcTestEntry struct {
@@ -19,10 +21,15 @@ type gcTestEntry struct {
 // TestGCCollectSkipsRepublishedBlob pins the loose-GC revalidation: a digest
 // that became referenced after the snapshot (a publish finished and released
 // its lock) must survive Collect.
+var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "images", Table: TableRecords},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	engine, err := metajson.Open(MetaNamespace[gcTestEntry]("images_test", filepath.Join(dir, "images.json"), filepath.Join(dir, "images.lock")))
+	engine, err := metajson.Open(metajson.Namespace{Name: "images_test", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +107,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine, err := metajson.Open(metajson.Namespace{
-		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: imageTables,
+		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +149,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 func TestGCCollectRespectsExternalPins(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	engine, err := metajson.Open(MetaNamespace[gcTestEntry]("images_pins", filepath.Join(dir, "images.json"), filepath.Join(dir, "images.lock")))
+	engine, err := metajson.Open(metajson.Namespace{Name: "images_pins", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
 	if err != nil {
 		t.Fatal(err)
 	}

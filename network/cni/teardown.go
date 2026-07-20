@@ -27,7 +27,7 @@ type netCleanupRecord struct {
 }
 
 func (c *CNI) tombstones() *tombstone.Table {
-	return tombstone.NewTable(c.meta, metaNS)
+	return tombstone.NewTable(c.meta, NamespaceName)
 }
 
 // teardownProtocol runs the §5 protocol for one VM's networking under its

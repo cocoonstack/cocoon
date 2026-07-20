@@ -3,32 +3,13 @@ package cni
 import (
 	"context"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
 
 const (
-	metaNS          = "networks"
-	tableRecords    = "records"
-	tableTombstones = "tombstones"
+	NamespaceName = "networks"
+	TableRecords  = "records"
 )
-
-var netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "networks", Table: tableRecords},
-	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}}
-
-// MetaNamespace declares the network namespace over the legacy networks.json.
-func MetaNamespace(conf *config.Config) metajson.Namespace {
-	cfg := &Config{Config: conf}
-	return metajson.Namespace{
-		Name:     metaNS,
-		FilePath: cfg.IndexFile(),
-		LockPath: cfg.IndexLock(),
-		Codec:    netTables,
-	}
-}
 
 // netTx is the CNI view of one meta transaction: a records-only namespace
 // with the vm_id secondary lookup served by scan.
@@ -51,13 +32,13 @@ func (t *netTx) byVMID(vmID string) ([]networkRecord, error) {
 }
 
 func (c *CNI) view(ctx context.Context, fn func(*netTx) error) error {
-	return c.meta.View(ctx, []string{metaNS}, func(r meta.Reader) error {
+	return c.meta.View(ctx, []string{NamespaceName}, func(r meta.Reader) error {
 		return fn(c.tx(ctx, r, nil))
 	})
 }
 
 func (c *CNI) update(ctx context.Context, fn func(*netTx) error) error {
-	return c.meta.Update(ctx, meta.Scope{Write: metaNS}, meta.CommitDurable, func(w meta.Writer) error {
+	return c.meta.Update(ctx, meta.Scope{Write: NamespaceName}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(c.tx(ctx, w, w))
 	})
 }
@@ -79,5 +60,5 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 }
 
 func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
-	return &netTx{RecordTx: meta.NewRecordTx[networkRecord](ctx, c.meta, metaNS, tableRecords, r, w)}
+	return &netTx{RecordTx: meta.NewRecordTx[networkRecord](ctx, c.meta, NamespaceName, TableRecords, r, w)}
 }

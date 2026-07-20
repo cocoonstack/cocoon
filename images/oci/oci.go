@@ -41,7 +41,7 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 
 	log.WithFunc("oci.New").Debugf(ctx, "OCI image backend initialized, pool size: %d", cfg.PoolSize)
 
-	store := images.NewMetaStore[imageEntry](metaStore, metaNS)
+	store := images.NewMetaStore[imageEntry](metaStore, NamespaceName)
 	o := &OCI{
 		conf:  cfg,
 		store: store,

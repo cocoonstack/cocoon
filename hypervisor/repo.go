@@ -42,7 +42,7 @@ func (t *vmTx) resolveMany(refs []string) ([]string, error) {
 // orphanDirs returns the ordered cleanup-intent list.
 func (t *vmTx) orphanDirs() ([]string, error) {
 	var dirs []string
-	if err := t.r.ScanRaw(t.ctx, t.ns, tableOrphanDirs, func(dir string, _ json.RawMessage) error {
+	if err := t.r.ScanRaw(t.ctx, t.ns, TableOrphanDirs, func(dir string, _ json.RawMessage) error {
 		dirs = append(dirs, dir)
 		return nil
 	}); err != nil {
@@ -53,7 +53,7 @@ func (t *vmTx) orphanDirs() ([]string, error) {
 
 // removeOrphanDir mirrors slices.DeleteFunc on idx.OrphanDirs.
 func (t *vmTx) removeOrphanDir(dir string) error {
-	return t.w.DeleteRaw(t.ctx, t.ns, tableOrphanDirs, dir, false)
+	return t.w.DeleteRaw(t.ctx, t.ns, TableOrphanDirs, dir, false)
 }
 
 // view runs fn over the backend's namespace snapshot (legacy With).
@@ -80,7 +80,7 @@ func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error
 
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
-		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.Meta, b.NS, tableRecords, tableNames, r, w),
+		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.Meta, b.NS, TableRecords, TableNames, r, w),
 		ctx:     ctx,
 		ns:      b.NS,
 		r:       r,

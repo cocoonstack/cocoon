@@ -20,6 +20,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
@@ -1513,10 +1514,22 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 	return id
 }
 
+var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "snapshots", Table: TableRecords},
+	{Key: "names", Table: TableNames},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
+// testSnapNamespace mirrors the composition root's snapshots declaration.
+func testSnapNamespace(conf *config.Config) metajson.Namespace {
+	cfg := NewConfig(conf)
+	return metajson.Namespace{Name: NamespaceName, FilePath: cfg.IndexFile(), LockPath: cfg.IndexLock(), Codec: testSnapTables}
+}
+
 // newTestMetaStore opens the snapshot namespace over conf for tests.
 func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
 	t.Helper()
-	store, err := metajson.Open(MetaNamespace(conf))
+	store, err := metajson.Open(testSnapNamespace(conf))
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)
 	}

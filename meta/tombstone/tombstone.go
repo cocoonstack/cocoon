@@ -14,6 +14,9 @@ import (
 )
 
 const (
+	// TableName is the tombstones satellite table every §5 namespace carries.
+	TableName = "tombstones"
+
 	PhaseLeased   Phase = "leased"
 	PhaseDeleting Phase = "deleting"
 
@@ -22,8 +25,6 @@ const (
 
 	ModeAggregate Mode = "aggregate"
 	ModeSubset    Mode = "subset"
-
-	table = "tombstones"
 )
 
 // ErrLost reports a fenced write that matched zero rows: another worker
@@ -64,7 +65,7 @@ type Table struct {
 
 // NewTable binds the tombstones table in ns on s.
 func NewTable(s meta.Store, ns string) *Table {
-	return &Table{ns: ns, recs: meta.NewCollection[Record](s, ns, table)}
+	return &Table{ns: ns, recs: meta.NewCollection[Record](s, ns, TableName)}
 }
 
 // Get returns id's tombstone, nil when none.

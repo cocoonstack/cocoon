@@ -50,7 +50,7 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
-	cfg := &Config{Config: conf}
+	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)
 	}

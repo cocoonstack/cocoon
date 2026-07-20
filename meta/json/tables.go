@@ -9,11 +9,13 @@ import (
 )
 
 // TableSpec maps one legacy top-level object field to a model table;
-// Optional omits the field from encoded output while the table is empty.
+// Optional omits the field from encoded output while the table is empty;
+// StringList marks an ordered []string field stored as presence markers.
 type TableSpec struct {
-	Key      string
-	Table    string
-	Optional bool
+	Key        string
+	Table      string
+	Optional   bool
+	StringList bool
 }
 
 // DecodeTables loads specs' map fields into a fresh Model (sorted insertion,
@@ -44,6 +46,16 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMe
 		}
 		key, _ := keyTok.(string)
 		if sp, ok := byKey[key]; ok {
+			if sp.StringList {
+				var ids []string
+				if err := dec.Decode(&ids); err != nil {
+					return nil, nil, err
+				}
+				for _, id := range ids {
+					m.Put(sp.Table, id, stringListMarker)
+				}
+				continue
+			}
 			var tbl map[string]json.RawMessage
 			if err := dec.Decode(&tbl); err != nil {
 				return nil, nil, err
@@ -72,16 +84,27 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMe
 func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 	buf := []byte{'{'}
 	for _, sp := range specs {
+		if sp.StringList {
+			var ids []string
+			_ = m.Scan(sp.Table, func(id string, _ json.RawMessage) error {
+				ids = append(ids, id)
+				return nil
+			})
+			if sp.Optional && len(ids) == 0 {
+				continue
+			}
+			buf = appendKey(buf, sp.Key)
+			var err error
+			if buf, err = AppendStringSlice(buf, ids); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		collected := CollectTable(m, sp.Table)
 		if sp.Optional && len(collected) == 0 {
 			continue
 		}
-		if len(buf) > 1 {
-			buf = append(buf, ',')
-		}
-		buf = append(buf, '"')
-		buf = append(buf, sp.Key...)
-		buf = append(buf, '"', ':')
+		buf = appendKey(buf, sp.Key)
 		var err error
 		if buf, err = AppendRawMap(buf, collected); err != nil {
 			return nil, err
@@ -105,4 +128,15 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 
 func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	return EncodeTables(m, c.Specs)
+}
+
+var stringListMarker = json.RawMessage("{}")
+
+func appendKey(buf []byte, key string) []byte {
+	if len(buf) > 1 {
+		buf = append(buf, ',')
+	}
+	buf = append(buf, '"')
+	buf = append(buf, key...)
+	return append(buf, '"', ':')
 }

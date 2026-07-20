@@ -199,7 +199,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := metajson.Open(metajson.Namespace{
-		Name: metaNS, FilePath: path, LockPath: filepath.Join(dir, "networks.lock"), Codec: netTables,
+		Name: NamespaceName, FilePath: path, LockPath: filepath.Join(dir, "networks.lock"), Codec: testNetTables,
 	})
 	if err != nil {
 		t.Fatal(err)
