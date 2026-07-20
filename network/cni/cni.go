@@ -130,21 +130,16 @@ func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, true)
 }
 
-// Delete tears down all NICs for each VM and removes the netns. Best-effort.
+// Delete tears down each VM's networking through the phase protocol; the
+// caller already holds the VM lock (delete protocol or GC), making this a
+// ...Locked entrypoint — re-locking the non-reentrant flock would deadlock.
 func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
-		return c.deleteVM(ctx, vmID)
+		return c.teardownProtocol(ctx, vmID, nil, false)
 	})
 	return result.Succeeded, result.Err()
 }
 
-// deleteVM tears down all of vmID's networking through the phase protocol.
-// The caller already holds the VM lock (the delete protocol's NetCleanup or
-// the GC collector), so this is a ...Locked entrypoint — re-locking the
-// non-reentrant flock here would self-deadlock (design §5).
-func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
-	return c.teardownProtocol(ctx, vmID, nil, false)
-}
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {

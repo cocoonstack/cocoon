@@ -48,7 +48,7 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 		ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,
-			LookupRefs: lookupRefs,
+			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id, normalizeRef) },
 			Sizer:      imageSizer(cfg),
 		},
 	}
@@ -93,7 +93,7 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 		result = make([][]*types.StorageConfig, len(vms))
 		boot = make([]*types.BootConfig, len(vms))
 		for i, vm := range vms {
-			_, entry, ok := lookupOne(idx.Images, vm.Image)
+			_, entry, ok := images.LookupOne(idx.Images, vm.Image, normalizeRef)
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}

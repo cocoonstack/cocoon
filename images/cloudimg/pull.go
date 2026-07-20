@@ -85,7 +85,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 	if !force {
 		var skip bool
 		if err := store.View(ctx, func(idx *imageIndex) error {
-			if _, entry, ok := lookupOne(idx.Images, url); ok {
+			if _, entry, ok := images.LookupOne(idx.Images, url); ok {
 				blobPath := conf.BlobPath(entry.ContentSum.Hex())
 				if utils.ValidFile(blobPath) {
 					logger.Debugf(ctx, "image %s already cached, skipping", url)

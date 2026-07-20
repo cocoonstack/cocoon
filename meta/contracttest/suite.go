@@ -406,10 +406,4 @@ func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
 	}
 }
 
-func view(t *testing.T, s meta.Store, ns string, fn func(meta.Reader) error) {
-	t.Helper()
-	if err := s.View(t.Context(), []string{ns}, fn); err != nil {
-		t.Fatal(err)
-	}
-}
 

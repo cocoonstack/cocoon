@@ -194,7 +194,7 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
 	// A failed NIC release keeps its record AND the netns, surfaced as an error so rm reports the retryable leftover.
-	err := c.deleteVM(ctx, "vm1")
+	err := c.teardownProtocol(ctx, "vm1", nil, false)
 	if err == nil || !strings.Contains(err.Error(), "netns kept") {
 		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	// A VM resized to 0 NICs has no lease needing a plugin DEL; a missing conflist must not wedge its netns removal.
-	if err := c.deleteVM(t.Context(), "vm1"); err != nil {
+	if err := c.teardownProtocol(t.Context(), "vm1", nil, false); err != nil {
 		t.Fatalf("deleteVM with zero records: %v", err)
 	}
 }

@@ -63,7 +63,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 	if err := fn(idx); err != nil {
 		return err
 	}
-	c := s.collection()
+	c := meta.NewCollection[E](s.meta, s.ns, tableRecords)
 	for id := range before {
 		if idx.Images[id] == nil {
 			if err := c.Delete(ctx, w, id); err != nil {
@@ -105,10 +105,6 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 		return nil, nil, err
 	}
 	return idx, before, nil
-}
-
-func (s *Store[E]) collection() *meta.Collection[E] {
-	return meta.NewCollection[E](s.meta, s.ns, tableRecords)
 }
 
 // MetaNamespace declares an image namespace over its legacy images.json.

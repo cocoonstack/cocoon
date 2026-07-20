@@ -10,15 +10,6 @@ import (
 
 type imageIndex = images.Index[imageEntry]
 
-// lookupOne finds an entry by ref (exact or normalized) or manifest digest (exact or prefix).
-func lookupOne(m map[string]*imageEntry, id string) (string, *imageEntry, bool) {
-	return images.LookupOne(m, id, normalizeRef)
-}
-
-func lookupRefs(m map[string]*imageEntry, id string) []string {
-	return images.LookupRefs(m, id, normalizeRef)
-}
-
 // Paths derive from digests at runtime; not stored.
 type imageEntry struct {
 	Ref            string        `json:"ref"`

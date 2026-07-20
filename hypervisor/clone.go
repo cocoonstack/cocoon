@@ -14,11 +14,6 @@ import (
 // AfterExtractFn finalizes a cloned VM after snapshot files are in place; sourceSnapshotID flows through for metering lineage.
 type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error)
 
-// CloneSetup is the shared pre-clone sequence: validate CPU, reserve a placeholder, ensure dirs, return a cleanup that rolls back both.
-func (b *Backend) CloneSetup(ctx context.Context, vmID string, vmCfg *types.VMConfig, snapshotConfig *types.SnapshotConfig) (runDir, logDir string, now time.Time, cleanup func(), err error) {
-	return b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
-}
-
 // DirectCloneBase clones from a local snapshot directory. Used when the snapshot lives on the same host (no tar streaming needed).
 func (b *Backend) DirectCloneBase(
 	ctx context.Context, vmID string, vmCfg *types.VMConfig,
@@ -26,7 +21,7 @@ func (b *Backend) DirectCloneBase(
 	cloneFiles func(dstDir, srcDir string) error,
 	afterExtract AfterExtractFn,
 ) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := b.CloneSetup(ctx, vmID, vmCfg, snapshotConfig)
+	runDir, logDir, now, cleanup, err := b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +44,7 @@ func (b *Backend) CloneFromStream(
 	net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader,
 	afterExtract AfterExtractFn,
 ) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := b.CloneSetup(ctx, vmID, vmCfg, snapshotConfig)
+	runDir, logDir, now, cleanup, err := b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
 	if err != nil {
 		return nil, err
 	}

@@ -209,23 +209,11 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	const logTag = "cmd.vm.rm"
-	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cliutil.WantJSON(cmd), routed,
-		func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-			return hyper.Delete(ctx, refs, force)
-		})
-
-	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
+	return batchRoutedCmd(ctx, cmd, "rm", "deleted", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+		return hyper.Delete(ctx, refs, force)
+	})
 }
 
-// recoverNetworkForStopped runs Start's network self-heal when the restore target is not running (hibernate resume after a host reboot).
-func (h Handler) recoverNetworkForStopped(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, ref string) {
-	vm, err := hyper.Inspect(ctx, ref)
-	if err != nil || vm.State == types.VMStateRunning {
-		return
-	}
-	h.recoverNetwork(ctx, conf, hyper, []string{vm.ID})
-}
 
 func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
 	logger := log.WithFunc("cmd.vm.recoverNetwork")

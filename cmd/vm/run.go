@@ -159,7 +159,10 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
-	h.recoverNetworkForStopped(ctx, conf, hyper, vmRef)
+	// Start's network self-heal, needed here for hibernate resume after a host reboot.
+	if vm, err := hyper.Inspect(ctx, vmRef); err == nil && vm.State != types.VMStateRunning {
+		h.recoverNetwork(ctx, conf, hyper, []string{vm.ID})
+	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
