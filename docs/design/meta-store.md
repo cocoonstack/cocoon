@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.14)
+# Meta store: unified metadata layer (design v2.15)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -465,9 +465,14 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   cannot answer "is this mine?" in general, because `meta_state` is a
   sqlite-engine concept and a json target has no equivalent — so the tool
   keeps its own engine-independent manifest at the meta root
-  (`meta-convert.manifest`): source identity (paths + per-namespace sha256 +
+  (`meta-convert.manifest`): source identity (paths + per-namespace digest +
   record counts), target engine, per-namespace completion marks, and aside
-  paths. Because the manifest is the ONLY recovery authority for a json
+  paths. **The digest is engine-neutral by construction** — raw json bytes and
+  sqlite rows are not comparable — so it is the sha256 of a canonical
+  namespace export: records sorted by id, each encoded with the same
+  deterministic encoder, satellite sets appended in a fixed order. Both
+  engines can produce it, which is what makes "is this target mine?" and the
+  round-trip gates answerable at all. Because the manifest is the ONLY recovery authority for a json
   target, it carries its own crash protocol:
   - it is written and fsynced (temp → fsync → rename → parent-dir fsync)
     **before the first byte is written to the target**, and every update uses
@@ -488,6 +493,11 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   verified write, so a later reverse conversion can never find a stale
   authority and skip importing newer data. Test matrix includes
   sqlite→json→(writes)→sqlite with a diff assertion on the final content.
+- **A manifest present means a conversion is in flight.** Ordinary
+  `Store.Open` refuses while `meta-convert.manifest` exists, pointing the
+  operator at `meta convert`; only conversion recovery bypasses it. Without
+  that, a half-converted json target opens normally and its not-yet-written
+  namespaces read as empty.
 - **Fail-closed open (sqlite engine only).** With `meta_backend: sqlite`,
   opening a namespace with no `meta_state` row refuses: "run
   `cocoon meta convert`" when a legacy source exists, "run `cocoon meta init`"
@@ -600,6 +610,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   cleanup leaves the entity's lock file intact (it is outside the cleanup
   set), that a worker holding it still holds the SAME inode afterwards, and
   that the reaper removes a lock file only when `TryLock` proves it unheld.
+- **Entrypoint tombstone discipline**: kill a delete worker mid-`deleting`,
+  do NOT run GC, then immediately attempt `vm start`, snapshot clone, snapshot
+  export and NIC resize — each must drive recovery and refuse, never boot,
+  read or rebuild a half-removed resource.
 - **Subset teardown recovery**: crash mid-`deleting` on a SUBSET lease (a
   one-NIC `vm net remove`), then recover — the untouched NIC rows, their
   TAPs, and the netns must all survive. A generic aggregate-shaped GC test
@@ -726,6 +740,16 @@ contract — and the measured win arrives only in P2.
   flocks. Every subsystem's index moves onto Collections and domain
   repositories. `storage.Store[T]` and `storage/json` retire at the end of
   P0, since nothing is left on them.
+  One escape hatch is required and must be built deliberately: today's GC
+  takes every module's store flock FIRST and then calls the non-locking
+  `ReadRaw`/`WriteRaw`, while `meta.Store` exposes only self-locking
+  `View`/`Update` — a direct substitution re-enters the same flock and
+  self-deadlocks. P0 therefore keeps an INTERNAL, json-engine-only
+  `LockedView`/`LockedUpdate` pair used by nothing except the legacy GC
+  modules, and deletes it in P1 together with `gc.Module.Locker`. The
+  alternative — pulling the tombstone protocol forward into P0 — is rejected
+  because it would make a fixture mismatch ambiguous again, which is the one
+  property P0 exists to have.
   Gate: byte-identical golden fixtures for every namespace file, the full
   contract suite green, `.prev` recovery and crash-boundary tests in the real
   write order, and the paired-ratio non-regression gate. A fixture mismatch
