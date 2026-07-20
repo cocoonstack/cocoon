@@ -82,14 +82,16 @@ repositories (§1a):
 func NewCollection[R any](s Store, table string, opts ...Option[R]) *Collection[R]
 
 func (c *Collection[R]) Get(ctx context.Context, r Reader, id string) (*R, error)
-func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R) error  // ErrConflict on id/unique-index collision
-func (c *Collection[R]) Replace(ctx context.Context, w Writer, id string, rec *R) error // ErrNotFound if absent
-func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string) error
+func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id/unique-index collision
+func (c *Collection[R]) Replace(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error // ErrNotFound if absent
+func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ...WriteOpt) error
 func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn func(id string, rec *R) error) error
 func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, error) // detached; small namespaces
 func (c *Collection[R]) Find(ctx context.Context, r Reader, index, value string) (string, *R, error)
 
-func NewLog[E any](s Store, table string) *Log[E] // Append(ctx, w, e) / Scan(ctx, r, from, fn)
+func NewLog[E any](s Store, table string) *Log[E] // Append(ctx, w, e, opts...) / Scan(ctx, r, from, fn)
+// Log.Append is bound by the same Durable-default / RelaxedOK enforcement as
+// collection writes (contract clause 3); it is not exempt.
 ```
 
 `Scan` is callback-shaped so iteration errors propagate and the read
@@ -117,9 +119,10 @@ explicit exceptions where it does not:
 PRAGMA application_id = 0x434F434E;  -- "COCN"
 PRAGMA user_version   = 1;
 
-CREATE TABLE migrations (version INTEGER, namespace TEXT, source TEXT,
-                         sha256 TEXT, records INTEGER, applied_at TEXT,
-                         PRIMARY KEY (version, namespace));
+CREATE TABLE migrations (version INTEGER NOT NULL, namespace TEXT NOT NULL,
+                         source TEXT, sha256 TEXT, records INTEGER,
+                         applied_at TEXT, PRIMARY KEY (version, namespace));
+-- NOT NULL is explicit: SQLite does not imply it on composite PK columns.
 
 CREATE TABLE vms_firecracker      (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
 CREATE TABLE vms_cloudhypervisor  (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
@@ -298,8 +301,12 @@ engine does not change them.
 - Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
   write.
 - Real multi-process: 256 separate CLI processes (not goroutines).
-- Functional: `status --event` regression; migrate crash-and-rerun
-  idempotence; unmigrated-JSON refusal; unsupported-filesystem refusal.
+- Functional: `status --event` regression; convert crash-and-rerun
+  idempotence; unconverted-JSON refusal; unsupported-filesystem refusal;
+  ErrDurabilityContract structural check (durable-default write under a
+  Relaxed Writer fails; RelaxedOK sites succeed); concurrent-GC
+  same-candidate race (second worker's tombstone insert gets ErrConflict and
+  skips, GC cycle completes cleanly).
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone
   consistency, directory ownership.
