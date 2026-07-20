@@ -42,12 +42,24 @@ func AppendStringSlice(dst []byte, s []string) ([]byte, error) {
 	return append(dst, ']'), nil
 }
 
-// CollectTable snapshots one table into a map of raw records.
-func CollectTable(m *Model, tbl string) map[string]json.RawMessage {
-	out := make(map[string]json.RawMessage, m.Len(tbl))
-	_ = m.Scan(tbl, func(id string, raw json.RawMessage) error {
-		out[id] = raw
-		return nil
-	})
-	return out
+// AppendTable appends tbl as a compact JSON object with sorted keys, values
+// verbatim — no intermediate value-map copy on the commit path.
+func AppendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
+	t := m.tables[tbl]
+	dst = append(dst, '{')
+	if t != nil {
+		for i, k := range slices.Sorted(maps.Keys(t.recs)) {
+			if i > 0 {
+				dst = append(dst, ',')
+			}
+			kb, err := json.Marshal(k)
+			if err != nil {
+				return nil, err
+			}
+			dst = append(dst, kb...)
+			dst = append(dst, ':')
+			dst = append(dst, t.recs[k]...)
+		}
+	}
+	return append(dst, '}'), nil
 }

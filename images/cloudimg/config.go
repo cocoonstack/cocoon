@@ -7,11 +7,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// NamespaceName is this backend's meta namespace.
-const NamespaceName = "images_cloudimg"
-
-// defaultPullConns is the default concurrent Range connections per cloud-image download.
-const defaultPullConns = 8
+const (
+	// NamespaceName is this backend's meta namespace.
+	NamespaceName = "images_cloudimg"
+	// defaultPullConns is the default concurrent Range connections per cloud-image download.
+	defaultPullConns = 8
+)
 
 type Config struct {
 	images.BaseConfig

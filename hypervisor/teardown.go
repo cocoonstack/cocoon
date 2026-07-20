@@ -37,14 +37,12 @@ func (b *Backend) tombstones() *tombstone.Table {
 // resumes.
 func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord, teardown NetTeardown) error {
 	ts := b.tombstones()
-	cleanup, err := tombstone.MarshalCleanup(vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir})
+	cl := vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
+	cleanup, err := tombstone.MarshalCleanup(cl)
 	if err != nil {
 		return err
 	}
-	var (
-		leaseID string
-		cl      = vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
-	)
+	var leaseID string
 	if err := b.update(ctx, func(t *vmTx) error {
 		if r, err := t.Get(id); err != nil {
 			return err
@@ -88,14 +86,8 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 		if err := t.Del(id); err != nil {
 			return err
 		}
-		if cl.Name != "" {
-			if cur, ok, err := t.NameGet(cl.Name); err != nil {
-				return err
-			} else if ok && cur == id {
-				if err := t.NameDel(cl.Name); err != nil {
-					return err
-				}
-			}
+		if err := t.NameDelIfOwned(cl.Name, id); err != nil {
+			return err
 		}
 		return ts.Finalize(ctx, t.w, id, leaseID)
 	})

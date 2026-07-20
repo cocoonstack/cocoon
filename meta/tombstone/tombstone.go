@@ -86,8 +86,7 @@ func (t *Table) Scan(ctx context.Context, r meta.Reader, fn func(id string, rec 
 // an existing tombstone is ErrConflict — another worker owns the candidate.
 func (t *Table) Lease(ctx context.Context, w meta.Writer, id string, p Payload) (string, error) {
 	leaseID := utils.GenerateID()
-	err := t.recs.Insert(ctx, w, id, &Record{LeaseID: leaseID, Phase: PhaseLeased, LeasedAt: time.Now(), Payload: p})
-	if err != nil {
+	if err := t.recs.Insert(ctx, w, id, &Record{LeaseID: leaseID, Phase: PhaseLeased, LeasedAt: time.Now(), Payload: p}); err != nil {
 		return "", err
 	}
 	return leaseID, nil

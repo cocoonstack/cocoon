@@ -65,15 +65,7 @@ func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 		if err := t.Del(id); err != nil {
 			return err
 		}
-		if name == "" {
-			return nil
-		}
-		if cur, ok, err := t.NameGet(name); err != nil {
-			return err
-		} else if ok && cur == id {
-			return t.NameDel(name)
-		}
-		return nil
+		return t.NameDelIfOwned(name, id)
 	}); err != nil {
 		log.WithFunc(b.Typ+".RollbackCreate").Errorf(ctx, err, "rollback VM %s (name=%s)", id, name)
 	}

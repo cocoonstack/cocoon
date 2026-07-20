@@ -100,6 +100,18 @@ func (x *NamedTx[R]) NameDel(name string) error {
 	return x.names.Delete(x.ctx, x.w, name)
 }
 
+// NameDelIfOwned removes name's mapping only while it still points at id; "" is a no-op.
+func (x *NamedTx[R]) NameDelIfOwned(name, id string) error {
+	if name == "" {
+		return nil
+	}
+	cur, ok, err := x.NameGet(name)
+	if err != nil || !ok || cur != id {
+		return err
+	}
+	return x.NameDel(name)
+}
+
 // Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at
 // least three characters; notFound is the subsystem's sentinel.
 func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {

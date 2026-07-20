@@ -87,6 +87,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		return err
 	}
 	target := s.nss[sc.Write]
+	committed := false
 	if err := s.withLocked(ctx, states, func() error {
 		models, err := s.loadAll(ctx, states)
 		if err != nil {
@@ -101,9 +102,22 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		if err := fn(w); err != nil {
 			return err
 		}
-		return commitLocked(target, models[sc.Write])
+		// A clean transaction commits nothing — the encode/rotate/fsync tail
+		// would rewrite identical bytes on every read-only guard. A recovered
+		// generation still commits: that is the read-repair of a torn main.
+		if !models[sc.Write].model.Dirty() && !models[sc.Write].recovered {
+			return nil
+		}
+		if err := commitLocked(target, models[sc.Write]); err != nil {
+			return err
+		}
+		committed = true
+		return nil
 	}); err != nil {
 		return err
+	}
+	if !committed {
+		return nil
 	}
 	return syncCommitted(target, mode)
 }
@@ -121,8 +135,7 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) resolve(nss []string) ([]*nsState, error) {
-	sorted := slices.Sorted(slices.Values(nss))
-	sorted = slices.Compact(sorted)
+	sorted := slices.Compact(slices.Sorted(slices.Values(nss)))
 	states := make([]*nsState, 0, len(sorted))
 	for _, name := range sorted {
 		st, ok := s.nss[name]
@@ -193,12 +206,14 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 		if cerr != nil {
 			return nil, cerr
 		}
+		m.markClean()
 		return &loaded{model: m}, nil
 	case err != nil:
 		return nil, fmt.Errorf("read %s: %w", def.FilePath, code(err, meta.ErrIO))
 	}
 	m, decodeErr := def.Codec.Decode(raw)
 	if decodeErr == nil {
+		m.markClean()
 		return &loaded{model: m}, nil
 	}
 	prevRaw, prevErr := os.ReadFile(def.FilePath + prevSuffix) //nolint:gosec
@@ -210,6 +225,7 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 		return nil, code(errors.Join(fmt.Errorf("decode %s: %w", def.FilePath, decodeErr), prevDecodeErr), meta.ErrCorrupt)
 	}
 	log.WithFunc("meta.json.loadNamespace").Warnf(ctx, "%s undecodable (%v); recovered the previous generation", def.FilePath, decodeErr)
+	prev.markClean()
 	return &loaded{model: prev, recovered: true}, nil
 }
 

@@ -22,14 +22,12 @@ type TableSpec struct {
 }
 
 // DecodeTables loads specs' map fields into a fresh Model (sorted insertion,
-// matching what encoding/json always wrote) and returns non-spec top-level
-// fields for codec-specific extras. Single streaming pass: a whole-file
-// unmarshal into raw messages would tokenize the payload twice (the paired
-// perf gate caught the O(N) regression).
-func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMessage, error) {
+// matching what encoding/json always wrote). Single streaming pass — a whole-file
+// unmarshal into raw messages tokenizes the payload twice.
+func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	m := NewModel()
 	if data == nil {
-		return m, nil, nil
+		return m, nil
 	}
 	byKey := make(map[string]TableSpec, len(specs))
 	for _, sp := range specs {
@@ -37,22 +35,21 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMe
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if tok, err := dec.Token(); err != nil {
-		return nil, nil, err
+		return nil, err
 	} else if tok != json.Delim('{') {
-		return nil, nil, fmt.Errorf("namespace file: want object, got %v", tok)
+		return nil, fmt.Errorf("namespace file: want object, got %v", tok)
 	}
-	var extras map[string]json.RawMessage
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		key, _ := keyTok.(string)
 		if sp, ok := byKey[key]; ok {
 			if sp.StringList {
 				var ids []string
 				if err := dec.Decode(&ids); err != nil {
-					return nil, nil, err
+					return nil, err
 				}
 				for _, id := range ids {
 					m.Put(sp.Table, id, stringListMarker)
@@ -61,7 +58,7 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMe
 			}
 			var tbl map[string]json.RawMessage
 			if err := dec.Decode(&tbl); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			for _, id := range slices.Sorted(maps.Keys(tbl)) {
 				m.Put(sp.Table, id, tbl[id])
@@ -70,17 +67,13 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMe
 		}
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if extras == nil {
-			extras = map[string]json.RawMessage{}
-		}
-		extras[key] = raw
 	}
 	if _, err := dec.Token(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return m, extras, nil
+	return m, nil
 }
 
 // EncodeTables assembles the legacy object shape from specs' tables.
@@ -88,7 +81,7 @@ func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 	buf := []byte{'{'}
 	for _, sp := range specs {
 		if sp.StringList {
-			var ids []string
+			ids := make([]string, 0, m.Len(sp.Table))
 			_ = m.Scan(sp.Table, func(id string, _ json.RawMessage) error {
 				ids = append(ids, id)
 				return nil
@@ -103,13 +96,12 @@ func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 			}
 			continue
 		}
-		collected := CollectTable(m, sp.Table)
-		if sp.Optional && len(collected) == 0 {
+		if sp.Optional && m.Len(sp.Table) == 0 {
 			continue
 		}
 		buf = appendKey(buf, sp.Key)
 		var err error
-		if buf, err = AppendRawMap(buf, collected); err != nil {
+		if buf, err = AppendTable(buf, m, sp.Table); err != nil {
 			return nil, err
 		}
 	}
@@ -125,8 +117,7 @@ type TableCodec struct {
 }
 
 func (c TableCodec) Decode(data []byte) (*Model, error) {
-	m, _, err := DecodeTables(data, c.Specs)
-	return m, err
+	return DecodeTables(data, c.Specs)
 }
 
 func (c TableCodec) Encode(m *Model) ([]byte, error) {

@@ -338,3 +338,43 @@ func TestDurableSyncOrder(t *testing.T) {
 		t.Fatalf("relaxed commit skipped the atomic rename: %v", steps)
 	}
 }
+
+// TestCleanUpdateSkipsCommit pins the dirty-skip: a read-only Update must not
+// re-encode, rotate or fsync — the entry guards run on every VM operation.
+func TestCleanUpdateSkipsCommit(t *testing.T) {
+	var steps []string
+	testCrashStep = func(step string) error { steps = append(steps, step); return nil }
+	t.Cleanup(func() { testCrashStep = nil })
+	ctx := t.Context()
+	dir := t.TempDir()
+	s := newStore(t, dir, "alpha")
+	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	v := map[string]int{"n": 1}
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "a", &v)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "alpha.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	steps = nil
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		_, _, err := w.GetRaw(ctx, "alpha", "records", "a")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 0 {
+		t.Fatalf("clean transaction ran the commit tail: %v", steps)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "alpha.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("clean transaction rewrote the namespace file")
+	}
+}

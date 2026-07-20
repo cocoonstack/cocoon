@@ -13,6 +13,7 @@ import (
 // rely on for order-sensitive fields.
 type Model struct {
 	tables map[string]*table
+	dirty  bool
 }
 
 // NewModel returns an empty namespace model.
@@ -41,6 +42,7 @@ func (m *Model) Put(tbl, id string, raw json.RawMessage) {
 		t.ids = append(t.ids, id)
 	}
 	t.recs[id] = raw
+	m.dirty = true
 }
 
 // Delete removes (tbl, id), preserving the relative order of the rest.
@@ -54,7 +56,14 @@ func (m *Model) Delete(tbl, id string) {
 	}
 	delete(t.recs, id)
 	t.ids = slices.DeleteFunc(t.ids, func(s string) bool { return s == id })
+	m.dirty = true
 }
+
+// Dirty reports whether any write touched the model since decode.
+func (m *Model) Dirty() bool { return m.dirty }
+
+// markClean resets Dirty after decode — loading populates via Put.
+func (m *Model) markClean() { m.dirty = false }
 
 // Scan yields (tbl, id) pairs in insertion order; fn errors abort and propagate.
 func (m *Model) Scan(tbl string, fn func(id string, raw json.RawMessage) error) error {

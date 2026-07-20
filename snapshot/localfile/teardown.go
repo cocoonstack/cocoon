@@ -96,14 +96,8 @@ func (lf *LocalFile) finishSnapTeardown(ctx context.Context, id, leaseID string,
 		if err := t.Del(id); err != nil {
 			return err
 		}
-		if cl.Name != "" {
-			if cur, ok, err := t.NameGet(cl.Name); err != nil {
-				return err
-			} else if ok && cur == id {
-				if err := t.NameDel(cl.Name); err != nil {
-					return err
-				}
-			}
+		if err := t.NameDelIfOwned(cl.Name, id); err != nil {
+			return err
 		}
 		return ts.Finalize(ctx, t.Writer(), id, leaseID)
 	})
