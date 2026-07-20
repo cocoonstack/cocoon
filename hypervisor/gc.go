@@ -153,7 +153,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			return nil
 		})
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
-		ok := b.withOpsTryLock(ctx, runDir, func() {
+		ok := b.withOpsTryLock(ctx, id, func() {
 			// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
 			if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {
 				errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
@@ -182,7 +182,8 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	var errs []error
 	for _, dir := range runDirs {
-		b.withOpsTryLock(ctx, dir, func() {
+		// The run dir's basename is its VM ID — the lock domain of everything inside it.
+		b.withOpsTryLock(ctx, filepath.Base(dir), func() {
 			errs = append(errs, utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
 				if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {
 					return false
@@ -240,7 +241,7 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 			clearIntent(dir)
 			continue
 		}
-		b.withOpsTryLock(ctx, dir, func() {
+		b.withOpsTryLock(ctx, filepath.Base(dir), func() {
 			// Fail closed: a still-live VMM in the leftover dir must not lose its sockets.
 			if err := b.ensureOrphanVMMDead(ctx, dir); err != nil {
 				errs = append(errs, fmt.Errorf("orphan vmm in %s: %w (kept)", dir, err))
@@ -258,8 +259,8 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 }
 
 // withOpsTryLock runs fn holding the VM ops lock, reporting false (fn skipped) when an in-flight operation owns it; GC never blocks on ops locks, so the reversed order vs. the ops-outer/index-inner convention cannot deadlock.
-func (b *Backend) withOpsTryLock(ctx context.Context, runDir string, fn func()) bool {
-	l, err := opsLock(runDir)
+func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bool {
+	l, err := opsLock(b.Conf, vmID)
 	if err != nil {
 		return false
 	}

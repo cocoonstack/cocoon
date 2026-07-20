@@ -48,6 +48,7 @@ const (
 // BackendConfig provides backend-specific values needed by shared Backend methods.
 type BackendConfig interface {
 	BinaryName() string
+	RootDirPath() string
 	PIDFileName() string
 	TerminateGracePeriod() time.Duration
 	SocketWaitTimeout() time.Duration

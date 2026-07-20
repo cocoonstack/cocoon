@@ -156,8 +156,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
 					continue
 				}
-				_ = os.Remove(conf.LeasePath(id))
-				_ = fl.Close()
+				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion (design §5)
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
 				removed = append(removed, id)
 				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.

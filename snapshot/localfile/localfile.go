@@ -315,7 +315,8 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	if deletedRecord {
 		emitSnapStop(ctx, lf.metering, id, hypType)
 	}
-	_ = os.Remove(lf.conf.LeasePath(id))
+	// The lease file stays: flock synchronizes on the inode, and deleting one
+	// splits exclusion for a live waiter (design §5 lock-inode rules).
 	return nil
 }
 

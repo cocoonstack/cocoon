@@ -18,6 +18,7 @@ import (
 	"github.com/vishvananda/netns"
 
 	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -32,7 +33,8 @@ const (
 	// SnapshotFileSkip means the file should not be cloned.
 	SnapshotFileSkip
 
-	// OpsLockName is the per-VM cross-process mutation lock file (in the VM run dir).
+	// OpsLockName is the legacy in-runDir lock file name; still guarded against
+	// in snapshot payloads (isLockFile) so old exports cannot overwrite one.
 	OpsLockName = "ops.lock"
 
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
@@ -53,18 +55,12 @@ const (
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
 
-// LockVMOps serializes mutating verbs on one VM across processes (#103); the flock dies with the holder, so a crash never wedges the VM.
+// LockVMOps serializes mutating verbs on one VM across processes (#103); the
+// flock dies with the holder, so a crash never wedges the VM. The lock path
+// is VMID-keyed and record-independent (lock/vmlock), so no index read —
+// locked or lockless — sits on the ops path.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
-	runDir := b.Conf.VMRunDir(vmID)
-	// The record's persisted RunDir wins: after a --run-dir migration the paths differ and two lock files would let ops interleave.
-	rec, err := b.RawLoadRecord(ctx, vmID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve run dir for %s: %w", vmID, err)
-	}
-	if rec != nil && rec.RunDir != "" {
-		runDir = rec.RunDir
-	}
-	l, err := opsLock(runDir)
+	l, err := opsLock(b.Conf, vmID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,9 +70,9 @@ func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	return func() { _ = l.Unlock(ctx) }, nil
 }
 
-// RawLoadRecord reads the record LOCKLESSLY (nil when absent): ops verbs must
-// not stall behind an in-flight GC cycle's namespace lock, and a GC lock must
-// not fake a miss. P0 adapter allowlist; retires with the stable VM lock (P1).
+// RawLoadRecord reads the record LOCKLESSLY (nil when absent): the netresize
+// failed-persist re-read must not let a GC namespace lock fake a miss. P0
+// adapter allowlist; retires with the tombstone-protocol GC.
 func (b *Backend) RawLoadRecord(ctx context.Context, vmID string) (*VMRecord, error) {
 	var rec *VMRecord
 	if err := b.rawView(ctx, func(t *vmTx) error {
@@ -443,12 +439,11 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 	}, nil
 }
 
-// opsLock recreates runDir if missing (crash leftovers, logDir-only orphans) and returns the per-VM ops flock.
-func opsLock(runDir string) (*flock.Lock, error) {
-	if err := os.MkdirAll(runDir, 0o750); err != nil {
-		return nil, fmt.Errorf("ops lock dir: %w", err)
-	}
-	return flock.New(filepath.Join(runDir, OpsLockName)), nil
+// opsLock resolves the stable VMID-keyed operation lock (lock/vmlock): it
+// lives outside every cleanup set, so destructive teardown never splits a
+// held inode.
+func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
+	return vmlock.New(conf.RootDirPath(), vmID)
 }
 
 // isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.

@@ -60,6 +60,7 @@ func main() {
 type benchConfig struct{ dir string }
 
 func (c benchConfig) BinaryName() string                  { return "bench" }
+func (c benchConfig) RootDirPath() string                 { return c.dir }
 func (c benchConfig) PIDFileName() string                 { return "pid" }
 func (c benchConfig) TerminateGracePeriod() time.Duration { return time.Second }
 func (c benchConfig) SocketWaitTimeout() time.Duration    { return time.Second }

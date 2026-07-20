@@ -539,6 +539,7 @@ func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 func newDiskStubConfig(t *testing.T) stubBackendConfig {
 	dir := t.TempDir()
 	return stubBackendConfig{
+		rootDir:   dir,
 		indexFile: filepath.Join(dir, "index.json"),
 		indexLock: filepath.Join(dir, "index.lock"),
 	}
@@ -547,9 +548,12 @@ func newDiskStubConfig(t *testing.T) stubBackendConfig {
 // stubBackendConfig satisfies BackendConfig for tests that only exercise the
 // metering wiring; unused methods panic so accidental dependence shows up loud.
 type stubBackendConfig struct {
+	rootDir   string
 	indexFile string
 	indexLock string
 }
+
+func (c stubBackendConfig) RootDirPath() string { return c.rootDir }
 
 func (stubBackendConfig) BinaryName() string                  { return "stub-vmm" }
 func (stubBackendConfig) PIDFileName() string                 { return "stub.pid" }
@@ -594,7 +598,7 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 	return &Backend{
 		Typ:      typ,
 		NS:       ns,
-		Conf:     meteringStubConfig{vmRunRoot: dir},
+		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
 		Meta:     store,
 		Locker:   locker,
 		Metering: rec,

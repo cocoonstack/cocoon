@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -28,7 +28,11 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	l := flock.New(filepath.Join(runDir, OpsLockName))
+	lk, err := vmlock.New(b.Conf.RootDirPath(), id)
+	if err != nil {
+		t.Fatalf("vm lock: %v", err)
+	}
+	l := lk
 	if ok, err := l.TryLock(ctx); err != nil || !ok {
 		t.Fatalf("hold ops lock: ok=%v err=%v", ok, err)
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -201,5 +202,36 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 	if string(got) != string(after) {
 		t.Fatalf("differential trace diverged from legacy bytes:\n got: %s\nwant: %s", got, after)
+	}
+}
+
+// TestCrossComponentVMLockPath asserts CH/FC (via LockVMOps) and CNI (via
+// lock/vmlock directly) resolve one vmID to the SAME lock file — a stale
+// backend-specific resolver would let CNI GC and VM lifecycle interleave.
+func TestCrossComponentVMLockPath(t *testing.T) {
+	ctx := t.Context()
+	b, _ := newMeteringTestBackend(t)
+	const id = "VMLOCKPATHCHECK"
+
+	unlock, err := b.LockVMOps(ctx, id)
+	if err != nil {
+		t.Fatalf("LockVMOps: %v", err)
+	}
+	defer unlock()
+
+	peer, err := vmlock.New(b.Conf.RootDirPath(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := peer.TryLock(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		_ = peer.Unlock(ctx)
+		t.Fatal("vmlock path acquired while LockVMOps held — resolvers diverged")
+	}
+	if _, statErr := os.Stat(vmlock.Path(b.Conf.RootDirPath(), id)); statErr != nil {
+		t.Fatalf("lock file not at the shared path: %v", statErr)
 	}
 }
