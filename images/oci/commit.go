@@ -29,9 +29,31 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 
 // finishImport commits results under name and emits the shared commit/done
 // progress + log tail; verb names the operation ("Pulled"/"Imported").
-func finishImport(ctx context.Context, conf *Config, idx *imageIndex, name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
+// finishImport commits blobs to their final paths (outside any transaction,
+// under per-digest locks so GC cannot delete a not-yet-indexed blob) and then
+// records the entry in one pure transaction.
+func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: len(results)})
-	if err := commitAndRecord(conf, idx, name, manifestDigest, results); err != nil {
+	var locks images.BlobLocks
+	defer locks.Release()
+	lockPaths := make([]string, 0, len(results))
+	for i := range results {
+		lockPaths = append(lockPaths, conf.BlobLockPath(results[i].digest.Hex()))
+	}
+	if err := locks.Lock(lockPaths...); err != nil {
+		return err
+	}
+	if err := commitBlobs(conf, results); err != nil {
+		return err
+	}
+	entry, err := buildEntry(conf, name, manifestDigest, results)
+	if err != nil {
+		return err
+	}
+	if err := store.Update(ctx, func(idx *imageIndex) error {
+		idx.Images[name] = entry
+		return nil
+	}); err != nil {
 		return err
 	}
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: len(results)})
@@ -39,13 +61,10 @@ func finishImport(ctx context.Context, conf *Config, idx *imageIndex, name strin
 	return nil
 }
 
-func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest images.Digest, results []pullLayerResult) error {
-	var (
-		layerEntries []layerEntry
-		kernelLayer  images.Digest
-		initrdLayer  images.Digest
-	)
-
+// commitBlobs moves every layer's blob and boot files into their final
+// paths. File-only: it runs OUTSIDE any transaction, under the per-digest
+// locks that keep GC away from not-yet-indexed blobs.
+func commitBlobs(conf *Config, results []pullLayerResult) error {
 	for i := range results {
 		r := &results[i]
 		layerDigestHex := r.digest.Hex()
@@ -62,19 +81,30 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 		if err := moveBootFile(r.initrdPath, conf.InitrdPath(layerDigestHex), conf.BootDir(layerDigestHex), r.index, "initrd"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
+// buildEntry assembles the index entry from committed blobs; read-only on the
+// filesystem, so the enclosing transaction closure stays pure and retryable.
+func buildEntry(conf *Config, ref string, manifestDigest images.Digest, results []pullLayerResult) (*imageEntry, error) {
+	var (
+		layerEntries []layerEntry
+		kernelLayer  images.Digest
+		initrdLayer  images.Digest
+	)
+	for i := range results {
+		r := &results[i]
 		if r.kernelPath != "" {
 			kernelLayer = r.digest
 		}
 		if r.initrdPath != "" {
 			initrdLayer = r.digest
 		}
-
 		layerEntries = append(layerEntries, layerEntry{Digest: r.digest})
 	}
-
 	if kernelLayer == "" || initrdLayer == "" {
-		return fmt.Errorf("image %s missing boot files (vmlinuz/initrd.img)", ref)
+		return nil, fmt.Errorf("image %s missing boot files (vmlinuz/initrd.img)", ref)
 	}
 
 	var totalSize int64
@@ -88,17 +118,17 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 	}
 	for _, le := range layerEntries {
 		if err := addSize(conf.BlobPath(le.Digest.Hex()), fmt.Sprintf("blob missing for layer %s", le.Digest)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := addSize(conf.KernelPath(kernelLayer.Hex()), fmt.Sprintf("kernel missing for %s", kernelLayer)); err != nil {
-		return err
+		return nil, err
 	}
 	if err := addSize(conf.InitrdPath(initrdLayer.Hex()), fmt.Sprintf("initrd missing for %s", initrdLayer)); err != nil {
-		return err
+		return nil, err
 	}
 
-	idx.Images[ref] = &imageEntry{
+	return &imageEntry{
 		Ref:            ref,
 		ManifestDigest: manifestDigest,
 		Layers:         layerEntries,
@@ -106,6 +136,5 @@ func commitAndRecord(conf *Config, idx *imageIndex, ref string, manifestDigest i
 		InitrdLayer:    initrdLayer,
 		Size:           totalSize,
 		CreatedAt:      time.Now(),
-	}
-	return nil
+	}, nil
 }

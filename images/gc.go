@@ -12,8 +12,9 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	gofrsflock "github.com/gofrs/flock"
+
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -25,9 +26,10 @@ type ImageGCSnapshot struct {
 
 // GCModuleConfig configures a generic image GC module.
 type GCModuleConfig[E any] struct {
-	Name   string
-	Locker lock.Locker
-	Store  *Store[E]
+	Name  string
+	Store *Store[E]
+	// LockPath returns the per-digest blob lock path (design §5).
+	LockPath func(hex string) string
 	// ReadRefs extracts referenced digest hexes from the index.
 	ReadRefs func(map[string]*E) map[string]struct{}
 	// ScanDisk returns digest hexes found on disk (blobs).
@@ -45,12 +47,10 @@ type GCModuleConfig[E any] struct {
 // BuildGCModule constructs a gc.Module from the config.
 func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 	return gc.Module[ImageGCSnapshot]{
-		Name:   cfg.Name,
-		Locker: cfg.Locker,
+		Name: cfg.Name,
 		ReadDB: func(ctx context.Context) (ImageGCSnapshot, error) {
 			var snap ImageGCSnapshot
-			// Lockless read: the orchestrator already holds the namespace lock.
-			if err := cfg.Store.LockedRead(ctx, func(idx *Index[E]) error {
+			if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
 				snap.refs = cfg.ReadRefs(idx.Images)
 				return nil
 			}); err != nil {
@@ -77,7 +77,34 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 			return slices.Compact(candidates)
 		},
 		Collect: func(ctx context.Context, ids []string, _ ImageGCSnapshot) error {
-			return gcCollectBlobs(ctx, cfg.Name, cfg.TempDir, cfg.DirOnly, ids, cfg.Removers...)
+			errs := gcStaleTemp(ctx, cfg.TempDir, cfg.DirOnly)
+			// Per-digest lock (TryLock): a publish holding it is mid
+			// rename-to-index and must not lose its blob; an unreferenced
+			// blob is otherwise recordless — its removal converges without a
+			// tombstone. The lock file is kept: unlinking a lock path splits
+			// exclusion for a live waiter.
+			logger := log.WithFunc("gc." + cfg.Name)
+			for _, hex := range ids {
+				fl := gofrsflock.New(cfg.LockPath(hex))
+				ok, err := fl.TryLock()
+				if err != nil || !ok {
+					_ = fl.Close()
+					if err != nil {
+						errs = append(errs, fmt.Errorf("lock blob %s: %w", hex, err))
+					} else {
+						logger.Warnf(ctx, "skip %s: blob lock busy (publish in flight)", hex)
+					}
+					continue
+				}
+				for _, rm := range cfg.Removers {
+					if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
+					}
+				}
+				_ = fl.Close()
+				logger.Infof(ctx, "collected blob=%s", hex)
+			}
+			return errors.Join(errs...)
 		},
 	}
 }
@@ -95,25 +122,4 @@ func gcStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
 		info, err := e.Info()
 		return err == nil && info.ModTime().Before(cutoff)
 	})
-}
-
-// gcCollectBlobs removes stale temps then per-hex blobs via removers (fs.ErrNotExist ignored); module names the gc log subsystem.
-func gcCollectBlobs(ctx context.Context, module, tempDir string, dirOnly bool, ids []string, removers ...func(string) error) error {
-	logger := log.WithFunc("gc." + module)
-	var errs []error
-	errs = append(errs, gcStaleTemp(ctx, tempDir, dirOnly)...)
-	for _, hex := range ids {
-		var blobErr error
-		for _, rm := range removers {
-			if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				blobErr = errors.Join(blobErr, err)
-			}
-		}
-		if blobErr != nil {
-			errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, blobErr))
-			continue
-		}
-		logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
-	}
-	return errors.Join(errs...)
 }

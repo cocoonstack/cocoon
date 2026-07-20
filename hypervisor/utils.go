@@ -70,12 +70,12 @@ func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	return func() { _ = l.Unlock(ctx) }, nil
 }
 
-// RawLoadRecord reads the record LOCKLESSLY (nil when absent): the netresize
-// failed-persist re-read must not let a GC namespace lock fake a miss. P0
-// adapter allowlist; retires with the tombstone-protocol GC.
-func (b *Backend) RawLoadRecord(ctx context.Context, vmID string) (*VMRecord, error) {
+// PeekRecord reads the record (nil when absent). With the lock-all GC gone,
+// a plain self-locking view no longer risks stalling behind a cycle-long
+// namespace lock.
+func (b *Backend) PeekRecord(ctx context.Context, vmID string) (*VMRecord, error) {
 	var rec *VMRecord
-	if err := b.rawView(ctx, func(t *vmTx) error {
+	if err := b.view(ctx, func(t *vmTx) error {
 		var err error
 		rec, err = t.Get(vmID)
 		return err

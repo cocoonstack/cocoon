@@ -37,53 +37,49 @@ func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imag
 		}
 	}
 
-	return store.Publish(ctx, func(idx *imageIndex) error {
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(file)})
+	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(file)})
 
-		workDir, cleanup, err := newWorkDir(conf, "import-*")
-		if err != nil {
-			return err
-		}
-		defer cleanup()
+	workDir, cleanup, err := newWorkDir(conf, "import-*")
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
-		totalLayers := len(file)
-		results, mapErr := utils.Map(ctx, file, func(ctx context.Context, i int, filePath string) (pullLayerResult, error) {
-			var r pullLayerResult
-			err := processLocalTar(ctx, tarImportJob{
-				conf: conf, idx: i, total: totalLayers,
-				label: filePath, workDir: workDir, tracker: tracker, result: &r,
-			}, filePath)
-			return r, err
-		}, conf.PoolSize)
-		if mapErr != nil {
-			return fmt.Errorf("process layers: %w", mapErr)
-		}
+	totalLayers := len(file)
+	results, mapErr := utils.Map(ctx, file, func(ctx context.Context, i int, filePath string) (pullLayerResult, error) {
+		var r pullLayerResult
+		err := processLocalTar(ctx, tarImportJob{
+			conf: conf, idx: i, total: totalLayers,
+			label: filePath, workDir: workDir, tracker: tracker, result: &r,
+		}, filePath)
+		return r, err
+	}, conf.PoolSize)
+	if mapErr != nil {
+		return fmt.Errorf("process layers: %w", mapErr)
+	}
 
-		return finishImport(ctx, conf, idx, name, computeManifestDigest(results), results, tracker, "Imported")
-	})
+	return finishImport(ctx, conf, store, name, computeManifestDigest(results), results, tracker, "Imported")
 }
 
 func importTarFromReader(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, r io.Reader) error {
-	return store.Publish(ctx, func(idx *imageIndex) error {
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
+	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
 
-		workDir, cleanup, err := newWorkDir(conf, "import-*")
-		if err != nil {
-			return err
-		}
-		defer cleanup()
+	workDir, cleanup, err := newWorkDir(conf, "import-*")
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
-		var result pullLayerResult
-		if err := processTarReader(ctx, tarImportJob{
-			conf: conf, idx: 0, total: 1,
-			label: name, workDir: workDir, tracker: tracker, result: &result,
-		}, r); err != nil {
-			return fmt.Errorf("process layer: %w", err)
-		}
+	var result pullLayerResult
+	if err := processTarReader(ctx, tarImportJob{
+		conf: conf, idx: 0, total: 1,
+		label: name, workDir: workDir, tracker: tracker, result: &result,
+	}, r); err != nil {
+		return fmt.Errorf("process layer: %w", err)
+	}
 
-		results := []pullLayerResult{result}
-		return finishImport(ctx, conf, idx, name, computeManifestDigest(results), results, tracker, "Imported")
-	})
+	results := []pullLayerResult{result}
+	return finishImport(ctx, conf, store, name, computeManifestDigest(results), results, tracker, "Imported")
 }
 
 func processLocalTar(ctx context.Context, j tarImportJob, tarPath string) error {

@@ -5,7 +5,6 @@ package bridge
 import (
 	"context"
 	"maps"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -25,14 +23,10 @@ type bridgeSnapshot struct {
 	prefixes map[string]struct{}
 }
 
-// GCModule returns a GC module reclaiming orphan bt* TAP devices; it needs no Bridge instance, only rootDir for the lock file.
-func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
-	lockPath := filepath.Join(rootDir, "bridge", "gc.lock")
-	_ = utils.EnsureDirs(filepath.Dir(lockPath))
-
+// GCModule returns a GC module reclaiming orphan bt* TAP devices; it needs no Bridge instance.
+func GCModule(_ string) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
-		Name:   typ,
-		Locker: flock.New(lockPath),
+		Name: typ,
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			snap := bridgeSnapshot{prefixes: make(map[string]struct{})}
 

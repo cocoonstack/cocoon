@@ -112,7 +112,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 // recoverVMTombstone drives id's tombstone to completion under the held ops
 // lock: leased rolls back (record stays live), deleting rolls forward from
 // the payload. done reports the entity was finalized (record gone).
-func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown NetTeardown) (done bool, err error) {
+func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown NetTeardown) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
 	ts := b.tombstones()
 	var (
 		rec     *tombstone.Record

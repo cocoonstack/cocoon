@@ -46,15 +46,23 @@ func commit(
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
-	if err := store.Publish(ctx, func(idx *imageIndex) error {
-		if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
-			if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
-				return fmt.Errorf("rename blob: %w", renameErr)
-			}
-			if chmodErr := os.Chmod(blobPath, 0o444); chmodErr != nil { //nolint:gosec // G302: intentionally world-readable
-				logger.Warnf(ctx, "chmod blob %s: %v", blobPath, chmodErr)
-			}
+	// Per-digest lock spans rename→index-commit: GC's TryLock cannot delete a
+	// blob that is on disk but not yet indexed (design §5). The rename runs
+	// outside any transaction; the index write is one pure transaction.
+	var blobLocks images.BlobLocks
+	defer blobLocks.Release()
+	if err := blobLocks.Lock(conf.BlobLockPath(digestHex)); err != nil {
+		return err
+	}
+	if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
+		if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
+			return fmt.Errorf("rename blob: %w", renameErr)
 		}
+		if chmodErr := os.Chmod(blobPath, 0o444); chmodErr != nil { //nolint:gosec // G302: intentionally world-readable
+			logger.Warnf(ctx, "chmod blob %s: %v", blobPath, chmodErr)
+		}
+	}
+	if err := store.Update(ctx, func(idx *imageIndex) error {
 		return writeIndexEntry(idx, conf, ref, digestHex)
 	}); err != nil {
 		return fmt.Errorf("update index: %w", err)

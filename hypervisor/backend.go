@@ -8,8 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -67,8 +66,7 @@ type Backend struct {
 	Typ      string
 	NS       string
 	Conf     BackendConfig
-	Meta     *metajson.Store
-	Locker   lock.Locker
+	Meta     meta.Store
 	Metering metering.Recorder
 
 	// NetCleanup releases a VM's host networking during delete/recovery; the
@@ -79,24 +77,18 @@ type Backend struct {
 // NewBackend wires shared init: EnsureDirs, the backend's namespace on the
 // injected meta store, nil-recorder fallback. Locker is the namespace lock
 // exposed for the legacy GC lock-all (P0 adapter; retires in P1).
-func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store *metajson.Store) (*Backend, error) {
+func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	ns := VMNamespaceName(typ)
-	locker, err := store.NamespaceLocker(ns)
-	if err != nil {
-		return nil, err
-	}
 	return &Backend{
 		Typ:      typ,
-		NS:       ns,
+		NS:       VMNamespaceName(typ),
 		Conf:     conf,
 		Meta:     store,
-		Locker:   locker,
 		Metering: rec,
 	}, nil
 }

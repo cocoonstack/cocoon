@@ -78,21 +78,6 @@ func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error
 	})
 }
 
-// rawView is the lockless read (legacy ReadRaw); P0 allowlist: LockVMOps and
-// the GC snapshot paths that already hold the namespace lock.
-func (b *Backend) rawView(ctx context.Context, fn func(*vmTx) error) error {
-	return b.Meta.RawView(ctx, b.NS, func(r meta.Reader) error {
-		return fn(b.tx(ctx, r, nil))
-	})
-}
-
-// lockedUpdate writes while the GC orchestrator holds the namespace lock (legacy WriteRaw).
-func (b *Backend) lockedUpdate(ctx context.Context, fn func(*vmTx) error) error {
-	return b.Meta.LockedUpdate(ctx, b.NS, func(w meta.Writer) error {
-		return fn(b.tx(ctx, w, w))
-	})
-}
-
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
 		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.Meta, b.NS, tableRecords, tableNames, r, w),

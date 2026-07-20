@@ -10,8 +10,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/cocoonstack/cocoon/images"
-	"github.com/cocoonstack/cocoon/lock"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -28,13 +27,12 @@ var _ images.Images = (*OCI)(nil)
 type OCI struct {
 	conf      *Config
 	store     *images.Store[imageEntry]
-	locker    lock.Locker
 	pullGroup singleflight.Group
 	ops       images.Ops[imageEntry]
 }
 
 // New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.
-func New(ctx context.Context, rootDir string, poolSize int, metaStore *metajson.Store) (*OCI, error) {
+func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store) (*OCI, error) {
 	cfg := NewConfig(rootDir, poolSize)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -43,14 +41,9 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore *metajson.
 	log.WithFunc("oci.New").Debugf(ctx, "OCI image backend initialized, pool size: %d", cfg.PoolSize)
 
 	store := images.NewMetaStore[imageEntry](metaStore, metaNS)
-	locker, err := store.Locker()
-	if err != nil {
-		return nil, err
-	}
 	o := &OCI{
-		conf:   cfg,
-		store:  store,
-		locker: locker,
+		conf:  cfg,
+		store: store,
 		ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,

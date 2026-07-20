@@ -155,3 +155,9 @@ func (x *NamedTx[R]) ResolveMany(refs []string, notFound error) ([]string, error
 	}
 	return ids, nil
 }
+
+// Reader exposes the transaction's read handle for satellite tables.
+func (x *NamedTx[R]) Reader() Reader { return x.r }
+
+// Writer exposes the transaction's write handle for satellite tables.
+func (x *NamedTx[R]) Writer() Writer { return x.w }

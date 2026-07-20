@@ -9,8 +9,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/cocoonstack/cocoon/images"
-	"github.com/cocoonstack/cocoon/lock"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -24,13 +23,12 @@ var _ images.Images = (*CloudImg)(nil)
 type CloudImg struct {
 	conf      *Config
 	store     *images.Store[imageEntry]
-	locker    lock.Locker
 	pullGroup singleflight.Group
 	ops       images.Ops[imageEntry]
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.
-func New(ctx context.Context, rootDir string, pullConns int, metaStore *metajson.Store) (*CloudImg, error) {
+func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Store) (*CloudImg, error) {
 	cfg := NewConfig(rootDir, pullConns)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -39,14 +37,9 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore *metajson
 	log.WithFunc("cloudimg.New").Debugf(ctx, "cloud image backend initialized, pull conns: %d", cfg.PullConns)
 
 	store := images.NewMetaStore[imageEntry](metaStore, metaNS)
-	locker, err := store.Locker()
-	if err != nil {
-		return nil, err
-	}
 	c := &CloudImg{
-		conf:   cfg,
-		store:  store,
-		locker: locker,
+		conf:  cfg,
+		store: store,
 		ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,

@@ -103,7 +103,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 // removing a committed NIC would strand record-without-device, unhealable by a
 // same-target retry. Lockless read so a GC index lock can't fake a miss.
 func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
-	rec, err := ch.RawLoadRecord(ctx, vmID)
+	rec, err := ch.PeekRecord(ctx, vmID)
 	if err != nil {
 		return false, err
 	}

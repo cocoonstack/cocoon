@@ -202,35 +202,6 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	return nil
 }
 
-// CleanStalePlaceholders removes "creating" records past GC grace period.
-func (b *Backend) CleanStalePlaceholders(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	cutoff := time.Now().Add(-CreatingStateGCGrace)
-	// Runs while the GC orchestrator holds the namespace lock (legacy WriteRaw).
-	return b.lockedUpdate(ctx, func(t *vmTx) error {
-		for _, id := range ids {
-			r, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if r == nil || r.State != types.VMStateCreating || !r.UpdatedAt.Before(cutoff) {
-				continue
-			}
-			if n := r.Config.Name; n != "" {
-				if err := t.NameDel(n); err != nil {
-					return err
-				}
-			}
-			if err := t.Del(id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 // closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.
 func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
 	now := time.Now()

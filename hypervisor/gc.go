@@ -16,6 +16,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -65,13 +66,12 @@ func (s VMGCSnapshot) sweepDirs(runRoot string) []string {
 // BuildGCModule builds GC module that scans DB and dirs for orphan VMs.
 func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	return gc.Module[VMGCSnapshot]{
-		Name:   b.Typ,
-		Locker: b.Locker,
+		Name:    b.Typ,
+		Recover: b.gcRecover,
 		ReadDB: func(ctx context.Context) (VMGCSnapshot, error) {
 			snap := VMGCSnapshot{reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-CreatingStateGCGrace)
-			// Lockless read: the orchestrator already holds the namespace lock.
-			if err := b.rawView(ctx, func(t *vmTx) error {
+			if err := b.view(ctx, func(t *vmTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
 				var err error
@@ -136,43 +136,84 @@ func (b *Backend) WatchPath() string {
 	return b.Conf.IndexFile()
 }
 
-// gcCollect kills leftover hypervisor processes, removes orphan dirs/records, and sweeps stale capture/staging leftovers under the orchestrator's flock.
+// gcRecover resumes existing tombstones by phase before discovery: an
+// interrupted delete never reappears as a candidate, and stranding it would
+// leak forever (design §5 recovery-precedes-discovery).
+func (b *Backend) gcRecover(ctx context.Context) []error {
+	var ids []string
+	if err := b.view(ctx, func(t *vmTx) error {
+		return b.tombstones().Scan(ctx, t.r, func(id string, _ *tombstone.Record) error {
+			ids = append(ids, id)
+			return nil
+		})
+	}); err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, id := range ids {
+		b.withOpsTryLock(ctx, id, func() {
+			if _, err := b.recoverVMTombstone(ctx, id, b.NetCleanup); err != nil {
+				errs = append(errs, fmt.Errorf("recover %s: %w", id, err))
+			}
+		})
+	}
+	return errs
+}
+
+// gcCollect kills leftover hypervisor processes, removes orphan dirs and
+// stale-creating records (through the phase protocol), and sweeps stale
+// capture/staging leftovers; every candidate revalidates under its VM lock.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
-	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM would strand a live VMM/dirs with no owner and let network GC tear it down.
-	safeToUnrecord := make([]string, 0, len(ids))
+	cutoff := time.Now().Add(-CreatingStateGCGrace)
 	for _, id := range ids {
-		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
-		_ = b.rawView(ctx, func(t *vmTx) error {
-			if rec, err := t.Get(id); err == nil && rec != nil {
-				runDir, logDir = rec.RunDir, rec.LogDir
-			}
-			return nil
-		})
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, id, func() {
-			// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
-			if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {
+			var rec *VMRecord
+			if err := b.view(ctx, func(t *vmTx) error {
+				var err error
+				rec, err = t.Get(id)
+				return err
+			}); err != nil {
+				errs = append(errs, err)
+				return
+			}
+			if rec == nil {
+				// Recordless orphan dirs: removal converges without a
+				// tombstone — no metadata points at them.
+				runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
+				// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
+				if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {
+					errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
+					return
+				}
+				if err := RemoveVMDirs(runDir, logDir); err != nil {
+					errs = append(errs, fmt.Errorf("remove vm %s: %w", id, err))
+					return
+				}
+				logger.Infof(ctx, "collected id=%s reason=%s", id, snap.reasons[id])
+				return
+			}
+			// Revalidate under the lock: only a still-stale creating record qualifies.
+			if rec.State != types.VMStateCreating || !rec.UpdatedAt.Before(cutoff) {
+				return
+			}
+			if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
 				errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
 				return
 			}
-			if err := RemoveVMDirs(runDir, logDir); err != nil {
-				errs = append(errs, fmt.Errorf("remove vm %s: %w", id, err))
+			if err := b.deleteVMProtocol(ctx, id, rec, b.NetCleanup); err != nil {
+				errs = append(errs, fmt.Errorf("collect %s: %w", id, err))
 				return
 			}
-			logger.Infof(ctx, "collected id=%s runDir=%s logDir=%s reason=%s",
-				id, runDir, logDir, snap.reasons[id])
-			safeToUnrecord = append(safeToUnrecord, id)
+			logger.Infof(ctx, "collected id=%s reason=%s", id, snap.reasons[id])
 		})
 		if !ok {
 			logger.Warnf(ctx, "skip %s: ops lock busy (in-flight operation)", id)
 		}
-	}
-	if err := b.CleanStalePlaceholders(ctx, safeToUnrecord); err != nil {
-		errs = append(errs, fmt.Errorf("clean stale placeholders: %w", err))
 	}
 	return errors.Join(errs...)
 }
@@ -227,9 +268,8 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 // sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
 func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 	logger := log.WithFunc("gc." + b.Typ)
-	// Lockless write: the orchestrator already holds the namespace lock for the whole cycle; a locked Update here would self-deadlock.
 	clearIntent := func(dir string) {
-		if err := b.lockedUpdate(ctx, func(t *vmTx) error {
+		if err := b.update(ctx, func(t *vmTx) error {
 			return t.removeOrphanDir(dir)
 		}); err != nil {
 			logger.Warnf(ctx, "clear cleanup intent %s: %v", dir, err)

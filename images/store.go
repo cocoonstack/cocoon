@@ -8,7 +8,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/cocoonstack/cocoon/lock"
+	gofrsflock "github.com/gofrs/flock"
+
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
@@ -24,12 +25,12 @@ const (
 // materializes per operation — the same IO profile as the legacy store; the
 // sqlite schema splits refs into indexed tables in P2.
 type Store[E any] struct {
-	meta *metajson.Store
+	meta meta.Store
 	ns   string
 }
 
 // NewMetaStore binds an image namespace on the shared engine.
-func NewMetaStore[E any](store *metajson.Store, ns string) *Store[E] {
+func NewMetaStore[E any](store meta.Store, ns string) *Store[E] {
 	return &Store[E]{meta: store, ns: ns}
 }
 
@@ -50,39 +51,6 @@ func (s *Store[E]) Update(ctx context.Context, fn func(*Index[E]) error) error {
 	return s.meta.Update(ctx, meta.Scope{Write: s.ns}, meta.CommitDurable, func(w meta.Writer) error {
 		return s.applyDiff(ctx, w, fn)
 	})
-}
-
-// Publish is Update for the publish critical sections — OCI pull,
-// importTarLayers, importTarFromReader, cloudimg commit — whose closures move
-// blob files inside the transaction (P0 adapter allowlist; the json engine
-// runs closures exactly once).
-func (s *Store[E]) Publish(ctx context.Context, fn func(*Index[E]) error) error {
-	return s.meta.ImpureUpdate(ctx, s.ns, func(w meta.Writer) error {
-		return s.applyDiff(ctx, w, fn)
-	})
-}
-
-// LockedRead reads while the GC orchestrator holds the namespace lock.
-func (s *Store[E]) LockedRead(ctx context.Context, fn func(*Index[E]) error) error {
-	return s.meta.RawView(ctx, s.ns, func(r meta.Reader) error {
-		idx, _, err := s.materialize(ctx, r)
-		if err != nil {
-			return err
-		}
-		return fn(idx)
-	})
-}
-
-// LockedWrite writes while the GC orchestrator holds the namespace lock.
-func (s *Store[E]) LockedWrite(ctx context.Context, fn func(*Index[E]) error) error {
-	return s.meta.LockedUpdate(ctx, s.ns, func(w meta.Writer) error {
-		return s.applyDiff(ctx, w, fn)
-	})
-}
-
-// Locker exposes the namespace lock for gc.Module (P0 adapter).
-func (s *Store[E]) Locker() (lock.Locker, error) {
-	return s.meta.NamespaceLocker(s.ns)
 }
 
 func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[E]) error) error {
@@ -195,4 +163,36 @@ func (IndexCodec[E]) Encode(m *metajson.Model) ([]byte, error) {
 		}
 	}
 	return append(buf, '}', '\n'), nil
+}
+
+// BlobLocks holds per-digest blob locks for a publish critical section:
+// sorted acquisition so concurrent multi-digest publishes cannot deadlock;
+// Release never removes the lock files (flock synchronizes on the inode).
+type BlobLocks struct {
+	held []*gofrsflock.Flock
+}
+
+// Lock acquires every path in sorted order, blocking.
+func (b *BlobLocks) Lock(paths ...string) error {
+	sorted := slices.Clone(paths)
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+	for _, p := range sorted {
+		fl := gofrsflock.New(p)
+		if err := fl.Lock(); err != nil {
+			_ = fl.Close()
+			b.Release()
+			return fmt.Errorf("lock blob %s: %w", p, err)
+		}
+		b.held = append(b.held, fl)
+	}
+	return nil
+}
+
+// Release drops every held lock.
+func (b *BlobLocks) Release() {
+	for _, fl := range b.held {
+		_ = fl.Close()
+	}
+	b.held = nil
 }

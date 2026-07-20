@@ -18,8 +18,15 @@ func (c *BaseConfig) BackendDir() string { return filepath.Join(c.RootDir, c.Sub
 func (c *BaseConfig) DBDir() string      { return filepath.Join(c.BackendDir(), "db") }
 func (c *BaseConfig) TempDir() string    { return filepath.Join(c.BackendDir(), "temp") }
 func (c *BaseConfig) BlobsDir() string   { return filepath.Join(c.BackendDir(), "blobs") }
-func (c *BaseConfig) IndexFile() string  { return filepath.Join(c.DBDir(), "images.json") }
-func (c *BaseConfig) IndexLock() string  { return filepath.Join(c.DBDir(), "images.lock") }
+
+// BlobLockPath is the per-digest lock beside the blob (design §5): taken by
+// GC and by any flow that materializes that digest; never removed by cleanup.
+func (c *BaseConfig) BlobLockPath(hex string) string {
+	return filepath.Join(c.BlobsDir(), hex+".lock")
+}
+
+func (c *BaseConfig) IndexFile() string { return filepath.Join(c.DBDir(), "images.json") }
+func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "images.lock") }
 
 func (c *BaseConfig) BlobPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+c.BlobExt)

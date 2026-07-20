@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock/flock"
 )
 
 // bridgeSnapshot is a placeholder for non-Linux.
@@ -16,8 +15,6 @@ type bridgeSnapshot struct{}
 func GCModule(rootDir string) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: "bridge",
-		// /dev/null supports flock everywhere, so TryLock always succeeds without creating a real lock file.
-		Locker: flock.New("/dev/null"),
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			return bridgeSnapshot{}, nil
 		},

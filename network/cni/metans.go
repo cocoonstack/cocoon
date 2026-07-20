@@ -31,46 +31,47 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 
 var _ metajson.Codec = netIndexCodec{}
 
-// netIndexCodec reproduces the legacy networkIndex file byte-for-byte.
+// netIndexCodec reproduces the legacy networkIndex file byte-for-byte;
+// records cross as raw messages (no per-record re-marshal).
 type netIndexCodec struct{}
+
+// rawNetIndex mirrors networkIndex's field layout with pass-through record bytes.
+type rawNetIndex struct {
+	Networks   map[string]json.RawMessage `json:"networks"`
+	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+}
 
 func (netIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()
 	if data == nil {
 		return m, nil
 	}
-	var idx networkIndex
+	var idx rawNetIndex
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return nil, err
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Networks)) {
-		raw, err := json.Marshal(idx.Networks[id])
-		if err != nil {
-			return nil, err
-		}
-		m.Put(tableRecs, id, raw)
+		m.Put(tableRecs, id, idx.Networks[id])
+	}
+	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
+		m.Put(tableTombs, id, idx.Tombstones[id])
 	}
 	return m, nil
 }
 
 func (netIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	idx := networkIndex{}
-	idx.Init()
-	if err := m.Scan(tableRecs, func(id string, raw json.RawMessage) error {
-		var rec networkRecord
-		if err := json.Unmarshal(raw, &rec); err != nil {
-			return err
-		}
-		idx.Networks[id] = &rec
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(&idx)
+	buf := append([]byte(nil), `{"networks":`...)
+	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecs))
 	if err != nil {
 		return nil, err
 	}
-	return append(data, '\n'), nil
+	if ts := metajson.CollectTable(m, tableTombs); len(ts) > 0 {
+		buf = append(buf, `,"tombstones":`...)
+		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
+			return nil, err
+		}
+	}
+	return append(buf, '}', '\n'), nil
 }
 
 // netTx is the CNI view of one meta transaction: a records-only namespace
@@ -132,20 +133,22 @@ func (c *CNI) update(ctx context.Context, fn func(*netTx) error) error {
 	})
 }
 
-// rawView reads while the GC orchestrator holds the namespace lock (legacy ReadRaw).
-func (c *CNI) rawView(ctx context.Context, fn func(*netTx) error) error {
-	return c.meta.RawView(ctx, metaNS, func(r meta.Reader) error {
-		return fn(c.tx(ctx, r, nil))
-	})
-}
-
-// lockedUpdate writes while the GC orchestrator holds the namespace lock (legacy WriteRaw).
-func (c *CNI) lockedUpdate(ctx context.Context, fn func(*netTx) error) error {
-	return c.meta.LockedUpdate(ctx, metaNS, func(w meta.Writer) error {
-		return fn(c.tx(ctx, w, w))
-	})
-}
-
 func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
 	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecs)}
+}
+
+// deleteRecords removes the given record rows in one transaction; used by
+// the Add-path stale-NIC reclaim, which runs under the VM lock.
+func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.update(ctx, func(t *netTx) error {
+		for _, id := range ids {
+			if err := t.del(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

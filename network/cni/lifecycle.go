@@ -202,8 +202,15 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
 	}
-	downIDs, err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
-	return errors.Join(err, c.deleteRecords(ctx, downIDs))
+	// SUBSET phase protocol (design §2): the payload names record IDs — never
+	// NIC indices — so a crash mid-teardown recovers exactly these rows and
+	// leaves the netns and the other NICs alone. The caller (netresize) holds
+	// the VM lock, making this a ...Locked entrypoint.
+	subset := make([]string, 0, len(picked))
+	for _, r := range picked {
+		subset = append(subset, r.ID)
+	}
+	return c.teardownProtocol(ctx, vmID, subset, true)
 }
 
 // stageNICIntents reclaims stale slots and lands every fresh NIC's intent record in one write before any plugin ADD: GC gets per-NIC release context at the cost of a single fsync on the claim path.

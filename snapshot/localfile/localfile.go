@@ -15,8 +15,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -53,14 +52,13 @@ var (
 // LocalFile is the local-filesystem snapshot backend.
 type LocalFile struct {
 	conf     *Config
-	meta     *metajson.Store
-	locker   lock.Locker
+	meta     meta.Store
 	metering metering.Recorder
 	gcPolicy EvictionPolicy
 }
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.
-func New(conf *config.Config, rec metering.Recorder, store *metajson.Store, opts ...Option) (*LocalFile, error) {
+func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...Option) (*LocalFile, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -71,11 +69,7 @@ func New(conf *config.Config, rec metering.Recorder, store *metajson.Store, opts
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	locker, err := store.NamespaceLocker(metaNS)
-	if err != nil {
-		return nil, err
-	}
-	lf := &LocalFile{conf: cfg, meta: store, locker: locker, metering: rec}
+	lf := &LocalFile{conf: cfg, meta: store, metering: rec}
 	for _, opt := range opts {
 		opt(lf)
 	}
@@ -90,16 +84,32 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 	if err != nil {
 		return "", types.SnapshotConfig{}, nil, err
 	}
-	release, err := lf.acquireReadLease(ctx, rec.ID)
-	if err != nil {
-		return "", types.SnapshotConfig{}, nil, err
+	// Shared-lease escalation (design §5): a shared holder cannot drive
+	// recovery, so on meeting a tombstone the guard releases the shared lease,
+	// recovers under an exclusive one, and this loop re-acquires shared and
+	// revalidates — an in-place upgrade would self-deadlock.
+	for range 2 {
+		release, err := lf.acquireReadLease(ctx, rec.ID)
+		if err != nil {
+			return "", types.SnapshotConfig{}, nil, err
+		}
+		if gErr := lf.guardSnapTombstone(ctx, rec.ID, release); gErr != nil {
+			if errors.Is(gErr, ErrTombstoned) {
+				if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
+					return "", types.SnapshotConfig{}, nil, err
+				}
+				continue
+			}
+			return "", types.SnapshotConfig{}, nil, gErr
+		}
+		// Re-verify under the lease: a delete may have completed between lookup and acquire.
+		if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
+			release()
+			return "", types.SnapshotConfig{}, nil, err
+		}
+		return rec.DataDir, snapshotRecordToConfig(rec), release, nil
 	}
-	// Re-verify under the lease: a delete may have completed between lookup and acquire.
-	if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
-		release()
-		return "", types.SnapshotConfig{}, nil, err
-	}
-	return rec.DataDir, snapshotRecordToConfig(rec), release, nil
+	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
 
 // Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
@@ -288,33 +298,20 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
 	}
 	defer fl.Close() //nolint:errcheck
-	if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
-		return fmt.Errorf("remove data dir %s: %w", id, err)
+	// The §5 phase protocol: the record stays live until the fenced finalize,
+	// and a crash mid-removal leaves a deleting tombstone recovery resumes.
+	// A recordless leftover dir converges without one (nothing points at it).
+	deletedRecord, hypType, err := lf.deleteSnapshotProtocol(ctx, id, nil)
+	if err != nil {
+		return err
 	}
-	var (
-		hypType       string
-		deletedRecord bool
-	)
-	if err := lf.update(ctx, func(t *snapTx) error {
-		deletedRecord, hypType = false, ""
-		rec, err := t.Get(id)
-		if err != nil || rec == nil {
-			return err
+	if !deletedRecord {
+		if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
+			return fmt.Errorf("remove data dir %s: %w", id, err)
 		}
-		deletedRecord = true
-		hypType = rec.Hypervisor
-		if rec.Name != "" {
-			if err := t.NameDel(rec.Name); err != nil {
-				return err
-			}
-		}
-		return t.Del(id)
-	}); err != nil {
-		return fmt.Errorf("delete DB record %s: %w", id, err)
+		return nil
 	}
-	if deletedRecord {
-		emitSnapStop(ctx, lf.metering, id, hypType)
-	}
+	emitSnapStop(ctx, lf.metering, id, hypType)
 	// The lease file stays: flock synchronizes on the inode, and deleting one
 	// splits exclusion for a live waiter (design §5 lock-inode rules).
 	return nil

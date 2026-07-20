@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -15,8 +14,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/lock"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -40,8 +38,7 @@ var _ network.Network = (*CNI)(nil)
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {
 	conf        *Config
-	meta        *metajson.Store
-	locker      lock.Locker
+	meta        meta.Store
 	confLists   map[string]*libcni.NetworkConfigList // name → conflist
 	defaultName string                               // first conflist name (backward compat)
 	cniConf     *libcni.CNIConfig
@@ -49,7 +46,7 @@ type CNI struct {
 }
 
 // New creates a CNI provider; conflist loading is best-effort so Delete/Inspect/List still work when none are available — Add fails in that case.
-func New(conf *config.Config, store *metajson.Store) (*CNI, error) {
+func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -58,15 +55,9 @@ func New(conf *config.Config, store *metajson.Store) (*CNI, error) {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)
 	}
 
-	locker, err := store.NamespaceLocker(metaNS)
-	if err != nil {
-		return nil, err
-	}
-
 	c := &CNI{
 		conf:      cfg,
 		meta:      store,
-		locker:    locker,
 		confLists: make(map[string]*libcni.NetworkConfigList),
 	}
 
@@ -147,31 +138,12 @@ func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	return result.Succeeded, result.Err()
 }
 
+// deleteVM tears down all of vmID's networking through the phase protocol.
+// The caller already holds the VM lock (the delete protocol's NetCleanup or
+// the GC collector), so this is a ...Locked entrypoint — re-locking the
+// non-reentrant flock here would self-deadlock (design §5).
 func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
-	var records []networkRecord
-	if err := c.view(ctx, func(t *netTx) error {
-		var err error
-		records, err = t.byVMID(vmID)
-		return err
-	}); err != nil {
-		return fmt.Errorf("read network index: %w", err)
-	}
-	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
-	nsPath := netnsPath(vmID)
-	// Sweep only released records: a failed DEL keeps its record so GC retries the release.
-	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, false)
-	if err := c.deleteRecords(ctx, downIDs); err != nil {
-		return errors.Join(tdErr, err)
-	}
-	if tdErr != nil {
-		// Keep the netns: the retried DEL (GC) runs with its full context intact.
-		return fmt.Errorf("nic release incomplete, netns kept for gc retry: %w", tdErr)
-	}
-	nsName := netnsName(vmID)
-	if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove netns %s: %w", nsPath, err)
-	}
-	return nil
+	return c.teardownProtocol(ctx, vmID, nil, false)
 }
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
@@ -219,20 +191,6 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 		downIDs = append(downIDs, rec.ID)
 	}
 	return downIDs, errors.Join(errs...)
-}
-
-func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	return c.update(ctx, func(t *netTx) error {
-		for _, id := range ids {
-			if err := t.del(id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
 
 func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {

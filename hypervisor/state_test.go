@@ -589,18 +589,12 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 	const typ = "test-hv"
 	dir := t.TempDir()
 	store := testNamespace(t, typ, dir)
-	ns := VMNamespaceName(typ)
-	locker, err := store.NamespaceLocker(ns)
-	if err != nil {
-		t.Fatalf("namespace locker: %v", err)
-	}
 	rec := meteringcapture.New()
 	return &Backend{
 		Typ:      typ,
-		NS:       ns,
+		NS:       VMNamespaceName(typ),
 		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
 		Meta:     store,
-		Locker:   locker,
 		Metering: rec,
 	}, rec
 }

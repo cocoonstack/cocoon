@@ -131,7 +131,7 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	if res.After != 0 || len(res.Removed) != 1 {
 		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
 	}
-	rec, err := ch.RawLoadRecord(ctx, "vm7")
+	rec, err := ch.PeekRecord(ctx, "vm7")
 	if err != nil {
 		t.Fatalf("read record: %v", err)
 	}

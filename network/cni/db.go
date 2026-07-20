@@ -15,15 +15,3 @@ type networkRecord struct {
 	// IfName is the CNI interface name inside the netns (eth0, eth1, ...).
 	IfName string `json:"if_name"`
 }
-
-// networkIndex is the top-level DB structure for the CNI network provider.
-type networkIndex struct {
-	Networks map[string]*networkRecord `json:"networks"`
-}
-
-// Init implements storage.Initer.
-func (idx *networkIndex) Init() {
-	if idx.Networks == nil {
-		idx.Networks = make(map[string]*networkRecord)
-	}
-}

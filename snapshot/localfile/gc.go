@@ -15,6 +15,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -56,15 +57,14 @@ type snapshotGCSnapshot struct {
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
 func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot] {
-	conf, locker, recorder := lf.conf, lf.locker, lf.metering
+	conf, recorder := lf.conf, lf.metering
 	return gc.Module[snapshotGCSnapshot]{
-		Name:   "snapshot",
-		Locker: locker,
+		Name:    "snapshot",
+		Recover: lf.gcRecover,
 		ReadDB: func(ctx context.Context) (snapshotGCSnapshot, error) {
 			snap := snapshotGCSnapshot{policy: policy, reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-pendingGCGrace)
-			// Lockless read: the orchestrator already holds the namespace lock.
-			if err := lf.rawView(ctx, func(t *snapTx) error {
+			if err := lf.view(ctx, func(t *snapTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
@@ -128,11 +128,16 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		},
 		Collect: func(ctx context.Context, ids []string, snap snapshotGCSnapshot) error {
 			logger := log.WithFunc("gc.snapshot")
-			var (
-				errs    []error
-				removed = make([]string, 0, len(ids))
-				emits   = make([]string, 0, len(ids))
-			)
+			cutoff := time.Now().Add(-pendingGCGrace)
+			pending := false
+			revalidate := func(rec *snapshot.SnapshotRecord) bool {
+				pending = rec.Pending
+				if rec.Pending {
+					return rec.CreatedAt.Before(cutoff)
+				}
+				return true
+			}
+			var errs []error
 			for _, id := range ids {
 				if err := ctx.Err(); err != nil {
 					errs = append(errs, err)
@@ -151,25 +156,27 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
 					continue
 				}
-				if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
+				// Record-backed candidates go through the phase protocol; a
+				// recordless leftover dir converges by plain removal.
+				pending = false
+				deleted, hyp, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
+				if err != nil {
 					_ = fl.Close()
-					errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
+					errs = append(errs, fmt.Errorf("collect snapshot %s: %w", id, err))
 					continue
+				}
+				if !deleted {
+					if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
+						_ = fl.Close()
+						errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
+						continue
+					}
 				}
 				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion (design §5)
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
-				removed = append(removed, id)
 				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
-				if _, ok := snap.records[id]; ok {
-					emits = append(emits, id)
-				}
-			}
-			// Emit only after the record deletion lands: a persistently failing DB would re-candidate these ids and double-close the interval.
-			if err := cleanResolvedRecords(ctx, lf, removed); err != nil {
-				errs = append(errs, fmt.Errorf("clean DB records: %w", err))
-			} else {
-				for _, id := range emits {
-					emitSnapStop(ctx, recorder, id, snap.records[id].hypervisor)
+				if deleted && !pending {
+					emitSnapStop(ctx, recorder, id, hyp)
 				}
 			}
 			return errors.Join(errs...)
@@ -272,7 +279,7 @@ func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]sn
 	if !changed {
 		return
 	}
-	if err := lf.lockedUpdate(ctx, func(t *snapTx) error {
+	if err := lf.update(ctx, func(t *snapTx) error {
 		for id, m := range records {
 			r, err := t.Get(id)
 			if err != nil {
@@ -292,36 +299,23 @@ func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]sn
 	}
 }
 
-// cleanResolvedRecords drops resolved records; pending only past grace.
-func cleanResolvedRecords(ctx context.Context, lf *LocalFile, ids []string) error {
-	if len(ids) == 0 {
-		return nil
+// gcRecover resumes existing snapshot tombstones by phase before discovery
+// (design §5 recovery-precedes-discovery).
+func (lf *LocalFile) gcRecover(ctx context.Context) []error {
+	var ids []string
+	if err := lf.view(ctx, func(t *snapTx) error {
+		return lf.tombstones().Scan(ctx, t.Reader(), func(id string, _ *tombstone.Record) error {
+			ids = append(ids, id)
+			return nil
+		})
+	}); err != nil {
+		return []error{err}
 	}
-	cutoff := time.Now().Add(-pendingGCGrace)
-	stale := func(r *snapshot.SnapshotRecord) bool {
-		if r.Pending {
-			return r.CreatedAt.Before(cutoff)
+	var errs []error
+	for _, id := range ids {
+		if err := lf.recoverSnapTombstone(ctx, id); err != nil {
+			errs = append(errs, err)
 		}
-		return true
 	}
-	return lf.lockedUpdate(ctx, func(t *snapTx) error {
-		for _, id := range ids {
-			rec, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if rec == nil || !stale(rec) {
-				continue
-			}
-			if n := rec.Name; n != "" {
-				if err := t.NameDel(n); err != nil {
-					return err
-				}
-			}
-			if err := t.Del(id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	return errs
 }
