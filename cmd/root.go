@@ -30,7 +30,9 @@ var (
 func Execute(ctx context.Context) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	return newRootCmd().ExecuteContext(ctx)
+	err := newRootCmd().ExecuteContext(ctx)
+	cmdcore.CloseMetaStore(ctx)
+	return err
 }
 
 func newRootCmd() *cobra.Command {

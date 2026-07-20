@@ -1,7 +1,10 @@
 package core
 
 import (
+	"context"
 	"sync"
+
+	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
@@ -33,4 +36,15 @@ func MetaStore(conf *config.Config) (*metajson.Store, error) {
 		)
 	})
 	return metaStore, metaErr
+}
+
+// CloseMetaStore ends the store's unified lifecycle at command teardown
+// (design §10 P0); a process that never opened it is a no-op.
+func CloseMetaStore(ctx context.Context) {
+	if metaStore == nil {
+		return
+	}
+	if err := metaStore.Close(); err != nil {
+		log.WithFunc("core.CloseMetaStore").Warnf(ctx, "close meta store: %v", err)
+	}
 }
