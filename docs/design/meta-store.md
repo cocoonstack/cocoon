@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.12)
+# Meta store: unified metadata layer (design v2.13)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -198,28 +198,32 @@ CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NUL
 -- namespace vms_firecracker (same shape for vms_cloudhypervisor)
 CREATE TABLE vms_firecracker            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
 CREATE TABLE vms_firecracker_orphandirs (path TEXT NOT NULL PRIMARY KEY);
-CREATE TABLE vms_firecracker_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE vms_firecracker_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL, payload TEXT NOT NULL);
 
 -- namespace snapshots
 CREATE TABLE snapshots            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE snapshots_tombstones (id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL, payload TEXT NOT NULL);
 
 -- namespace networks
 CREATE TABLE networks            (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
 CREATE INDEX networks_by_vm ON networks(vm_id);
-CREATE TABLE networks_tombstones (vm_id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE networks_tombstones (vm_id TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL, payload TEXT NOT NULL);
 -- Keyed by VM, not by NIC: network records are one row per NIC, but GC
 -- candidates, netns, TAPs and the ops lock are all per VM. A VM-keyed lease
 -- also covers the case where no network row survives but an orphan netns
 -- does. CNI Add checks this table by vm_id before creating anything.
--- Finalize for a network lease means: every row with that vm_id, plus the
--- netns and TAPs derived from it — the aggregate, not one NIC row.
+-- Finalize acts on exactly what the payload says: an AGGREGATE teardown
+-- removes every row for that vm_id plus the netns and TAPs derived from it,
+-- while a SUBSET teardown (a `vm net remove --index N` resize) removes only
+-- the listed NIC indices and leaves the netns and the other NICs alone.
+-- Without that distinction, recovering a one-NIC resize would tear down the
+-- VM's whole networking.
 
 -- namespace images_oci (same shape for images_cloudimg)
 CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE image_oci_refs        (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest), data TEXT NOT NULL);
 CREATE INDEX image_oci_refs_digest ON image_oci_refs(digest);
-CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL);
+CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL, payload TEXT NOT NULL);
 ```
 
 Representation rules (each has a round-trip fixture in §9):
@@ -317,7 +321,14 @@ candidates.
 Per candidate:
 
 1. Short `View` builds candidates (never held across file IO).
-2. Acquire the entity's operational lock (ops flock). The mapping is
+2. Acquire the entity's operational lock (ops flock) — but only at the
+   OUTERMOST lifecycle operation. flock is not reentrant, and callers like
+   CH's network resize already hold the VM ops lock before invoking NIC
+   removal (`hypervisor/cloudhypervisor/netresize.go` takes `LockVMOps`
+   first), so an unconditional re-acquire inside the protocol would
+   self-deadlock. Destructive repository flows therefore expose `...Locked`
+   entrypoints that assert the lock is already held and skip step 2; the
+   plain entrypoints acquire it. The mapping is
    explicit, because it is not uniform today: VMs use the existing per-VM
    `ops.lock`; networks are covered by their owning VM's lock (teardown
    belongs to that VM); snapshots use their existing read-lease mechanism in
@@ -362,10 +373,18 @@ adopts, uniform across namespaces:
   `ops.lock` relocates to a runDir sibling, matching where snapshots already
   put `LeasePath`);
 - destructive cleanup NEVER deletes a lock file;
-- lock files are reaped by a separate age-plus-`TryLock` sweep — the pattern
-  `hypervisor/gc.go`'s `sweepStaleCloneLocks` already implements, precisely
-  so "a live waiter can't be split onto a fresh inode", and which
-  `images/gc.go` already respects by skipping `.lock` files.
+- lock files are reaped only by an explicit maintenance action (doctor /
+  `gc --deep`) that requires a quiescent store, never during normal
+  operation — entity locks are cheap to keep and expensive to get wrong;
+- and because unlink-versus-acquire can still split exclusion (a waiter
+  blocked on the old inode is granted it after the reaper unlinks the path,
+  while a new actor locks the freshly created file at the same path), EVERY
+  locker validates identity after acquiring: stat the path, compare
+  device+inode with the fstat of the descriptor it holds, and retry on
+  mismatch. This is the same hazard `hypervisor/gc.go`'s
+  `sweepStaleCloneLocks` documents ("a live waiter can't be split onto a
+  fresh inode") and that `images/gc.go` sidesteps by never deleting `.lock`
+  files at all.
 
 With that rule the protocol needs no per-namespace special case: the record
 is deleted at finalize (step 6) everywhere.
@@ -560,11 +579,12 @@ Engine-scoped, because the engines have deliberately different cost models.
   append and the number burned as a gap, since the contract permits either
   and a json engine will typically burn where sqlite reuses.
 - **Commit atomicity under crash** (all engines): kill the process at every
-  step of a multi-record single-namespace `Update` (json: mid-rewrite, between
-  temp write and rename, between rename and `.prev` rotation; sqlite: mid-WAL
-  append, pre/post commit-frame); reopening must show the transaction wholly
-  applied or wholly absent — never partially. Isolation tests alone do not
-  prove this.
+  step of a multi-record single-namespace `Update`, in the order the code
+  actually performs them — json: `.prev` link+rename rotation FIRST, then the
+  main temp write and rename, then the file fsyncs, then the parent-dir
+  fsync; sqlite: mid-WAL append, pre/post commit-frame. Reopening must show
+  the transaction wholly applied or wholly absent — never partially.
+  Isolation tests alone do not prove this.
 - **Lock-inode safety**: for every namespace, assert that a full destructive
   cleanup leaves the entity's lock file intact (it is outside the cleanup
   set), that a worker holding it still holds the SAME inode afterwards, and
@@ -610,13 +630,16 @@ Engine-scoped, because the engines have deliberately different cost models.
   missed change); unsupported-fs refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
-  consistency, directory ownership. Tombstone legality follows the uniform
-  protocol: a record LIVE alongside a `leased` or `deleting` tombstone is the
-  normal in-flight state (records are deleted at finalize, §5 step 6), and a
-  tombstone with no record is a crash residue the recovery sweep must clear —
-  neither is corruption. The genuinely illegal states are a record whose
-  tombstone vanished mid-`deleting` (nothing left to drive roll-forward) and
-  a tombstone whose `lease_id` is empty.
+  consistency, directory ownership. Tombstone legality is conditional on the
+  payload's candidate kind, not absolute: for a RECORD-BACKED candidate the
+  row stays live alongside a `leased` or `deleting` tombstone until finalize
+  (§5 step 6), so row-present is the normal in-flight state; for a RECORDLESS
+  orphan (a directory or blob GC collects that never had a row) there is no
+  row in any phase, and demanding one would fail a correct implementation.
+  The genuinely illegal states are a tombstone with an empty `lease_id` or
+  payload, a record-backed tombstone whose row vanished before finalize, and
+  a `deleting` tombstone that no recovery sweep can act on because its
+  payload does not name its cleanup target.
 
 **Performance, sqlite engine (the reason this design exists).**
 - Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k,
@@ -624,8 +647,11 @@ Engine-scoped, because the engines have deliberately different cost models.
   implementation with a small constant would satisfy the storm bounds below:
   per-operation cost at N=10k divided by cost at N=100 must have a 95% CI
   upper bound ≤ 2.0 (log-growth over two decades is ≈1.5×; linear growth
-  would be ≈100×), AND the absolute per-operation cost at N=10k must stay
-  under a predeclared ceiling.
+  would be ≈100×), AND the absolute per-operation median at N=10k must stay
+  under a concrete ceiling — on the reference testbed (16-core, NVMe):
+  Durable single-record write ≤ 5ms (one fsync plus overhead), Relaxed write
+  ≤ 1ms, `Get` ≤ 0.5ms. Without concrete numbers a flat-but-slow primitive
+  (say 500ms per op) satisfies the ratio rule trivially.
 - Hardware storms, ≥5 rounds per point (median, p95, variance reported), with
   a **predeclared numeric bound, judged by the upper bound of a 95% CI** —
   not by failure to reject flatness: fitting wall ≈ a + b·N at B=64, the pass
