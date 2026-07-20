@@ -15,6 +15,11 @@ const (
 	tableTombstones = "tombstones"
 )
 
+var netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: tableRecords},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
+}}
+
 // MetaNamespace declares the network namespace over the legacy networks.json.
 func MetaNamespace(conf *config.Config) metajson.Namespace {
 	cfg := &Config{Config: conf}
@@ -25,11 +30,6 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 		Codec:    netTables,
 	}
 }
-
-var netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "networks", Table: tableRecords},
-	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}}
 
 // netTx is the CNI view of one meta transaction: a records-only namespace
 // with the vm_id secondary lookup served by scan.

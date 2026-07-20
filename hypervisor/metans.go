@@ -16,6 +16,12 @@ const (
 	orphanDirEntry = "{}"
 )
 
+var vmTables = []metajson.TableSpec{
+	{Key: "vms", Table: tableRecords},
+	{Key: "names", Table: tableNames},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
+}
+
 // VMNamespaceName maps a backend type to its meta namespace (design §2).
 func VMNamespaceName(typ string) string {
 	return "vms_" + strings.ReplaceAll(typ, "-", "")
@@ -29,12 +35,6 @@ func MetaNamespace(typ, indexFile, lockPath string) metajson.Namespace {
 		LockPath: lockPath,
 		Codec:    vmIndexCodec{},
 	}
-}
-
-var vmTables = []metajson.TableSpec{
-	{Key: "vms", Table: tableRecords},
-	{Key: "names", Table: tableNames},
-	{Key: "tombstones", Table: tableTombstones, Optional: true},
 }
 
 var _ metajson.Codec = vmIndexCodec{}

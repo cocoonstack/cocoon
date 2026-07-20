@@ -16,6 +16,12 @@ const (
 	tableTombstones = "tombstones"
 )
 
+var snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "snapshots", Table: tableRecords},
+	{Key: "names", Table: tableNames},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
+}}
+
 // MetaNamespace declares the snapshot namespace over the legacy snapshots.json.
 func MetaNamespace(conf *config.Config) metajson.Namespace {
 	cfg := NewConfig(conf)
@@ -26,12 +32,6 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 		Codec:    snapTables,
 	}
 }
-
-var snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "snapshots", Table: tableRecords},
-	{Key: "names", Table: tableNames},
-	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}}
 
 type snapTx = meta.NamedTx[snapshot.SnapshotRecord]
 
