@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.18)
+# Meta store: unified metadata layer (design v2.19)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -220,7 +220,9 @@ CREATE TABLE networks_tombstones (vm_id TEXT NOT NULL PRIMARY KEY, lease_id TEXT
 -- Finalize acts on exactly what the payload says: an AGGREGATE teardown
 -- removes every row for that vm_id plus the netns and TAPs derived from it,
 -- while a SUBSET teardown (a `vm net remove --index N` resize) removes only
--- the listed NIC indices and leaves the netns and the other NICs alone.
+-- the records named by id in `cleanup.records[]` — never NIC indices, which
+-- cannot disambiguate duplicate or same-IfName rows — and leaves the netns
+-- and the other NICs alone.
 -- Without that distinction, recovering a one-NIC resize would tear down the
 -- VM's whole networking.
 
@@ -475,11 +477,13 @@ after acquiring the entity lock or read lease, check the tombstone:
 The snapshot shared read lease is explicitly included, and it needs one extra
 step because a shared holder cannot drive recovery: recovery requires the
 EXCLUSIVE lock, so an exporter that finds a `deleting` tombstone while
-holding its own shared lease would deadlock trying to upgrade. The sequence
-is therefore RELEASE the shared lease → acquire the lock exclusively →
-recover → re-acquire shared → REVALIDATE record and tombstone before touching
-the data dir (the entity may have been finalized while unheld, in which case
-the operation fails `ErrNotFound`). This is protocol, not a test-only
+holding its own shared lease would deadlock trying to upgrade. The full sequence, with every transition explicit because each omission
+deadlocks: RELEASE the shared lease → acquire the lock EXCLUSIVELY → recover
+→ **RELEASE the exclusive lock** → re-acquire shared → REVALIDATE record and
+tombstone before touching the data dir (the entity may have been finalized
+while unheld, in which case the operation fails `ErrNotFound`). Holding
+exclusive while asking for shared self-deadlocks exactly like the in-place
+upgrade it replaces. This is protocol, not a test-only
 obligation. Concurrent GC runs (scheduled + manual) may pick the same
 candidate: `ErrConflict` on the tombstone insert means another worker owns
 the lease — skip the candidate, not an error.
@@ -653,6 +657,8 @@ two-engine events) plus the performance block.
 **Correctness (all engines).**
 - Contract-test suite incl. the forced-retry wrapper (clause 1), detached-value
   mutation test (clause 4), write-scope violation rejection (clause 2),
+  absent-`Delete`-is-success (an engine reporting zero rows affected must
+  normalize, not surface `ErrNotFound`),
   `ErrDurabilityContract` structural check (clause 5), and the ctx-vs-held-writer
   deadline test (clause 6 / §4).
 - **Scope enforcement and deadlock freedom**: accessing an undeclared
@@ -830,7 +836,9 @@ contract — and the measured win arrives only in P2.
   same operation sequences (create, reserve/adopt/finalize, name lookup and
   collision, resize, delete, GC pass) against the legacy implementation and
   against meta-json, comparing returned values, error identities, AND the
-  final namespace bytes. Static fixtures plus a generic engine contract would
+  final namespace bytes — with a deterministic clock and ID source injected
+  into BOTH implementations, since create/finalize/GC stamp `time.Now` and
+  generate IDs, and two correct runs would otherwise differ byte-for-byte. Static fixtures plus a generic engine contract would
   let migrated domain-repository choreography change behaviour while every
   other gate passes. A mismatch here is unambiguous — it can only mean the
   boundary moved something it should not have.
