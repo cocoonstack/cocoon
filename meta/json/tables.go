@@ -1,7 +1,9 @@
 package json
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 )
@@ -15,31 +17,55 @@ type TableSpec struct {
 }
 
 // DecodeTables loads specs' map fields into a fresh Model (sorted insertion,
-// matching what encoding/json always wrote) and returns the raw top level
-// for codec-specific extras.
+// matching what encoding/json always wrote) and returns non-spec top-level
+// fields for codec-specific extras. Single streaming pass: a whole-file
+// unmarshal into raw messages would tokenize the payload twice (the paired
+// perf gate caught the O(N) regression).
 func DecodeTables(data []byte, specs []TableSpec) (*Model, map[string]json.RawMessage, error) {
 	m := NewModel()
 	if data == nil {
 		return m, nil, nil
 	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil {
-		return nil, nil, err
-	}
+	byKey := make(map[string]TableSpec, len(specs))
 	for _, sp := range specs {
-		raw, ok := top[sp.Key]
-		if !ok {
-			continue
-		}
-		var tbl map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &tbl); err != nil {
+		byKey[sp.Key] = sp
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if tok, err := dec.Token(); err != nil {
+		return nil, nil, err
+	} else if tok != json.Delim('{') {
+		return nil, nil, fmt.Errorf("namespace file: want object, got %v", tok)
+	}
+	var extras map[string]json.RawMessage
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
 			return nil, nil, err
 		}
-		for _, id := range slices.Sorted(maps.Keys(tbl)) {
-			m.Put(sp.Table, id, tbl[id])
+		key, _ := keyTok.(string)
+		if sp, ok := byKey[key]; ok {
+			var tbl map[string]json.RawMessage
+			if err := dec.Decode(&tbl); err != nil {
+				return nil, nil, err
+			}
+			for _, id := range slices.Sorted(maps.Keys(tbl)) {
+				m.Put(sp.Table, id, tbl[id])
+			}
+			continue
 		}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil, nil, err
+		}
+		if extras == nil {
+			extras = map[string]json.RawMessage{}
+		}
+		extras[key] = raw
 	}
-	return m, top, nil
+	if _, err := dec.Token(); err != nil {
+		return nil, nil, err
+	}
+	return m, extras, nil
 }
 
 // EncodeTables assembles the legacy object shape from specs' tables.
