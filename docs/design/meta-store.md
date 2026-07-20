@@ -122,19 +122,20 @@ PRAGMA user_version   = 1;
 CREATE TABLE migrations (version INTEGER NOT NULL, namespace TEXT NOT NULL,
                          source TEXT, sha256 TEXT, records INTEGER,
                          applied_at TEXT, PRIMARY KEY (version, namespace));
--- NOT NULL is explicit: SQLite does not imply it on composite PK columns.
+-- NOT NULL is explicit on every PK column: SQLite implies it only for a
+-- lone INTEGER PRIMARY KEY (rowid alias); every other PK shape admits NULLs.
 
-CREATE TABLE vms_firecracker      (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE vms_cloudhypervisor  (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE vm_orphan_dirs       (engine TEXT, path TEXT, PRIMARY KEY (engine, path));
-CREATE TABLE snapshots            (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
-CREATE TABLE networks             (id TEXT PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
+CREATE TABLE vms_firecracker      (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
+CREATE TABLE vms_cloudhypervisor  (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
+CREATE TABLE vm_orphan_dirs       (engine TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (engine, path));
+CREATE TABLE snapshots            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
+CREATE TABLE networks             (id TEXT NOT NULL PRIMARY KEY, vm_id TEXT, data TEXT NOT NULL);
 CREATE INDEX networks_by_vm ON networks(vm_id);
-CREATE TABLE images_oci           (digest TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE image_oci_refs       (ref TEXT PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest));
-CREATE TABLE images_cloudimg      (digest TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE image_cloudimg_refs  (ref TEXT PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_cloudimg(digest));
-CREATE TABLE tombstones           (ns TEXT, id TEXT, leased_at TEXT, PRIMARY KEY (ns, id));
+CREATE TABLE images_oci           (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE image_oci_refs       (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_oci(digest));
+CREATE TABLE images_cloudimg      (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE image_cloudimg_refs  (ref TEXT NOT NULL PRIMARY KEY, digest TEXT NOT NULL REFERENCES images_cloudimg(digest));
+CREATE TABLE tombstones           (ns TEXT NOT NULL, id TEXT NOT NULL, leased_at TEXT, PRIMARY KEY (ns, id));
 ```
 
 Notes: image refs are many-to-one on digest (ref list and digest-prefix
