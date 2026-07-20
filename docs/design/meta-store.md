@@ -330,8 +330,14 @@ Per candidate:
    entrypoints that assert the lock is already held and skip step 2; the
    plain entrypoints acquire it. The mapping is
    explicit, because it is not uniform today: VMs use the existing per-VM
-   `ops.lock`; networks are covered by their owning VM's lock (teardown
-   belongs to that VM); snapshots use their existing read-lease mechanism in
+   `ops.lock`; networks are covered by their owning VM's lock — which is a
+   CHANGE, not a description: `cmd/vm/lifecycle.go` tears down TAPs and calls
+   `netProvider.Delete` after `hyper.Delete` has already removed the record,
+   outside any ops lock, and today it could not do otherwise because the lock
+   inode dies with the runDir. Relocating the ops lock (the rule above) is
+   precisely what makes network teardown under the owning VM's lock
+   implementable, and P1 must restructure `vm rm` to hold it across both the
+   record deletion and the network teardown; snapshots use their existing read-lease mechanism in
    exclusive mode — its `LeasePath(id)` is already a SIBLING of the data dir
    (`<dir>.lease`), deliberately outside the tree that gets removed;
    **images have no per-digest lock today and gain one** — a lock file beside
