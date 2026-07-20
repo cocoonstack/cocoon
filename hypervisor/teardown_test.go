@@ -256,6 +256,11 @@ func TestLiveHolderKeepsLease(t *testing.T) {
 // and refuse the boot.
 func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
+	var netTorn []string
+	b.NetCleanup = func(_ context.Context, id string) error {
+		netTorn = append(netTorn, id)
+		return nil
+	}
 	ctx := t.Context()
 	rec := seedProtoVM(t, b, "vmentry1")
 	ts := b.tombstones()
@@ -296,5 +301,8 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	}
 	if after != nil {
 		t.Fatalf("tombstone survived entry-driven recovery: %+v", after)
+	}
+	if len(netTorn) != 1 || netTorn[0] != "vmentry1" {
+		t.Fatalf("entry-driven recovery skipped the injected network cleanup: %v", netTorn)
 	}
 }

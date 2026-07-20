@@ -137,14 +137,14 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown Ne
 }
 
 // EntryGuard enforces the entrypoint discipline under a held ops lock:
-// roll a leased tombstone back in place; drive a deleting one to completion
-// (network cleanup converges via the CNI GC) and refuse the operation.
+// roll a leased tombstone back in place; drive a deleting one to completion —
+// including the injected network cleanup — and refuse the operation.
 func (b *Backend) EntryGuard(ctx context.Context, id string) error {
 	err := b.update(ctx, func(t *vmTx) error { return b.guardVMTombstone(ctx, t, id) })
 	if !errors.Is(err, ErrTombstoned) {
 		return err
 	}
-	if _, rerr := b.recoverVMTombstone(ctx, id, nil); rerr != nil {
+	if _, rerr := b.recoverVMTombstone(ctx, id, b.NetCleanup); rerr != nil {
 		return fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
 	}
 	return fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
