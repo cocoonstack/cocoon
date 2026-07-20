@@ -38,3 +38,9 @@ func (c *CloudImg) SetPinnedElsewhere(fn func(context.Context) (map[string]struc
 func (c *CloudImg) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
 	return images.PinBlobs(&c.conf.BaseConfig, blobIDs)
 }
+
+// OwnsBlob reports whether this backend holds hex's blob file.
+func (c *CloudImg) OwnsBlob(hex string) bool {
+	_, err := os.Stat(c.conf.BlobPath(hex))
+	return err == nil
+}

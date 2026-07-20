@@ -242,6 +242,13 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
+	// The envelope's pins land on the VM record inside restore; the digest
+	// locks keep image GC away until they are committed.
+	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
+	if err != nil {
+		return err
+	}
+	defer releasePins()
 	return h.runDirectRestore(ctx, cmd, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
@@ -322,7 +329,15 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
+	// Envelope pins get the same digest-lock window as create (design §5: a
+	// re-pin flow holds the lock while committing); a record-backed clone's
+	// source pin already protects these, a --from-dir envelope has no record.
+	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
+	if err != nil {
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
+	}
 	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, cfg.ImageBlobIDs)
+	releasePins()
 	if err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}

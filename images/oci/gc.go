@@ -37,6 +37,12 @@ func (o *OCI) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), 
 	return images.PinBlobs(&o.conf.BaseConfig, blobIDs)
 }
 
+// OwnsBlob reports whether this backend holds hex's blob file.
+func (o *OCI) OwnsBlob(hex string) bool {
+	_, err := os.Stat(o.conf.BlobPath(hex))
+	return err == nil
+}
+
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, o.GCModule())
 }

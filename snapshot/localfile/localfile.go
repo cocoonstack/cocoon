@@ -41,6 +41,12 @@ func WithGCPolicy(p EvictionPolicy) Option {
 	return func(lf *LocalFile) { lf.gcPolicy = p }
 }
 
+// WithBlobPinner injects the digest-lock hook Import holds while committing
+// an envelope's image pins (design §5: re-pin flows take the digest lock).
+func WithBlobPinner(fn func(context.Context, map[string]struct{}) (func(), error)) Option {
+	return func(lf *LocalFile) { lf.pinBlobs = fn }
+}
+
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
 	_ snapshot.Direct             = (*LocalFile)(nil)
@@ -55,6 +61,7 @@ type LocalFile struct {
 	meta     meta.Store
 	metering metering.Recorder
 	gcPolicy EvictionPolicy
+	pinBlobs func(context.Context, map[string]struct{}) (func(), error)
 }
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.

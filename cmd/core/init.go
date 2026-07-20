@@ -191,6 +191,9 @@ func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Op
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, localfile.WithBlobPinner(func(ctx context.Context, blobIDs map[string]struct{}) (func(), error) {
+		return PinEnvelopeBlobs(ctx, conf, blobIDs)
+	}))
 	s, err := localfile.New(conf, MeteringRecorder(ctx, conf), store, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("init snapshot backend: %w", err)
@@ -205,4 +208,36 @@ func findHypervisorFactory(typ config.HypervisorType) func(context.Context, *con
 		}
 	}
 	return nil
+}
+
+// PinEnvelopeBlobs locks envelope-sourced pins (clone --from-dir, restore
+// --from-dir, snapshot import) on whichever backend owns each blob; digests
+// with no local blob are skipped — there is nothing for GC to take.
+func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[string]struct{}) (func(), error) {
+	if len(blobIDs) == 0 {
+		return func() {}, nil
+	}
+	ociStore, cloudimgStore, err := InitImageBackendsForPull(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+	ociIDs, cloudimgIDs := map[string]struct{}{}, map[string]struct{}{}
+	for hex := range blobIDs {
+		switch {
+		case ociStore.OwnsBlob(hex):
+			ociIDs[hex] = struct{}{}
+		case cloudimgStore.OwnsBlob(hex):
+			cloudimgIDs[hex] = struct{}{}
+		}
+	}
+	releaseOCI, err := ociStore.PinBlobs(ctx, ociIDs)
+	if err != nil {
+		return nil, err
+	}
+	releaseCloudimg, err := cloudimgStore.PinBlobs(ctx, cloudimgIDs)
+	if err != nil {
+		releaseOCI()
+		return nil, err
+	}
+	return func() { releaseOCI(); releaseCloudimg() }, nil
 }
