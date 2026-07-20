@@ -214,7 +214,6 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	})
 }
 
-
 func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
 	logger := log.WithFunc("cmd.vm.recoverNetwork")
 

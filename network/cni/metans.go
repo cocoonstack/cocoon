@@ -2,7 +2,6 @@ package cni
 
 import (
 	"context"
-	"errors"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
@@ -34,36 +33,13 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 // netTx is the CNI view of one meta transaction: a records-only namespace
 // with the vm_id secondary lookup served by scan.
 type netTx struct {
-	ctx  context.Context
-	r    meta.Reader
-	w    meta.Writer
-	recs *meta.Collection[networkRecord]
-}
-
-func (t *netTx) get(id string) (*networkRecord, error) {
-	rec, err := t.recs.Get(t.ctx, t.r, id)
-	if errors.Is(err, meta.ErrNotFound) {
-		return nil, nil
-	}
-	return rec, err
-}
-
-func (t *netTx) put(id string, rec *networkRecord) error {
-	return t.recs.Upsert(t.ctx, t.w, id, rec)
-}
-
-func (t *netTx) del(id string) error {
-	return t.recs.Delete(t.ctx, t.w, id)
-}
-
-func (t *netTx) scan(fn func(id string, rec *networkRecord) error) error {
-	return t.recs.Scan(t.ctx, t.r, fn)
+	*meta.RecordTx[networkRecord]
 }
 
 // byVMID returns detached copies of vmID's records.
 func (t *netTx) byVMID(vmID string) ([]networkRecord, error) {
 	var out []networkRecord
-	if err := t.scan(func(_ string, rec *networkRecord) error {
+	if err := t.Scan(func(_ string, rec *networkRecord) error {
 		if rec.VMID == vmID {
 			out = append(out, *rec)
 		}
@@ -94,7 +70,7 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 	}
 	return c.update(ctx, func(t *netTx) error {
 		for _, id := range ids {
-			if err := t.del(id); err != nil {
+			if err := t.Del(id); err != nil {
 				return err
 			}
 		}
@@ -103,5 +79,5 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 }
 
 func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
-	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecords)}
+	return &netTx{RecordTx: meta.NewRecordTx[networkRecord](ctx, c.meta, metaNS, tableRecords, r, w)}
 }

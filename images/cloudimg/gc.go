@@ -40,7 +40,4 @@ func (c *CloudImg) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (fun
 }
 
 // OwnsBlob reports whether this backend holds hex's blob file.
-func (c *CloudImg) OwnsBlob(hex string) bool {
-	_, err := os.Stat(c.conf.BlobPath(hex))
-	return err == nil
-}
+func (c *CloudImg) OwnsBlob(hex string) bool { return c.conf.OwnsBlob(hex) }

@@ -30,7 +30,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			var snap cniSnapshot
 			snap.dbVMIDs = make(map[string]struct{})
 			if err := c.view(ctx, func(t *netTx) error {
-				return t.scan(func(_ string, rec *networkRecord) error {
+				return t.Scan(func(_ string, rec *networkRecord) error {
 					snap.dbVMIDs[rec.VMID] = struct{}{}
 					return nil
 				})
@@ -95,7 +95,7 @@ func (c *CNI) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := c.view(ctx, func(t *netTx) error {
 		var err error
-		ids, err = c.tombstones().PendingIDs(ctx, t.r)
+		ids, err = c.tombstones().PendingIDs(ctx, t.Reader())
 		return err
 	}); err != nil {
 		return []error{err}

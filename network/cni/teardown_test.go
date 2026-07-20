@@ -40,13 +40,13 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, tx.w, "vm1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
+		leaseID, err = ts.Lease(ctx, tx.Writer(), "vm1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.update(ctx, func(tx *netTx) error {
-		return ts.MarkDeleting(ctx, tx.w, "vm1", leaseID)
+		return ts.MarkDeleting(ctx, tx.Writer(), "vm1", leaseID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestAggregateTeardownRecovery(t *testing.T) {
 	var left *tombstone.Record
 	if err := c.view(ctx, func(tx *netTx) error {
 		var err error
-		left, err = c.tombstones().Get(ctx, tx.r, "vm2")
+		left, err = c.tombstones().Get(ctx, tx.Reader(), "vm2")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -117,13 +117,13 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, tx.w, "vm5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		leaseID, err = ts.Lease(ctx, tx.Writer(), "vm5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.update(ctx, func(tx *netTx) error {
-		return ts.MarkDeleting(ctx, tx.w, "vm5", leaseID)
+		return ts.MarkDeleting(ctx, tx.Writer(), "vm5", leaseID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	var left *tombstone.Record
 	if err := c.view(ctx, func(tx *netTx) error {
 		var err error
-		left, err = ts.Get(ctx, tx.r, "vm5")
+		left, err = ts.Get(ctx, tx.Reader(), "vm5")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	var left *tombstone.Record
 	if err := c.view(ctx, func(tx *netTx) error {
 		var lerr error
-		left, lerr = c.tombstones().Get(ctx, tx.r, "vm3")
+		left, lerr = c.tombstones().Get(ctx, tx.Reader(), "vm3")
 		return lerr
 	}); err != nil {
 		t.Fatal(err)
@@ -219,15 +219,15 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 
 	if err := c.update(ctx, func(tx *netTx) error {
-		if err := tx.del("NET2"); err != nil {
+		if err := tx.Del("NET2"); err != nil {
 			return err
 		}
-		rec, err := tx.get("NET3")
+		rec, err := tx.Get("NET3")
 		if err != nil {
 			return err
 		}
 		rec.IP = "10.0.0.9"
-		return tx.put("NET3", rec)
+		return tx.Put("NET3", rec)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -256,13 +256,13 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, tx.w, "vm6", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		leaseID, err = ts.Lease(ctx, tx.Writer(), "vm6", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.update(ctx, func(tx *netTx) error {
-		return ts.MarkDeleting(ctx, tx.w, "vm6", leaseID)
+		return ts.MarkDeleting(ctx, tx.Writer(), "vm6", leaseID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -293,13 +293,13 @@ func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, tx.w, "vm7", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
+		leaseID, err = ts.Lease(ctx, tx.Writer(), "vm7", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.update(ctx, func(tx *netTx) error {
-		return ts.MarkDeleting(ctx, tx.w, "vm7", leaseID)
+		return ts.MarkDeleting(ctx, tx.Writer(), "vm7", leaseID)
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -174,7 +174,7 @@ func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
 	// and sweep both (DEL is idempotent), not strand one as a phantom.
 	seedRecords(t, c, "vm1", "eth1")
 	if err := c.update(ctx, func(t *netTx) error {
-		return t.put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
+		return t.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
 	if err := c.update(t.Context(), func(tx *netTx) error {
 		for _, ifName := range ifNames {
 			id := "n-" + ifName
-			if err := tx.put(id, &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}); err != nil {
+			if err := tx.Put(id, &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}); err != nil {
 				return err
 			}
 		}
@@ -416,7 +416,7 @@ func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 	t.Helper()
 	var got []string
 	if err := c.view(t.Context(), func(tx *netTx) error {
-		return tx.scan(func(id string, _ *networkRecord) error {
+		return tx.Scan(func(id string, _ *networkRecord) error {
 			got = append(got, id)
 			return nil
 		})

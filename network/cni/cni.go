@@ -100,7 +100,7 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 	var result *types.Network
 	return result, c.view(ctx, func(t *netTx) error {
-		rec, err := t.get(id)
+		rec, err := t.Get(id)
 		if err != nil || rec == nil {
 			return err
 		}
@@ -113,7 +113,7 @@ func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
 	var result []*types.Network
 	return result, c.view(ctx, func(t *netTx) error {
-		return t.scan(func(_ string, rec *networkRecord) error {
+		return t.Scan(func(_ string, rec *networkRecord) error {
 			result = append(result, &rec.Network)
 			return nil
 		})
@@ -139,7 +139,6 @@ func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	})
 	return result.Succeeded, result.Err()
 }
-
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {

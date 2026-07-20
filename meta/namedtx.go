@@ -10,36 +10,24 @@ import (
 
 const resolvePrefixMin = 3
 
-// NamedTx is the id→record set plus name→id index pattern shared by cocoon
-// subsystems, viewed through one transaction handle. Get mirrors map lookup
-// (nil when absent), Put is an upsert, and name entries are claimed and
-// released explicitly — exactly the legacy index semantics.
-type NamedTx[R any] struct {
+// RecordTx is the id→record map view of one table inside a transaction:
+// Get mirrors map lookup (nil when absent), Put is an upsert.
+type RecordTx[R any] struct {
 	ctx   context.Context
 	ns    string
 	table string
 	r     Reader
 	w     Writer
 	recs  *Collection[R]
-	names *Collection[string]
 }
 
-// NewNamedTx binds the pattern to (ns, recordsTable, namesTable); w is nil in
-// read-only transactions.
-func NewNamedTx[R any](ctx context.Context, s Store, ns, recordsTable, namesTable string, r Reader, w Writer) *NamedTx[R] {
-	return &NamedTx[R]{
-		ctx:   ctx,
-		ns:    ns,
-		table: recordsTable,
-		r:     r,
-		w:     w,
-		recs:  NewCollection[R](s, ns, recordsTable),
-		names: NewCollection[string](s, ns, namesTable),
-	}
+// NewRecordTx binds the view to (ns, table); w is nil in read-only transactions.
+func NewRecordTx[R any](ctx context.Context, s Store, ns, table string, r Reader, w Writer) *RecordTx[R] {
+	return &RecordTx[R]{ctx: ctx, ns: ns, table: table, r: r, w: w, recs: NewCollection[R](s, ns, table)}
 }
 
 // Get mirrors items[id]: nil when absent.
-func (x *NamedTx[R]) Get(id string) (*R, error) {
+func (x *RecordTx[R]) Get(id string) (*R, error) {
 	rec, err := x.recs.Get(x.ctx, x.r, id)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
@@ -48,13 +36,46 @@ func (x *NamedTx[R]) Get(id string) (*R, error) {
 }
 
 // Put mirrors items[id] = rec (upsert).
-func (x *NamedTx[R]) Put(id string, rec *R, opts ...WriteOpt) error {
+func (x *RecordTx[R]) Put(id string, rec *R, opts ...WriteOpt) error {
 	return x.recs.Upsert(x.ctx, x.w, id, rec, opts...)
 }
 
 // Del mirrors delete(items, id).
-func (x *NamedTx[R]) Del(id string) error {
+func (x *RecordTx[R]) Del(id string) error {
 	return x.recs.Delete(x.ctx, x.w, id)
+}
+
+// All returns every record detached, keyed by id.
+func (x *RecordTx[R]) All() (map[string]*R, error) {
+	return x.recs.List(x.ctx, x.r)
+}
+
+// Scan yields detached records.
+func (x *RecordTx[R]) Scan(fn func(id string, rec *R) error) error {
+	return x.recs.Scan(x.ctx, x.r, fn)
+}
+
+// Reader exposes the transaction's read handle for satellite tables.
+func (x *RecordTx[R]) Reader() Reader { return x.r }
+
+// Writer exposes the transaction's write handle for satellite tables.
+func (x *RecordTx[R]) Writer() Writer { return x.w }
+
+// NamedTx is RecordTx plus the explicit name→id index shared by cocoon
+// subsystems; name entries are claimed and released explicitly — exactly the
+// legacy index semantics.
+type NamedTx[R any] struct {
+	*RecordTx[R]
+	names *Collection[string]
+}
+
+// NewNamedTx binds the pattern to (ns, recordsTable, namesTable); w is nil in
+// read-only transactions.
+func NewNamedTx[R any](ctx context.Context, s Store, ns, recordsTable, namesTable string, r Reader, w Writer) *NamedTx[R] {
+	return &NamedTx[R]{
+		RecordTx: NewRecordTx[R](ctx, s, ns, recordsTable, r, w),
+		names:    NewCollection[string](s, ns, namesTable),
+	}
 }
 
 // NameGet mirrors names[name] lookup.
@@ -77,16 +98,6 @@ func (x *NamedTx[R]) NameSet(name, id string, opts ...WriteOpt) error {
 // NameDel mirrors delete(names, name).
 func (x *NamedTx[R]) NameDel(name string) error {
 	return x.names.Delete(x.ctx, x.w, name)
-}
-
-// All returns every record detached, keyed by id.
-func (x *NamedTx[R]) All() (map[string]*R, error) {
-	return x.recs.List(x.ctx, x.r)
-}
-
-// Scan yields detached records.
-func (x *NamedTx[R]) Scan(fn func(id string, rec *R) error) error {
-	return x.recs.Scan(x.ctx, x.r, fn)
 }
 
 // Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at
@@ -147,9 +158,3 @@ func (x *NamedTx[R]) ResolveMany(refs []string, notFound error) ([]string, error
 	}
 	return ids, nil
 }
-
-// Reader exposes the transaction's read handle for satellite tables.
-func (x *NamedTx[R]) Reader() Reader { return x.r }
-
-// Writer exposes the transaction's write handle for satellite tables.
-func (x *NamedTx[R]) Writer() Writer { return x.w }

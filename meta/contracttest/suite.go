@@ -49,12 +49,12 @@ type record struct {
 	N    int    `json:"n"`
 }
 
-func get1(t *testing.T, s meta.Store, c *meta.Collection[record], id string) (*record, error) {
+func get1(t *testing.T, s meta.Store, c *meta.Collection[record]) (*record, error) {
 	t.Helper()
 	var rec *record
 	err := s.View(t.Context(), []string{nsAlpha}, func(r meta.Reader) error {
 		var err error
-		rec, err = c.Get(t.Context(), r, id)
+		rec, err = c.Get(t.Context(), r, "a")
 		return err
 	})
 	return rec, err
@@ -73,7 +73,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	}); !errors.Is(err, meta.ErrConflict) {
 		t.Fatalf("duplicate insert: got %v, want ErrConflict", err)
 	}
-	got, err := get1(t, s, c, "a")
+	got, err := get1(t, s, c)
 	if err != nil || got.N != 1 {
 		t.Fatalf("get after insert: %+v, %v", got, err)
 	}
@@ -81,7 +81,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		return c.Replace(ctx, w, "a", &record{Name: "one", N: 2})
 	})
-	if got, _ = get1(t, s, c, "a"); got.N != 2 {
+	if got, _ = get1(t, s, c); got.N != 2 {
 		t.Fatalf("get after replace: %+v", got)
 	}
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
@@ -91,7 +91,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	}
 
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Delete(ctx, w, "a") })
-	if _, err := get1(t, s, c, "a"); !errors.Is(err, meta.ErrNotFound) {
+	if _, err := get1(t, s, c); !errors.Is(err, meta.ErrNotFound) {
 		t.Fatalf("get after delete: %v", err)
 	}
 	// Absent delete is idempotent success, never ErrNotFound.
@@ -107,7 +107,7 @@ func testDetached(t *testing.T, factory Factory) {
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Insert(ctx, w, "a", in) })
 	in.Name = "mutated-after-insert"
 
-	got, err := get1(t, s, c, "a")
+	got, err := get1(t, s, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func testDetached(t *testing.T, factory Factory) {
 		t.Fatalf("insert captured caller mutation: %q", got.Name)
 	}
 	got.Name = "mutated-after-get"
-	if again, _ := get1(t, s, c, "a"); again.Name != nameOrig {
+	if again, _ := get1(t, s, c); again.Name != nameOrig {
 		t.Fatalf("get returned attached value: %q", again.Name)
 	}
 
@@ -127,7 +127,7 @@ func testDetached(t *testing.T, factory Factory) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := get1(t, s, c, "a"); again.Name != nameOrig {
+	if again, _ := get1(t, s, c); again.Name != nameOrig {
 		t.Fatalf("scan exposed engine state: %q", again.Name)
 	}
 
@@ -148,7 +148,7 @@ func testDetached(t *testing.T, factory Factory) {
 			return nil
 		})
 	})
-	if again, err := get1(t, s, c, "a"); err != nil || again.Name != nameOrig {
+	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
 		t.Fatalf("raw read aliased engine state: %v %v", again, err)
 	}
 }
@@ -204,7 +204,7 @@ func testDurability(t *testing.T, factory Factory) {
 	}); err != nil {
 		t.Fatalf("relaxed opt-in write: %v", err)
 	}
-	if got, err := get1(t, s, c, "a"); err != nil || got.N != 1 {
+	if got, err := get1(t, s, c); err != nil || got.N != 1 {
 		t.Fatalf("relaxed write not visible: %+v, %v", got, err)
 	}
 }
@@ -322,7 +322,7 @@ func testViewIsolation(t *testing.T, factory Factory) {
 		t.Fatal(err)
 	}
 	<-done
-	if got, _ := get1(t, s, c, "a"); got.N != 2 {
+	if got, _ := get1(t, s, c); got.N != 2 {
 		t.Fatalf("post-view state: %+v", got)
 	}
 }
@@ -405,5 +405,3 @@ func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
 		t.Fatal(err)
 	}
 }
-
-

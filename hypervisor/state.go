@@ -102,9 +102,22 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 		return fmt.Errorf("UpdateStates(Running) not allowed; use BatchMarkStarted")
 	}
 	now := timeNow()
-	// Metering entries stage inside the closure and publish only on nil return,
-	// so a retried closure cannot double-emit (meta contract clause 1).
-	var stopped []metering.Entry
+	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+		r.State = state
+		r.UpdatedAt = now
+		if state == types.VMStateStopped && hasOpenComputeInterval(r) {
+			r.StoppedAt = &now
+			return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
+		}
+		return nil
+	})
+}
+
+// batchUpdateVMs mutates each present id in one transaction; mutate's
+// metering entries stage inside the closure and publish only after commit,
+// so a retried closure cannot double-emit (meta contract clause 1).
+func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
+	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
 		staged := []metering.Entry{}
 		for _, id := range ids {
@@ -115,22 +128,17 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 			if r == nil {
 				continue
 			}
-			r.State = state
-			r.UpdatedAt = now
-			if state == types.VMStateStopped && hasOpenComputeInterval(r) {
-				r.StoppedAt = &now
-				staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
-			}
+			staged = append(staged, mutate(r, id)...)
 			if err := t.Put(id, r); err != nil {
 				return err
 			}
 		}
-		stopped = staged
+		emits = staged
 		return nil
 	}); err != nil {
 		return err
 	}
-	b.emitAll(ctx, stopped)
+	b.emitAll(ctx, emits)
 	return nil
 }
 
@@ -166,40 +174,20 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 		return nil
 	}
 	now := timeNow()
-	// Staged-then-published like UpdateStates: closure purity under retry.
-	var emits []metering.Entry
-	if err := b.update(ctx, func(t *vmTx) error {
-		staged := []metering.Entry{}
-		for _, id := range ids {
-			r, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if r == nil {
-				continue
-			}
-			shape := shapeFromConfig(r.Config)
-			if hasOpenComputeInterval(r) {
-				staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
-			}
-			reason := bootOrRestartReason(r.FirstBooted)
-			staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
-			r.State = types.VMStateRunning
-			r.StartedAt = &now
-			r.StoppedAt = nil
-			r.UpdatedAt = now
-			r.FirstBooted = true
-			if err := t.Put(id, r); err != nil {
-				return err
-			}
+	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+		shape := shapeFromConfig(r.Config)
+		var staged []metering.Entry
+		if hasOpenComputeInterval(r) {
+			staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 		}
-		emits = staged
-		return nil
-	}); err != nil {
-		return err
-	}
-	b.emitAll(ctx, emits)
-	return nil
+		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, bootOrRestartReason(r.FirstBooted), shape, now))
+		r.State = types.VMStateRunning
+		r.StartedAt = &now
+		r.StoppedAt = nil
+		r.UpdatedAt = now
+		r.FirstBooted = true
+		return staged
+	})
 }
 
 // closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.

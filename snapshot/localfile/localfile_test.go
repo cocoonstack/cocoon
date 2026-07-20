@@ -194,7 +194,7 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	// Check the index directly: Inspect hides pending records, so it cannot
 	// distinguish "rolled back" from "stale pending left behind" — and a stale
 	// name reservation would fail the tar-fallback Create with "already in use".
-	if err := lf.dbRead(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbRead(ctx, func(idx *snapshotIndex) error {
 		if _, stale := idx.Snapshots[id]; stale {
 			return fmt.Errorf("pending record %s still in index", id)
 		}

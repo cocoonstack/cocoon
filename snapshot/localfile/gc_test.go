@@ -124,7 +124,7 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 
 	pastAccess := time.Now().Add(-72 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		for _, name := range []string{"old1", "old2"} {
 			r := idx.Snapshots[idx.Names[name]]
 			if r == nil {
@@ -180,7 +180,7 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 		}
 	}
 	pastAccess := time.Now().Add(-72 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		for _, name := range []string{"old1", "old2"} {
 			idx.Snapshots[idx.Names[name]].LastAccessedAt = pastAccess
 		}
@@ -199,7 +199,7 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 		t.Fatalf("want 2 candidates, got %v", ids)
 	}
 	// A clone/export lands in the window and touches old1.
-	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		idx.Snapshots[idx.Names["old1"]].LastAccessedAt = time.Now()
 		return nil
 	}); err != nil {
@@ -311,7 +311,7 @@ func TestRestoreUpdatesLastAccessedAt(t *testing.T) {
 	}
 
 	original := time.Now().Add(-48 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		r := idx.Snapshots[id]
 		if r == nil {
 			return fmt.Errorf("setup: %s missing", id)
@@ -454,7 +454,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 		t.Fatal(err)
 	}
 	stalePendingID := testID(t)
-	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
 			Snapshot: types.Snapshot{
 				SnapshotConfig: types.SnapshotConfig{ID: stalePendingID},

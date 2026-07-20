@@ -158,7 +158,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 
 	return configs, c.update(ctx, func(t *netTx) error {
 		for _, f := range fresh {
-			rec, err := t.get(f.recID)
+			rec, err := t.Get(f.recID)
 			if err != nil {
 				return err
 			}
@@ -168,7 +168,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			if f.cfg.Network != nil {
 				rec.Network = *f.cfg.Network
 			}
-			if err := t.put(f.recID, rec); err != nil {
+			if err := t.Put(f.recID, rec); err != nil {
 				return err
 			}
 		}
@@ -255,7 +255,7 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	}
 	if err := c.update(ctx, func(t *netTx) error {
 		for _, rec := range intents {
-			if err := t.put(rec.ID, rec); err != nil {
+			if err := t.Put(rec.ID, rec); err != nil {
 				return err
 			}
 		}

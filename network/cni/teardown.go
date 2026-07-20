@@ -51,7 +51,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 			records = filterRecords(records, subset)
 		}
 		var resumed *tombstone.Record
-		leaseID, resumed, err = ts.Acquire(ctx, t.w, vmID, func() (tombstone.Payload, error) {
+		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), vmID, func() (tombstone.Payload, error) {
 			for _, r := range records {
 				cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
 			}
@@ -78,7 +78,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		return err
 	}
 	if err := c.update(ctx, func(t *netTx) error {
-		return ts.MarkDeleting(ctx, t.w, vmID, leaseID)
+		return ts.MarkDeleting(ctx, t.Writer(), vmID, leaseID)
 	}); err != nil {
 		return err
 	}
@@ -110,14 +110,14 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 	// Sweep only released records: a failed DEL keeps its record AND the tombstone so the retry resumes with context intact.
 	if err := c.update(ctx, func(t *netTx) error {
 		for _, id := range downIDs {
-			if err := t.del(id); err != nil {
+			if err := t.Del(id); err != nil {
 				return err
 			}
 		}
 		if tdErr != nil {
 			return nil // keep the tombstone: recovery re-runs the remaining DELs
 		}
-		err := ts.Finalize(ctx, t.w, vmID, leaseID)
+		err := ts.Finalize(ctx, t.Writer(), vmID, leaseID)
 		if errors.Is(err, tombstone.ErrLost) {
 			return nil
 		}
@@ -142,7 +142,7 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	)
 	if err := c.update(ctx, func(t *netTx) error {
 		var err error
-		rec, leaseID, err = ts.Resume(ctx, t.w, vmID)
+		rec, leaseID, err = ts.Resume(ctx, t.Writer(), vmID)
 		return err
 	}); err != nil {
 		return false, err

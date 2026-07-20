@@ -10,11 +10,22 @@ import (
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/snapshot"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // dbUpdate is the test-only whole-index shim: materialize, run fn, write the
 // difference back. Production code never uses it.
-func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshot.SnapshotIndex) error) error {
+// snapshotIndex mirrors the legacy top-level DB shape for shim-based tests.
+type snapshotIndex struct {
+	Snapshots map[string]*snapshot.SnapshotRecord `json:"snapshots"`
+	Names     map[string]string                   `json:"names"`
+}
+
+func (idx *snapshotIndex) Init() {
+	utils.InitNamedIndex(&idx.Snapshots, &idx.Names)
+}
+
+func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshotIndex) error) error {
 	return lf.update(ctx, func(t *snapTx) error {
 		before, idx, err := materializeSnapIndex(t)
 		if err != nil {
@@ -28,7 +39,7 @@ func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshot.SnapshotInd
 }
 
 // dbRead is the test-only whole-index read shim.
-func (lf *LocalFile) dbRead(ctx context.Context, fn func(*snapshot.SnapshotIndex) error) error {
+func (lf *LocalFile) dbRead(ctx context.Context, fn func(*snapshotIndex) error) error {
 	return lf.view(ctx, func(t *snapTx) error {
 		_, idx, err := materializeSnapIndex(t)
 		if err != nil {
@@ -38,8 +49,8 @@ func (lf *LocalFile) dbRead(ctx context.Context, fn func(*snapshot.SnapshotIndex
 	})
 }
 
-func materializeSnapIndex(t *snapTx) (*snapshot.SnapshotIndex, *snapshot.SnapshotIndex, error) {
-	idx := &snapshot.SnapshotIndex{}
+func materializeSnapIndex(t *snapTx) (*snapshotIndex, *snapshotIndex, error) {
+	idx := &snapshotIndex{}
 	idx.Init()
 	var err error
 	if idx.Snapshots, err = t.All(); err != nil {
@@ -57,11 +68,11 @@ func materializeSnapIndex(t *snapTx) (*snapshot.SnapshotIndex, *snapshot.Snapsho
 			}
 		}
 	}
-	before := &snapshot.SnapshotIndex{Snapshots: maps.Clone(idx.Snapshots), Names: maps.Clone(idx.Names)}
+	before := &snapshotIndex{Snapshots: maps.Clone(idx.Snapshots), Names: maps.Clone(idx.Names)}
 	return before, idx, nil
 }
 
-func writeBackSnapIndex(t *snapTx, before, after *snapshot.SnapshotIndex) error {
+func writeBackSnapIndex(t *snapTx, before, after *snapshotIndex) error {
 	for id := range before.Snapshots {
 		if after.Snapshots[id] == nil {
 			if err := t.Del(id); err != nil {

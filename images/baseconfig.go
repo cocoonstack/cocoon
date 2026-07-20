@@ -2,6 +2,7 @@ package images
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -30,6 +31,12 @@ func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "image
 
 func (c *BaseConfig) BlobPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+c.BlobExt)
+}
+
+// OwnsBlob reports whether this backend holds hex's blob file.
+func (c *BaseConfig) OwnsBlob(hex string) bool {
+	_, err := os.Stat(c.BlobPath(hex))
+	return err == nil
 }
 
 func (c *BaseConfig) EnsureBaseDirs() error {
