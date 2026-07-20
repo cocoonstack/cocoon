@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	"github.com/projecteru2/core/log"
@@ -13,7 +14,9 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
@@ -21,7 +24,7 @@ import (
 
 var (
 	metaOnce  sync.Once
-	metaStore *metajson.Store
+	metaStore meta.Store
 	metaErr   error
 
 	// vmTables maps the legacy vms.json fields onto the vms-namespace tables;
@@ -47,10 +50,33 @@ var (
 	}}
 )
 
+// MetaNamespaces lists every namespace with its tables — the engine-neutral
+// declaration both engines consume.
+func MetaNamespaces() []metasqlite.Namespace {
+	return []metasqlite.Namespace{
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: localfile.NamespaceName, Tables: []string{localfile.TableRecords, localfile.TableNames, tombstone.TableName}},
+		{Name: oci.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
+		{Name: cloudimg.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
+		{Name: cni.NamespaceName, Tables: []string{cni.TableRecords, tombstone.TableName}},
+	}
+}
+
+// MetaDBPath is the sqlite engine's database under the meta root.
+func MetaDBPath(conf *config.Config) string {
+	return filepath.Join(conf.RootDir, "meta", metasqlite.DBFileName)
+}
+
 // MetaStore builds the process-wide meta store once — one store, every
 // namespace — and injects it into every backend (design §10 P0 boundary).
-func MetaStore(conf *config.Config) (*metajson.Store, error) {
+// The engine follows conf.MetaBackend: json (default) or sqlite.
+func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
+		if conf.MetaBackend == "sqlite" {
+			metaStore, metaErr = metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...)
+			return
+		}
 		chCfg := cloudhypervisor.NewConfig(conf)
 		fcCfg := firecracker.NewConfig(conf)
 		snapCfg := localfile.NewConfig(conf)

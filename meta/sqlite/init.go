@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cocoonstack/cocoon/meta"
@@ -17,6 +18,9 @@ import (
 // is left for the operator.
 func Init(dbPath string, namespaces ...Namespace) (err error) {
 	if err := refuseManifest(dbPath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
 		return err
 	}
 	if exists(dbPath) {

@@ -75,6 +75,7 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("stop_timeout_seconds", 30)
 	viper.SetDefault("pool_size", runtime.NumCPU())
 	viper.SetDefault("pull_conns", 8)
+	viper.SetDefault("meta_backend", "json")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.max_size", 500)
 	viper.SetDefault("log.max_age", 28)

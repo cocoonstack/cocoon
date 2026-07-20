@@ -43,6 +43,8 @@ type Config struct {
 	PoolSize int `json:"pool_size" mapstructure:"pool_size"`
 	// PullConns: concurrent HTTP Range connections per cloud-image download; <=0 = 8.
 	PullConns int `json:"pull_conns" mapstructure:"pull_conns"`
+	// MetaBackend selects the metadata engine: "json" (default) or "sqlite".
+	MetaBackend string `json:"meta_backend,omitempty" mapstructure:"meta_backend"`
 	// CNIConfDir: CNI plugin configuration dir. Default: /etc/cni/net.d.
 	CNIConfDir string `json:"cni_conf_dir" mapstructure:"cni_conf_dir"`
 	// CNIBinDir: CNI plugin binary dir. Default: /opt/cni/bin.
