@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func testDecls() []Namespace {
@@ -31,6 +33,24 @@ func TestFailedInitRestarts(t *testing.T) {
 	}
 	if _, err := Open(path, testDecls()...); err != nil {
 		t.Fatalf("open: %v", err)
+	}
+}
+
+func TestForeignPopulatedDBRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	db, err := open(path, "FULL", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE somebody_elses (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if err := Init(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
+		t.Fatalf("want foreign-db refusal, got %v", err)
+	}
+	if !utils.FileExists(path) {
+		t.Fatal("foreign db was deleted")
 	}
 }
 
