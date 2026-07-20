@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.19)
+# Meta store: unified metadata layer (design v2.20)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -261,9 +261,13 @@ NIC indices:
 ```
 
 VM cleanup carries its dirs and disk paths; image cleanup carries the blob
-path and digest. Steps 4–6 and every recovery read this and nothing else,
-which is what lets a worker finish a job whose record is already gone —
-and is why the payload must be complete at lease time.
+path and digest. Steps 4–6 and every recovery read this and nothing else.
+To be precise about WHOSE record may be gone: a record-backed candidate keeps
+its row through `leased` and `deleting` and loses it only at finalize (§5
+step 6), so the payload serves recordless orphans and the finalize step
+itself — it is never licence to delete the row early, which would leave
+in-flight references dangling. That is why the payload must be complete at
+lease time.
 
 Representation rules (each has a round-trip fixture in §9):
 
@@ -368,15 +372,17 @@ Per candidate:
    self-deadlock. Destructive repository flows therefore expose `...Locked`
    entrypoints that assert the lock is already held and skip step 2; the
    plain entrypoints acquire it. The mapping is
-   explicit, because it is not uniform today: VMs use the existing per-VM
-   `ops.lock`; networks are covered by their owning VM's lock — which is a
-   CHANGE, not a description: `cmd/vm/lifecycle.go` tears down TAPs and calls
+   explicit, because it is not uniform today: VMs use the stable VMID-keyed
+   lock (`<RootDir>/locks/vm/<vmID>.lock`, the rule above); networks share
+   that SAME lock, derived from the vmID alone — which is a CHANGE, not a
+   description: `cmd/vm/lifecycle.go` tears down TAPs and calls
    `netProvider.Delete` after `hyper.Delete` has already removed the record,
-   outside any ops lock, and today it could not do otherwise because the lock
-   inode dies with the runDir. Relocating the ops lock (the rule above) is
-   precisely what makes network teardown under the owning VM's lock
-   implementable, and P1 must restructure `vm rm` to hold it across both the
-   record deletion and the network teardown; snapshots use their existing read-lease mechanism in
+   outside any ops lock, and today it could not do otherwise because the
+   lock inode dies with the runDir. The VMID-keyed path is what makes both
+   hard cases implementable: `vm rm` (P1 restructures it to hold the lock
+   across record deletion AND network teardown) and the CNI GC's recordless
+   orphan netns, whose lock derives from the vmID in the netns name with no
+   record to consult; snapshots use their existing read-lease mechanism in
    exclusive mode — its `LeasePath(id)` is already a SIBLING of the data dir
    (`<dir>.lease`), deliberately outside the tree that gets removed;
    **images have no per-digest lock today and gain one** — a lock file beside
@@ -417,9 +423,15 @@ paths violate this: `ops.lock` sits INSIDE the VM runDir that
 `os.Remove(LeasePath(id))` after removing the data dir. The rule this design
 adopts, uniform across namespaces:
 
-- every entity lock file lives OUTSIDE the resource's cleanup set (VM
-  `ops.lock` relocates to a runDir sibling, matching where snapshots already
-  put `LeasePath`);
+- every entity lock file lives OUTSIDE any resource's cleanup set. For VMs
+  the P1 form is a stable, VMID-keyed, backend-independent path —
+  `<RootDir>/locks/vm/<vmID>.lock` — used through ONE shared helper by CH,
+  FC and CNI alike. Not a runDir sibling: the CNI GC's candidates include
+  orphan netns whose VM record is already gone, and `networkRecord` carries
+  neither hypervisor nor RunDir, so a record-derived path is unfindable
+  exactly when it is needed most, while a VMID-derived path needs nothing
+  but the ID. This also ends `LockVMOps`'s lockless index read — the lock
+  path no longer depends on the record at all;
 - destructive cleanup NEVER deletes a lock file;
 - lock files are reaped only by an explicit maintenance action (doctor /
   `gc --deep`) that requires a quiescent store, never during normal
@@ -529,7 +541,13 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   keeps its own engine-independent manifest at the meta root
   (`meta-convert.manifest`): source identity (paths + per-namespace digest +
   record counts), target engine, per-namespace completion marks, and aside
-  paths. **The digest is engine-neutral by construction** — raw json bytes and
+  paths. **A json source is TWO files, and both are authority**: main and
+  `.prev`. Manifest entries, the move-aside, and the "target must be fresh"
+  check all name both generations — otherwise a json→sqlite→json round trip
+  can leave a pre-conversion `.prev` beside the new main, and the json
+  engine's own recovery path will serve that stale generation the first time
+  the new main is unreadable. **The digest is engine-neutral by
+  construction** — raw json bytes and
   sqlite rows are not comparable — so it is the sha256 of a canonical
   namespace export: records sorted by id, each encoded with the same
   deterministic encoder, satellite sets appended in a fixed order. Both
@@ -548,8 +566,16 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
     content hash and record count;
   - a populated target with no matching manifest entry is foreign and
     refused, telling the operator to move it aside deliberately;
-  - the manifest is removed, and its parent dir synced, only after the whole
-    conversion is complete.
+  - **backend selection is the final manifest-tracked step, not a separate
+    operator chore.** Retiring the json source while `meta_backend` still
+    reads `json` (the default) would make the next open see missing files
+    and call the namespaces empty. The conversion records the intended
+    backend in the manifest, switches the effective selection, and keeps the
+    manifest in place until a normal `Store.Open` has selected and verified
+    the new target;
+  - the manifest is removed, and its parent dir synced, only after that
+    verified open — at which point the conversion is complete in every
+    sense.
 - **The old authority is retired, not left in place.** Conversion in either
   direction renames its source aside only after a fully committed, fully
   verified write, so a later reverse conversion can never find a stale
@@ -742,7 +768,10 @@ two-engine events) plus the performance block.
   commits, external-process commits, connection-pool churn (the notifier must
   keep observing across it), and fsnotify queue overflow (a dropped watch
   event must degrade to a change-token-confirmed poll, not a permanently
-  missed change); unsupported-fs refusal.
+  missed change); unsupported-filesystem refusal asserted SEPARATELY for
+  open, init and convert — each refusing before the first byte of target or
+  WAL state exists, since a single open-only test passes while init or
+  convert still creates WAL state on NFS before noticing.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
   consistency, directory ownership. Tombstone legality is conditional on the
@@ -787,7 +816,13 @@ two-engine events) plus the performance block.
   processes, not goroutines, asserting successful-operation counts against
   final record counts, name/ref index consistency, that every failure is a
   mapped `ErrConflict`/`ErrBusy` rather than a lost write, and zero
-  corruption on reopen. A process-local lock that silently drops records
+  corruption on reopen. A **predeclared success floor** applies to every
+  storm gate — ≥99% of attempted operations must COMPLETE, and latency is
+  scored only over completed batches. Without it a near-zero busy-retry
+  ceiling passes: nearly every contended operation returns an allowed
+  `ErrBusy`, the storm finishes fast, and the error-classification assertion
+  is satisfied by design. The mixed workload's concurrent durable write is
+  bounded the same way. A process-local lock that silently drops records
   would otherwise pass on latency alone.
 
 **Performance, json engine.** No slope gate — O(records) per write is its
@@ -819,16 +854,31 @@ contract — and the measured win arrives only in P2.
   flocks. Every subsystem's index moves onto Collections and domain
   repositories. `storage.Store[T]` and `storage/json` retire at the end of
   P0, since nothing is left on them.
-  One escape hatch is required and must be built deliberately: today's GC
-  takes every module's store flock FIRST and then calls the non-locking
-  `ReadRaw`/`WriteRaw`, while `meta.Store` exposes only self-locking
-  `View`/`Update` — a direct substitution re-enters the same flock and
-  self-deadlocks. P0 therefore keeps an INTERNAL, json-engine-only
-  `LockedView`/`LockedUpdate` pair used by nothing except the legacy GC
-  modules, and deletes it in P1 together with `gc.Module.Locker`. The
-  alternative — pulling the tombstone protocol forward into P0 — is rejected
-  because it would make a fixture mismatch ambiguous again, which is the one
-  property P0 exists to have.
+  One escape hatch is required and must be built deliberately — and it is
+  NOT GC-only. A caller audit shows four legacy paths that depend on the old
+  store's special lock semantics and cannot be expressed as pure retryable
+  closures:
+  - `LockVMOps` resolves the run dir with a LOCKLESS `ReadRaw`, expressly so
+    ops verbs don't stall behind an in-flight GC cycle's index lock; the
+    `netresize` failed-persist re-read does the same so a GC index lock
+    cannot fake a miss;
+  - OCI pull and cloudimg commit publish blob files INSIDE the image-index
+    flock — "rename + index write" is one critical section. A retryable
+    closure cannot contain the rename (side effect, violates purity), and
+    hoisting the rename outside the transaction opens a real window where
+    image GC deletes a blob that is not yet indexed;
+  - today's GC takes every module's store flock FIRST and then calls the
+    non-locking `ReadRaw`/`WriteRaw`, while `meta.Store` exposes only
+    self-locking `View`/`Update` — a direct substitution re-enters the same
+    flock and self-deadlocks.
+  P0 therefore ships an INTERNAL, json-engine-only legacy adapter with an
+  explicit allowlist: `RawView` for exactly the two lockless read sites, and
+  a namespace-lock (exactly-once) path for exactly the legacy GC modules and
+  the OCI/cloudimg publish steps. Nothing else may touch it, and it is
+  deleted in P1 once the stable VM lock, the per-digest image lock and the
+  new GC land. The alternative — pulling the tombstone protocol forward into
+  P0 — is rejected because it would make a fixture mismatch ambiguous again,
+  which is the one property P0 exists to have.
   Gate: byte-identical golden fixtures for every namespace file, the full
   contract suite green, `.prev` recovery and crash-boundary tests in the real
   write order, the paired-ratio non-regression gate, and — the one that
