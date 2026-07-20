@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.15)
+# Meta store: unified metadata layer (design v2.16)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -226,6 +226,23 @@ CREATE INDEX image_oci_refs_digest ON image_oci_refs(digest);
 CREATE TABLE images_oci_tombstones (digest TEXT NOT NULL PRIMARY KEY, lease_id TEXT NOT NULL, phase TEXT NOT NULL, leased_at TEXT NOT NULL, payload TEXT NOT NULL);
 ```
 
+Tombstone `payload` is what makes recovery possible without the record. It is
+written at lease time (§5 step 3), never later, and its shape is fixed:
+
+```json
+{"kind": "record" | "orphan",
+ "scope": {"mode": "aggregate"} | {"mode": "subset", "nics": [1, 2]},
+ "targets": {"dirs": [], "files": [], "netns": "", "taps": []}}
+```
+
+`kind` distinguishes a record-backed candidate from a recordless orphan (GC
+legitimately collects directories and blobs that never had a row); `scope`
+distinguishes a full teardown from an explicit subset such as the NIC indices
+of a resize — recovering a subset as an aggregate would destroy healthy
+resources; `targets` names everything cleanup must touch. Steps 4–6 and every
+recovery read this and nothing else, which is what lets a worker finish a job
+whose record is already gone.
+
 Representation rules (each has a round-trip fixture in §9):
 
 - **Per-ref payload survives.** Several refs may share one digest and each
@@ -358,9 +375,8 @@ Per candidate:
    never exist without the information its recovery needs. Step 4 only flips
    the phase; it adds nothing.
 4. Short `Update`, committed **before any filesystem work** and guarded by
-   `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'`,
-   copying the paths cleanup needs into the tombstone so a recovering worker
-   needs nothing from the record.
+   `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'`.
+   Nothing else — the payload was written whole at step 3 and is immutable.
 5. Slow file/directory cleanup outside any transaction, driven by the
    tombstone's payload so a recovering worker needs nothing from the deleted
    record.
@@ -585,6 +601,13 @@ Outside the boundary for every engine: host-local operational locks
 
 Engine-scoped, because the engines have deliberately different cost models.
 
+Gates are scoped per phase and per engine — one naming an engine that does
+not exist yet in a phase is out of scope for that phase's release:
+P0 = contract suite + json fixtures/format/crash + non-regression ratio;
+P1 = P0 plus the protocol correctness gates below (json only);
+P2 = everything sqlite-specific (schema identity, init, conversion, backup,
+two-engine events) plus the performance block.
+
 **Correctness (all engines).**
 - Contract-test suite incl. the forced-retry wrapper (clause 1), detached-value
   mutation test (clause 4), write-scope violation rejection (clause 2),
@@ -632,9 +655,13 @@ Engine-scoped, because the engines have deliberately different cost models.
   the old-or-new atomicity and invariant gates pass either way, so this needs
   its own assertion.
 - **Backup fidelity** (sqlite): take a backup while a writer is active and
-  the WAL is non-empty, then restore it — every acknowledged commit must be
-  present (a backup that silently omits un-checkpointed WAL state passes
-  every other gate); and assert that the previously published backup stays
+  the WAL is non-empty, then restore it. The assertion is anchored on a
+  durable pre-snapshot marker: every commit acknowledged BEFORE the marker
+  must be present (a backup that silently omits un-checkpointed WAL state
+  passes every other gate), while commits acknowledged after the snapshot
+  point may legitimately be present or absent — `VACUUM INTO` captures a
+  point-in-time snapshot, so demanding "every acknowledged commit" would fail
+  a correct implementation; and assert that the previously published backup stays
   intact and usable until the replacement is fully committed, with crashes
   injected at each step of the temp → verify → fsync → rename → parent-sync
   sequence.
@@ -762,9 +789,12 @@ contract — and the measured win arrives only in P2.
   the protocol, the `vm rm` network-teardown restructure, and removal of
   `gc.Module.Locker` / `Watchable.WatchPath` / `IndexFile`/`IndexLock`. The
   GC design gets validated for real, on the engine we already trust.
-  Gate: the correctness block of §9 in full — lock-inode safety, tombstone
-  fencing/ABA, phase-directed recovery, commit atomicity under crash,
-  multi-process correctness.
+  Gate (the applicable subset of §9, not the whole block — P1 has no sqlite
+  engine, so sqlite backup, init, conversion and two-engine event tests are
+  out of scope until P2): lock-inode safety, tombstone fencing/ABA,
+  phase-directed recovery incl. subset teardown, entrypoint tombstone
+  discipline, commit atomicity under crash, multi-process correctness, and
+  json-engine event/overflow behaviour.
 - **P2 — the sqlite engine (opt-in) and everything that exists only for it.**
   Schema, runtime contract, `meta init`/`meta convert` with its manifest, the
   per-engine event tokens, `meta_state`. Scale deployments convert ALL
@@ -773,6 +803,10 @@ contract — and the measured win arrives only in P2.
   absolute anchors apply, and where the measured win lands.
 - **P3 — optional follow-ons**: metering `Log`; a networked engine if the
   fleet ever wants one; widening the Relaxed set per operation with data.
-- Revertibility: P0 and P1 are ordinary code changes on one engine, revertible
-  by revert. P2's conversion is reversible only through
-  `meta convert --to json`.
+- Revertibility, stated precisely: P0 is revertible as ordinary code. **P1 is
+  NOT plainly revertible** — P0 code knows nothing about tombstones, so
+  reverting while a `deleting` tombstone exists would expose its still-live
+  row as healthy over partially removed files. Rolling P1 back requires a
+  quiescent store whose recovery sweep has completed and whose tombstone sets
+  are empty; anything else must be recovered forward first. P2's conversion
+  is reversible only through `meta convert --to json`.
