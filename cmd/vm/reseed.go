@@ -18,11 +18,6 @@ const (
 	reseedEntropyBytes = 32
 	reseedMaxAttempts  = 3
 	reseedRetryDelay   = 2 * time.Second
-	// reseedAttemptTimeout bounds one dial+reseed. A guest whose vsock is
-	// wedged (e.g. a hypervisor that resets virtio-vsock on restore, leaving
-	// the agent unreachable) can otherwise block the CONNECT reply read or the
-	// reseed frame read forever on a background context — hanging the clone/
-	// restore command that fires this best-effort signal.
 	reseedAttemptTimeout = 4 * time.Second
 )
 
