@@ -20,7 +20,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs: "db" holds vms.json/vms.lock (when RootDir == RunDir), clone-locks/ holds FC clone flocks.
+// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs: "db" holds the record store (vms/, names/, locks — when RootDir == RunDir), clone-locks/ holds FC clone flocks.
 var gcReservedDirNames = map[string]struct{}{"db": {}, CloneLocksDirName: {}}
 
 // VMGCSnapshot is the ReadDB-phase data for any hypervisor GC module (CH + FC share the shape).
@@ -70,28 +70,27 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 		ReadDB: func(_ context.Context) (VMGCSnapshot, error) {
 			snap := VMGCSnapshot{reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-CreatingStateGCGrace)
-			if err := b.DB.ReadRaw(func(idx *VMIndex) error {
-				snap.blobIDs = make(map[string]struct{}, len(idx.VMs))
-				snap.vmIDs = make(map[string]struct{}, len(idx.VMs))
-				snap.orphanDirs = slices.Clone(idx.OrphanDirs)
-				for id, rec := range idx.VMs {
-					if rec == nil {
-						continue
-					}
-					snap.vmIDs[id] = struct{}{}
-					if rec.RunDir != "" {
-						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
-					}
-					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
-					if rec.State == types.VMStateCreating && rec.UpdatedAt.Before(cutoff) {
-						snap.staleCreate = append(snap.staleCreate, id)
-					}
-				}
-				return nil
-			}); err != nil {
+			// Lock-free reads; the cycle's exclusive barrier (Locker) keeps record births out, which is all the pin set needs to stay trustworthy.
+			recs, err := b.DB.List()
+			if err != nil {
 				return snap, err
 			}
-			var err error
+			snap.orphanDirs, err = b.DB.OrphanDirs()
+			if err != nil {
+				return snap, err
+			}
+			snap.blobIDs = make(map[string]struct{}, len(recs))
+			snap.vmIDs = make(map[string]struct{}, len(recs))
+			for _, rec := range recs {
+				snap.vmIDs[rec.ID] = struct{}{}
+				if rec.RunDir != "" {
+					snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
+				}
+				maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
+				if rec.State == types.VMStateCreating && rec.UpdatedAt.Before(cutoff) {
+					snap.staleCreate = append(snap.staleCreate, rec.ID)
+				}
+			}
 			if snap.runDirs, err = utils.ScanSubdirs(b.Conf.RunDir()); err != nil {
 				return snap, err
 			}
@@ -130,9 +129,9 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// WatchPath returns VM index file path for filesystem-based watching.
+// WatchPath returns the per-VM records dir for filesystem-based watching: every record write or delete changes an entry there.
 func (b *Backend) WatchPath() string {
-	return b.Conf.IndexFile()
+	return b.DB.RecordsDir()
 }
 
 // gcCollect kills leftover hypervisor processes, removes orphan dirs/records, and sweeps stale capture/staging leftovers under the orchestrator's flock.
@@ -141,16 +140,14 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
+	errs = append(errs, b.sweepOrphanNameClaims(ctx)...)
 	// Only fully-reclaimed ids lose their DB record: unrecording a skipped VM would strand a live VMM/dirs with no owner and let network GC tear it down.
 	safeToUnrecord := make([]string, 0, len(ids))
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
-		_ = b.DB.ReadRaw(func(idx *VMIndex) error {
-			if rec := idx.VMs[id]; rec != nil {
-				runDir, logDir = rec.RunDir, rec.LogDir
-			}
-			return nil
-		})
+		if rec, ok, _ := b.DB.Get(id); ok {
+			runDir, logDir = rec.RunDir, rec.LogDir
+		}
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, runDir, func() {
 			// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
@@ -224,18 +221,33 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 
 // sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
 func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
+	if len(dirs) == 0 {
+		return nil
+	}
 	logger := log.WithFunc("gc." + b.Typ)
-	// Lockless write: the orchestrator already holds the index flock for the whole cycle; a locked Update here would self-deadlock.
 	clearIntent := func(dir string) {
-		if err := b.DB.WriteRaw(func(idx *VMIndex) error {
-			idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return d == dir })
-			return nil
-		}); err != nil {
+		if err := b.DB.ClearOrphanDirs(ctx, []string{dir}); err != nil {
 			logger.Warnf(ctx, "clear cleanup intent %s: %v", dir, err)
+		}
+	}
+	// A standing record still owning a dir means its delete crashed between the intent write and the unrecord: the VM is alive, only a retried rm may reclaim it.
+	recs, err := b.DB.List()
+	if err != nil {
+		return []error{fmt.Errorf("list records for orphan-dir sweep: %w", err)}
+	}
+	owned := make(map[string]struct{}, 2*len(recs))
+	for _, r := range recs {
+		for _, d := range []string{r.RunDir, r.LogDir} {
+			if d != "" {
+				owned[filepath.Clean(d)] = struct{}{}
+			}
 		}
 	}
 	var errs []error
 	for _, dir := range dirs {
+		if _, ok := owned[filepath.Clean(dir)]; ok {
+			continue
+		}
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 			clearIntent(dir)
 			continue
@@ -253,6 +265,39 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 			logger.Infof(ctx, "collected dir=%s reason=migrated-delete-retry", dir)
 			clearIntent(dir)
 		})
+	}
+	return errs
+}
+
+// sweepOrphanNameClaims reclaims name claims whose VM record is gone (crashed create/delete leftovers). Age-gated like stale placeholders so an in-flight create's claim→record window is never raided; the live re-check runs under the names lock (see VMDB.SweepDeadClaim).
+func (b *Backend) sweepOrphanNameClaims(ctx context.Context) []error {
+	entries, err := os.ReadDir(b.DB.namesDir)
+	if err != nil {
+		return nil
+	}
+	logger := log.WithFunc("gc." + b.Typ)
+	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	var errs []error
+	for _, e := range entries {
+		info, infoErr := e.Info()
+		if infoErr != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		// Aged publish temps (crash between write and link) are never the canonical claim.
+		if strings.HasPrefix(e.Name(), claimTmpPrefix) {
+			if rmErr := os.Remove(filepath.Join(b.DB.namesDir, e.Name())); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+				errs = append(errs, rmErr)
+			}
+			continue
+		}
+		removed, name, sweepErr := b.DB.SweepDeadClaim(ctx, e.Name())
+		if sweepErr != nil {
+			errs = append(errs, sweepErr)
+			continue
+		}
+		if removed {
+			logger.Infof(ctx, "collected name claim %q reason=orphan-claim", name)
+		}
 	}
 	return errs
 }

@@ -131,7 +131,7 @@ func mergeWatchChannels(ctx context.Context, hypers []hypervisor.Hypervisor) <-c
 		if !ok {
 			continue
 		}
-		ch, err := utils.WatchFile(ctx, w.WatchPath(), statusWatchDebounce)
+		ch, err := utils.WatchDir(ctx, w.WatchPath(), statusWatchDebounce)
 		if err == nil {
 			channels = append(channels, ch)
 		}

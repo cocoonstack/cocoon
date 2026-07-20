@@ -34,7 +34,7 @@ type Hypervisor interface {
 	RegisterGC(*gc.Orchestrator)
 }
 
-// Watchable is optionally implemented by hypervisors that support file-based state watching.
+// Watchable is optionally implemented by hypervisors that support state watching; WatchPath is a directory whose entries change on every state write.
 type Watchable interface {
 	WatchPath() string
 }

@@ -28,8 +28,8 @@ func TestFailRestoreSparesStoppedOrigin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id := "vm-fail-" + string(tt.origin)
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
-			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
+			if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+				r.State = tt.origin
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -73,9 +73,9 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			const id = "vm-direct-fail"
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
 			runDir := t.TempDir()
-			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
-				idx.VMs[id].RunDir = runDir
+			if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+				r.State = tt.origin
+				r.RunDir = runDir
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -108,9 +108,9 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	const id = "vm-merge-fail"
 	runDir := t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
+	if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		r.RunDir = runDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed state: %v", err)
@@ -164,8 +164,8 @@ func TestResolveForRestoreStates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id := "vm-" + string(tt.state)
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
-			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.state
+			if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+				r.State = tt.state
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -200,8 +200,8 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b, id := newHibernateTestVM(t)
-			if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
+			if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+				r.State = tt.origin
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -247,8 +247,8 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 			ctx := t.Context()
 			const id = "vm-corrupt"
 			seedStoppedVMWithDirs(t, b, id)
-			if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-				tt.mutate(idx.VMs[id])
+			if err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+				tt.mutate(r)
 				return nil
 			}); err != nil {
 				t.Fatalf("seed: %v", err)
@@ -268,9 +268,9 @@ func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-sweep-fail"
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = t.TempDir()
+	if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		r.RunDir = t.TempDir()
 		return nil
 	}); err != nil {
 		t.Fatalf("seed state: %v", err)

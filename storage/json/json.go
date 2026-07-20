@@ -16,7 +16,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const prevSuffix = ".prev"
+// PrevSuffix names the crash-recovery previous-generation sibling kept next to the store file.
+const PrevSuffix = ".prev"
 
 var _ storage.Store[struct{}] = (*Store[struct{}])(nil)
 
@@ -68,7 +69,7 @@ func (s *Store[T]) UpdateNoDirSync(ctx context.Context, fn func(*T) error) error
 	if err := utils.SyncFile(s.filePath); err != nil {
 		return err
 	}
-	if err := utils.SyncFile(s.filePath + prevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := utils.SyncFile(s.filePath + PrevSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -95,7 +96,7 @@ func (s *Store[T]) writeRaw(ctx context.Context, fn func(*T) error, sync utils.S
 	}
 	// Keep the durable previous generation reachable: the caller fsyncs only after release, and a crash in between may tear the fresh file on filesystems without rename-over data ordering. A recovered main is the torn one — rotating it in would destroy the only good generation — and the rotation goes link+rename so a .prev exists at every instant.
 	if !recovered {
-		tmp := s.filePath + prevSuffix + ".tmp"
+		tmp := s.filePath + PrevSuffix + ".tmp"
 		if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
@@ -104,7 +105,7 @@ func (s *Store[T]) writeRaw(ctx context.Context, fn func(*T) error, sync utils.S
 		case err != nil:
 			return err
 		default:
-			if err := os.Rename(tmp, s.filePath+prevSuffix); err != nil {
+			if err := os.Rename(tmp, s.filePath+PrevSuffix); err != nil {
 				return err
 			}
 		}
@@ -124,7 +125,7 @@ func (s *Store[T]) load(ctx context.Context) (*T, bool, error) {
 	default:
 		if decodeErr := stdjson.Unmarshal(raw, &data); decodeErr != nil {
 			var prev T
-			if prevErr := utils.ReadJSONFile(s.filePath+prevSuffix, &prev); prevErr != nil {
+			if prevErr := utils.ReadJSONFile(s.filePath+PrevSuffix, &prev); prevErr != nil {
 				return nil, false, errors.Join(fmt.Errorf("decode %s: %w", s.filePath, decodeErr), prevErr)
 			}
 			data = prev

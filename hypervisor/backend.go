@@ -11,8 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/lock"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/metering"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -63,16 +61,19 @@ type BackendConfig interface {
 	VMLogDir(id string) string
 }
 
-// Backend provides shared store operations for hypervisor backends.
+// Backend provides shared store operations for hypervisor backends. Locker is
+// the GC barrier flock (exclusive per GC cycle, shared per record birth); day-to-day
+// record IO goes through DB's per-VM files and never touches it.
 type Backend struct {
 	Typ      string
 	Conf     BackendConfig
-	DB       storage.Store[VMIndex]
+	DB       *VMDB
 	Locker   lock.Locker
 	Metering metering.Recorder
 }
 
-// NewBackend wires shared init: EnsureDirs, flock, JSON store, nil-recorder fallback.
+// NewBackend wires shared init: EnsureDirs, barrier flock, per-VM record store
+// (running the one-shot legacy vms.json split if present), nil-recorder fallback.
 func NewBackend(typ string, conf BackendConfig, rec metering.Recorder) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -81,10 +82,14 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder) (*Backend
 		rec = metering.NopRecorder{}
 	}
 	locker := flock.New(conf.IndexLock())
+	db, err := OpenVMDB(conf.IndexFile(), conf.IndexLock(), locker)
+	if err != nil {
+		return nil, err
+	}
 	return &Backend{
 		Typ:      typ,
 		Conf:     conf,
-		DB:       storejson.New[VMIndex](conf.IndexFile(), locker),
+		DB:       db,
 		Locker:   locker,
 		Metering: rec,
 	}, nil

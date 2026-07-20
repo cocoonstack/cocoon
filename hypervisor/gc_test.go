@@ -18,11 +18,11 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	const id = "vm-gc-lock"
 	runDir, logDir := t.TempDir(), t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, false)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateCreating
-		idx.VMs[id].UpdatedAt = time.Now().Add(-25 * time.Hour)
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = logDir
+	if err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+		r.State = types.VMStateCreating
+		r.UpdatedAt = time.Now().Add(-25 * time.Hour)
+		r.RunDir = runDir
+		r.LogDir = logDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -117,10 +117,7 @@ func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(leftover, "cow.raw"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.OrphanDirs = append(idx.OrphanDirs, leftover)
-		return nil
-	}); err != nil {
+	if err := b.DB.AddOrphanDirs(ctx, []string{leftover}); err != nil {
 		t.Fatalf("seed intent: %v", err)
 	}
 
@@ -130,12 +127,11 @@ func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
 		t.Fatal("migrated leftover dir must be reclaimed")
 	}
-	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
-		if len(idx.OrphanDirs) != 0 {
-			t.Fatalf("intent must be cleared, got %v", idx.OrphanDirs)
-		}
-		return nil
-	}); err != nil {
+	dirs, err := b.DB.OrphanDirs()
+	if err != nil {
 		t.Fatalf("read: %v", err)
+	}
+	if len(dirs) != 0 {
+		t.Fatalf("intent must be cleared, got %v", dirs)
 	}
 }

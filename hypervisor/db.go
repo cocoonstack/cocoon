@@ -1,10 +1,7 @@
 package hypervisor
 
 import (
-	"fmt"
-
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 // VMRecord is the persisted record for a single VM; JSON tags live on the embedded types.VM (duplicates would shadow the promoted fields).
@@ -22,30 +19,12 @@ type VMRecord struct {
 	Quarantine string `json:"quarantine,omitempty"`
 }
 
-// VMIndex is the top-level DB structure for a hypervisor backend.
+// VMIndex is the legacy monolithic vms.json shape, retained only to decode a
+// pre-split index during the one-shot migration (see OpenVMDB); live state is
+// per-VM record files plus name claims and the orphan-dirs store.
 type VMIndex struct {
 	VMs   map[string]*VMRecord `json:"vms"`
 	Names map[string]string    `json:"names"` // name → VM ID
-	// OrphanDirs are migrated VM dirs whose delete removed the record but failed the dir removal; GC retries them since the orphan scan only covers configured roots.
+	// OrphanDirs were migrated VM dirs pending cleanup retry; now in orphanDirIndex.
 	OrphanDirs []string `json:"orphan_dirs,omitempty"`
-}
-
-func (idx *VMIndex) Init() {
-	utils.InitNamedIndex(&idx.VMs, &idx.Names)
-}
-
-func (idx *VMIndex) Resolve(ref string) (string, error) {
-	return utils.ResolveRef(idx.VMs, idx.Names, ref, ErrNotFound)
-}
-
-func (idx *VMIndex) ResolveMany(refs []string) ([]string, error) {
-	return utils.ResolveRefs(idx.VMs, idx.Names, refs, ErrNotFound)
-}
-
-func (idx *VMIndex) GetRecord(vmID string) (*VMRecord, error) {
-	r := idx.VMs[vmID]
-	if r == nil {
-		return nil, fmt.Errorf("vm %s disappeared from index", vmID)
-	}
-	return r, nil
 }

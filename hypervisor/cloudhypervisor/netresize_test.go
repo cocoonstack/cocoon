@@ -84,12 +84,9 @@ func TestResolveFailedPersist(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{{ID: "cocoon-net-aabbccddee01", MAC: nc.MAC}})
 	plumbing := &stubPlumbing{}
 
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", Hypervisor: ch.Typ}}
-		rec.NetworkConfigs = []*types.NetworkConfig{nc}
-		idx.VMs["vm1"] = rec
-		return nil
-	}); err != nil {
+	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", Hypervisor: ch.Typ}}
+	rec.NetworkConfigs = []*types.NetworkConfig{nc}
+	if err := ch.DB.Put(ctx, rec); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	committed, err := ch.resolveFailedPersist(ctx, hc, plumbing, "vm1", nc, "cocoon-net-aabbccddee01", 0)
@@ -100,8 +97,8 @@ func TestResolveFailedPersist(t *testing.T) {
 		t.Fatal("no teardown may run when the record carries the NIC")
 	}
 
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		idx.VMs["vm1"].NetworkConfigs = nil
+	if err := ch.DB.Update(ctx, "vm1", func(r *hypervisor.VMRecord) error {
+		r.NetworkConfigs = nil
 		return nil
 	}); err != nil {
 		t.Fatalf("truncate: %v", err)
@@ -125,12 +122,9 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
 	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
-	if err := ch.DB.Update(ctx, func(idx *hypervisor.VMIndex) error {
-		rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm7", Hypervisor: ch.Typ}}
-		rec.NetworkConfigs = []*types.NetworkConfig{nc}
-		idx.VMs["vm7"] = rec
-		return nil
-	}); err != nil {
+	seed := &hypervisor.VMRecord{VM: types.VM{ID: "vm7", Hypervisor: ch.Typ}}
+	seed.NetworkConfigs = []*types.NetworkConfig{nc}
+	if err := ch.DB.Put(ctx, seed); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// vm.info reports no live nets, so macToID can't resolve nc's MAC.
@@ -144,12 +138,12 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	if res.After != 0 || len(res.Removed) != 1 {
 		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
 	}
-	var rec *hypervisor.VMRecord
-	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error { rec = idx.VMs["vm7"]; return nil }); err != nil {
+	loaded, _, err := ch.DB.Get("vm7")
+	if err != nil {
 		t.Fatalf("read record: %v", err)
 	}
-	if len(rec.NetworkConfigs) != 0 {
-		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(rec.NetworkConfigs))
+	if len(loaded.NetworkConfigs) != 0 {
+		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(loaded.NetworkConfigs))
 	}
 }
 

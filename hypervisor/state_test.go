@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -108,9 +106,9 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	dir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].RunDir = dir
-		idx.VMs["vm1"].LogDir = dir
+	if err := b.DB.Update(ctx, "vm1", func(r *VMRecord) error {
+		r.RunDir = dir
+		r.LogDir = dir
 		return nil
 	}); err != nil {
 		t.Fatalf("set dirs: %v", err)
@@ -184,9 +182,9 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	dir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].RunDir = dir
-		idx.VMs["vm1"].LogDir = dir
+	if err := b.DB.Update(ctx, "vm1", func(r *VMRecord) error {
+		r.RunDir = dir
+		r.LogDir = dir
 		return nil
 	}); err != nil {
 		t.Fatalf("set dirs: %v", err)
@@ -584,33 +582,32 @@ func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
 	dir := t.TempDir()
-	locker := flock.New(filepath.Join(dir, "index.lock"))
-	store := storejson.New[VMIndex](filepath.Join(dir, "index.json"), locker)
 	rec := meteringcapture.New()
-	return &Backend{
-		Typ:      "test-hv",
-		Conf:     meteringStubConfig{vmRunRoot: dir},
-		DB:       store,
-		Locker:   locker,
-		Metering: rec,
-	}, rec
+	b, err := NewBackend("test-hv", meteringStubConfig{
+		stubBackendConfig: stubBackendConfig{
+			indexFile: filepath.Join(dir, "index.json"),
+			indexLock: filepath.Join(dir, "index.lock"),
+		},
+		vmRunRoot: dir,
+	}, rec)
+	if err != nil {
+		t.Fatalf("NewBackend: %v", err)
+	}
+	return b, rec
 }
 
 func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int64, firstBooted bool) {
 	t.Helper()
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id] = &VMRecord{
-			VM: types.VM{
-				ID:          id,
-				Hypervisor:  b.Typ,
-				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
-				FirstBooted: firstBooted,
-			},
-			// Real dirs by default: sequences write markers into RunDir, and an empty path would land them in the package dir.
-			RunDir: t.TempDir(),
-			LogDir: t.TempDir(),
-		}
-		return nil
+	if err := b.DB.Put(t.Context(), &VMRecord{
+		VM: types.VM{
+			ID:          id,
+			Hypervisor:  b.Typ,
+			Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
+			FirstBooted: firstBooted,
+		},
+		// Real dirs by default: sequences write markers into RunDir, and an empty path would land them in the package dir.
+		RunDir: t.TempDir(),
+		LogDir: t.TempDir(),
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -619,10 +616,10 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage int64) {
 	t.Helper()
 	seedVMRecord(t, b, id, cpu, mem, storage, true)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+	if err := b.DB.Update(t.Context(), id, func(r *VMRecord) error {
 		now := time.Now()
-		idx.VMs[id].State = types.VMStateRunning
-		idx.VMs[id].StartedAt = &now
+		r.State = types.VMStateRunning
+		r.StartedAt = &now
 		return nil
 	}); err != nil {
 		t.Fatalf("set running: %v", err)
@@ -654,10 +651,10 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	const id = "vm-staging"
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	runDir := t.TempDir()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = runDir
+	if err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		r.RunDir = runDir
+		r.LogDir = runDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)

@@ -101,16 +101,13 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 // resolveFailedPersist re-reads the record after a failed NIC persist (fsync
 // can fail after the rename landed) and tears down only on a conclusive miss:
 // removing a committed NIC would strand record-without-device, unhealable by a
-// same-target retry. Lockless read so a GC index lock can't fake a miss.
+// same-target retry. Lockless read so a concurrent lock holder can't fake a miss.
 func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
-	var rec *hypervisor.VMRecord
-	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
-		rec = idx.VMs[vmID]
-		return nil
-	}); err != nil {
+	rec, _, err := ch.DB.Get(vmID)
+	if err != nil {
 		return false, err
 	}
-	if nicPersisted(rec, nc.MAC) {
+	if nicPersisted(&rec, nc.MAC) {
 		return true, nil
 	}
 	logger := log.WithFunc("cloudhypervisor.NetResize.add")

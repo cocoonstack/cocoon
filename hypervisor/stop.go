@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -134,30 +133,23 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		}
 		log.WithFunc(b.Typ+".deleteOneLocked").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
 	}
-	var (
-		shape              metering.Shape
-		hadRunningInterval bool
-	)
-	// Dirs outside the configured roots escape the GC orphan scan; persist a cleanup intent in the same transaction so a failed removal stays reclaimable.
+	// Dirs outside the configured roots escape the GC orphan scan; persist the cleanup intent before unrecording so a crash in between cannot strand them pointerless (the sweep skips dirs whose owner record still stands).
 	migrated := migratedDirs(rec, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
+	if len(migrated) > 0 {
+		if err := b.DB.AddOrphanDirs(ctx, migrated); err != nil {
+			return err
+		}
+	}
 	// Record first: dir removal deletes the ops.lock inode, and a fresh-inode locker must resolve a gone record instead of reviving the VM.
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil {
-			return ErrNotFound
-		}
-		hadRunningInterval = hasOpenComputeInterval(r)
-		shape = shapeFromConfig(r.Config)
-		delete(idx.Names, r.Config.Name)
-		delete(idx.VMs, id)
-		for _, dir := range migrated {
-			if !slices.Contains(idx.OrphanDirs, dir) {
-				idx.OrphanDirs = append(idx.OrphanDirs, dir)
-			}
-		}
-		return nil
-	}); err != nil {
+	gone, _, err := b.DB.Delete(ctx, id, nil)
+	if err != nil {
 		return err
+	}
+	hadRunningInterval := hasOpenComputeInterval(&gone)
+	shape := shapeFromConfig(gone.Config)
+	// Claim released after the record: a crash in between leaves an orphan claim the next same-name create repairs.
+	if relErr := b.DB.ReleaseName(ctx, gone.Config.Name, id); relErr != nil {
+		log.WithFunc(b.Typ+".deleteOneLocked").Warnf(ctx, "release name %q for %s: %v", gone.Config.Name, id, relErr)
 	}
 	computeReason := metering.ReasonStopCrash
 	if stoppedByUs {
@@ -174,10 +166,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 }
 
 func (b *Backend) clearOrphanDirs(ctx context.Context, dirs []string) {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return slices.Contains(dirs, d) })
-		return nil
-	}); err != nil {
+	if err := b.DB.ClearOrphanDirs(ctx, dirs); err != nil {
 		log.WithFunc(b.Typ+".clearOrphanDirs").Warnf(ctx, "clear cleanup intents %v: %v", dirs, err)
 	}
 }

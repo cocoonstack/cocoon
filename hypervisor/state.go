@@ -103,22 +103,27 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	}
 	now := time.Now()
 	var stopped []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		for _, id := range ids {
-			r := idx.VMs[id]
-			if r == nil {
-				continue
-			}
+	for _, id := range ids {
+		var pending []metering.Entry
+		err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+			pending = pending[:0]
 			r.State = state
 			r.UpdatedAt = now
 			if state == types.VMStateStopped && hasOpenComputeInterval(r) {
 				r.StoppedAt = &now
-				stopped = append(stopped, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
+				pending = append(pending, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
 			}
+			return nil
+		})
+		if errors.Is(err, ErrNotFound) {
+			continue // vanished mid-batch: the legacy index skipped nil records the same way
 		}
-		return nil
-	}); err != nil {
-		return err
+		if err != nil {
+			// Earlier ids already persisted their flips; emit their entries so the ledger stays paired.
+			b.emitAll(ctx, stopped)
+			return err
+		}
+		stopped = append(stopped, pending...)
 	}
 	b.emitAll(ctx, stopped)
 	return nil
@@ -136,16 +141,13 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
 	now := time.Now()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil {
-			return nil
-		}
+	err := b.DB.Update(ctx, id, func(r *VMRecord) error {
 		r.State = types.VMStateError
 		r.Quarantine = reason
 		r.UpdatedAt = now
 		return nil
-	}); err != nil {
+	})
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
 	}
 }
@@ -157,57 +159,72 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	}
 	now := time.Now()
 	var emits []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		for _, id := range ids {
-			r := idx.VMs[id]
-			if r == nil {
-				continue
-			}
+	for _, id := range ids {
+		var pending []metering.Entry
+		err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+			pending = pending[:0]
 			shape := shapeFromConfig(r.Config)
 			if hasOpenComputeInterval(r) {
-				emits = append(emits, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
+				pending = append(pending, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 			}
 			reason := bootOrRestartReason(r.FirstBooted)
-			emits = append(emits, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
+			pending = append(pending, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 			r.State = types.VMStateRunning
 			r.StartedAt = &now
 			r.StoppedAt = nil
 			r.UpdatedAt = now
 			r.FirstBooted = true
+			return nil
+		})
+		if errors.Is(err, ErrNotFound) {
+			continue
 		}
-		return nil
-	}); err != nil {
-		return err
+		if err != nil {
+			b.emitAll(ctx, emits)
+			return err
+		}
+		emits = append(emits, pending...)
 	}
 	b.emitAll(ctx, emits)
 	return nil
 }
 
-// CleanStalePlaceholders removes "creating" records past GC grace period.
-func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error {
+// CleanStalePlaceholders removes "creating" records past GC grace period,
+// re-checking staleness under each record's own lock (TOCTOU) and releasing the
+// name claim of every record actually removed.
+func (b *Backend) CleanStalePlaceholders(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	cutoff := time.Now().Add(-CreatingStateGCGrace)
-	return b.DB.WriteRaw(func(idx *VMIndex) error {
-		utils.CleanStaleRecords(
-			idx.VMs, idx.Names, ids,
-			func(r *VMRecord) string { return r.Config.Name },
-			func(r *VMRecord) bool {
-				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
-			},
-		)
-		return nil
-	})
+	var errs []error
+	for _, id := range ids {
+		rec, deleted, err := b.DB.Delete(ctx, id, func(r *VMRecord) bool {
+			return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
+		})
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !deleted || rec.Config.Name == "" {
+			continue
+		}
+		if err := b.DB.ReleaseName(ctx, rec.Config.Name, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.
 func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
 	now := time.Now()
 	closed := false
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[rec.ID]
-		if r == nil || !hasOpenComputeInterval(r) {
+	err := b.DB.Update(ctx, rec.ID, func(r *VMRecord) error {
+		if !hasOpenComputeInterval(r) {
 			return nil
 		}
 		if r.State == types.VMStateRunning {
@@ -217,7 +234,8 @@ func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) 
 		r.UpdatedAt = now
 		closed = true
 		return nil
-	}); err != nil {
+	})
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		log.WithFunc(b.Typ+".closeStaleComputeInterval").Warnf(ctx, "close interval for %s: %v", rec.ID, err)
 		return
 	}
@@ -235,9 +253,9 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		shape  metering.Shape
 		reason metering.Reason
 	)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil || r.State == types.VMStateRunning {
+	err := b.DB.Update(ctx, id, func(r *VMRecord) error {
+		emit = false
+		if r.State == types.VMStateRunning {
 			return nil
 		}
 		if hasOpenComputeInterval(r) {
@@ -255,8 +273,11 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		r.UpdatedAt = now
 		r.FirstBooted = true
 		return nil
-	}); err != nil {
-		log.WithFunc(b.Typ+".reconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
+	})
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			log.WithFunc(b.Typ+".reconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
+		}
 		return
 	}
 	if emit {

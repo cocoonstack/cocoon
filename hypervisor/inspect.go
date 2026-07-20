@@ -2,6 +2,7 @@ package hypervisor
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 
@@ -10,28 +11,17 @@ import (
 )
 
 func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
-	var result *types.VM
-	return result, b.DB.With(ctx, func(idx *VMIndex) error {
-		id, err := idx.Resolve(ref)
-		if err != nil {
-			return err
-		}
-		result = b.ToVM(idx.VMs[id])
-		return nil
-	})
+	_, rec, err := b.ResolveAndLoad(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return b.ToVM(&rec), nil
 }
 
-// List snapshots all records under the DB lock then runs ToVM (which does per-running-VM file IO) outside the lock and in parallel, so concurrent writers don't queue behind status polls and poll latency stays bounded by pool size, not fleet size. Mutable map fields are cloned inside the lock to avoid a concurrent-read race with RecordSnapshot etc.
+// List reads every record lock-free (per-record files are atomic-rename generations) and runs ToVM (which does per-running-VM file IO) in parallel, so concurrent writers never queue behind status polls and poll latency stays bounded by pool size, not fleet size.
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
-	var recs []*VMRecord
-	if err := b.DB.With(ctx, func(idx *VMIndex) error {
-		recs = utils.MapValues(idx.VMs, func(r *VMRecord) *VMRecord {
-			cp := *r
-			cp.SnapshotIDs = maps.Clone(r.SnapshotIDs)
-			return &cp
-		})
-		return nil
-	}); err != nil {
+	recs, err := b.DB.List()
+	if err != nil {
 		return nil, err
 	}
 	return utils.Map(ctx, recs, func(_ context.Context, _ int, r *VMRecord) (*types.VM, error) {
@@ -50,61 +40,48 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	return &info
 }
 
-func (b *Backend) ResolveRef(ctx context.Context, ref string) (string, error) {
-	var id string
-	return id, b.DB.With(ctx, func(idx *VMIndex) error {
-		var err error
-		id, err = idx.Resolve(ref)
-		return err
-	})
+func (b *Backend) ResolveRef(_ context.Context, ref string) (string, error) {
+	return b.DB.Resolve(ref)
 }
 
-// ResolveRefs batch-resolves under a single lock.
-func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, error) {
-	var ids []string
-	return ids, b.DB.With(ctx, func(idx *VMIndex) error {
-		var err error
-		ids, err = idx.ResolveMany(refs)
-		return err
-	})
+// ResolveRefs batch-resolves refs.
+func (b *Backend) ResolveRefs(_ context.Context, refs []string) ([]string, error) {
+	return b.DB.ResolveMany(refs)
 }
 
-// LoadRecord returns a shallow value-copy; pointer/slice/map fields still alias the live record. Treat as read-only outside DB transactions.
-func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
-	var rec VMRecord
-	return rec, b.DB.With(ctx, func(idx *VMIndex) error {
-		var err error
-		rec, err = utils.LookupCopy(idx.VMs, id)
-		return err
-	})
+// LoadRecord returns a freshly decoded copy private to the caller; still treat it as read-only — mutations belong in DB.Update transactions.
+func (b *Backend) LoadRecord(_ context.Context, id string) (VMRecord, error) {
+	rec, ok, err := b.DB.Get(id)
+	if err != nil {
+		return VMRecord{}, err
+	}
+	if !ok {
+		return VMRecord{}, fmt.Errorf("%q not found", id)
+	}
+	return rec, nil
 }
 
-// ResolveAndLoad combines ResolveRef + LoadRecord under a single DB lock.
-func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRecord, error) {
-	var (
-		id  string
-		rec VMRecord
-	)
-	return id, rec, b.DB.With(ctx, func(idx *VMIndex) error {
-		var err error
-		id, err = idx.Resolve(ref)
-		if err != nil {
-			return err
-		}
-		rec, err = utils.LookupCopy(idx.VMs, id)
-		return err
-	})
+// ResolveAndLoad combines ResolveRef + LoadRecord. A record deleted between
+// the two reads maps to ErrNotFound so callers probing backends (resolveVMOwner)
+// keep treating it as an absence, not a hard failure.
+func (b *Backend) ResolveAndLoad(_ context.Context, ref string) (string, VMRecord, error) {
+	id, err := b.DB.Resolve(ref)
+	if err != nil {
+		return "", VMRecord{}, err
+	}
+	rec, ok, err := b.DB.Get(id)
+	if err != nil {
+		return "", VMRecord{}, err
+	}
+	if !ok {
+		return "", VMRecord{}, ErrNotFound
+	}
+	return id, rec, nil
 }
 
-// UpdateRecord runs mutate on the VM's live record inside one DB transaction.
+// UpdateRecord runs mutate on the VM's record inside one locked read-modify-write.
 func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VMRecord) error) error {
-	return b.DB.Update(ctx, func(idx *VMIndex) error {
-		r, err := idx.GetRecord(vmID)
-		if err != nil {
-			return err
-		}
-		return mutate(r)
-	})
+	return b.DB.Update(ctx, vmID, mutate)
 }
 
 // SetRunningSockets fills a running VM's live sockets (API socket, bound vsock UDS) from runDir — for clone/restore records that skip ToVM.
