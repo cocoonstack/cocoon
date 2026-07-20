@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.7)
+# Meta store: unified metadata layer (design v2.8)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -52,11 +52,17 @@ const (
     CommitRelaxed                   // may lose the un-checkpointed tail on power loss; store stays consistent
 )
 
+// Scope declares, before the closure runs, every namespace a transaction
+// touches. Write is the single namespace it may modify; Read lists the others
+// it may read. The declaration is what makes lock ordering possible.
+type Scope struct {
+    Write string
+    Read  []string
+}
+
 type Store interface {
-    View(ctx context.Context, fn func(Reader) error) error
-    // Update runs a write transaction scoped to ns: it may READ any
-    // namespace through the Writer, but may WRITE only ns.
-    Update(ctx context.Context, ns string, mode CommitMode, fn func(Writer) error) error
+    View(ctx context.Context, nss []string, fn func(Reader) error) error
+    Update(ctx context.Context, sc Scope, mode CommitMode, fn func(Writer) error) error
     Events(ctx context.Context) (ch <-chan struct{}, release func(), err error)
     Close() error
 }
@@ -71,20 +77,27 @@ Contract clauses (binding on every engine):
    caller-owned slice from inside `fn` duplicates output on retry. The
    contract-test suite includes a forced-retry engine wrapper that runs every
    closure twice.
-2. **Write scope.** A write transaction targets exactly one namespace; reads
-   inside it may span namespaces. This is what keeps the json engine a
-   correct first-class implementation (one file rewritten atomically per
-   commit; read-only namespaces locked in a fixed global order, so no
-   deadlock and no multi-file commit protocol). Flows needing atomicity across
-   subsystems must be redesigned as single-namespace transactions plus
-   idempotent reconciliation — this design does not promise cross-subsystem
-   atomicity to anyone.
+2. **Declared scope, single write namespace.** A transaction declares its
+   full namespace set up front (`Scope`); a write transaction may modify
+   exactly one of them. Engines acquire every declared namespace — write
+   target included — in one fixed global order BEFORE invoking the closure.
+   Lock-then-discover would deadlock (A writes vms and reads images while B
+   writes images and reads vms), which is why the read set is part of the API
+   rather than something the engine learns as the closure runs. Touching an
+   undeclared namespace fails with `ErrScope` at the first access, not at
+   commit. This keeps the json engine correct and first-class (one file
+   rewritten atomically per commit; no multi-file commit protocol) and costs
+   sqlite nothing (it ignores the ordering hint). Flows needing atomicity
+   across subsystems must be redesigned as single-namespace transactions plus
+   idempotent reconciliation — this design promises cross-subsystem atomicity
+   to no one.
 3. **Isolation.** `Update` is serializable within its namespace; `View` sees a
    consistent snapshot of every namespace it touches.
-4. **Detached values.** `Get`/`List`/`Scan` hand back values the caller may
-   mutate freely; mutation never reaches the store. Engines must not expose
-   pointers into their own in-memory state (the json engine decodes per call).
-   Persisting a change requires `Replace`.
+4. **Detached values, every read API.** `Get`, `List`, `Scan`, `Find`,
+   `FindAll` and `Log.Scan` all hand back deeply detached values the caller
+   may mutate freely; mutation never reaches the store. Engines must not
+   expose pointers into their own in-memory state (the json engine decodes
+   per call). Persisting a change requires `Replace`.
 5. **Durability is enforced structurally, not by caller discipline.** Every
    `Writer` carries its transaction's `CommitMode`; every write defaults to
    requiring `CommitDurable`; the only path to a relaxed write is a per-op
@@ -121,11 +134,14 @@ func (l *Log[E]) Append(ctx context.Context, w Writer, e E, opts ...WriteOpt) (S
 func (l *Log[E]) Scan(ctx context.Context, r Reader, after Seq, fn func(Seq, E) error) error
 ```
 
-Log contract: `Seq` is assigned at append time, strictly increasing within a
-namespace, unique, and **may contain gaps** (a rolled-back transaction burns
-its number). `Scan(after)` is EXCLUSIVE of `after` and yields in increasing
-`Seq` order, so `after = lastSeen` resumes without duplication or loss.
-`Append` is bound by clause 5 exactly like collection writes.
+Log contract: over COMMITTED entries, `Seq` is unique and strictly
+increasing within a namespace; gaps are permitted. A number handed to a
+transaction that later rolls back MAY be reused by a subsequent append —
+required, because SQLite reuses rowids from rolled-back inserts and an
+independent allocator cannot write while the enclosing `BEGIN IMMEDIATE`
+holds the writer. `Scan(after)` is EXCLUSIVE of `after` and yields in
+increasing `Seq` order, so `after = lastSeen` resumes without duplication or
+loss. `Append` is bound by clause 5 exactly like collection writes.
 
 `Scan` is callback-shaped so iteration errors propagate and no lazy iterator
 escapes the read transaction. Single-op sugar (`c.Get1(ctx, s, id)`) wraps an
@@ -156,6 +172,11 @@ PRAGMA user_version   = 1;           -- schema version; upgrades run as explicit
 
 CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL,
                          source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT);
+-- SQLITE-ENGINE CONCEPT ONLY. A DB file cannot distinguish "namespace never
+-- initialized" from "namespace empty", so this row does it. The json engine
+-- has no equivalent and needs none: the presence or absence of its namespace
+-- file is the state, exactly as today — existing json deployments upgrade
+-- into the meta refactor untouched and never run a conversion (§6, §8).
 -- state: 'initialized' (fresh, possibly zero records) | 'converted' (imported
 -- from json). A namespace with NO row is UNINITIALIZED — never "empty" (§6).
 -- NOT NULL is explicit on every PK column: SQLite implies it only for a lone
@@ -306,25 +327,36 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   migration, never implicitly at open time.
 - **`cocoon meta convert --to sqlite|json`** performs a cutover into a
   **fresh target**: advisory check that no cocoon activity is present (legacy
-  locks free); refuse if the target already exists with data (the operator
-  moves it aside deliberately); load each namespace via the source engine
+  locks free); load each namespace via the source engine
   (json source preserves `.prev` recovery); derive the name index from
   records and VERIFY it against the source's own name map (mismatch → abort
   with a report); write all records plus the `meta_state` row
   (`state='converted'`, source path, sha256, record count) in one Durable
   transaction per namespace; commit; then rename the source aside
   (`*.converted-<ts>`) and sync the parent dir.
+- **Resumable, never ambiguous.** A crash between "target committed" and
+  "source renamed aside" leaves a populated target; the rerun must finish the
+  job, not refuse it. On start the tool compares each namespace's target
+  `meta_state` row (source path, sha256, record count) against the pending
+  source: an exact match is THIS conversion, verified and resumed (remaining
+  namespaces + pending renames); a populated target that does not match any
+  pending source is a foreign store and is refused, telling the operator to
+  move it aside deliberately.
 - **The old authority is retired, not left in place.** Conversion in either
-  direction renames its source aside after a fully committed, fully verified
-  write, so a later reverse conversion can never find a stale authority and
-  skip importing newer data. Test matrix includes
+  direction renames its source aside only after a fully committed, fully
+  verified write, so a later reverse conversion can never find a stale
+  authority and skip importing newer data. Test matrix includes
   sqlite→json→(writes)→sqlite with a diff assertion on the final content.
-- **Fail-closed open.** With `meta_backend: X`, opening a namespace with no
-  `meta_state` row refuses: "run `cocoon meta convert`" when a legacy source
-  exists, "run `cocoon meta init`" when it does not. An uninitialized
-  namespace is never silently treated as empty. Running a pre-cutover binary
-  after conversion is unsupported — the renamed-aside source and release
-  notes are the guard, not code.
+- **Fail-closed open (sqlite engine only).** With `meta_backend: sqlite`,
+  opening a namespace with no `meta_state` row refuses: "run
+  `cocoon meta convert`" when a legacy source exists, "run `cocoon meta init`"
+  when it does not — an uninitialized namespace is never silently treated as
+  empty. The **json engine has no such check and needs none**: a missing
+  namespace file means empty, exactly as today, so an existing json
+  deployment upgrades into the meta refactor with no marker, no format
+  change, and no conversion. Running a pre-cutover binary after a conversion
+  is unsupported — the renamed-aside source and release notes are the guard,
+  not code.
 - Tests: crash-and-rerun idempotence at every step boundary; name-index
   mismatch abort; uninitialized refusal; the round-trip matrix above.
 
@@ -341,8 +373,16 @@ changes for that connection's own commits, so polling it through a pool
 (where connections may be replaced under churn) both misses and invents
 events. The notifier connection never writes, so every commit it must report
 comes from another connection or another process and is therefore visible to
-it. Contract tests cover
-same-process and external-process commits.
+it.
+
+`data_version` is only consulted after a filesystem signal, so a lost signal
+would stall `status --event` indefinitely. Overflow and loss are handled
+explicitly: on fsnotify overflow or watch error the notifier immediately
+re-checks `data_version`, resubscribes, and signals if the value moved; and a
+bounded safety poll (low frequency, single `PRAGMA` on the pinned connection)
+runs unconditionally as a floor, so no missed inotify event can wedge a
+watcher. Contract tests cover same-process commits, external-process commits,
+pool churn, and forced overflow.
 `Watchable.WatchPath`, `BackendConfig.IndexFile()/IndexLock()` retire together.
 
 ## 8. Engines (json and sqlite today; redis/etcd/consul-shaped later)
@@ -395,6 +435,13 @@ Engine-scoped, because the engines have deliberately different cost models.
   mutation test (clause 4), write-scope violation rejection (clause 2),
   `ErrDurabilityContract` structural check (clause 5), and the ctx-vs-held-writer
   deadline test (clause 6 / §4).
+- **Scope enforcement and deadlock freedom**: accessing an undeclared
+  namespace returns `ErrScope`; a stress test runs mutually-inverse
+  transactions (write A read B vs write B read A) across processes and must
+  never deadlock or time out.
+- **Log cursor**: `Seq` unique and increasing over committed entries;
+  `Scan(after)` never duplicates or skips across a rolled-back append that
+  reused a number.
 - **Commit atomicity under crash** (all engines): kill the process at every
   step of a multi-record single-namespace `Update` (json: mid-rewrite, between
   temp write and rename, between rename and `.prev` rotation; sqlite: mid-WAL
@@ -417,8 +464,11 @@ Engine-scoped, because the engines have deliberately different cost models.
 - GC: concurrent-candidate `ErrConflict` skip; crash in `leased` (rolls back)
   and in `deleting` (rolls forward, never resurrects) — the latter asserted
   with files already partially removed.
-- Conversion: crash-and-rerun idempotence at each step; name-mismatch abort;
-  uninitialized-namespace refusal; sqlite→json→writes→sqlite content diff.
+- Conversion: crash-and-rerun idempotence at each step, including a crash
+  between target commit and source rename (the rerun must RESUME, not refuse);
+  foreign-target refusal; name-mismatch abort; uninitialized-namespace
+  refusal (sqlite); json-engine upgrade with no marker and no conversion;
+  sqlite→json→writes→sqlite content diff.
 - `status --event` regression: same-process commits, external-process
   commits, connection-pool churn (the notifier must keep observing across it),
   and fsnotify queue overflow (a dropped watch event must degrade to a
@@ -446,13 +496,22 @@ Engine-scoped, because the engines have deliberately different cost models.
 - Component metrics per round: writer wait, transaction/commit duration, WAL
   bytes, checkpoint duration, p99 around checkpoint boundaries.
 - Mixed workload: B=64 clone storm with a concurrent durable snapshot/image
-  write. Real multi-process: 256 separate CLI processes, not goroutines.
+  write.
+- **Real multi-process correctness** (not just load): 256 separate CLI
+  processes, not goroutines, asserting successful-operation counts against
+  final record counts, name/ref index consistency, that every failure is a
+  mapped `ErrConflict`/`ErrBusy` rather than a lost write, and zero
+  corruption on reopen. A process-local lock that silently drops records
+  would otherwise pass on latency alone.
 
 **Performance, json engine.** No slope gate — O(records) per write is its
 documented contract (§8), so an O(log N) requirement would fail a correct
-implementation. Gate is compatibility instead: at N = 1/100/1k, sequential
-and burst16 clone latency within 10% of the legacy `storage.Store[T]`
-implementation on the same host.
+implementation. Gate is non-regression, measured as a **paired ratio**: at
+N = 1/100/1k, legacy and meta-json rounds run interleaved on the same host
+(paired samples cancel drift), and the pass rule is UCB95 of the
+meta/legacy latency ratio ≤ 1.15. An unqualified ±10% single-run threshold
+is tighter than the measured ±20% host noise and would both fail unchanged
+code and pass real regressions depending on run order.
 
 ## 10. Phasing (coupling-honest)
 
