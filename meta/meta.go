@@ -39,11 +39,6 @@ type CommitMode uint8
 // WriteOpt modifies a single write; see RelaxedOK.
 type WriteOpt uint8
 
-// Seq numbers committed log entries: unique and strictly increasing per
-// namespace over committed entries; numbers from rolled-back appends may be
-// reused or burned.
-type Seq uint64
-
 // Scope declares, before the closure runs, every namespace a transaction
 // touches: Write is the single namespace it may modify, Read the others it
 // may read. Engines acquire all of them in one fixed global order before
@@ -79,7 +74,6 @@ type Writer interface {
 	Reader
 	PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error
 	DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error
-	NextSeq(ctx context.Context, ns, table string) (Seq, error)
 	Mode() CommitMode
 }
 

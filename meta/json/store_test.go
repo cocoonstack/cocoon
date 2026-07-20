@@ -24,6 +24,18 @@ func (c *crashPoint) hook(step string) error {
 	return nil
 }
 
+func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {
+	t.Helper()
+	c := meta.NewCollection[map[string]int](s, ns, "records")
+	var rec *map[string]int
+	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
+		var err error
+		rec, err = c.Get(t.Context(), r, id)
+		return err
+	})
+	return rec, err
+}
+
 func newStore(t *testing.T, dir string, nss ...string) *Store {
 	t.Helper()
 	defs := make([]Namespace, 0, len(nss))
@@ -140,7 +152,7 @@ func TestPrevRecovery(t *testing.T) {
 
 	s2 := newStore(t, dir, "alpha")
 	c2 := meta.NewCollection[map[string]int](s2, "alpha", "records")
-	got, err := c2.Get1(ctx, "a")
+	got, err := mustGet(t, s2, "alpha", "a")
 	if err != nil || (*got)["gen"] != 1 {
 		t.Fatalf("recovered generation: %v, %v", got, err)
 	}
@@ -211,7 +223,6 @@ func TestGenericCodecRoundTrip(t *testing.T) {
 	m := NewModel()
 	m.Put("records", "b", []byte(`{"n":2}`))
 	m.Put("records", "a", []byte(`{"n":1}`))
-	m.SetSeq("log", 7)
 	data, err := GenericCodec{}.Encode(m)
 	if err != nil {
 		t.Fatal(err)
@@ -226,9 +237,6 @@ func TestGenericCodecRoundTrip(t *testing.T) {
 	}
 	if string(data) != string(data2) {
 		t.Fatalf("round trip unstable:\n%s\n%s", data, data2)
-	}
-	if m2.Seq("log") != 7 {
-		t.Fatalf("seq lost: %d", m2.Seq("log"))
 	}
 	if _, ok := m2.Get("records", "a"); !ok {
 		t.Fatal("record lost")

@@ -1,6 +1,11 @@
-# Meta store: unified metadata layer (design v2.26)
+# Meta store: unified metadata layer (design v2.27)
 
-Status: frozen at v2.26; implementation in progress (issue #146).
+Status: frozen at v2.27; implementation in progress (issue #146).
+v2.27 (API narrowing): the unique/non-unique index options (`WithUnique`,
+`Find`, `FindAll`), the `Get1` sugar and the `Log`/`Seq` primitives are
+removed from the P0/P1 surface — no consumer exists (the domain
+repositories carry name indexes explicitly for byte fidelity); the metering
+`Log` returns with its P3 consumer, re-adding `Seq`/`NextSeq` then.
 v2.26 (implementation calibration): recordless directory/blob GC candidates
 converge tombstone-free by idempotent re-discovery; `kind=orphan` is reserved
 for recordless flows whose cleanup needs resumable context (the orphan
@@ -97,9 +102,9 @@ Contract clauses (binding on every engine):
    to no one.
 3. **Isolation.** `Update` is serializable within its namespace; `View` sees a
    consistent snapshot of every namespace it touches.
-4. **Detached values, every read API.** `Get`, `List`, `Scan`, `Find`,
-   `FindAll` and `Log.Scan` all hand back deeply detached values the caller
-   may mutate freely; mutation never reaches the store. Engines must not
+4. **Detached values, every read API.** `Get`, `List` and `Scan` hand back
+   deeply detached values the caller may mutate freely; mutation never
+   reaches the store. Engines must not
    expose pointers into their own in-memory state (the json engine decodes
    per call). Persisting a change requires `Replace`.
 5. **Durability is enforced structurally, not by caller discipline.** Every
@@ -116,36 +121,23 @@ Contract clauses (binding on every engine):
    `ErrCorrupt`, `ErrNoSpace`, `ErrIO`, `ErrDurabilityContract`, `ErrScope`;
    engine codes never reach callers, and every one is `errors.Is`-comparable.
 
-Collections and logs are storage primitives; lifecycle semantics live in
-domain repositories (§1a):
+Collections are storage primitives; lifecycle semantics live in domain
+repositories (§1a). The log primitive (`Log`/`Seq`/`Scan(after)`) is out of
+the P0/P1 surface (v2.27) and returns with its P3 metering consumer,
+carrying the original contract: committed `Seq` unique and strictly
+increasing, rolled-back numbers reusable, `Scan(after)` exclusive.
 
 ```go
-func NewCollection[R any](s Store, ns, table string, opts ...Option[R]) *Collection[R]
+func NewCollection[R any](s Store, ns, table string) *Collection[R]
 
 func (c *Collection[R]) Get(ctx context.Context, r Reader, id string) (*R, error)          // detached copy
-func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id/unique collision
+func (c *Collection[R]) Insert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // ErrConflict on id collision
 func (c *Collection[R]) Replace(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error // ErrNotFound if absent
+func (c *Collection[R]) Upsert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error  // map-assignment semantics
 func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ...WriteOpt) error // idempotent: absent id is success, never ErrNotFound
 func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn func(id string, rec *R) error) error
 func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, error)         // detached; small namespaces
-func (c *Collection[R]) Find(ctx context.Context, r Reader, index, value string) (string, *R, error)
-func (c *Collection[R]) FindAll(ctx context.Context, r Reader, index, value string, fn func(id string, rec *R) error) error // non-unique indexes
-
-type Seq uint64
-
-func NewLog[E any](s Store, ns, table string) *Log[E]
-func (l *Log[E]) Append(ctx context.Context, w Writer, e E, opts ...WriteOpt) (Seq, error)
-func (l *Log[E]) Scan(ctx context.Context, r Reader, after Seq, fn func(Seq, E) error) error
 ```
-
-Log contract: over COMMITTED entries, `Seq` is unique and strictly
-increasing within a namespace; gaps are permitted. A number handed to a
-transaction that later rolls back MAY be reused by a subsequent append —
-required, because SQLite reuses rowids from rolled-back inserts and an
-independent allocator cannot write while the enclosing `BEGIN IMMEDIATE`
-holds the writer. `Scan(after)` is EXCLUSIVE of `after` and yields in
-increasing `Seq` order, so `after = lastSeen` resumes without duplication or
-loss. `Append` is bound by clause 5 exactly like collection writes.
 
 `Delete` on an absent id is idempotent SUCCESS, never `ErrNotFound`: that is
 today's json-map behaviour, retries of a partially applied closure depend on
@@ -153,8 +145,7 @@ it, and recordless finalize deletes rows that may not exist. An engine whose
 natural answer differs (sqlite reports zero rows affected) must normalize.
 
 `Scan` is callback-shaped so iteration errors propagate and no lazy iterator
-escapes the read transaction. Single-op sugar (`c.Get1(ctx, s, id)`) wraps an
-auto View/Update.
+escapes the read transaction.
 
 ### 1a. Domain repositories
 
@@ -718,11 +709,10 @@ two-engine events) plus the performance block.
   namespace returns `ErrScope`; a stress test runs mutually-inverse
   transactions (write A read B vs write B read A) across processes and must
   never deadlock or time out.
-- **Log cursor**: `Seq` unique and increasing over committed entries;
-  `Scan(after)` never duplicates or skips across a rolled-back append —
-  asserted for BOTH legal engine behaviours, the number reused by a later
-  append and the number burned as a gap, since the contract permits either
-  and a json engine will typically burn where sqlite reuses.
+- **Log cursor** (P3, with the metering log): `Seq` unique and increasing
+  over committed entries; `Scan(after)` never duplicates or skips across a
+  rolled-back append — asserted for both legal engine behaviours (reuse and
+  gap).
 - **Commit atomicity under crash** (all engines): kill the process at every
   step of a multi-record single-namespace `Update`, in the order the code
   actually performs them — json: `.prev` link+rename rotation FIRST, then the

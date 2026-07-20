@@ -337,13 +337,6 @@ func (w *txWriter) DeleteRaw(_ context.Context, ns, table, id string, relaxedOK 
 	return nil
 }
 
-func (w *txWriter) NextSeq(_ context.Context, ns, table string) (meta.Seq, error) {
-	if err := w.check(ns, true); err != nil {
-		return 0, err
-	}
-	return meta.Seq(w.model.NextSeq(table)), nil
-}
-
 func (w *txWriter) Mode() meta.CommitMode { return w.mode }
 
 func (w *txWriter) check(ns string, relaxedOK bool) error {

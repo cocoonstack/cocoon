@@ -18,7 +18,7 @@ type Codec interface {
 
 var _ Codec = GenericCodec{}
 
-// GenericCodec persists a Model as {"tables":{...},"seqs":{...}} for
+// GenericCodec persists a Model as {"tables":{...}} for
 // namespaces with no legacy format (contract tests, future additions).
 // Insertion order is not preserved across reload: tables refill sorted by id.
 type GenericCodec struct{}
@@ -38,14 +38,11 @@ func (GenericCodec) Decode(data []byte) (*Model, error) {
 			m.Put(tbl, id, recs[id])
 		}
 	}
-	for tbl, seq := range file.Seqs {
-		m.SetSeq(tbl, seq)
-	}
 	return m, nil
 }
 
 func (GenericCodec) Encode(m *Model) ([]byte, error) {
-	file := genericFile{Tables: map[string]map[string]json.RawMessage{}, Seqs: map[string]uint64{}}
+	file := genericFile{Tables: map[string]map[string]json.RawMessage{}}
 	for _, tbl := range m.TableNames() {
 		recs := map[string]json.RawMessage{}
 		if err := m.Scan(tbl, func(id string, raw json.RawMessage) error {
@@ -56,9 +53,6 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 		}
 		file.Tables[tbl] = recs
 	}
-	for _, tbl := range m.SeqTables() {
-		file.Seqs[tbl] = m.Seq(tbl)
-	}
 	data, err := json.Marshal(file)
 	if err != nil {
 		return nil, fmt.Errorf("encode generic namespace: %w", err)
@@ -68,5 +62,4 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 
 type genericFile struct {
 	Tables map[string]map[string]json.RawMessage `json:"tables"`
-	Seqs   map[string]uint64                     `json:"seqs,omitempty"`
 }

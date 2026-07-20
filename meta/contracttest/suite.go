@@ -31,11 +31,9 @@ type Factory func(t *testing.T, namespaces []string) meta.Store
 func Run(t *testing.T, factory Factory) {
 	t.Run("CRUD", func(t *testing.T) { testCRUD(t, factory) })
 	t.Run("DetachedValues", func(t *testing.T) { testDetached(t, factory) })
-	t.Run("UniqueIndex", func(t *testing.T) { testUniqueIndex(t, factory) })
 	t.Run("Scope", func(t *testing.T) { testScope(t, factory) })
 	t.Run("DurabilityContract", func(t *testing.T) { testDurability(t, factory) })
 	t.Run("ForcedRetry", func(t *testing.T) { testForcedRetry(t, factory) })
-	t.Run("LogSeq", func(t *testing.T) { testLogSeq(t, factory) })
 	t.Run("CtxVsHeldWriter", func(t *testing.T) { testCtxVsHeldWriter(t, factory) })
 	t.Run("ViewIsolation", func(t *testing.T) { testViewIsolation(t, factory) })
 	t.Run("DeadlockFreedom", func(t *testing.T) { testDeadlockFreedom(t, factory) })
@@ -51,6 +49,17 @@ type record struct {
 	N    int    `json:"n"`
 }
 
+func get1(t *testing.T, s meta.Store, c *meta.Collection[record], id string) (*record, error) {
+	t.Helper()
+	var rec *record
+	err := s.View(t.Context(), []string{nsAlpha}, func(r meta.Reader) error {
+		var err error
+		rec, err = c.Get(t.Context(), r, id)
+		return err
+	})
+	return rec, err
+}
+
 func testCRUD(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
@@ -64,7 +73,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	}); !errors.Is(err, meta.ErrConflict) {
 		t.Fatalf("duplicate insert: got %v, want ErrConflict", err)
 	}
-	got, err := c.Get1(ctx, "a")
+	got, err := get1(t, s, c, "a")
 	if err != nil || got.N != 1 {
 		t.Fatalf("get after insert: %+v, %v", got, err)
 	}
@@ -72,7 +81,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		return c.Replace(ctx, w, "a", &record{Name: "one", N: 2})
 	})
-	if got, _ = c.Get1(ctx, "a"); got.N != 2 {
+	if got, _ = get1(t, s, c, "a"); got.N != 2 {
 		t.Fatalf("get after replace: %+v", got)
 	}
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
@@ -82,7 +91,7 @@ func testCRUD(t *testing.T, factory Factory) {
 	}
 
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Delete(ctx, w, "a") })
-	if _, err := c.Get1(ctx, "a"); !errors.Is(err, meta.ErrNotFound) {
+	if _, err := get1(t, s, c, "a"); !errors.Is(err, meta.ErrNotFound) {
 		t.Fatalf("get after delete: %v", err)
 	}
 	// Absent delete is idempotent success, never ErrNotFound.
@@ -98,7 +107,7 @@ func testDetached(t *testing.T, factory Factory) {
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Insert(ctx, w, "a", in) })
 	in.Name = "mutated-after-insert"
 
-	got, err := c.Get1(ctx, "a")
+	got, err := get1(t, s, c, "a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +115,7 @@ func testDetached(t *testing.T, factory Factory) {
 		t.Fatalf("insert captured caller mutation: %q", got.Name)
 	}
 	got.Name = "mutated-after-get"
-	if again, _ := c.Get1(ctx, "a"); again.Name != nameOrig {
+	if again, _ := get1(t, s, c, "a"); again.Name != nameOrig {
 		t.Fatalf("get returned attached value: %q", again.Name)
 	}
 
@@ -118,7 +127,7 @@ func testDetached(t *testing.T, factory Factory) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := c.Get1(ctx, "a"); again.Name != nameOrig {
+	if again, _ := get1(t, s, c, "a"); again.Name != nameOrig {
 		t.Fatalf("scan exposed engine state: %q", again.Name)
 	}
 
@@ -139,55 +148,9 @@ func testDetached(t *testing.T, factory Factory) {
 			return nil
 		})
 	})
-	if again, err := c.Get1(ctx, "a"); err != nil || again.Name != nameOrig {
+	if again, err := get1(t, s, c, "a"); err != nil || again.Name != nameOrig {
 		t.Fatalf("raw read aliased engine state: %v %v", again, err)
 	}
-}
-
-func testUniqueIndex(t *testing.T, factory Factory) {
-	ctx := t.Context()
-	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection(s, nsAlpha, "records",
-		meta.WithUnique("name", func(r *record) string { return r.Name }))
-
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "a", &record{Name: "shared"})
-	})
-	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "b", &record{Name: "shared"})
-	}); !errors.Is(err, meta.ErrConflict) {
-		t.Fatalf("unique collision: got %v, want ErrConflict", err)
-	}
-
-	// Sparse: empty keys are unindexed and never collide.
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		if err := c.Insert(ctx, w, "u1", &record{Name: ""}); err != nil {
-			return err
-		}
-		return c.Insert(ctx, w, "u2", &record{Name: ""})
-	})
-
-	id, rec, err := find(ctx, s, c, "name", "shared")
-	if err != nil || id != "a" || rec == nil {
-		t.Fatalf("find: %q, %+v, %v", id, rec, err)
-	}
-
-	// Replace rekeys; the old key is released, the new key claimed.
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		return c.Replace(ctx, w, "a", &record{Name: "renamed"})
-	})
-	if _, _, err := find(ctx, s, c, "name", "shared"); !errors.Is(err, meta.ErrNotFound) {
-		t.Fatalf("old key still resolves: %v", err)
-	}
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "b", &record{Name: "shared"})
-	})
-
-	// Delete releases the key.
-	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Delete(ctx, w, "b") })
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "b2", &record{Name: "shared"})
-	})
 }
 
 func testScope(t *testing.T, factory Factory) {
@@ -241,7 +204,7 @@ func testDurability(t *testing.T, factory Factory) {
 	}); err != nil {
 		t.Fatalf("relaxed opt-in write: %v", err)
 	}
-	if got, err := c.Get1(ctx, "a"); err != nil || got.N != 1 {
+	if got, err := get1(t, s, c, "a"); err != nil || got.N != 1 {
 		t.Fatalf("relaxed write not visible: %+v, %v", got, err)
 	}
 }
@@ -250,7 +213,6 @@ func testForcedRetry(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := ForcedRetry(factory(t, []string{nsAlpha}))
 	c := meta.NewCollection[record](s, nsAlpha, "records")
-	l := meta.NewLog[record](s, nsAlpha, "log")
 
 	// The correct pattern: accumulate inside, publish only after nil return.
 	var out []string
@@ -263,9 +225,6 @@ func testForcedRetry(t *testing.T, factory Factory) {
 				return err
 			}
 			staged = append(staged, id)
-		}
-		if _, err := l.Append(ctx, w, record{Name: "event"}); err != nil {
-			return err
 		}
 		out = staged
 		return nil
@@ -287,74 +246,9 @@ func testForcedRetry(t *testing.T, factory Factory) {
 		if len(recs) != 2 {
 			return fmt.Errorf("committed %d records, want 2", len(recs))
 		}
-		n := 0
-		if err := l.Scan(ctx, r, 0, func(meta.Seq, record) error { n++; return nil }); err != nil {
-			return err
-		}
-		if n != 1 {
-			return fmt.Errorf("committed %d log entries, want 1", n)
-		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func testLogSeq(t *testing.T, factory Factory) {
-	ctx := t.Context()
-	s := factory(t, []string{nsAlpha})
-	l := meta.NewLog[record](s, nsAlpha, "log")
-
-	// seqs collects only committed numbers, published after each transaction
-	// returns — appending inside the closure would break under retry (clause 1).
-	var seqs []meta.Seq
-	for i := range 3 {
-		var seq meta.Seq
-		update(t, s, nsAlpha, func(w meta.Writer) error {
-			var err error
-			seq, err = l.Append(ctx, w, record{N: i})
-			return err
-		})
-		seqs = append(seqs, seq)
-	}
-	// A rolled-back append may reuse or burn its number — both are legal; only
-	// committed entries must stay unique and increasing.
-	boom := errors.New("boom")
-	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
-		if _, err := l.Append(ctx, w, record{N: 99}); err != nil {
-			return err
-		}
-		return boom
-	}); !errors.Is(err, boom) {
-		t.Fatalf("rollback: %v", err)
-	}
-	var last meta.Seq
-	update(t, s, nsAlpha, func(w meta.Writer) error {
-		var err error
-		last, err = l.Append(ctx, w, record{N: 3})
-		return err
-	})
-	seqs = append(seqs, last)
-
-	for i := 1; i < len(seqs); i++ {
-		if seqs[i] <= seqs[i-1] {
-			t.Fatalf("committed seqs not strictly increasing: %v", seqs)
-		}
-	}
-	// Scan(after) is exclusive and resumes without duplication or loss.
-	var all []int
-	view(t, s, nsAlpha, func(r meta.Reader) error {
-		return l.Scan(ctx, r, 0, func(_ meta.Seq, e record) error { all = append(all, e.N); return nil })
-	})
-	if len(all) != 4 || all[3] != 3 {
-		t.Fatalf("scan all: %v", all)
-	}
-	var resumed []int
-	view(t, s, nsAlpha, func(r meta.Reader) error {
-		return l.Scan(ctx, r, seqs[1], func(_ meta.Seq, e record) error { resumed = append(resumed, e.N); return nil })
-	})
-	if len(resumed) != 2 || resumed[0] != 2 || resumed[1] != 3 {
-		t.Fatalf("scan after %d: %v", seqs[1], resumed)
 	}
 }
 
@@ -428,7 +322,7 @@ func testViewIsolation(t *testing.T, factory Factory) {
 		t.Fatal(err)
 	}
 	<-done
-	if got, _ := c.Get1(ctx, "a"); got.N != 2 {
+	if got, _ := get1(t, s, c, "a"); got.N != 2 {
 		t.Fatalf("post-view state: %+v", got)
 	}
 }
@@ -519,13 +413,3 @@ func view(t *testing.T, s meta.Store, ns string, fn func(meta.Reader) error) {
 	}
 }
 
-func find[R any](ctx context.Context, s meta.Store, c *meta.Collection[R], index, value string) (id string, rec *R, err error) {
-	verr := s.View(ctx, []string{nsAlpha}, func(r meta.Reader) error {
-		id, rec, err = c.Find(ctx, r, index, value)
-		return nil
-	})
-	if verr != nil {
-		return "", nil, verr
-	}
-	return id, rec, err
-}

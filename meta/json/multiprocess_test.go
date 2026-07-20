@@ -51,8 +51,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 
 	s := newStore(t, dir, "alpha")
 	c := meta.NewCollection[map[string]int](s, "alpha", "records")
-	recs, err := c.Get1(t.Context(), "w0-op0")
-	if err != nil || recs == nil {
+	if recs, err := mustGet(t, s, "alpha", "w0-op0"); err != nil || recs == nil {
 		t.Fatalf("spot check: %v %v", recs, err)
 	}
 	total := 0
@@ -217,9 +216,8 @@ func TestAckedDurableSurvivesKill(t *testing.T) {
 	}
 
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
 	for _, id := range acked {
-		if _, err := c.Get1(t.Context(), id); err != nil {
+		if _, err := mustGet(t, s, "alpha", id); err != nil {
 			t.Fatalf("acked durable write %s lost after SIGKILL: %v", id, err)
 		}
 	}

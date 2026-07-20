@@ -8,17 +8,16 @@ import (
 	"slices"
 )
 
-// Model is one namespace's decoded state: named tables plus log sequence
-// counters. Tables preserve insertion order — loaded file order first, new
-// ids appended — which legacy codecs rely on for order-sensitive fields.
+// Model is one namespace's decoded state: named tables preserving insertion
+// order — loaded file order first, new ids appended — which legacy codecs
+// rely on for order-sensitive fields.
 type Model struct {
 	tables map[string]*table
-	seqs   map[string]uint64
 }
 
 // NewModel returns an empty namespace model.
 func NewModel() *Model {
-	return &Model{tables: map[string]*table{}, seqs: map[string]uint64{}}
+	return &Model{tables: map[string]*table{}}
 }
 
 // Get returns the raw record under (tbl, id).
@@ -80,26 +79,9 @@ func (m *Model) Len(tbl string) int {
 	return len(t.ids)
 }
 
-// NextSeq advances and returns tbl's log sequence counter.
-func (m *Model) NextSeq(tbl string) uint64 {
-	m.seqs[tbl]++
-	return m.seqs[tbl]
-}
-
-// Seq returns tbl's current log sequence counter.
-func (m *Model) Seq(tbl string) uint64 { return m.seqs[tbl] }
-
-// SetSeq restores tbl's log sequence counter (codec decode).
-func (m *Model) SetSeq(tbl string, v uint64) { m.seqs[tbl] = v }
-
 // TableNames returns all table names sorted; for generic codecs.
 func (m *Model) TableNames() []string {
 	return slices.Sorted(maps.Keys(m.tables))
-}
-
-// SeqTables returns all sequence-counter table names sorted; for generic codecs.
-func (m *Model) SeqTables() []string {
-	return slices.Sorted(maps.Keys(m.seqs))
 }
 
 type table struct {
