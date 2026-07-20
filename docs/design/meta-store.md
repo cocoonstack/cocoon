@@ -51,11 +51,19 @@ Contract clauses (binding on every engine):
    through the Reader/Writer handle, none outside it. (This is what keeps a
    future networked engine implementable behind the same API — §8.)
 2. **Isolation.** `Update` runs serializable; `View` sees a consistent
-   snapshot. `CommitMode` is a per-transaction property chosen before BEGIN; a
-   transaction touching durable-class data must use `CommitDurable`.
-3. **ctx wins.** Context cancellation/deadline preempts engine busy-waiting.
-4. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
-   `ErrCorrupt`, `ErrNoSpace`; engine codes never reach callers.
+   snapshot. `CommitMode` is a per-transaction property chosen before BEGIN.
+3. **Durability is enforced structurally, not by caller discipline.** Every
+   `Writer` carries its transaction's `CommitMode`; every collection write
+   defaults to requiring `CommitDurable`. The only way to write under a
+   Relaxed transaction is a per-operation opt-in
+   (`c.Insert(ctx, w, id, rec, meta.RelaxedOK)`), making every relaxed write
+   site explicit and greppable. A durable-default write invoked on a Relaxed
+   `Writer` fails with `ErrDurabilityContract` — a power-loss contract
+   violation is a test-time error, not an incident.
+4. **ctx wins.** Context cancellation/deadline preempts engine busy-waiting.
+5. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
+   `ErrCorrupt`, `ErrNoSpace`, `ErrDurabilityContract`; engine codes never
+   reach callers.
 
 Collections are storage primitives only; lifecycle semantics live in domain
 repositories (§1a):
@@ -99,8 +107,9 @@ explicit exceptions where it does not:
 PRAGMA application_id = 0x434F434E;  -- "COCN"
 PRAGMA user_version   = 1;
 
-CREATE TABLE migrations (version INTEGER PRIMARY KEY, source TEXT, sha256 TEXT,
-                         records INTEGER, applied_at TEXT);
+CREATE TABLE migrations (version INTEGER, namespace TEXT, source TEXT,
+                         sha256 TEXT, records INTEGER, applied_at TEXT,
+                         PRIMARY KEY (version, namespace));
 
 CREATE TABLE vms_firecracker      (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
 CREATE TABLE vms_cloudhypervisor  (id TEXT PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
@@ -135,7 +144,9 @@ deletion leases (§5).
   (config, blob pins, quarantine) — hence durable-by-default.
 - Widening the Relaxed set (start/stop flips, GC deletes, network records) is
   gated on row-granularity hardware measurements, per operation, later.
-- A FULL commit also flushes earlier NORMAL commits (durability barrier).
+- Engine note (sqlite only, NOT part of the §1 contract): a FULL commit also
+  flushes earlier NORMAL commits because they share one WAL. No caller may
+  rely on this — see §8's independence rule.
 
 ## 4. sqlite runtime contract (modernc.org/sqlite — pure Go; CGO would break cross-compilation)
 
@@ -179,7 +190,10 @@ Post-migration cycle, per candidate:
 Reference-creating transactions (clone pinning an image, snapshot lease) check
 `tombstones` inside their own `Update` and fail `ErrConflict` if the target is
 being deleted. Startup sweeps stale tombstones by lease age (crash recovery:
-either finish the delete or roll the lease back).
+either finish the delete or roll the lease back). Concurrent GC runs
+(scheduled + manual) may select the same candidate: `ErrConflict` on the
+tombstone insert means another worker owns the lease — the candidate is
+skipped, not treated as a GC error.
 
 ## 6. Migration: explicit state machine, two-release sequence
 
@@ -196,9 +210,15 @@ State signals: `application_id` + `user_version` + `migrations` rows + a
   report); insert everything in the one transaction; write the migrations row
   {source path, sha256, record count, version}; commit (Durable). Then rename
   `vms.json`→`.imported` (+`.prev`), fsync parent, write the marker.
-  - Crash windows: before commit → JSON stays authoritative; after commit
-    before rename → startup sees migrations row + JSON present and completes
-    the rename idempotently; marker written last.
+  - The marker write is itself durable: write to a temp file, fsync, atomic
+    rename, parent-dir sync.
+  - Crash windows (each an explicit entry in the crash-injection matrix):
+    before commit → JSON stays authoritative; after commit before rename →
+    startup sees migrations row + JSON present and completes the rename
+    idempotently; **after rename before marker** → startup self-repair:
+    migrations row present for the current version but marker absent →
+    rewrite the marker (durably) before any other work, so a stale Release-A
+    binary can never misread the renamed-away JSON as an empty store.
   - Concurrent CLIs: losers of `BEGIN IMMEDIATE` wait, then re-read the
     migrations row and proceed as already-migrated.
 - **Rollback** is a controlled `cocoon meta export --to-json` (DB→JSON +
@@ -230,6 +250,19 @@ without changes visible above the boundary:
 - errors and ctx are engine-neutral; nothing in the API names files, locks,
   fsync, or WAL.
 
+Two portability rules binding on callers and engines:
+
+- **Relaxed independence.** Data written under `CommitRelaxed` must be
+  independently acceptable to lose. Callers must never depend on a later
+  unrelated Durable commit making earlier Relaxed data durable — that
+  ordering is a shared-WAL accident of the sqlite engine (§3 note) that a
+  sharded or per-key-queue engine will not honor.
+- **Constraints are semantics, not schema.** The unique-index and
+  referential-integrity outcomes of §2 (`ErrConflict` on name/ref collision,
+  digest FK integrity) are part of the API contract; a non-relational engine
+  must reimplement them transactionally, not merely store keys and values.
+  The contract-test suite encodes them engine-agnostically.
+
 What deliberately stays OUTSIDE the boundary either way: host-local
 operational locks (ops/clone flocks) and directory lifecycles — a networked
 engine does not change them. Recorded caveat: a network store on the claim
@@ -257,6 +290,16 @@ implementation, the legacy-JSON adapter its second (migration period only).
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone
   consistency, directory ownership.
+- **Absolute targets** (shape gates alone would admit a flat-but-slow
+  implementation; anchors from cocoonstack/sandbox#30, reference testbed
+  16-core NVMe, FC none-lane 512M golden):
+  - 3×B64 no-clean ladder: round-1 (N=0) wall ≤ 1.5s (json baseline 1009ms —
+    no regression at small N), every later round ≤ 1.3× round-1 (json
+    baseline: 3.6×/4.9×);
+  - phase decomposition at N=128 (t13 anchor method): the two index-attributed
+    segments combined p50 ≤ 300ms (json baseline: 2347ms + 867ms), i.e. the
+    metadata layer moves to within ~20× of the 14ms snapshot-load floor
+    instead of ~230×.
 
 ## 10. Phasing (coupling-honest)
 
@@ -267,7 +310,11 @@ implementation, the legacy-JSON adapter its second (migration period only).
 - **P2 = Release B:** VM-index cutover (migration machine); GC in hybrid
   lock-all mode.
 - **P3:** snapshots → networks → images(+refs) migrate; THEN GC switches to
-  the tombstone protocol and `gc.Module.Locker` is removed.
+  the tombstone protocol and `gc.Module.Locker` is removed. No second
+  Release-A is needed: Release B is already the fleet floor, every deployed
+  binary understands the marker and the migrations table, so each P3
+  namespace cuts over with its own migrations row under the same single
+  marker and state machine.
 - **P4:** metering Log (optional); retire `storage/json`, `Store[T]`,
   `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak.
 - Revertibility, stated precisely: P0–P1 trivially; P2+ only via the export
