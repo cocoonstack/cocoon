@@ -13,9 +13,12 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const restoreTAPPrefix = "rm"
 
 type cloneResumeOpts struct {
 	vmCfg               *types.VMConfig
@@ -81,9 +84,16 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("validate post-cidata storage: %w", vErr)
 	}
 
+	// vm.restore attaches the taps named in the snapshot, so concurrent clones of one golden race to attach the source's tap (EBUSY); it cannot attach the clone's real taps either — vm.remove-device releases a tap only after the guest ACKs the eject, so hotSwapNets' add-net would EBUSY on its own tap. Give every restored NIC a clone-unique throwaway tap (auto-created by CH, auto-destroyed once the removed device drops it).
+	netTAPs := make([]string, len(chCfg.Nets))
+	for i := range netTAPs {
+		netTAPs[i] = network.TAPName(restoreTAPPrefix, vmID, i)
+	}
+
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: patchStorageConfigs,
+		netTAPs:        netTAPs,
 		consoleSock:    consoleSock,
 		vsockSock:      hypervisor.VsockSockPath(runDir),
 		directBoot:     directBoot,

@@ -169,6 +169,38 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 	}
 }
 
+func TestPatchCHConfig_RetargetsNetTAPs(t *testing.T) {
+	dir := t.TempDir()
+	cfg := baseCHConfig()
+	cfg["net"] = []any{
+		map[string]any{"id": "_net2", "tap": "btSOURCE00-0", "mac": "96:39:e0:7e:03:6d", "num_queues": 2},
+		map[string]any{"id": "_net3", "tap": "btSOURCE00-1", "mac": "96:39:e0:7e:03:6e", "num_queues": 2},
+	}
+	path := writeCHConfig(t, dir, cfg)
+
+	opts := basePatchOpts()
+	opts.netTAPs = []string{"btCLONE000-0", "rmCLONE000-1"}
+	if err := patchCHConfig(path, opts); err != nil {
+		t.Fatalf("patchCHConfig: %v", err)
+	}
+
+	result := readRawJSON(t, path)
+	nets := result["net"].([]any)
+	for i, want := range opts.netTAPs {
+		n := nets[i].(map[string]any)
+		if n["tap"] != want {
+			t.Errorf("net[%d].tap: got %v, want %v", i, n["tap"], want)
+		}
+	}
+	n0 := nets[0].(map[string]any)
+	if n0["id"] != "_net2" {
+		t.Errorf("net[0].id changed: got %v", n0["id"])
+	}
+	if n0["mac"] != "96:39:e0:7e:03:6d" {
+		t.Errorf("net[0].mac changed: got %v", n0["mac"])
+	}
+}
+
 func TestUpdateCOWPath_OCI(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
