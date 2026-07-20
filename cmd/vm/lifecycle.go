@@ -299,6 +299,15 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
 				continue
 			}
+			// Entry discipline before healing: an interrupted delete must finish
+			// and refuse, never get its network rebuilt (§9).
+			if g, ok := hyper.(hypervisor.EntryGuarded); ok {
+				if gErr := g.EntryGuard(ctx, vm.ID); gErr != nil {
+					logger.Warnf(ctx, "skip network recovery for VM %s: %v", vm.ID, gErr)
+					unlock()
+					continue
+				}
+			}
 			// Recheck under the lock from the fresh record: the pre-lock List snapshot may predate a completed rm or net resize.
 			if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
 				recoverOne(fresh)
