@@ -18,12 +18,22 @@ cost model; the consumer call profile is record-shaped.
 
 Goals: record-granularity metadata ops; per-transaction durability classes;
 cross-namespace consistent reads and short transactions; multi-process CLI
-safety; engine-portable API (see §8); migration with an explicit state machine.
+safety; multiple engines behind one API — json and sqlite today, networked
+engines (redis/etcd/consul-shaped) later (§8); engine conversion as an
+explicit ops action (§6).
 
 Non-goals: per-VM runDir sidecars (`config.json` is read by the CH process;
 `cocoon.json` is dir-lifecycle-bound), blob/memory files, and operational
 flocks (`ops.lock`, clone-locks) — those guard long operations and directories,
-not data, and stay on `lock/flock`. No network-filesystem support (§4).
+not data, and stay on `lock/flock`. No network-filesystem support for the
+sqlite engine (§4).
+
+Design calibration (maintainer): no overdesign, no defenses for contrived
+scenarios. Every guard in this document must map to an operational risk that
+can occur under the deployment contract (single host, ops-driven engine
+conversion, no mixed-version fleets). Review findings whose preconditions
+require operator action outside that contract are labeled [contrived] and
+accepted without code.
 
 ## 1. API (package `meta`)
 
@@ -195,15 +205,17 @@ either finish the delete or roll the lease back). Concurrent GC runs
 tombstone insert means another worker owns the lease — the candidate is
 skipped, not treated as a GC error.
 
-## 6. Migration: explicit offline cutover (operator-driven)
+## 6. Engine conversion: explicit, offline, operator-driven
 
-Maintainer decision: backward compatibility across the cutover is NOT a
-requirement. The migration is a one-time, operator-scheduled downtime action,
-and initialization is an ops step — never an implicit library behavior racing
-concurrent CLIs.
+Maintainer decisions: backward compatibility across a conversion is NOT a
+requirement (one-time, operator-scheduled downtime action), and engine
+initialization is an ops step — never an implicit library behavior racing
+concurrent CLIs. Deployments that stay on the json engine (the default)
+never run a conversion at all: the meta refactor is behavior-preserving for
+them (§8).
 
-- `cocoon meta migrate` (invocable standalone or via doctor) performs the
-  cutover explicitly: advisory check that no cocoon activity is present
+- `cocoon meta convert --to sqlite` (invocable standalone or via doctor)
+  performs the cutover explicitly: advisory check that no cocoon activity is present
   (legacy flocks free), take the legacy flocks, load each namespace via the
   legacy loader (preserving `.prev` recovery), derive the name index from
   records and VERIFY it against the legacy Names map (mismatch → abort with a
@@ -214,13 +226,13 @@ concurrent CLIs.
   re-checks migrations rows and completes pending renames. There is no
   concurrent-open state machine and no marker choreography — those protected
   mixed-version fleets, which are out of scope by decision.
-- Post-cutover binaries fail closed on open: a legacy JSON index present for
-  a namespace with no migrations row → refuse with "run cocoon meta migrate"
-  (read-only check). Running a pre-cutover binary after migration is
+- With `meta_backend: sqlite` configured, open fails closed when a legacy
+  JSON index exists for a namespace with no migrations row → refuse with
+  "run cocoon meta convert" (read-only check). Running a pre-cutover binary after migration is
   unsupported — the renamed `.imported` files and release notes are the
   guard, not code.
-- Rollback, if ever needed, is the controlled `cocoon meta export --to-json`
-  tool — never an old binary.
+- Rollback is the same tool in reverse (`cocoon meta convert --to json`) —
+  never an old binary.
 - Tests: crash-and-rerun idempotence at each step boundary; name-index
   mismatch abort; unmigrated-JSON refusal.
 
@@ -232,17 +244,29 @@ on the meta directory filtered to `meta.db{,-wal,-shm}`, debounced, confirmed
 via `PRAGMA data_version` before signaling; one shared notifier per Store.
 `Watchable.WatchPath`, `BackendConfig.IndexFile()/IndexLock()` retire together.
 
-## 8. Engine portability (the "could Redis implement this?" clause)
+## 8. Engines (json and sqlite today; redis/etcd/consul-shaped later)
 
-The API in §1 is deliberately implementable by a non-file, non-local engine
-without changes visible above the boundary:
+One API, several engines, chosen per deployment via config
+(`meta_backend: json | sqlite`, default `json`). The engine-agnostic
+contract-test suite (isolation, retryable closures, error taxonomy,
+constraint semantics, events) runs against every engine.
 
-- retryable pure closures → optimistic engines (Redis WATCH/MULTI or Lua) can
-  re-execute `fn`;
-- `CommitDurable/Relaxed` → `WAIT`/AOF-fsync policy vs default;
-- `Events` → keyspace notifications;
-- errors and ctx are engine-neutral; nothing in the API names files, locks,
-  fsync, or WAL.
+- **json (first-class, default).** Today's per-namespace files, formats, and
+  `.prev` crash story move INSIDE the engine: every `Update` loads and
+  rewrites the namespace file under its flock. Documented cost profile is
+  O(records) per write — right for small and dev deployments, and the meta
+  refactor is behavior-preserving for them: json-engine users never convert.
+- **sqlite (scale engine).** §2–§4; opt-in via config plus one offline
+  conversion (§6). This is the engine the C1M fleet runs.
+- **Networked engines later (redis / etcd / consul shaped).** The contract is
+  deliberately implementable by them without API change: retryable pure
+  closures → etcd STM / redis WATCH-MULTI-or-Lua; `CommitDurable/Relaxed` →
+  quorum-or-fsync policy vs default; `Events` → watch APIs / keyspace
+  notifications; tombstone leases (§5) → native leases; errors and ctx are
+  engine-neutral — nothing in the API names files, locks, fsync, or WAL.
+  Recorded caveat: a network store on the claim path conflicts with the
+  single-host no-daemon latency model; the realistic role is fleet-level,
+  but the boundary holds.
 
 Two portability rules binding on callers and engines:
 
@@ -257,14 +281,9 @@ Two portability rules binding on callers and engines:
   must reimplement them transactionally, not merely store keys and values.
   The contract-test suite encodes them engine-agnostically.
 
-What deliberately stays OUTSIDE the boundary either way: host-local
+What deliberately stays OUTSIDE the boundary for every engine: host-local
 operational locks (ops/clone flocks) and directory lifecycles — a networked
-engine does not change them. Recorded caveat: a network store on the claim
-path conflicts with the single-host no-daemon latency model; the realistic
-Redis role is a fleet-level replica/index, but the boundary holds. A shared
-engine-agnostic contract-test suite (isolation, retry, error taxonomy,
-events) runs against every engine; the sqlite engine is simply its first
-implementation, the legacy-JSON adapter its second (migration period only).
+engine does not change them.
 
 ## 9. Acceptance gates (statistical, not single-run)
 
@@ -297,17 +316,20 @@ implementation, the legacy-JSON adapter its second (migration period only).
 
 ## 10. Phasing (coupling-honest)
 
-- **P0 (now, no release):** `meta` package + sqlite engine + contract-test
-  suite + microbenches; `VMRepository` prototype behind a build tag. JSON path
-  untouched.
-- **P1:** first meta-capable release + `cocoon meta migrate` (VM index);
-  operator runs the offline cutover during the upgrade window; GC in hybrid
-  lock-all mode.
-- **P2:** snapshots → networks → images(+refs) gain migrate support; each
-  cuts over as an operator-run migrate in its release's upgrade window.
+- **P0 (now, no release):** `meta` package + json AND sqlite engines +
+  contract-test suite + microbenches; `VMRepository` prototype behind a
+  build tag. Legacy path untouched.
+- **P1:** VM index moves onto the meta API — json engine as default (pure
+  internal refactor, zero user-visible change), sqlite + `meta convert`
+  shipping in the same release; scale deployments opt in during a downtime
+  window; GC in hybrid lock-all mode.
+- **P2:** snapshots → networks → images(+refs) move onto the meta API with
+  conversion support, same pattern.
 - **P3:** with all cross-referencing namespaces in the DB, GC switches to
   the tombstone protocol and `gc.Module.Locker` is removed.
-- **P4:** metering Log (optional); retire `storage/json`, `Store[T]`,
-  `Watchable`, `IndexFile/IndexLock` after ≥1 release of soak.
+- **P4:** metering Log (optional); retire the OLD `storage/json` + 
+  `Store[T]` code paths, `Watchable`, `IndexFile/IndexLock` after ≥1 release
+  of soak — the json ENGINE behind `meta.Store` remains a supported
+  first-class backend.
 - Revertibility, stated precisely: P0 trivially; P1+ only via the export
   tool. The earlier "every step revertible" claim is withdrawn.
