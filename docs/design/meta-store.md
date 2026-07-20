@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.22)
+# Meta store: unified metadata layer (design v2.23)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -159,11 +159,16 @@ compare-and-swap flows are methods on `hypervisor.VMRepository` (and peers),
 each composed of primitives inside ONE short `Update` with in-transaction
 revalidation. Business code never hand-rolls Get+Replace.
 
-**Every destructive flow uses the §5 phase protocol, not just GC.**
-`vm rm`, `snapshot rm` and NIC teardown perform the same slow destructive
-work outside a transaction; without a phase transition a crash mid-teardown
-leaves live metadata over partially removed resources — the exact failure the
-protocol exists to prevent. GC is one caller of the protocol, not its owner.
+**Every METADATA-BACKED destructive flow uses the §5 phase protocol, not just
+GC.** `vm rm`, `snapshot rm` and CNI NIC teardown perform slow destructive
+work outside a transaction over a persistent record; without a phase
+transition a crash mid-teardown leaves live metadata over partially removed
+resources — the exact failure the protocol exists to prevent. GC is one
+caller of the protocol, not its owner. The bridge lane is deliberately OUT of
+scope: it keeps no persistent record (`network/bridge` `Inspect`/`List` have
+none), so its TAP cleanup is already an idempotent, retryable sweep with
+nothing to leave dangling — forcing a tombstone onto it would be pure
+overhead guarding a non-problem.
 
 Create/clone stays **two short transactions around slow external work**, not
 one: `reserve + name claim` → image prep, directories, CNI, VMM launch (none
@@ -569,25 +574,36 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
     operator chore.** Retiring the json source while `meta_backend` still
     reads `json` (the default) would make the next open see missing files
     and call the namespaces empty. The conversion records the intended
-    backend in the manifest and switches the effective selection. Removal
-    then needs a `ready` phase, because ordinary `Store.Open` refuses while
-    a manifest exists (below) — if removal waited on a *normal* open the two
-    would deadlock. Once every namespace is committed and verified the tool
-    marks the manifest `ready`; a `ready` manifest permits exactly one thing
-    an ordinary open cannot — a target-only verification open — after which
-    the tool (or the next open) removes the manifest and syncs the parent
-    dir.
+    backend in the manifest. **Config stays the sole backend authority** —
+    `cmd/root.go` reads `meta_backend` from flag/file/env and the converter
+    has no fixed config source it may persistently rewrite, so `convert
+    --to X` REQUIRES that the effective `meta_backend` for the next
+    deployment already be `X` (checked up front, refused otherwise). The
+    manifest therefore records only conversion progress, never the
+    selection. Removal is done by the CONVERSION/RECOVERY path alone, not by
+    an ordinary open: once every namespace is committed and verified the tool
+    (or a rerun of it) opens the target through the recovery path — the only
+    path allowed to open WITH a manifest present — verifies it, then removes
+    and fsyncs the manifest. Ordinary `Store.Open` NEVER bypasses a manifest;
+    there is no circular wait because ordinary open is never the remover.
 - **The old authority is retired, not left in place.** Conversion in either
   direction renames its source aside only after a fully committed, fully
   verified write, so a later reverse conversion can never find a stale
   authority and skip importing newer data. Test matrix includes
   sqlite→json→(writes)→sqlite with a diff assertion on the final content.
+  **A sqlite source is meta.db + `-wal` + `-shm`, not one file**: before a
+  conversion reads or aside-renames it, the tool checkpoints the WAL and
+  closes the writer, readers and notifier, and the fresh-target check covers
+  all three paths. Source-aside either merges the WAL first or moves the
+  whole artifact set together, so a commit still living in a non-empty WAL is
+  never dropped — asserted by a reverse-conversion test that leaves an
+  un-checkpointed commit in the WAL and checks it survives.
 - **A manifest present means a conversion is in flight.** Ordinary
-  `Store.Open` refuses while a non-`ready` `meta-convert.manifest` exists,
-  pointing the operator at `meta convert`; conversion recovery and the
-  `ready`-state verification open bypass it. Without this a half-converted
-  json target would open normally and its not-yet-written namespaces would
-  read as empty.
+  `Store.Open` refuses whenever `meta-convert.manifest` exists, pointing the
+  operator at `meta convert`; ONLY the conversion/recovery path opens with a
+  manifest present, to verify and then remove it. Without this a
+  half-converted json target would open normally and its not-yet-written
+  namespaces would read as empty.
 - **Fail-closed open (sqlite engine only).** With `meta_backend: sqlite`,
   opening a namespace with no `meta_state` row refuses: "run
   `cocoon meta convert`" when a legacy source exists, "run `cocoon meta init`"
@@ -910,7 +926,7 @@ contract — and the measured win arrives only in P2.
   boundary moved something it should not have.
 - **P1 — protocol changes, still json-only (releasable).** Everything that
   alters behavior rather than structure: entity lock relocation out of
-  cleanup sets plus identity revalidation, the tombstone phase protocol with
+  cleanup sets, the tombstone phase protocol with
   payloads, `...Locked` entrypoints, every destructive flow (not just GC) on
   the protocol, the `vm rm` network-teardown restructure, and removal of
   `gc.Module.Locker` / `Watchable.WatchPath` / `IndexFile`/`IndexLock`. The
