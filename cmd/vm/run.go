@@ -13,6 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -158,7 +159,10 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
-	h.recoverNetworkForStopped(ctx, conf, hyper, vmRef)
+	// Start's network self-heal, needed here for hibernate resume after a host reboot.
+	if vm, inspectErr := hyper.Inspect(ctx, vmRef); inspectErr == nil && vm.State != types.VMStateRunning {
+		h.recoverNetwork(ctx, conf, hyper, []string{vm.ID})
+	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -241,6 +245,13 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
+	// The envelope's pins land on the VM record inside restore; the digest
+	// locks keep image GC away until they are committed.
+	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
+	if err != nil {
+		return err
+	}
+	defer releasePins()
 	return h.runDirectRestore(ctx, cmd, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
@@ -321,7 +332,13 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
+	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
+	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
+	if err != nil {
+		return nil, "", nil, nil, nil, types.NetSetup{}, err
+	}
 	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, cfg.ImageBlobIDs)
+	releasePins()
 	if err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
@@ -377,7 +394,6 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
-// runDirectRestore is the shared tail for the snapshot-DB and --from-dir restore paths: log, DirectRestore, output.
 func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
@@ -421,7 +437,11 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, fmt.Errorf("--bridge and --network are mutually exclusive")
 	}
 
-	backends, hyper, err := cmdcore.InitBackends(ctx, conf)
+	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	hyper, err := cmdcore.InitHypervisor(ctx, conf)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -439,7 +459,14 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
 	vmID := utils.GenerateID()
-	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, hypervisor.ExtractBlobIDs(storageConfigs, bootCfg))
+	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
+	// Digest locks span resolve → reserve commit, so image GC cannot collect a blob inside the window.
+	releasePins, err := pinResolvedBlobs(ctx, backends, vmCfg.Image, blobIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, blobIDs)
+	releasePins()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -462,7 +489,20 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	return ctx, info, hyper, nil
 }
 
-// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until the backend finalizes. rollback covers failures before the backend adopts the placeholder; unlock is deferred past Create/Clone by the caller.
+// pinResolvedBlobs holds the resolved image's digest locks until the reserve
+// commits; the empty set (bridge/dataless) pins nothing.
+func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref string, blobIDs map[string]struct{}) (func(), error) {
+	if len(blobIDs) == 0 {
+		return func() {}, nil
+	}
+	owner, err := cmdcore.ResolveImageOwner(ctx, backends, ref)
+	if err != nil {
+		return nil, fmt.Errorf("pin image blobs: %w", err)
+	}
+	return owner.PinBlobs(ctx, blobIDs)
+}
+
+// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until adopt or rollback.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {

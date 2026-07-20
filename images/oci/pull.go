@@ -10,7 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,7 +21,7 @@ type pullLayerResult struct {
 	initrdPath string
 }
 
-func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], imageRef string, tracker progress.Tracker) error {
+func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], imageRef string, tracker progress.Tracker) error {
 	logger := log.WithFunc("oci.pull")
 
 	ref, digestHex, layers, err := fetchImage(ctx, imageRef)
@@ -30,31 +29,42 @@ func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], im
 		return err
 	}
 
-	return store.Update(ctx, func(idx *imageIndex) error {
-		if isUpToDate(conf, idx, ref, digestHex) {
-			logger.Debugf(ctx, "Already up to date: %s (digest: sha256:%s)", ref, digestHex)
-			return nil
-		}
+	// Heavy work (downloads, EROFS conversion, blob renames) runs outside any transaction under finishImport's per-digest locks; the up-to-date pre-check is racy but benign since the whole flow is idempotent per digest.
+	var upToDate bool
+	if err := store.View(ctx, func(idx *imageIndex) error {
+		upToDate = isUpToDate(conf, idx, ref, digestHex)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if upToDate {
+		logger.Debugf(ctx, "Already up to date: %s (digest: sha256:%s)", ref, digestHex)
+		return nil
+	}
+	var knownBootHexes map[string]struct{}
+	if err := store.View(ctx, func(idx *imageIndex) error {
+		knownBootHexes = collectBootHexes(idx)
+		return nil
+	}); err != nil {
+		return err
+	}
 
-		knownBootHexes := collectBootHexes(idx)
+	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(layers)})
 
-		tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(layers)})
+	workDir, cleanup, mkErr := newWorkDir(conf, "pull-*")
+	if mkErr != nil {
+		return mkErr
+	}
+	defer cleanup()
 
-		workDir, cleanup, mkErr := newWorkDir(conf, "pull-*")
-		if mkErr != nil {
-			return mkErr
-		}
-		defer cleanup()
+	results, waitErr := processLayers(ctx, conf, layers, workDir, knownBootHexes, tracker)
+	if waitErr != nil {
+		return waitErr
+	}
 
-		results, waitErr := processLayers(ctx, conf, layers, workDir, knownBootHexes, tracker)
-		if waitErr != nil {
-			return waitErr
-		}
+	healCachedBootFiles(ctx, conf, layers, results, workDir)
 
-		healCachedBootFiles(ctx, conf, layers, results, workDir)
-
-		return finishImport(ctx, conf, idx, ref, images.NewDigest(digestHex), results, tracker, "Pulled")
-	})
+	return finishImport(ctx, conf, store, ref, images.NewDigest(digestHex), results, tracker, "Pulled")
 }
 
 func processLayers(ctx context.Context, conf *Config, layers []v1.Layer, workDir string, knownBootHexes map[string]struct{}, tracker progress.Tracker) ([]pullLayerResult, error) {

@@ -1,0 +1,81 @@
+package core
+
+import (
+	"context"
+	"sync"
+
+	"github.com/projecteru2/core/log"
+
+	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
+	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
+	"github.com/cocoonstack/cocoon/images"
+	"github.com/cocoonstack/cocoon/images/cloudimg"
+	"github.com/cocoonstack/cocoon/images/oci"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/network/cni"
+	"github.com/cocoonstack/cocoon/snapshot/localfile"
+)
+
+var (
+	metaOnce  sync.Once
+	metaStore *metajson.Store
+	metaErr   error
+
+	// vmTables maps the legacy vms.json fields onto the vms-namespace tables;
+	// the json field names are engine knowledge and live only here.
+	vmTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+		{Key: "vms", Table: hypervisor.TableRecords},
+		{Key: "names", Table: hypervisor.TableNames},
+		{Key: "orphan_dirs", Table: hypervisor.TableOrphanDirs, Optional: true, StringList: true},
+		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+	}}
+	snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+		{Key: "snapshots", Table: localfile.TableRecords},
+		{Key: "names", Table: localfile.TableNames},
+		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+	}}
+	netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+		{Key: "networks", Table: cni.TableRecords},
+		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+	}}
+	imageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+		{Key: "images", Table: images.TableRecords},
+		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+	}}
+)
+
+// MetaStore builds the process-wide meta store once — one store, every
+// namespace — and injects it into every backend (design §10 P0 boundary).
+func MetaStore(conf *config.Config) (*metajson.Store, error) {
+	metaOnce.Do(func() {
+		chCfg := cloudhypervisor.NewConfig(conf)
+		fcCfg := firecracker.NewConfig(conf)
+		snapCfg := localfile.NewConfig(conf)
+		cniCfg := cni.NewConfig(conf)
+		ociCfg := oci.NewConfig(conf.RootDir, 0)
+		cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
+		metaStore, metaErr = metajson.Open(
+			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
+			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
+			metajson.Namespace{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
+			metajson.Namespace{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
+			metajson.Namespace{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
+			metajson.Namespace{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
+		)
+	})
+	return metaStore, metaErr
+}
+
+// CloseMetaStore ends the store's unified lifecycle at command teardown
+// (design §10 P0); a process that never opened it is a no-op.
+func CloseMetaStore(ctx context.Context) {
+	if metaStore == nil {
+		return
+	}
+	if err := metaStore.Close(); err != nil {
+		log.WithFunc("core.CloseMetaStore").Warnf(ctx, "close meta store: %v", err)
+	}
+}

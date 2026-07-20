@@ -213,19 +213,6 @@ func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
 	return resolved, nil
 }
 
-// inspectRunning gates on a live VM and returns a fresh vm.info for conflict/memory/device-id lookups.
-func (ch *CloudHypervisor) inspectRunning(ctx context.Context, vmRef string) (*http.Client, *chVMInfoResponse, error) {
-	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
-	if err != nil {
-		return nil, nil, err
-	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil {
-		return nil, nil, err
-	}
-	return hc, info, nil
-}
-
 // lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, making precheck-then-call atomic against concurrent attach/detach/restore.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
 	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
@@ -239,6 +226,10 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	fail := func(err error) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
 		unlock()
 		return nil, hypervisor.VMRecord{}, nil, nil, err
+	}
+	// Entrypoint discipline (design §5): device attach is reference-creating.
+	if gErr := ch.EntryGuard(ctx, vmID); gErr != nil {
+		return fail(gErr)
 	}
 	rec, err := ch.LoadRecord(ctx, vmID)
 	if err != nil {
@@ -349,11 +340,15 @@ func listWith[A any](
 	ctx context.Context, ch *CloudHypervisor, vmRef string,
 	extract func(*chVMInfoResponse) []A,
 ) ([]A, error) {
-	_, info, err := ch.inspectRunning(ctx, vmRef)
+	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
 		return nil, err
 	}
 	return extract(info), nil

@@ -8,18 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 )
 
-type imageIndex struct {
-	images.Index[imageEntry]
-}
-
-// Lookup finds an entry by ref (exact or normalized) or manifest digest (exact or prefix).
-func (idx *imageIndex) Lookup(id string) (string, *imageEntry, bool) {
-	return images.LookupOne(idx.Images, id, normalizeRef)
-}
-
-func (idx *imageIndex) LookupRefs(id string) []string {
-	return images.LookupRefs(idx.Images, id, normalizeRef)
-}
+type imageIndex = images.Index[imageEntry]
 
 // Paths derive from digests at runtime; not stored.
 type imageEntry struct {

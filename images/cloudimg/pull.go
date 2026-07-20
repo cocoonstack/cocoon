@@ -15,9 +15,9 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -79,13 +79,13 @@ type rangeProbe struct {
 }
 
 // pull commits url as a blob; the URL→blob mapping is idempotent (no-op when the blob already exists).
-func pull(ctx context.Context, conf *Config, store storage.Store[imageIndex], url string, force bool, tracker progress.Tracker) error {
+func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], url string, force bool, tracker progress.Tracker) error {
 	logger := log.WithFunc("cloudimg.pull")
 
 	if !force {
 		var skip bool
-		if err := store.With(ctx, func(idx *imageIndex) error {
-			if _, entry, ok := idx.Lookup(url); ok {
+		if err := store.View(ctx, func(idx *imageIndex) error {
+			if _, entry, ok := images.LookupOne(idx.Images, url); ok {
 				blobPath := conf.BlobPath(entry.ContentSum.Hex())
 				if utils.ValidFile(blobPath) {
 					logger.Debugf(ctx, "image %s already cached, skipping", url)

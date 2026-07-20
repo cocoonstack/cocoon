@@ -15,15 +15,16 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/snapshot"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// pendingGCGrace lets a slow-storage snapshot finish before GC reclaims a pending record.
-const pendingGCGrace = 24 * time.Hour
+const (
+	// pendingGCGrace lets a slow-storage snapshot finish before GC reclaims a pending record.
+	pendingGCGrace = 24 * time.Hour
+
+	reasonOrphan = "orphan"
+)
 
 // EvictionPolicy controls LRU snapshot eviction; Enabled with zero criteria evicts all non-pending.
 type EvictionPolicy struct {
@@ -58,28 +59,26 @@ type snapshotGCSnapshot struct {
 
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
-func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker lock.Locker, policy EvictionPolicy, recorder metering.Recorder) gc.Module[snapshotGCSnapshot] {
+func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot] {
+	conf, recorder := lf.conf, lf.metering
 	return gc.Module[snapshotGCSnapshot]{
-		Name:   "snapshot",
-		Locker: locker,
+		Name:    "snapshot",
+		Recover: lf.gcRecover,
 		ReadDB: func(ctx context.Context) (snapshotGCSnapshot, error) {
 			snap := snapshotGCSnapshot{policy: policy, reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-pendingGCGrace)
-			if err := store.ReadRaw(func(idx *snapshot.SnapshotIndex) error {
+			if err := lf.view(ctx, func(t *snapTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
-				for id, rec := range idx.Snapshots {
-					if rec == nil {
-						continue
-					}
+				return t.Scan(func(id string, rec *snapshot.SnapshotRecord) error {
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.Pending {
 						if rec.CreatedAt.Before(cutoff) {
 							snap.stalePending = append(snap.stalePending, id)
 						}
-						continue
+						return nil
 					}
 					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
 						snap.missingDir = append(snap.missingDir, id)
@@ -90,8 +89,8 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 						lastAccessed: rec.LastAccessedAt,
 						sizeBytes:    rec.SizeBytes,
 					}
-				}
-				return nil
+					return nil
+				})
 			}); err != nil {
 				return snap, err
 			}
@@ -100,14 +99,14 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 				return snap, err
 			}
 			if policy.MaxSize > 0 {
-				backfillSizeBytes(ctx, conf, store, snap.records)
+				backfillSizeBytes(ctx, lf, snap.records)
 			}
 			return snap, nil
 		},
 		Resolve: func(ctx context.Context, snap snapshotGCSnapshot, _ map[string]any) []string {
 			orphans := utils.FilterUnreferenced(snap.dataDirs, snap.snapshotIDs)
 			for _, id := range orphans {
-				snap.reasons[id] = "orphan"
+				snap.reasons[id] = reasonOrphan
 			}
 			for _, id := range snap.stalePending {
 				snap.reasons[id] = "stale-pending"
@@ -132,11 +131,8 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 		},
 		Collect: func(ctx context.Context, ids []string, snap snapshotGCSnapshot) error {
 			logger := log.WithFunc("gc.snapshot")
-			var (
-				errs    []error
-				removed = make([]string, 0, len(ids))
-				emits   = make([]string, 0, len(ids))
-			)
+			cutoff := time.Now().Add(-pendingGCGrace)
+			var errs []error
 			for _, id := range ids {
 				if err := ctx.Err(); err != nil {
 					errs = append(errs, err)
@@ -155,31 +151,66 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
 					continue
 				}
-				if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
+				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
+				pending, sawRecord := false, false
+				revalidate := func(rec *snapshot.SnapshotRecord) bool {
+					pending, sawRecord = rec.Pending, true
+					switch snap.reasons[id] {
+					case "stale-pending":
+						return rec.Pending && rec.CreatedAt.Before(cutoff)
+					case "missing-dir":
+						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
+						return errors.Is(statErr, fs.ErrNotExist)
+					case reasonOrphan:
+						return false // a record appeared for a dir orphaned at ReadDB
+					default: // LRU picks: a touch since ReadDB voids the eviction choice
+						m, ok := snap.records[id]
+						return ok && rec.LastAccessedAt.Equal(m.lastAccessed)
+					}
+				}
+				// Record-backed candidates go through the phase protocol; a
+				// recordless leftover dir converges by plain removal.
+				deleted, hyp, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
+				if err != nil {
 					_ = fl.Close()
-					errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
+					errs = append(errs, fmt.Errorf("collect snapshot %s: %w", id, err))
 					continue
 				}
-				_ = os.Remove(conf.LeasePath(id))
-				_ = fl.Close()
-				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
-				removed = append(removed, id)
-				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
-				if _, ok := snap.records[id]; ok {
-					emits = append(emits, id)
+				if !deleted {
+					if snap.reasons[id] != reasonOrphan || sawRecord {
+						_ = fl.Close() // candidacy voided under the lease; the next cycle re-picks
+						continue
+					}
+					if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
+						_ = fl.Close()
+						errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
+						continue
+					}
 				}
-			}
-			// Emit only after the record deletion lands: a persistently failing DB would re-candidate these ids and double-close the interval.
-			if err := cleanResolvedRecords(store, removed); err != nil {
-				errs = append(errs, fmt.Errorf("clean DB records: %w", err))
-			} else {
-				for _, id := range emits {
-					emitSnapStop(ctx, recorder, id, snap.records[id].hypervisor)
+				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion
+				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
+				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
+				if deleted && !pending {
+					emitSnapStop(ctx, recorder, id, hyp)
 				}
 			}
 			return errors.Join(errs...)
 		},
 	}
+}
+
+// PinnedBlobIDs reports every image blob pinned by a snapshot record — image GC's under-digest-lock recheck source.
+func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
+	pins := map[string]struct{}{}
+	if err := lf.view(ctx, func(t *snapTx) error {
+		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+			maps.Copy(pins, rec.ImageBlobIDs)
+			return nil
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return pins, nil
 }
 
 // pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
@@ -257,7 +288,8 @@ func logEvictRow(ctx context.Context, logger *log.Fields, verb, id string, m sna
 }
 
 // backfillSizeBytes computes + persists SizeBytes for records missing it so future GC skips du.
-func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[snapshot.SnapshotIndex], records map[string]snapshotMeta) {
+func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]snapshotMeta) {
+	conf := lf.conf
 	logger := log.WithFunc("gc.snapshot")
 	var changed bool
 	for id, m := range records {
@@ -276,10 +308,18 @@ func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[sn
 	if !changed {
 		return
 	}
-	if err := store.WriteRaw(func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.update(ctx, func(t *snapTx) error {
 		for id, m := range records {
-			if r := idx.Snapshots[id]; r != nil && r.SizeBytes != m.sizeBytes {
-				r.SizeBytes = m.sizeBytes
+			r, err := t.Get(id)
+			if err != nil {
+				return err
+			}
+			if r == nil || r.SizeBytes == m.sizeBytes {
+				continue
+			}
+			r.SizeBytes = m.sizeBytes
+			if err := t.Put(id, r); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -288,23 +328,21 @@ func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[sn
 	}
 }
 
-// cleanResolvedRecords drops resolved records; pending only past grace.
-func cleanResolvedRecords(store storage.Store[snapshot.SnapshotIndex], ids []string) error {
-	if len(ids) == 0 {
-		return nil
+// gcRecover resumes existing snapshot tombstones by phase before discovery.
+func (lf *LocalFile) gcRecover(ctx context.Context) []error {
+	var ids []string
+	if err := lf.view(ctx, func(t *snapTx) error {
+		var err error
+		ids, err = lf.tombstones().PendingIDs(ctx, t.Reader())
+		return err
+	}); err != nil {
+		return []error{err}
 	}
-	cutoff := time.Now().Add(-pendingGCGrace)
-	return store.WriteRaw(func(idx *snapshot.SnapshotIndex) error {
-		utils.CleanStaleRecords(
-			idx.Snapshots, idx.Names, ids,
-			func(r *snapshot.SnapshotRecord) string { return r.Name },
-			func(r *snapshot.SnapshotRecord) bool {
-				if r.Pending {
-					return r.CreatedAt.Before(cutoff)
-				}
-				return true
-			},
-		)
-		return nil
-	})
+	var errs []error
+	for _, id := range ids {
+		if err := lf.recoverSnapTombstone(ctx, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
 }

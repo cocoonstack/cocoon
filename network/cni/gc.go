@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -13,29 +12,28 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 type cniSnapshot struct {
-	dbVMIDs    map[string]struct{} // unique VM IDs from CNI DB records
-	netnsNames []string            // VM IDs extracted from /var/run/netns/cocoon-*
+	dbVMIDs    map[string]struct{}
+	netnsNames []string // VM IDs extracted from /var/run/netns/cocoon-*
 }
 
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.
 func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 	return gc.Module[cniSnapshot]{
-		Name:   typ,
-		Locker: c.locker,
-		ReadDB: func(_ context.Context) (cniSnapshot, error) {
+		Name:    typ,
+		Recover: c.gcRecover,
+		ReadDB: func(ctx context.Context) (cniSnapshot, error) {
 			var snap cniSnapshot
 			snap.dbVMIDs = make(map[string]struct{})
-			if err := c.store.ReadRaw(func(idx *networkIndex) error {
-				for _, rec := range idx.Networks {
-					if rec != nil {
-						snap.dbVMIDs[rec.VMID] = struct{}{}
-					}
-				}
-				return nil
+			if err := c.view(ctx, func(t *netTx) error {
+				return t.Scan(func(_ string, rec *networkRecord) error {
+					snap.dbVMIDs[rec.VMID] = struct{}{}
+					return nil
+				})
 			}); err != nil {
 				return snap, err
 			}
@@ -60,44 +58,26 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			logger := log.WithFunc("gc.cni")
 			var errs []error
 			for _, vmID := range ids {
-				// Lockless — orchestrator holds flock.
-				var records []networkRecord
-				if readErr := c.store.ReadRaw(func(idx *networkIndex) error {
-					records = idx.byVMID(vmID)
-					return nil
-				}); readErr != nil {
-					errs = append(errs, fmt.Errorf("read records for %s: %w", vmID, readErr))
+				// The owning VM's lock covers network teardown (design §5);
+				// a held lock means an in-flight lifecycle operation — skip.
+				lk, lockErr := vmlock.New(c.conf.RootDir, vmID)
+				if lockErr != nil {
+					errs = append(errs, lockErr)
 					continue
 				}
-
-				// CNI DEL per NIC — a failed release keeps its record for the next GC cycle.
-				downIDs, tdErr := c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, false)
-
-				// Lockless write.
-				if len(downIDs) > 0 {
-					if err := c.store.WriteRaw(func(idx *networkIndex) error {
-						for _, id := range downIDs {
-							delete(idx.Networks, id)
-						}
-						return nil
-					}); err != nil {
-						errs = append(errs, fmt.Errorf("clean DB for %s: %w", vmID, err))
-						continue
-					}
+				ok, lockErr := lk.TryLock(ctx)
+				if lockErr != nil || !ok {
+					logger.Warnf(ctx, "skip %s: vm lock busy", vmID)
+					continue
 				}
+				tdErr := c.teardownProtocol(ctx, vmID, nil, false)
+				_ = lk.Unlock(ctx)
 				if tdErr != nil {
 					// Keep the netns: the next cycle's retried DEL runs with its context intact.
 					errs = append(errs, fmt.Errorf("nic release incomplete for %s, netns kept: %w", vmID, tdErr))
 					continue
 				}
-
-				nsName := netnsName(vmID)
-				if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-					errs = append(errs, fmt.Errorf("remove netns %s: %w", nsName, err))
-					continue
-				}
-				logger.Infof(ctx, "collected id=%s netns=%s nics=%d/%d reason=orphan",
-					vmID, nsName, len(downIDs), len(records))
+				logger.Infof(ctx, "collected id=%s netns=%s reason=orphan", vmID, netnsName(vmID))
 			}
 			return errors.Join(errs...)
 		},
@@ -107,4 +87,34 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 // RegisterGC registers the CNI GC module with the given Orchestrator.
 func (c *CNI) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, c.GCModule())
+}
+
+// gcRecover resumes existing network tombstones by phase before discovery,
+// each under its owning VM's lock (design §5 recovery-precedes-discovery).
+func (c *CNI) gcRecover(ctx context.Context) []error {
+	var ids []string
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		ids, err = c.tombstones().PendingIDs(ctx, t.Reader())
+		return err
+	}); err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, vmID := range ids {
+		lk, err := vmlock.New(c.conf.RootDir, vmID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		ok, err := lk.TryLock(ctx)
+		if err != nil || !ok {
+			continue
+		}
+		if _, err := c.recoverTombstone(ctx, vmID); err != nil {
+			errs = append(errs, fmt.Errorf("recover %s: %w", vmID, err))
+		}
+		_ = lk.Unlock(ctx)
+	}
+	return errs
 }

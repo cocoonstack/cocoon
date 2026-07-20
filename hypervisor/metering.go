@@ -38,7 +38,7 @@ func (b *Backend) emitOpenInterval(ctx context.Context, vm *types.VM, reason met
 
 // emitDeleteClose fires storage.stop unconditionally; compute.stop only when an interval was open.
 func (b *Backend) emitDeleteClose(ctx context.Context, vmID string, shape metering.Shape, computeReason metering.Reason, hadRunningInterval bool) {
-	now := time.Now()
+	now := timeNow()
 	if hadRunningInterval {
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStop, vmID, computeReason, shape, now))
 	}

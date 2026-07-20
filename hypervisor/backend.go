@@ -8,11 +8,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -47,15 +44,17 @@ const (
 	GracefulStopPollInterval = 500 * time.Millisecond
 )
 
+// timeNow is the deterministic-clock seam the differential trace injects (design §10).
+var timeNow = time.Now
+
 // BackendConfig provides backend-specific values needed by shared Backend methods.
 type BackendConfig interface {
 	BinaryName() string
+	RootDirPath() string
 	PIDFileName() string
 	TerminateGracePeriod() time.Duration
 	SocketWaitTimeout() time.Duration
 	EffectivePoolSize() int
-	IndexFile() string
-	IndexLock() string
 	EnsureDirs() error
 	RunDir() string
 	LogDir() string
@@ -66,31 +65,37 @@ type BackendConfig interface {
 // Backend provides shared store operations for hypervisor backends.
 type Backend struct {
 	Typ      string
+	NS       string
 	Conf     BackendConfig
-	DB       storage.Store[VMIndex]
-	Locker   lock.Locker
+	Meta     meta.Store
 	Metering metering.Recorder
+
+	// NetCleanup releases a VM's host networking during delete/recovery.
+	NetCleanup NetTeardown
 }
 
-// NewBackend wires shared init: EnsureDirs, flock, JSON store, nil-recorder fallback.
-func NewBackend(typ string, conf BackendConfig, rec metering.Recorder) (*Backend, error) {
+// NewBackend wires shared init: EnsureDirs, the backend's namespace on the
+// injected meta store, nil-recorder fallback.
+func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	locker := flock.New(conf.IndexLock())
 	return &Backend{
 		Typ:      typ,
+		NS:       VMNamespaceName(typ),
 		Conf:     conf,
-		DB:       storejson.New[VMIndex](conf.IndexFile(), locker),
-		Locker:   locker,
+		Meta:     store,
 		Metering: rec,
 	}, nil
 }
 
 func (b *Backend) Type() string { return b.Typ }
+
+// SetNetCleanup injects the network teardown used by delete and recovery.
+func (b *Backend) SetNetCleanup(fn NetTeardown) { b.NetCleanup = fn }
 
 // LaunchSpec is the per-call input to Backend.LaunchVMProcess.
 type LaunchSpec struct {
@@ -165,7 +170,6 @@ type HibernateSpec struct {
 	RuntimeFiles []string
 }
 
-// runWrapped runs fn under a spec's optional Wrap.
 func runWrapped(rec *VMRecord, wrap func(*VMRecord, func() error) error, fn func() error) error {
 	if wrap != nil {
 		return wrap(rec, fn)

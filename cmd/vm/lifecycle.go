@@ -20,7 +20,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
-	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -210,32 +209,9 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	const logTag = "cmd.vm.rm"
-	allDeleted, lastErr := runRoutedLoop(ctx, logTag, "deleted", cliutil.WantJSON(cmd), routed,
-		func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-			return hyper.Delete(ctx, refs, force)
-		})
-
-	if len(allDeleted) > 0 {
-		// Before the error check: a partial CNI failure must not suppress bridge TAP cleanup for the rest of the batch.
-		bridgenet.CleanupTAPs(allDeleted)
-		if netProvider, initErr := cmdcore.InitNetwork(conf); initErr == nil {
-			if _, delErr := netProvider.Delete(ctx, allDeleted); delErr != nil {
-				return fmt.Errorf("vm(s) deleted but network cleanup failed: %w", delErr)
-			}
-		}
-	}
-
-	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
-}
-
-// recoverNetworkForStopped runs Start's network self-heal when the restore target is not running (hibernate resume after a host reboot).
-func (h Handler) recoverNetworkForStopped(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, ref string) {
-	vm, err := hyper.Inspect(ctx, ref)
-	if err != nil || vm.State == types.VMStateRunning {
-		return
-	}
-	h.recoverNetwork(ctx, conf, hyper, []string{vm.ID})
+	return batchRoutedCmd(ctx, cmd, "rm", "deleted", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+		return hyper.Delete(ctx, refs, force)
+	})
 }
 
 func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
@@ -302,20 +278,30 @@ func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper 
 			}
 		}
 		// Ops lock serializes verify-and-rebuild: two concurrent starts would both see missing plumbing, double-ADD, and the loser's rollback DEL would tear down the winner's network.
-		if locker, ok := hyper.(hypervisor.Reserver); ok {
-			unlock, lockErr := locker.LockVMOps(ctx, vm.ID)
-			if lockErr != nil {
-				logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
+		locker, ok := hyper.(hypervisor.Reserver)
+		if !ok {
+			recoverOne(vm)
+			continue
+		}
+		unlock, lockErr := locker.LockVMOps(ctx, vm.ID)
+		if lockErr != nil {
+			logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
+			continue
+		}
+		// Entry discipline before healing: an interrupted delete must finish
+		// and refuse, never get its network rebuilt (§9).
+		if g, ok := hyper.(hypervisor.EntryGuarded); ok {
+			if gErr := g.EntryGuard(ctx, vm.ID); gErr != nil {
+				logger.Warnf(ctx, "skip network recovery for VM %s: %v", vm.ID, gErr)
+				unlock()
 				continue
 			}
-			// Recheck under the lock from the fresh record: the pre-lock List snapshot may predate a completed rm or net resize.
-			if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
-				recoverOne(fresh)
-			}
-			unlock()
-		} else {
-			recoverOne(vm)
 		}
+		// Recheck under the lock from the fresh record: the pre-lock List snapshot may predate a completed rm or net resize.
+		if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
+			recoverOne(fresh)
+		}
+		unlock()
 	}
 }
 

@@ -11,13 +11,13 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, filePath string) error {
+func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, filePath string) error {
 	logger := log.WithFunc("cloudimg.importQcow2File")
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
@@ -75,7 +75,7 @@ func importQcow2File(ctx context.Context, conf *Config, store storage.Store[imag
 	return nil
 }
 
-func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, r io.Reader) error {
+func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, r io.Reader) error {
 	logger := log.WithFunc("cloudimg.importQcow2Reader")
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
@@ -109,7 +109,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store storage.Store[im
 	return nil
 }
 
-func importQcow2Concat(ctx context.Context, conf *Config, store storage.Store[imageIndex], name string, tracker progress.Tracker, file ...string) error {
+func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
 	logger := log.WithFunc("cloudimg.importQcow2Concat")
 
 	if len(file) == 0 {

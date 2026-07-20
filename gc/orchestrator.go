@@ -25,56 +25,38 @@ func Register[S any](o *Orchestrator, m Module[S]) {
 	o.modules = append(o.modules, m)
 }
 
-// Run executes one GC cycle: lock all → snapshot → resolve → collect. Fail-closed on busy locks to keep cross-module decisions consistent.
+// Run executes one GC cycle: recover tombstones by phase, then snapshot →
+// resolve → collect; modules revalidate every destructive decision under
+// their own entity locks (§5 loose-snapshot rule).
 func (o *Orchestrator) Run(ctx context.Context) error {
 	start := time.Now()
 	logger := log.WithFunc("gc.Run")
 
-	var locked []runner
-	var skipped []string
+	var errs []error
 	for _, m := range o.modules {
-		ok, err := m.getLocker().TryLock(ctx)
-		if err != nil {
-			logger.Warnf(ctx, "skip %s: TryLock error: %v", m.getName(), err)
-			skipped = append(skipped, m.getName())
-			continue
+		for _, err := range m.recover(ctx) {
+			errs = append(errs, fmt.Errorf("gc recover %s: %w", m.getName(), err))
 		}
-		if !ok {
-			logger.Warnf(ctx, "skip %s: lock held by another operation", m.getName())
-			skipped = append(skipped, m.getName())
-			continue
-		}
-		locked = append(locked, m)
-	}
-	defer func() {
-		for _, m := range locked {
-			m.getLocker().Unlock(ctx) //nolint:errcheck,gosec
-		}
-	}()
-
-	if len(skipped) > 0 {
-		return fmt.Errorf("gc aborted: modules skipped (lock busy): %s", strings.Join(skipped, ", "))
 	}
 
-	snapshots := make(map[string]any, len(locked))
-	for _, m := range locked {
+	snapshots := make(map[string]any, len(o.modules))
+	for _, m := range o.modules {
 		snap, err := m.readSnapshot(ctx)
 		if err != nil {
-			return fmt.Errorf("gc aborted: snapshot %s: %w", m.getName(), err)
+			return errors.Join(append(errs, fmt.Errorf("gc aborted: snapshot %s: %w", m.getName(), err))...)
 		}
 		snapshots[m.getName()] = snap
 	}
 
 	targets := make(map[string][]string)
-	for _, m := range locked {
+	for _, m := range o.modules {
 		if ids := m.resolveTargets(ctx, snapshots[m.getName()], snapshots); len(ids) > 0 {
 			targets[m.getName()] = ids
 		}
 	}
 
-	var errs []error
-	summary := make(map[string]int, len(locked))
-	for _, m := range locked {
+	summary := make(map[string]int, len(o.modules))
+	for _, m := range o.modules {
 		ids := targets[m.getName()]
 		// Collect runs even with no ids: modules sweep stale temp/capture leftovers there.
 		if err := m.collect(ctx, ids, snapshots[m.getName()]); err != nil {

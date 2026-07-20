@@ -3,7 +3,6 @@ package cni
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,9 +12,9 @@ import (
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/version"
 
-	"github.com/cocoonstack/cocoon/lock/flock"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -175,9 +174,8 @@ func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
 	// A failed reclaim can leave two records for one ifname; Remove must tear down
 	// and sweep both (DEL is idempotent), not strand one as a phantom.
 	seedRecords(t, c, "vm1", "eth1")
-	if err := c.store.Update(ctx, func(idx *networkIndex) error {
-		idx.Networks["n-eth1-dup"] = &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
-		return nil
+	if err := c.update(ctx, func(t *netTx) error {
+		return t.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +195,7 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
 	// A failed NIC release keeps its record AND the netns, surfaced as an error so rm reports the retryable leftover.
-	err := c.deleteVM(ctx, "vm1")
+	err := c.teardownProtocol(ctx, "vm1", nil, false)
 	if err == nil || !strings.Contains(err.Error(), "netns kept") {
 		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
 	}
@@ -210,7 +208,7 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	// A VM resized to 0 NICs has no lease needing a plugin DEL; a missing conflist must not wedge its netns removal.
-	if err := c.deleteVM(t.Context(), "vm1"); err != nil {
+	if err := c.teardownProtocol(t.Context(), "vm1", nil, false); err != nil {
 		t.Fatalf("deleteVM with zero records: %v", err)
 	}
 }
@@ -290,9 +288,10 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 		t.Fatalf("got %d configs, want 1", len(configs))
 	}
 	var got []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		got = idx.byVMID("vm1")
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		got, err = t.byVMID("vm1")
+		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -352,6 +351,11 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 }
 
 // newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
+var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: TableRecords},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
 	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
@@ -360,8 +364,18 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	}
 	exec := &recordingExec{}
 	dir := t.TempDir()
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     NamespaceName,
+		FilePath: filepath.Join(dir, "net.json"),
+		LockPath: filepath.Join(dir, "net.lock"),
+		Codec:    testNetTables,
+	})
+	if err != nil {
+		t.Fatalf("open meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
 	return &CNI{
-		store:       storejson.New[networkIndex](filepath.Join(dir, "net.json"), flock.New(filepath.Join(dir, "net.lock"))),
+		meta:        store,
 		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
 		defaultName: "cni-bridge",
 		cniConf:     libcni.NewCNIConfigWithCacheDir([]string{"/nonexistent"}, filepath.Join(dir, "cache"), exec),
@@ -391,10 +405,12 @@ func testVMCfg() *types.VMConfig {
 // seedRecords inserts one record per ifName, with ID "n-<ifName>".
 func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
 	t.Helper()
-	if err := c.store.Update(t.Context(), func(idx *networkIndex) error {
+	if err := c.update(t.Context(), func(tx *netTx) error {
 		for _, ifName := range ifNames {
 			id := "n-" + ifName
-			idx.Networks[id] = &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}
+			if err := tx.Put(id, &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -405,12 +421,15 @@ func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
 func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 	t.Helper()
 	var got []string
-	if err := c.store.With(t.Context(), func(idx *networkIndex) error {
-		got = slices.Sorted(maps.Keys(idx.Networks))
-		return nil
+	if err := c.view(t.Context(), func(tx *netTx) error {
+		return tx.Scan(func(id string, _ *networkRecord) error {
+			got = append(got, id)
+			return nil
+		})
 	}); err != nil {
 		t.Fatal(err)
 	}
+	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("records = %v, want %v", got, want)
 	}

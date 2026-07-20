@@ -5,48 +5,46 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/types"
 )
 
 // Ops bundles the store and callbacks shared by Inspect/List/Delete; one per backend.
-type Ops[I any, E Entry] struct {
-	Store      storage.Store[I]
+type Ops[E Entry] struct {
+	Store      *Store[E]
 	Type       string
-	LookupRefs func(*I, string) []string
-	Entries    func(*I) map[string]*E
+	LookupRefs func(map[string]*E, string) []string
 	Sizer      func(*E) int64
 }
 
 // Inspect returns (nil, nil) when no entry matches id or the id is an
 // ambiguous prefix spanning distinct digests (LookupOne semantics).
-func (ops Ops[I, E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {
-	err = ops.Store.With(ctx, func(idx *I) error {
-		refs := ops.LookupRefs(idx, id)
-		if len(refs) == 0 || !refsShareDigest(ops.Entries(idx), refs) {
+func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {
+	err = ops.Store.View(ctx, func(idx *Index[E]) error {
+		refs := ops.LookupRefs(idx.Images, id)
+		if len(refs) == 0 || !refsShareDigest(idx.Images, refs) {
 			return nil
 		}
-		result = entryToImage(ops.Entries(idx)[refs[0]], ops.Type, ops.Sizer)
+		result = entryToImage(idx.Images[refs[0]], ops.Type, ops.Sizer)
 		return nil
 	})
 	return result, err
 }
 
 // List returns every image in the index.
-func (ops Ops[I, E]) List(ctx context.Context) (result []*types.Image, err error) {
-	err = ops.Store.With(ctx, func(idx *I) error {
-		result = listImages(ops.Entries(idx), ops.Type, ops.Sizer)
+func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
+	err = ops.Store.View(ctx, func(idx *Index[E]) error {
+		result = listImages(idx.Images, ops.Type, ops.Sizer)
 		return nil
 	})
 	return result, err
 }
 
 // Delete deletes entries from an index by ids and returns removed refs.
-func (ops Ops[I, E]) Delete(ctx context.Context, ids []string) (deleted []string, err error) {
-	err = ops.Store.Update(ctx, func(idx *I) error {
+func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, err error) {
+	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error
-		deleted, delErr = deleteByID(ctx, ops.Type+".Delete", ops.Entries(idx), func(id string) []string {
-			return ops.LookupRefs(idx, id)
+		deleted, delErr = deleteByID(ctx, ops.Type+".Delete", idx.Images, func(id string) []string {
+			return ops.LookupRefs(idx.Images, id)
 		}, ids)
 		return delErr
 	})

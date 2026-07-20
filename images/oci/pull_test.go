@@ -11,12 +11,10 @@ import (
 
 func TestCollectBootHexesAndBootFilesPresent(t *testing.T) {
 	idx := &imageIndex{
-		Index: images.Index[imageEntry]{
-			Images: map[string]*imageEntry{
-				"one": {
-					KernelLayer: images.NewDigest("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
-					InitrdLayer: images.NewDigest("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"),
-				},
+		Images: map[string]*imageEntry{
+			"one": {
+				KernelLayer: images.NewDigest("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+				InitrdLayer: images.NewDigest("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"),
 			},
 		},
 	}
@@ -75,16 +73,14 @@ func TestMoveBootFileAndIsUpToDate(t *testing.T) {
 	}
 
 	idx := &imageIndex{
-		Index: images.Index[imageEntry]{
-			Images: map[string]*imageEntry{
-				"demo": {
-					Ref:            "demo",
-					ManifestDigest: images.NewDigest(digestHex),
-					Layers:         []layerEntry{{Digest: images.NewDigest(digestHex)}},
-					KernelLayer:    images.NewDigest(digestHex),
-					InitrdLayer:    images.NewDigest(digestHex),
-					CreatedAt:      time.Now(),
-				},
+		Images: map[string]*imageEntry{
+			"demo": {
+				Ref:            "demo",
+				ManifestDigest: images.NewDigest(digestHex),
+				Layers:         []layerEntry{{Digest: images.NewDigest(digestHex)}},
+				KernelLayer:    images.NewDigest(digestHex),
+				InitrdLayer:    images.NewDigest(digestHex),
+				CreatedAt:      time.Now(),
 			},
 		},
 	}

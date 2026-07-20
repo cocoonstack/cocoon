@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -15,11 +14,8 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -42,31 +38,26 @@ var _ network.Network = (*CNI)(nil)
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {
 	conf        *Config
-	store       storage.Store[networkIndex]
-	locker      lock.Locker
-	confLists   map[string]*libcni.NetworkConfigList // name → conflist
-	defaultName string                               // first conflist name (backward compat)
+	meta        meta.Store
+	confLists   map[string]*libcni.NetworkConfigList
+	defaultName string // first conflist name (backward compat)
 	cniConf     *libcni.CNIConfig
-	loadErr     error // conflist load failure, surfaced by errNoConflist
+	loadErr     error
 }
 
 // New creates a CNI provider; conflist loading is best-effort so Delete/Inspect/List still work when none are available — Add fails in that case.
-func New(conf *config.Config) (*CNI, error) {
+func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
-	cfg := &Config{Config: conf}
+	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)
 	}
 
-	locker := flock.New(cfg.IndexLock())
-	store := storejson.New[networkIndex](cfg.IndexFile(), locker)
-
 	c := &CNI{
 		conf:      cfg,
-		store:     store,
-		locker:    locker,
+		meta:      store,
 		confLists: make(map[string]*libcni.NetworkConfigList),
 	}
 
@@ -108,13 +99,12 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 // Inspect returns the network record for id, or (nil, nil) if not found.
 func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 	var result *types.Network
-	return result, c.store.With(ctx, func(idx *networkIndex) error {
-		rec := idx.Networks[id]
-		if rec == nil {
-			return nil
+	return result, c.view(ctx, func(t *netTx) error {
+		rec, err := t.Get(id)
+		if err != nil || rec == nil {
+			return err
 		}
-		net := rec.Network // value copy — detached from the locked index
-		result = &net
+		result = &rec.Network
 		return nil
 	})
 }
@@ -122,12 +112,11 @@ func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 // List returns all known network records.
 func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
 	var result []*types.Network
-	return result, c.store.With(ctx, func(idx *networkIndex) error {
-		result = utils.MapValues(idx.Networks, func(rec *networkRecord) *types.Network {
-			n := rec.Network
-			return &n
+	return result, c.view(ctx, func(t *netTx) error {
+		return t.Scan(func(_ string, rec *networkRecord) error {
+			result = append(result, &rec.Network)
+			return nil
 		})
-		return nil
 	})
 }
 
@@ -141,38 +130,12 @@ func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, true)
 }
 
-// Delete tears down all NICs for each VM and removes the netns. Best-effort.
+// Delete tears down each VM's networking; the caller already holds the VM lock, so this never re-locks the non-reentrant flock.
 func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
-		return c.deleteVM(ctx, vmID)
+		return c.teardownProtocol(ctx, vmID, nil, false)
 	})
 	return result.Succeeded, result.Err()
-}
-
-func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
-	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("read network index: %w", err)
-	}
-	// Run even when records is empty: a VM resized to 0 NICs still owns its netns.
-	nsPath := netnsPath(vmID)
-	// Sweep only released records: a failed DEL keeps its record so GC retries the release.
-	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, false)
-	if err := c.deleteRecords(ctx, downIDs); err != nil {
-		return errors.Join(tdErr, err)
-	}
-	if tdErr != nil {
-		// Keep the netns: the retried DEL (GC) runs with its full context intact.
-		return fmt.Errorf("nic release incomplete, netns kept for gc retry: %w", tdErr)
-	}
-	nsName := netnsName(vmID)
-	if err := deleteNetnsFn(ctx, nsName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove netns %s: %w", nsPath, err)
-	}
-	return nil
 }
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
@@ -222,23 +185,12 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 	return downIDs, errors.Join(errs...)
 }
 
-func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	return c.store.Update(ctx, func(idx *networkIndex) error {
-		for _, id := range ids {
-			delete(idx.Networks, id)
-		}
-		return nil
-	})
-}
-
 func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		records, err = t.byVMID(vmID)
+		return err
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}

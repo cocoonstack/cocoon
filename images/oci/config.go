@@ -7,6 +7,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// NamespaceName is this backend's meta namespace.
+const NamespaceName = "images_oci"
+
 type Config struct {
 	images.BaseConfig
 	// PoolSize bounds concurrent layer processing.

@@ -33,6 +33,11 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 		return netresize.Result{}, err
 	}
 	defer unlock()
+	// Entrypoint discipline (design §5): a resize must not plumb NICs onto a
+	// VM whose delete was interrupted.
+	if err = ch.EntryGuard(ctx, vmID); err != nil {
+		return netresize.Result{}, err
+	}
 	// Reload under the lock: a resize that won the lock first may have changed the NIC set after this one loaded the record.
 	if rec, err = ch.LoadRecord(ctx, vmID); err != nil {
 		return netresize.Result{}, err
@@ -103,11 +108,8 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 // removing a committed NIC would strand record-without-device, unhealable by a
 // same-target retry. Lockless read so a GC index lock can't fake a miss.
 func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
-	var rec *hypervisor.VMRecord
-	if err := ch.DB.ReadRaw(func(idx *hypervisor.VMIndex) error {
-		rec = idx.VMs[vmID]
-		return nil
-	}); err != nil {
+	rec, err := ch.PeekRecord(ctx, vmID)
+	if err != nil {
 		return false, err
 	}
 	if nicPersisted(rec, nc.MAC) {
@@ -187,7 +189,7 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 	})
 }
 
-// nicPersisted reports whether rec already carries a NIC with mac — resolves the commit-ambiguity of a failed persist (fsync can fail after the rename landed).
+// nicPersisted reports whether rec already carries a NIC with mac.
 func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
 	return rec != nil && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
 		return nc != nil && strings.EqualFold(nc.MAC, mac)

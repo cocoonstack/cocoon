@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -18,7 +18,7 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	const id = "vm-gc-lock"
 	runDir, logDir := t.TempDir(), t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, false)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateCreating
 		idx.VMs[id].UpdatedAt = time.Now().Add(-25 * time.Hour)
 		idx.VMs[id].RunDir = runDir
@@ -28,7 +28,11 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	l := flock.New(filepath.Join(runDir, OpsLockName))
+	lk, err := vmlock.New(b.Conf.RootDirPath(), id)
+	if err != nil {
+		t.Fatalf("vm lock: %v", err)
+	}
+	l := lk
 	if ok, err := l.TryLock(ctx); err != nil || !ok {
 		t.Fatalf("hold ops lock: ok=%v err=%v", ok, err)
 	}
@@ -117,7 +121,7 @@ func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(leftover, "cow.raw"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.OrphanDirs = append(idx.OrphanDirs, leftover)
 		return nil
 	}); err != nil {
@@ -130,7 +134,7 @@ func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
 		t.Fatal("migrated leftover dir must be reclaimed")
 	}
-	if err := b.DB.ReadRaw(func(idx *VMIndex) error {
+	if err := b.dbRead(t.Context(), func(idx *VMIndex) error {
 		if len(idx.OrphanDirs) != 0 {
 			t.Fatalf("intent must be cleared, got %v", idx.OrphanDirs)
 		}

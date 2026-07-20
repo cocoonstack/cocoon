@@ -38,7 +38,7 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 	ctx := t.Context()
 	const id = "vm-nil-nic"
 	seedStoppedVMWithDirs(t, b, id)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{nil}
 		return nil
 	}); err != nil {
@@ -65,7 +65,7 @@ func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) {
 	t.Helper()
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	dir := shortTempDir(t)
-	if err := b.DB.Update(t.Context(), func(idx *VMIndex) error {
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateStopped
 		idx.VMs[id].RunDir = dir
 		idx.VMs[id].LogDir = dir

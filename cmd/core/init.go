@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -11,6 +13,8 @@ import (
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/network"
 	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/network/cni"
@@ -19,12 +23,41 @@ import (
 )
 
 var hypervisorFactories = []hypervisorFactory{
-	{config.HypervisorCH, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		return cloudhypervisor.New(c, MeteringRecorder(ctx, c))
-	}},
-	{config.HypervisorFirecracker, func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		return firecracker.New(c, MeteringRecorder(ctx, c))
-	}},
+	{config.HypervisorCH, wireHypervisor(cloudhypervisor.New)},
+	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
+}
+
+// wireHypervisor builds a backend factory over the shared store and recorder.
+func wireHypervisor[H interface {
+	hypervisor.Hypervisor
+	SetNetCleanup(hypervisor.NetTeardown)
+}](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
+	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
+		store, err := MetaStore(c)
+		if err != nil {
+			return nil, err
+		}
+		h, err := newFn(c, MeteringRecorder(ctx, c), store)
+		if err != nil {
+			return nil, err
+		}
+		h.SetNetCleanup(netCleanup(c))
+		return h, nil
+	}
+}
+
+// netCleanup runs inside the delete protocol under the VM lock; a partial CNI failure leaves the tombstone for retry/GC to resume.
+func netCleanup(c *config.Config) hypervisor.NetTeardown {
+	return func(ctx context.Context, vmID string) error {
+		bridgenet.CleanupTAPs([]string{vmID})
+		netProvider, initErr := InitNetwork(c)
+		if initErr != nil {
+			// Lazy CNI; OK to skip for bridge-only setups.
+			return nil
+		}
+		_, err := netProvider.Delete(ctx, []string{vmID})
+		return err
+	}
 }
 
 type hypervisorFactory struct {
@@ -53,23 +86,65 @@ func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend
 }
 
 func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OCI, *cloudimg.CloudImg, error) {
-	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, nil, err
+	}
+	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize(), store)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init oci backend: %w", err)
 	}
-	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns())
+	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns(), store)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init cloudimg backend: %w", err)
 	}
+	recheck := pinnedElsewhere(conf)
+	ociStore.SetPinnedElsewhere(recheck)
+	cloudimgStore.SetPinnedElsewhere(recheck)
 	return ociStore, cloudimgStore, nil
 }
 
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
+func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
+	type pinner interface {
+		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
+	}
+	return func(ctx context.Context) (map[string]struct{}, error) {
+		hypers, err := InitAllHypervisors(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		snapBackend, err := InitSnapshot(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		sources := make([]pinner, 0, len(hypers)+1)
+		for _, h := range hypers {
+			if p, ok := h.(pinner); ok {
+				sources = append(sources, p)
+			}
+		}
+		if p, ok := snapBackend.(pinner); ok {
+			sources = append(sources, p)
+		}
+		pins := map[string]struct{}{}
+		for _, s := range sources {
+			m, err := s.PinnedBlobIDs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			maps.Copy(pins, m)
+		}
+		return pins, nil
+	}
+}
+
 func InitHypervisor(ctx context.Context, conf *config.Config) (hypervisor.Hypervisor, error) {
-	ctor := findHypervisorFactory(conf.Hypervisor())
-	if ctor == nil {
+	i := slices.IndexFunc(hypervisorFactories, func(f hypervisorFactory) bool { return f.typ == conf.Hypervisor() })
+	if i < 0 {
 		return nil, fmt.Errorf("unknown hypervisor type: %s", conf.Hypervisor())
 	}
-	h, err := ctor(ctx, conf)
+	h, err := hypervisorFactories[i].ctor(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("init hypervisor: %w", err)
 	}
@@ -89,7 +164,11 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 }
 
 func InitNetwork(conf *config.Config) (network.Network, error) {
-	p, err := cni.New(conf)
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, err
+	}
+	p, err := cni.New(conf, store)
 	if err != nil {
 		return nil, fmt.Errorf("init network: %w", err)
 	}
@@ -105,18 +184,46 @@ func InitBridgeNetwork(conf *config.Config, bridgeDev string) (network.Network, 
 }
 
 func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Option) (snapshot.Snapshot, error) {
-	s, err := localfile.New(conf, MeteringRecorder(ctx, conf), opts...)
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, localfile.WithBlobPinner(func(ctx context.Context, blobIDs map[string]struct{}) (func(), error) {
+		return PinEnvelopeBlobs(ctx, conf, blobIDs)
+	}))
+	s, err := localfile.New(conf, MeteringRecorder(ctx, conf), store, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("init snapshot backend: %w", err)
 	}
 	return s, nil
 }
 
-func findHypervisorFactory(typ config.HypervisorType) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
-	for _, f := range hypervisorFactories {
-		if f.typ == typ {
-			return f.ctor
+// PinEnvelopeBlobs locks envelope-sourced pins (clone/restore --from-dir, snapshot import) on the owning backend; digests with no local blob are skipped.
+func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[string]struct{}) (func(), error) {
+	if len(blobIDs) == 0 {
+		return func() {}, nil
+	}
+	ociStore, cloudimgStore, err := InitImageBackendsForPull(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+	ociIDs, cloudimgIDs := map[string]struct{}{}, map[string]struct{}{}
+	for hex := range blobIDs {
+		switch {
+		case ociStore.OwnsBlob(hex):
+			ociIDs[hex] = struct{}{}
+		case cloudimgStore.OwnsBlob(hex):
+			cloudimgIDs[hex] = struct{}{}
 		}
 	}
-	return nil
+	releaseOCI, err := ociStore.PinBlobs(ctx, ociIDs)
+	if err != nil {
+		return nil, err
+	}
+	releaseCloudimg, err := cloudimgStore.PinBlobs(ctx, cloudimgIDs)
+	if err != nil {
+		releaseOCI()
+		return nil, err
+	}
+	return func() { releaseOCI(); releaseCloudimg() }, nil
 }

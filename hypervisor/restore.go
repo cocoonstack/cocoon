@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -48,7 +47,7 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 }
 
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
-	now := time.Now()
+	now := timeNow()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
@@ -170,7 +169,6 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	return result, nil
 }
 
-// prepareRestore resolves ref, takes the VM ops lock, re-resolves under it, and validates the record (mirrors prepareSnapshot/StartSequence); the caller defers the returned unlock.
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
 	vmID, _, err := b.ResolveForRestore(ctx, vmRef)
 	if err != nil {
@@ -183,6 +181,9 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 	fail := func(err error) (string, *VMRecord, func(), error) {
 		unlock()
 		return "", nil, nil, err
+	}
+	if gErr := b.EntryGuard(ctx, vmID); gErr != nil {
+		return fail(gErr)
 	}
 	// Revalidate under the lock: the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.
 	vmID, rec, err := b.ResolveForRestore(ctx, vmID)
@@ -200,10 +201,14 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 
 // emitRestoreComputeStop closes the compute interval after a confirmed kill; fail-closed on DB error and skip on vanished record so the ledger never gets a phantom entry.
 func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldShape metering.Shape, sourceSnapshotID string) {
-	now := time.Now()
+	now := timeNow()
 	closed := false
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[vmID]
+	if err := b.update(ctx, func(t *vmTx) error {
+		closed = false
+		r, err := t.Get(vmID)
+		if err != nil {
+			return err
+		}
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
@@ -211,7 +216,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		r.StoppedAt = &now
 		r.UpdatedAt = now
 		closed = true
-		return nil
+		return t.Put(vmID, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".emitRestoreComputeStop").Warnf(ctx, "mark stopped after kill %s: %v", vmID, err)
 		return
@@ -222,9 +227,8 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMComputeStop, vmID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 }
 
-// emitRestoreSuccess closes old storage and opens fresh storage+compute.
 func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape metering.Shape, sourceSnapshotID string) {
-	now := time.Now()
+	now := timeNow()
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, vm.ID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }

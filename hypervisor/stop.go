@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -27,7 +25,6 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 	}); err == nil {
 		return nil
 	}
-	// Distinguish user cancellation from timeout.
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -134,29 +131,9 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		}
 		log.WithFunc(b.Typ+".deleteOneLocked").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)
 	}
-	var (
-		shape              metering.Shape
-		hadRunningInterval bool
-	)
-	// Dirs outside the configured roots escape the GC orphan scan; persist a cleanup intent in the same transaction so a failed removal stays reclaimable.
-	migrated := migratedDirs(rec, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
-	// Record first: dir removal deletes the ops.lock inode, and a fresh-inode locker must resolve a gone record instead of reviving the VM.
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil {
-			return ErrNotFound
-		}
-		hadRunningInterval = hasOpenComputeInterval(r)
-		shape = shapeFromConfig(r.Config)
-		delete(idx.Names, r.Config.Name)
-		delete(idx.VMs, id)
-		for _, dir := range migrated {
-			if !slices.Contains(idx.OrphanDirs, dir) {
-				idx.OrphanDirs = append(idx.OrphanDirs, dir)
-			}
-		}
-		return nil
-	}); err != nil {
+	shape := shapeFromConfig(rec.Config)
+	hadRunningInterval := hasOpenComputeInterval(rec)
+	if err := b.deleteVMProtocol(ctx, id, rec, b.NetCleanup); err != nil {
 		return err
 	}
 	computeReason := metering.ReasonStopCrash
@@ -164,22 +141,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		computeReason = metering.ReasonStopUser
 	}
 	b.emitDeleteClose(ctx, id, shape, computeReason, hadRunningInterval)
-	if rmErr := RemoveVMDirs(rec.RunDir, rec.LogDir); rmErr != nil {
-		return fmt.Errorf("cleanup VM dirs (gc will retry): %w", rmErr)
-	}
-	if len(migrated) > 0 {
-		b.clearOrphanDirs(ctx, migrated)
-	}
 	return nil
-}
-
-func (b *Backend) clearOrphanDirs(ctx context.Context, dirs []string) {
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		idx.OrphanDirs = slices.DeleteFunc(idx.OrphanDirs, func(d string) bool { return slices.Contains(dirs, d) })
-		return nil
-	}); err != nil {
-		log.WithFunc(b.Typ+".clearOrphanDirs").Warnf(ctx, "clear cleanup intents %v: %v", dirs, err)
-	}
 }
 
 func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
@@ -189,16 +151,4 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 	}
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 	return nil
-}
-
-// migratedDirs returns rec dirs that differ from the configured defaults ("" entries dropped).
-func migratedDirs(rec *VMRecord, defRunDir, defLogDir string) []string {
-	var dirs []string
-	if rec.RunDir != "" && filepath.Clean(rec.RunDir) != filepath.Clean(defRunDir) {
-		dirs = append(dirs, filepath.Clean(rec.RunDir))
-	}
-	if rec.LogDir != "" && filepath.Clean(rec.LogDir) != filepath.Clean(defLogDir) {
-		dirs = append(dirs, filepath.Clean(rec.LogDir))
-	}
-	return dirs
 }

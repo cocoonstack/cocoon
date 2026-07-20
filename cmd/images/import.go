@@ -14,9 +14,8 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/images/cloudimg"
-	"github.com/cocoonstack/cocoon/images/oci"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -99,9 +98,9 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 
 func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.images.importCloudimgFiles")
-	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns())
+	_, cloudimgStore, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
-		return fmt.Errorf("init cloudimg backend: %w", err)
+		return err
 	}
 	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
 		if len(files) == 1 {
@@ -117,9 +116,9 @@ func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, n
 
 func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.images.importOCIFiles")
-	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
+	ociStore, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
-		return fmt.Errorf("init oci backend: %w", err)
+		return err
 	}
 	tracker := ociTracker(ctx, logger, name, func(total int) string {
 		return fmt.Sprintf("importing %s (%d layer(s))", name, total)
@@ -132,9 +131,9 @@ func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name s
 
 func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
 	logger := log.WithFunc("cmd.images.importCloudimgReader")
-	cloudimgStore, err := cloudimg.New(ctx, conf.RootDir, conf.EffectivePullConns())
+	_, cloudimgStore, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
-		return fmt.Errorf("init cloudimg backend: %w", err)
+		return err
 	}
 	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
 		return "reading stream for " + name
@@ -147,9 +146,9 @@ func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, 
 
 func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
 	logger := log.WithFunc("cmd.images.importOCIReader")
-	ociStore, err := oci.New(ctx, conf.RootDir, conf.EffectivePoolSize())
+	ociStore, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
-		return fmt.Errorf("init oci backend: %w", err)
+		return err
 	}
 	tracker := ociTracker(ctx, logger, name, func(int) string {
 		return fmt.Sprintf("importing %s (1 layer from stream)", name)

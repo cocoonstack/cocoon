@@ -2,6 +2,7 @@ package images
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -18,11 +19,23 @@ func (c *BaseConfig) BackendDir() string { return filepath.Join(c.RootDir, c.Sub
 func (c *BaseConfig) DBDir() string      { return filepath.Join(c.BackendDir(), "db") }
 func (c *BaseConfig) TempDir() string    { return filepath.Join(c.BackendDir(), "temp") }
 func (c *BaseConfig) BlobsDir() string   { return filepath.Join(c.BackendDir(), "blobs") }
-func (c *BaseConfig) IndexFile() string  { return filepath.Join(c.DBDir(), "images.json") }
-func (c *BaseConfig) IndexLock() string  { return filepath.Join(c.DBDir(), "images.lock") }
+
+// BlobLockPath is the per-digest lock beside the blob, taken by GC and by any flow that materializes that digest; never removed by cleanup.
+func (c *BaseConfig) BlobLockPath(hex string) string {
+	return filepath.Join(c.BlobsDir(), hex+".lock")
+}
+
+func (c *BaseConfig) IndexFile() string { return filepath.Join(c.DBDir(), "images.json") }
+func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "images.lock") }
 
 func (c *BaseConfig) BlobPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+c.BlobExt)
+}
+
+// OwnsBlob reports whether this backend holds hex's blob file.
+func (c *BaseConfig) OwnsBlob(hex string) bool {
+	_, err := os.Stat(c.BlobPath(hex))
+	return err == nil
 }
 
 func (c *BaseConfig) EnsureBaseDirs() error {

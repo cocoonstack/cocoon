@@ -15,12 +15,9 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/snapshot"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -44,6 +41,11 @@ func WithGCPolicy(p EvictionPolicy) Option {
 	return func(lf *LocalFile) { lf.gcPolicy = p }
 }
 
+// WithBlobPinner injects the digest-lock hook Import holds while committing an envelope's image pins.
+func WithBlobPinner(fn func(context.Context, map[string]struct{}) (func(), error)) Option {
+	return func(lf *LocalFile) { lf.pinBlobs = fn }
+}
+
 var (
 	_ snapshot.Snapshot           = (*LocalFile)(nil)
 	_ snapshot.Direct             = (*LocalFile)(nil)
@@ -55,14 +57,14 @@ var (
 // LocalFile is the local-filesystem snapshot backend.
 type LocalFile struct {
 	conf     *Config
-	store    storage.Store[snapshot.SnapshotIndex]
-	locker   lock.Locker
+	meta     meta.Store
 	metering metering.Recorder
 	gcPolicy EvictionPolicy
+	pinBlobs func(context.Context, map[string]struct{}) (func(), error)
 }
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.
-func New(conf *config.Config, rec metering.Recorder, opts ...Option) (*LocalFile, error) {
+func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...Option) (*LocalFile, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -73,9 +75,7 @@ func New(conf *config.Config, rec metering.Recorder, opts ...Option) (*LocalFile
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	locker := flock.New(cfg.IndexLock())
-	store := storejson.New[snapshot.SnapshotIndex](cfg.IndexFile(), locker)
-	lf := &LocalFile{conf: cfg, store: store, locker: locker, metering: rec}
+	lf := &LocalFile{conf: cfg, meta: store, metering: rec}
 	for _, opt := range opts {
 		opt(lf)
 	}
@@ -90,16 +90,29 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 	if err != nil {
 		return "", types.SnapshotConfig{}, nil, err
 	}
-	release, err := lf.acquireReadLease(ctx, rec.ID)
-	if err != nil {
-		return "", types.SnapshotConfig{}, nil, err
+	// A shared holder can't drive recovery, so this releases the shared lease, recovers exclusively, then re-acquires shared to avoid self-deadlocking an in-place upgrade.
+	for range 2 {
+		release, err := lf.acquireReadLease(ctx, rec.ID)
+		if err != nil {
+			return "", types.SnapshotConfig{}, nil, err
+		}
+		if gErr := lf.guardSnapTombstone(ctx, rec.ID, release); gErr != nil {
+			if errors.Is(gErr, ErrTombstoned) {
+				if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
+					return "", types.SnapshotConfig{}, nil, err
+				}
+				continue
+			}
+			return "", types.SnapshotConfig{}, nil, gErr
+		}
+		// Re-verify under the lease: a delete may have completed between lookup and acquire.
+		if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
+			release()
+			return "", types.SnapshotConfig{}, nil, err
+		}
+		return rec.DataDir, snapshotRecordToConfig(rec), release, nil
 	}
-	// Re-verify under the lease: a delete may have completed between lookup and acquire.
-	if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
-		release()
-		return "", types.SnapshotConfig{}, nil, err
-	}
-	return rec.DataDir, snapshotRecordToConfig(rec), release, nil
+	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
 
 // Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
@@ -191,15 +204,15 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 // List returns all snapshots (excluding pending ones).
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
-	return result, lf.store.With(ctx, func(idx *snapshot.SnapshotIndex) error {
-		for _, rec := range idx.Snapshots {
-			if rec == nil || rec.Pending {
-				continue
+	return result, lf.view(ctx, func(t *snapTx) error {
+		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+			if rec.Pending {
+				return nil
 			}
 			s := rec.Snapshot
 			result = append(result, &s)
-		}
-		return nil
+			return nil
+		})
 	})
 }
 
@@ -215,9 +228,9 @@ func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, 
 // Delete removes each ref (rm dir → DB update); a mid-loop rm-OK-then-DB-fail leaves a stale DB record for GC.
 func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string
-	if err := lf.store.With(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.view(ctx, func(t *snapTx) error {
 		var resolveErr error
-		ids, resolveErr = idx.ResolveMany(refs)
+		ids, resolveErr = t.ResolveMany(refs, snapshot.ErrNotFound)
 		return resolveErr
 	}); err != nil {
 		return nil, err
@@ -242,7 +255,7 @@ func (lf *LocalFile) Restore(ctx context.Context, ref string) (types.SnapshotCon
 }
 
 func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, gcModule(lf.conf, lf.store, lf.locker, lf.gcPolicy, lf.metering))
+	gc.Register(orch, gcModule(lf, lf.gcPolicy))
 }
 
 // acquireBuildLease exclusively leases id while its data dir is being built (Create/Import), so rm/GC cannot resolve-and-delete the half-written dir.
@@ -288,36 +301,22 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
 	}
 	defer fl.Close() //nolint:errcheck
-	if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
-		return fmt.Errorf("remove data dir %s: %w", id, err)
+	// A recordless leftover dir converges without a tombstone — nothing points at it.
+	deletedRecord, hypType, err := lf.deleteSnapshotProtocol(ctx, id, nil)
+	if err != nil {
+		return err
 	}
-	var (
-		hypType       string
-		deletedRecord bool
-	)
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
-		rec := idx.Snapshots[id]
-		if rec == nil {
-			return nil
+	if !deletedRecord {
+		if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
+			return fmt.Errorf("remove data dir %s: %w", id, err)
 		}
-		deletedRecord = true
-		hypType = rec.Hypervisor
-		if rec.Name != "" {
-			delete(idx.Names, rec.Name)
-		}
-		delete(idx.Snapshots, id)
 		return nil
-	}); err != nil {
-		return fmt.Errorf("delete DB record %s: %w", id, err)
 	}
-	if deletedRecord {
-		emitSnapStop(ctx, lf.metering, id, hypType)
-	}
-	_ = os.Remove(lf.conf.LeasePath(id))
+	emitSnapStop(ctx, lf.metering, id, hypType)
+	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
 	return nil
 }
 
-// beginCreate validates cfg and inserts the pending placeholder record, returning the data dir.
 func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig) (string, error) {
 	if err := cfg.Validate(); err != nil {
 		return "", err
@@ -333,22 +332,24 @@ func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig)
 	return dataDir, nil
 }
 
-// finalizeCreate measures dataDir, flips the pending record durable, and emits metering.
 func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConfig, dataDir string) error {
 	size, err := utils.DirSize(dataDir)
 	if err != nil {
 		return fmt.Errorf("compute data dir size: %w", err)
 	}
 	finalizedAt := time.Now()
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
-		rec := idx.Snapshots[cfg.ID]
+	if err := lf.update(ctx, func(t *snapTx) error {
+		rec, err := t.Get(cfg.ID)
+		if err != nil {
+			return err
+		}
 		if rec == nil {
 			return fmt.Errorf("snapshot %q disappeared from index", cfg.ID)
 		}
 		rec.Pending = false
 		rec.SizeBytes = size
 		rec.LastAccessedAt = finalizedAt
-		return nil
+		return t.Put(cfg.ID, rec)
 	}); err != nil {
 		return fmt.Errorf("finalize snapshot: %w", err)
 	}
@@ -356,37 +357,40 @@ func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConf
 	return nil
 }
 
-// insertRecord adds rec under id with name-collision check; both Create (Pending) and Import (finalized) go through here.
 func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *snapshot.SnapshotRecord) error {
-	return lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+	return lf.update(ctx, func(t *snapTx) error {
 		// Reject an existing ID: a same-ID retry must not adopt (and later roll back) a finalized snapshot.
-		if idx.Snapshots[id] != nil {
+		if existing, err := t.Get(id); err != nil {
+			return err
+		} else if existing != nil {
 			return fmt.Errorf("snapshot id %q already exists", id)
 		}
 		if name != "" {
-			if existingID, ok := idx.Names[name]; ok {
+			if existingID, ok, err := t.NameGet(name); err != nil {
+				return err
+			} else if ok {
 				return fmt.Errorf("snapshot name %q already in use by %s", name, existingID)
 			}
 		}
-		idx.Snapshots[id] = rec
+		if err := t.Put(id, rec); err != nil {
+			return err
+		}
 		if name != "" {
-			idx.Names[name] = id
+			return t.NameSet(name, id)
 		}
 		return nil
 	})
 }
 
-// rollbackCreate removes a placeholder snapshot record from the DB.
 func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 	// Survives Ctrl-C: a pending record left behind blocks same-name retries until GC.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 	defer cancel()
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
-		delete(idx.Snapshots, id)
-		if name != "" && idx.Names[name] == id {
-			delete(idx.Names, name)
+	if err := lf.update(ctx, func(t *snapTx) error {
+		if err := t.Del(id); err != nil {
+			return err
 		}
-		return nil
+		return t.NameDelIfOwned(name, id)
 	}); err != nil {
 		log.WithFunc("localfile.rollbackCreate").Warnf(ctx, "rollback snapshot %s (name=%s): %v", id, name, err)
 	}
@@ -395,25 +399,31 @@ func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 // lookupRecord resolves ref to a non-pending record; touch=true also bumps LastAccessedAt under the same write lock.
 func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (snapshot.SnapshotRecord, error) {
 	var rec snapshot.SnapshotRecord
-	apply := func(idx *snapshot.SnapshotIndex) error {
-		id, err := idx.Resolve(ref)
+	apply := func(t *snapTx) error {
+		id, err := t.Resolve(ref, snapshot.ErrNotFound)
 		if err != nil {
 			return err
 		}
-		r := idx.Snapshots[id]
+		r, err := t.Get(id)
+		if err != nil {
+			return err
+		}
 		if r == nil || r.Pending {
 			return snapshot.ErrNotFound
 		}
 		if touch {
 			r.LastAccessedAt = time.Now()
+			if err := t.Put(id, r); err != nil {
+				return err
+			}
 		}
 		rec = *r
 		return nil
 	}
 	if touch {
-		return rec, lf.store.Update(ctx, apply)
+		return rec, lf.update(ctx, apply)
 	}
-	return rec, lf.store.With(ctx, apply)
+	return rec, lf.view(ctx, apply)
 }
 
 // snapshotRecordToConfig builds a detached SnapshotConfig from a record, deep-copying ImageBlobIDs so the caller can use it after the lock is released.

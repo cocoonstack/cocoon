@@ -13,6 +13,7 @@ import (
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -51,9 +52,16 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	nsName := netnsName(vmID)
 	nsPath := netnsPath(vmID)
 
+	if err = c.guardAdd(ctx, vmID); err != nil {
+		return nil, err
+	}
+
 	var stale map[string]networkRecord
-	if err = c.store.With(ctx, func(idx *networkIndex) error {
-		records := idx.byVMID(vmID)
+	if err = c.view(ctx, func(t *netTx) error {
+		records, byErr := t.byVMID(vmID)
+		if byErr != nil {
+			return byErr
+		}
 		stale = make(map[string]networkRecord, len(records))
 		for _, r := range records {
 			stale[r.IfName] = r
@@ -148,19 +156,36 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 	}
 
-	return configs, c.store.Update(ctx, func(idx *networkIndex) error {
+	return configs, c.update(ctx, func(t *netTx) error {
 		for _, f := range fresh {
-			rec := idx.Networks[f.recID]
+			rec, err := t.Get(f.recID)
+			if err != nil {
+				return err
+			}
 			if rec == nil { // intent vanished (concurrent sweep): reinsert
 				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: fmt.Sprintf("eth%d", f.index)}
-				idx.Networks[f.recID] = rec
 			}
 			if f.cfg.Network != nil {
 				rec.Network = *f.cfg.Network
 			}
+			if err := t.Put(f.recID, rec); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
+}
+
+// guardAdd finishes an interrupted teardown before new NICs are plumbed; a completed deleting roll-forward refuses the Add.
+func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
+	rolledForward, err := c.recoverTombstone(ctx, vmID)
+	if err != nil {
+		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
+	}
+	if rolledForward {
+		return fmt.Errorf("vm %s network teardown was interrupted; recovery completed, retry the operation: %w", vmID, meta.ErrConflict)
+	}
+	return nil
 }
 
 // Remove tears down NIC plumbing for the given indices; preserves the netns. A failed NIC keeps its DB record so retry / vm rm / GC can still release its CNI resources.
@@ -169,9 +194,10 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		return nil
 	}
 	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		records, err = t.byVMID(vmID)
+		return err
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
@@ -193,8 +219,12 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
 	}
-	downIDs, err := c.tearDownNICs(ctx, vmID, netnsPath(vmID), picked, true)
-	return errors.Join(err, c.deleteRecords(ctx, downIDs))
+	// The payload names record IDs, never NIC indices, so a crash mid-teardown recovers exactly these rows and leaves the netns and the other NICs alone.
+	subset := make([]string, 0, len(picked))
+	for _, r := range picked {
+		subset = append(subset, r.ID)
+	}
+	return c.teardownProtocol(ctx, vmID, subset, true)
 }
 
 // stageNICIntents reclaims stale slots and lands every fresh NIC's intent record in one write before any plugin ADD: GC gets per-NIC release context at the cost of a single fsync on the claim path.
@@ -219,9 +249,11 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	if len(intents) == 0 {
 		return recIDs, nil
 	}
-	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+	if err := c.update(ctx, func(t *netTx) error {
 		for _, rec := range intents {
-			idx.Networks[rec.ID] = rec
+			if err := t.Put(rec.ID, rec); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -230,7 +262,6 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	return recIDs, nil
 }
 
-// nicRuntime builds one NIC's runtime conf; recovered NICs get a pre-DEL and their persisted IP pinned.
 func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) *libcni.RuntimeConf {
 	ifName := fmt.Sprintf("eth%d", spec.Index)
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
@@ -245,7 +276,6 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 	return rt
 }
 
-// provisionNIC runs the plugin ADD and wires the TAP via TC redirect, returning the NIC's host-side config.
 func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigList, rt *libcni.RuntimeConf, vmID, nsPath string, vmCfg *types.VMConfig, spec network.AddSpec) (*types.NetworkConfig, error) {
 	ifName := fmt.Sprintf("eth%d", spec.Index)
 	tapName := tapNameForVM(vmID, spec.Index)
@@ -319,7 +349,6 @@ func ensureNetns(name, nsPath string) (bool, error) {
 	return true, nil
 }
 
-// extractNetworkInfo converts a CNI ADD result into types.Network.
 func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Network, error) {
 	newResult, err := current.NewResultFromResult(result)
 	if err != nil {

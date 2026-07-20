@@ -31,7 +31,10 @@ jobs:
         run: go vet ./...
 
       - name: Test with coverage
-        run: go test -race -timeout 120s -count=1 -cover -coverprofile=coverage.out ./...
+        env:
+          # Constrained runners: token storm scale; the full 256-process gate runs offline.
+          COCOON_STORM_WORKERS: "2"
+        run: go test -race -timeout 20m -count=1 -cover -coverprofile=coverage.out ./...
 
       - name: Upload coverage artifact
         continue-on-error: true

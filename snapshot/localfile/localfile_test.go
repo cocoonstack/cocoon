@@ -13,11 +13,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
@@ -27,7 +30,7 @@ import (
 
 func TestNew(t *testing.T) {
 	dir := t.TempDir()
-	lf, err := New(&config.Config{RootDir: dir}, metering.NopRecorder{})
+	lf, err := New(&config.Config{RootDir: dir}, metering.NopRecorder{}, newTestMetaStore(t, &config.Config{RootDir: dir}))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -37,7 +40,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNew_NilConfig(t *testing.T) {
-	_, err := New(nil, metering.NopRecorder{})
+	_, err := New(nil, metering.NopRecorder{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil config")
 	}
@@ -192,7 +195,7 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	// Check the index directly: Inspect hides pending records, so it cannot
 	// distinguish "rolled back" from "stale pending left behind" — and a stale
 	// name reservation would fail the tar-fallback Create with "already in use".
-	if err := lf.store.With(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbRead(ctx, func(idx *snapshotIndex) error {
 		if _, stale := idx.Snapshots[id]; stale {
 			return fmt.Errorf("pending record %s still in index", id)
 		}
@@ -1413,7 +1416,8 @@ func newTestLF(t *testing.T) *LocalFile {
 func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
 	t.Helper()
 	dir := t.TempDir()
-	lf, err := New(&config.Config{RootDir: dir}, rec)
+	conf := &config.Config{RootDir: dir}
+	lf, err := New(conf, rec, newTestMetaStore(t, conf))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -1508,4 +1512,63 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		t.Fatalf("Create: %v", err)
 	}
 	return id
+}
+
+var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "snapshots", Table: TableRecords},
+	{Key: "names", Table: TableNames},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
+// testSnapNamespace mirrors the composition root's snapshots declaration.
+func testSnapNamespace(conf *config.Config) metajson.Namespace {
+	cfg := NewConfig(conf)
+	return metajson.Namespace{Name: NamespaceName, FilePath: cfg.IndexFile(), LockPath: cfg.IndexLock(), Codec: testSnapTables}
+}
+
+// newTestMetaStore opens the snapshot namespace over conf for tests.
+func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
+	t.Helper()
+	store, err := metajson.Open(testSnapNamespace(conf))
+	if err != nil {
+		t.Fatalf("open meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+// TestImportPinsEnvelopeBlobs pins the digest-lock hook: Import must hold the
+// injected pinner over exactly the envelope's blob IDs while committing.
+func TestImportPinsEnvelopeBlobs(t *testing.T) {
+	src := newTestLF(t)
+	ctx := t.Context()
+	id := makeExportableSnapshot(t, src, "pin-src", map[string][]byte{"cow.raw": []byte("x")})
+	stream, err := src.Export(ctx, id)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer stream.Close()
+
+	var pinned []string
+	released := false
+	dir := t.TempDir()
+	conf := &config.Config{RootDir: dir}
+	dst, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf),
+		WithBlobPinner(func(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+			pinned = slices.Sorted(maps.Keys(blobIDs))
+			return func() { released = true }, nil
+		}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := dst.Import(ctx, stream, "pin-dst", ""); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if want := []string{"blob1"}; !slices.Equal(pinned, want) {
+		t.Fatalf("pinner got %v, want %v", pinned, want)
+	}
+	if !released {
+		t.Fatal("pin never released")
+	}
 }

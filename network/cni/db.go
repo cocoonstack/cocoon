@@ -15,26 +15,3 @@ type networkRecord struct {
 	// IfName is the CNI interface name inside the netns (eth0, eth1, ...).
 	IfName string `json:"if_name"`
 }
-
-// networkIndex is the top-level DB structure for the CNI network provider.
-type networkIndex struct {
-	Networks map[string]*networkRecord `json:"networks"`
-}
-
-// Init implements storage.Initer.
-func (idx *networkIndex) Init() {
-	if idx.Networks == nil {
-		idx.Networks = make(map[string]*networkRecord)
-	}
-}
-
-// byVMID returns detached copies of vmID's records, safe to use after the lock is released.
-func (idx *networkIndex) byVMID(vmID string) []networkRecord {
-	var out []networkRecord
-	for _, rec := range idx.Networks {
-		if rec != nil && rec.VMID == vmID {
-			out = append(out, *rec)
-		}
-	}
-	return out
-}

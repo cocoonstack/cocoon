@@ -7,8 +7,11 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// defaultPullConns is the default concurrent Range connections per cloud-image download.
-const defaultPullConns = 8
+const (
+	// NamespaceName is this backend's meta namespace.
+	NamespaceName    = "images_cloudimg"
+	defaultPullConns = 8
+)
 
 type Config struct {
 	images.BaseConfig

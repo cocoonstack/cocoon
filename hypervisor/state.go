@@ -101,26 +101,44 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	if state == types.VMStateRunning {
 		return fmt.Errorf("UpdateStates(Running) not allowed; use BatchMarkStarted")
 	}
-	now := time.Now()
-	var stopped []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
+	now := timeNow()
+	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+		r.State = state
+		r.UpdatedAt = now
+		if state == types.VMStateStopped && hasOpenComputeInterval(r) {
+			r.StoppedAt = &now
+			return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
+		}
+		return nil
+	})
+}
+
+// batchUpdateVMs mutates each present id in one transaction; mutate's
+// metering entries stage inside the closure and publish only after commit,
+// so a retried closure cannot double-emit (meta contract clause 1).
+func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
+	var emits []metering.Entry
+	if err := b.update(ctx, func(t *vmTx) error {
+		staged := []metering.Entry{}
 		for _, id := range ids {
-			r := idx.VMs[id]
+			r, err := t.Get(id)
+			if err != nil {
+				return err
+			}
 			if r == nil {
 				continue
 			}
-			r.State = state
-			r.UpdatedAt = now
-			if state == types.VMStateStopped && hasOpenComputeInterval(r) {
-				r.StoppedAt = &now
-				stopped = append(stopped, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now))
+			staged = append(staged, mutate(r, id)...)
+			if err := t.Put(id, r); err != nil {
+				return err
 			}
 		}
+		emits = staged
 		return nil
 	}); err != nil {
 		return err
 	}
-	b.emitAll(ctx, stopped)
+	b.emitAll(ctx, emits)
 	return nil
 }
 
@@ -135,16 +153,16 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
-	now := time.Now()
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
-		if r == nil {
-			return nil
+	now := timeNow()
+	if err := b.update(ctx, func(t *vmTx) error {
+		r, err := t.Get(id)
+		if err != nil || r == nil {
+			return err
 		}
 		r.State = types.VMStateError
 		r.Quarantine = reason
 		r.UpdatedAt = now
-		return nil
+		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
 	}
@@ -155,58 +173,33 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	now := time.Now()
-	var emits []metering.Entry
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		for _, id := range ids {
-			r := idx.VMs[id]
-			if r == nil {
-				continue
-			}
-			shape := shapeFromConfig(r.Config)
-			if hasOpenComputeInterval(r) {
-				emits = append(emits, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
-			}
-			reason := bootOrRestartReason(r.FirstBooted)
-			emits = append(emits, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
-			r.State = types.VMStateRunning
-			r.StartedAt = &now
-			r.StoppedAt = nil
-			r.UpdatedAt = now
-			r.FirstBooted = true
+	now := timeNow()
+	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+		shape := shapeFromConfig(r.Config)
+		var staged []metering.Entry
+		if hasOpenComputeInterval(r) {
+			staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	b.emitAll(ctx, emits)
-	return nil
-}
-
-// CleanStalePlaceholders removes "creating" records past GC grace period.
-func (b *Backend) CleanStalePlaceholders(_ context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	cutoff := time.Now().Add(-CreatingStateGCGrace)
-	return b.DB.WriteRaw(func(idx *VMIndex) error {
-		utils.CleanStaleRecords(
-			idx.VMs, idx.Names, ids,
-			func(r *VMRecord) string { return r.Config.Name },
-			func(r *VMRecord) bool {
-				return r.State == types.VMStateCreating && r.UpdatedAt.Before(cutoff)
-			},
-		)
-		return nil
+		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, bootOrRestartReason(r.FirstBooted), shape, now))
+		r.State = types.VMStateRunning
+		r.StartedAt = &now
+		r.StoppedAt = nil
+		r.UpdatedAt = now
+		r.FirstBooted = true
+		return staged
 	})
 }
 
 // closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.
 func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
-	now := time.Now()
+	now := timeNow()
 	closed := false
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[rec.ID]
+	if err := b.update(ctx, func(t *vmTx) error {
+		closed = false
+		r, err := t.Get(rec.ID)
+		if err != nil {
+			return err
+		}
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
@@ -216,7 +209,7 @@ func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) 
 		r.StoppedAt = &now
 		r.UpdatedAt = now
 		closed = true
-		return nil
+		return t.Put(rec.ID, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".closeStaleComputeInterval").Warnf(ctx, "close interval for %s: %v", rec.ID, err)
 		return
@@ -229,14 +222,18 @@ func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) 
 
 // reconcileToRunning flips State→Running for a drifted record whose process is alive. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
 func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
-	now := time.Now()
+	now := timeNow()
 	var (
 		emit   bool
 		shape  metering.Shape
 		reason metering.Reason
 	)
-	if err := b.DB.Update(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
+	if err := b.update(ctx, func(t *vmTx) error {
+		emit = false
+		r, err := t.Get(id)
+		if err != nil {
+			return err
+		}
 		if r == nil || r.State == types.VMStateRunning {
 			return nil
 		}
@@ -244,7 +241,7 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 			r.State = types.VMStateRunning
 			r.StoppedAt = nil
 			r.UpdatedAt = now
-			return nil
+			return t.Put(id, r)
 		}
 		emit = true
 		shape = shapeFromConfig(r.Config)
@@ -254,7 +251,7 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		r.StoppedAt = nil
 		r.UpdatedAt = now
 		r.FirstBooted = true
-		return nil
+		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".reconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
 		return
@@ -274,7 +271,6 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// bootOrRestartReason picks the metering reason for a VM's compute.start event.
 func bootOrRestartReason(firstBooted bool) metering.Reason {
 	if firstBooted {
 		return metering.ReasonRestart

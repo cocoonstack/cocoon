@@ -34,16 +34,16 @@ type Hypervisor interface {
 	RegisterGC(*gc.Orchestrator)
 }
 
-// Watchable is optionally implemented by hypervisors that support file-based state watching.
-type Watchable interface {
-	WatchPath() string
-}
-
 // Reserver pre-claims a VM ID before host resources (network) are provisioned, closing the window where GC would see ownerless TAP/netns. Callers hold LockVMOps from the claim through Create/Clone so a concurrent rm/start cannot interleave with the half-built VM.
 type Reserver interface {
 	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error
 	RollbackCreate(ctx context.Context, id, name string)
 	LockVMOps(ctx context.Context, vmID string) (func(), error)
+}
+
+// EntryGuarded lets cmd-layer flows run the tombstone entry guard under the ops lock before an entrypoint, so a half-removed resource is never rebuilt.
+type EntryGuarded interface {
+	EntryGuard(ctx context.Context, id string) error
 }
 
 // Direct is an optional interface for hypervisors that support clone/restore from a local snapshot directory.

@@ -12,14 +12,13 @@ import (
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 func commit(
 	ctx context.Context,
 	conf *Config,
-	store storage.Store[imageIndex],
+	store *images.Store[imageEntry],
 	ref string,
 	tracker progress.Tracker,
 	sourcePath string,
@@ -47,15 +46,23 @@ func commit(
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
-	if err := store.Update(ctx, func(idx *imageIndex) error {
-		if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
-			if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
-				return fmt.Errorf("rename blob: %w", renameErr)
-			}
-			if chmodErr := os.Chmod(blobPath, 0o444); chmodErr != nil { //nolint:gosec // G302: intentionally world-readable
-				logger.Warnf(ctx, "chmod blob %s: %v", blobPath, chmodErr)
-			}
+	// Per-digest lock spans rename→index-commit: GC's TryLock cannot delete a
+	// blob that is on disk but not yet indexed (design §5). The rename runs
+	// outside any transaction; the index write is one pure transaction.
+	var blobLocks images.BlobLocks
+	defer blobLocks.Release()
+	if err := blobLocks.Lock(conf.BlobLockPath(digestHex)); err != nil {
+		return err
+	}
+	if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
+		if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
+			return fmt.Errorf("rename blob: %w", renameErr)
 		}
+		if chmodErr := os.Chmod(blobPath, 0o444); chmodErr != nil { //nolint:gosec // G302: intentionally world-readable
+			logger.Warnf(ctx, "chmod blob %s: %v", blobPath, chmodErr)
+		}
+	}
+	if err := store.Update(ctx, func(idx *imageIndex) error {
 		return writeIndexEntry(idx, conf, ref, digestHex)
 	}); err != nil {
 		return fmt.Errorf("update index: %w", err)
@@ -82,7 +89,6 @@ func prepareTmpBlob(
 		info.Format, info.Compat, info.HasBackingFile)
 
 	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
-		// Fast path: the source is already a final-form qcow2 blob.
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
 		if err := os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)

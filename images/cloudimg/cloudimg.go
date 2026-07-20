@@ -9,9 +9,8 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/cocoonstack/cocoon/images"
-	"github.com/cocoonstack/cocoon/lock"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/progress"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -22,15 +21,15 @@ var _ images.Images = (*CloudImg)(nil)
 
 // CloudImg stores cloud image blobs for UEFI boot under Cloud Hypervisor.
 type CloudImg struct {
-	conf      *Config
-	store     storage.Store[imageIndex]
-	locker    lock.Locker
-	pullGroup singleflight.Group
-	ops       images.Ops[imageIndex, imageEntry]
+	conf            *Config
+	store           *images.Store[imageEntry]
+	pullGroup       singleflight.Group
+	ops             images.Ops[imageEntry]
+	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.
-func New(ctx context.Context, rootDir string, pullConns int) (*CloudImg, error) {
+func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Store) (*CloudImg, error) {
 	cfg := NewConfig(rootDir, pullConns)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -38,17 +37,15 @@ func New(ctx context.Context, rootDir string, pullConns int) (*CloudImg, error) 
 
 	log.WithFunc("cloudimg.New").Debugf(ctx, "cloud image backend initialized, pull conns: %d", cfg.PullConns)
 
-	store, locker := images.NewStore[imageIndex](cfg.IndexFile(), cfg.IndexLock())
+	store := images.NewMetaStore[imageEntry](metaStore, NamespaceName)
 	c := &CloudImg{
-		conf:   cfg,
-		store:  store,
-		locker: locker,
-		ops: images.Ops[imageIndex, imageEntry]{
+		conf:  cfg,
+		store: store,
+		ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,
-			LookupRefs: func(idx *imageIndex, q string) []string { return idx.LookupRefs(q) },
-			Entries:    func(idx *imageIndex) map[string]*imageEntry { return idx.Images },
-			Sizer:      imageSizer,
+			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id) },
+			Sizer:      func(e *imageEntry) int64 { return e.Size },
 		},
 	}
 	return c, nil
@@ -94,11 +91,11 @@ func (c *CloudImg) Delete(ctx context.Context, ids []string) ([]string, error) {
 
 // Config resolves cloud images to qcow2 storage plus firmware boot config.
 func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
-	err = c.store.With(ctx, func(idx *imageIndex) error {
+	err = c.store.View(ctx, func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))
 		boot = make([]*types.BootConfig, len(vms))
 		for i, vm := range vms {
-			_, entry, ok := idx.Lookup(vm.Image)
+			_, entry, ok := images.LookupOne(idx.Images, vm.Image)
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}

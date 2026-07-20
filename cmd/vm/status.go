@@ -16,12 +16,10 @@ import (
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
-
-const statusWatchDebounce = 200 * time.Millisecond
 
 type vmEvent struct {
 	Event string   `json:"event"`
@@ -80,7 +78,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 		return statusOnce(ctx, hypers, args, format)
 	}
 
-	watchCh := mergeWatchChannels(ctx, hypers)
+	watchCh := metaEvents(ctx, conf)
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
@@ -124,44 +122,18 @@ func renderVMList(vms []*types.VM, format string) error {
 	})
 }
 
-func mergeWatchChannels(ctx context.Context, hypers []hypervisor.Hypervisor) <-chan struct{} {
-	var channels []<-chan struct{}
-	for _, h := range hypers {
-		w, ok := h.(hypervisor.Watchable)
-		if !ok {
-			continue
-		}
-		ch, err := utils.WatchFile(ctx, w.WatchPath(), statusWatchDebounce)
-		if err == nil {
-			channels = append(channels, ch)
-		}
-	}
-	if len(channels) == 0 {
+// metaEvents subscribes to the meta store's coalesced change signal.
+func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
+	store, err := cmdcore.MetaStore(conf)
+	if err != nil {
 		return nil
 	}
-	if len(channels) == 1 {
-		return channels[0]
+	ch, release, err := store.Events(ctx)
+	if err != nil {
+		return nil
 	}
-	merged := make(chan struct{}, 1)
-	for _, ch := range channels {
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case _, ok := <-ch:
-					if !ok {
-						return
-					}
-					select {
-					case merged <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}()
-	}
-	return merged
+	context.AfterFunc(ctx, release)
+	return ch
 }
 
 func runLoop(ctx context.Context, watchCh <-chan struct{}, tick <-chan time.Time, fn func()) {

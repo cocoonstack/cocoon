@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"os"
 
 	"github.com/cocoonstack/cocoon/gc"
@@ -9,21 +10,35 @@ import (
 )
 
 func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
-	return images.BuildGCModule(images.GCModuleConfig[imageIndex]{
+	return images.BuildGCModule(images.GCModuleConfig[imageEntry]{
 		Name:      typ,
-		Locker:    o.locker,
 		Store:     o.store,
-		ReadRefs:  func(idx *imageIndex) map[string]struct{} { return images.ReferencedDigests(idx.Images) },
+		LockPath:  o.conf.BlobLockPath,
+		ReadRefs:  images.ReferencedDigests[imageEntry],
 		ScanDisk:  func() ([]string, error) { return utils.ScanFileStems(o.conf.BlobsDir(), o.conf.BlobExt) },
 		ExtraDisk: func() ([]string, error) { return utils.ScanSubdirs(o.conf.BootBaseDir()) },
 		Removers: []func(string) error{
 			func(hex string) error { return os.Remove(o.conf.BlobPath(hex)) },
 			func(hex string) error { return os.RemoveAll(o.conf.BootDir(hex)) },
 		},
-		TempDir: o.conf.TempDir(),
-		DirOnly: true,
+		TempDir:         o.conf.TempDir(),
+		DirOnly:         true,
+		PinnedElsewhere: o.pinnedElsewhere,
 	})
 }
+
+// SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
+func (o *OCI) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, error)) {
+	o.pinnedElsewhere = fn
+}
+
+// PinBlobs implements images.Images: digest locks held while the caller commits a pin.
+func (o *OCI) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+	return images.PinBlobs(&o.conf.BaseConfig, blobIDs)
+}
+
+// OwnsBlob reports whether this backend holds hex's blob file.
+func (o *OCI) OwnsBlob(hex string) bool { return o.conf.OwnsBlob(hex) }
 
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, o.GCModule())

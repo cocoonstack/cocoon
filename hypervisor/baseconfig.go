@@ -76,5 +76,7 @@ func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity fu
 	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
 }
 
+func (c *BaseConfig) RootDirPath() string { return c.RootDir }
+
 func (c *BaseConfig) dir() string   { return filepath.Join(c.RootDir, c.backendName) }
 func (c *BaseConfig) dbDir() string { return filepath.Join(c.dir(), "db") }
