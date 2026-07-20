@@ -1,6 +1,20 @@
-# Meta store: unified metadata layer (design v2.27)
+# Meta store: unified metadata layer (design v2.28)
 
-Status: frozen at v2.27; implementation in progress (issue #146).
+Status: frozen at v2.28; P0-P3 implemented (issue #146).
+v2.28 (P2/P3 as-built amendments): the sqlite physical schema is the generic
+`(id, data)` row per (namespace, table) — the record SPI's own shape — not
+§2's earlier domain-typed sketch; `meta init`/`meta convert`/`meta backup`
+take no target flag (the effective `meta_backend` is the sole authority);
+the convert name check is referential (every name resolves to a live record)
+rather than per-record derivation, which would need domain field knowledge
+the engine-neutral tool must not have; manifest aside-progress is tracked by
+source-file absence, not recorded paths; the json engine cannot see the
+manifest path itself, so the ordinary-open refusal for it lives at the
+composition root (`cmd/core.MetaStore`) while the sqlite engine also refuses
+internally; `Log`/`Seq` return as an SPI-layered primitive (in-table cursor
+row, rollback reuses the number on both engines; gaps stay legal for future
+engines) with the opt-in `metering.backend: meta` consumer writing Relaxed —
+matching the file backend's no-fsync durability.
 v2.27 (API narrowing): the unique/non-unique index options (`WithUnique`,
 `Find`, `FindAll`), the `Get1` sugar and the `Log`/`Seq` primitives are
 removed from the P0/P1 surface — no consumer exists (the domain
@@ -126,6 +140,13 @@ repositories (§1a). The log primitive (`Log`/`Seq`/`Scan(after)`) is out of
 the P0/P1 surface (v2.27) and returns with its P3 metering consumer,
 carrying the original contract: committed `Seq` unique and strictly
 increasing, rolled-back numbers reusable, `Scan(after)` exclusive.
+As built (v2.28): `Log[R]` layers on the record SPI like `Collection` —
+entries keyed by zero-padded decimal Seq, the cursor a reserved in-table
+row — so BOTH engines get identical semantics with zero engine code;
+rollback reuses the number on both (gaps remain legal for future engines).
+Consumer: `metering.backend: meta` (opt-in; the default file backend keeps
+the hot path untouched), appending `CommitRelaxed` — the same
+no-fsync-per-entry durability the file backend already has.
 
 ```go
 func NewCollection[R any](s Store, ns, table string) *Collection[R]
@@ -176,10 +197,21 @@ the CLI drives today can shrink.
 
 ## 2. Schema (sqlite engine; one DB, namespace = table group)
 
-JSON payload column everywhere (existing struct tags; low schema churn);
-secondary keys and per-row metadata extracted into real columns. **Lossless
+JSON payload column everywhere (existing struct tags; low schema churn).
+**As built (v2.28): every table is the generic `(id TEXT NOT NULL PRIMARY
+KEY, data TEXT NOT NULL)` pair, one table per (namespace, table) named
+`"<ns>__<table>"`.** The record SPI (`GetRaw`/`ScanRaw`/`PutRaw`/`DeleteRaw`)
+is the proven P0 boundary; storing exactly its shape keeps the engine free of
+per-namespace codecs and keeps domain field knowledge out of the engine —
+the same coupling P0 removed from the subsystems. The domain-typed sketch
+below is RETIRED with its consequences re-homed: name uniqueness is the
+`names` table's primary key (name → id, absent when unnamed — no NULL
+mapping needed); per-ref payload survives because refs are ordinary rows
+with `data`; the `networks_by_vm` index is dropped (meta-scale scans, §8
+envelope); tombstone fields live inside `data` as the §5 payload. **Lossless
 representation of today's records is a hard requirement** — the fixtures gate
-in §9 enforces it.
+in §9 enforces it, byte-for-byte, because conversion copies SPI rows
+verbatim.
 
 ```sql
 -- Set ONLY when creating a fresh DB; on every open they are READ and verified,
@@ -200,6 +232,11 @@ CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NUL
 -- NOT NULL is explicit on every PK column: SQLite implies it only for a lone
 -- INTEGER PRIMARY KEY (rowid alias); every other PK shape admits NULLs.
 
+-- AS BUILT (v2.28): per (namespace, table) declared by the composition root —
+CREATE TABLE "vms_cloudhypervisor__records" (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
+-- ... same shape for every declared (namespace, table) pair.
+
+-- RETIRED SKETCH (v2.27, superseded — kept for the rationale in its comments):
 -- namespace vms_firecracker (same shape for vms_cloudhypervisor)
 CREATE TABLE vms_firecracker            (id TEXT NOT NULL PRIMARY KEY, name TEXT UNIQUE, data TEXT NOT NULL);
 CREATE TABLE vms_firecracker_orphandirs (path TEXT NOT NULL PRIMARY KEY);
@@ -511,8 +548,9 @@ initialization is an ops step — never implicit library behavior racing
 concurrent CLIs. Deployments staying on the json engine (the default) never
 convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
 
-- **Initialization is explicit and atomic.** `cocoon meta init --backend
-  sqlite` creates the DB on a fresh root: schema DDL, `application_id`,
+- **Initialization is explicit and atomic.** `cocoon meta init` (sqlite is
+  the only backend needing one; it refuses unless the effective
+  `meta_backend` is sqlite) creates the DB on a fresh root: schema DDL, `application_id`,
   `user_version` and one `meta_state` row per namespace
   (`state='initialized'`, `records=0`) all commit in ONE transaction —
   SQLite's DDL is transactional, so a crash mid-init leaves either nothing or
@@ -526,12 +564,16 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   NEWER than the binary understands fails closed with a clear message; an
   older `user_version` is upgraded only by an explicit, transactional schema
   migration, never implicitly at open time.
-- **`cocoon meta convert --to sqlite|json`** performs a cutover into a
+- **`cocoon meta convert`** (no target flag — the effective `meta_backend`
+  IS the target, which folds the "config already selects X" precondition
+  below into the command's shape) performs a cutover into a
   **fresh target**: advisory check that no cocoon activity is present (legacy
   locks free); load each namespace via the source engine
-  (json source preserves `.prev` recovery); derive the name index from
-  records and VERIFY it against the source's own name map (mismatch → abort
-  with a report); write all records plus — for a SQLITE target only, since
+  (json source preserves `.prev` recovery); verify the name index
+  referentially — every name entry must resolve to a live record, plus the
+  record count against the manifest (per-record derivation is out: it would
+  need domain field knowledge the engine-neutral tool must not have);
+  write all records plus — for a SQLITE target only, since
   json has no such concept — the `meta_state` row
   (`state='converted'`, source path, sha256, record count) in one Durable
   transaction per namespace; commit; then rename the source aside
@@ -543,8 +585,9 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   sqlite-engine concept and a json target has no equivalent — so the tool
   keeps its own engine-independent manifest at the meta root
   (`meta-convert.manifest`): source identity (paths + per-namespace digest +
-  record counts), target engine, per-namespace completion marks, and aside
-  paths. **A json source is TWO files, and both are authority**: main and
+  record counts), target engine, and per-namespace completion marks. Aside
+  progress needs no manifest field: retirement renames are per-file and a
+  rerun simply skips sources already absent. **A json source is TWO files, and both are authority**: main and
   `.prev`. Manifest entries, the move-aside, and the "target must be fresh"
   check all name both generations — otherwise a json→sqlite→json round trip
   can leave a pre-conversion `.prev` beside the new main, and the json
@@ -603,7 +646,10 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   operator at `meta convert`; ONLY the conversion/recovery path opens with a
   manifest present, to verify and then remove it. Without this a
   half-converted json target would open normally and its not-yet-written
-  namespaces would read as empty.
+  namespaces would read as empty. Enforcement seams (v2.28): the sqlite
+  engine refuses in `Open`/`Init` itself; the json engine cannot know the
+  manifest path, so its refusal lives at the composition root
+  (`cmd/core.MetaStore`), which guards both backends before either opens.
 - **Fail-closed open (sqlite engine only).** With `meta_backend: sqlite`,
   opening a namespace with no `meta_state` row refuses: "run
   `cocoon meta convert`" when a legacy source exists, "run `cocoon meta init`"

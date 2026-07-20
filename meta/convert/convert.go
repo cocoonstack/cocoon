@@ -16,6 +16,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
@@ -71,6 +72,9 @@ func Run(ctx context.Context, spec Spec, target string) error {
 }
 
 func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {
+	if err := checkQuiesced(ctx, spec, target); err != nil {
+		return err
+	}
 	src, err := openSource(spec, target)
 	if err != nil {
 		return err
@@ -115,6 +119,31 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 		m.Namespaces[ns.Name] = &NSRecord{Files: sourceFiles(spec, target, ns.Name), SHA256: digest, Records: count}
 	}
 	return m, nil
+}
+
+// checkQuiesced is §6's advisory activity check: a held json namespace lock
+// means live cocoon processes, and converting under them would lose writes
+// landing after a namespace is copied.
+func checkQuiesced(ctx context.Context, spec Spec, target string) error {
+	if target != "sqlite" {
+		return nil
+	}
+	for _, jns := range spec.JSON {
+		// Persistent form: the engine's own locks are persistent, and a
+		// transient probe would delete the shared lock file on release.
+		l := flock.New(jns.LockPath)
+		ok, err := l.TryLock(ctx)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("namespace %s lock is held; stop cocoon activity before converting", jns.Name)
+		}
+		if err := l.Unlock(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // openSource opens the engine being converted FROM (the opposite of target).
