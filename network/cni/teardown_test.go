@@ -2,9 +2,12 @@ package cni
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
@@ -112,4 +115,63 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 		t.Fatalf("retry: %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth0"})
+}
+
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
+// and requires byte-identical output to the legacy storage layer's writes.
+func TestLegacyDifferentialTrace(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	baseline, err := os.ReadFile("testdata/legacy-networks.baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile("testdata/legacy-networks.after.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "networks.json")
+	if err := os.WriteFile(path, baseline, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := metajson.Open(metajson.Namespace{
+		Name: metaNS, FilePath: path, LockPath: filepath.Join(dir, "networks.lock"), Codec: netIndexCodec{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	c := &CNI{meta: store}
+
+	if err := c.update(ctx, func(*netTx) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(baseline) {
+		t.Fatalf("round-trip not byte-identical:\n got: %s\nwant: %s", got, baseline)
+	}
+
+	if err := c.update(ctx, func(tx *netTx) error {
+		if err := tx.del("NET2"); err != nil {
+			return err
+		}
+		rec, err := tx.get("NET3")
+		if err != nil {
+			return err
+		}
+		rec.IP = "10.0.0.9"
+		return tx.put("NET3", rec)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(after) {
+		t.Fatalf("differential trace diverged:\n got: %s\nwant: %s", got, after)
+	}
 }

@@ -1,8 +1,10 @@
 package images
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
@@ -67,5 +69,66 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	}
 	if len(removed) != 1 || removed[0] != "deadbeef" {
 		t.Fatalf("unreferenced blob not collected: %v", removed)
+	}
+}
+
+type fixtureEntry struct {
+	Ref       string    `json:"ref"`
+	Digest    string    `json:"manifest_digest"`
+	Size      int64     `json:"size"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
+// and requires byte-identical output to the legacy storage layer's writes.
+func TestLegacyDifferentialTrace(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	baseline, err := os.ReadFile("testdata/legacy-images.baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile("testdata/legacy-images.after.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "images.json")
+	if err := os.WriteFile(path, baseline, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := metajson.Open(metajson.Namespace{
+		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: IndexCodec[fixtureEntry]{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	store := NewMetaStore[fixtureEntry](engine, "images_test")
+
+	if err := store.Update(ctx, func(*Index[fixtureEntry]) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(baseline) {
+		t.Fatalf("round-trip not byte-identical:\n got: %s\nwant: %s", got, baseline)
+	}
+
+	t2 := time.Date(2026, 7, 3, 12, 45, 0, 0, time.UTC)
+	if err := store.Update(ctx, func(idx *Index[fixtureEntry]) error {
+		delete(idx.Images, "docker.io/library/a:1")
+		idx.Images["docker.io/library/c:3"] = &fixtureEntry{Ref: "docker.io/library/c:3", Digest: "sha256:cccc", Size: 200, CreatedAt: t2}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(after) {
+		t.Fatalf("differential trace diverged:\n got: %s\nwant: %s", got, after)
 	}
 }

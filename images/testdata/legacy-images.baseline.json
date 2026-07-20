@@ -1,0 +1,1 @@
+{"images":{"docker.io/library/a:1":{"ref":"docker.io/library/a:1","manifest_digest":"sha256:aaaa","size":100,"created_at":"2026-07-01T10:00:00Z"},"docker.io/library/b:2":{"ref":"docker.io/library/b:2","manifest_digest":"sha256:aaaa","size":100,"created_at":"2026-07-02T11:30:00Z"}}}
