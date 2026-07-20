@@ -91,8 +91,17 @@ func (o *OCI) Delete(ctx context.Context, ids []string) ([]string, error) {
 }
 
 // Config builds StorageConfig + BootConfig from layer digests; errors if any blob is missing.
-func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
-	err = o.store.With(ctx, func(idx *imageIndex) error {
+//
+// Lock-free read (ReadRaw, not With): Config is on the clone/run hot path — every
+// `cocoon vm clone` subprocess resolves its base image here — and With takes the
+// index flock EXCLUSIVELY, so under a warm-pool refill N concurrent clone
+// processes cross-process-serialize on one lock just to read. The index is
+// written only by pull/import via atomic rename, so a lock-free read always sees
+// a complete generation (with the .prev crash fallback), same contract as the
+// per-VM record Get. A concurrent pull racing a clone is benign: the clone sees
+// the pre- or post-pull index, both consistent.
+func (o *OCI) Config(_ context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
+	err = o.store.ReadRaw(func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))
 		boot = make([]*types.BootConfig, len(vms))
 		for i, vm := range vms {
