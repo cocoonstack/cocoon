@@ -18,7 +18,7 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 	now := time.Now()
 	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
 	return b.updateRelaxed(ctx, func(t *vmTx) error {
-		existing, err := t.get(id)
+		existing, err := t.Get(id)
 		if err != nil {
 			return err
 		}
@@ -28,16 +28,16 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 				existing.RunDir = runDir
 				existing.LogDir = logDir
 				existing.UpdatedAt = now
-				return t.put(id, existing, meta.RelaxedOK)
+				return t.Put(id, existing, meta.RelaxedOK)
 			}
 			return fmt.Errorf("id collision %q (retry)", id)
 		}
-		if dup, ok, err := t.nameGet(vmCfg.Name); err != nil {
+		if dup, ok, err := t.NameGet(vmCfg.Name); err != nil {
 			return err
 		} else if ok && dup != id {
 			return fmt.Errorf("vm name %q already exists (id: %s)", vmCfg.Name, dup)
 		}
-		if err := t.put(id, &VMRecord{
+		if err := t.Put(id, &VMRecord{
 			VM: types.VM{
 				ID: id, Hypervisor: b.Typ, State: types.VMStateCreating,
 				Config: *vmCfg, CreatedAt: now, UpdatedAt: now,
@@ -48,7 +48,7 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 		}, meta.RelaxedOK); err != nil {
 			return err
 		}
-		return t.nameSet(vmCfg.Name, id, meta.RelaxedOK)
+		return t.NameSet(vmCfg.Name, id, meta.RelaxedOK)
 	})
 }
 
@@ -62,16 +62,16 @@ func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
 	if err := b.update(ctx, func(t *vmTx) error {
-		if err := t.del(id); err != nil {
+		if err := t.Del(id); err != nil {
 			return err
 		}
 		if name == "" {
 			return nil
 		}
-		if cur, ok, err := t.nameGet(name); err != nil {
+		if cur, ok, err := t.NameGet(name); err != nil {
 			return err
 		} else if ok && cur == id {
-			return t.nameDel(name)
+			return t.NameDel(name)
 		}
 		return nil
 	}); err != nil {
@@ -86,7 +86,7 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 		if err != nil {
 			return err
 		}
-		return t.put(id, &VMRecord{
+		return t.Put(id, &VMRecord{
 			VM:           *info,
 			BootConfig:   bootCfg,
 			ImageBlobIDs: blobIDs,

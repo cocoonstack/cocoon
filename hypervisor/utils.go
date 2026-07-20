@@ -81,7 +81,7 @@ func (b *Backend) RawLoadRecord(ctx context.Context, vmID string) (*VMRecord, er
 	var rec *VMRecord
 	if err := b.rawView(ctx, func(t *vmTx) error {
 		var err error
-		rec, err = t.get(vmID)
+		rec, err = t.Get(vmID)
 		return err
 	}); err != nil {
 		return nil, err

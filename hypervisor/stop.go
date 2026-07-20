@@ -141,7 +141,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	migrated := migratedDirs(rec, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
 	// Record first: dir removal deletes the ops.lock inode, and a fresh-inode locker must resolve a gone record instead of reviving the VM.
 	if err := b.update(ctx, func(t *vmTx) error {
-		r, err := t.get(id)
+		r, err := t.Get(id)
 		if err != nil {
 			return err
 		}
@@ -150,10 +150,10 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		}
 		hadRunningInterval = hasOpenComputeInterval(r)
 		shape = shapeFromConfig(r.Config)
-		if err := t.nameDel(r.Config.Name); err != nil {
+		if err := t.NameDel(r.Config.Name); err != nil {
 			return err
 		}
-		if err := t.del(id); err != nil {
+		if err := t.Del(id); err != nil {
 			return err
 		}
 		for _, dir := range migrated {

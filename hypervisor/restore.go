@@ -204,7 +204,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	closed := false
 	if err := b.update(ctx, func(t *vmTx) error {
 		closed = false
-		r, err := t.get(vmID)
+		r, err := t.Get(vmID)
 		if err != nil {
 			return err
 		}
@@ -215,7 +215,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		r.StoppedAt = &now
 		r.UpdatedAt = now
 		closed = true
-		return t.put(vmID, r)
+		return t.Put(vmID, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".emitRestoreComputeStop").Warnf(ctx, "mark stopped after kill %s: %v", vmID, err)
 		return

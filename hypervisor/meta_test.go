@@ -67,11 +67,11 @@ func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
 	idx := &VMIndex{}
 	idx.Init()
 	var err error
-	if idx.VMs, err = t.all(); err != nil {
+	if idx.VMs, err = t.All(); err != nil {
 		return nil, nil, err
 	}
 	if err := t.r.ScanRaw(t.ctx, t.ns, tableNames, func(name string, _ json.RawMessage) error {
-		id, ok, err := t.nameGet(name)
+		id, ok, err := t.NameGet(name)
 		if err != nil || !ok {
 			return err
 		}
@@ -90,7 +90,7 @@ func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
 func writeBack(t *vmTx, before, after *VMIndex) error {
 	for id := range before.VMs {
 		if after.VMs[id] == nil {
-			if err := t.del(id); err != nil {
+			if err := t.Del(id); err != nil {
 				return err
 			}
 		}
@@ -99,19 +99,19 @@ func writeBack(t *vmTx, before, after *VMIndex) error {
 		if rec == nil {
 			continue
 		}
-		if err := t.put(id, rec); err != nil {
+		if err := t.Put(id, rec); err != nil {
 			return err
 		}
 	}
 	for name := range before.Names {
 		if _, ok := after.Names[name]; !ok {
-			if err := t.nameDel(name); err != nil {
+			if err := t.NameDel(name); err != nil {
 				return err
 			}
 		}
 	}
 	for name, id := range after.Names {
-		if err := t.nameSet(name, id); err != nil {
+		if err := t.NameSet(name, id); err != nil {
 			return err
 		}
 	}

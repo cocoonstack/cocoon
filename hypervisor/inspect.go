@@ -31,7 +31,7 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	var recs []*VMRecord
 	if err := b.view(ctx, func(t *vmTx) error {
-		all, err := t.all()
+		all, err := t.All()
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, err
 func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
 	var rec VMRecord
 	return rec, b.view(ctx, func(t *vmTx) error {
-		r, err := t.get(id)
+		r, err := t.Get(id)
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 		if id, err = t.resolve(ref); err != nil {
 			return err
 		}
-		r, err := t.get(id)
+		r, err := t.Get(id)
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VM
 		if err := mutate(r); err != nil {
 			return err
 		}
-		return t.put(vmID, r)
+		return t.Put(vmID, r)
 	})
 }
 

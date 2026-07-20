@@ -78,7 +78,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 				if snap.orphanDirs, err = t.orphanDirs(); err != nil {
 					return err
 				}
-				return t.scan(func(id string, rec *VMRecord) error {
+				return t.Scan(func(id string, rec *VMRecord) error {
 					snap.vmIDs[id] = struct{}{}
 					if rec.RunDir != "" {
 						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
@@ -147,7 +147,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	for _, id := range ids {
 		runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
 		_ = b.rawView(ctx, func(t *vmTx) error {
-			if rec, err := t.get(id); err == nil && rec != nil {
+			if rec, err := t.Get(id); err == nil && rec != nil {
 				runDir, logDir = rec.RunDir, rec.LogDir
 			}
 			return nil
