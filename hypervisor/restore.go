@@ -184,7 +184,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 		unlock()
 		return "", nil, nil, err
 	}
-	if gErr := b.entryGuard(ctx, vmID); gErr != nil {
+	if gErr := b.EntryGuard(ctx, vmID); gErr != nil {
 		return fail(gErr)
 	}
 	// Revalidate under the lock: the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.

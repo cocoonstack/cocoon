@@ -73,8 +73,7 @@ type Backend struct {
 }
 
 // NewBackend wires shared init: EnsureDirs, the backend's namespace on the
-// injected meta store, nil-recorder fallback. Locker is the namespace lock
-// exposed for the legacy GC lock-all (P0 adapter; retires in P1).
+// injected meta store, nil-recorder fallback.
 func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)

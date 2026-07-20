@@ -174,7 +174,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.entryGuard(ctx, "vmproto5"); err != nil {
+	if err := b.EntryGuard(ctx, "vmproto5"); err != nil {
 		t.Fatalf("leased guard must roll back and proceed: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	err = b.entryGuard(ctx, "vmproto5")
+	err = b.EntryGuard(ctx, "vmproto5")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting guard must refuse after recovery: %v", err)
 	}
