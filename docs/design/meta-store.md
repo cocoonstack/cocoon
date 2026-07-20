@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.11)
+# Meta store: unified metadata layer (design v2.12)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -109,8 +109,8 @@ Contract clauses (binding on every engine):
    retry interval (§4 bounds it for sqlite); a blocked writer never pins a
    caller past its deadline.
 7. **Engine-neutral errors.** `ErrNotFound`, `ErrConflict`, `ErrBusy`,
-   `ErrCorrupt`, `ErrNoSpace`, `ErrDurabilityContract`, `ErrScope`; engine
-   codes never reach callers.
+   `ErrCorrupt`, `ErrNoSpace`, `ErrIO`, `ErrDurabilityContract`, `ErrScope`;
+   engine codes never reach callers, and every one is `errors.Is`-comparable.
 
 Collections and logs are storage primitives; lifecycle semantics live in
 domain repositories (§1a):
@@ -153,6 +153,12 @@ Reserve/adopt/finalize, quarantine, state transitions and other
 compare-and-swap flows are methods on `hypervisor.VMRepository` (and peers),
 each composed of primitives inside ONE short `Update` with in-transaction
 revalidation. Business code never hand-rolls Get+Replace.
+
+**Every destructive flow uses the §5 phase protocol, not just GC.**
+`vm rm`, `snapshot rm` and NIC teardown perform the same slow destructive
+work outside a transaction; without a phase transition a crash mid-teardown
+leaves live metadata over partially removed resources — the exact failure the
+protocol exists to prevent. GC is one caller of the protocol, not its owner.
 
 Create/clone stays **two short transactions around slow external work**, not
 one: `reserve + name claim` → image prep, directories, CNI, VMM launch (none
@@ -206,6 +212,8 @@ CREATE TABLE networks_tombstones (vm_id TEXT NOT NULL PRIMARY KEY, lease_id TEXT
 -- candidates, netns, TAPs and the ops lock are all per VM. A VM-keyed lease
 -- also covers the case where no network row survives but an orphan netns
 -- does. CNI Add checks this table by vm_id before creating anything.
+-- Finalize for a network lease means: every row with that vm_id, plus the
+-- netns and TAPs derived from it — the aggregate, not one NIC row.
 
 -- namespace images_oci (same shape for images_cloudimg)
 CREATE TABLE images_oci            (digest TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL);
@@ -273,9 +281,13 @@ Representation rules (each has a round-trip fixture in §9):
   time; `ErrBusy` is a real, mapped outcome.
 - Error mapping: SQLITE_BUSY/LOCKED→`ErrBusy`; constraint violations→
   `ErrConflict`; SQLITE_CORRUPT/NOTADB→`ErrCorrupt`; SQLITE_FULL/ENOSPC→
-  `ErrNoSpace`; row-missing→`ErrNotFound`.
-- Filesystem: WAL requires shared memory; network filesystems are unsupported.
-  `doctor` checks the meta dir's fs type and refuses NFS/CIFS/unknown-FUSE.
+  `ErrNoSpace`; SQLITE_IOERR/CANTOPEN/READONLY and their json-engine
+  equivalents→`ErrIO`; row-missing→`ErrNotFound`.
+- Filesystem: WAL requires shared memory; network filesystems are
+  unsupported. The check is ENFORCED in open, init and convert — refusing
+  NFS/CIFS/unknown-FUSE before any WAL work — because an operator who never
+  ran `doctor` would otherwise run SQLite outside its supported locking
+  contract. `doctor` reports the same check as diagnostics.
 - Observability: writer-wait, transaction duration, commit duration, WAL
   bytes, checkpoint duration; slow-transaction warn threshold.
 - Backup: `VACUUM INTO` a temp path → `PRAGMA integrity_check` on the copy →
@@ -293,6 +305,14 @@ pinned). The alternative — a compatibility gate every meta write must take —
 would serialize exactly what this design exists to parallelize; it is
 recorded as the fallback if a partial migration is ever forced, with that
 cost stated up front.
+
+**Recovery precedes discovery.** Every cycle first scans existing tombstones
+— under each entity's lock, taking over by replacing `lease_id` — and
+resumes them by phase. A `deleting` tombstone whose data is already gone will
+never reappear as a candidate through record-based discovery, and the
+insert-conflict rule would make a later worker skip it, stranding the
+tombstone forever. Only after that sweep does the cycle look for new
+candidates.
 
 Per candidate:
 
@@ -317,23 +337,9 @@ Per candidate:
    namespace, verify state/references/UpdatedAt still qualify, insert the
    tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
 4. Short `Update`, committed **before any filesystem work** and guarded by
-   `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'` and,
-   **for any entity whose operational lock lives inside the tree about to be
-   removed, delete the live record in the same transaction**, copying the
-   paths cleanup still needs into the tombstone. VMs are exactly this case:
-   `ops.lock` sits in the runDir, so `RemoveAll(runDir)` unlinks the very
-   inode this worker holds, after which another process can create a fresh
-   file at that path and believe it owns the lock. Today's code deletes the
-   record before the directories for precisely this reason, and the protocol
-   must not invert it: no live record may be visible once the lock inode is
-   destroyable. Entities whose lock lives OUTSIDE the deleted tree keep their
-   record until step 6 — snapshots (lease file is a sibling of the data dir)
-   and images (lock file survives blob deletion) are both in this category.
-   Implementation note: snapshots show the cleaner shape. Moving the VM ops
-   lock to a sibling of the runDir, as `LeasePath` already does for
-   snapshots, would delete this special case entirely and is worth costing
-   during P1 — the special case is documented here because the lock is inside
-   the tree TODAY, not because inside is right.
+   `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'`,
+   copying the paths cleanup needs into the tombstone so a recovering worker
+   needs nothing from the record.
 5. Slow file/directory cleanup outside any transaction, driven by the
    tombstone's payload so a recovering worker needs nothing from the deleted
    record.
@@ -342,6 +348,27 @@ Per candidate:
    worker is a resumed or duplicated instance of work whose lease was already
    recovered and finalized by another worker after the original owner's
    process died — abort without deleting anything.
+
+**Lock inodes are never destroyed while held — a precondition of this whole
+protocol.** flock synchronizes on the inode, so deleting a lock file a worker
+holds lets another process create a fresh file at the same path and believe
+it owns the lock; both then run the destructive path concurrently. Today two
+paths violate this: `ops.lock` sits INSIDE the VM runDir that
+`RemoveAll` erases, and snapshot cleanup explicitly
+`os.Remove(LeasePath(id))` after removing the data dir. The rule this design
+adopts, uniform across namespaces:
+
+- every entity lock file lives OUTSIDE the resource's cleanup set (VM
+  `ops.lock` relocates to a runDir sibling, matching where snapshots already
+  put `LeasePath`);
+- destructive cleanup NEVER deletes a lock file;
+- lock files are reaped by a separate age-plus-`TryLock` sweep — the pattern
+  `hypervisor/gc.go`'s `sweepStaleCloneLocks` already implements, precisely
+  so "a live waiter can't be split onto a fresh inode", and which
+  `images/gc.go` already respects by skipping `.lock` files.
+
+With that rule the protocol needs no per-namespace special case: the record
+is deleted at finalize (step 6) everywhere.
 
 **Lock lifetime: one owner, start to finish.** The entity ops lock taken in
 step 2 is held through step 6. A live-but-slow worker is therefore never
@@ -549,6 +576,12 @@ Engine-scoped, because the engines have deliberately different cost models.
   lease at all.
 - **Schema identity**: wrong `application_id` and newer `user_version` both
   fail closed on open; no open path ever rewrites either.
+- **Durability, asserted not assumed**: with engine-level fault injection,
+  an acknowledged `CommitDurable` write MUST survive simulated power loss
+  (catches a `writerDurable` mis-wired to NORMAL, or a json engine that
+  skipped an fsync), and a `CommitRelaxed` write is ALLOWED to disappear —
+  the old-or-new atomicity and invariant gates pass either way, so this needs
+  its own assertion.
 - **Init atomicity**: crash injected during `meta init` leaves either no
   store or a fully initialized one; a file with schema but zero `meta_state`
   rows is recognized as a failed init and restarted, while any other
@@ -584,8 +617,13 @@ Engine-scoped, because the engines have deliberately different cost models.
   record that is live while its tombstone says `deleting`.
 
 **Performance, sqlite engine (the reason this design exists).**
-- Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k —
-  slope ≈ O(log N), enforced in CI.
+- Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k,
+  with a NUMERIC pass rule, since "≈ O(log N)" is unenforceable and an O(N)
+  implementation with a small constant would satisfy the storm bounds below:
+  per-operation cost at N=10k divided by cost at N=100 must have a 95% CI
+  upper bound ≤ 2.0 (log-growth over two decades is ≈1.5×; linear growth
+  would be ≈100×), AND the absolute per-operation cost at N=10k must stay
+  under a predeclared ceiling.
 - Hardware storms, ≥5 rounds per point (median, p95, variance reported), with
   a **predeclared numeric bound, judged by the upper bound of a 95% CI** —
   not by failure to reject flatness: fitting wall ≈ a + b·N at B=64, the pass
