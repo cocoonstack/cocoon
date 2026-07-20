@@ -100,6 +100,7 @@ func (n *notifier) stop() {
 }
 
 func (n *notifier) loop() {
+	watchErrs := testWatchErrs // seam snapshot at spawn; nil outside tests
 	timer := time.NewTimer(0)
 	if !timer.Stop() {
 		<-timer.C
@@ -125,6 +126,8 @@ func (n *notifier) loop() {
 			if !ok {
 				return
 			}
+			n.checkAndBroadcast()
+		case <-watchErrs: // nil outside tests: never selected
 			n.checkAndBroadcast()
 		case <-timer.C:
 			pending = false

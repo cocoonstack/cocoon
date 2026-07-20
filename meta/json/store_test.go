@@ -244,3 +244,46 @@ func TestOpenValidation(t *testing.T) {
 		t.Fatal("duplicate namespace accepted")
 	}
 }
+
+// TestEventsForcedOverflow is the §7 forced-overflow gate: with fsnotify
+// severed (lost events), an injected overflow error must make the notifier
+// re-read its token and signal the missed change.
+func TestEventsForcedOverflow(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	// Seam set before the notifier loop starts; reset runs after the store's
+	// Cleanup closes that loop (LIFO), so neither races the loop's reads.
+	testWatchErrs = make(chan struct{})
+	t.Cleanup(func() { testWatchErrs = nil })
+	s := newStore(t, dir, "alpha")
+
+	ch, release, err := s.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	// Sever the dir watch: the commit below produces no fsnotify event.
+	if err := s.events.watcher.Remove(dir); err != nil {
+		t.Fatalf("remove watch: %v", err)
+	}
+	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	v := map[string]int{"v": 1}
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "a", &v)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Drain anything debounced from before the sever.
+	select {
+	case <-ch:
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	testWatchErrs <- struct{}{}
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no signal after forced overflow (safety poll is 5s, so this was the overflow path)")
+	}
+}

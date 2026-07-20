@@ -199,3 +199,102 @@ func TestEntryGuardDisciplines(t *testing.T) {
 		t.Fatal("record must be finalized by driven recovery")
 	}
 }
+
+// TestLiveHolderKeepsLease is §9's negative fencing case: while A is alive
+// and slow (ops lock held, tombstone deleting), B's recovery sweep can
+// neither take the lock nor steal the lease.
+func TestLiveHolderKeepsLease(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	rec := seedProtoVM(t, b, "vmlive1")
+	ts := b.tombstones()
+
+	cleanup, err := tombstone.MarshalCleanup(vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var leaseA string
+	if err := b.update(ctx, func(tx *vmTx) error {
+		leaseA, err = ts.Lease(ctx, tx.w, "vmlive1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.update(ctx, func(tx *vmTx) error {
+		return ts.MarkDeleting(ctx, tx.w, "vmlive1", leaseA)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := b.LockVMOps(ctx, "vmlive1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if errs := b.gcRecover(ctx); len(errs) != 0 {
+		t.Fatalf("gcRecover against a live holder must skip, got %v", errs)
+	}
+
+	var after *tombstone.Record
+	if err := b.view(ctx, func(tx *vmTx) error {
+		var err error
+		after, err = ts.Get(ctx, tx.r, "vmlive1")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if after == nil || after.LeaseID != leaseA || after.Phase != tombstone.PhaseDeleting {
+		t.Fatalf("live holder's lease disturbed: %+v (want lease %s deleting)", after, leaseA)
+	}
+	if _, err := os.Stat(rec.RunDir); err != nil {
+		t.Fatalf("live holder's run dir touched: %v", err)
+	}
+}
+
+// TestPrepareStartRefusesMidDeleting is the §9 entry gate through the real
+// start entrypoint: a dead worker's deleting tombstone must drive recovery
+// and refuse the boot.
+func TestPrepareStartRefusesMidDeleting(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	rec := seedProtoVM(t, b, "vmentry1")
+	ts := b.tombstones()
+
+	cleanup, err := tombstone.MarshalCleanup(vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var leaseA string
+	if err := b.update(ctx, func(tx *vmTx) error {
+		leaseA, err = ts.Lease(ctx, tx.w, "vmentry1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.update(ctx, func(tx *vmTx) error {
+		return ts.MarkDeleting(ctx, tx.w, "vmentry1", leaseA)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := b.PrepareStart(ctx, "vmentry1", nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("mid-deleting VM must refuse to boot with ErrNotFound, got %v", err)
+	}
+	if _, err := b.LoadRecord(ctx, "vmentry1"); err == nil {
+		t.Fatal("record survived entry-driven recovery")
+	}
+	if _, err := os.Stat(rec.RunDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("run dir survived entry-driven recovery: %v", err)
+	}
+	var after *tombstone.Record
+	if err := b.view(ctx, func(tx *vmTx) error {
+		var err error
+		after, err = ts.Get(ctx, tx.r, "vmentry1")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if after != nil {
+		t.Fatalf("tombstone survived entry-driven recovery: %+v", after)
+	}
+}

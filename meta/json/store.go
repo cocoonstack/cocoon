@@ -23,8 +23,11 @@ import (
 const prevSuffix = ".prev"
 
 // testCrashStep aborts a commit right after the named write step when set;
-// crash-boundary tests use it to reproduce every legal on-disk intermediate state.
-var testCrashStep func(step string) error
+// testWatchErrs injects a forced fsnotify overflow/watch error (§7 gate).
+var (
+	testCrashStep func(step string) error
+	testWatchErrs chan struct{}
+)
 
 // Namespace declares one namespace's file, lock and format.
 type Namespace struct {
