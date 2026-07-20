@@ -20,6 +20,11 @@ const (
 	tableTombstones = "tombstones"
 )
 
+var imageTables = []metajson.TableSpec{
+	{Key: "images", Table: tableRecords},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
+}
+
 // Store is one image namespace on the shared meta engine, presenting the
 // legacy whole-index closure shape over record primitives: image lookups are
 // whole-map by nature (ref normalization, digest-prefix matching).

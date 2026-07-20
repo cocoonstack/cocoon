@@ -2,8 +2,6 @@ package hypervisor
 
 import (
 	"encoding/json"
-	"maps"
-	"slices"
 	"strings"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
@@ -33,12 +31,10 @@ func MetaNamespace(typ, indexFile, lockPath string) metajson.Namespace {
 	}
 }
 
-// rawVMIndex mirrors VMIndex's field layout with pass-through record bytes.
-type rawVMIndex struct {
-	VMs        map[string]json.RawMessage `json:"vms"`
-	Names      map[string]json.RawMessage `json:"names"`
-	OrphanDirs []string                   `json:"orphan_dirs,omitempty"`
-	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+var vmTables = []metajson.TableSpec{
+	{Key: "vms", Table: tableRecords},
+	{Key: "names", Table: tableNames},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
 }
 
 var _ metajson.Codec = vmIndexCodec{}
@@ -51,25 +47,19 @@ var _ metajson.Codec = vmIndexCodec{}
 type vmIndexCodec struct{}
 
 func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
-	m := metajson.NewModel()
-	if data == nil {
-		return m, nil
-	}
-	var idx rawVMIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
+	m, top, err := metajson.DecodeTables(data, vmTables)
+	if err != nil {
 		return nil, err
 	}
-	for _, id := range slices.Sorted(maps.Keys(idx.VMs)) {
-		m.Put(tableRecords, id, idx.VMs[id])
-	}
-	for _, name := range slices.Sorted(maps.Keys(idx.Names)) {
-		m.Put(tableNames, name, idx.Names[name])
-	}
-	for _, dir := range idx.OrphanDirs {
-		m.Put(tableOrphanDirs, dir, json.RawMessage(orphanDirEntry))
-	}
-	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
-		m.Put(tableTombstones, id, idx.Tombstones[id])
+	// orphan_dirs is a slice, not a table: preserve its order outside specs.
+	if raw, ok := top["orphan_dirs"]; ok {
+		var dirs []string
+		if err := json.Unmarshal(raw, &dirs); err != nil {
+			return nil, err
+		}
+		for _, dir := range dirs {
+			m.Put(tableOrphanDirs, dir, json.RawMessage(orphanDirEntry))
+		}
 	}
 	return m, nil
 }
