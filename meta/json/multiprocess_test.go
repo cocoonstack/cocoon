@@ -13,12 +13,20 @@ import (
 )
 
 const (
-	mpWorkers = 256
-	mpOps     = 15
+	mpOps = 15
 
 	inverseWorkers = 8
 	inverseOps     = 10
 )
+
+// stormWorkers is the design's 256-process gate by default; constrained CI
+// runners dial it down via COCOON_STORM_WORKERS (full scale runs offline).
+func stormWorkers() int {
+	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
+		return v
+	}
+	return 256
+}
 
 // TestMultiProcessCorrectness is the design §9 gate with real processes, not
 // goroutines: every worker's acknowledged insert must be present afterwards,
@@ -28,8 +36,9 @@ func TestMultiProcessCorrectness(t *testing.T) {
 		t.Skip("multi-process gate skipped in -short")
 	}
 	dir := t.TempDir()
-	cmds := make([]*exec.Cmd, 0, mpWorkers)
-	for w := range mpWorkers {
+	workers := stormWorkers()
+	cmds := make([]*exec.Cmd, 0, workers)
+	for w := range workers {
 		cmd := exec.Command(os.Args[0], "-test.run=TestMultiProcessWorker$", "-test.count=1") //nolint:gosec
 		cmd.Env = append(os.Environ(),
 			"META_MP_DIR="+dir,
@@ -63,7 +72,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("reopen after storm: %v", err)
 	}
-	if want := mpWorkers * mpOps; total != want {
+	if want := workers * mpOps; total != want {
 		t.Fatalf("lost writes: %d records, want %d", total, want)
 	}
 }
