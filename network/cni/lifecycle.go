@@ -54,8 +54,15 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	// Entrypoint discipline (design §2/§5): an interrupted teardown must
 	// finish before new NICs are plumbed — its recovery re-runs DELs by
 	// ifname and would tear a fresh NIC down. The caller holds the VM lock.
-	if err = c.recoverTombstone(ctx, vmID); err != nil {
+	// A completed AGGREGATE roll-forward refuses this Add: the whole VM's
+	// networking was mid-delete; a subset recovery only closed out an old
+	// NIC's removal and the fresh Add proceeds.
+	aggregate, err := c.recoverTombstone(ctx, vmID)
+	if err != nil {
 		return nil, fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
+	}
+	if aggregate {
+		return nil, fmt.Errorf("vm %s networking was mid-delete; teardown completed, retry the operation", vmID)
 	}
 
 	var stale map[string]networkRecord

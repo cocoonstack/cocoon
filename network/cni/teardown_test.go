@@ -9,6 +9,7 @@ import (
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/network"
 )
 
 // TestSubsetTeardownRecovery is the design §9 subset gate: crash mid-deleting
@@ -44,7 +45,7 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.recoverTombstone(ctx, "vm1"); err != nil {
+	if _, err := c.recoverTombstone(ctx, "vm1"); err != nil {
 		t.Fatalf("recover: %v", err)
 	}
 	// eth1's row is gone; eth0's row survives; no netns removal was attempted.
@@ -116,7 +117,7 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.recoverTombstone(ctx, "vm5"); err != nil {
+	if _, err := c.recoverTombstone(ctx, "vm5"); err != nil {
 		t.Fatalf("recover with netns gone: %v", err)
 	}
 	assertRecordIDs(t, c, nil)
@@ -225,5 +226,42 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 	if string(got) != string(after) {
 		t.Fatalf("differential trace diverged:\n got: %s\nwant: %s", got, after)
+	}
+}
+
+// TestAddRefusesAfterAggregateRollForward pins the entry rule: recovery of a
+// whole-VM deleting tombstone completes the teardown AND refuses the Add; a
+// retry then proceeds on the clean slate.
+func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	ctx := t.Context()
+	seedRecords(t, c, "vm6", "eth0")
+
+	ts := c.tombstones()
+	var leaseID string
+	if err := c.update(ctx, func(tx *netTx) error {
+		cleanup, err := tombstone.MarshalCleanup(netCleanup{Netns: "vm6", Records: []netCleanupRecord{{ID: "n-eth0", Type: "cni-bridge", IfName: "eth0"}}})
+		if err != nil {
+			return err
+		}
+		leaseID, err = ts.Lease(ctx, tx.w, "vm6", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.update(ctx, func(tx *netTx) error {
+		return ts.MarkDeleting(ctx, tx.w, "vm6", leaseID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.Add(ctx, "vm6", testVMCfg(), network.AddSpec{Index: 0}); err == nil || !strings.Contains(err.Error(), "mid-delete") {
+		t.Fatalf("Add after aggregate roll-forward must refuse, got %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+
+	if _, err := c.Add(ctx, "vm6", testVMCfg(), network.AddSpec{Index: 0}); err != nil {
+		t.Fatalf("retry on the clean slate: %v", err)
 	}
 }

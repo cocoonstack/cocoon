@@ -135,8 +135,9 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 	return nil
 }
 
-// recoverTombstone drives vmID's tombstone under the held VM lock.
-func (c *CNI) recoverTombstone(ctx context.Context, vmID string) error {
+// recoverTombstone drives vmID's tombstone under the held VM lock; aggregate
+// reports a completed whole-VM roll-forward so entrypoints can refuse.
+func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (aggregate bool, err error) {
 	ts := c.tombstones()
 	var (
 		rec     *tombstone.Record
@@ -147,20 +148,20 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) error {
 		rec, leaseID, err = ts.Resume(ctx, t.w, vmID)
 		return err
 	}); err != nil {
-		return err
+		return false, err
 	}
 	if rec == nil || rec.Phase == tombstone.PhaseLeased {
-		return nil
+		return false, nil
 	}
 	var cl netCleanup
 	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
-		return fmt.Errorf("tombstone %s payload: %w", vmID, err)
+		return false, fmt.Errorf("tombstone %s payload: %w", vmID, err)
 	}
 	if err := c.finishTeardown(ctx, vmID, leaseID, rec.Payload.Mode, cl, false); err != nil {
-		return err
+		return false, err
 	}
 	log.WithFunc("cni.recoverTombstone").Warnf(ctx, "rolled forward interrupted teardown for VM %s", vmID)
-	return nil
+	return rec.Payload.Mode == tombstone.ModeAggregate, nil
 }
 
 func filterRecords(records []networkRecord, ids []string) []networkRecord {

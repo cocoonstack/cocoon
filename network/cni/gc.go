@@ -111,7 +111,7 @@ func (c *CNI) gcRecover(ctx context.Context) []error {
 		if err != nil || !ok {
 			continue
 		}
-		if err := c.recoverTombstone(ctx, vmID); err != nil {
+		if _, err := c.recoverTombstone(ctx, vmID); err != nil {
 			errs = append(errs, fmt.Errorf("recover %s: %w", vmID, err))
 		}
 		_ = lk.Unlock(ctx)
