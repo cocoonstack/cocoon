@@ -165,6 +165,62 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 }
 
+// TestGCModule_LRURevalidatesAccess pins design §5 step 2 for LRU picks: a
+// snapshot touched between ReadDB and Collect is no longer the record the
+// policy chose — it must survive the stale candidate list.
+func TestGCModule_LRURevalidatesAccess(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+
+	for _, name := range []string{"old1", "old2"} {
+		id := testID(t)
+		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name},
+			makeTar(t, map[string][]byte{"cow.raw": []byte("x")})); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	pastAccess := time.Now().Add(-72 * time.Hour)
+	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+		for _, name := range []string{"old1", "old2"} {
+			idx.Snapshots[idx.Names[name]].LastAccessedAt = pastAccess
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mod := gcModule(lf, EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatalf("ReadDB: %v", err)
+	}
+	ids := mod.Resolve(ctx, snap, map[string]any{})
+	if len(ids) != 2 {
+		t.Fatalf("want 2 candidates, got %v", ids)
+	}
+	// A clone/export lands in the window and touches old1.
+	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
+		idx.Snapshots[idx.Names["old1"]].LastAccessedAt = time.Now()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mod.Collect(ctx, ids, snap); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	remaining, err := lf.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Name != "old1" {
+		t.Fatalf("touched snapshot evicted on stale candidacy: %v", remaining)
+	}
+	if _, err := os.Stat(lf.conf.SnapshotDataDir(remaining[0].ID)); err != nil {
+		t.Fatalf("survivor data dir: %v", err)
+	}
+}
+
 func TestGCModule_DryRunNoEviction(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()

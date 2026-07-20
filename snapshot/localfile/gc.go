@@ -128,14 +128,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		Collect: func(ctx context.Context, ids []string, snap snapshotGCSnapshot) error {
 			logger := log.WithFunc("gc.snapshot")
 			cutoff := time.Now().Add(-pendingGCGrace)
-			pending := false
-			revalidate := func(rec *snapshot.SnapshotRecord) bool {
-				pending = rec.Pending
-				if rec.Pending {
-					return rec.CreatedAt.Before(cutoff)
-				}
-				return true
-			}
 			var errs []error
 			for _, id := range ids {
 				if err := ctx.Err(); err != nil {
@@ -155,9 +147,27 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
 					continue
 				}
+				// Candidacy revalidation under the lease (design §5 step 2): the
+				// reason picked at ReadDB must still hold, or a create/touch that
+				// landed in the window evicts the wrong snapshot.
+				pending, sawRecord := false, false
+				revalidate := func(rec *snapshot.SnapshotRecord) bool {
+					pending, sawRecord = rec.Pending, true
+					switch snap.reasons[id] {
+					case "stale-pending":
+						return rec.Pending && rec.CreatedAt.Before(cutoff)
+					case "missing-dir":
+						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
+						return errors.Is(statErr, fs.ErrNotExist)
+					case "orphan":
+						return false // a record appeared for a dir orphaned at ReadDB
+					default: // LRU picks: a touch since ReadDB voids the eviction choice
+						m, ok := snap.records[id]
+						return ok && rec.LastAccessedAt.Equal(m.lastAccessed)
+					}
+				}
 				// Record-backed candidates go through the phase protocol; a
 				// recordless leftover dir converges by plain removal.
-				pending = false
 				deleted, hyp, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
 					_ = fl.Close()
@@ -165,6 +175,10 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					continue
 				}
 				if !deleted {
+					if snap.reasons[id] != "orphan" || sawRecord {
+						_ = fl.Close() // candidacy voided under the lease; the next cycle re-picks
+						continue
+					}
 					if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
 						_ = fl.Close()
 						errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
