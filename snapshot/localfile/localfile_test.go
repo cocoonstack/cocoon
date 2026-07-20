@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -1521,4 +1522,40 @@ func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
+}
+
+// TestImportPinsEnvelopeBlobs pins the digest-lock hook: Import must hold the
+// injected pinner over exactly the envelope's blob IDs while committing.
+func TestImportPinsEnvelopeBlobs(t *testing.T) {
+	src := newTestLF(t)
+	ctx := t.Context()
+	id := makeExportableSnapshot(t, src, "pin-src", map[string][]byte{"cow.raw": []byte("x")})
+	stream, err := src.Export(ctx, id)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer stream.Close()
+
+	var pinned []string
+	released := false
+	dir := t.TempDir()
+	conf := &config.Config{RootDir: dir}
+	dst, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf),
+		WithBlobPinner(func(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+			pinned = slices.Sorted(maps.Keys(blobIDs))
+			return func() { released = true }, nil
+		}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := dst.Import(ctx, stream, "pin-dst", ""); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if want := []string{"blob1"}; !slices.Equal(pinned, want) {
+		t.Fatalf("pinner got %v, want %v", pinned, want)
+	}
+	if !released {
+		t.Fatal("pin never released")
+	}
 }

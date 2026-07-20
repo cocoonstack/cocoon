@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	gofrsflock "github.com/gofrs/flock"
 	"time"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
@@ -176,5 +178,35 @@ func TestGCCollectRespectsExternalPins(t *testing.T) {
 	}
 	if len(removed) != 1 || removed[0] != "deadbeef" {
 		t.Fatalf("unpinned blob not collected: %v", removed)
+	}
+}
+
+// TestPinBlobs pins the primitive: the digest lock excludes a concurrent
+// taker while held, releases cleanly, and a missing blob fails the pin.
+func TestPinBlobs(t *testing.T) {
+	cfg := &BaseConfig{RootDir: t.TempDir(), Subdir: "oci", BlobExt: ".erofs"}
+	if err := cfg.EnsureBaseDirs(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.BlobPath("deadbeef"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := PinBlobs(cfg, map[string]struct{}{"deadbeef": {}})
+	if err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	fl := gofrsflock.New(cfg.BlobLockPath("deadbeef"))
+	if ok, _ := fl.TryLock(); ok {
+		t.Fatal("digest lock not held during pin")
+	}
+	release()
+	if ok, err := fl.TryLock(); err != nil || !ok {
+		t.Fatalf("digest lock not released: %v %v", ok, err)
+	}
+	_ = fl.Close()
+
+	if _, err := PinBlobs(cfg, map[string]struct{}{"cafebabe": {}}); err == nil {
+		t.Fatal("pin of a missing blob must fail")
 	}
 }
