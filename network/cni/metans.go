@@ -2,10 +2,7 @@ package cni
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"maps"
-	"slices"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
@@ -29,10 +26,9 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 	}
 }
 
-// rawNetIndex mirrors networkIndex's field layout with pass-through record bytes.
-type rawNetIndex struct {
-	Networks   map[string]json.RawMessage `json:"networks"`
-	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+var netTables = []metajson.TableSpec{
+	{Key: "networks", Table: tableRecords},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
 }
 
 var _ metajson.Codec = netIndexCodec{}
@@ -42,36 +38,12 @@ var _ metajson.Codec = netIndexCodec{}
 type netIndexCodec struct{}
 
 func (netIndexCodec) Decode(data []byte) (*metajson.Model, error) {
-	m := metajson.NewModel()
-	if data == nil {
-		return m, nil
-	}
-	var idx rawNetIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, err
-	}
-	for _, id := range slices.Sorted(maps.Keys(idx.Networks)) {
-		m.Put(tableRecords, id, idx.Networks[id])
-	}
-	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
-		m.Put(tableTombstones, id, idx.Tombstones[id])
-	}
-	return m, nil
+	m, _, err := metajson.DecodeTables(data, netTables)
+	return m, err
 }
 
 func (netIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	buf := append([]byte(nil), `{"networks":`...)
-	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
-	if err != nil {
-		return nil, err
-	}
-	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
-		buf = append(buf, `,"tombstones":`...)
-		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
-			return nil, err
-		}
-	}
-	return append(buf, '}', '\n'), nil
+	return metajson.EncodeTables(m, netTables)
 }
 
 // netTx is the CNI view of one meta transaction: a records-only namespace

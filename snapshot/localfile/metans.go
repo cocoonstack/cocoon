@@ -2,9 +2,6 @@ package localfile
 
 import (
 	"context"
-	"encoding/json"
-	"maps"
-	"slices"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
@@ -30,11 +27,10 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 	}
 }
 
-// rawSnapIndex mirrors SnapshotIndex's field layout with pass-through record bytes.
-type rawSnapIndex struct {
-	Snapshots  map[string]json.RawMessage `json:"snapshots"`
-	Names      map[string]json.RawMessage `json:"names"`
-	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+var snapTables = []metajson.TableSpec{
+	{Key: "snapshots", Table: tableRecords},
+	{Key: "names", Table: tableNames},
+	{Key: "tombstones", Table: tableTombstones, Optional: true},
 }
 
 var _ metajson.Codec = snapIndexCodec{}
@@ -44,43 +40,12 @@ var _ metajson.Codec = snapIndexCodec{}
 type snapIndexCodec struct{}
 
 func (snapIndexCodec) Decode(data []byte) (*metajson.Model, error) {
-	m := metajson.NewModel()
-	if data == nil {
-		return m, nil
-	}
-	var idx rawSnapIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, err
-	}
-	for _, id := range slices.Sorted(maps.Keys(idx.Snapshots)) {
-		m.Put(tableRecords, id, idx.Snapshots[id])
-	}
-	for _, name := range slices.Sorted(maps.Keys(idx.Names)) {
-		m.Put(tableNames, name, idx.Names[name])
-	}
-	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
-		m.Put(tableTombstones, id, idx.Tombstones[id])
-	}
-	return m, nil
+	m, _, err := metajson.DecodeTables(data, snapTables)
+	return m, err
 }
 
 func (snapIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	buf := append([]byte(nil), `{"snapshots":`...)
-	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
-	if err != nil {
-		return nil, err
-	}
-	buf = append(buf, `,"names":`...)
-	if buf, err = metajson.AppendRawMap(buf, metajson.CollectTable(m, tableNames)); err != nil {
-		return nil, err
-	}
-	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
-		buf = append(buf, `,"tombstones":`...)
-		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
-			return nil, err
-		}
-	}
-	return append(buf, '}', '\n'), nil
+	return metajson.EncodeTables(m, snapTables)
 }
 
 type snapTx = meta.NamedTx[snapshot.SnapshotRecord]
