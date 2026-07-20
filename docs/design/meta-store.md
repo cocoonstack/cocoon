@@ -569,7 +569,11 @@ Engine-scoped, because the engines have deliberately different cost models.
   missed change); unsupported-fs refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
-  consistency, directory ownership.
+  consistency, directory ownership. The checker must treat a `deleting`
+  tombstone with NO live record as LEGAL, not corruption: it is the normal
+  window for any entity whose lock lives inside the deleted tree (§5 step 4).
+  Illegal combinations are a `leased` tombstone without a record, and a
+  record that is live while its tombstone says `deleting`.
 
 **Performance, sqlite engine (the reason this design exists).**
 - Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k —
