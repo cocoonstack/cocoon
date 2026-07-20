@@ -77,8 +77,18 @@ func InitHypervisor(ctx context.Context, conf *config.Config) (hypervisor.Hyperv
 }
 
 func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.Hypervisor, error) {
-	result := make([]hypervisor.Hypervisor, 0, len(hypervisorFactories))
-	for _, f := range hypervisorFactories {
+	factories := hypervisorFactories
+	// A Firecracker-pinned engine (the sandbox data plane sets
+	// COCOON_USE_FIRECRACKER) must never even CONSTRUCT the Cloud-Hypervisor
+	// backend here: NewBackend migrates that backend's on-disk VM index, which
+	// would corrupt a co-located desktop cocoon sharing the same root dir. The
+	// pin also scopes `cocoon gc` and `vm list` so the sandbox never sweeps or
+	// migrates desktop CH VMs.
+	if conf.UseFirecracker {
+		factories = onlyHypervisorFactory(conf.Hypervisor())
+	}
+	result := make([]hypervisor.Hypervisor, 0, len(factories))
+	for _, f := range factories {
 		h, err := f.ctor(ctx, conf)
 		if err != nil {
 			return nil, fmt.Errorf("init hypervisor %s: %w", f.typ, err)
@@ -86,6 +96,16 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 		result = append(result, h)
 	}
 	return result, nil
+}
+
+// onlyHypervisorFactory returns the single factory for typ (empty if unknown).
+func onlyHypervisorFactory(typ config.HypervisorType) []hypervisorFactory {
+	for _, f := range hypervisorFactories {
+		if f.typ == typ {
+			return []hypervisorFactory{f}
+		}
+	}
+	return nil
 }
 
 func InitNetwork(conf *config.Config) (network.Network, error) {

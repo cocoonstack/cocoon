@@ -62,6 +62,10 @@ func newRootCmd() *cobra.Command {
 
 	viper.SetEnvPrefix("COCOON")
 	viper.AutomaticEnv()
+	// use_firecracker has no persistent flag/default, so AutomaticEnv+Unmarshal
+	// won't see COCOON_USE_FIRECRACKER without an explicit bind. The sandbox
+	// engine pins itself to Firecracker this way (see InitAllHypervisors).
+	_ = viper.BindEnv("use_firecracker")
 	viper.SetDefault("root_dir", "/var/lib/cocoon")
 	viper.SetDefault("run_dir", "/var/lib/cocoon/run")
 	viper.SetDefault("log_dir", "/var/log/cocoon")
