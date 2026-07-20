@@ -33,3 +33,27 @@ func TestValidateRestoreNICs(t *testing.T) {
 		t.Fatal("NIC count drift must be rejected")
 	}
 }
+
+func TestValidateRestoreMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		mem     chMemory
+		wantErr bool
+	}{
+		{"empty mode any mem", "", chMemory{HugePages: true, Shared: true}, false},
+		{"copy any mem", "copy", chMemory{HugePages: true}, false},
+		{"ondemand hugepages", "ondemand", chMemory{HugePages: true}, false},
+		{"mmap plain", "mmap", chMemory{}, false},
+		{"mmap hugepages", "mmap", chMemory{HugePages: true}, true},
+		{"mmap shared", "mmap", chMemory{Shared: true}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRestoreMode(tt.mode, tt.mem)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("got err=%v, wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
+}
