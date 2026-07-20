@@ -164,3 +164,58 @@ func MarshalCleanup(v any) (json.RawMessage, error) {
 	}
 	return raw, nil
 }
+
+// PendingIDs lists every tombstoned id (the recovery sweep's work list).
+func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error) {
+	var ids []string
+	if err := t.Scan(ctx, r, func(id string, _ *Record) error {
+		ids = append(ids, id)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// Acquire starts protocol work on id under the caller's held entity lock: an
+// existing tombstone is taken over (resumed reports its record, payload
+// included); otherwise build supplies the fresh payload and a new lease is
+// inserted.
+func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build func() (Payload, error)) (leaseID string, resumed *Record, err error) {
+	existing, err := t.Get(ctx, w, id)
+	if err != nil {
+		return "", nil, err
+	}
+	if existing != nil {
+		taken, takeErr := t.TakeOver(ctx, w, id)
+		if takeErr != nil {
+			return "", nil, takeErr
+		}
+		return taken.LeaseID, taken, nil
+	}
+	p, err := build()
+	if err != nil {
+		return "", nil, err
+	}
+	leaseID, err = t.Lease(ctx, w, id, p)
+	return leaseID, nil, err
+}
+
+// Resume takes over id's tombstone for recovery under the caller's held
+// entity lock: a leased entry rolls back in place (rec reports what was
+// found, done=true means nothing left to do); a deleting entry returns with a
+// fresh lease for the caller to roll forward.
+func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Record, leaseID string, err error) {
+	rec, err = t.Get(ctx, w, id)
+	if err != nil || rec == nil {
+		return rec, "", err
+	}
+	taken, err := t.TakeOver(ctx, w, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if rec.Phase == PhaseLeased {
+		return rec, taken.LeaseID, t.Rollback(ctx, w, id, taken.LeaseID)
+	}
+	return rec, taken.LeaseID, nil
+}

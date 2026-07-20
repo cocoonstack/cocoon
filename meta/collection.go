@@ -3,6 +3,7 @@ package meta
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -256,4 +257,13 @@ func (c *Collection[R]) dropIndexEntries(ctx context.Context, w Writer, id strin
 
 func (c *Collection[R]) indexTable(name string) string {
 	return c.table + ".idx." + name
+}
+
+// Upsert inserts or replaces id (map-assignment semantics).
+func (c *Collection[R]) Upsert(ctx context.Context, w Writer, id string, rec *R, opts ...WriteOpt) error {
+	err := c.Replace(ctx, w, id, rec, opts...)
+	if errors.Is(err, ErrNotFound) {
+		return c.Insert(ctx, w, id, rec, opts...)
+	}
+	return err
 }

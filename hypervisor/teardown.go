@@ -41,28 +41,26 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 	if err != nil {
 		return err
 	}
-	var leaseID string
+	var (
+		leaseID string
+		cl      = vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
+	)
 	if err := b.update(ctx, func(t *vmTx) error {
 		if r, err := t.Get(id); err != nil {
 			return err
 		} else if r == nil {
 			return ErrNotFound
 		}
-		existing, err := ts.Get(ctx, t.w, id)
-		if err != nil {
+		var resumed *tombstone.Record
+		var err error
+		leaseID, resumed, err = ts.Acquire(ctx, t.w, id, func() (tombstone.Payload, error) {
+			return tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
+		})
+		if err != nil || resumed == nil {
 			return err
 		}
-		if existing != nil {
-			// A dead owner's lease: take it over and resume from its phase.
-			taken, takeErr := ts.TakeOver(ctx, t.w, id)
-			if takeErr != nil {
-				return takeErr
-			}
-			leaseID = taken.LeaseID
-			return nil
-		}
-		leaseID, err = ts.Lease(ctx, t.w, id, tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
-		return err
+		// A dead owner's lease: resume with ITS payload, not a re-derivation.
+		return json.Unmarshal(resumed.Payload.Cleanup, &cl)
 	}); err != nil {
 		return err
 	}
@@ -71,7 +69,7 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 	}); err != nil {
 		return err
 	}
-	return b.finishVMTeardown(ctx, id, leaseID, vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}, teardown)
+	return b.finishVMTeardown(ctx, id, leaseID, cl, teardown)
 }
 
 // finishVMTeardown runs the slow cleanup outside any transaction, then the
@@ -119,20 +117,8 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown Ne
 	)
 	if err := b.update(ctx, func(t *vmTx) error {
 		var err error
-		rec, err = ts.Get(ctx, t.w, id)
-		if err != nil || rec == nil {
-			return err
-		}
-		taken, takeErr := ts.TakeOver(ctx, t.w, id)
-		if takeErr != nil {
-			return takeErr
-		}
-		leaseID = taken.LeaseID
-		if rec.Phase == tombstone.PhaseLeased {
-			// No filesystem work happened: roll back, the record stays live.
-			return ts.Rollback(ctx, t.w, id, leaseID)
-		}
-		return nil
+		rec, leaseID, err = ts.Resume(ctx, t.w, id)
+		return err
 	}); err != nil {
 		return false, err
 	}

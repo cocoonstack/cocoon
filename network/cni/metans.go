@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	metaNS     = "networks"
-	tableRecs  = "records"
-	tableTombs = "tombstones"
+	metaNS          = "networks"
+	tableRecords    = "records"
+	tableTombstones = "tombstones"
 )
 
 // MetaNamespace declares the network namespace over the legacy networks.json.
@@ -51,21 +51,21 @@ func (netIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 		return nil, err
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Networks)) {
-		m.Put(tableRecs, id, idx.Networks[id])
+		m.Put(tableRecords, id, idx.Networks[id])
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
-		m.Put(tableTombs, id, idx.Tombstones[id])
+		m.Put(tableTombstones, id, idx.Tombstones[id])
 	}
 	return m, nil
 }
 
 func (netIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
 	buf := append([]byte(nil), `{"networks":`...)
-	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecs))
+	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
 	if err != nil {
 		return nil, err
 	}
-	if ts := metajson.CollectTable(m, tableTombs); len(ts) > 0 {
+	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
 		buf = append(buf, `,"tombstones":`...)
 		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
 			return nil, err
@@ -92,11 +92,7 @@ func (t *netTx) get(id string) (*networkRecord, error) {
 }
 
 func (t *netTx) put(id string, rec *networkRecord) error {
-	err := t.recs.Replace(t.ctx, t.w, id, rec)
-	if errors.Is(err, meta.ErrNotFound) {
-		return t.recs.Insert(t.ctx, t.w, id, rec)
-	}
-	return err
+	return t.recs.Upsert(t.ctx, t.w, id, rec)
 }
 
 func (t *netTx) del(id string) error {
@@ -150,5 +146,5 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 }
 
 func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
-	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecs)}
+	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecords)}
 }

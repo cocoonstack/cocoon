@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	metaNS     = "snapshots"
-	tableRecs  = "records"
-	tableNames = "names"
-	tableTombs = "tombstones"
+	metaNS          = "snapshots"
+	tableRecords    = "records"
+	tableNames      = "names"
+	tableTombstones = "tombstones"
 )
 
 // MetaNamespace declares the snapshot namespace over the legacy snapshots.json.
@@ -53,20 +53,20 @@ func (snapIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 		return nil, err
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Snapshots)) {
-		m.Put(tableRecs, id, idx.Snapshots[id])
+		m.Put(tableRecords, id, idx.Snapshots[id])
 	}
 	for _, name := range slices.Sorted(maps.Keys(idx.Names)) {
 		m.Put(tableNames, name, idx.Names[name])
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
-		m.Put(tableTombs, id, idx.Tombstones[id])
+		m.Put(tableTombstones, id, idx.Tombstones[id])
 	}
 	return m, nil
 }
 
 func (snapIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
 	buf := append([]byte(nil), `{"snapshots":`...)
-	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecs))
+	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (snapIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
 	if buf, err = metajson.AppendRawMap(buf, metajson.CollectTable(m, tableNames)); err != nil {
 		return nil, err
 	}
-	if ts := metajson.CollectTable(m, tableTombs); len(ts) > 0 {
+	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
 		buf = append(buf, `,"tombstones":`...)
 		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
 			return nil, err
@@ -98,5 +98,5 @@ func (lf *LocalFile) update(ctx context.Context, fn func(*snapTx) error) error {
 }
 
 func (lf *LocalFile) tx(ctx context.Context, r meta.Reader, w meta.Writer) *snapTx {
-	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, lf.meta, metaNS, tableRecs, tableNames, r, w)
+	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, lf.meta, metaNS, tableRecords, tableNames, r, w)
 }

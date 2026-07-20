@@ -49,11 +49,7 @@ func (x *NamedTx[R]) Get(id string) (*R, error) {
 
 // Put mirrors items[id] = rec (upsert).
 func (x *NamedTx[R]) Put(id string, rec *R, opts ...WriteOpt) error {
-	err := x.recs.Replace(x.ctx, x.w, id, rec, opts...)
-	if errors.Is(err, ErrNotFound) {
-		return x.recs.Insert(x.ctx, x.w, id, rec, opts...)
-	}
-	return err
+	return x.recs.Upsert(x.ctx, x.w, id, rec, opts...)
 }
 
 // Del mirrors delete(items, id).
@@ -75,11 +71,7 @@ func (x *NamedTx[R]) NameGet(name string) (string, bool, error) {
 
 // NameSet mirrors names[name] = id.
 func (x *NamedTx[R]) NameSet(name, id string, opts ...WriteOpt) error {
-	err := x.names.Replace(x.ctx, x.w, name, &id, opts...)
-	if errors.Is(err, ErrNotFound) {
-		return x.names.Insert(x.ctx, x.w, name, &id, opts...)
-	}
-	return err
+	return x.names.Upsert(x.ctx, x.w, name, &id, opts...)
 }
 
 // NameDel mirrors delete(names, name).

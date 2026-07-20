@@ -15,7 +15,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -304,10 +303,9 @@ func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]sn
 func (lf *LocalFile) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {
-		return lf.tombstones().Scan(ctx, t.Reader(), func(id string, _ *tombstone.Record) error {
-			ids = append(ids, id)
-			return nil
-		})
+		var err error
+		ids, err = lf.tombstones().PendingIDs(ctx, t.Reader())
+		return err
 	}); err != nil {
 		return []error{err}
 	}

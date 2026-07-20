@@ -47,33 +47,29 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 		if err != nil {
 			return err
 		}
-		if existing != nil {
-			taken, takeErr := ts.TakeOver(ctx, t.Writer(), id)
-			if takeErr != nil {
-				return takeErr
+		if existing == nil {
+			if rec == nil || (revalidate != nil && !revalidate(rec)) {
+				skip = true
+				return nil
 			}
-			leaseID = taken.LeaseID
-			return json.Unmarshal(taken.Payload.Cleanup, &cl)
+			hyp = rec.Hypervisor
+			cl = snapCleanup{Name: rec.Name, DataDir: rec.DataDir}
+			if cl.DataDir == "" {
+				cl.DataDir = lf.conf.SnapshotDataDir(id)
+			}
 		}
-		if rec == nil {
-			skip = true
-			return nil
-		}
-		if revalidate != nil && !revalidate(rec) {
-			skip = true
-			return nil
-		}
-		hyp = rec.Hypervisor
-		cl = snapCleanup{Name: rec.Name, DataDir: rec.DataDir}
-		if cl.DataDir == "" {
-			cl.DataDir = lf.conf.SnapshotDataDir(id)
-		}
-		cleanup, err := tombstone.MarshalCleanup(cl)
-		if err != nil {
+		var resumed *tombstone.Record
+		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), id, func() (tombstone.Payload, error) {
+			cleanup, mErr := tombstone.MarshalCleanup(cl)
+			if mErr != nil {
+				return tombstone.Payload{}, mErr
+			}
+			return tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
+		})
+		if err != nil || resumed == nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, t.Writer(), id, tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
-		return err
+		return json.Unmarshal(resumed.Payload.Cleanup, &cl)
 	}); err != nil {
 		return false, "", err
 	}
@@ -141,19 +137,8 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	)
 	if err := lf.update(ctx, func(t *snapTx) error {
 		var err error
-		rec, err = ts.Get(ctx, t.Writer(), id)
-		if err != nil || rec == nil {
-			return err
-		}
-		taken, takeErr := ts.TakeOver(ctx, t.Writer(), id)
-		if takeErr != nil {
-			return takeErr
-		}
-		leaseID = taken.LeaseID
-		if rec.Phase == tombstone.PhaseLeased {
-			return ts.Rollback(ctx, t.Writer(), id, leaseID)
-		}
-		return nil
+		rec, leaseID, err = ts.Resume(ctx, t.Writer(), id)
+		return err
 	}); err != nil {
 		return err
 	}

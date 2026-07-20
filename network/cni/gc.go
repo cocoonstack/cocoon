@@ -13,7 +13,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
-	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -95,10 +94,9 @@ func (c *CNI) RegisterGC(orch *gc.Orchestrator) {
 func (c *CNI) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := c.view(ctx, func(t *netTx) error {
-		return c.tombstones().Scan(ctx, t.r, func(id string, _ *tombstone.Record) error {
-			ids = append(ids, id)
-			return nil
-		})
+		var err error
+		ids, err = c.tombstones().PendingIDs(ctx, t.r)
+		return err
 	}); err != nil {
 		return []error{err}
 	}

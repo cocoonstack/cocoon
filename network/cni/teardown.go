@@ -45,19 +45,6 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 	)
 	if err := c.update(ctx, func(t *netTx) error {
 		leaseID, cl = "", netCleanup{}
-		existing, err := ts.Get(ctx, t.w, vmID)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			taken, takeErr := ts.TakeOver(ctx, t.w, vmID)
-			if takeErr != nil {
-				return takeErr
-			}
-			leaseID = taken.LeaseID
-			mode = taken.Payload.Mode
-			return json.Unmarshal(taken.Payload.Cleanup, &cl)
-		}
 		records, err := t.byVMID(vmID)
 		if err != nil {
 			return err
@@ -67,22 +54,30 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 			mode = tombstone.ModeSubset
 			records = filterRecords(records, subset)
 		}
-		for _, r := range records {
-			cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
-		}
-		if mode == tombstone.ModeAggregate {
-			cl.Netns = netnsPath(vmID)
-		}
-		kind := tombstone.KindRecord
-		if len(cl.Records) == 0 {
-			kind = tombstone.KindOrphan // a 0-NIC VM still owns its netns
-		}
-		cleanup, err := tombstone.MarshalCleanup(cl)
-		if err != nil {
+		var resumed *tombstone.Record
+		leaseID, resumed, err = ts.Acquire(ctx, t.w, vmID, func() (tombstone.Payload, error) {
+			for _, r := range records {
+				cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
+			}
+			if mode == tombstone.ModeAggregate {
+				cl.Netns = netnsPath(vmID)
+			}
+			kind := tombstone.KindRecord
+			if len(cl.Records) == 0 {
+				kind = tombstone.KindOrphan // a 0-NIC VM still owns its netns
+			}
+			cleanup, mErr := tombstone.MarshalCleanup(cl)
+			if mErr != nil {
+				return tombstone.Payload{}, mErr
+			}
+			return tombstone.Payload{Kind: kind, Mode: mode, Cleanup: cleanup}, nil
+		})
+		if err != nil || resumed == nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, t.w, vmID, tombstone.Payload{Kind: kind, Mode: mode, Cleanup: cleanup})
-		return err
+		mode = resumed.Payload.Mode
+		cl = netCleanup{}
+		return json.Unmarshal(resumed.Payload.Cleanup, &cl)
 	}); err != nil {
 		return err
 	}
@@ -141,19 +136,8 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) error {
 	)
 	if err := c.update(ctx, func(t *netTx) error {
 		var err error
-		rec, err = ts.Get(ctx, t.w, vmID)
-		if err != nil || rec == nil {
-			return err
-		}
-		taken, takeErr := ts.TakeOver(ctx, t.w, vmID)
-		if takeErr != nil {
-			return takeErr
-		}
-		leaseID = taken.LeaseID
-		if rec.Phase == tombstone.PhaseLeased {
-			return ts.Rollback(ctx, t.w, vmID, leaseID)
-		}
-		return nil
+		rec, leaseID, err = ts.Resume(ctx, t.w, vmID)
+		return err
 	}); err != nil {
 		return err
 	}
