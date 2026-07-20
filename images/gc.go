@@ -96,6 +96,22 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 					}
 					continue
 				}
+				// Revalidate under the held lock: a publish that finished after
+				// the snapshot may have referenced this digest — the candidate
+				// list is stale by design (loose GC).
+				referenced := false
+				if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
+					_, referenced = cfg.ReadRefs(idx.Images)[hex]
+					return nil
+				}); err != nil {
+					_ = fl.Close()
+					errs = append(errs, fmt.Errorf("revalidate blob %s: %w", hex, err))
+					continue
+				}
+				if referenced {
+					_ = fl.Close()
+					continue
+				}
 				for _, rm := range cfg.Removers {
 					if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
 						errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))

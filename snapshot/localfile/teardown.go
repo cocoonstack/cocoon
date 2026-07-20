@@ -183,6 +183,9 @@ func (lf *LocalFile) guardSnapTombstone(ctx context.Context, id string, releaseS
 		present = rec != nil
 		return err
 	}); err != nil {
+		// The guard consumes the lease on every path: leaking a shared flock
+		// here would block exclusive delete/GC for the process lifetime.
+		releaseShared()
 		return err
 	}
 	if !present {
