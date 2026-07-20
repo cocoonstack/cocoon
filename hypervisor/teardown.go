@@ -11,9 +11,8 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// ErrTombstoned reports an entrypoint that met a deleting-phase entity: its
-// resources are partially gone, recovery was driven, and the operation must
-// not touch the record.
+// ErrTombstoned reports an entrypoint that met a deleting-phase entity:
+// resources are partially gone and the operation must not touch the record.
 var ErrTombstoned = errors.New("vm is being deleted")
 
 // vmCleanup is the vms-namespace tombstone payload: everything teardown

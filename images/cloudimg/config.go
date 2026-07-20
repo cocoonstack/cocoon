@@ -8,6 +8,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const metaNS = "images_cloudimg"
+
 // defaultPullConns is the default concurrent Range connections per cloud-image download.
 const defaultPullConns = 8
 
@@ -32,8 +34,6 @@ func (c *Config) EnsureDirs() error {
 func (c *Config) tmpBlobPath(digestHex string) string {
 	return filepath.Join(c.TempDir(), ".tmp-"+digestHex+".qcow2")
 }
-
-const metaNS = "images_cloudimg"
 
 // MetaNamespace declares this backend's namespace on the shared meta store.
 func MetaNamespace(rootDir string) metajson.Namespace {

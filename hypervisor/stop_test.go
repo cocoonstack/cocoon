@@ -143,7 +143,7 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }, nil); err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
-	if err := b.dbRead(context.Background(), func(idx *VMIndex) error {
+	if err := b.dbRead(t.Context(), func(idx *VMIndex) error {
 		if len(idx.OrphanDirs) != 0 {
 			t.Fatalf("successful delete must clear its cleanup intent, got %v", idx.OrphanDirs)
 		}

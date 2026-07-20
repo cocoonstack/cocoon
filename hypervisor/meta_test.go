@@ -132,6 +132,15 @@ func writeBack(t *vmTx, before, after *VMIndex) error {
 	return nil
 }
 
+// addOrphanDir survives only for fixtures/shims: production writes cleanup
+// intent through tombstone payloads now.
+func (t *vmTx) addOrphanDir(dir string) error {
+	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, tableOrphanDirs, dir); err != nil || ok {
+		return err
+	}
+	return t.w.PutRaw(t.ctx, t.ns, tableOrphanDirs, dir, json.RawMessage(orphanDirEntry), false)
+}
+
 // TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
 // and requires byte-identical output to what the LEGACY storage layer wrote
 // for the same operations (fixtures generated at master by cmd/fixturegen).
@@ -234,13 +243,4 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 	if _, statErr := os.Stat(vmlock.Path(b.Conf.RootDirPath(), id)); statErr != nil {
 		t.Fatalf("lock file not at the shared path: %v", statErr)
 	}
-}
-
-// addOrphanDir survives only for fixtures/shims: production writes cleanup
-// intent through tombstone payloads now.
-func (t *vmTx) addOrphanDir(dir string) error {
-	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, tableOrphanDirs, dir); err != nil || ok {
-		return err
-	}
-	return t.w.PutRaw(t.ctx, t.ns, tableOrphanDirs, dir, json.RawMessage(orphanDirEntry), false)
 }

@@ -14,7 +14,7 @@ func TestSingleflightDoDetachesCanceledWaiter(t *testing.T) {
 	started := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
-		_ = SingleflightDo(context.Background(), &g, "k", func() error {
+		_ = SingleflightDo(t.Context(), &g, "k", func() error {
 			close(started)
 			<-block
 			return nil
@@ -25,7 +25,7 @@ func TestSingleflightDoDetachesCanceledWaiter(t *testing.T) {
 	// the key and select its own instant result over the canceled ctx.
 	<-started
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := SingleflightDo(ctx, &g, "k", func() error { return nil }); !errors.Is(err, context.Canceled) {
 		t.Errorf("canceled waiter err = %v, want context.Canceled", err)

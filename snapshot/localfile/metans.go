@@ -30,18 +30,18 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 	}
 }
 
-var _ metajson.Codec = snapIndexCodec{}
-
-// snapIndexCodec reproduces the legacy SnapshotIndex file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type snapIndexCodec struct{}
-
 // rawSnapIndex mirrors SnapshotIndex's field layout with pass-through record bytes.
 type rawSnapIndex struct {
 	Snapshots  map[string]json.RawMessage `json:"snapshots"`
 	Names      map[string]json.RawMessage `json:"names"`
 	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
 }
+
+var _ metajson.Codec = snapIndexCodec{}
+
+// snapIndexCodec reproduces the legacy SnapshotIndex file byte-for-byte;
+// records cross as raw messages (no per-record re-marshal).
+type snapIndexCodec struct{}
 
 func (snapIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()

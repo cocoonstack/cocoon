@@ -8,6 +8,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const metaNS = "images_oci"
+
 type Config struct {
 	images.BaseConfig
 	// PoolSize bounds concurrent layer processing.
@@ -41,8 +43,6 @@ func (c *Config) KernelPath(layerDigestHex string) string {
 func (c *Config) InitrdPath(layerDigestHex string) string {
 	return filepath.Join(c.BootDir(layerDigestHex), "initrd.img")
 }
-
-const metaNS = "images_oci"
 
 // MetaNamespace declares this backend's namespace on the shared meta store.
 func MetaNamespace(rootDir string) metajson.Namespace {

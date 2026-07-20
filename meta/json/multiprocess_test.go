@@ -1,7 +1,6 @@
 package json
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,7 +78,7 @@ func TestMultiProcessWorker(t *testing.T) {
 	}
 	s := newStore(t, dir, "alpha")
 	c := meta.NewCollection[map[string]int](s, "alpha", "records")
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := range ops {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
 		v := map[string]int{"n": i}

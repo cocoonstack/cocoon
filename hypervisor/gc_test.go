@@ -134,7 +134,7 @@ func TestSweepOrphanDirsReclaimsMigratedLeftover(t *testing.T) {
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
 		t.Fatal("migrated leftover dir must be reclaimed")
 	}
-	if err := b.dbRead(context.Background(), func(idx *VMIndex) error {
+	if err := b.dbRead(t.Context(), func(idx *VMIndex) error {
 		if len(idx.OrphanDirs) != 0 {
 			t.Fatalf("intent must be cleared, got %v", idx.OrphanDirs)
 		}

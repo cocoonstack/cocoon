@@ -20,10 +20,8 @@ const (
 )
 
 // Store is one image namespace on the shared meta engine, presenting the
-// legacy whole-index closure shape over record primitives. Image lookups are
-// whole-map by nature (ref normalization, digest-prefix matching), so P0
-// materializes per operation — the same IO profile as the legacy store; the
-// sqlite schema splits refs into indexed tables in P2.
+// legacy whole-index closure shape over record primitives: image lookups are
+// whole-map by nature (ref normalization, digest-prefix matching).
 type Store[E any] struct {
 	meta meta.Store
 	ns   string
@@ -122,15 +120,15 @@ func MetaNamespace[E any](ns, indexFile, lockPath string) metajson.Namespace {
 	return metajson.Namespace{Name: ns, FilePath: indexFile, LockPath: lockPath, Codec: IndexCodec[E]{}}
 }
 
-// IndexCodec reproduces the legacy {"images":{...}} file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type IndexCodec[E any] struct{}
-
 // rawImageIndex mirrors Index's field layout with pass-through record bytes.
 type rawImageIndex struct {
 	Images     map[string]json.RawMessage `json:"images"`
 	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
 }
+
+// IndexCodec reproduces the legacy {"images":{...}} file byte-for-byte;
+// records cross as raw messages (no per-record re-marshal).
+type IndexCodec[E any] struct{}
 
 func (IndexCodec[E]) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()

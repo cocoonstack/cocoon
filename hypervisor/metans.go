@@ -33,6 +33,14 @@ func MetaNamespace(typ, indexFile, lockPath string) metajson.Namespace {
 	}
 }
 
+// rawVMIndex mirrors VMIndex's field layout with pass-through record bytes.
+type rawVMIndex struct {
+	VMs        map[string]json.RawMessage `json:"vms"`
+	Names      map[string]json.RawMessage `json:"names"`
+	OrphanDirs []string                   `json:"orphan_dirs,omitempty"`
+	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+}
+
 var _ metajson.Codec = vmIndexCodec{}
 
 // vmIndexCodec reproduces the legacy VMIndex file byte-for-byte. Records
@@ -41,14 +49,6 @@ var _ metajson.Codec = vmIndexCodec{}
 // fields marshal sorted exactly as encoding/json always wrote them, and
 // orphan_dirs keeps its slice order.
 type vmIndexCodec struct{}
-
-// rawVMIndex mirrors VMIndex's field layout with pass-through record bytes.
-type rawVMIndex struct {
-	VMs        map[string]json.RawMessage `json:"vms"`
-	Names      map[string]json.RawMessage `json:"names"`
-	OrphanDirs []string                   `json:"orphan_dirs,omitempty"`
-	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
-}
 
 func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()

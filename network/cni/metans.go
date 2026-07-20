@@ -29,17 +29,17 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 	}
 }
 
-var _ metajson.Codec = netIndexCodec{}
-
-// netIndexCodec reproduces the legacy networkIndex file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type netIndexCodec struct{}
-
 // rawNetIndex mirrors networkIndex's field layout with pass-through record bytes.
 type rawNetIndex struct {
 	Networks   map[string]json.RawMessage `json:"networks"`
 	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
 }
+
+var _ metajson.Codec = netIndexCodec{}
+
+// netIndexCodec reproduces the legacy networkIndex file byte-for-byte;
+// records cross as raw messages (no per-record re-marshal).
+type netIndexCodec struct{}
 
 func (netIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()
@@ -133,10 +133,6 @@ func (c *CNI) update(ctx context.Context, fn func(*netTx) error) error {
 	})
 }
 
-func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
-	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecs)}
-}
-
 // deleteRecords removes the given record rows in one transaction; used by
 // the Add-path stale-NIC reclaim, which runs under the VM lock.
 func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
@@ -151,4 +147,8 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 		}
 		return nil
 	})
+}
+
+func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
+	return &netTx{ctx: ctx, r: r, w: w, recs: meta.NewCollection[networkRecord](c.meta, metaNS, tableRecs)}
 }

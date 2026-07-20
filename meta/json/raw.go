@@ -6,11 +6,9 @@ import (
 	"slices"
 )
 
-// AppendRawMap appends m as a compact JSON object with sorted keys, emitting
-// values verbatim. Byte-identical to encoding/json marshaling the same map,
-// minus its per-value compaction scan — the reason codecs use it (the legacy
-// store paid one typed marshal per write; a validation re-scan of every
-// record would be a new O(bytes) cost on the same path).
+// AppendRawMap appends m as a compact JSON object with sorted keys, values
+// emitted verbatim — byte-identical to encoding/json without its per-value
+// compaction re-scan.
 func AppendRawMap(dst []byte, m map[string]json.RawMessage) ([]byte, error) {
 	dst = append(dst, '{')
 	for i, k := range slices.Sorted(maps.Keys(m)) {
