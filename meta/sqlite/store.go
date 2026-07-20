@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -19,6 +20,7 @@ import (
 	sqlite3lib "modernc.org/sqlite/lib"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -54,13 +56,15 @@ type Store struct {
 	writerDurable *sql.DB
 	writerRelaxed *sql.DB
 	readers       *sql.DB
-	notifier      *notifier
+
+	mu       sync.Mutex // guards notifier lazy-init against concurrent Events/Close
+	notifier *notifier
 }
 
 // Open verifies identity, version and per-namespace meta_state, then builds
 // the connection set. It never creates or migrates — that is Init's job.
 func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
-	if err := refuseManifest(dbPath); err != nil {
+	if err := RefuseManifest(dbPath); err != nil {
 		return nil, err
 	}
 	return openStore(dbPath, namespaces)
@@ -146,10 +150,12 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 
 func (s *Store) Close() error {
 	var errs []error
+	s.mu.Lock()
 	if s.notifier != nil {
 		s.notifier.stop()
 		s.notifier = nil
 	}
+	s.mu.Unlock()
 	for _, db := range []*sql.DB{s.writerDurable, s.writerRelaxed, s.readers} {
 		if db != nil {
 			errs = append(errs, db.Close())
@@ -380,9 +386,9 @@ func (h *txHandle) checkWrite(ns string, relaxedOK bool) error {
 	return nil
 }
 
-func refuseManifest(dbPath string) error {
+func RefuseManifest(dbPath string) error {
 	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
-	if exists(manifest) {
+	if utils.FileExists(manifest) {
 		return fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
 	}
 	return nil

@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -104,9 +102,8 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
 		// Ordinary opens of EITHER engine refuse while a conversion is in
 		// flight (§6); the json engine cannot see the manifest itself.
-		manifest := filepath.Join(filepath.Dir(MetaDBPath(conf)), metasqlite.ManifestName)
-		if _, err := os.Stat(manifest); err == nil {
-			metaErr = fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
+		if err := metasqlite.RefuseManifest(MetaDBPath(conf)); err != nil {
+			metaErr = err
 			return
 		}
 		if conf.MetaBackend == "sqlite" {

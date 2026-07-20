@@ -30,7 +30,7 @@ func Checkpoint(dbPath string) error {
 // Backup produces a consistent single-file copy at destPath: VACUUM INTO a
 // temp file, integrity-check it, fsync, then rename into place (§4).
 func Backup(dbPath, destPath string) (err error) {
-	if exists(destPath) {
+	if utils.FileExists(destPath) {
 		return fmt.Errorf("%s already exists; refusing to overwrite", destPath)
 	}
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {

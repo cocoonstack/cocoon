@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // Init creates a fresh store: schema DDL, identity pragmas and one
@@ -17,7 +18,7 @@ import (
 // meta_state table at all is a failed init and is restarted; anything else
 // is left for the operator.
 func Init(dbPath string, namespaces ...Namespace) error {
-	if err := refuseManifest(dbPath); err != nil {
+	if err := RefuseManifest(dbPath); err != nil {
 		return err
 	}
 	return initStore(dbPath, namespaces)
@@ -33,7 +34,7 @@ func initStore(dbPath string, namespaces []Namespace) (err error) {
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
-	if exists(dbPath) {
+	if utils.FileExists(dbPath) {
 		partial, perr := failedInit(dbPath)
 		if perr != nil {
 			return perr
@@ -106,21 +107,21 @@ func failedInit(dbPath string) (bool, error) {
 		}
 		return false, mapErr(serr)
 	}
+	var tables, metaState int
+	if serr := db.QueryRow("SELECT count(*), count(*) FILTER (WHERE name = 'meta_state') FROM sqlite_master WHERE type = 'table'").Scan(&tables, &metaState); serr != nil {
+		return false, mapErr(serr)
+	}
 	if appID == 0 {
-		return true, nil
+		// Our crash windows leave either an empty file or the committed schema
+		// with pragmas unset; a populated zero-appid DB without meta_state is
+		// someone else's file, never deleted.
+		if tables == 0 || metaState > 0 {
+			return true, nil
+		}
+		return false, fmt.Errorf("%s: populated database without cocoon identity; move it aside: %w", dbPath, meta.ErrCorrupt)
 	}
 	if appID != ApplicationID {
 		return false, fmt.Errorf("%s: application_id %#x is not a cocoon meta store: %w", dbPath, appID, meta.ErrCorrupt)
 	}
-	var n int
-	err = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta_state'").Scan(&n)
-	if err != nil {
-		return false, mapErr(err)
-	}
-	return n == 0, nil
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return metaState == 0, nil
 }

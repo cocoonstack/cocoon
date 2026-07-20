@@ -78,14 +78,14 @@ func Run(ctx context.Context, spec Spec, target string) error {
 }
 
 func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {
-	if err := checkQuiesced(ctx, spec, target); err != nil {
-		return err
-	}
 	src, err := openSource(spec, target)
 	if err != nil {
 		return err
 	}
 	defer src.Close() //nolint:errcheck
+	if qerr := checkQuiesced(ctx, spec, target, src); qerr != nil {
+		return qerr
+	}
 	if m == nil {
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
 			return err
@@ -127,11 +127,19 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 	return m, nil
 }
 
-// checkQuiesced is §6's advisory activity check: a held json namespace lock
-// means live cocoon processes, and converting under them would lose writes
-// landing after a namespace is copied.
-func checkQuiesced(ctx context.Context, spec Spec, target string) error {
-	if target != EngineSQLite {
+// checkQuiesced is §6's advisory activity check: an in-flight source write
+// means live cocoon processes, and converting under them could lose writes
+// landing on a namespace already marked done.
+func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
+	if target == EngineJSON {
+		// sqlite source: an empty durable transaction fails ErrBusy while a
+		// writer is mid-flight.
+		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		err := src.Update(probeCtx, meta.Scope{Write: spec.Decls[0].Name}, meta.CommitDurable, func(meta.Writer) error { return nil })
+		if err != nil {
+			return fmt.Errorf("sqlite store busy; stop cocoon activity before converting: %w", err)
+		}
 		return nil
 	}
 	for _, jns := range spec.JSON {
@@ -159,7 +167,7 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 	}
 	// The driver would create an empty file on first touch; a missing source
 	// must fail before that.
-	if !exists(spec.DBPath) {
+	if !utils.FileExists(spec.DBPath) {
 		return nil, fmt.Errorf("no sqlite store at %s to convert from", spec.DBPath)
 	}
 	return metasqlite.OpenForRecovery(spec.DBPath, spec.Decls...)
@@ -169,7 +177,7 @@ func openTarget(spec Spec, target string) (meta.Store, error) {
 	if target == EngineJSON {
 		return metajson.Open(spec.JSON...)
 	}
-	if !exists(spec.DBPath) {
+	if !utils.FileExists(spec.DBPath) {
 		if err := metasqlite.InitForRecovery(spec.DBPath, spec.Decls...); err != nil {
 			return nil, err
 		}
@@ -308,7 +316,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 // sqlite source checkpoints to a single file first (§6). Runs with both
 // engines closed; already-renamed files are skipped, so a crash here reruns.
 func retireSources(spec Spec, target string) error {
-	if target == EngineJSON && exists(spec.DBPath) {
+	if target == EngineJSON && utils.FileExists(spec.DBPath) {
 		if err := metasqlite.Checkpoint(spec.DBPath); err != nil {
 			return err
 		}
@@ -316,7 +324,7 @@ func retireSources(spec Spec, target string) error {
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	for _, ns := range spec.Decls {
 		for _, f := range sourceFiles(spec, target, ns.Name) {
-			if !exists(f) {
+			if !utils.FileExists(f) {
 				continue
 			}
 			if err := os.Rename(f, f+asideSuffix+ts); err != nil {
@@ -387,9 +395,4 @@ func finishManifest(root string) error {
 		return err
 	}
 	return utils.SyncParentDir(root)
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

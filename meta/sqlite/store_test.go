@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/utils"
+
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/meta/contracttest"
 )
@@ -15,7 +17,7 @@ func newStore(t *testing.T, dir string, nss ...string) *Store {
 		decls = append(decls, Namespace{Name: ns, Tables: []string{"records", "names", "tombstones"}})
 	}
 	path := filepath.Join(dir, DBFileName)
-	if !exists(path) {
+	if !utils.FileExists(path) {
 		if err := Init(path, decls...); err != nil {
 			t.Fatalf("init: %v", err)
 		}

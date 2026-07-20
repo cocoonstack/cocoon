@@ -10,6 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 var testTables = []string{"records", "names", "tombstones"}
@@ -82,7 +83,7 @@ func TestRoundTrip(t *testing.T) {
 	if err := Run(ctx, spec, "sqlite"); err != nil {
 		t.Fatalf("convert to sqlite: %v", err)
 	}
-	if exists(spec.JSON[0].FilePath) {
+	if utils.FileExists(spec.JSON[0].FilePath) {
 		t.Fatal("json source not retired aside")
 	}
 	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
@@ -105,7 +106,7 @@ func TestRoundTrip(t *testing.T) {
 	if err := Run(ctx, spec, "json"); err != nil {
 		t.Fatalf("convert back to json: %v", err)
 	}
-	if exists(spec.DBPath) {
+	if utils.FileExists(spec.DBPath) {
 		t.Fatal("sqlite source not retired aside")
 	}
 	js, err := metajson.Open(spec.JSON...)

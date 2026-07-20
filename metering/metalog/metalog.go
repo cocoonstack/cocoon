@@ -1,6 +1,6 @@
 // Package metalog records metering entries in the meta store's log (§1 P3):
-// one Relaxed append per entry, matching the file backend's no-fsync
-// durability, with a durable Seq cursor for downstream consumers.
+// one Relaxed append per entry — the file backend's no-fsync durability —
+// with a Seq cursor committed atomically alongside each entry.
 package metalog
 
 import (

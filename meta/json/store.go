@@ -128,7 +128,7 @@ func (s *Store) Close() error {
 	defer s.mu.Unlock()
 	s.closed = true
 	if s.events != nil {
-		s.events.stop()
+		s.events.b.Stop()
 		s.events = nil
 	}
 	return nil
