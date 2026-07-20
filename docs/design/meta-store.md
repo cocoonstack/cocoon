@@ -301,15 +301,18 @@ Per candidate:
    explicit, because it is not uniform today: VMs use the existing per-VM
    `ops.lock`; networks are covered by their owning VM's lock (teardown
    belongs to that VM); snapshots use their existing read-lease mechanism in
-   exclusive mode; **images have no per-entity lock today and gain one** — a
-   per-digest lock file beside the blob, taken by GC and by any flow that
-   materializes or re-pins that digest. Without it, step 2 and the recovery
-   rule below are unimplementable for image GC once `gc.Module.Locker` is
-   gone. Two rules come with it: the lock file is NEVER removed by the
-   cleanup that deletes the blob it guards (unlinking a held lock recreates
-   the inode race described in step 4), and a flow pinning several digests
-   takes their locks in sorted digest order, so two concurrent multi-digest
-   pins cannot deadlock.
+   exclusive mode — its `LeasePath(id)` is already a SIBLING of the data dir
+   (`<dir>.lease`), deliberately outside the tree that gets removed;
+   **images have no per-digest lock today and gain one** — a lock file beside
+   the blob, taken by GC and by any flow that materializes or re-pins that
+   digest. Without it, step 2 and the recovery rule below are unimplementable
+   for image GC once `gc.Module.Locker` is gone. Two rules come with it, both
+   already established practice in this codebase rather than new invention:
+   the lock file is NEVER removed by the cleanup that deletes what it guards
+   (`images/gc.go`'s stale-temp sweep already skips `.lock` files for exactly
+   this reason — flock synchronizes on the inode, so deleting one races a
+   live holder), and a flow pinning several digests takes their locks in
+   sorted digest order so two concurrent multi-digest pins cannot deadlock.
 3. Short `Update` on the target namespace (Durable): re-read every relevant
    namespace, verify state/references/UpdatedAt still qualify, insert the
    tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
@@ -323,9 +326,14 @@ Per candidate:
    file at that path and believe it owns the lock. Today's code deletes the
    record before the directories for precisely this reason, and the protocol
    must not invert it: no live record may be visible once the lock inode is
-   destroyable. Entities whose lock lives OUTSIDE the deleted tree (images:
-   the per-digest lock file is never removed by blob deletion) keep their
-   record until step 6.
+   destroyable. Entities whose lock lives OUTSIDE the deleted tree keep their
+   record until step 6 — snapshots (lease file is a sibling of the data dir)
+   and images (lock file survives blob deletion) are both in this category.
+   Implementation note: snapshots show the cleaner shape. Moving the VM ops
+   lock to a sibling of the runDir, as `LeasePath` already does for
+   snapshots, would delete this special case entirely and is worth costing
+   during P1 — the special case is documented here because the lock is inside
+   the tree TODAY, not because inside is right.
 5. Slow file/directory cleanup outside any transaction, driven by the
    tombstone's payload so a recovering worker needs nothing from the deleted
    record.
