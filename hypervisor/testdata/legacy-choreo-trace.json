@@ -1,0 +1,72 @@
+{
+  "steps": [
+    {
+      "op": "reserve-vm1",
+      "err_class": "nil"
+    },
+    {
+      "op": "reserve-name-collision",
+      "err_class": "other",
+      "err_msg": "vm name \"alpha\" already exists (id: VM1)"
+    },
+    {
+      "op": "reserve-adopt",
+      "err_class": "nil",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"creating\",\"config\":{\"cpu\":2,\"memory\":1073741824,\"storage\":10737418240,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"created_at\":\"TS\",\"updated_at\":\"TS\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}"
+    },
+    {
+      "op": "reserve-id-collision",
+      "err_class": "other",
+      "err_msg": "id collision \"VM1\" (retry)"
+    },
+    {
+      "op": "finalize",
+      "err_class": "nil",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":2,\"memory\":1073741824,\"storage\":10737418240,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"0001-01-01T00:00:00Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "metering": [
+        "vm.storage.start/boot"
+      ]
+    },
+    {
+      "op": "resolve-name",
+      "err_class": "nil",
+      "result": "VM1"
+    },
+    {
+      "op": "resolve-missing",
+      "err_class": "notfound",
+      "err_msg": "vm not found"
+    },
+    {
+      "op": "resize",
+      "err_class": "nil",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"0001-01-01T00:00:00Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}"
+    },
+    {
+      "op": "mark-started",
+      "err_class": "nil",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"running\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"TS\",\"started_at\":\"TS\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "metering": [
+        "vm.compute.start/boot"
+      ]
+    },
+    {
+      "op": "update-stopped",
+      "err_class": "nil",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"TS\",\"started_at\":\"TS\",\"stopped_at\":\"TS\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "metering": [
+        "vm.compute.stop/stop-user"
+      ]
+    },
+    {
+      "op": "reserve-vm3",
+      "err_class": "nil"
+    },
+    {
+      "op": "rollback-then-resolve",
+      "err_class": "notfound",
+      "err_msg": "vm not found"
+    }
+  ],
+  "final_bytes": "{\"vms\":{\"VM1\":{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"TS\",\"started_at\":\"TS\",\"stopped_at\":\"TS\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}},\"names\":{\"alpha\":\"VM1\"}}\n"
+}
