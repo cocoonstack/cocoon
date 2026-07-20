@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.24)
+# Meta store: unified metadata layer (design v2.25)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -591,13 +591,14 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   verified write, so a later reverse conversion can never find a stale
   authority and skip importing newer data. Test matrix includes
   sqlite→json→(writes)→sqlite with a diff assertion on the final content.
-  **A sqlite source is meta.db + `-wal` + `-shm`, not one file**: before a
-  conversion reads or aside-renames it, the tool checkpoints the WAL and
-  closes the writer, readers and notifier, and the fresh-target check covers
-  all three paths. Source-aside either merges the WAL first or moves the
-  whole artifact set together, so a commit still living in a non-empty WAL is
-  never dropped — asserted by a reverse-conversion test that leaves an
-  un-checkpointed commit in the WAL and checks it survives.
+  **A sqlite source is meta.db + `-wal` + `-shm`, not one file**: the tool
+  runs `PRAGMA wal_checkpoint(TRUNCATE)`, closes the writer, readers and
+  notifier, and only then aside-renames `meta.db` — ONE path, no
+  move-the-artifact-set alternative (multi-file aside recovery is complexity
+  guarding nothing once the WAL is truncated). The fresh-target check still
+  covers all three paths. Asserted by a reverse-conversion test that leaves
+  an un-checkpointed commit in the WAL and checks it survives the
+  checkpoint-then-aside sequence.
 - **A manifest present means a conversion is in flight.** Ordinary
   `Store.Open` refuses whenever `meta-convert.manifest` exists, pointing the
   operator at `meta convert`; ONLY the conversion/recovery path opens with a
@@ -876,10 +877,17 @@ contract — and the measured win arrives only in P2.
 
 P0 implementation boundaries (verified against source, to hold while coding):
 one `meta.Store` is constructed once at the command layer with a unified
-lifecycle and `Close`, injected into every backend — `cmd/core/init.go`
-builds a store per backend today; the json engine's `Events` watches the
-PARENT-DIR SET of every namespace file — `utils/watch.go` watches a single
-dir today; the bridge lane stays off the tombstone protocol (§1a).
+lifecycle and `Close`, injected into every backend — and the sweep must
+cover EVERY direct construction site, not just `cmd/core/init.go`:
+`cmd/images/import.go` alone builds oci/cloudimg backends directly at four
+call sites. The json engine's `Events` watches the PARENT-DIR SET of every
+namespace file — `utils/watch.go` watches a single dir today. The bridge
+lane stays off the tombstone protocol (§1a). And the forced-retry contract
+suite must actually exercise the migrated `UpdateStates`/`BatchMarkStarted`:
+`hypervisor/state.go` today appends metering entries to a slice OUTSIDE the
+closure — the exact pattern contract clause 1 forbids (a retried closure
+double-emits) — and migrates by collecting inside the closure and publishing
+after commit.
 
 - **P0 — boundary only, semantics unchanged (releasable, zero user-visible
   change).** The `meta` package, its contract-test suite (including the
