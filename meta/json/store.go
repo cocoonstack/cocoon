@@ -294,7 +294,9 @@ func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (json.RawMess
 		return nil, false, fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
 	raw, ok := l.model.Get(table, id)
-	return raw, ok, nil
+	// Detached values (contract clause 4): aliasing model bytes would let a
+	// caller mutate committed state without PutRaw's scope/durability checks.
+	return slices.Clone(raw), ok, nil
 }
 
 func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error {
@@ -302,7 +304,9 @@ func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn func(id strin
 	if !ok {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
-	return l.model.Scan(table, fn)
+	return l.model.Scan(table, func(id string, raw json.RawMessage) error {
+		return fn(id, slices.Clone(raw))
+	})
 }
 
 type txWriter struct {

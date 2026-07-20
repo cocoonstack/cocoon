@@ -4,6 +4,7 @@ package contracttest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -119,6 +120,27 @@ func testDetached(t *testing.T, factory Factory) {
 	}
 	if again, _ := c.Get1(ctx, "a"); again.Name != nameOrig {
 		t.Fatalf("scan exposed engine state: %q", again.Name)
+	}
+
+	// Raw SPI detachment: mutating returned bytes inside a committing Update
+	// must not reach engine state — aliasing would bypass PutRaw's checks.
+	update(t, s, nsAlpha, func(w meta.Writer) error {
+		raw, ok, err := w.GetRaw(ctx, nsAlpha, "records", "a")
+		if err != nil || !ok {
+			t.Fatalf("GetRaw: %v %v", ok, err)
+		}
+		for i := range raw {
+			raw[i] = 'X'
+		}
+		return w.ScanRaw(ctx, nsAlpha, "records", func(_ string, raw json.RawMessage) error {
+			for i := range raw {
+				raw[i] = 'Y'
+			}
+			return nil
+		})
+	})
+	if again, err := c.Get1(ctx, "a"); err != nil || again.Name != nameOrig {
+		t.Fatalf("raw read aliased engine state: %v %v", again, err)
 	}
 }
 
