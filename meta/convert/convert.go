@@ -26,8 +26,7 @@ import (
 const (
 	asideSuffix = ".converted-"
 
-	// EngineJSON/EngineSQLite name the two engines; config meta_backend
-	// carries these values.
+	// EngineJSON/EngineSQLite are the meta_backend values.
 	EngineJSON   = "json"
 	EngineSQLite = "sqlite"
 )

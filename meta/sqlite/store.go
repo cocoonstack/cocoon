@@ -1,8 +1,5 @@
 // Package sqlite is the meta scale engine: one WAL database, namespace =
-// table group, record-granularity writes (design §2-§4). Physical schema is
-// the generic (id, data) pair per (namespace, table) — the record SPI's
-// shape — declared by the composition root exactly like the json engine's
-// table codecs (v2.28).
+// table group, generic (id, data) rows per root-declared table (§2-§4, v2.28).
 package sqlite
 
 import (
@@ -147,7 +144,6 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	return nil
 }
 
-// Close stops the notifier and closes every handle.
 func (s *Store) Close() error {
 	var errs []error
 	if s.notifier != nil {
@@ -236,8 +232,7 @@ func tableName(ns, table string) string {
 	return quoteIdent(ns + "__" + table)
 }
 
-// quoteIdent quotes a SQL identifier; namespace and table names come from
-// the composition root, never user input, but quoting keeps them inert.
+// quoteIdent keeps root-declared identifiers inert in SQL text.
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

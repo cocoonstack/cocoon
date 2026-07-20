@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	// NamespaceName/TableEntries locate the metering log; the composition
-	// root declares them to both engines.
+	// NamespaceName/TableEntries locate the metering log in the meta store.
 	NamespaceName = "metering"
 	TableEntries  = "entries"
 )
@@ -43,8 +42,7 @@ func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 	}
 }
 
-// Scan streams committed entries with Seq strictly after cursor — the
-// consumer's read side.
+// Scan streams committed entries with Seq strictly after cursor.
 func (r *Recorder) Scan(ctx context.Context, after meta.Seq, fn func(meta.Seq, *metering.Entry) error) error {
 	return r.store.View(ctx, []string{NamespaceName}, func(rd meta.Reader) error {
 		return r.log.Scan(ctx, rd, after, fn)
