@@ -71,9 +71,7 @@ func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	return func() { _ = l.Unlock(ctx) }, nil
 }
 
-// PeekRecord reads the record (nil when absent). With the lock-all GC gone,
-// a plain self-locking view no longer risks stalling behind a cycle-long
-// namespace lock.
+// PeekRecord reads the record via a plain self-locking view (nil when absent).
 func (b *Backend) PeekRecord(ctx context.Context, vmID string) (*VMRecord, error) {
 	var rec *VMRecord
 	if err := b.view(ctx, func(t *vmTx) error {

@@ -129,9 +129,8 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// gcRecover resumes existing tombstones by phase before discovery: an
-// interrupted delete never reappears as a candidate, and stranding it would
-// leak forever (design §5 recovery-precedes-discovery).
+// gcRecover implements Module.Recover: resume tombstones by phase before
+// discovery (design §5).
 func (b *Backend) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := b.view(ctx, func(t *vmTx) error {

@@ -134,9 +134,6 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	}
 	shape := shapeFromConfig(rec.Config)
 	hadRunningInterval := hasOpenComputeInterval(rec)
-	// The §5 phase protocol: record and name stay live until the fenced
-	// finalize; a crash mid-teardown leaves a deleting tombstone whose payload
-	// resumes the job, never live metadata over half-removed resources.
 	if err := b.deleteVMProtocol(ctx, id, rec, b.NetCleanup); err != nil {
 		return err
 	}

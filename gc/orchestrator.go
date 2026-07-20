@@ -25,10 +25,9 @@ func Register[S any](o *Orchestrator, m Module[S]) {
 	o.modules = append(o.modules, m)
 }
 
-// Run executes one GC cycle: recover existing tombstones by phase, then
-// snapshot → resolve → collect. The orchestrator holds no locks (design §5):
-// snapshots are loose and every destructive decision is revalidated by the
-// module under its entity lock and tombstone lease.
+// Run executes one GC cycle: recover tombstones by phase, then snapshot →
+// resolve → collect; modules revalidate every destructive decision under
+// their own entity locks (§5 loose-snapshot rule).
 func (o *Orchestrator) Run(ctx context.Context) error {
 	start := time.Now()
 	logger := log.WithFunc("gc.Run")

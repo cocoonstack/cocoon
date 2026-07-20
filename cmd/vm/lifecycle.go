@@ -215,8 +215,6 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 			return hyper.Delete(ctx, refs, force)
 		})
 
-	// Network teardown now runs inside each VM's delete protocol, under its
-	// lock (design §5) — no post-hoc cleanup pass.
 	return finishRoutedCmd(ctx, cmd, logTag, "rm", "deleted", allDeleted, lastErr)
 }
 

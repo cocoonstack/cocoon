@@ -329,9 +329,8 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
-	// Envelope pins get the same digest-lock window as create (design §5: a
-	// re-pin flow holds the lock while committing); a record-backed clone's
-	// source pin already protects these, a --from-dir envelope has no record.
+	// Envelope pins share create's digest-lock window (design §5); a
+	// record-backed clone's source pin already protects these.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
@@ -486,7 +485,6 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	return ctx, info, hyper, nil
 }
 
-// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until the backend finalizes. rollback covers failures before the backend adopts the placeholder; unlock is deferred past Create/Clone by the caller.
 // pinResolvedBlobs holds the resolved image's digest locks until the reserve
 // commits; the empty set (bridge/dataless) pins nothing.
 func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref string, blobIDs map[string]struct{}) (func(), error) {
@@ -500,6 +498,9 @@ func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref s
 	return owner.PinBlobs(ctx, blobIDs)
 }
 
+// prereserveVM locks the VM's ops and claims its ID before network
+// provisioning, so GC never sees ownerless TAP/netns and rm/start cannot
+// interleave until the backend adopts or rolls back the placeholder.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {

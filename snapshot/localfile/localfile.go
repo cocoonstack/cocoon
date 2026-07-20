@@ -305,9 +305,7 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
 	}
 	defer fl.Close() //nolint:errcheck
-	// The §5 phase protocol: the record stays live until the fenced finalize,
-	// and a crash mid-removal leaves a deleting tombstone recovery resumes.
-	// A recordless leftover dir converges without one (nothing points at it).
+	// A recordless leftover dir converges without a tombstone — nothing points at it.
 	deletedRecord, hypType, err := lf.deleteSnapshotProtocol(ctx, id, nil)
 	if err != nil {
 		return err
