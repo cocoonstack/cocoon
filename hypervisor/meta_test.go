@@ -235,3 +235,12 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 		t.Fatalf("lock file not at the shared path: %v", statErr)
 	}
 }
+
+// addOrphanDir survives only for fixtures/shims: production writes cleanup
+// intent through tombstone payloads now.
+func (t *vmTx) addOrphanDir(dir string) error {
+	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, tableOrphanDirs, dir); err != nil || ok {
+		return err
+	}
+	return t.w.PutRaw(t.ctx, t.ns, tableOrphanDirs, dir, json.RawMessage(orphanDirEntry), false)
+}
