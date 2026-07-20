@@ -42,6 +42,9 @@ type GCModuleConfig[E any] struct {
 	TempDir string
 	// DirOnly: true for OCI (temp dirs), false for cloudimg (temp files).
 	DirOnly bool
+	// PinnedElsewhere reports blobs pinned by VM/snapshot records, consulted
+	// under the digest lock — the candidate list predates those pins. Optional.
+	PinnedElsewhere func(ctx context.Context) (map[string]struct{}, error)
 }
 
 // BuildGCModule constructs a gc.Module from the config.
@@ -107,6 +110,15 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 					_ = fl.Close()
 					errs = append(errs, fmt.Errorf("revalidate blob %s: %w", hex, err))
 					continue
+				}
+				if !referenced && cfg.PinnedElsewhere != nil {
+					pins, err := cfg.PinnedElsewhere(ctx)
+					if err != nil {
+						_ = fl.Close()
+						errs = append(errs, fmt.Errorf("recheck pins for blob %s: %w", hex, err))
+						continue
+					}
+					_, referenced = pins[hex]
 				}
 				if referenced {
 					_ = fl.Close()

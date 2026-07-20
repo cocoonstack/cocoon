@@ -25,10 +25,11 @@ var _ images.Images = (*OCI)(nil)
 
 // OCI converts OCI container layers to EROFS for Cloud Hypervisor.
 type OCI struct {
-	conf      *Config
-	store     *images.Store[imageEntry]
-	pullGroup singleflight.Group
-	ops       images.Ops[imageEntry]
+	conf            *Config
+	store           *images.Store[imageEntry]
+	pullGroup       singleflight.Group
+	ops             images.Ops[imageEntry]
+	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
 }
 
 // New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.

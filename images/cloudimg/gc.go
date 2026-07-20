@@ -1,6 +1,7 @@
 package cloudimg
 
 import (
+	"context"
 	"os"
 
 	"github.com/cocoonstack/cocoon/gc"
@@ -18,11 +19,22 @@ func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 		Removers: []func(string) error{
 			func(hex string) error { return os.Remove(c.conf.BlobPath(hex)) },
 		},
-		TempDir: c.conf.TempDir(),
-		DirOnly: false,
+		TempDir:         c.conf.TempDir(),
+		PinnedElsewhere: c.pinnedElsewhere,
+		DirOnly:         false,
 	})
 }
 
 func (c *CloudImg) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, c.GCModule())
+}
+
+// SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
+func (c *CloudImg) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, error)) {
+	c.pinnedElsewhere = fn
+}
+
+// PinBlobs implements images.Images: digest locks held while the caller commits a pin.
+func (c *CloudImg) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+	return images.PinBlobs(&c.conf.BaseConfig, blobIDs)
 }

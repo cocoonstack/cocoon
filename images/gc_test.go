@@ -1,6 +1,7 @@
 package images
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -130,5 +131,50 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 	if string(got) != string(after) {
 		t.Fatalf("differential trace diverged:\n got: %s\nwant: %s", got, after)
+	}
+}
+
+// TestGCCollectRespectsExternalPins pins the create-window race: a VM pin
+// committed after the GC snapshot must save the blob via the under-lock
+// recheck (design §5 step 2).
+func TestGCCollectRespectsExternalPins(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	engine, err := metajson.Open(MetaNamespace[gcTestEntry]("images_pins", filepath.Join(dir, "images.json"), filepath.Join(dir, "images.lock")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	store := NewMetaStore[gcTestEntry](engine, "images_pins")
+
+	pins := map[string]struct{}{"deadbeef": {}}
+	var removed []string
+	mod := BuildGCModule(GCModuleConfig[gcTestEntry]{
+		Name:     "test",
+		Store:    store,
+		LockPath: func(hex string) string { return filepath.Join(dir, hex+".lock") },
+		ReadRefs: func(map[string]*gcTestEntry) map[string]struct{} { return map[string]struct{}{} },
+		ScanDisk: func() ([]string, error) { return []string{"deadbeef"}, nil },
+		Removers: []func(string) error{func(hex string) error { removed = append(removed, hex); return nil }},
+		TempDir:  dir,
+		PinnedElsewhere: func(context.Context) (map[string]struct{}, error) {
+			return pins, nil
+		},
+	})
+
+	if err := mod.Collect(ctx, []string{"deadbeef"}, ImageGCSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("externally pinned blob removed: %v", removed)
+	}
+
+	// The pin released: the same candidate collects.
+	pins = map[string]struct{}{}
+	if err := mod.Collect(ctx, []string{"deadbeef"}, ImageGCSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "deadbeef" {
+		t.Fatalf("unpinned blob not collected: %v", removed)
 	}
 }

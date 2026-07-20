@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 
 	gofrsflock "github.com/gofrs/flock"
@@ -193,4 +194,28 @@ func (b *BlobLocks) Release() {
 		_ = fl.Close()
 	}
 	b.held = nil
+}
+
+// PinBlobs takes blobIDs' digest locks and verifies each blob file still
+// exists: a re-pinning flow holds the lock while committing its pin (design
+// §5), or image GC collects the blob between resolve and reserve.
+func PinBlobs(cfg *BaseConfig, blobIDs map[string]struct{}) (func(), error) {
+	if len(blobIDs) == 0 {
+		return func() {}, nil
+	}
+	paths := make([]string, 0, len(blobIDs))
+	for hex := range blobIDs {
+		paths = append(paths, cfg.BlobLockPath(hex))
+	}
+	locks := &BlobLocks{}
+	if err := locks.Lock(paths...); err != nil {
+		return nil, err
+	}
+	for hex := range blobIDs {
+		if _, err := os.Stat(cfg.BlobPath(hex)); err != nil {
+			locks.Release()
+			return nil, fmt.Errorf("image blob %s no longer on disk (collected before the pin): %w", hex, err)
+		}
+	}
+	return locks.Release, nil
 }

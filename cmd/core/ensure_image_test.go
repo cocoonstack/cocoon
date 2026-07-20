@@ -142,6 +142,10 @@ type fakeImageBackend struct {
 
 func (f *fakeImageBackend) Type() string { return f.typ }
 
+func (f *fakeImageBackend) PinBlobs(context.Context, map[string]struct{}) (func(), error) {
+	return func() {}, nil
+}
+
 func (f *fakeImageBackend) Pull(_ context.Context, ref string, force bool, _ progress.Tracker) error {
 	f.pullRefs = append(f.pullRefs, ref)
 	f.pullForce = append(f.pullForce, force)

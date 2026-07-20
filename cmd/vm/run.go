@@ -13,6 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -439,7 +440,15 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
 	vmID := utils.GenerateID()
-	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, hypervisor.ExtractBlobIDs(storageConfigs, bootCfg))
+	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
+	// Digest locks span resolve → reserve commit (design §5: a re-pin flow
+	// takes the lock), so image GC cannot collect a blob inside the window.
+	releasePins, err := pinResolvedBlobs(ctx, backends, vmCfg.Image, blobIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, blobIDs)
+	releasePins()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -463,6 +472,19 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 }
 
 // prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until the backend finalizes. rollback covers failures before the backend adopts the placeholder; unlock is deferred past Create/Clone by the caller.
+// pinResolvedBlobs holds the resolved image's digest locks until the reserve
+// commits; the empty set (bridge/dataless) pins nothing.
+func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref string, blobIDs map[string]struct{}) (func(), error) {
+	if len(blobIDs) == 0 {
+		return func() {}, nil
+	}
+	owner, err := cmdcore.ResolveImageOwner(ctx, backends, ref)
+	if err != nil {
+		return nil, fmt.Errorf("pin image blobs: %w", err)
+	}
+	return owner.PinBlobs(ctx, blobIDs)
+}
+
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {

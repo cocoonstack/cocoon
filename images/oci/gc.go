@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"os"
 
 	"github.com/cocoonstack/cocoon/gc"
@@ -20,9 +21,20 @@ func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
 			func(hex string) error { return os.Remove(o.conf.BlobPath(hex)) },
 			func(hex string) error { return os.RemoveAll(o.conf.BootDir(hex)) },
 		},
-		TempDir: o.conf.TempDir(),
-		DirOnly: true,
+		TempDir:         o.conf.TempDir(),
+		DirOnly:         true,
+		PinnedElsewhere: o.pinnedElsewhere,
 	})
+}
+
+// SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
+func (o *OCI) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, error)) {
+	o.pinnedElsewhere = fn
+}
+
+// PinBlobs implements images.Images: digest locks held while the caller commits a pin.
+func (o *OCI) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+	return images.PinBlobs(&o.conf.BaseConfig, blobIDs)
 }
 
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {

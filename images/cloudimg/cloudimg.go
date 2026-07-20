@@ -21,10 +21,11 @@ var _ images.Images = (*CloudImg)(nil)
 
 // CloudImg stores cloud image blobs for UEFI boot under Cloud Hypervisor.
 type CloudImg struct {
-	conf      *Config
-	store     *images.Store[imageEntry]
-	pullGroup singleflight.Group
-	ops       images.Ops[imageEntry]
+	conf            *Config
+	store           *images.Store[imageEntry]
+	pullGroup       singleflight.Group
+	ops             images.Ops[imageEntry]
+	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.

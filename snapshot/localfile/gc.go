@@ -197,6 +197,21 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
+// PinnedBlobIDs reports every image blob pinned by a snapshot record — image
+// GC's under-digest-lock recheck source (design §5 step 2).
+func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
+	pins := map[string]struct{}{}
+	if err := lf.view(ctx, func(t *snapTx) error {
+		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+			maps.Copy(pins, rec.ImageBlobIDs)
+			return nil
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return pins, nil
+}
+
 // pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -99,7 +100,46 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	if err != nil {
 		return nil, nil, fmt.Errorf("init cloudimg backend: %w", err)
 	}
+	recheck := pinnedElsewhere(conf)
+	ociStore.SetPinnedElsewhere(recheck)
+	cloudimgStore.SetPinnedElsewhere(recheck)
 	return ociStore, cloudimgStore, nil
+}
+
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock
+// recheck (design §5 step 2); backends build lazily, GC-path only.
+func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
+	type pinner interface {
+		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
+	}
+	return func(ctx context.Context) (map[string]struct{}, error) {
+		hypers, err := InitAllHypervisors(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		snapBackend, err := InitSnapshot(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		sources := make([]pinner, 0, len(hypers)+1)
+		for _, h := range hypers {
+			if p, ok := h.(pinner); ok {
+				sources = append(sources, p)
+			}
+		}
+		if p, ok := snapBackend.(pinner); ok {
+			sources = append(sources, p)
+		}
+		pins := map[string]struct{}{}
+		for _, s := range sources {
+			m, err := s.PinnedBlobIDs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			maps.Copy(pins, m)
+		}
+		return pins, nil
+	}
 }
 
 func InitHypervisor(ctx context.Context, conf *config.Config) (hypervisor.Hypervisor, error) {

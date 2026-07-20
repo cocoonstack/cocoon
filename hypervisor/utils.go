@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -83,6 +84,21 @@ func (b *Backend) PeekRecord(ctx context.Context, vmID string) (*VMRecord, error
 		return nil, err
 	}
 	return rec, nil
+}
+
+// PinnedBlobIDs reports every image blob pinned by a VM record — image GC's
+// under-digest-lock recheck source (design §5 step 2).
+func (b *Backend) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
+	pins := map[string]struct{}{}
+	if err := b.view(ctx, func(t *vmTx) error {
+		return t.Scan(func(_ string, rec *VMRecord) error {
+			maps.Copy(pins, rec.ImageBlobIDs)
+			return nil
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return pins, nil
 }
 
 func (b *Backend) PIDFilePath(runDir string) string {
