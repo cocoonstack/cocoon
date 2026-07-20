@@ -7,6 +7,7 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
 var (
@@ -22,6 +23,7 @@ func MetaStore(conf *config.Config) (*metajson.Store, error) {
 		metaStore, metaErr = metajson.Open(
 			cloudhypervisor.MetaNamespace(conf),
 			firecracker.MetaNamespace(conf),
+			localfile.MetaNamespace(conf),
 		)
 	})
 	return metaStore, metaErr

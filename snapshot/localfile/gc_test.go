@@ -17,9 +17,9 @@ import (
 
 func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"a": meta(1, 100),
-		"b": meta(2, 100),
-		"c": meta(3, 100),
+		"a": agedMeta(1, 100),
+		"b": agedMeta(2, 100),
+		"c": agedMeta(3, 100),
 	}
 	got := pickLRU(records, EvictionPolicy{Enabled: true})
 	if len(got) != 3 {
@@ -29,10 +29,10 @@ func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
 
 func TestPickLRU_KeepLast(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"newest":   meta(1, 10),
-		"middle":   meta(5, 10),
-		"oldest":   meta(10, 10),
-		"oldester": meta(20, 10),
+		"newest":   agedMeta(1, 10),
+		"middle":   agedMeta(5, 10),
+		"oldest":   agedMeta(10, 10),
+		"oldester": agedMeta(20, 10),
 	}
 	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 2})
 	if !slices.Equal(sortedKeys(got), []string{"oldest", "oldester"}) {
@@ -44,7 +44,7 @@ func TestPickLRU_KeepLast(t *testing.T) {
 }
 
 func TestPickLRU_KeepLastExceedsAll(t *testing.T) {
-	records := map[string]snapshotMeta{"a": meta(1, 10), "b": meta(2, 10)}
+	records := map[string]snapshotMeta{"a": agedMeta(1, 10), "b": agedMeta(2, 10)}
 	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 10})
 	if len(got) != 0 {
 		t.Errorf("KeepLast>len: got %v, want empty", got)
@@ -53,8 +53,8 @@ func TestPickLRU_KeepLastExceedsAll(t *testing.T) {
 
 func TestPickLRU_MaxAge(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"fresh": meta(1, 10),
-		"stale": meta(48, 10),
+		"fresh": agedMeta(1, 10),
+		"stale": agedMeta(48, 10),
 	}
 	got := pickLRU(records, EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour})
 	if !slices.Equal(sortedKeys(got), []string{"stale"}) {
@@ -67,10 +67,10 @@ func TestPickLRU_MaxAge(t *testing.T) {
 
 func TestPickLRU_MaxSize(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"a": meta(1, 30),
-		"b": meta(2, 30),
-		"c": meta(3, 30),
-		"d": meta(4, 30),
+		"a": agedMeta(1, 30),
+		"b": agedMeta(2, 30),
+		"c": agedMeta(3, 30),
+		"d": agedMeta(4, 30),
 	}
 	got := pickLRU(records, EvictionPolicy{Enabled: true, MaxSize: 60})
 	if !slices.Equal(sortedKeys(got), []string{"c", "d"}) {
@@ -80,9 +80,9 @@ func TestPickLRU_MaxSize(t *testing.T) {
 
 func TestPickLRU_UnionOfCriteria(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"fresh-small": meta(1, 10),
-		"fresh-big":   meta(2, 100),
-		"old-small":   meta(48, 10),
+		"fresh-small": agedMeta(1, 10),
+		"fresh-big":   agedMeta(2, 100),
+		"old-small":   agedMeta(48, 10),
 	}
 	got := pickLRU(records, EvictionPolicy{
 		Enabled: true, MaxAge: 24 * time.Hour, MaxSize: 50,
@@ -94,7 +94,7 @@ func TestPickLRU_UnionOfCriteria(t *testing.T) {
 
 func TestPickLRU_ZeroTimeIsOldest(t *testing.T) {
 	records := map[string]snapshotMeta{
-		"recent": meta(1, 10),
+		"recent": agedMeta(1, 10),
 		"zero":   {lastAccessed: time.Time{}, sizeBytes: 10},
 	}
 	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 1})
@@ -104,7 +104,7 @@ func TestPickLRU_ZeroTimeIsOldest(t *testing.T) {
 }
 
 func TestPickLRU_NoCriteriaAllReasonAll(t *testing.T) {
-	records := map[string]snapshotMeta{"a": meta(1, 10)}
+	records := map[string]snapshotMeta{"a": agedMeta(1, 10)}
 	got := pickLRU(records, EvictionPolicy{Enabled: true})
 	if got["a"] != "lru-all" {
 		t.Errorf("reason: got %q, want lru-all", got["a"])
@@ -124,7 +124,7 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 
 	pastAccess := time.Now().Add(-72 * time.Hour)
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
 		for _, name := range []string{"old1", "old2"} {
 			r := idx.Snapshots[idx.Names[name]]
 			if r == nil {
@@ -138,7 +138,7 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 
 	policy := EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour}
-	mod := gcModule(lf.conf, lf.store, lf.locker, policy, metering.NopRecorder{})
+	mod := gcModule(lf, policy)
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatalf("ReadDB: %v", err)
@@ -178,7 +178,7 @@ func TestGCModule_DryRunNoEviction(t *testing.T) {
 	}
 
 	policy := EvictionPolicy{Enabled: true, DryRun: true}
-	mod := gcModule(lf.conf, lf.store, lf.locker, policy, metering.NopRecorder{})
+	mod := gcModule(lf, policy)
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestGCModule_BareSnapshotEvictsAll(t *testing.T) {
 		}
 	}
 
-	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{Enabled: true}, metering.NopRecorder{})
+	mod := gcModule(lf, EvictionPolicy{Enabled: true})
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestRestoreUpdatesLastAccessedAt(t *testing.T) {
 	}
 
 	original := time.Now().Add(-48 * time.Hour)
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
 		r := idx.Snapshots[id]
 		if r == nil {
 			return fmt.Errorf("setup: %s missing", id)
@@ -296,7 +296,7 @@ func TestGCModule_RemovalFailureKeepsDBRecord(t *testing.T) {
 		}
 	}
 
-	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{Enabled: true}, metering.NopRecorder{})
+	mod := gcModule(lf, EvictionPolicy{Enabled: true})
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatalf("ReadDB: %v", err)
@@ -327,7 +327,7 @@ func TestGCModule_OrphanDirCleaned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{}, metering.NopRecorder{})
+	mod := gcModule(lf, EvictionPolicy{})
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +358,7 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 	}
 
 	rec := meteringcapture.New()
-	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{Enabled: true}, rec)
+	mod := gcModule(withRecorder(lf, rec), EvictionPolicy{Enabled: true})
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -398,7 +398,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 		t.Fatal(err)
 	}
 	stalePendingID := testID(t)
-	if err := lf.store.Update(ctx, func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.dbUpdate(ctx, func(idx *snapshot.SnapshotIndex) error {
 		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
 			Snapshot: types.Snapshot{
 				SnapshotConfig: types.SnapshotConfig{ID: stalePendingID},
@@ -413,7 +413,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 
 	rec := meteringcapture.New()
-	mod := gcModule(lf.conf, lf.store, lf.locker, EvictionPolicy{}, rec)
+	mod := gcModule(withRecorder(lf, rec), EvictionPolicy{})
 	snap, err := mod.ReadDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -430,11 +430,17 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 }
 
-func meta(ageHours int, size int64) snapshotMeta {
+func agedMeta(ageHours int, size int64) snapshotMeta {
 	accessedAt := time.Now().Add(-time.Duration(ageHours) * time.Hour)
 	return snapshotMeta{lastAccessed: accessedAt, sizeBytes: size}
 }
 
 func sortedKeys(m map[string]string) []string {
 	return slices.Sorted(maps.Keys(m))
+}
+
+// withRecorder swaps the emit recorder for assertion tests.
+func withRecorder(lf *LocalFile, rec metering.Recorder) *LocalFile {
+	lf.metering = rec
+	return lf
 }

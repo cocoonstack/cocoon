@@ -113,7 +113,11 @@ func InitBridgeNetwork(conf *config.Config, bridgeDev string) (network.Network, 
 }
 
 func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Option) (snapshot.Snapshot, error) {
-	s, err := localfile.New(conf, MeteringRecorder(ctx, conf), opts...)
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, err
+	}
+	s, err := localfile.New(conf, MeteringRecorder(ctx, conf), store, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("init snapshot backend: %w", err)
 	}

@@ -15,10 +15,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/snapshot"
-	"github.com/cocoonstack/cocoon/storage"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -58,28 +55,27 @@ type snapshotGCSnapshot struct {
 
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
-func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker lock.Locker, policy EvictionPolicy, recorder metering.Recorder) gc.Module[snapshotGCSnapshot] {
+func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot] {
+	conf, locker, recorder := lf.conf, lf.locker, lf.metering
 	return gc.Module[snapshotGCSnapshot]{
 		Name:   "snapshot",
 		Locker: locker,
 		ReadDB: func(ctx context.Context) (snapshotGCSnapshot, error) {
 			snap := snapshotGCSnapshot{policy: policy, reasons: make(map[string]string)}
 			cutoff := time.Now().Add(-pendingGCGrace)
-			if err := store.ReadRaw(func(idx *snapshot.SnapshotIndex) error {
+			// Lockless read: the orchestrator already holds the namespace lock.
+			if err := lf.rawView(ctx, func(t *snapTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
-				for id, rec := range idx.Snapshots {
-					if rec == nil {
-						continue
-					}
+				return t.Scan(func(id string, rec *snapshot.SnapshotRecord) error {
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.Pending {
 						if rec.CreatedAt.Before(cutoff) {
 							snap.stalePending = append(snap.stalePending, id)
 						}
-						continue
+						return nil
 					}
 					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
 						snap.missingDir = append(snap.missingDir, id)
@@ -90,8 +86,8 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 						lastAccessed: rec.LastAccessedAt,
 						sizeBytes:    rec.SizeBytes,
 					}
-				}
-				return nil
+					return nil
+				})
 			}); err != nil {
 				return snap, err
 			}
@@ -100,7 +96,7 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 				return snap, err
 			}
 			if policy.MaxSize > 0 {
-				backfillSizeBytes(ctx, conf, store, snap.records)
+				backfillSizeBytes(ctx, lf, snap.records)
 			}
 			return snap, nil
 		},
@@ -170,7 +166,7 @@ func gcModule(conf *Config, store storage.Store[snapshot.SnapshotIndex], locker 
 				}
 			}
 			// Emit only after the record deletion lands: a persistently failing DB would re-candidate these ids and double-close the interval.
-			if err := cleanResolvedRecords(store, removed); err != nil {
+			if err := cleanResolvedRecords(ctx, lf, removed); err != nil {
 				errs = append(errs, fmt.Errorf("clean DB records: %w", err))
 			} else {
 				for _, id := range emits {
@@ -257,7 +253,8 @@ func logEvictRow(ctx context.Context, logger *log.Fields, verb, id string, m sna
 }
 
 // backfillSizeBytes computes + persists SizeBytes for records missing it so future GC skips du.
-func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[snapshot.SnapshotIndex], records map[string]snapshotMeta) {
+func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]snapshotMeta) {
+	conf := lf.conf
 	logger := log.WithFunc("gc.snapshot")
 	var changed bool
 	for id, m := range records {
@@ -276,10 +273,18 @@ func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[sn
 	if !changed {
 		return
 	}
-	if err := store.WriteRaw(func(idx *snapshot.SnapshotIndex) error {
+	if err := lf.lockedUpdate(ctx, func(t *snapTx) error {
 		for id, m := range records {
-			if r := idx.Snapshots[id]; r != nil && r.SizeBytes != m.sizeBytes {
-				r.SizeBytes = m.sizeBytes
+			r, err := t.Get(id)
+			if err != nil {
+				return err
+			}
+			if r == nil || r.SizeBytes == m.sizeBytes {
+				continue
+			}
+			r.SizeBytes = m.sizeBytes
+			if err := t.Put(id, r); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -289,22 +294,35 @@ func backfillSizeBytes(ctx context.Context, conf *Config, store storage.Store[sn
 }
 
 // cleanResolvedRecords drops resolved records; pending only past grace.
-func cleanResolvedRecords(store storage.Store[snapshot.SnapshotIndex], ids []string) error {
+func cleanResolvedRecords(ctx context.Context, lf *LocalFile, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	cutoff := time.Now().Add(-pendingGCGrace)
-	return store.WriteRaw(func(idx *snapshot.SnapshotIndex) error {
-		utils.CleanStaleRecords(
-			idx.Snapshots, idx.Names, ids,
-			func(r *snapshot.SnapshotRecord) string { return r.Name },
-			func(r *snapshot.SnapshotRecord) bool {
-				if r.Pending {
-					return r.CreatedAt.Before(cutoff)
+	stale := func(r *snapshot.SnapshotRecord) bool {
+		if r.Pending {
+			return r.CreatedAt.Before(cutoff)
+		}
+		return true
+	}
+	return lf.lockedUpdate(ctx, func(t *snapTx) error {
+		for _, id := range ids {
+			rec, err := t.Get(id)
+			if err != nil {
+				return err
+			}
+			if rec == nil || !stale(rec) {
+				continue
+			}
+			if n := rec.Name; n != "" {
+				if err := t.NameDel(n); err != nil {
+					return err
 				}
-				return true
-			},
-		)
+			}
+			if err := t.Del(id); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }
