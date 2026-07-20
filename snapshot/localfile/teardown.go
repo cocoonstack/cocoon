@@ -17,7 +17,6 @@ import (
 // ErrTombstoned reports an entrypoint that met a deleting-phase snapshot.
 var ErrTombstoned = errors.New("snapshot is being deleted")
 
-// snapCleanup is the snapshots-namespace tombstone payload.
 type snapCleanup struct {
 	Name    string `json:"name,omitempty"`
 	DataDir string `json:"data_dir,omitempty"`
@@ -27,9 +26,7 @@ func (lf *LocalFile) tombstones() *tombstone.Table {
 	return tombstone.NewTable(lf.meta, NamespaceName)
 }
 
-// deleteSnapshotProtocol runs the §5 phase protocol for one snapshot under
-// its held EXCLUSIVE lease. revalidate (optional) re-checks candidacy inside
-// the lease transaction; returning false skips without error.
+// deleteSnapshotProtocol runs the phase protocol for one snapshot under its held EXCLUSIVE lease; revalidate (optional) re-checks candidacy inside the lease transaction, and returning false skips without error.
 func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshot.SnapshotRecord) bool) (deleted bool, hyp string, err error) {
 	ts := lf.tombstones()
 	var (
@@ -122,7 +119,6 @@ func (lf *LocalFile) recoverSnapTombstone(ctx context.Context, id string) error 
 	return lf.recoverSnapTombstoneLocked(ctx, id)
 }
 
-// recoverSnapTombstoneLocked is recovery with the exclusive lease already held.
 func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) error {
 	ts := lf.tombstones()
 	var (
@@ -150,8 +146,7 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	return nil
 }
 
-// guardSnapTombstone is the §5 shared-lease escalation: release shared,
-// recover exclusively, report ErrTombstoned — an in-place upgrade deadlocks.
+// guardSnapTombstone is the shared-lease escalation: release shared, recover exclusively, report ErrTombstoned — an in-place upgrade deadlocks.
 func (lf *LocalFile) guardSnapTombstone(ctx context.Context, id string, releaseShared func()) error {
 	var present bool
 	if err := lf.view(ctx, func(t *snapTx) error {

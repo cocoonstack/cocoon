@@ -30,8 +30,7 @@ func (c *CNI) tombstones() *tombstone.Table {
 	return tombstone.NewTable(c.meta, NamespaceName)
 }
 
-// teardownProtocol runs the §5 protocol for one VM's networking under its
-// held VM lock; nil subset means aggregate (all records + the netns).
+// teardownProtocol runs the delete protocol for one VM's networking under its held VM lock; nil subset means aggregate (all records + the netns).
 func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string, deleteTAP bool) error {
 	ts := c.tombstones()
 	var (

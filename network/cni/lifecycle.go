@@ -176,8 +176,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// guardAdd finishes an interrupted teardown before new NICs are plumbed; any
-// completed deleting roll-forward refuses the Add (§5 binding rule).
+// guardAdd finishes an interrupted teardown before new NICs are plumbed; a completed deleting roll-forward refuses the Add.
 func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
 	rolledForward, err := c.recoverTombstone(ctx, vmID)
 	if err != nil {
@@ -220,10 +219,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
 	}
-	// SUBSET phase protocol (design §2): the payload names record IDs — never
-	// NIC indices — so a crash mid-teardown recovers exactly these rows and
-	// leaves the netns and the other NICs alone. The caller (netresize) holds
-	// the VM lock, making this a ...Locked entrypoint.
+	// The payload names record IDs, never NIC indices, so a crash mid-teardown recovers exactly these rows and leaves the netns and the other NICs alone.
 	subset := make([]string, 0, len(picked))
 	for _, r := range picked {
 		subset = append(subset, r.ID)
@@ -266,7 +262,6 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	return recIDs, nil
 }
 
-// nicRuntime builds one NIC's runtime conf; recovered NICs get a pre-DEL and their persisted IP pinned.
 func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) *libcni.RuntimeConf {
 	ifName := fmt.Sprintf("eth%d", spec.Index)
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
@@ -281,7 +276,6 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 	return rt
 }
 
-// provisionNIC runs the plugin ADD and wires the TAP via TC redirect, returning the NIC's host-side config.
 func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigList, rt *libcni.RuntimeConf, vmID, nsPath string, vmCfg *types.VMConfig, spec network.AddSpec) (*types.NetworkConfig, error) {
 	ifName := fmt.Sprintf("eth%d", spec.Index)
 	tapName := tapNameForVM(vmID, spec.Index)
@@ -355,7 +349,6 @@ func ensureNetns(name, nsPath string) (bool, error) {
 	return true, nil
 }
 
-// extractNetworkInfo converts a CNI ADD result into types.Network.
 func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Network, error) {
 	newResult, err := current.NewResultFromResult(result)
 	if err != nil {

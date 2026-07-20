@@ -151,9 +151,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
 					continue
 				}
-				// Candidacy revalidation under the lease (design §5 step 2): the
-				// reason picked at ReadDB must still hold, or a create/touch that
-				// landed in the window evicts the wrong snapshot.
+				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
 				pending, sawRecord := false, false
 				revalidate := func(rec *snapshot.SnapshotRecord) bool {
 					pending, sawRecord = rec.Pending, true
@@ -189,7 +187,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						continue
 					}
 				}
-				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion (design §5)
+				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
 				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
 				if deleted && !pending {
@@ -201,8 +199,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
-// PinnedBlobIDs reports every image blob pinned by a snapshot record — image
-// GC's under-digest-lock recheck source (design §5 step 2).
+// PinnedBlobIDs reports every image blob pinned by a snapshot record — image GC's under-digest-lock recheck source.
 func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
 	pins := map[string]struct{}{}
 	if err := lf.view(ctx, func(t *snapTx) error {
@@ -331,8 +328,7 @@ func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]sn
 	}
 }
 
-// gcRecover resumes existing snapshot tombstones by phase before discovery
-// (design §5 recovery-precedes-discovery).
+// gcRecover resumes existing snapshot tombstones by phase before discovery.
 func (lf *LocalFile) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {

@@ -41,8 +41,7 @@ func WithGCPolicy(p EvictionPolicy) Option {
 	return func(lf *LocalFile) { lf.gcPolicy = p }
 }
 
-// WithBlobPinner injects the digest-lock hook Import holds while committing
-// an envelope's image pins (design §5: re-pin flows take the digest lock).
+// WithBlobPinner injects the digest-lock hook Import holds while committing an envelope's image pins.
 func WithBlobPinner(fn func(context.Context, map[string]struct{}) (func(), error)) Option {
 	return func(lf *LocalFile) { lf.pinBlobs = fn }
 }
@@ -91,10 +90,7 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 	if err != nil {
 		return "", types.SnapshotConfig{}, nil, err
 	}
-	// Shared-lease escalation (design §5): a shared holder cannot drive
-	// recovery, so on meeting a tombstone the guard releases the shared lease,
-	// recovers under an exclusive one, and this loop re-acquires shared and
-	// revalidates — an in-place upgrade would self-deadlock.
+	// A shared holder can't drive recovery, so this releases the shared lease, recovers exclusively, then re-acquires shared to avoid self-deadlocking an in-place upgrade.
 	for range 2 {
 		release, err := lf.acquireReadLease(ctx, rec.ID)
 		if err != nil {
@@ -317,12 +313,10 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		return nil
 	}
 	emitSnapStop(ctx, lf.metering, id, hypType)
-	// The lease file stays: flock synchronizes on the inode, and deleting one
-	// splits exclusion for a live waiter (design §5 lock-inode rules).
+	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
 	return nil
 }
 
-// beginCreate validates cfg and inserts the pending placeholder record, returning the data dir.
 func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig) (string, error) {
 	if err := cfg.Validate(); err != nil {
 		return "", err
@@ -338,7 +332,6 @@ func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig)
 	return dataDir, nil
 }
 
-// finalizeCreate measures dataDir, flips the pending record durable, and emits metering.
 func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConfig, dataDir string) error {
 	size, err := utils.DirSize(dataDir)
 	if err != nil {
@@ -364,7 +357,6 @@ func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConf
 	return nil
 }
 
-// insertRecord adds rec under id with name-collision check; both Create (Pending) and Import (finalized) go through here.
 func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *snapshot.SnapshotRecord) error {
 	return lf.update(ctx, func(t *snapTx) error {
 		// Reject an existing ID: a same-ID retry must not adopt (and later roll back) a finalized snapshot.
@@ -390,7 +382,6 @@ func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *sna
 	})
 }
 
-// rollbackCreate removes a placeholder snapshot record from the DB.
 func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 	// Survives Ctrl-C: a pending record left behind blocks same-name retries until GC.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)

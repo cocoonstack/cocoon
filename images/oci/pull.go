@@ -29,11 +29,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 		return err
 	}
 
-	// Heavy work (downloads, EROFS conversion, blob renames) runs OUTSIDE any
-	// transaction; the per-digest locks in finishImport keep GC away from
-	// blobs that are on disk but not yet indexed, and the final index write is
-	// one pure transaction. The up-to-date pre-check is racy but benign: the
-	// whole flow is idempotent per digest.
+	// Heavy work (downloads, EROFS conversion, blob renames) runs outside any transaction under finishImport's per-digest locks; the up-to-date pre-check is racy but benign since the whole flow is idempotent per digest.
 	var upToDate bool
 	if err := store.View(ctx, func(idx *imageIndex) error {
 		upToDate = isUpToDate(conf, idx, ref, digestHex)

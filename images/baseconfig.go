@@ -20,8 +20,7 @@ func (c *BaseConfig) DBDir() string      { return filepath.Join(c.BackendDir(), 
 func (c *BaseConfig) TempDir() string    { return filepath.Join(c.BackendDir(), "temp") }
 func (c *BaseConfig) BlobsDir() string   { return filepath.Join(c.BackendDir(), "blobs") }
 
-// BlobLockPath is the per-digest lock beside the blob (design §5): taken by
-// GC and by any flow that materializes that digest; never removed by cleanup.
+// BlobLockPath is the per-digest lock beside the blob, taken by GC and by any flow that materializes that digest; never removed by cleanup.
 func (c *BaseConfig) BlobLockPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+".lock")
 }

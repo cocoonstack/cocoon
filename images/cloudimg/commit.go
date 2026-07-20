@@ -89,7 +89,6 @@ func prepareTmpBlob(
 		info.Format, info.Compat, info.HasBackingFile)
 
 	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
-		// Fast path: the source is already a final-form qcow2 blob.
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
 		if err := os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)

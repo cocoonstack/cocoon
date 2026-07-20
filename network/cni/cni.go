@@ -39,10 +39,10 @@ var _ network.Network = (*CNI)(nil)
 type CNI struct {
 	conf        *Config
 	meta        meta.Store
-	confLists   map[string]*libcni.NetworkConfigList // name → conflist
-	defaultName string                               // first conflist name (backward compat)
+	confLists   map[string]*libcni.NetworkConfigList
+	defaultName string // first conflist name (backward compat)
 	cniConf     *libcni.CNIConfig
-	loadErr     error // conflist load failure, surfaced by errNoConflist
+	loadErr     error
 }
 
 // New creates a CNI provider; conflist loading is best-effort so Delete/Inspect/List still work when none are available — Add fails in that case.
@@ -130,9 +130,7 @@ func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, true)
 }
 
-// Delete tears down each VM's networking through the phase protocol; the
-// caller already holds the VM lock (delete protocol or GC), making this a
-// ...Locked entrypoint — re-locking the non-reentrant flock would deadlock.
+// Delete tears down each VM's networking; the caller already holds the VM lock, so this never re-locks the non-reentrant flock.
 func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
 		return c.teardownProtocol(ctx, vmID, nil, false)

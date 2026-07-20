@@ -1,5 +1,4 @@
-// Package contracttest is the engine-agnostic meta contract suite: every
-// engine must pass it unmodified (design §8, §9).
+// Package contracttest is the engine-agnostic meta contract suite: every engine must pass it unmodified.
 package contracttest
 
 import (
@@ -23,8 +22,7 @@ const (
 
 var errForcedRollback = errors.New("forced rollback")
 
-// Factory returns a fresh Store serving the given namespaces; the suite owns
-// its lifetime.
+// Factory returns a fresh Store serving the given namespaces; the suite owns its lifetime.
 type Factory func(t *testing.T, namespaces []string) meta.Store
 
 // Run executes the full contract suite against factory.
@@ -40,8 +38,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("Events", func(t *testing.T) { testEvents(t, factory) })
 }
 
-// ForcedRetry wraps s so every Update closure runs twice — once rolled back,
-// once for real — enforcing contract clause 1 (pure retryable closures).
+// ForcedRetry wraps s so every Update closure runs twice — once rolled back, once for real — enforcing pure retryable closures.
 func ForcedRetry(s meta.Store) meta.Store { return &retryStore{Store: s} }
 
 type record struct {
@@ -131,8 +128,7 @@ func testDetached(t *testing.T, factory Factory) {
 		t.Fatalf("scan exposed engine state: %q", again.Name)
 	}
 
-	// Raw SPI detachment: mutating returned bytes inside a committing Update
-	// must not reach engine state — aliasing would bypass PutRaw's checks.
+	// Raw SPI detachment: mutating returned bytes inside a committing Update must not reach engine state (aliasing would bypass PutRaw's checks).
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		raw, ok, err := w.GetRaw(ctx, nsAlpha, "records", "a")
 		if err != nil || !ok {

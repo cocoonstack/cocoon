@@ -169,7 +169,6 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	return result, nil
 }
 
-// prepareRestore resolves ref, takes the VM ops lock, re-resolves under it, and validates the record (mirrors prepareSnapshot/StartSequence); the caller defers the returned unlock.
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
 	vmID, _, err := b.ResolveForRestore(ctx, vmRef)
 	if err != nil {
@@ -228,7 +227,6 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMComputeStop, vmID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 }
 
-// emitRestoreSuccess closes old storage and opens fresh storage+compute.
 func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape metering.Shape, sourceSnapshotID string) {
 	now := timeNow()
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, vm.ID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))

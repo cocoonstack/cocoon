@@ -46,8 +46,7 @@ func wireHypervisor[H interface {
 	}
 }
 
-// netCleanup runs inside the delete protocol under the VM lock (design §5);
-// a partial CNI failure leaves the tombstone for retry/GC to resume.
+// netCleanup runs inside the delete protocol under the VM lock; a partial CNI failure leaves the tombstone for retry/GC to resume.
 func netCleanup(c *config.Config) hypervisor.NetTeardown {
 	return func(ctx context.Context, vmID string) error {
 		bridgenet.CleanupTAPs([]string{vmID})
@@ -105,8 +104,7 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	return ociStore, cloudimgStore, nil
 }
 
-// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock
-// recheck (design §5 step 2); backends build lazily, GC-path only.
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
 func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
 	type pinner interface {
 		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
@@ -200,9 +198,7 @@ func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Op
 	return s, nil
 }
 
-// PinEnvelopeBlobs locks envelope-sourced pins (clone/restore --from-dir,
-// snapshot import) on the owning backend; digests with no local blob are
-// skipped — nothing for GC to take.
+// PinEnvelopeBlobs locks envelope-sourced pins (clone/restore --from-dir, snapshot import) on the owning backend; digests with no local blob are skipped.
 func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[string]struct{}) (func(), error) {
 	if len(blobIDs) == 0 {
 		return func() {}, nil

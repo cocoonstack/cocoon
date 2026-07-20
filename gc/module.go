@@ -1,7 +1,4 @@
-// Package gc runs modular garbage collection: each subsystem registers a
-// Module; recovery precedes discovery (design §5), snapshots are loose, and
-// every destructive decision is revalidated by the module under its entity
-// locks and tombstone leases — the orchestrator holds no locks of its own.
+// Package gc runs modular garbage collection: recovery precedes discovery, snapshots are loose, and every destructive decision is revalidated by the module under its own entity locks and tombstone leases.
 package gc
 
 import (
@@ -12,9 +9,7 @@ import (
 type Module[S any] struct {
 	Name string
 
-	// Recover resumes existing tombstones by phase BEFORE discovery: a
-	// deleting entry whose data is already gone never reappears as a
-	// candidate, and stranding it would leak forever. Optional.
+	// Recover resumes existing tombstones by phase before discovery, so a deleting entry whose data is already gone never reappears as a candidate. Optional.
 	Recover func(ctx context.Context) []error
 
 	// ReadDB reads the module's current state (self-locking snapshot).
@@ -27,7 +22,6 @@ type Module[S any] struct {
 	Collect func(ctx context.Context, ids []string, snap S) error
 }
 
-// Module[S] implements runner.
 func (m Module[S]) getName() string { return m.Name }
 
 func (m Module[S]) recover(ctx context.Context) []error {

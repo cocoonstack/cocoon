@@ -41,8 +41,7 @@ type Reserver interface {
 	LockVMOps(ctx context.Context, vmID string) (func(), error)
 }
 
-// EntryGuarded lets cmd-layer flows run the tombstone entry guard under the
-// ops lock before an entrypoint (§9: never rebuild a half-removed resource).
+// EntryGuarded lets cmd-layer flows run the tombstone entry guard under the ops lock before an entrypoint, so a half-removed resource is never rebuilt.
 type EntryGuarded interface {
 	EntryGuard(ctx context.Context, id string) error
 }

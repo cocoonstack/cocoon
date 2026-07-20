@@ -9,8 +9,7 @@ import (
 
 const (
 	// NamespaceName is this backend's meta namespace.
-	NamespaceName = "images_cloudimg"
-	// defaultPullConns is the default concurrent Range connections per cloud-image download.
+	NamespaceName    = "images_cloudimg"
 	defaultPullConns = 8
 )
 

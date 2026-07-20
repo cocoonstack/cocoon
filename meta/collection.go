@@ -6,8 +6,7 @@ import (
 	"fmt"
 )
 
-// Collection is a typed record set inside one namespace table. All reads
-// hand back detached values; persisting a change requires Replace.
+// Collection is a typed record set inside one namespace table; reads hand back detached values, persisting a change requires Replace.
 type Collection[R any] struct {
 	store Store
 	ns    string

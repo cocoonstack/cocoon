@@ -70,8 +70,7 @@ type Backend struct {
 	Meta     meta.Store
 	Metering metering.Recorder
 
-	// NetCleanup releases a VM's host networking during delete/recovery; the
-	// command layer injects it so both run under one VM lock (design §5).
+	// NetCleanup releases a VM's host networking during delete/recovery.
 	NetCleanup NetTeardown
 }
 
@@ -171,7 +170,6 @@ type HibernateSpec struct {
 	RuntimeFiles []string
 }
 
-// runWrapped runs fn under a spec's optional Wrap.
 func runWrapped(rec *VMRecord, wrap func(*VMRecord, func() error) error, fn func() error) error {
 	if wrap != nil {
 		return wrap(rec, fn)

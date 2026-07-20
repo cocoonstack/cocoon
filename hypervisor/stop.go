@@ -25,7 +25,6 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 	}); err == nil {
 		return nil
 	}
-	// Distinguish user cancellation from timeout.
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

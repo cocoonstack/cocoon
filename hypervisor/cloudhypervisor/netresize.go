@@ -189,7 +189,7 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 	})
 }
 
-// nicPersisted reports whether rec already carries a NIC with mac — resolves the commit-ambiguity of a failed persist (fsync can fail after the rename landed).
+// nicPersisted reports whether rec already carries a NIC with mac.
 func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
 	return rec != nil && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
 		return nc != nil && strings.EqualFold(nc.MAC, mac)

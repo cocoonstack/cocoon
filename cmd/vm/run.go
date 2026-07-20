@@ -332,8 +332,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
 	}
-	// Envelope pins share create's digest-lock window (design §5); a
-	// record-backed clone's source pin already protects these.
+	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return nil, "", nil, nil, nil, types.NetSetup{}, err
@@ -395,7 +394,6 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
-// runDirectRestore is the shared tail for the snapshot-DB and --from-dir restore paths: log, DirectRestore, output.
 func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
@@ -462,8 +460,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 
 	vmID := utils.GenerateID()
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
-	// Digest locks span resolve → reserve commit (design §5: a re-pin flow
-	// takes the lock), so image GC cannot collect a blob inside the window.
+	// Digest locks span resolve → reserve commit, so image GC cannot collect a blob inside the window.
 	releasePins, err := pinResolvedBlobs(ctx, backends, vmCfg.Image, blobIDs)
 	if err != nil {
 		return nil, nil, nil, err
@@ -505,9 +502,7 @@ func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref s
 	return owner.PinBlobs(ctx, blobIDs)
 }
 
-// prereserveVM locks the VM's ops and claims its ID before network
-// provisioning, so GC never sees ownerless TAP/netns and rm/start cannot
-// interleave until the backend adopts or rolls back the placeholder.
+// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until adopt or rollback.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {

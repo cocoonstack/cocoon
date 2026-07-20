@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	// NamespaceName and the table names are the snapshots data-model
-	// vocabulary; the composition root maps them onto the legacy file.
+	// NamespaceName and the table names are the snapshots data-model vocabulary; the composition root maps them onto the legacy file.
 	NamespaceName = "snapshots"
 	TableRecords  = "records"
 	TableNames    = "names"

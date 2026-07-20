@@ -34,8 +34,7 @@ const (
 	// SnapshotFileSkip means the file should not be cloned.
 	SnapshotFileSkip
 
-	// OpsLockName is the legacy in-runDir lock file name; still guarded against
-	// in snapshot payloads (isLockFile) so old exports cannot overwrite one.
+	// OpsLockName is the legacy in-runDir lock file name, still guarded in snapshot payloads so old exports can't overwrite a held lock.
 	OpsLockName = "ops.lock"
 
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
@@ -56,10 +55,7 @@ const (
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
 
-// LockVMOps serializes mutating verbs on one VM across processes (#103); the
-// flock dies with the holder, so a crash never wedges the VM. The lock path
-// is VMID-keyed and record-independent (lock/vmlock), so no index read —
-// locked or lockless — sits on the ops path.
+// LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	l, err := opsLock(b.Conf, vmID)
 	if err != nil {
@@ -84,8 +80,7 @@ func (b *Backend) PeekRecord(ctx context.Context, vmID string) (*VMRecord, error
 	return rec, nil
 }
 
-// PinnedBlobIDs reports every image blob pinned by a VM record — image GC's
-// under-digest-lock recheck source (design §5 step 2).
+// PinnedBlobIDs reports every image blob pinned by a VM record — image GC's under-digest-lock recheck source.
 func (b *Backend) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
 	pins := map[string]struct{}{}
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -453,9 +448,7 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 	}, nil
 }
 
-// opsLock resolves the stable VMID-keyed operation lock (lock/vmlock): it
-// lives outside every cleanup set, so destructive teardown never splits a
-// held inode.
+// opsLock resolves the VMID-keyed operation lock, kept outside every cleanup set so teardown never splits a held inode.
 func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
 	return vmlock.New(conf.RootDirPath(), vmID)
 }

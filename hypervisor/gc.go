@@ -129,8 +129,7 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// gcRecover implements Module.Recover: resume tombstones by phase before
-// discovery (design §5).
+// gcRecover implements Module.Recover: resume tombstones by phase before discovery.
 func (b *Backend) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -151,9 +150,7 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	return errs
 }
 
-// gcCollect kills leftover hypervisor processes, removes orphan dirs and
-// stale-creating records (through the phase protocol), and sweeps stale
-// capture/staging leftovers; every candidate revalidates under its VM lock.
+// gcCollect sweeps orphan dirs/locks and removes candidate IDs; every candidate revalidates under its VM lock.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
@@ -173,8 +170,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 				return
 			}
 			if rec == nil {
-				// Recordless orphan dirs: removal converges without a
-				// tombstone — no metadata points at them.
+				// Recordless orphan dirs converge without a tombstone: no metadata points at them.
 				runDir, logDir := b.Conf.VMRunDir(id), b.Conf.VMLogDir(id)
 				// Fail closed: deleting sockets/disks under a still-live VMM corrupts it.
 				if err := b.ensureOrphanVMMDead(ctx, runDir); err != nil {
@@ -273,7 +269,6 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 			continue
 		}
 		b.withOpsTryLock(ctx, filepath.Base(dir), func() {
-			// Fail closed: a still-live VMM in the leftover dir must not lose its sockets.
 			if err := b.ensureOrphanVMMDead(ctx, dir); err != nil {
 				errs = append(errs, fmt.Errorf("orphan vmm in %s: %w (kept)", dir, err))
 				return

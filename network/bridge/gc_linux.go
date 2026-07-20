@@ -18,7 +18,6 @@ import (
 
 const tapPrefix = "bt"
 
-// bridgeSnapshot holds the set of VM ID prefixes that own bt* TAP devices.
 type bridgeSnapshot struct {
 	prefixes map[string]struct{}
 }

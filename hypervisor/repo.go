@@ -19,7 +19,6 @@ type vmTx struct {
 	w   meta.Writer
 }
 
-// getRecord mirrors idx.GetRecord: absence is an error naming the id.
 func (t *vmTx) getRecord(id string) (*VMRecord, error) {
 	rec, err := t.Get(id)
 	if err != nil {
@@ -51,27 +50,23 @@ func (t *vmTx) orphanDirs() ([]string, error) {
 	return dirs, nil
 }
 
-// removeOrphanDir mirrors slices.DeleteFunc on idx.OrphanDirs.
 func (t *vmTx) removeOrphanDir(dir string) error {
 	return t.w.DeleteRaw(t.ctx, t.ns, TableOrphanDirs, dir, false)
 }
 
-// view runs fn over the backend's namespace snapshot (legacy With).
 func (b *Backend) view(ctx context.Context, fn func(*vmTx) error) error {
 	return b.Meta.View(ctx, []string{b.NS}, func(r meta.Reader) error {
 		return fn(b.tx(ctx, r, nil))
 	})
 }
 
-// update runs fn in a durable transaction (legacy Update).
 func (b *Backend) update(ctx context.Context, fn func(*vmTx) error) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
 }
 
-// updateRelaxed is the creating-placeholder write, today's only relaxed flow
-// (legacy UpdateNoDirSync): its loss is re-derived by the GC orphan sweep.
+// updateRelaxed is the creating-placeholder write, today's only relaxed flow: its loss is re-derived by the GC orphan sweep.
 func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))

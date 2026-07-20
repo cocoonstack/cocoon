@@ -271,7 +271,6 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// bootOrRestartReason picks the metering reason for a VM's compute.start event.
 func bootOrRestartReason(firstBooted bool) metering.Reason {
 	if firstBooted {
 		return metering.ReasonRestart

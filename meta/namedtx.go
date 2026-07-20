@@ -61,9 +61,7 @@ func (x *RecordTx[R]) Reader() Reader { return x.r }
 // Writer exposes the transaction's write handle for satellite tables.
 func (x *RecordTx[R]) Writer() Writer { return x.w }
 
-// NamedTx is RecordTx plus the explicit name→id index shared by cocoon
-// subsystems; name entries are claimed and released explicitly — exactly the
-// legacy index semantics.
+// NamedTx is RecordTx plus an explicit name→id index shared by cocoon subsystems; name entries are claimed and released explicitly.
 type NamedTx[R any] struct {
 	*RecordTx[R]
 	names *Collection[string]

@@ -153,7 +153,6 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	return nil
 }
 
-// prepareSnapshot resolves ref and stages a capture dir inside the VM's run dir.
 func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, func(), error) {
 	vmID, err := b.ResolveRef(ctx, ref)
 	if err != nil {
@@ -184,7 +183,6 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	return vmID, rec, tmpDir, unlock, nil
 }
 
-// finalizeSnapshot writes the sidecar metadata and registers the snapshot on the VM record.
 func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, error) {
 	if spec.AfterCapture != nil {
 		if err := spec.AfterCapture(rec, tmpDir); err != nil {

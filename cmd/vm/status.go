@@ -122,8 +122,7 @@ func renderVMList(vms []*types.VM, format string) error {
 	})
 }
 
-// metaEvents subscribes to the meta store's coalesced change signal
-// (design §7); it replaces the retired per-backend file watching.
+// metaEvents subscribes to the meta store's coalesced change signal.
 func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
 	store, err := cmdcore.MetaStore(conf)
 	if err != nil {

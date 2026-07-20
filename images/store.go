@@ -132,9 +132,7 @@ func (b *BlobLocks) Release() {
 	b.held = nil
 }
 
-// PinBlobs takes blobIDs' digest locks and verifies each blob file still
-// exists: a re-pinning flow holds the lock while committing its pin (design
-// §5), or image GC collects the blob between resolve and reserve.
+// PinBlobs takes blobIDs' digest locks then verifies each blob file still exists, in case image GC deleted it between resolve and reserve.
 func PinBlobs(cfg *BaseConfig, blobIDs map[string]struct{}) (func(), error) {
 	if len(blobIDs) == 0 {
 		return func() {}, nil

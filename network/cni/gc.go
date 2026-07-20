@@ -17,8 +17,8 @@ import (
 )
 
 type cniSnapshot struct {
-	dbVMIDs    map[string]struct{} // unique VM IDs from CNI DB records
-	netnsNames []string            // VM IDs extracted from /var/run/netns/cocoon-*
+	dbVMIDs    map[string]struct{}
+	netnsNames []string // VM IDs extracted from /var/run/netns/cocoon-*
 }
 
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.

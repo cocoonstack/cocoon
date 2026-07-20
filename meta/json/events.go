@@ -16,11 +16,7 @@ const (
 	eventsSafetyPoll = 5 * time.Second
 )
 
-// Events subscribes to committed-change signals: fsnotify on the
-// parent-directory set of every namespace file, confirmed against each
-// file's identity tuple (inode, size, mtime) — the thing writers rotate
-// atomically — with a low-frequency safety poll as the floor for lost
-// inotify events (design §7).
+// Events subscribes to committed-change signals: fsnotify confirmed against each file's (inode, size, mtime) identity, with a safety poll as a floor for missed events.
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -127,7 +123,7 @@ func (n *notifier) loop() {
 				return
 			}
 			n.checkAndBroadcast()
-		case <-watchErrs: // nil outside tests: never selected
+		case <-watchErrs:
 			n.checkAndBroadcast()
 		case <-timer.C:
 			pending = false

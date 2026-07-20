@@ -1,8 +1,4 @@
-// Package vmlock is the single resolver for per-VM operation locks: a
-// stable, VMID-keyed, backend-independent path used by CH, FC and CNI alike
-// (design §5). The lock lives outside every cleanup set — destructive
-// teardown never deletes it — and derives from the vmID alone, so the CNI
-// GC's recordless orphan netns can still find it with no record to consult.
+// Package vmlock resolves per-VM operation locks by vmID alone, so recordless orphan-netns GC can still find them; the lock file is never deleted by cleanup.
 package vmlock
 
 import (

@@ -28,7 +28,7 @@ type ImageGCSnapshot struct {
 type GCModuleConfig[E any] struct {
 	Name  string
 	Store *Store[E]
-	// LockPath returns the per-digest blob lock path (design §5).
+	// LockPath returns the per-digest blob lock path.
 	LockPath func(hex string) string
 	// ReadRefs extracts referenced digest hexes from the index.
 	ReadRefs func(map[string]*E) map[string]struct{}
@@ -42,8 +42,7 @@ type GCModuleConfig[E any] struct {
 	TempDir string
 	// DirOnly: true for OCI (temp dirs), false for cloudimg (temp files).
 	DirOnly bool
-	// PinnedElsewhere reports blobs pinned by VM/snapshot records, consulted
-	// under the digest lock — the candidate list predates those pins. Optional.
+	// PinnedElsewhere reports blobs pinned by VM/snapshot records, consulted under the digest lock since the candidate list predates those pins. Optional.
 	PinnedElsewhere func(ctx context.Context) (map[string]struct{}, error)
 }
 
@@ -81,11 +80,7 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 		},
 		Collect: func(ctx context.Context, ids []string, _ ImageGCSnapshot) error {
 			errs := gcStaleTemp(ctx, cfg.TempDir, cfg.DirOnly)
-			// Per-digest lock (TryLock): a publish holding it is mid
-			// rename-to-index and must not lose its blob; an unreferenced
-			// blob is otherwise recordless — its removal converges without a
-			// tombstone. The lock file is kept: unlinking a lock path splits
-			// exclusion for a live waiter.
+			// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 			logger := log.WithFunc("gc." + cfg.Name)
 			for _, hex := range ids {
 				fl := gofrsflock.New(cfg.LockPath(hex))
@@ -99,9 +94,7 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 					}
 					continue
 				}
-				// Revalidate under the held lock: a publish that finished after
-				// the snapshot may have referenced this digest — the candidate
-				// list is stale by design (loose GC).
+				// Revalidate under the held lock: a publish that finished after the snapshot may have referenced this digest.
 				referenced := false
 				if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
 					_, referenced = cfg.ReadRefs(idx.Images)[hex]
