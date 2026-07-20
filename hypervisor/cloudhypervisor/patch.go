@@ -12,6 +12,7 @@ import (
 
 type patchOptions struct {
 	storageConfigs []*types.StorageConfig
+	netTAPs        []string
 	consoleSock    string
 	vsockSock      string
 	directBoot     bool
@@ -61,6 +62,18 @@ func patchCHConfig(path string, opts *patchOptions) error {
 				return fmt.Errorf("patch vsock: %w", patchErr)
 			}
 			raw["vsock"] = patched
+		}
+	}
+
+	if len(opts.netTAPs) > 0 {
+		if netRaw, ok := raw["net"]; ok && rawObjectPresent(netRaw) {
+			patched, patchErr := patchRawArray(netRaw, len(opts.netTAPs), func(i int, elem map[string]json.RawMessage) error {
+				return setField(elem, "tap", opts.netTAPs[i])
+			})
+			if patchErr != nil {
+				return fmt.Errorf("patch nets: %w", patchErr)
+			}
+			raw["net"] = patched
 		}
 	}
 
