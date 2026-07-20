@@ -16,10 +16,20 @@ import (
 // mid-init leaves nothing or a complete store (§6). A file with no
 // meta_state table at all is a failed init and is restarted; anything else
 // is left for the operator.
-func Init(dbPath string, namespaces ...Namespace) (err error) {
+func Init(dbPath string, namespaces ...Namespace) error {
 	if err := refuseManifest(dbPath); err != nil {
 		return err
 	}
+	return initStore(dbPath, namespaces)
+}
+
+// InitForRecovery is Init without the manifest guard — the conversion tool
+// creates its target while the manifest is necessarily present (§6).
+func InitForRecovery(dbPath string, namespaces ...Namespace) error {
+	return initStore(dbPath, namespaces)
+}
+
+func initStore(dbPath string, namespaces []Namespace) (err error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
 		return err
 	}

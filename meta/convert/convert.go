@@ -135,7 +135,7 @@ func openTarget(spec Spec, target string) (meta.Store, error) {
 		return metajson.Open(spec.JSON...)
 	}
 	if !exists(spec.DBPath) {
-		if err := metasqlite.Init(spec.DBPath, spec.Decls...); err != nil {
+		if err := metasqlite.InitForRecovery(spec.DBPath, spec.Decls...); err != nil {
 			return nil, err
 		}
 	}
