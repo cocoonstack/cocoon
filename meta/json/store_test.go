@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -285,5 +286,47 @@ func TestEventsForcedOverflow(t *testing.T) {
 	case <-ch:
 	case <-time.After(3 * time.Second):
 		t.Fatal("no signal after forced overflow (safety poll is 5s, so this was the overflow path)")
+	}
+}
+
+// TestDurableSyncOrder is the §9 durability gate at the engine level: a
+// CommitDurable ack happens only after rename → main fsync → prev fsync →
+// parent-dir fsync all ran (a mis-wired durable path would skip them), while
+// CommitRelaxed relinquishes the post-main syncs — which is why it is allowed
+// to disappear. With the crash-boundary tests asserting every intermediate
+// state recovers, acked-durable-survives-power-loss follows from fs contract.
+func TestDurableSyncOrder(t *testing.T) {
+	var steps []string
+	testCrashStep = func(step string) error { steps = append(steps, step); return nil }
+	t.Cleanup(func() { testCrashStep = nil })
+	ctx := t.Context()
+	dir := t.TempDir()
+	s := newStore(t, dir, "alpha")
+	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+
+	steps = nil
+	v := map[string]int{"n": 1}
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "a", &v)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	idxOf := func(name string) int { return slices.Index(steps, name) }
+	renamed, mainSync, prevSync := idxOf("main-renamed"), idxOf("main-synced"), idxOf("prev-synced")
+	if renamed < 0 || mainSync < 0 || prevSync < 0 || !(renamed < mainSync && mainSync < prevSync) {
+		t.Fatalf("durable ack without full sync order: %v", steps)
+	}
+
+	steps = nil
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitRelaxed, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "b", &v, meta.RelaxedOK)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(steps, "prev-synced") {
+		t.Fatalf("relaxed commit ran the durable sync tail: %v", steps)
+	}
+	if !slices.Contains(steps, "main-renamed") {
+		t.Fatalf("relaxed commit skipped the atomic rename: %v", steps)
 	}
 }
