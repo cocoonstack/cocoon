@@ -275,7 +275,7 @@ func syncCommitted(st *nsState, mode meta.CommitMode) error {
 	if err := utils.SyncParentDir(filepath.Dir(path)); err != nil {
 		return code(err, meta.ErrIO)
 	}
-	return nil
+	return crash("dir-synced")
 }
 
 func crash(step string) error {

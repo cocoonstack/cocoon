@@ -57,7 +57,7 @@ func TestContractForcedRetryEngine(t *testing.T) {
 }
 
 func TestCommitAtomicityUnderCrash(t *testing.T) {
-	steps := []string{"prev-linked", "prev-rotated", "main-renamed", "main-synced", "prev-synced"}
+	steps := []string{"prev-linked", "prev-rotated", "main-renamed", "main-synced", "prev-synced", "dir-synced"}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			ctx := t.Context()
@@ -312,8 +312,8 @@ func TestDurableSyncOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	idxOf := func(name string) int { return slices.Index(steps, name) }
-	renamed, mainSync, prevSync := idxOf("main-renamed"), idxOf("main-synced"), idxOf("prev-synced")
-	if renamed < 0 || mainSync < 0 || prevSync < 0 || !(renamed < mainSync && mainSync < prevSync) {
+	renamed, mainSync, prevSync, dirSync := idxOf("main-renamed"), idxOf("main-synced"), idxOf("prev-synced"), idxOf("dir-synced")
+	if renamed < 0 || mainSync < 0 || prevSync < 0 || dirSync < 0 || !(renamed < mainSync && mainSync < prevSync && prevSync < dirSync) {
 		t.Fatalf("durable ack without full sync order: %v", steps)
 	}
 
@@ -323,7 +323,7 @@ func TestDurableSyncOrder(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(steps, "prev-synced") {
+	if slices.Contains(steps, "prev-synced") || slices.Contains(steps, "dir-synced") {
 		t.Fatalf("relaxed commit ran the durable sync tail: %v", steps)
 	}
 	if !slices.Contains(steps, "main-renamed") {
