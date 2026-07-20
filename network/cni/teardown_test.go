@@ -2,11 +2,13 @@ package cni
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
@@ -256,12 +258,49 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := c.Add(ctx, "vm6", testVMCfg(), network.AddSpec{Index: 0}); err == nil || !strings.Contains(err.Error(), "mid-delete") {
-		t.Fatalf("Add after aggregate roll-forward must refuse, got %v", err)
+	if _, err := c.Add(ctx, "vm6", testVMCfg(), network.AddSpec{Index: 0}); !errors.Is(err, meta.ErrConflict) {
+		t.Fatalf("Add after aggregate roll-forward must refuse with ErrConflict, got %v", err)
 	}
 	assertRecordIDs(t, c, nil)
 
 	if _, err := c.Add(ctx, "vm6", testVMCfg(), network.AddSpec{Index: 0}); err != nil {
 		t.Fatalf("retry on the clean slate: %v", err)
+	}
+}
+
+// TestAddRefusesAfterSubsetRollForward pins the §5 binding rule without a
+// mode exception: even a subset deleting recovery fails the current Add; the
+// retry proceeds from the recovered state.
+func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	ctx := t.Context()
+	seedRecords(t, c, "vm7", "eth0", "eth1")
+
+	ts := c.tombstones()
+	var leaseID string
+	if err := c.update(ctx, func(tx *netTx) error {
+		cleanup, err := tombstone.MarshalCleanup(netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
+		if err != nil {
+			return err
+		}
+		leaseID, err = ts.Lease(ctx, tx.w, "vm7", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.update(ctx, func(tx *netTx) error {
+		return ts.MarkDeleting(ctx, tx.w, "vm7", leaseID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.Add(ctx, "vm7", testVMCfg(), network.AddSpec{Index: 2}); !errors.Is(err, meta.ErrConflict) {
+		t.Fatalf("Add after subset roll-forward must refuse with ErrConflict, got %v", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth0"})
+
+	if _, err := c.Add(ctx, "vm7", testVMCfg(), network.AddSpec{Index: 2}); err != nil {
+		t.Fatalf("retry after recovery: %v", err)
 	}
 }

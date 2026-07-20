@@ -13,6 +13,7 @@ import (
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -175,19 +176,17 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// guardAdd is Add's entry discipline (design §2/§5): an interrupted teardown
-// must finish before new NICs are plumbed — its recovery re-runs DELs by
-// ifname and would tear a fresh NIC down. A completed AGGREGATE roll-forward
-// refuses this Add (the whole VM's networking was mid-delete); a subset
-// recovery only closed out an old NIC's removal and the fresh Add proceeds.
-// The caller holds the VM lock.
+// guardAdd is Add's entry discipline (design §5 binding rule): an interrupted
+// teardown must finish before new NICs are plumbed, and ANY completed deleting
+// roll-forward fails the current operation — the retry starts from the
+// recovered state. The caller holds the VM lock.
 func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
-	aggregate, err := c.recoverTombstone(ctx, vmID)
+	rolledForward, err := c.recoverTombstone(ctx, vmID)
 	if err != nil {
 		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
 	}
-	if aggregate {
-		return fmt.Errorf("vm %s networking was mid-delete; teardown completed, retry the operation", vmID)
+	if rolledForward {
+		return fmt.Errorf("vm %s network teardown was interrupted; recovery completed, retry the operation: %w", vmID, meta.ErrConflict)
 	}
 	return nil
 }
