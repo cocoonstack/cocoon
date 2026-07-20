@@ -6,7 +6,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 )
 
@@ -25,7 +25,7 @@ type Firecracker struct {
 }
 
 // New creates a Firecracker backend. rec may be nil; the backend falls back to NopRecorder for emit calls.
-func New(conf *config.Config, rec metering.Recorder, store *metajson.Store) (*Firecracker, error) {
+func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecracker, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
