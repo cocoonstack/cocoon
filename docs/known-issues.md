@@ -51,7 +51,8 @@ This is by design: clone restores the VM's exact state including all account set
 `cocoon vm exec` dials the cocoon-agent inside the guest over hybrid vsock. Two caveats:
 
 - **Legacy VMs (created before vsock support landed)** have no vsock UDS bound. `vm inspect` omits `vsock_socket` and `vm exec` returns `vsock not configured for this VM (recreate the VM to enable agent exec)`. Recreate the VM to gain exec capability.
-- **FC clone vsock requires FC ≥ v1.16** (the `vsock_override` field on `PUT /snapshot/load` was merged post-v1.15). Older FC rejects the field with `unknown field vsock_override`. Cocoon omits the field on same-VM restore, so FC < v1.16 still runs and restores fine — only `vm clone` needs the field, hence needs FC ≥ v1.16. `doctor/check.sh` installs v1.16.0 by default.
+- **FC clone vsock requires FC ≥ v1.16** (the `vsock_override` field on `PUT /snapshot/load` was merged post-v1.15). Older FC rejects the field with `unknown field vsock_override`. Cocoon omits the field on same-VM restore, so FC < v1.16 still runs and restores fine — only `vm clone` needs the field.
+- **FC v1.16.0 snapshot-restore permanently breaks guest vsock** ([#140](https://github.com/cocoonstack/cocoon/issues/140)): after `vm clone` or `vm restore` the guest agent never answers hybrid-vsock `CONNECT`, with no recovery. Fixed upstream in FC v1.16.1 — the effective floor for any FC restore/clone lane. `doctor/check.sh` installs v1.16.1 by default.
 
 Windows guests are supported as of cocoon-agent v0.1.3 (registered via SCM, runs as `LocalSystem`). Official `ghcr.io/cocoonstack/windows/win11:*` images bake the agent and a `CocoonNicAutoHeal` scheduled task that recovers chained-clone NDIS-stuck NICs in-guest. DIY Windows images need to install both pieces themselves; without the agent, `vm exec` returns `read CONNECT reply: EOF`.
 
