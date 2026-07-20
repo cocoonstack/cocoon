@@ -132,8 +132,9 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 
 	// gc pass: the REAL orchestration on both sides — discovery, age cutoff
 	// through the seamed clock, ops-lock, under-lock revalidation.
+	// Real dirs mirror tracegen: lockable run dir, paths never in compared output.
 	cfgDelta := &types.VMConfig{Name: "delta", Config: types.Config{CPU: 1}}
-	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, "/r/VM4", "/l/VM4"))
+	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, t.TempDir(), t.TempDir()))
 	clock = clock.Add(25 * time.Hour)
 	orch := gc.New()
 	b.RegisterGC(orch)
