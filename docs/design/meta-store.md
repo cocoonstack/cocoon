@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.13)
+# Meta store: unified metadata layer (design v2.14)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -352,7 +352,11 @@ Per candidate:
    sorted digest order so two concurrent multi-digest pins cannot deadlock.
 3. Short `Update` on the target namespace (Durable): re-read every relevant
    namespace, verify state/references/UpdatedAt still qualify, insert the
-   tombstone with a freshly generated `lease_id` and `phase='leased'`, commit.
+   tombstone with a freshly generated `lease_id`, `phase='leased'` AND its
+   complete `payload`, commit. The payload is known here — it is derived from
+   the candidate — and the column is `NOT NULL` precisely so a tombstone can
+   never exist without the information its recovery needs. Step 4 only flips
+   the phase; it adds nothing.
 4. Short `Update`, committed **before any filesystem work** and guarded by
    `WHERE ... AND lease_id=?`: flip the tombstone to `phase='deleting'`,
    copying the paths cleanup needs into the tombstone so a recovering worker
@@ -450,7 +454,8 @@ convert: the meta refactor is behavior-preserving for them (§8, §9 fixtures).
   locks free); load each namespace via the source engine
   (json source preserves `.prev` recovery); derive the name index from
   records and VERIFY it against the source's own name map (mismatch → abort
-  with a report); write all records plus the `meta_state` row
+  with a report); write all records plus — for a SQLITE target only, since
+  json has no such concept — the `meta_state` row
   (`state='converted'`, source path, sha256, record count) in one Durable
   transaction per namespace; commit; then rename the source aside
   (`*.converted-<ts>`) and sync the parent dir.
@@ -595,6 +600,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   cleanup leaves the entity's lock file intact (it is outside the cleanup
   set), that a worker holding it still holds the SAME inode afterwards, and
   that the reaper removes a lock file only when `TryLock` proves it unheld.
+- **Subset teardown recovery**: crash mid-`deleting` on a SUBSET lease (a
+  one-NIC `vm net remove`), then recover — the untouched NIC rows, their
+  TAPs, and the netns must all survive. A generic aggregate-shaped GC test
+  passes while this fails, which is exactly why it is called out separately.
 - **Tombstone fencing / ABA**: kill worker A mid-`deleting` → B acquires the
   released ops lock, recovers under a NEW `lease_id` and finalizes → replaying
   A's exact finalize statement affects zero rows. Also assert the negative
@@ -608,6 +617,13 @@ Engine-scoped, because the engines have deliberately different cost models.
   skipped an fsync), and a `CommitRelaxed` write is ALLOWED to disappear —
   the old-or-new atomicity and invariant gates pass either way, so this needs
   its own assertion.
+- **Backup fidelity** (sqlite): take a backup while a writer is active and
+  the WAL is non-empty, then restore it — every acknowledged commit must be
+  present (a backup that silently omits un-checkpointed WAL state passes
+  every other gate); and assert that the previously published backup stays
+  intact and usable until the replacement is fully committed, with crashes
+  injected at each step of the temp → verify → fsync → rename → parent-sync
+  sequence.
 - **Init atomicity**: crash injected during `meta init` leaves either no
   store or a fully initialized one; a file with schema but zero `meta_state`
   rows is recognized as a failed init and restarted, while any other
