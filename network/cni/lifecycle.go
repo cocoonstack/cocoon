@@ -51,18 +51,8 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	nsName := netnsName(vmID)
 	nsPath := netnsPath(vmID)
 
-	// Entrypoint discipline (design §2/§5): an interrupted teardown must
-	// finish before new NICs are plumbed — its recovery re-runs DELs by
-	// ifname and would tear a fresh NIC down. The caller holds the VM lock.
-	// A completed AGGREGATE roll-forward refuses this Add: the whole VM's
-	// networking was mid-delete; a subset recovery only closed out an old
-	// NIC's removal and the fresh Add proceeds.
-	aggregate, err := c.recoverTombstone(ctx, vmID)
-	if err != nil {
-		return nil, fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
-	}
-	if aggregate {
-		return nil, fmt.Errorf("vm %s networking was mid-delete; teardown completed, retry the operation", vmID)
+	if err = c.guardAdd(ctx, vmID); err != nil {
+		return nil, err
 	}
 
 	var stale map[string]networkRecord
@@ -183,6 +173,23 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 		return nil
 	})
+}
+
+// guardAdd is Add's entry discipline (design §2/§5): an interrupted teardown
+// must finish before new NICs are plumbed — its recovery re-runs DELs by
+// ifname and would tear a fresh NIC down. A completed AGGREGATE roll-forward
+// refuses this Add (the whole VM's networking was mid-delete); a subset
+// recovery only closed out an old NIC's removal and the fresh Add proceeds.
+// The caller holds the VM lock.
+func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
+	aggregate, err := c.recoverTombstone(ctx, vmID)
+	if err != nil {
+		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
+	}
+	if aggregate {
+		return fmt.Errorf("vm %s networking was mid-delete; teardown completed, retry the operation", vmID)
+	}
+	return nil
 }
 
 // Remove tears down NIC plumbing for the given indices; preserves the netns. A failed NIC keeps its DB record so retry / vm rm / GC can still release its CNI resources.
