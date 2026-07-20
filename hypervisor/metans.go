@@ -13,6 +13,7 @@ const (
 	tableRecords    = "records"
 	tableNames      = "names"
 	tableOrphanDirs = "orphandirs"
+	tableTombstones = "tombstones"
 
 	orphanDirEntry = "{}"
 )
@@ -46,6 +47,7 @@ type rawVMIndex struct {
 	VMs        map[string]json.RawMessage `json:"vms"`
 	Names      map[string]json.RawMessage `json:"names"`
 	OrphanDirs []string                   `json:"orphan_dirs,omitempty"`
+	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
 }
 
 func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
@@ -65,6 +67,9 @@ func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 	}
 	for _, dir := range idx.OrphanDirs {
 		m.Put(tableOrphanDirs, dir, json.RawMessage(orphanDirEntry))
+	}
+	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
+		m.Put(tableTombstones, id, idx.Tombstones[id])
 	}
 	return m, nil
 }
@@ -89,6 +94,12 @@ func (vmIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
 	if len(dirs) > 0 {
 		buf = append(buf, `,"orphan_dirs":`...)
 		if buf, err = metajson.AppendStringSlice(buf, dirs); err != nil {
+			return nil, err
+		}
+	}
+	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
+		buf = append(buf, `,"tombstones":`...)
+		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
 			return nil, err
 		}
 	}

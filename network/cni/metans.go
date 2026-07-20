@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	metaNS    = "networks"
-	tableRecs = "records"
+	metaNS     = "networks"
+	tableRecs  = "records"
+	tableTombs = "tombstones"
 )
 
 // MetaNamespace declares the network namespace over the legacy networks.json.

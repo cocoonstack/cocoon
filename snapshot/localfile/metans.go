@@ -16,6 +16,7 @@ const (
 	metaNS     = "snapshots"
 	tableRecs  = "records"
 	tableNames = "names"
+	tableTombs = "tombstones"
 )
 
 // MetaNamespace declares the snapshot namespace over the legacy snapshots.json.

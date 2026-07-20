@@ -13,7 +13,10 @@ import (
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 )
 
-const tableRecords = "records"
+const (
+	tableRecords    = "records"
+	tableTombstones = "tombstones"
+)
 
 // Store is one image namespace on the shared meta engine, presenting the
 // legacy whole-index closure shape over record primitives. Image lookups are
@@ -151,44 +154,45 @@ func MetaNamespace[E any](ns, indexFile, lockPath string) metajson.Namespace {
 	return metajson.Namespace{Name: ns, FilePath: indexFile, LockPath: lockPath, Codec: IndexCodec[E]{}}
 }
 
-// IndexCodec reproduces the legacy {"images":{...}} file byte-for-byte.
+// IndexCodec reproduces the legacy {"images":{...}} file byte-for-byte;
+// records cross as raw messages (no per-record re-marshal).
 type IndexCodec[E any] struct{}
+
+// rawImageIndex mirrors Index's field layout with pass-through record bytes.
+type rawImageIndex struct {
+	Images     map[string]json.RawMessage `json:"images"`
+	Tombstones map[string]json.RawMessage `json:"tombstones,omitempty"`
+}
 
 func (IndexCodec[E]) Decode(data []byte) (*metajson.Model, error) {
 	m := metajson.NewModel()
 	if data == nil {
 		return m, nil
 	}
-	var idx Index[E]
+	var idx rawImageIndex
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return nil, err
 	}
 	for _, id := range slices.Sorted(maps.Keys(idx.Images)) {
-		raw, err := json.Marshal(idx.Images[id])
-		if err != nil {
-			return nil, err
-		}
-		m.Put(tableRecords, id, raw)
+		m.Put(tableRecords, id, idx.Images[id])
+	}
+	for _, id := range slices.Sorted(maps.Keys(idx.Tombstones)) {
+		m.Put(tableTombstones, id, idx.Tombstones[id])
 	}
 	return m, nil
 }
 
 func (IndexCodec[E]) Encode(m *metajson.Model) ([]byte, error) {
-	idx := Index[E]{}
-	idx.Init()
-	if err := m.Scan(tableRecords, func(id string, raw json.RawMessage) error {
-		var e E
-		if err := json.Unmarshal(raw, &e); err != nil {
-			return err
-		}
-		idx.Images[id] = &e
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(&idx)
+	buf := append([]byte(nil), `{"images":`...)
+	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
 	if err != nil {
 		return nil, err
 	}
-	return append(data, '\n'), nil
+	if ts := metajson.CollectTable(m, tableTombstones); len(ts) > 0 {
+		buf = append(buf, `,"tombstones":`...)
+		if buf, err = metajson.AppendRawMap(buf, ts); err != nil {
+			return nil, err
+		}
+	}
+	return append(buf, '}', '\n'), nil
 }
