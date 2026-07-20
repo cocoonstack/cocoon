@@ -522,7 +522,7 @@ func TestReconcileToRunningIdempotent(t *testing.T) {
 
 func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 	cfg := newDiskStubConfig(t)
-	b, err := NewBackend("test-hv", cfg, nil, newTestMetaStore(t, "test-hv", cfg))
+	b, err := NewBackend("test-hv", cfg, nil, newTestMetaStore(t, "test-hv", cfg.indexFile, cfg.indexLock))
 	if err != nil {
 		t.Fatalf("NewBackend(rec=nil): %v", err)
 	}

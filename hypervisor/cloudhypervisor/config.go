@@ -36,5 +36,6 @@ func (c *Config) CidataPath(vmID string) string {
 
 // MetaNamespace declares this backend's namespace on the shared meta store.
 func MetaNamespace(conf *config.Config) metajson.Namespace {
-	return hypervisor.MetaNamespace(typ, NewConfig(conf))
+	cfg := NewConfig(conf)
+	return hypervisor.MetaNamespace(typ, cfg.IndexFile(), cfg.IndexLock())
 }

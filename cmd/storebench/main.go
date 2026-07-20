@@ -22,7 +22,7 @@ func main() {
 	dir, _ := os.MkdirTemp("", "storebench-*")
 	defer os.RemoveAll(dir) //nolint:errcheck
 	ctx := context.Background()
-	store, err := metajson.Open(hypervisor.MetaNamespace("bench", benchConfig{dir: dir}))
+	store, err := metajson.Open(hypervisor.MetaNamespace("bench", filepath.Join(dir, "vms.json"), filepath.Join(dir, "vms.lock")))
 	if err != nil {
 		panic(err)
 	}

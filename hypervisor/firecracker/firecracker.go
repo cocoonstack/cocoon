@@ -14,7 +14,6 @@ const typ = "firecracker"
 
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
-	_ hypervisor.Watchable  = (*Firecracker)(nil)
 	_ hypervisor.Direct     = (*Firecracker)(nil)
 )
 

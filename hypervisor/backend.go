@@ -52,8 +52,6 @@ type BackendConfig interface {
 	TerminateGracePeriod() time.Duration
 	SocketWaitTimeout() time.Duration
 	EffectivePoolSize() int
-	IndexFile() string
-	IndexLock() string
 	EnsureDirs() error
 	RunDir() string
 	LogDir() string

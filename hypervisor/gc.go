@@ -131,11 +131,6 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// WatchPath returns VM index file path for filesystem-based watching.
-func (b *Backend) WatchPath() string {
-	return b.Conf.IndexFile()
-}
-
 // gcRecover resumes existing tombstones by phase before discovery: an
 // interrupted delete never reappears as a candidate, and stranding it would
 // leak forever (design §5 recovery-precedes-discovery).

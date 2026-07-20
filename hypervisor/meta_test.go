@@ -15,9 +15,9 @@ import (
 )
 
 // newTestMetaStore opens a meta store over conf's index paths for one backend type.
-func newTestMetaStore(t *testing.T, typ string, conf BackendConfig) *metajson.Store {
+func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
-	store, err := metajson.Open(MetaNamespace(typ, conf))
+	store, err := metajson.Open(MetaNamespace(typ, indexFile, lockPath))
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)
 	}

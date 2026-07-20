@@ -24,11 +24,11 @@ func VMNamespaceName(typ string) string {
 }
 
 // MetaNamespace declares a backend's namespace over its legacy vms.json.
-func MetaNamespace(typ string, conf BackendConfig) metajson.Namespace {
+func MetaNamespace(typ, indexFile, lockPath string) metajson.Namespace {
 	return metajson.Namespace{
 		Name:     VMNamespaceName(typ),
-		FilePath: conf.IndexFile(),
-		LockPath: conf.IndexLock(),
+		FilePath: indexFile,
+		LockPath: lockPath,
 		Codec:    vmIndexCodec{},
 	}
 }

@@ -15,7 +15,6 @@ const typ = "cloud-hypervisor"
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
 	_ hypervisor.Direct     = (*CloudHypervisor)(nil)
-	_ hypervisor.Watchable  = (*CloudHypervisor)(nil)
 )
 
 // CloudHypervisor implements hypervisor.Hypervisor.
