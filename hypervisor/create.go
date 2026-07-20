@@ -15,7 +15,7 @@ import (
 
 // ReserveVM inserts a "creating" placeholder under id, failing on id/name collision. Re-reserving the placeholder this same create claimed via PrereserveVM adopts it (refreshing blob pins and dirs).
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
-	now := time.Now()
+	now := timeNow()
 	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
 	return b.updateRelaxed(ctx, func(t *vmTx) error {
 		existing, err := t.Get(id)
@@ -96,7 +96,7 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 	}); err != nil {
 		return err
 	}
-	b.Metering.Emit(ctx, b.makeEntry(metering.KindVMStorageStart, id, metering.ReasonBoot, shapeFromConfig(info.Config), time.Now()))
+	b.Metering.Emit(ctx, b.makeEntry(metering.KindVMStorageStart, id, metering.ReasonBoot, shapeFromConfig(info.Config), timeNow()))
 	return nil
 }
 
@@ -144,7 +144,7 @@ func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *type
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
 		return "", "", time.Time{}, nil, err
 	}
-	now = time.Now()
+	now = timeNow()
 	runDir = b.Conf.VMRunDir(id)
 	logDir = b.Conf.VMLogDir(id)
 

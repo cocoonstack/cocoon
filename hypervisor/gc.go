@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -69,7 +68,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 		Recover: b.gcRecover,
 		ReadDB: func(ctx context.Context) (VMGCSnapshot, error) {
 			snap := VMGCSnapshot{reasons: make(map[string]string)}
-			cutoff := time.Now().Add(-CreatingStateGCGrace)
+			cutoff := timeNow().Add(-CreatingStateGCGrace)
 			if err := b.view(ctx, func(t *vmTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
@@ -161,7 +160,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
-	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	cutoff := timeNow().Add(-CreatingStateGCGrace)
 	for _, id := range ids {
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, id, func() {
@@ -213,7 +212,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 
 // sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age. It runs per-dir under the VM ops lock: the staging name is fixed, so without it a fresh restore could recreate the dir between the age check and the removal (ABA) and lose its staging mid-flight.
 func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) []error {
-	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	cutoff := timeNow().Add(-CreatingStateGCGrace)
 	var errs []error
 	for _, dir := range runDirs {
 		// The run dir's basename is its VM ID — the lock domain of everything inside it.
@@ -238,7 +237,7 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 		return nil
 	}
 	logger := log.WithFunc("gc." + b.Typ)
-	cutoff := time.Now().Add(-CreatingStateGCGrace)
+	cutoff := timeNow().Add(-CreatingStateGCGrace)
 	var errs []error
 	for _, e := range entries {
 		info, infoErr := e.Info()

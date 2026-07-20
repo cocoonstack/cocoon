@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -48,7 +47,7 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 }
 
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
-	now := time.Now()
+	now := timeNow()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
 		r.State = types.VMStateRunning
@@ -203,7 +202,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 
 // emitRestoreComputeStop closes the compute interval after a confirmed kill; fail-closed on DB error and skip on vanished record so the ledger never gets a phantom entry.
 func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldShape metering.Shape, sourceSnapshotID string) {
-	now := time.Now()
+	now := timeNow()
 	closed := false
 	if err := b.update(ctx, func(t *vmTx) error {
 		closed = false
@@ -231,7 +230,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 
 // emitRestoreSuccess closes old storage and opens fresh storage+compute.
 func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape metering.Shape, sourceSnapshotID string) {
-	now := time.Now()
+	now := timeNow()
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, vm.ID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
 }

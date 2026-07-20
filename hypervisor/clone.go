@@ -79,6 +79,6 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 	}); err != nil {
 		return err
 	}
-	b.emitOpenInterval(ctx, info, metering.ReasonClone, sourceSnapshotID, time.Now())
+	b.emitOpenInterval(ctx, info, metering.ReasonClone, sourceSnapshotID, timeNow())
 	return nil
 }

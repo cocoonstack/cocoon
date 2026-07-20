@@ -101,7 +101,7 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	if state == types.VMStateRunning {
 		return fmt.Errorf("UpdateStates(Running) not allowed; use BatchMarkStarted")
 	}
-	now := time.Now()
+	now := timeNow()
 	// Metering entries stage inside the closure and publish only on nil return,
 	// so a retried closure cannot double-emit (meta contract clause 1).
 	var stopped []metering.Entry
@@ -145,7 +145,7 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
-	now := time.Now()
+	now := timeNow()
 	if err := b.update(ctx, func(t *vmTx) error {
 		r, err := t.Get(id)
 		if err != nil || r == nil {
@@ -165,7 +165,7 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	now := time.Now()
+	now := timeNow()
 	// Staged-then-published like UpdateStates: closure purity under retry.
 	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
@@ -204,7 +204,7 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 
 // closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.
 func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
-	now := time.Now()
+	now := timeNow()
 	closed := false
 	if err := b.update(ctx, func(t *vmTx) error {
 		closed = false
@@ -234,7 +234,7 @@ func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) 
 
 // reconcileToRunning flips State→Running for a drifted record whose process is alive. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
 func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
-	now := time.Now()
+	now := timeNow()
 	var (
 		emit   bool
 		shape  metering.Shape

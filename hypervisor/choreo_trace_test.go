@@ -5,14 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
+	"time"
 
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
 )
-
-var choreoTSRe = regexp.MustCompile(`"(19|20)\d{2}-\d{2}-\d{2}T[^"]*"`)
 
 type choreoStep struct {
 	Op       string   `json:"op"`
@@ -53,15 +51,21 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	normalize := func(s string) string { return choreoTSRe.ReplaceAllString(s, `"TS"`) }
+	// The injected deterministic clock (design §10) makes results and final
+	// bytes byte-exact against the legacy-recorded golden.
+	clock := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	origNow := timeNow
+	timeNow = func() time.Time { return clock }
+	t.Cleanup(func() { timeNow = origNow })
+
 	classify := func(err error) (string, string) {
 		switch {
 		case err == nil:
 			return "nil", ""
 		case errors.Is(err, ErrNotFound):
-			return "notfound", normalize(err.Error())
+			return "notfound", err.Error()
 		default:
-			return "other", normalize(err.Error())
+			return "other", err.Error()
 		}
 	}
 	var steps []choreoStep
@@ -72,7 +76,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 			kinds = append(kinds, string(e.Kind)+"/"+string(e.Reason))
 		}
 		rec.Reset()
-		steps = append(steps, choreoStep{Op: op, ErrClass: cls, ErrMsg: msg, Result: normalize(result), Metering: kinds})
+		steps = append(steps, choreoStep{Op: op, ErrClass: cls, ErrMsg: msg, Result: result, Metering: kinds})
 	}
 	loadJSON := func(id string) string {
 		r, err := b.LoadRecord(ctx, id)
@@ -115,6 +119,32 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "beta")
 	record("rollback-then-resolve", "", err)
 
+	// delete: the P1 phase protocol replaces legacy's inline record removal;
+	// the differential holds at values, errors and final state.
+	vm1, err := b.LoadRecord(ctx, "VM1")
+	if err != nil {
+		t.Fatalf("load VM1 pre-delete: %v", err)
+	}
+	record("delete", "", b.deleteVMProtocol(ctx, "VM1", &vm1, nil))
+	_, err = b.ResolveRef(ctx, "alpha")
+	record("delete-then-resolve", "", err)
+
+	// gc pass: the protocol GC's stale-creating sweep (gcCollect's record
+	// action) vs legacy CleanStalePlaceholders.
+	cfgDelta := &types.VMConfig{Name: "delta", Config: types.Config{CPU: 1}}
+	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, "/r/VM4", "/l/VM4"))
+	clock = clock.Add(25 * time.Hour)
+	vm4, err := b.LoadRecord(ctx, "VM4")
+	if err != nil {
+		t.Fatalf("load VM4 pre-sweep: %v", err)
+	}
+	record("gc-pass", "", b.deleteVMProtocol(ctx, "VM4", &vm4, nil))
+	_, err = b.ResolveRef(ctx, "delta")
+	record("gc-pass-then-resolve", "", err)
+
+	cfgEps := &types.VMConfig{Name: "epsilon", Config: types.Config{Image: "img:2", CPU: 1, Memory: 1 << 29, Storage: 5 << 30}}
+	recordLoad("reserve-vm5", "VM5", b.ReserveVM(ctx, "VM5", cfgEps, map[string]struct{}{"blobC": {}}, "/r/VM5", "/l/VM5"))
+
 	if len(steps) != len(golden.Steps) {
 		t.Fatalf("step count drift: got %d, legacy %d", len(steps), len(golden.Steps))
 	}
@@ -138,7 +168,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("final bytes: %v", err)
 	}
-	if got := normalize(string(final)); got != golden.FinalBytes {
+	if got := string(final); got != golden.FinalBytes {
 		t.Errorf("final namespace bytes drift:\n got: %s\nwant: %s", got, golden.FinalBytes)
 	}
 }

@@ -44,6 +44,9 @@ const (
 	GracefulStopPollInterval = 500 * time.Millisecond
 )
 
+// timeNow is the deterministic-clock seam the differential trace injects (design §10).
+var timeNow = time.Now
+
 // BackendConfig provides backend-specific values needed by shared Backend methods.
 type BackendConfig interface {
 	BinaryName() string
