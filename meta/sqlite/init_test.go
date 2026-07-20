@@ -36,6 +36,23 @@ func TestFailedInitRestarts(t *testing.T) {
 	}
 }
 
+func TestInitIdentityAtomicWithSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	// The retired pragmas-after-commit window: schema present, identity
+	// absent. It must refuse loudly, never strand or silently delete.
+	db, err := open(path, "FULL", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL, source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if err := Init(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
+		t.Fatalf("want loud refusal on half-identified db, got %v", err)
+	}
+}
+
 func TestForeignPopulatedDBRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
 	db, err := open(path, "FULL", true)

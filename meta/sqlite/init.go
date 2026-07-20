@@ -14,9 +14,8 @@ import (
 
 // Init creates a fresh store: schema DDL, identity pragmas and one
 // initialized meta_state row per namespace, all in ONE transaction — a crash
-// mid-init leaves nothing or a complete store (§6). A file with no
-// meta_state table at all is a failed init and is restarted; anything else
-// is left for the operator.
+// mid-init leaves nothing or a complete store (§6). An empty database is a
+// failed init and is restarted; anything else is left for the operator.
 func Init(dbPath string, namespaces ...Namespace) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
@@ -59,18 +58,16 @@ func initStore(dbPath string, namespaces []Namespace) (err error) {
 	if err := createSchema(tx, namespaces); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	// Identity pragmas ride the same transaction as the schema: a crash
+	// leaves nothing (or an empty file) or a complete store, never a
+	// half-identified one (§6).
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA application_id = %d", ApplicationID)); err != nil {
 		return mapErr(err)
 	}
-	// Identity pragmas cannot run inside the transaction; they land after the
-	// schema commit, and failedInit treats their absence as a failed init.
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA application_id = %d", ApplicationID)); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion)); err != nil {
 		return mapErr(err)
 	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion)); err != nil {
-		return mapErr(err)
-	}
-	return nil
+	return mapErr(tx.Commit())
 }
 
 func createSchema(tx *sql.Tx, namespaces []Namespace) error {
@@ -92,8 +89,9 @@ func createSchema(tx *sql.Tx, namespaces []Namespace) error {
 	return nil
 }
 
-// failedInit reports whether dbPath is a crashed init: identity pragmas
-// unset or the meta_state table missing entirely.
+// failedInit reports whether dbPath is a crashed init. Init is atomic, so
+// the only restartable state is an empty database (driver lazy-touch or a
+// crash before the commit); anything populated is refused, never deleted.
 func failedInit(dbPath string) (bool, error) {
 	db, err := open(dbPath, "FULL", false)
 	if err != nil {
@@ -107,21 +105,15 @@ func failedInit(dbPath string) (bool, error) {
 		}
 		return false, mapErr(serr)
 	}
-	var tables, metaState int
-	if serr := db.QueryRow("SELECT count(*), count(*) FILTER (WHERE name = 'meta_state') FROM sqlite_master WHERE type = 'table'").Scan(&tables, &metaState); serr != nil {
+	var tables int
+	if serr := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables); serr != nil {
 		return false, mapErr(serr)
 	}
-	if appID == 0 {
-		// Our crash windows leave either an empty file or the committed schema
-		// with pragmas unset; a populated zero-appid DB without meta_state is
-		// someone else's file, never deleted.
-		if tables == 0 || metaState > 0 {
-			return true, nil
-		}
-		return false, fmt.Errorf("%s: populated database without cocoon identity; move it aside: %w", dbPath, meta.ErrCorrupt)
+	if tables == 0 {
+		return true, nil
 	}
 	if appID != ApplicationID {
-		return false, fmt.Errorf("%s: application_id %#x is not a cocoon meta store: %w", dbPath, appID, meta.ErrCorrupt)
+		return false, fmt.Errorf("%s: populated database without cocoon identity; move it aside: %w", dbPath, meta.ErrCorrupt)
 	}
-	return metaState == 0, nil
+	return false, nil
 }
