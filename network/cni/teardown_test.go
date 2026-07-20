@@ -84,6 +84,58 @@ func TestAggregateTeardownRecovery(t *testing.T) {
 	}
 }
 
+// TestAggregateRecoveryAfterNetnsGone converges the crash window between
+// netns removal and the record sweep: TAP deletion is skipped (the TAPs died
+// with the ns), DELs still run, rows sweep, the tombstone finalizes.
+func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	tapDeletes := 0
+	origTAP, origStat := deleteTAPFn, statNetnsFn
+	deleteTAPFn = func(string, string) error { tapDeletes++; return nil }
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	t.Cleanup(func() { deleteTAPFn, statNetnsFn = origTAP, origStat })
+	ctx := t.Context()
+	seedRecords(t, c, "vm5", "eth0")
+
+	ts := c.tombstones()
+	var leaseID string
+	if err := c.update(ctx, func(tx *netTx) error {
+		cleanup, err := tombstone.MarshalCleanup(netCleanup{Netns: "vm5", Records: []netCleanupRecord{{ID: "n-eth0", Type: "cni-bridge", IfName: "eth0"}}})
+		if err != nil {
+			return err
+		}
+		leaseID, err = ts.Lease(ctx, tx.w, "vm5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.update(ctx, func(tx *netTx) error {
+		return ts.MarkDeleting(ctx, tx.w, "vm5", leaseID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.recoverTombstone(ctx, "vm5"); err != nil {
+		t.Fatalf("recover with netns gone: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+	if tapDeletes != 0 {
+		t.Fatalf("TAP delete attempted against a removed netns (%d)", tapDeletes)
+	}
+	var left *tombstone.Record
+	if err := c.view(ctx, func(tx *netTx) error {
+		var err error
+		left, err = ts.Get(ctx, tx.r, "vm5")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if left != nil {
+		t.Fatalf("tombstone survived converged recovery: %+v", left)
+	}
+}
+
 // TestSubsetFailureKeepsTombstone pins the retry story: a failing DEL keeps
 // the row and the subset tombstone, and the error names the retry path.
 func TestSubsetFailureKeepsTombstone(t *testing.T) {
