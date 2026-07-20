@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,9 +23,12 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
 	netnsRemoved := 0
-	origNetns := deleteNetnsFn
+	var tapsDeleted []string
+	origNetns, origTAP, origStat := deleteNetnsFn, deleteTAPFn, statNetnsFn
 	deleteNetnsFn = func(context.Context, string) error { netnsRemoved++; return nil }
-	t.Cleanup(func() { deleteNetnsFn = origNetns })
+	deleteTAPFn = func(_, tap string) error { tapsDeleted = append(tapsDeleted, tap); return nil }
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil } // netns present
+	t.Cleanup(func() { deleteNetnsFn, deleteTAPFn, statNetnsFn = origNetns, origTAP, origStat })
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
@@ -59,6 +63,11 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	}
 	if netnsRemoved != 0 {
 		t.Fatalf("subset recovery removed the netns (%d removals)", netnsRemoved)
+	}
+	// Remove ran with deleteTAP=true; recovery restores it for exactly the
+	// subset's TAP and no other.
+	if want := []string{tapNameForVM("vm1", 1)}; !slices.Equal(tapsDeleted, want) {
+		t.Fatalf("subset recovery TAP deletions = %v, want %v", tapsDeleted, want)
 	}
 }
 

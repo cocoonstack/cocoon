@@ -158,7 +158,11 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
 		return false, fmt.Errorf("tombstone %s payload: %w", vmID, err)
 	}
-	if err := c.finishTeardown(ctx, vmID, leaseID, rec.Payload.Mode, cl, false); err != nil {
+	// Subset teardown (vm net remove) creates its TAPs independently of the
+	// netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's
+	// TAPs die with the netns.
+	deleteTAP := rec.Payload.Mode == tombstone.ModeSubset
+	if err := c.finishTeardown(ctx, vmID, leaseID, rec.Payload.Mode, cl, deleteTAP); err != nil {
 		return false, err
 	}
 	log.WithFunc("cni.recoverTombstone").Warnf(ctx, "rolled forward interrupted teardown for VM %s", vmID)
