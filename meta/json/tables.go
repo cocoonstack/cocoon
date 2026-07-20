@@ -8,6 +8,9 @@ import (
 	"slices"
 )
 
+// stringListMarker backs StringList presence rows; the value never surfaces.
+var stringListMarker = json.RawMessage("{}")
+
 // TableSpec maps one legacy top-level object field to a model table;
 // Optional omits the field from encoded output while the table is empty;
 // StringList marks an ordered []string field stored as presence markers.
@@ -129,8 +132,6 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	return EncodeTables(m, c.Specs)
 }
-
-var stringListMarker = json.RawMessage("{}")
 
 func appendKey(buf []byte, key string) []byte {
 	if len(buf) > 1 {

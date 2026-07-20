@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 	"time"
 
 	gofrsflock "github.com/gofrs/flock"
