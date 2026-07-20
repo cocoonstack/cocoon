@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strconv"
 	"time"
 
@@ -37,6 +38,11 @@ func main() {
 		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); err != nil {
 			panic(err)
 		}
+	}
+	if pf := os.Getenv("CPUPROFILE"); pf != "" {
+		f, _ := os.Create(pf) //nolint:gosec // bench-only profile path from env
+		_ = pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
 	}
 	start := time.Now()
 	for i := range ops {

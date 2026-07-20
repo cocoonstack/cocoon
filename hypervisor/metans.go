@@ -70,28 +70,27 @@ func (vmIndexCodec) Decode(data []byte) (*metajson.Model, error) {
 }
 
 func (vmIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	idx := rawVMIndex{VMs: map[string]json.RawMessage{}, Names: map[string]json.RawMessage{}}
-	if err := m.Scan(tableRecords, func(id string, raw json.RawMessage) error {
-		idx.VMs[id] = raw
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err := m.Scan(tableNames, func(name string, raw json.RawMessage) error {
-		idx.Names[name] = raw
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err := m.Scan(tableOrphanDirs, func(dir string, _ json.RawMessage) error {
-		idx.OrphanDirs = append(idx.OrphanDirs, dir)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(&idx)
+	buf := append([]byte(nil), `{"vms":`...)
+	buf, err := metajson.AppendRawMap(buf, metajson.CollectTable(m, tableRecords))
 	if err != nil {
 		return nil, err
 	}
-	return append(data, '\n'), nil
+	buf = append(buf, `,"names":`...)
+	if buf, err = metajson.AppendRawMap(buf, metajson.CollectTable(m, tableNames)); err != nil {
+		return nil, err
+	}
+	var dirs []string
+	if err = m.Scan(tableOrphanDirs, func(dir string, _ json.RawMessage) error {
+		dirs = append(dirs, dir)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if len(dirs) > 0 {
+		buf = append(buf, `,"orphan_dirs":`...)
+		if buf, err = metajson.AppendStringSlice(buf, dirs); err != nil {
+			return nil, err
+		}
+	}
+	return append(buf, '}', '\n'), nil
 }
