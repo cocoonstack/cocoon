@@ -16,10 +16,8 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/lock"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/network"
-	"github.com/cocoonstack/cocoon/storage"
-	storejson "github.com/cocoonstack/cocoon/storage/json"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -42,7 +40,7 @@ var _ network.Network = (*CNI)(nil)
 // CNI implements network.Network using CNI plugins with per-VM netns + bridge + tap.
 type CNI struct {
 	conf        *Config
-	store       storage.Store[networkIndex]
+	meta        *metajson.Store
 	locker      lock.Locker
 	confLists   map[string]*libcni.NetworkConfigList // name → conflist
 	defaultName string                               // first conflist name (backward compat)
@@ -51,7 +49,7 @@ type CNI struct {
 }
 
 // New creates a CNI provider; conflist loading is best-effort so Delete/Inspect/List still work when none are available — Add fails in that case.
-func New(conf *config.Config) (*CNI, error) {
+func New(conf *config.Config, store *metajson.Store) (*CNI, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -60,12 +58,14 @@ func New(conf *config.Config) (*CNI, error) {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)
 	}
 
-	locker := flock.New(cfg.IndexLock())
-	store := storejson.New[networkIndex](cfg.IndexFile(), locker)
+	locker, err := store.NamespaceLocker(metaNS)
+	if err != nil {
+		return nil, err
+	}
 
 	c := &CNI{
 		conf:      cfg,
-		store:     store,
+		meta:      store,
 		locker:    locker,
 		confLists: make(map[string]*libcni.NetworkConfigList),
 	}
@@ -108,13 +108,12 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 // Inspect returns the network record for id, or (nil, nil) if not found.
 func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 	var result *types.Network
-	return result, c.store.With(ctx, func(idx *networkIndex) error {
-		rec := idx.Networks[id]
-		if rec == nil {
-			return nil
+	return result, c.view(ctx, func(t *netTx) error {
+		rec, err := t.get(id)
+		if err != nil || rec == nil {
+			return err
 		}
-		net := rec.Network // value copy — detached from the locked index
-		result = &net
+		result = &rec.Network
 		return nil
 	})
 }
@@ -122,12 +121,11 @@ func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
 // List returns all known network records.
 func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
 	var result []*types.Network
-	return result, c.store.With(ctx, func(idx *networkIndex) error {
-		result = utils.MapValues(idx.Networks, func(rec *networkRecord) *types.Network {
-			n := rec.Network
-			return &n
+	return result, c.view(ctx, func(t *netTx) error {
+		return t.scan(func(_ string, rec *networkRecord) error {
+			result = append(result, &rec.Network)
+			return nil
 		})
-		return nil
 	})
 }
 
@@ -151,9 +149,10 @@ func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
 
 func (c *CNI) deleteVM(ctx context.Context, vmID string) error {
 	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		records, err = t.byVMID(vmID)
+		return err
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
@@ -226,9 +225,11 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return c.store.Update(ctx, func(idx *networkIndex) error {
+	return c.update(ctx, func(t *netTx) error {
 		for _, id := range ids {
-			delete(idx.Networks, id)
+			if err := t.del(id); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -236,9 +237,10 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 
 func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		records, err = t.byVMID(vmID)
+		return err
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}

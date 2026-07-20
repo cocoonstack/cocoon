@@ -52,8 +52,11 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	nsPath := netnsPath(vmID)
 
 	var stale map[string]networkRecord
-	if err = c.store.With(ctx, func(idx *networkIndex) error {
-		records := idx.byVMID(vmID)
+	if err = c.view(ctx, func(t *netTx) error {
+		records, byErr := t.byVMID(vmID)
+		if byErr != nil {
+			return byErr
+		}
 		stale = make(map[string]networkRecord, len(records))
 		for _, r := range records {
 			stale[r.IfName] = r
@@ -148,15 +151,20 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 	}
 
-	return configs, c.store.Update(ctx, func(idx *networkIndex) error {
+	return configs, c.update(ctx, func(t *netTx) error {
 		for _, f := range fresh {
-			rec := idx.Networks[f.recID]
+			rec, err := t.get(f.recID)
+			if err != nil {
+				return err
+			}
 			if rec == nil { // intent vanished (concurrent sweep): reinsert
 				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: fmt.Sprintf("eth%d", f.index)}
-				idx.Networks[f.recID] = rec
 			}
 			if f.cfg.Network != nil {
 				rec.Network = *f.cfg.Network
+			}
+			if err := t.put(f.recID, rec); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -169,9 +177,10 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		return nil
 	}
 	var records []networkRecord
-	if err := c.store.With(ctx, func(idx *networkIndex) error {
-		records = idx.byVMID(vmID)
-		return nil
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		records, err = t.byVMID(vmID)
+		return err
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
@@ -219,9 +228,11 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	if len(intents) == 0 {
 		return recIDs, nil
 	}
-	if err := c.store.Update(ctx, func(idx *networkIndex) error {
+	if err := c.update(ctx, func(t *netTx) error {
 		for _, rec := range intents {
-			idx.Networks[rec.ID] = rec
+			if err := t.put(rec.ID, rec); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {

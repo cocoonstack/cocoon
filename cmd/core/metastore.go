@@ -9,6 +9,7 @@ import (
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
@@ -28,6 +29,7 @@ func MetaStore(conf *config.Config) (*metajson.Store, error) {
 			localfile.MetaNamespace(conf),
 			oci.MetaNamespace(conf.RootDir),
 			cloudimg.MetaNamespace(conf.RootDir),
+			cni.MetaNamespace(conf),
 		)
 	})
 	return metaStore, metaErr

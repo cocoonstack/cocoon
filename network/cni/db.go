@@ -27,14 +27,3 @@ func (idx *networkIndex) Init() {
 		idx.Networks = make(map[string]*networkRecord)
 	}
 }
-
-// byVMID returns detached copies of vmID's records, safe to use after the lock is released.
-func (idx *networkIndex) byVMID(vmID string) []networkRecord {
-	var out []networkRecord
-	for _, rec := range idx.Networks {
-		if rec != nil && rec.VMID == vmID {
-			out = append(out, *rec)
-		}
-	}
-	return out
-}

@@ -26,16 +26,15 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 	return gc.Module[cniSnapshot]{
 		Name:   typ,
 		Locker: c.locker,
-		ReadDB: func(_ context.Context) (cniSnapshot, error) {
+		ReadDB: func(ctx context.Context) (cniSnapshot, error) {
 			var snap cniSnapshot
 			snap.dbVMIDs = make(map[string]struct{})
-			if err := c.store.ReadRaw(func(idx *networkIndex) error {
-				for _, rec := range idx.Networks {
-					if rec != nil {
-						snap.dbVMIDs[rec.VMID] = struct{}{}
-					}
-				}
-				return nil
+			// Lockless read: the orchestrator already holds the namespace lock.
+			if err := c.rawView(ctx, func(t *netTx) error {
+				return t.scan(func(_ string, rec *networkRecord) error {
+					snap.dbVMIDs[rec.VMID] = struct{}{}
+					return nil
+				})
 			}); err != nil {
 				return snap, err
 			}
@@ -62,9 +61,10 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			for _, vmID := range ids {
 				// Lockless — orchestrator holds flock.
 				var records []networkRecord
-				if readErr := c.store.ReadRaw(func(idx *networkIndex) error {
-					records = idx.byVMID(vmID)
-					return nil
+				if readErr := c.rawView(ctx, func(t *netTx) error {
+					var err error
+					records, err = t.byVMID(vmID)
+					return err
 				}); readErr != nil {
 					errs = append(errs, fmt.Errorf("read records for %s: %w", vmID, readErr))
 					continue
@@ -75,9 +75,11 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 
 				// Lockless write.
 				if len(downIDs) > 0 {
-					if err := c.store.WriteRaw(func(idx *networkIndex) error {
+					if err := c.lockedUpdate(ctx, func(t *netTx) error {
 						for _, id := range downIDs {
-							delete(idx.Networks, id)
+							if err := t.del(id); err != nil {
+								return err
+							}
 						}
 						return nil
 					}); err != nil {

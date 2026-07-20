@@ -101,7 +101,11 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 }
 
 func InitNetwork(conf *config.Config) (network.Network, error) {
-	p, err := cni.New(conf)
+	store, err := MetaStore(conf)
+	if err != nil {
+		return nil, err
+	}
+	p, err := cni.New(conf, store)
 	if err != nil {
 		return nil, fmt.Errorf("init network: %w", err)
 	}
