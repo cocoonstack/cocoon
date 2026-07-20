@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/gc"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -129,16 +130,14 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 
-	// gc pass: the protocol GC's stale-creating sweep (gcCollect's record
-	// action) vs legacy CleanStalePlaceholders.
+	// gc pass: the REAL orchestration on both sides — discovery, age cutoff
+	// through the seamed clock, ops-lock, under-lock revalidation.
 	cfgDelta := &types.VMConfig{Name: "delta", Config: types.Config{CPU: 1}}
 	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, "/r/VM4", "/l/VM4"))
 	clock = clock.Add(25 * time.Hour)
-	vm4, err := b.LoadRecord(ctx, "VM4")
-	if err != nil {
-		t.Fatalf("load VM4 pre-sweep: %v", err)
-	}
-	record("gc-pass", "", b.deleteVMProtocol(ctx, "VM4", &vm4, nil))
+	orch := gc.New()
+	b.RegisterGC(orch)
+	record("gc-pass", "", orch.Run(ctx))
 	_, err = b.ResolveRef(ctx, "delta")
 	record("gc-pass-then-resolve", "", err)
 

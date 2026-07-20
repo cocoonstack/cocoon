@@ -585,6 +585,8 @@ func (c meteringStubConfig) VMLogDir(string) string { return c.vmRunRoot }
 
 func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
 
+func (c meteringStubConfig) LogDir() string { return c.vmRunRoot }
+
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()
 	const typ = "test-hv"
