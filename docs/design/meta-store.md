@@ -1,4 +1,4 @@
-# Meta store: unified metadata layer (design v2.16)
+# Meta store: unified metadata layer (design v2.17)
 
 Status: design under review (issue #146).
 Baselines and measurements: cocoonstack/sandbox#30 (2026-07-20 phase decomposition).
@@ -231,17 +231,32 @@ written at lease time (§5 step 3), never later, and its shape is fixed:
 
 ```json
 {"kind": "record" | "orphan",
- "scope": {"mode": "aggregate"} | {"mode": "subset", "nics": [1, 2]},
- "targets": {"dirs": [], "files": [], "netns": "", "taps": []}}
+ "mode": "aggregate" | "subset",
+ "cleanup": { /* namespace-defined; see below */ }}
 ```
 
 `kind` distinguishes a record-backed candidate from a recordless orphan (GC
-legitimately collects directories and blobs that never had a row); `scope`
-distinguishes a full teardown from an explicit subset such as the NIC indices
-of a resize — recovering a subset as an aggregate would destroy healthy
-resources; `targets` names everything cleanup must touch. Steps 4–6 and every
-recovery read this and nothing else, which is what lets a worker finish a job
-whose record is already gone.
+legitimately collects directories and blobs that never had a row); `mode`
+distinguishes a full teardown from an explicit subset, since recovering a
+subset as an aggregate would destroy healthy resources. **`cleanup` is
+namespace-defined, and each namespace must carry everything its teardown
+actually calls** — a generic path list is not enough. Networks are the proof:
+`cniDel` needs the conflist NAME to resolve the plugin chain and the
+per-interface `IfName`, both of which live on the network record
+(`networkRecord.Type`, `.IfName`) and are gone once the row is deleted, and a
+subset must name record IDs rather than leaving recovery to infer rows from
+NIC indices:
+
+```json
+{"kind": "record", "mode": "subset",
+ "cleanup": {"netns": "/var/run/netns/...",
+             "records": [{"id": "...", "type": "cocoon", "if_name": "eth1", "tap": "..."}]}}
+```
+
+VM cleanup carries its dirs and disk paths; image cleanup carries the blob
+path and digest. Steps 4–6 and every recovery read this and nothing else,
+which is what lets a worker finish a job whose record is already gone —
+and is why the payload must be complete at lease time.
 
 Representation rules (each has a round-trip fixture in §9):
 
@@ -436,9 +451,25 @@ tombstone provably predates any filesystem mutation and may be rolled back
 (record stays live). A `deleting` tombstone means cleanup may have started:
 recovery MUST roll forward (re-run idempotent cleanup, then finalize) and
 must keep the tombstone if cleanup fails, so a record whose backing files are
-partially gone is never resurrected as live metadata. Reference-creating
-transactions check tombstones in their own `Update` and fail `ErrConflict`
-for any phase. Concurrent GC runs (scheduled + manual) may pick the same
+partially gone is never resurrected as live metadata.
+
+**Binding rule — every entrypoint consults the tombstone, not just GC and not
+just writers.** A record stays live throughout `deleting`, and a crashed
+delete worker releases its lock immediately while GC may not run for minutes.
+Any operation that touches an entity's external resources — `vm start`,
+snapshot clone and export, NIC resize, and every reference-creating
+transaction — MUST, in the same transaction that re-reads the record right
+after acquiring the entity lock or read lease, check the tombstone:
+
+- `leased` — no filesystem work has happened yet; take over or roll the lease
+  back, then proceed;
+- `deleting` — resources are partially gone; drive recovery to completion and
+  fail the current operation with `ErrConflict` (or `ErrNotFound` once
+  finalized). Never operate on the record.
+
+The snapshot shared read lease is explicitly included: acquiring it obliges
+the holder to re-check record AND tombstone before using the data dir. This
+is protocol, not a test-only obligation. Concurrent GC runs (scheduled + manual) may pick the same
 candidate: `ErrConflict` on the tombstone insert means another worker owns
 the lease — skip the candidate, not an error.
 
