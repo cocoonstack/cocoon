@@ -565,10 +565,10 @@ Engine-scoped, because the engines have deliberately different cost models.
   append, pre/post commit-frame); reopening must show the transaction wholly
   applied or wholly absent — never partially. Isolation tests alone do not
   prove this.
-- **Lock-inode safety**: for every entity whose ops lock lives inside the
-  deleted tree, assert no live record is visible once cleanup begins, and
-  that a concurrent process creating a fresh lock file at the same path
-  cannot observe a live record for the entity being removed.
+- **Lock-inode safety**: for every namespace, assert that a full destructive
+  cleanup leaves the entity's lock file intact (it is outside the cleanup
+  set), that a worker holding it still holds the SAME inode afterwards, and
+  that the reaper removes a lock file only when `TryLock` proves it unheld.
 - **Tombstone fencing / ABA**: kill worker A mid-`deleting` → B acquires the
   released ops lock, recovers under a NEW `lease_id` and finalizes → replaying
   A's exact finalize statement affects zero rows. Also assert the negative
@@ -610,11 +610,13 @@ Engine-scoped, because the engines have deliberately different cost models.
   missed change); unsupported-fs refusal.
 - Power-loss: beyond `integrity_check`, verify domain invariants — VM/name
   bijection, image/ref integrity, network→VM references, tombstone phase
-  consistency, directory ownership. The checker must treat a `deleting`
-  tombstone with NO live record as LEGAL, not corruption: it is the normal
-  window for any entity whose lock lives inside the deleted tree (§5 step 4).
-  Illegal combinations are a `leased` tombstone without a record, and a
-  record that is live while its tombstone says `deleting`.
+  consistency, directory ownership. Tombstone legality follows the uniform
+  protocol: a record LIVE alongside a `leased` or `deleting` tombstone is the
+  normal in-flight state (records are deleted at finalize, §5 step 6), and a
+  tombstone with no record is a crash residue the recovery sweep must clear —
+  neither is corruption. The genuinely illegal states are a record whose
+  tombstone vanished mid-`deleting` (nothing left to drive roll-forward) and
+  a tombstone whose `lease_id` is empty.
 
 **Performance, sqlite engine (the reason this design exists).**
 - Microbench: single-record Insert/Replace/Delete/Get at N = 1/100/1k/10k,
