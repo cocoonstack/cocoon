@@ -36,6 +36,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("ViewIsolation", func(t *testing.T) { testViewIsolation(t, factory) })
 	t.Run("DeadlockFreedom", func(t *testing.T) { testDeadlockFreedom(t, factory) })
 	t.Run("Events", func(t *testing.T) { testEvents(t, factory) })
+	t.Run("LogCursor", func(t *testing.T) { testLogCursor(t, factory) })
 }
 
 // ForcedRetry wraps s so every Update closure runs twice — once rolled back, once for real — enforcing pure retryable closures.
@@ -399,5 +400,62 @@ func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
 	t.Helper()
 	if err := s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, fn); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// testLogCursor asserts §9's log contract: committed Seq unique and strictly
+// increasing, a rolled-back append never surfaces in Scan (its number may be
+// reused or left as a gap), Scan(after) exclusive and in order.
+func testLogCursor(t *testing.T, factory Factory) {
+	ctx := t.Context()
+	s := factory(t, []string{nsAlpha})
+	l := meta.NewLog[record](nsAlpha, "records")
+
+	appendOne := func(n int) meta.Seq {
+		var seq meta.Seq
+		update(t, s, nsAlpha, func(w meta.Writer) error {
+			var err error
+			seq, err = l.Append(ctx, w, &record{N: n})
+			return err
+		})
+		return seq
+	}
+	s1, s2 := appendOne(1), appendOne(2)
+	if s1 >= s2 {
+		t.Fatalf("seq not strictly increasing: %d then %d", s1, s2)
+	}
+
+	err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
+		if _, err := l.Append(ctx, w, &record{N: 99}); err != nil {
+			return err
+		}
+		return errForcedRollback
+	})
+	if !errors.Is(err, errForcedRollback) {
+		t.Fatalf("want forced rollback, got %v", err)
+	}
+
+	s3 := appendOne(3)
+	if s3 <= s2 {
+		t.Fatalf("seq %d not above last committed %d", s3, s2)
+	}
+
+	var got []int
+	var seqs []meta.Seq
+	err = s.View(ctx, []string{nsAlpha}, func(r meta.Reader) error {
+		return l.Scan(ctx, r, s1, func(seq meta.Seq, rec *record) error {
+			got = append(got, rec.N)
+			seqs = append(seqs, seq)
+			return nil
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("scan after %d: want [2 3], got %v (seqs %v)", s1, got, seqs)
+	}
+	if seqs[0] != s2 || seqs[1] != s3 {
+		t.Fatalf("scan seqs: want [%d %d], got %v", s2, s3, seqs)
 	}
 }

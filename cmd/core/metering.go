@@ -11,6 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringfile "github.com/cocoonstack/cocoon/metering/file"
+	"github.com/cocoonstack/cocoon/metering/metalog"
 	meteringstderr "github.com/cocoonstack/cocoon/metering/stderr"
 )
 
@@ -40,6 +41,13 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 		return metering.NopRecorder{}
 	case "stderr":
 		return meteringstderr.New()
+	case "meta":
+		s, err := MetaStore(conf)
+		if err != nil {
+			log.WithFunc("core.buildRecorder").Warnf(ctx, "meta store: %v; metering disabled", err)
+			return metering.NopRecorder{}
+		}
+		return metalog.New(s)
 	default:
 		log.WithFunc("core.buildRecorder").Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
 		return metering.NopRecorder{}

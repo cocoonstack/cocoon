@@ -20,6 +20,7 @@ import (
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/metering/metalog"
 	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
@@ -62,6 +63,7 @@ func MetaNamespaces() []metasqlite.Namespace {
 		{Name: oci.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
 		{Name: cloudimg.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
 		{Name: cni.NamespaceName, Tables: []string{cni.TableRecords, tombstone.TableName}},
+		{Name: metalog.NamespaceName, Tables: []string{metalog.TableEntries}},
 	}
 }
 
@@ -81,6 +83,12 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 		{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
 		{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
 		{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
+		{
+			Name:     metalog.NamespaceName,
+			FilePath: filepath.Join(conf.RootDir, meteringSubdir, "log.json"),
+			LockPath: filepath.Join(conf.RootDir, meteringSubdir, "log.lock"),
+			Codec:    metajson.GenericCodec{},
+		},
 	}
 }
 
