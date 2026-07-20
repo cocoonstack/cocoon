@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/meta/contracttest"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
@@ -681,5 +682,42 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	}
 	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
 		t.Fatal("PrepareStart must refuse a creating placeholder")
+	}
+}
+
+// TestForcedRetryStateOps is the design §10 gate: the migrated
+// UpdateStates/BatchMarkStarted run on a forced-retry engine (every closure
+// executes twice) and must emit each metering entry exactly once.
+func TestForcedRetryStateOps(t *testing.T) {
+	const typ = "test-hv"
+	dir := t.TempDir()
+	rec := meteringcapture.New()
+	b := &Backend{
+		Typ:      typ,
+		NS:       VMNamespaceName(typ),
+		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Meta:     contracttest.ForcedRetry(testNamespace(t, typ, dir)),
+		Metering: rec,
+	}
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 2, 1<<30, 10<<30, false)
+
+	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
+		t.Fatalf("BatchMarkStarted under forced retry: %v", err)
+	}
+	if starts := rec.Entries(); len(starts) != 1 || starts[0].Kind != metering.KindVMComputeStart {
+		t.Fatalf("want exactly one compute.start, got %+v", starts)
+	}
+	rec.Reset()
+
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates under forced retry: %v", err)
+	}
+	if stops := rec.Entries(); len(stops) != 1 || stops[0].Kind != metering.KindVMComputeStop {
+		t.Fatalf("want exactly one compute.stop, got %+v", stops)
+	}
+	loaded, err := b.LoadRecord(ctx, "vm1")
+	if err != nil || loaded.State != types.VMStateStopped {
+		t.Fatalf("state after forced-retry ops: %+v %v", loaded, err)
 	}
 }
