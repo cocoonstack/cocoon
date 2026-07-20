@@ -1,10 +1,5 @@
-// Package tombstone is the revalidating destructive-work protocol (design
-// §5): a namespace-local marker with a fencing lease that makes every slow
-// teardown crash-recoverable. A `leased` tombstone provably predates any
-// filesystem mutation and may roll back; a `deleting` one means cleanup may
-// have started and must roll forward. Every mutating step is fenced by the
-// holder's lease id, so a resumed instance of a dead owner's work affects
-// nothing.
+// Package tombstone is the §5 phase protocol: leased rolls back, deleting
+// rolls forward, every mutation fenced by the holder's lease id.
 package tombstone
 
 import (
@@ -45,9 +40,8 @@ type Kind string
 // subset as an aggregate would destroy healthy resources.
 type Mode string
 
-// Payload is written whole at lease time and immutable after: recovery reads
-// it and nothing else, which is what lets a worker finish a job whose record
-// is already gone.
+// Payload is written whole at lease time and immutable after: recovery
+// reads it and nothing else.
 type Payload struct {
 	Kind    Kind            `json:"kind"`
 	Mode    Mode            `json:"mode"`

@@ -23,30 +23,15 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 		Name:     metaNS,
 		FilePath: cfg.IndexFile(),
 		LockPath: cfg.IndexLock(),
-		Codec:    snapIndexCodec{},
+		Codec:    snapTables,
 	}
 }
 
-var snapTables = []metajson.TableSpec{
+var snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "snapshots", Table: tableRecords},
 	{Key: "names", Table: tableNames},
 	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}
-
-var _ metajson.Codec = snapIndexCodec{}
-
-// snapIndexCodec reproduces the legacy SnapshotIndex file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type snapIndexCodec struct{}
-
-func (snapIndexCodec) Decode(data []byte) (*metajson.Model, error) {
-	m, _, err := metajson.DecodeTables(data, snapTables)
-	return m, err
-}
-
-func (snapIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	return metajson.EncodeTables(m, snapTables)
-}
+}}
 
 type snapTx = meta.NamedTx[snapshot.SnapshotRecord]
 

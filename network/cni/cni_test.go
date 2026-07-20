@@ -362,7 +362,7 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 		Name:     metaNS,
 		FilePath: filepath.Join(dir, "net.json"),
 		LockPath: filepath.Join(dir, "net.lock"),
-		Codec:    netIndexCodec{},
+		Codec:    netTables,
 	})
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)

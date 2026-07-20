@@ -176,10 +176,8 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// guardAdd is Add's entry discipline (design §5 binding rule): an interrupted
-// teardown must finish before new NICs are plumbed, and ANY completed deleting
-// roll-forward fails the current operation — the retry starts from the
-// recovered state. The caller holds the VM lock.
+// guardAdd finishes an interrupted teardown before new NICs are plumbed; any
+// completed deleting roll-forward refuses the Add (§5 binding rule).
 func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
 	rolledForward, err := c.recoverTombstone(ctx, vmID)
 	if err != nil {

@@ -22,29 +22,14 @@ func MetaNamespace(conf *config.Config) metajson.Namespace {
 		Name:     metaNS,
 		FilePath: cfg.IndexFile(),
 		LockPath: cfg.IndexLock(),
-		Codec:    netIndexCodec{},
+		Codec:    netTables,
 	}
 }
 
-var netTables = []metajson.TableSpec{
+var netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "networks", Table: tableRecords},
 	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}
-
-var _ metajson.Codec = netIndexCodec{}
-
-// netIndexCodec reproduces the legacy networkIndex file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type netIndexCodec struct{}
-
-func (netIndexCodec) Decode(data []byte) (*metajson.Model, error) {
-	m, _, err := metajson.DecodeTables(data, netTables)
-	return m, err
-}
-
-func (netIndexCodec) Encode(m *metajson.Model) ([]byte, error) {
-	return metajson.EncodeTables(m, netTables)
-}
+}}
 
 // netTx is the CNI view of one meta transaction: a records-only namespace
 // with the vm_id secondary lookup served by scan.

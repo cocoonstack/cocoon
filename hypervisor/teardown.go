@@ -150,10 +150,8 @@ func (b *Backend) EntryGuard(ctx context.Context, id string) error {
 	return fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
 }
 
-// guardVMTombstone is the entrypoint discipline (design §5): inside the
-// same transaction that re-reads the record under the entity lock, refuse to
-// operate on a tombstoned VM. leased tombstones roll back in place; deleting
-// ones make the caller drive recovery and fail with ErrTombstoned.
+// guardVMTombstone refuses tombstoned VMs inside the entrypoint's own
+// transaction: leased rolls back in place, deleting reports ErrTombstoned.
 func (b *Backend) guardVMTombstone(ctx context.Context, t *vmTx, id string) error {
 	ts := b.tombstones()
 	rec, err := ts.Get(ctx, t.w, id)

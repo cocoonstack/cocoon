@@ -63,3 +63,20 @@ func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 	}
 	return append(buf, '}', '\n'), nil
 }
+
+var _ Codec = TableCodec{}
+
+// TableCodec is the declaration-only codec for pure table-shaped namespaces:
+// a subsystem states its legacy field layout and owns no codec code.
+type TableCodec struct {
+	Specs []TableSpec
+}
+
+func (c TableCodec) Decode(data []byte) (*Model, error) {
+	m, _, err := DecodeTables(data, c.Specs)
+	return m, err
+}
+
+func (c TableCodec) Encode(m *Model) ([]byte, error) {
+	return EncodeTables(m, c.Specs)
+}

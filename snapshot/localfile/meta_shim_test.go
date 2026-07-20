@@ -110,7 +110,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := metajson.Open(metajson.Namespace{
-		Name: metaNS, FilePath: path, LockPath: filepath.Join(dir, "snapshots.lock"), Codec: snapIndexCodec{},
+		Name: metaNS, FilePath: path, LockPath: filepath.Join(dir, "snapshots.lock"), Codec: snapTables,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -61,7 +61,7 @@ type Store interface {
 	Close() error
 }
 
-// Reader is the raw read SPI transactions hand to Collection/Log; values
+// Reader is the raw read SPI transactions hand to Collection; values
 // returned are detached from engine state.
 type Reader interface {
 	GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error)

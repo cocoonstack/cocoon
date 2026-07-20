@@ -3,7 +3,6 @@ package images
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -19,10 +18,10 @@ const (
 	tableTombstones = "tombstones"
 )
 
-var imageTables = []metajson.TableSpec{
+var imageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "images", Table: tableRecords},
 	{Key: "tombstones", Table: tableTombstones, Optional: true},
-}
+}}
 
 // Store is one image namespace on the shared meta engine, presenting the
 // legacy whole-index closure shape over record primitives: image lookups are
@@ -83,7 +82,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 		if prev, ok := before[id]; ok && string(prev) == string(raw) {
 			continue
 		}
-		if err := upsert(ctx, w, c, id, entry); err != nil {
+		if err := c.Upsert(ctx, w, id, entry); err != nil {
 			return err
 		}
 	}
@@ -112,30 +111,9 @@ func (s *Store[E]) collection() *meta.Collection[E] {
 	return meta.NewCollection[E](s.meta, s.ns, tableRecords)
 }
 
-func upsert[E any](ctx context.Context, w meta.Writer, c *meta.Collection[E], id string, entry *E) error {
-	err := c.Replace(ctx, w, id, entry)
-	if errors.Is(err, meta.ErrNotFound) {
-		return c.Insert(ctx, w, id, entry)
-	}
-	return err
-}
-
 // MetaNamespace declares an image namespace over its legacy images.json.
 func MetaNamespace[E any](ns, indexFile, lockPath string) metajson.Namespace {
-	return metajson.Namespace{Name: ns, FilePath: indexFile, LockPath: lockPath, Codec: IndexCodec[E]{}}
-}
-
-// IndexCodec reproduces the legacy {"images":{...}} file byte-for-byte;
-// records cross as raw messages (no per-record re-marshal).
-type IndexCodec[E any] struct{}
-
-func (IndexCodec[E]) Decode(data []byte) (*metajson.Model, error) {
-	m, _, err := metajson.DecodeTables(data, imageTables)
-	return m, err
-}
-
-func (IndexCodec[E]) Encode(m *metajson.Model) ([]byte, error) {
-	return metajson.EncodeTables(m, imageTables)
+	return metajson.Namespace{Name: ns, FilePath: indexFile, LockPath: lockPath, Codec: imageTables}
 }
 
 // BlobLocks holds per-digest blob locks for a publish critical section:

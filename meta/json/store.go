@@ -134,11 +134,9 @@ func (s *Store) resolve(nss []string) ([]*nsState, error) {
 	return states, nil
 }
 
-// withLocked holds every namespace flock (fixed global order: sorted names)
-// for fn's duration. Unlock errors are logged, never joined: fn's mutation
-// may already be durably committed, and callers treat an error as "not
-// committed" and destructively roll back; a leaked flock instead fails the
-// next Lock loudly.
+// withLocked holds every namespace flock (sorted names = fixed global order).
+// Unlock errors log only: joining them would make callers roll back an
+// already-durable commit; a leaked flock fails the next Lock loudly instead.
 func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() error) error {
 	logger := log.WithFunc("meta.json.withLocked")
 	for i, st := range states {
@@ -215,10 +213,8 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	return &loaded{model: prev, recovered: true}, nil
 }
 
-// commitLocked runs under the namespace flock: rotate the durable previous
-// generation via link+rename (so a .prev exists at every instant), then
-// atomically rename the fresh bytes in with no fsync — the post-release
-// fsyncs in syncCommitted make them durable.
+// commitLocked rotates .prev via link+rename (one exists at every instant),
+// then renames the fresh bytes in; syncCommitted makes them durable.
 func commitLocked(st *nsState, l *loaded) error {
 	data, err := st.def.Codec.Encode(l.model)
 	if err != nil {

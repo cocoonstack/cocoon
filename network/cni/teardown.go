@@ -12,11 +12,9 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// netCleanup is the networks-namespace tombstone payload, keyed by VM. An
-// AGGREGATE teardown removes every listed record plus the netns; a SUBSET (a
-// `vm net remove` resize) removes only the records named here — never NIC
-// indices, which cannot disambiguate duplicate rows — and leaves the netns
-// and the other NICs alone (design §2).
+// netCleanup is the networks-namespace tombstone payload: aggregate removes
+// every listed record plus the netns; subset removes only the named record
+// IDs (never NIC indices — they cannot disambiguate duplicate rows).
 type netCleanup struct {
 	Netns   string             `json:"netns,omitempty"`
 	Records []netCleanupRecord `json:"records"`
@@ -32,10 +30,8 @@ func (c *CNI) tombstones() *tombstone.Table {
 	return tombstone.NewTable(c.meta, metaNS)
 }
 
-// teardownProtocol runs the §5 phase protocol for one VM's networking under
-// its held VM lock. subset lists the record IDs of a partial teardown; nil
-// means aggregate (all records + the netns). deleteTAP mirrors the legacy
-// Remove flag.
+// teardownProtocol runs the §5 protocol for one VM's networking under its
+// held VM lock; nil subset means aggregate (all records + the netns).
 func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string, deleteTAP bool) error {
 	ts := c.tombstones()
 	var (

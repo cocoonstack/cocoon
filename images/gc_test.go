@@ -100,7 +100,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine, err := metajson.Open(metajson.Namespace{
-		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: IndexCodec[fixtureEntry]{},
+		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: imageTables,
 	})
 	if err != nil {
 		t.Fatal(err)
