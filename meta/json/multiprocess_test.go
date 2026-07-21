@@ -41,7 +41,8 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	cmds := make([]*exec.Cmd, 0, workers)
 	for w := range workers {
 		cmd := exec.Command(os.Args[0], "-test.run=TestMultiProcessWorker$", "-test.count=1") //nolint:gosec
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(
+			os.Environ(),
 			"META_MP_DIR="+dir,
 			"META_MP_WORKER="+strconv.Itoa(w),
 			fmt.Sprintf("META_MP_OPS=%d", mpOps),
@@ -125,7 +126,8 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	cmds := make([]*exec.Cmd, 0, 2*inverseWorkers)
 	for w := range 2 * inverseWorkers {
 		cmd := exec.Command(os.Args[0], "-test.run=TestInverseScopeWorker$", "-test.count=1") //nolint:gosec
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(
+			os.Environ(),
 			"META_MP_DIR="+dir,
 			"META_MP_WORKER="+strconv.Itoa(w),
 			"META_MP_SCOPE="+scopes[w%2],
