@@ -105,8 +105,8 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 			return serr
 		}
 	}
-	if err := crashStep("manifest-saved"); err != nil {
-		return err
+	if cerr := crashStep("manifest-saved"); cerr != nil {
+		return cerr
 	}
 	dst, err := openTarget(ctx, spec, target)
 	if err != nil {
