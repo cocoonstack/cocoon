@@ -40,6 +40,9 @@ type Config struct {
 	FCBinary string `json:"fc_binary" mapstructure:"fc_binary"`
 	// UseFirecracker selects the Firecracker backend (--fc flag). Default: false (Cloud Hypervisor).
 	UseFirecracker bool `json:"use_firecracker,omitempty" mapstructure:"use_firecracker"`
+	// PinHypervisor restricts multi-backend operations (list/gc) and the legacy
+	// json VM namespace to Hypervisor(). It does not narrow whole-store conversion.
+	PinHypervisor bool `json:"pin_hypervisor,omitempty" mapstructure:"pin_hypervisor"`
 	// StopTimeoutSeconds: guest ACPI grace before SIGTERM/SIGKILL escalation. Default: 30.
 	StopTimeoutSeconds int `json:"stop_timeout_seconds" mapstructure:"stop_timeout_seconds"`
 	// PoolSize: goroutine pool size for concurrent operations; 0 = runtime.NumCPU().

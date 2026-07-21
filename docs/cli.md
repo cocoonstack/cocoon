@@ -60,6 +60,10 @@ cocoon
 
 The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the effective backend (default sqlite).
 
+`pin_hypervisor` (`COCOON_PIN_HYPERVISOR=1`) scopes runtime list/GC and
+legacy-json VM access only; both whole-root mutation commands refuse while the
+pin is set so it cannot be mistaken for a partial-engine operation.
+
 ## Global Flags
 
 | Flag              | Env Variable                   | Default            | Description                            |

@@ -29,6 +29,9 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 	if cmdcore.LegacyJSONPresent(conf) {
 		return fmt.Errorf("legacy json metadata present; a fresh sqlite store would shadow it — run `cocoon meta convert`")
 	}
+	if conf.PinHypervisor {
+		return fmt.Errorf("meta init operates on the whole root; rerun with pin_hypervisor disabled")
+	}
 	dbPath := cmdcore.MetaDBPath(conf)
 	if err := metasqlite.Init(ctx, dbPath, cmdcore.MetaNamespaces()...); err != nil {
 		return err
@@ -41,6 +44,9 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
+	}
+	if conf.PinHypervisor {
+		return fmt.Errorf("meta convert operates on the whole root; stop every cocoon consumer sharing it and rerun with pin_hypervisor disabled")
 	}
 	// The configured backend is the sole target authority (§6): convert
 	// always moves the OTHER engine's data into the effective backend.

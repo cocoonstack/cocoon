@@ -66,6 +66,10 @@ func newRootCmd() *cobra.Command {
 
 	viper.SetEnvPrefix("COCOON")
 	viper.AutomaticEnv()
+	// These fields have no persistent flag/default, so AutomaticEnv+Unmarshal
+	// will not see their COCOON_* values without explicit binds.
+	_ = viper.BindEnv("use_firecracker")
+	_ = viper.BindEnv("pin_hypervisor")
 	viper.SetDefault("root_dir", "/var/lib/cocoon")
 	viper.SetDefault("run_dir", "/var/lib/cocoon/run")
 	viper.SetDefault("log_dir", "/var/log/cocoon")

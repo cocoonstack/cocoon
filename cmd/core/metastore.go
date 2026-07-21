@@ -51,8 +51,9 @@ var (
 	}}
 )
 
-// MetaNamespaces lists every namespace with its tables — the engine-neutral
-// declaration both engines consume.
+// MetaNamespaces lists the stable whole-root namespace set used by sqlite
+// and conversion. Conversion may retire a whole sqlite database, so this set
+// must never depend on a process-local hypervisor pin.
 func MetaNamespaces() []metasqlite.Namespace {
 	return []metasqlite.Namespace{
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
@@ -85,6 +86,26 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 			Codec:    metajson.GenericCodec{},
 		},
 	}
+}
+
+// runtimeJSONNamespaces scopes only ordinary legacy-json opens. Whole-store
+// conversion always uses MetaJSONNamespaces so its manifest has a fixed scope.
+func runtimeJSONNamespaces(conf *config.Config) []metajson.Namespace {
+	namespaces := MetaJSONNamespaces(conf)
+	if !conf.PinHypervisor {
+		return namespaces
+	}
+	selected := hypervisor.VMNamespaceName(string(conf.Hypervisor()))
+	ch := hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor))
+	fc := hypervisor.VMNamespaceName(string(config.HypervisorFirecracker))
+	result := make([]metajson.Namespace, 0, len(namespaces)-1)
+	for _, ns := range namespaces {
+		if (ns.Name == ch || ns.Name == fc) && ns.Name != selected {
+			continue
+		}
+		result = append(result, ns)
+	}
+	return result
 }
 
 // MetaDBPath is the sqlite engine's database under the meta root.
@@ -149,7 +170,7 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		if conf.MetaBackend == "" {
 			log.WithFunc("core.MetaStore").Info(ctx, "legacy json meta store in use; `cocoon meta convert` upgrades it to sqlite")
 		}
-		if s, err := metajson.Open(MetaJSONNamespaces(conf)...); err != nil {
+		if s, err := metajson.Open(runtimeJSONNamespaces(conf)...); err != nil {
 			metaErr = err
 		} else {
 			metaStore = s
