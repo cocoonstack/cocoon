@@ -42,14 +42,10 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 // configureVM sends pre-boot config via REST then InstanceStart.
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
-	hugePages := hugePagesNone
-	if utils.DetectHugePages() {
-		hugePages = hugePages2M
-	}
+	// No hugepages: FC's File restore backend cannot map hugetlbfs-backed snapshots, which would break hibernate/clone (#155).
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
 		VCPUCount:  rec.Config.CPU,
 		MemSizeMiB: memMiB,
-		HugePages:  hugePages,
 	}); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
