@@ -31,7 +31,7 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 
 ## Performance Tuning
 
-- **Hugepages**: automatically detected from `/proc/sys/vm/nr_hugepages`; when available, VM memory is backed by 2 MiB hugepages for reduced TLB pressure
+- **Hugepages** (Cloud Hypervisor only): automatically detected from `/proc/sys/vm/nr_hugepages`; when available, VM memory is backed by 2 MiB hugepages for reduced TLB pressure. Firecracker VMs never use hugepages: FC cannot restore a hugetlbfs-backed snapshot, which would break hibernate/clone
 - **Disk I/O**: multi-queue virtio-blk; readonly base disks keep host page cache (`direct=off`), while writable raw/qcow2 COW disks use O_DIRECT (`direct=on`) to avoid host cache buildup and guest flush storms
 - **Balloon**: 25% of memory auto-returned via virtio-balloon with deflate-on-OOM and free-page reporting (VMs with < 256 MiB memory skip balloon)
 - **Watchdog**: hardware watchdog enabled by default for automatic guest reset on hang

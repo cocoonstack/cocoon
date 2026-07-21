@@ -21,17 +21,14 @@ const (
 	driveIDFmt = "drive_%d"
 	ifaceIDFmt = "eth%d"
 
-	hugePagesNone = "None"
-	hugePages2M   = "2M"
 	ioEngineAsync = "Async" // io_uring
 )
 
 // fcMachineConfig and the request types below follow Firecracker's pre-boot
 // config model: start empty, configure via PUT/PATCH, then InstanceStart.
 type fcMachineConfig struct {
-	VCPUCount  int    `json:"vcpu_count"`
-	MemSizeMiB int    `json:"mem_size_mib"`
-	HugePages  string `json:"huge_pages,omitempty"`
+	VCPUCount  int `json:"vcpu_count"`
+	MemSizeMiB int `json:"mem_size_mib"`
 }
 
 type fcBootSource struct {
