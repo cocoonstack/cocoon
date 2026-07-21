@@ -34,9 +34,12 @@ const (
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
-	busyRetryCeiling = 5 * time.Second
-	busyRetryBase    = 2 * time.Millisecond
-	slowTxnWarn      = 500 * time.Millisecond
+	// busyRetryPause caps the jittered pause between BEGIN IMMEDIATE retries;
+	// the in-driver busy_timeout already did the real waiting (§4).
+	busyRetryCeiling   = 5 * time.Second
+	busyRetryPause     = 2 * time.Millisecond
+	slowTxnWarn        = 500 * time.Millisecond
+	checkpointInterval = time.Second
 )
 
 // Namespace declares one namespace's table set; Tables lists the record
@@ -50,15 +53,26 @@ var _ meta.Store = (*Store)(nil)
 
 // Store is the sqlite engine: writerDurable/writerRelaxed single-conn
 // handles, a bounded reader pool, and a pinned notifier connection (§4).
+// Statements are prepared per handle at Open — the table set is static.
 type Store struct {
 	path          string
 	nss           map[string]Namespace
 	writerDurable *sql.DB
 	writerRelaxed *sql.DB
 	readers       *sql.DB
+	stmtsDurable  map[string]tableStmts
+	stmtsRelaxed  map[string]tableStmts
+	stmtsReaders  map[string]tableStmts
+	cpDone        chan struct{}
 
 	mu       sync.Mutex // guards notifier lazy-init against concurrent Events/Close
 	notifier *notifier
+}
+
+// tableStmts holds one table's prepared statements; scan/put/del are nil on
+// read-only handles.
+type tableStmts struct {
+	get, scan, put, del *sql.Stmt
 }
 
 // Open verifies identity, version and per-namespace meta_state, then builds
@@ -98,9 +112,22 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 		return nil, errors.Join(err, s.Close())
 	}
 	s.readers.SetMaxOpenConns(max(2, runtime.NumCPU()))
-	if err := s.verifyIdentity(); err != nil {
+	if err = s.verifyIdentity(); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
+	if s.stmtsDurable, err = prepareStmts(s.writerDurable, s.nss, true); err != nil {
+		return nil, errors.Join(err, s.Close())
+	}
+	if s.stmtsRelaxed, err = prepareStmts(s.writerRelaxed, s.nss, true); err != nil {
+		return nil, errors.Join(err, s.Close())
+	}
+	if s.stmtsReaders, err = prepareStmts(s.readers, s.nss, false); err != nil {
+		return nil, errors.Join(err, s.Close())
+	}
+	// A background PASSIVE checkpoint keeps the WAL short so committing
+	// writers rarely pay the autocheckpoint stall themselves.
+	s.cpDone = make(chan struct{})
+	go checkpointLoop(s.readers, s.cpDone)
 	return s, nil
 }
 
@@ -113,7 +140,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn func(meta.Reader) err
 		return mapErr(err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	return fn(&txHandle{ctx: ctx, tx: tx, store: s, scope: scopeSet(nss)})
+	return fn(&txHandle{ctx: ctx, tx: tx, sm: s.stmtsReaders, scope: scopeSet(nss)})
 }
 
 func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
@@ -124,16 +151,16 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if err := s.checkScope(nss); err != nil {
 		return err
 	}
-	writer := s.writerDurable
+	writer, sm := s.writerDurable, s.stmtsDurable
 	if mode == meta.CommitRelaxed {
-		writer = s.writerRelaxed
+		writer, sm = s.writerRelaxed, s.stmtsRelaxed
 	}
 	start := time.Now()
 	tx, err := s.beginImmediate(ctx, writer)
 	if err != nil {
 		return err
 	}
-	h := &txHandle{ctx: ctx, tx: tx, store: s, scope: scopeSet(nss), write: sc.Write, mode: mode}
+	h := &txHandle{ctx: ctx, tx: tx, sm: sm, scope: scopeSet(nss), write: sc.Write, mode: mode}
 	if err := fn(h); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -156,6 +183,20 @@ func (s *Store) Close() error {
 		s.notifier = nil
 	}
 	s.mu.Unlock()
+	if s.cpDone != nil {
+		close(s.cpDone)
+		s.cpDone = nil
+	}
+	for _, sm := range []map[string]tableStmts{s.stmtsDurable, s.stmtsRelaxed, s.stmtsReaders} {
+		for _, ts := range sm {
+			for _, st := range []*sql.Stmt{ts.get, ts.scan, ts.put, ts.del} {
+				if st != nil {
+					_ = st.Close()
+				}
+			}
+		}
+	}
+	s.stmtsDurable, s.stmtsRelaxed, s.stmtsReaders = nil, nil, nil
 	for _, db := range []*sql.DB{s.writerDurable, s.writerRelaxed, s.readers} {
 		if db != nil {
 			errs = append(errs, db.Close())
@@ -165,12 +206,12 @@ func (s *Store) Close() error {
 	return errors.Join(errs...)
 }
 
-// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded jittered loop:
-// the short in-driver busy_timeout alone would sleep past caller deadlines
-// (clause 6), and a persistent writer must surface ErrBusy, not hang.
+// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop: the short
+// in-driver busy_timeout does the real waiting (and bounds ctx latency,
+// clause 6), so between attempts only a tiny jittered pause bounds spin —
+// an exponential backoff here would idle past a freed lock.
 func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 	deadline := time.Now().Add(busyRetryCeiling)
-	backoff := busyRetryBase
 	for {
 		tx, err := db.BeginTx(ctx, nil)
 		if err == nil {
@@ -185,13 +226,12 @@ func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error)
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("writer contended past retry ceiling: %w", meta.ErrBusy)
 		}
-		jitter := time.Duration(rand.Int64N(int64(backoff))) //nolint:gosec // retry jitter, not cryptographic
+		pause := time.Duration(rand.Int64N(int64(busyRetryPause))) //nolint:gosec // retry jitter, not cryptographic
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(backoff + jitter):
+		case <-time.After(pause):
 		}
-		backoff = min(backoff*2, 100*time.Millisecond)
 	}
 }
 
@@ -251,8 +291,11 @@ func scopeSet(nss []string) map[string]struct{} {
 	return set
 }
 
+// open applies the per-connection runtime contract (§4); cache_size is KB
+// (negative form) and mmap_size covers the whole file at meta scale.
 func open(dbPath, sync string, writer bool) (*sql.DB, error) {
-	dsn := "file:" + dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_pragma=trusted_schema(0)&_pragma=synchronous(" + sync + ")"
+	dsn := "file:" + dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_pragma=trusted_schema(0)" +
+		"&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=synchronous(" + sync + ")"
 	if writer {
 		dsn += "&_txlock=immediate"
 	}
@@ -264,6 +307,46 @@ func open(dbPath, sync string, writer bool) (*sql.DB, error) {
 		db.SetMaxOpenConns(1)
 	}
 	return db, nil
+}
+
+func prepareStmts(db *sql.DB, nss map[string]Namespace, writer bool) (map[string]tableStmts, error) {
+	m := map[string]tableStmts{}
+	for _, ns := range nss {
+		for _, tbl := range ns.Tables {
+			tn := tableName(ns.Name, tbl)
+			var ts tableStmts
+			var err error
+			if ts.get, err = db.Prepare("SELECT data FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+				return nil, mapErr(err)
+			}
+			if ts.scan, err = db.Prepare("SELECT id, data FROM " + tn + " ORDER BY rowid"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+				return nil, mapErr(err)
+			}
+			if writer {
+				if ts.put, err = db.Prepare("INSERT INTO " + tn + " (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+					return nil, mapErr(err)
+				}
+				if ts.del, err = db.Prepare("DELETE FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+					return nil, mapErr(err)
+				}
+			}
+			m[ns.Name+"\x00"+tbl] = ts
+		}
+	}
+	return m, nil
+}
+
+func checkpointLoop(db *sql.DB, done <-chan struct{}) {
+	t := time.NewTicker(checkpointInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+		}
+	}
 }
 
 func isBusy(err error) bool {
@@ -303,7 +386,7 @@ func mapErr(err error) error {
 type txHandle struct {
 	ctx   context.Context
 	tx    *sql.Tx
-	store *Store
+	sm    map[string]tableStmts
 	scope map[string]struct{}
 	write string
 	mode  meta.CommitMode
@@ -318,8 +401,12 @@ func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMe
 	if err := h.checkRead(ns); err != nil {
 		return nil, false, err
 	}
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return nil, false, err
+	}
 	var data []byte
-	err := h.tx.QueryRowContext(ctx, "SELECT data FROM "+tableName(ns, table)+" WHERE id = ?", id).Scan(&data)
+	err = h.tx.StmtContext(ctx, ts.get).QueryRowContext(ctx, id).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -333,7 +420,11 @@ func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id str
 	if err := h.checkRead(ns); err != nil {
 		return err
 	}
-	rows, err := h.tx.QueryContext(ctx, "SELECT id, data FROM "+tableName(ns, table)+" ORDER BY rowid") //nolint:gosec // table name via quoteIdent from root declarations
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	rows, err := h.tx.StmtContext(ctx, ts.scan).QueryContext(ctx)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -355,7 +446,11 @@ func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.Ra
 	if err := h.checkWrite(ns, relaxedOK); err != nil {
 		return err
 	}
-	_, err := h.tx.ExecContext(ctx, "INSERT INTO "+tableName(ns, table)+" (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data", id, []byte(raw)) //nolint:gosec // table name via quoteIdent from root declarations
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	_, err = h.tx.StmtContext(ctx, ts.put).ExecContext(ctx, id, []byte(raw))
 	return mapErr(err)
 }
 
@@ -363,11 +458,23 @@ func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedO
 	if err := h.checkWrite(ns, relaxedOK); err != nil {
 		return err
 	}
-	_, err := h.tx.ExecContext(ctx, "DELETE FROM "+tableName(ns, table)+" WHERE id = ?", id) //nolint:gosec // table name via quoteIdent from root declarations
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	_, err = h.tx.StmtContext(ctx, ts.del).ExecContext(ctx, id)
 	return mapErr(err)
 }
 
 func (h *txHandle) Mode() meta.CommitMode { return h.mode }
+
+func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
+	ts, ok := h.sm[ns+"\x00"+table]
+	if !ok {
+		return tableStmts{}, fmt.Errorf("table %s/%s not declared: %w", ns, table, meta.ErrScope)
+	}
+	return ts, nil
+}
 
 func (h *txHandle) checkRead(ns string) error {
 	if _, ok := h.scope[ns]; !ok {
