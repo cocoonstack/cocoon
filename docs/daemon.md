@@ -47,6 +47,12 @@ WantedBy=multi-user.target
 
 Shutdown is clean: VMs keep running, and the next start re-adopts them.
 
+One operational note: the daemon is the first long-lived writer of the metering
+ledger, and the `file` backend holds that file open for its whole lifetime. If
+you rotate `<root-dir>/metering/ledger.jsonl` out from under it, the daemon keeps
+writing to the unlinked inode until it restarts. Either restart the daemon after
+a rotation, or run the `meta` metering backend instead.
+
 ## How supervision works
 
 Each pass — on a meta change event, or on the reconcile ticker — reads every
