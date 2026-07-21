@@ -31,6 +31,7 @@ var hypervisorFactories = []hypervisorFactory{
 func wireHypervisor[H interface {
 	hypervisor.Hypervisor
 	SetNetCleanup(hypervisor.NetTeardown)
+	SetNetLifecycle(hypervisor.NetLifecycle)
 }](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
 	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)
@@ -42,6 +43,7 @@ func wireHypervisor[H interface {
 			return nil, err
 		}
 		h.SetNetCleanup(netCleanup(c))
+		h.SetNetLifecycle(NewNetProviders(c).Lifecycle())
 		return h, nil
 	}
 }

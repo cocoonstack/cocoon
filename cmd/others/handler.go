@@ -7,8 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
-	"github.com/cocoonstack/cocoon/gc"
-	"github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 	"github.com/cocoonstack/cocoon/version"
 )
@@ -27,34 +25,10 @@ func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	o, err := cmdcore.NewGCOrchestrator(ctx, conf, localfile.WithGCPolicy(policy))
 	if err != nil {
 		return err
 	}
-	netProvider, err := cmdcore.InitNetwork(conf)
-	if err != nil {
-		return err
-	}
-	snapBackend, err := cmdcore.InitSnapshot(ctx, conf, localfile.WithGCPolicy(policy))
-	if err != nil {
-		return err
-	}
-
-	o := gc.New()
-	for _, b := range backends {
-		b.RegisterGC(o)
-	}
-	// Register ALL hypervisor backends so GC protects blobs from both CH and FC VMs.
-	hypers, hyperErr := cmdcore.InitAllHypervisors(ctx, conf)
-	if hyperErr != nil {
-		return hyperErr
-	}
-	for _, hyper := range hypers {
-		hyper.RegisterGC(o)
-	}
-	netProvider.RegisterGC(o)
-	gc.Register(o, bridge.GCModule())
-	snapBackend.RegisterGC(o)
 	return o.Run(ctx)
 }
 
