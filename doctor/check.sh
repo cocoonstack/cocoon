@@ -258,6 +258,20 @@ check_dir() {
 }
 
 check_dir "$COCOON_ROOT_DIR"
+
+# The sqlite meta engine (meta_backend=sqlite) needs WAL shared memory:
+# network filesystems under the meta root are refused by cocoon itself
+# (meta-store design v2.29 clause 4); report the same diagnostic here.
+meta_fstype=$(stat -f -c %T "$COCOON_ROOT_DIR" 2>/dev/null || echo unknown)
+case "$meta_fstype" in
+    nfs*|cifs|smb*|fuse*)
+        fail "meta root on $meta_fstype: sqlite WAL needs coherent shared memory; cocoon refuses this filesystem"
+        ;;
+    *)
+        pass "meta root filesystem ($meta_fstype) supports WAL"
+        ;;
+esac
+
 check_dir "$COCOON_RUN_DIR"
 check_dir "$COCOON_LOG_DIR"
 check_dir "${COCOON_ROOT_DIR}/cloudhypervisor/db"
