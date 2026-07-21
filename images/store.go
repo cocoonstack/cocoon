@@ -12,9 +12,8 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-const (
-	TableRecords = "records"
-)
+// TableRecords is the image-namespace records table.
+const TableRecords = "records"
 
 // Store is one image namespace on the shared meta engine, presenting the
 // legacy whole-index closure shape over record primitives: image lookups are

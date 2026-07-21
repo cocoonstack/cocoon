@@ -266,7 +266,8 @@ func argDir(i int) string {
 	}
 	dir, err := os.MkdirTemp("", "storebench-*")
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
 	return dir
 }

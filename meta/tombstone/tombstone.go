@@ -150,15 +150,6 @@ func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (
 	return rec, nil
 }
 
-// MarshalCleanup encodes a namespace-defined cleanup payload.
-func MarshalCleanup(v any) (json.RawMessage, error) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("encode cleanup payload: %w", err)
-	}
-	return raw, nil
-}
-
 // PendingIDs lists every tombstoned id (the recovery sweep's work list).
 func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error) {
 	var ids []string
@@ -209,4 +200,13 @@ func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Reco
 		return rec, taken.LeaseID, t.Rollback(ctx, w, id, taken.LeaseID)
 	}
 	return rec, taken.LeaseID, nil
+}
+
+// MarshalCleanup encodes a namespace-defined cleanup payload.
+func MarshalCleanup(v any) (json.RawMessage, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("encode cleanup payload: %w", err)
+	}
+	return raw, nil
 }
