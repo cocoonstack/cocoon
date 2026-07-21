@@ -88,6 +88,9 @@ func Run(ctx context.Context, spec Spec, target string) error {
 }
 
 func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {
+	if err := ensureJSONDirs(spec); err != nil {
+		return err
+	}
 	src, err := openSource(spec, target)
 	if err != nil {
 		return err
@@ -179,20 +182,16 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 // ensureJSONDirs creates namespace dirs for subsystems that never ran —
 // their absence means empty, and the engine's flock needs the dir to exist.
 func ensureJSONDirs(spec Spec) error {
+	dirs := make([]string, 0, len(spec.JSON))
 	for _, jns := range spec.JSON {
-		if err := os.MkdirAll(filepath.Dir(jns.LockPath), 0o750); err != nil {
-			return err
-		}
+		dirs = append(dirs, filepath.Dir(jns.LockPath))
 	}
-	return nil
+	return utils.EnsureDirs(dirs...)
 }
 
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == EngineSQLite {
-		if err := ensureJSONDirs(spec); err != nil {
-			return nil, err
-		}
 		return metajson.Open(spec.JSON...)
 	}
 	// The driver would create an empty file on first touch; a missing source
@@ -205,9 +204,6 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 
 func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, error) {
 	if target == EngineJSON {
-		if err := ensureJSONDirs(spec); err != nil {
-			return nil, err
-		}
 		return metajson.Open(spec.JSON...)
 	}
 	if !utils.FileExists(spec.DBPath) {
