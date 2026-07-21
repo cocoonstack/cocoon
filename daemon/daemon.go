@@ -1,6 +1,6 @@
-// Package daemon is the resident supervisor for VMs the cocoon CLI created: it
-// adopts their VMM processes, observes exits, and converges metadata and host
-// networking without becoming a dependency of any CLI verb.
+// Package daemon is the resident supervisor for VMs the cocoon CLI created: it adopts their
+// VMM processes, observes exits, and converges metadata and host networking — optionally, so no
+// CLI verb depends on it.
 package daemon
 
 import (
@@ -23,9 +23,7 @@ const (
 	// DefaultReconcileInterval floors how often a full pass runs; meta events drive faster ones.
 	DefaultReconcileInterval = 5 * time.Second
 
-	// wakeDebounce coalesces event bursts into one pass: the json engine's View
-	// holds a cross-process namespace lock, so an unthrottled daemon would stall
-	// every concurrent CLI invocation.
+	// wakeDebounce coalesces event bursts: the json engine's View holds a cross-process namespace lock, so unthrottled passes stall every concurrent CLI invocation.
 	wakeDebounce = 200 * time.Millisecond
 
 	lockFileName = "daemon.lock"
@@ -139,10 +137,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			// The meta layer never closes a subscriber channel, so a dead
-			// subscription is invisible: the ticker is the correctness floor and
-			// also the resubscribe cadence. Retries stay silent — only the first
-			// failure and the recovery are worth a line.
+			// A dead subscription is invisible — the meta layer never closes a subscriber channel — so the ticker doubles as the resubscribe cadence.
 			if events == nil {
 				if ch, rel, retryErr := d.subscribe(ctx); retryErr == nil {
 					events, release = ch, rel
@@ -207,8 +202,7 @@ func (d *Daemon) gcTicker() *time.Ticker {
 	return time.NewTicker(d.conf.GCInterval)
 }
 
-// runGC starts a collection unless one is still in flight; it runs off the
-// supervision loop so a slow sweep cannot delay convergence.
+// runGC starts a collection off the supervision loop, unless one is still in flight.
 func (d *Daemon) runGC(ctx context.Context) {
 	if !d.gcRunning.CompareAndSwap(false, true) {
 		log.WithFunc("daemon.runGC").Warn(ctx, "skip gc: previous run still active")

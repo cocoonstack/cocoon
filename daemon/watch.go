@@ -11,7 +11,6 @@ import (
 // exitQueue buffers observed exits so the poll loop never blocks behind a pass in flight.
 const exitQueue = 64
 
-// watchKey identifies a supervised VM across backends.
 type watchKey struct {
 	backend string
 	vmID    string
@@ -30,9 +29,7 @@ type watchEntry struct {
 	fd   int
 }
 
-// procWatcher turns VMM process exits into events. Where the platform has no
-// process-exit notification the registry stays empty and the daemon's reconcile
-// ticker is the only detector.
+// procWatcher turns VMM process exits into events; where the platform cannot notify, the registry stays empty and the reconcile ticker is the only detector.
 type procWatcher struct {
 	exits chan exitEvent
 

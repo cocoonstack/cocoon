@@ -137,10 +137,7 @@ func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, r
 	}
 }
 
-// collectOwnerless reclaims a creating placeholder whose owner died. A free ops
-// lock is the proof: create and clone hold it from prereserve through the final
-// record commit, so an unlocked placeholder has no live owner and its name
-// reservation must not wait out the GC grace.
+// collectOwnerless reclaims a creating placeholder whose owner died; a free ops lock is the proof, since create and clone hold it from prereserve through the final record commit.
 func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) {
 	unlock, ok := d.tryLock(ctx, b, rec.ID)
 	if !ok {
@@ -159,9 +156,7 @@ func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hyperv
 	logger.Warnf(ctx, "collected ownerless creating VM %s", rec.ID)
 }
 
-// handleExit converges the one generation the watcher saw exit, dating the stop
-// from the observation rather than from detection, then republishes so a stream
-// consumer learns of the crash without waiting for the ticker.
+// handleExit converges the generation the watcher saw exit, dating the stop from that observation, then republishes for stream consumers.
 func (d *Daemon) handleExit(ctx context.Context, ev exitEvent) {
 	converged := d.convergeExit(ctx, ev)
 	for {
@@ -212,8 +207,7 @@ func (d *Daemon) confirmDead(ctx context.Context, b Supervisor, rec *hypervisor.
 	return errors.Is(err, hypervisor.ErrNotRunning)
 }
 
-// tryLock reports ok=false for both a busy lock (an operation owns the VM) and a
-// lock error; both retry on the next pass, only the error is logged.
+// tryLock reports ok=false for a busy lock and for a lock error alike; both retry next pass, only the error is logged.
 func (d *Daemon) tryLock(ctx context.Context, b Supervisor, vmID string) (func(), bool) {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil {

@@ -17,7 +17,6 @@ const (
 	subQueue = 128
 )
 
-// changeKind labels a status stream event.
 type changeKind string
 
 // VMStatus is one supervised VM as of the last reconcile pass.
@@ -60,7 +59,6 @@ func (s VMStatus) changed(other VMStatus) bool {
 		s.QuiescePending != other.QuiescePending
 }
 
-// changeEvent is one status stream item.
 type changeEvent struct {
 	Kind   changeKind `json:"type"`
 	Status VMStatus   `json:"vm"`
