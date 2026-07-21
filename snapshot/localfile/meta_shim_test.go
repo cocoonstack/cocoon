@@ -10,7 +10,6 @@ import (
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/snapshot"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 // snapshotIndex mirrors the legacy top-level DB shape for shim-based tests.
@@ -20,7 +19,12 @@ type snapshotIndex struct {
 }
 
 func (idx *snapshotIndex) Init() {
-	utils.InitNamedIndex(&idx.Snapshots, &idx.Names)
+	if idx.Snapshots == nil {
+		idx.Snapshots = map[string]*snapshot.SnapshotRecord{}
+	}
+	if idx.Names == nil {
+		idx.Names = map[string]string{}
+	}
 }
 
 // dbUpdate is the test-only whole-index shim: materialize, run fn, write the

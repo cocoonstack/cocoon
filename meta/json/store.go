@@ -14,7 +14,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/lock"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/utils"
@@ -186,7 +185,7 @@ func (s *Store) loadAll(ctx context.Context, states []*nsState) (map[string]*loa
 
 type nsState struct {
 	def    Namespace
-	locker lock.Locker
+	locker *flock.Lock
 }
 
 type loaded struct {
@@ -334,7 +333,7 @@ type txWriter struct {
 }
 
 func (w *txWriter) PutRaw(_ context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
-	if err := w.check(ns, relaxedOK); err != nil {
+	if err := meta.CheckWriteScope(ns, w.write, w.mode, relaxedOK); err != nil {
 		return err
 	}
 	w.model.Put(table, id, slices.Clone(raw))
@@ -342,20 +341,10 @@ func (w *txWriter) PutRaw(_ context.Context, ns, table, id string, raw json.RawM
 }
 
 func (w *txWriter) DeleteRaw(_ context.Context, ns, table, id string, relaxedOK bool) error {
-	if err := w.check(ns, relaxedOK); err != nil {
+	if err := meta.CheckWriteScope(ns, w.write, w.mode, relaxedOK); err != nil {
 		return err
 	}
 	w.model.Delete(table, id)
-	return nil
-}
-
-func (w *txWriter) check(ns string, relaxedOK bool) error {
-	if ns != w.write {
-		return fmt.Errorf("write %s: %w", ns, meta.ErrScope)
-	}
-	if w.mode == meta.CommitRelaxed && !relaxedOK {
-		return fmt.Errorf("write %s: %w", ns, meta.ErrDurabilityContract)
-	}
 	return nil
 }
 

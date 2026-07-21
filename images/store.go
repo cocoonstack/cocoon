@@ -91,7 +91,7 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 			return fmt.Errorf("decode image entry %q: %w", id, err)
 		}
 		idx.Images[id] = &e
-		before[id] = slices.Clone(raw)
+		before[id] = raw
 		return nil
 	}); err != nil {
 		return nil, nil, err

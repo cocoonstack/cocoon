@@ -9,13 +9,9 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-
-	"github.com/cocoonstack/cocoon/lock"
 )
 
 const retryDelay = 2 * time.Millisecond
-
-var _ lock.Locker = (*Lock)(nil)
 
 // Lock provides in-process (channel) + cross-process (flock) mutual exclusion.
 type Lock struct {

@@ -37,6 +37,10 @@ func (c *BaseConfig) VMRunDir(vmID string) string { return filepath.Join(c.RunDi
 
 func (c *BaseConfig) VMLogDir(vmID string) string { return filepath.Join(c.LogDir(), vmID) }
 
+func (c *BaseConfig) COWRawPath(vmID string) string {
+	return filepath.Join(c.VMRunDir(vmID), COWRawFileName)
+}
+
 // EnsureDirs creates all static directories required by the backend.
 func (c *BaseConfig) EnsureDirs() error {
 	return utils.EnsureDirs(c.dbDir(), c.RunDir(), c.LogDir())

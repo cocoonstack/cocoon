@@ -6,26 +6,6 @@ import (
 	"slices"
 )
 
-// AppendRawMap appends m as a compact JSON object with sorted keys, values
-// emitted verbatim — byte-identical to encoding/json without its per-value
-// compaction re-scan.
-func AppendRawMap(dst []byte, m map[string]json.RawMessage) ([]byte, error) {
-	dst = append(dst, '{')
-	for i, k := range slices.Sorted(maps.Keys(m)) {
-		if i > 0 {
-			dst = append(dst, ',')
-		}
-		kb, err := json.Marshal(k)
-		if err != nil {
-			return nil, err
-		}
-		dst = append(dst, kb...)
-		dst = append(dst, ':')
-		dst = append(dst, m[k]...)
-	}
-	return append(dst, '}'), nil
-}
-
 // AppendStringSlice appends s as a compact JSON array of strings.
 func AppendStringSlice(dst []byte, s []string) ([]byte, error) {
 	dst = append(dst, '[')

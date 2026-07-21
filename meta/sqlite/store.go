@@ -481,7 +481,7 @@ func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id str
 }
 
 func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
-	if err := h.checkWrite(ns, relaxedOK); err != nil {
+	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
 		return err
 	}
 	ts, err := h.stmts(ns, table)
@@ -493,7 +493,7 @@ func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.Ra
 }
 
 func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error {
-	if err := h.checkWrite(ns, relaxedOK); err != nil {
+	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
 		return err
 	}
 	ts, err := h.stmts(ns, table)
@@ -515,16 +515,6 @@ func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
 func (h *txHandle) checkRead(ns string) error {
 	if _, ok := h.scope[ns]; !ok {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
-	}
-	return nil
-}
-
-func (h *txHandle) checkWrite(ns string, relaxedOK bool) error {
-	if ns != h.write {
-		return fmt.Errorf("write %s: %w", ns, meta.ErrScope)
-	}
-	if h.mode == meta.CommitRelaxed && !relaxedOK {
-		return fmt.Errorf("write %s: %w", ns, meta.ErrDurabilityContract)
 	}
 	return nil
 }
