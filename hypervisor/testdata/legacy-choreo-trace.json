@@ -22,7 +22,7 @@
     {
       "op": "finalize",
       "err_class": "nil",
-      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":2,\"memory\":1073741824,\"storage\":10737418240,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"0001-01-01T00:00:00Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":2,\"memory\":1073741824,\"storage\":10737418240,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"transition_generation\":1,\"last_transition_reason\":\"create\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
       "metering": [
         "vm.storage.start/boot"
       ]
@@ -40,12 +40,12 @@
     {
       "op": "resize",
       "err_class": "nil",
-      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"0001-01-01T00:00:00Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}"
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":false,\"transition_generation\":1,\"last_transition_reason\":\"create\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}"
     },
     {
       "op": "mark-started",
       "err_class": "nil",
-      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"running\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"transition_generation\":1,\"last_transition_reason\":\"boot\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"started_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"running\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"transition_generation\":2,\"last_transition_reason\":\"boot\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"started_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
       "metering": [
         "vm.compute.start/boot"
       ]
@@ -53,7 +53,7 @@
     {
       "op": "update-stopped",
       "err_class": "nil",
-      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"transition_generation\":2,\"last_transition_reason\":\"stop-user\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"started_at\":\"2026-01-02T03:04:05Z\",\"stopped_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
+      "result": "{\"id\":\"VM1\",\"hypervisor\":\"test-hv\",\"state\":\"stopped\",\"config\":{\"cpu\":4,\"memory\":1073741824,\"storage\":21474836480,\"image\":\"img:1\",\"name\":\"alpha\"},\"pid\":0,\"first_booted\":true,\"transition_generation\":3,\"last_transition_reason\":\"stop-user\",\"last_transition_at\":\"2026-01-02T03:04:05Z\",\"created_at\":\"0001-01-01T00:00:00Z\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"started_at\":\"2026-01-02T03:04:05Z\",\"stopped_at\":\"2026-01-02T03:04:05Z\",\"image_blob_ids\":{\"blobA\":{},\"blobB\":{}},\"run_dir\":\"/r2/VM1\",\"log_dir\":\"/l2/VM1\"}",
       "metering": [
         "vm.compute.stop/stop-user"
       ]

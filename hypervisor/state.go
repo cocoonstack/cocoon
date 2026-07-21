@@ -121,12 +121,17 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 			markTransition(r, state, types.TransitionError, now)
 			return nil
 		}
+		open := hasOpenComputeInterval(r)
+		wasUp := open || r.State == types.VMStateRunning
 		markTransition(r, state, types.TransitionStopUser, now)
 		r.QuiescePending = needsQuiesce(r)
-		if !hasOpenComputeInterval(r) {
+		if wasUp {
+			// A VM that was up gets a stop time even when its ledger interval was never opened.
+			r.StoppedAt = &now
+		}
+		if !open {
 			return nil
 		}
-		r.StoppedAt = &now
 		return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
 	})
 }

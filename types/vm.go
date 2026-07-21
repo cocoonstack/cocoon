@@ -13,6 +13,7 @@ const (
 	VMStateStopped  VMState = "stopped"  // CH process has exited cleanly
 	VMStateError    VMState = "error"    // start, stop, or restore failed
 
+	TransitionCreate         TransitionReason = "create"
 	TransitionBoot           TransitionReason = "boot"
 	TransitionRestart        TransitionReason = "restart"
 	TransitionClone          TransitionReason = "clone"

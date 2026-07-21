@@ -301,3 +301,62 @@ func TestTryLockVMOpsReportsBusyWithoutError(t *testing.T) {
 		t.Fatal("acquired an ops lock already held by an in-flight operation")
 	}
 }
+
+// StoppedAt is when the VM was observed stopped, so a record predating the
+// interval bookkeeping still gets one.
+func TestConvergeDeadDatesARecordWithNoOpenInterval(t *testing.T) {
+	b, rec := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs["vm1"].State = types.VMStateRunning
+		return nil
+	}); err != nil {
+		t.Fatalf("seed legacy running: %v", err)
+	}
+	observed := time.Date(2026, 7, 21, 11, 0, 0, 0, time.UTC)
+
+	if err := b.ConvergeDead(ctx, "vm1", recordOf(t, b, "vm1").TransitionGeneration, observed); err != nil {
+		t.Fatalf("ConvergeDead: %v", err)
+	}
+	got := recordOf(t, b, "vm1")
+	if got.StoppedAt == nil || !got.StoppedAt.Equal(observed) {
+		t.Errorf("got StoppedAt %v, want the observation time %v", got.StoppedAt, observed)
+	}
+	if n := len(rec.Entries()); n != 0 {
+		t.Errorf("got %d metering entries, want 0 without an open interval", n)
+	}
+}
+
+func TestUpdateStatesDatesAStoppedRecordThatWasRunning(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs["vm1"].State = types.VMStateRunning
+		return nil
+	}); err != nil {
+		t.Fatalf("seed legacy running: %v", err)
+	}
+
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates: %v", err)
+	}
+	if recordOf(t, b, "vm1").StoppedAt == nil {
+		t.Error("a running record stopped by the user got no stop time")
+	}
+}
+
+// A VM that never started must not be dated as though it had.
+func TestUpdateStatesLeavesACreatedRecordUndated(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
+
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates: %v", err)
+	}
+	if got := recordOf(t, b, "vm1"); got.StoppedAt != nil {
+		t.Errorf("got StoppedAt %v for a VM that never ran, want nil", got.StoppedAt)
+	}
+}

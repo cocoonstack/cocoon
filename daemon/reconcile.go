@@ -20,13 +20,16 @@ func (d *Daemon) reconcile(ctx context.Context) {
 		st, err := d.reconcileBackend(ctx, b)
 		if err != nil {
 			healthy = false
-			continue
 		}
 		all = append(all, st...)
 	}
 	d.state.publish(all, healthy, time.Now())
 }
 
+// reconcileBackend returns the backend's statuses plus the first failure the pass
+// hit. A busy ops lock is not a failure — it is the normal way supervision yields
+// to a command — but anything else means the pass did not fully succeed, which is
+// what /healthz reports.
 func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus, error) {
 	scan, err := b.ScanSupervision(ctx)
 	if err != nil {
@@ -36,116 +39,143 @@ func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus
 	now := time.Now()
 	seen := make(map[string]struct{}, len(scan.Records))
 	out := make([]VMStatus, 0, len(scan.Records))
+	var failed error
 	for _, rec := range scan.Records {
 		seen[rec.ID] = struct{}{}
 		key := watchKey{backend: b.Type(), vmID: rec.ID}
 		live := false
-		if _, tombstoned := scan.Tombstoned[rec.ID]; !tombstoned {
-			live = d.reconcileVM(ctx, b, key, rec, scan.Procs)
+		var vmErr error
+		if _, tombstoned := scan.Tombstoned[rec.ID]; tombstoned {
+			vmErr = d.resumeDelete(ctx, b, rec.ID)
+		} else {
+			live, vmErr = d.reconcileVM(ctx, b, key, rec, scan.Procs)
 		}
+		failed = cmpErr(failed, vmErr)
 		out = append(out, newVMStatus(b.Type(), rec, live, d.watcher.pidOf(key), now))
 	}
 	d.watcher.dropAbsent(b.Type(), seen)
-	return out, nil
+	return out, failed
 }
 
 // reconcileVM applies the supervision rules to one record and reports whether a VMM generation is live.
-func (d *Daemon) reconcileVM(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord, procs utils.ProcScan) bool {
+func (d *Daemon) reconcileVM(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord, procs utils.ProcScan) (bool, error) {
 	// A creating placeholder is never promoted: a clone launches its VMM before the record is complete.
 	if rec.State == types.VMStateCreating {
-		d.collectOwnerless(ctx, b, rec)
-		return false
+		return false, d.collectOwnerless(ctx, b, rec)
 	}
 	proc, err := b.ObserveVMMIn(ctx, rec, procs)
 	switch {
 	case err == nil:
-		d.adoptLive(ctx, b, key, rec, proc)
-		return true
+		return true, d.adoptLive(ctx, b, key, rec, proc)
 	case errors.Is(err, hypervisor.ErrNotRunning):
-		d.convergeDead(ctx, b, key, rec)
-		return false
+		return false, d.convergeDead(ctx, b, key, rec)
 	default:
 		// Fail closed: an inconclusive probe must never be read as an exit.
 		log.WithFunc("daemon.reconcileVM").Warnf(ctx, "liveness inconclusive for %s/%s: %v", key.backend, key.vmID, err)
-		return false
+		return false, err
 	}
 }
 
 // adoptLive watches the exact live generation, repairing a record that drifted out of Running first.
-func (d *Daemon) adoptLive(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord, proc utils.ProcRef) {
+func (d *Daemon) adoptLive(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord, proc utils.ProcRef) error {
 	if rec.State == types.VMStateRunning {
 		d.watcher.ensure(key, proc, rec.TransitionGeneration)
-		return
+		return nil
 	}
 	if rec.Quarantine != "" {
-		return
+		return nil
 	}
-	unlock, ok := d.tryLock(ctx, b, key.vmID)
+	unlock, ok, err := d.tryLock(ctx, b, key.vmID)
 	if !ok {
-		return
+		return err
 	}
 	defer unlock()
 	fresh, err := b.PeekRecord(ctx, key.vmID)
 	if err != nil || fresh == nil || fresh.Quarantine != "" {
-		return
+		return err
 	}
 	if again, obsErr := b.ObserveVMM(ctx, fresh); obsErr != nil || again != proc {
-		return
+		return obsErr
 	}
 	gen := b.ReconcileToRunning(ctx, key.vmID)
 	if gen == 0 {
-		return
+		return nil
 	}
 	log.WithFunc("daemon.adoptLive").Warnf(ctx, "adopted live VM %s whose record read %s", key.vmID, fresh.State)
 	d.watcher.ensure(key, proc, gen)
+	return nil
 }
 
 // convergeDead lands the stop transition, or retries a quiesce the last stop could not finish.
-func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord) {
+func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord) error {
 	d.watcher.drop(key)
 	if !hypervisor.NeedsDeadConvergence(rec) && !rec.QuiescePending {
-		return
+		return nil
 	}
-	unlock, ok := d.tryLock(ctx, b, key.vmID)
+	unlock, ok, err := d.tryLock(ctx, b, key.vmID)
 	if !ok {
-		return
+		return err
 	}
 	defer unlock()
 	fresh, err := b.PeekRecord(ctx, key.vmID)
 	if err != nil || fresh == nil {
-		return
+		return err
 	}
 	if !d.confirmDead(ctx, b, fresh) {
-		return
+		return nil
 	}
 	logger := log.WithFunc("daemon.convergeDead")
 	exited := hypervisor.NeedsDeadConvergence(fresh)
 	if err := b.ConvergeDead(ctx, key.vmID, fresh.TransitionGeneration, time.Now()); err != nil {
 		logger.Errorf(ctx, err, "converge %s", key.vmID)
-		return
+		return err
 	}
 	if exited {
 		logger.Warnf(ctx, "VM %s exited outside a cocoon stop", key.vmID)
 	}
+	return nil
 }
 
 // collectOwnerless reclaims a creating placeholder whose owner died; a free ops lock is the proof, since create and clone hold it from prereserve through the final record commit.
-func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) {
-	unlock, ok := d.tryLock(ctx, b, rec.ID)
+func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) error {
+	unlock, ok, err := d.tryLock(ctx, b, rec.ID)
 	if !ok {
-		return
+		return err
 	}
 	defer unlock()
 	fresh, err := b.PeekRecord(ctx, rec.ID)
 	if err != nil || fresh == nil || fresh.State != types.VMStateCreating {
-		return
+		return err
 	}
 	logger := log.WithFunc("daemon.collectOwnerless")
 	if err := b.CollectStaleCreate(ctx, rec.ID, fresh); err != nil {
 		logger.Errorf(ctx, err, "collect ownerless create %s", rec.ID)
-		return
+		return err
 	}
 	logger.Warnf(ctx, "collected ownerless creating VM %s", rec.ID)
+	return nil
+}
+
+// resumeDelete finishes a delete a previous worker left mid-protocol. Supervision
+// starts deletes of its own when it collects an ownerless placeholder, so it must
+// also resume them: a crash or a transient teardown failure after the deleting
+// mark would otherwise strand the record and its name reservation until someone
+// runs gc by hand.
+func (d *Daemon) resumeDelete(ctx context.Context, b Supervisor, vmID string) error {
+	unlock, ok, err := d.tryLock(ctx, b, vmID)
+	if !ok {
+		return err
+	}
+	defer unlock()
+	done, err := b.RecoverTombstone(ctx, vmID)
+	if err != nil {
+		log.WithFunc("daemon.resumeDelete").Errorf(ctx, err, "resume interrupted delete of %s", vmID)
+		return err
+	}
+	if done {
+		log.WithFunc("daemon.resumeDelete").Warnf(ctx, "finished an interrupted delete of VM %s", vmID)
+	}
+	return nil
 }
 
 // handleExit converges the generation the watcher saw exit, dating the stop from that observation, then republishes for stream consumers.
@@ -171,7 +201,7 @@ func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 	if b == nil {
 		return false
 	}
-	unlock, ok := d.tryLock(ctx, b, ev.key.vmID)
+	unlock, ok, _ := d.tryLock(ctx, b, ev.key.vmID)
 	if !ok {
 		return false
 	}
@@ -199,12 +229,20 @@ func (d *Daemon) confirmDead(ctx context.Context, b Supervisor, rec *hypervisor.
 	return errors.Is(err, hypervisor.ErrNotRunning)
 }
 
-// tryLock reports ok=false for a busy lock and for a lock error alike; both retry next pass, only the error is logged.
-func (d *Daemon) tryLock(ctx context.Context, b Supervisor, vmID string) (func(), bool) {
+// tryLock reports ok=false for a busy lock and for a lock error alike; only the error is worth logging, and only it makes the pass unhealthy.
+func (d *Daemon) tryLock(ctx context.Context, b Supervisor, vmID string) (func(), bool, error) {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil {
 		log.WithFunc("daemon.tryLock").Errorf(ctx, err, "ops lock for %s", vmID)
-		return nil, false
+		return nil, false, err
 	}
-	return unlock, ok
+	return unlock, ok, nil
+}
+
+// cmpErr keeps the first failure of a pass; later ones are already logged where they happened.
+func cmpErr(first, next error) error {
+	if first != nil {
+		return first
+	}
+	return next
 }

@@ -29,6 +29,7 @@ type Supervisable interface {
 	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
 	ReconcileToRunning(ctx context.Context, vmID string) uint64
 	CollectStaleCreate(ctx context.Context, vmID string, rec *VMRecord) error
+	RecoverTombstone(ctx context.Context, vmID string) (bool, error)
 }
 
 // SupervisionScan is one reconcile pass's view of a backend namespace, plus the
@@ -133,8 +134,10 @@ func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64,
 		}
 		if hasOpenComputeInterval(r) {
 			emit = []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shapeFromConfig(r.Config), observedAt)}
-			r.StoppedAt = &observedAt
 		}
+		// Dated whether or not a ledger interval was open: StoppedAt is when the VM was
+		// observed stopped, and a record predating the interval bookkeeping still has one.
+		r.StoppedAt = &observedAt
 		markTransition(r, types.VMStateStopped, types.TransitionUnexpectedExit, observedAt)
 		r.QuiescePending = needsQuiesce(r)
 		return t.Put(id, r)
@@ -182,6 +185,13 @@ func (b *Backend) CollectStaleCreate(ctx context.Context, id string, rec *VMReco
 		return fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err)
 	}
 	return b.deleteVMProtocol(ctx, id, rec)
+}
+
+// RecoverTombstone drives an unfinished delete to completion under the held ops
+// lock, reporting whether the record is now gone. Supervision needs it because it
+// starts deletes of its own.
+func (b *Backend) RecoverTombstone(ctx context.Context, id string) (bool, error) {
+	return b.recoverVMTombstone(ctx, id)
 }
 
 // clearQuiescePending is relaxed: losing the clear only costs one idempotent re-quiesce on a later pass.

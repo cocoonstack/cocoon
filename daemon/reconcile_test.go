@@ -27,10 +27,13 @@ type fakeSupervisor struct {
 	lockErr    error
 	observeErr error
 
+	resumeErr error
+
 	converged []convergeCall
 	adopted   []string
 	collected []string
 	quiesced  []string
+	resumed   []string
 }
 
 func newFake() *fakeSupervisor {
@@ -125,6 +128,18 @@ func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) uint
 	return rec.TransitionGeneration
 }
 
+func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resumed = append(f.resumed, vmID)
+	if f.resumeErr != nil {
+		return false, f.resumeErr
+	}
+	delete(f.records, vmID)
+	delete(f.tombstoned, vmID)
+	return true, nil
+}
+
 func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -186,13 +201,29 @@ func TestReconcileSkipsInconclusiveLiveness(t *testing.T) {
 	}
 }
 
-func TestReconcileSkipsTombstonedVM(t *testing.T) {
+// A tombstoned record is not supervised as a live VM, but the daemon starts
+// deletes of its own, so it must finish one a crash left mid-protocol.
+func TestReconcileResumesInterruptedDelete(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.tombstoned["vm1"] = struct{}{}
 	newTestDaemon(t, f).reconcile(t.Context())
 
 	if len(f.converged) != 0 {
-		t.Errorf("got %+v, want an unfinished delete left to the entry guard and GC", f.converged)
+		t.Errorf("got %+v, want no state convergence for a record being deleted", f.converged)
+	}
+	if len(f.resumed) != 1 || f.resumed[0] != "vm1" {
+		t.Fatalf("got resumed %v, want the interrupted delete finished", f.resumed)
+	}
+}
+
+func TestReconcileLeavesInterruptedDeleteLockedByAnOwner(t *testing.T) {
+	f := newFake().put(runningRec("vm1", 1))
+	f.tombstoned["vm1"] = struct{}{}
+	f.busy["vm1"] = struct{}{}
+	newTestDaemon(t, f).reconcile(t.Context())
+
+	if len(f.resumed) != 0 {
+		t.Errorf("got resumed %v, want the owning operation left to finish it", f.resumed)
 	}
 }
 
@@ -308,5 +339,45 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 
 	if len(f.converged) != 0 {
 		t.Errorf("got %+v, want nothing for a record removed while the event queued", f.converged)
+	}
+}
+
+// /healthz promises a full pass succeeded, so a real failure must make the pass
+// unhealthy — while a busy ops lock, which is how supervision yields to a
+// command, must not.
+func TestPassHealthReflectsFailuresButNotBusyLocks(t *testing.T) {
+	tests := []struct {
+		name    string
+		arrange func(*fakeSupervisor)
+		healthy bool
+	}{
+		{"clean pass", func(*fakeSupervisor) {}, true},
+		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, true},
+		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, false},
+		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFake().put(runningRec("vm1", 1))
+			tt.arrange(f)
+			d := newTestDaemon(t, f)
+			d.reconcile(t.Context())
+
+			if _, healthy, _ := d.state.snapshot(); healthy != tt.healthy {
+				t.Errorf("got healthy=%v, want %v", healthy, tt.healthy)
+			}
+		})
+	}
+}
+
+func TestPassUnhealthyWhenAnInterruptedDeleteCannotFinish(t *testing.T) {
+	f := newFake().put(runningRec("vm1", 1))
+	f.tombstoned["vm1"] = struct{}{}
+	f.resumeErr = fmt.Errorf("cni down")
+	d := newTestDaemon(t, f)
+	d.reconcile(t.Context())
+
+	if _, healthy, _ := d.state.snapshot(); healthy {
+		t.Error("a delete that could not be finished reported a healthy pass")
 	}
 }
