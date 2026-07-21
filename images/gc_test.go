@@ -17,14 +17,14 @@ type gcTestEntry struct {
 	Digest string `json:"digest"`
 }
 
-// TestGCCollectSkipsRepublishedBlob pins the loose-GC revalidation: a digest
-// that became referenced after the snapshot (a publish finished and released
-// its lock) must survive Collect.
 var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "images", Table: TableRecords},
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
+// TestGCCollectSkipsRepublishedBlob pins the loose-GC revalidation: a digest
+// that became referenced after the snapshot (a publish finished and released
+// its lock) must survive Collect.
 func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

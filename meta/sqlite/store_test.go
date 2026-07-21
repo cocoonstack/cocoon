@@ -4,10 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/utils"
-
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/meta/contracttest"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func newStore(t *testing.T, dir string, nss ...string) *Store {

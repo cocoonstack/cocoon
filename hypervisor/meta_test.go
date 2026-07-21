@@ -16,7 +16,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// newTestMetaStore opens a meta store over conf's index paths for one backend type.
 var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "vms", Table: TableRecords},
 	{Key: "names", Table: TableNames},
@@ -24,6 +23,7 @@ var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
+// newTestMetaStore opens a meta store over the given index paths for one backend type.
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: indexFile, LockPath: lockPath, Codec: testVMTables})

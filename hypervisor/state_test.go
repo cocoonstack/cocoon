@@ -561,8 +561,6 @@ func (stubBackendConfig) PIDFileName() string                 { return "stub.pid
 func (stubBackendConfig) TerminateGracePeriod() time.Duration { return time.Second }
 func (stubBackendConfig) SocketWaitTimeout() time.Duration    { return time.Second }
 func (stubBackendConfig) EffectivePoolSize() int              { return 1 }
-func (c stubBackendConfig) IndexFile() string                 { return c.indexFile }
-func (c stubBackendConfig) IndexLock() string                 { return c.indexLock }
 func (stubBackendConfig) EnsureDirs() error                   { return nil }
 func (stubBackendConfig) RunDir() string                      { panic("RunDir: not implemented in stub") }
 

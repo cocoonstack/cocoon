@@ -2,6 +2,7 @@ package json
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,7 +48,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 			"META_MP_WORKER="+strconv.Itoa(w),
 			fmt.Sprintf("META_MP_OPS=%d", mpOps),
 		)
-		out := &prefixedBuf{}
+		out := &bytes.Buffer{}
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start worker %d: %v", w, err)
@@ -105,15 +106,6 @@ func TestMultiProcessWorker(t *testing.T) {
 	}
 }
 
-type prefixedBuf struct{ b []byte }
-
-func (p *prefixedBuf) Write(data []byte) (int, error) {
-	p.b = append(p.b, data...)
-	return len(data), nil
-}
-
-func (p *prefixedBuf) String() string { return string(p.b) }
-
 // TestInverseScopeNoDeadlock is the §9 cross-process gate: mutually-inverse
 // scopes (write alpha read beta vs write beta read alpha) storm concurrently
 // and must never deadlock — the engine's fixed global lock order is the proof.
@@ -132,7 +124,7 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 			"META_MP_WORKER="+strconv.Itoa(w),
 			"META_MP_SCOPE="+scopes[w%2],
 		)
-		out := &prefixedBuf{}
+		out := &bytes.Buffer{}
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start worker %d: %v", w, err)

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 			"META_MP_WORKER="+strconv.Itoa(w),
 			fmt.Sprintf("META_MP_OPS=%d", mpOps),
 		)
-		out := &procBuf{}
+		out := &bytes.Buffer{}
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start worker %d: %v", w, err)
@@ -165,7 +166,7 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 			"META_MP_WORKER="+strconv.Itoa(w),
 			"META_MP_SCOPE="+scopes[w%2],
 		)
-		out := &procBuf{}
+		out := &bytes.Buffer{}
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start worker %d: %v", w, err)
@@ -310,12 +311,3 @@ func TestKillStormWorker(t *testing.T) {
 		fmt.Printf("ACK %s\n", txn)
 	}
 }
-
-type procBuf struct{ b []byte }
-
-func (p *procBuf) Write(data []byte) (int, error) {
-	p.b = append(p.b, data...)
-	return len(data), nil
-}
-
-func (p *procBuf) String() string { return string(p.b) }
