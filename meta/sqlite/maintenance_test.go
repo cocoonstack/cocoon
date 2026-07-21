@@ -5,14 +5,77 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
 )
 
+func backupGet(t *testing.T, dest, id string) (string, bool) {
+	t.Helper()
+	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
+	if err != nil {
+		t.Fatalf("open backup %s: %v", dest, err)
+	}
+	defer b.Close() //nolint:errcheck
+	var raw json.RawMessage
+	var ok bool
+	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
+		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("view backup: %v", err)
+	}
+	return string(raw), ok
+}
+
 func TestBackupFidelity(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	s := newStore(t, dir, "vms")
+	put := func(id, val string) {
+		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+			return w.PutRaw(ctx, "vms", "records", id, json.RawMessage(val), false)
+		})
+		if err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	// Pre-snapshot marker: acked before backup, MUST be captured even while
+	// a writer keeps the WAL non-empty (§9 backup fidelity).
+	put("marker", `{"v":1}`)
+	stop := make(chan struct{})
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+				put("churn", `{"i":`+string(rune('0'+i%10))+`}`)
+			}
+		}
+	}()
+	dest := filepath.Join(dir, "backup", "meta.db")
+	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	close(stop)
+	if raw, ok := backupGet(t, dest, "marker"); !ok || raw != `{"v":1}` {
+		t.Fatalf("marker missing from backup: %q ok=%v", raw, ok)
+	}
+
+	// Replacement: a second backup overwrites and carries new state.
+	put("marker", `{"v":2}`)
+	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
+		t.Fatalf("replace backup: %v", err)
+	}
+	if raw, _ := backupGet(t, dest, "marker"); raw != `{"v":2}` {
+		t.Fatalf("replacement backup content: %q", raw)
+	}
+}
+
+func TestBackupCrashSteps(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
@@ -22,29 +85,36 @@ func TestBackupFidelity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-
 	dest := filepath.Join(dir, "backup", "meta.db")
 	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
-		t.Fatalf("backup: %v", err)
-	}
-	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
-	if err != nil {
-		t.Fatalf("open backup: %v", err)
-	}
-	defer b.Close() //nolint:errcheck
-	err = b.View(ctx, []string{"vms"}, func(r meta.Reader) error {
-		raw, ok, err := r.GetRaw(ctx, "vms", "records", "id1")
-		if err != nil || !ok || string(raw) != `{"v":1}` {
-			t.Fatalf("backup content: %s ok=%v err=%v", raw, ok, err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("view backup: %v", err)
+		t.Fatalf("publish first backup: %v", err)
 	}
 
-	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
-		t.Fatalf("want overwrite refusal, got %v", err)
+	errCrash := errors.New("injected crash")
+	for _, step := range []string{"vacuumed", "verified", "synced", "renamed"} {
+		testBackupStep = func(at string) error {
+			if at == step {
+				return errCrash
+			}
+			return nil
+		}
+		err := Backup(ctx, filepath.Join(dir, DBFileName), dest)
+		if step != "renamed" {
+			// Crash before rename: the published backup must be intact.
+			if !errors.Is(err, errCrash) {
+				t.Fatalf("step %s: want injected crash, got %v", step, err)
+			}
+			if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
+				t.Fatalf("step %s: published backup damaged: %q ok=%v", step, raw, ok)
+			}
+		} else if !errors.Is(err, errCrash) {
+			t.Fatalf("step renamed: want injected crash, got %v", err)
+		}
+		// Rerun after every crash point must succeed (stale tmp cleared).
+		testBackupStep = nil
+		if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
+			t.Fatalf("rerun after %s: %v", step, err)
+		}
 	}
 }
 

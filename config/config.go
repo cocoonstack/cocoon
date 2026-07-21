@@ -99,6 +99,9 @@ func (c *Config) Validate() error {
 	if err := c.Metering.Validate(); err != nil {
 		return err
 	}
+	if c.MetaBackend != "" && c.MetaBackend != "json" && c.MetaBackend != "sqlite" {
+		return fmt.Errorf("meta_backend %q is not one of json|sqlite", c.MetaBackend)
+	}
 	return nil
 }
 

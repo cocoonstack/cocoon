@@ -98,3 +98,24 @@ func TestDNSServers(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_MetaBackend(t *testing.T) {
+	for _, tt := range []struct {
+		backend string
+		ok      bool
+	}{
+		{"", true}, {"json", true}, {"sqlite", true}, {"typo", false},
+	} {
+		c := &Config{
+			RootDir: "/r", RunDir: "/r/run", LogDir: "/l",
+			StopTimeoutSeconds: 30, MetaBackend: tt.backend,
+		}
+		err := c.Validate()
+		if tt.ok && err != nil {
+			t.Fatalf("backend %q: unexpected error %v", tt.backend, err)
+		}
+		if !tt.ok && err == nil {
+			t.Fatalf("backend %q: want rejection", tt.backend)
+		}
+	}
+}

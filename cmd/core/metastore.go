@@ -106,11 +106,21 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 			metaErr = err
 			return
 		}
+		// Assign the interface only on success: a typed-nil store would pass
+		// CloseMetaStore's nil check and panic.
 		if conf.MetaBackend == "sqlite" {
-			metaStore, metaErr = metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...)
+			if s, err := metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...); err != nil {
+				metaErr = err
+			} else {
+				metaStore = s
+			}
 			return
 		}
-		metaStore, metaErr = metajson.Open(MetaJSONNamespaces(conf)...)
+		if s, err := metajson.Open(MetaJSONNamespaces(conf)...); err != nil {
+			metaErr = err
+		} else {
+			metaStore = s
+		}
 	})
 	return metaStore, metaErr
 }

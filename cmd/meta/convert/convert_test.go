@@ -250,3 +250,16 @@ func TestOrdinaryOpenRefusedDuringConversion(t *testing.T) {
 		t.Fatalf("want init refusal, got %v", err)
 	}
 }
+
+func TestConvertRefusesUnsupportedFS(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	t.Setenv("COCOON_TEST_UNSUPPORTED_FS", "nfs")
+	err := Run(t.Context(), spec, "sqlite")
+	if err == nil || !strings.Contains(err.Error(), "unsupported filesystem") {
+		t.Fatalf("want fs refusal, got %v", err)
+	}
+	if utils.FileExists(spec.DBPath) {
+		t.Fatal("convert created target WAL state on refused filesystem")
+	}
+}

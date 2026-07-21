@@ -11,6 +11,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// testBackupStep injects crashes between backup steps (§9 gate); nil in prod.
+var testBackupStep func(step string) error
+
 // MarkConverted records a namespace's conversion provenance in meta_state (§6).
 func MarkConverted(ctx context.Context, dbPath, ns, source, sha256 string, records int) error {
 	return withDB(dbPath, func(db *sql.DB) error {
@@ -28,16 +31,19 @@ func Checkpoint(ctx context.Context, dbPath string) error {
 	})
 }
 
-// Backup produces a consistent single-file copy at destPath: VACUUM INTO a
-// temp file, integrity-check it, fsync, then rename into place (§4).
+// Backup replaces destPath with a consistent single-file copy: VACUUM INTO
+// a temp file, integrity-check, fsync, atomic rename, parent-dir sync (§4).
+// A previously published backup stays intact until the rename commits (§9).
 func Backup(ctx context.Context, dbPath, destPath string) (err error) {
-	if utils.FileExists(destPath) {
-		return fmt.Errorf("%s already exists; refusing to overwrite", destPath)
-	}
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
 		return merr
 	}
 	tmp := destPath + ".tmp"
+	// A stale temp from a crashed run would block VACUUM INTO; the published
+	// backup is untouched, so clearing it is safe.
+	if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		return rerr
+	}
 	defer func() {
 		if err != nil {
 			_ = os.Remove(tmp)
@@ -47,6 +53,9 @@ func Backup(ctx context.Context, dbPath, destPath string) (err error) {
 		_, verr := db.ExecContext(ctx, "VACUUM INTO ?", tmp)
 		return mapErr(verr)
 	}); err != nil {
+		return err
+	}
+	if err := backupStep("vacuumed"); err != nil {
 		return err
 	}
 	if err := withDB(tmp, func(db *sql.DB) error {
@@ -61,13 +70,29 @@ func Backup(ctx context.Context, dbPath, destPath string) (err error) {
 	}); err != nil {
 		return err
 	}
+	if err := backupStep("verified"); err != nil {
+		return err
+	}
 	if err := utils.SyncFile(tmp); err != nil {
+		return err
+	}
+	if err := backupStep("synced"); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, destPath); err != nil {
 		return err
 	}
+	if err := backupStep("renamed"); err != nil {
+		return err
+	}
 	return utils.SyncParentDir(filepath.Dir(destPath))
+}
+
+func backupStep(step string) error {
+	if testBackupStep == nil {
+		return nil
+	}
+	return testBackupStep(step)
 }
 
 func withDB(dbPath string, fn func(*sql.DB) error) (err error) {

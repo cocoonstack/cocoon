@@ -15,6 +15,7 @@ func TestMeteringConfigValidate(t *testing.T) {
 		{"file", MeteringFile, false},
 		{"nop", MeteringNop, false},
 		{"stderr", MeteringStderr, false},
+		{"meta", MeteringMeta, false},
 		{"unknown", "kafka", true},
 	}
 	for _, tt := range tests {

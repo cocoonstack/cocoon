@@ -91,6 +91,14 @@ func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 }
 
 func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
+	// The driver creates a file on first touch; Open never creates — that is
+	// Init's job (§6) — and §4 refuses network filesystems before WAL work.
+	if !utils.FileExists(dbPath) {
+		return nil, fmt.Errorf("no sqlite store at %s: run `cocoon meta init` or `cocoon meta convert`", dbPath)
+	}
+	if err := checkFS(dbPath); err != nil {
+		return nil, err
+	}
 	s := &Store{path: dbPath, nss: map[string]Namespace{}}
 	for _, ns := range namespaces {
 		if ns.Name == "" || len(ns.Tables) == 0 {

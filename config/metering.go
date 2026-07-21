@@ -6,6 +6,7 @@ const (
 	MeteringFile   MeteringBackend = "file"
 	MeteringNop    MeteringBackend = "nop"
 	MeteringStderr MeteringBackend = "stderr"
+	MeteringMeta   MeteringBackend = "meta"
 )
 
 // MeteringBackend identifies the lifecycle-event recorder backend.
@@ -25,9 +26,9 @@ type FileMeteringConfig struct {
 // Validate rejects an unknown metering backend at startup.
 func (m MeteringConfig) Validate() error {
 	switch m.Backend {
-	case "", MeteringFile, MeteringNop, MeteringStderr:
+	case "", MeteringFile, MeteringNop, MeteringStderr, MeteringMeta:
 		return nil
 	default:
-		return fmt.Errorf("metering.backend %q is not one of file|nop|stderr", m.Backend)
+		return fmt.Errorf("metering.backend %q is not one of file|nop|stderr|meta", m.Backend)
 	}
 }

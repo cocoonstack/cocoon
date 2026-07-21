@@ -3,7 +3,9 @@ package json
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 )
@@ -72,6 +74,11 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	}
 	if _, err := dec.Token(); err != nil {
 		return nil, err
+	}
+	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended
+	// main must fall back to .prev, not decode (§9 format fidelity).
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("namespace file: trailing data after document")
 	}
 	return m, nil
 }

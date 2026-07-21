@@ -108,3 +108,32 @@ func TestUninitializedNamespaceRefused(t *testing.T) {
 		t.Fatalf("want uninitialized refusal, got %v", err)
 	}
 }
+
+func TestOpenDoesNotCreate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta init") {
+		t.Fatalf("want missing-store refusal, got %v", err)
+	}
+	if utils.FileExists(path) {
+		t.Fatal("Open created a file")
+	}
+}
+
+func TestUnsupportedFSRefused(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DBFileName)
+	if err := Init(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	t.Setenv("COCOON_TEST_UNSUPPORTED_FS", "nfs")
+	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "unsupported filesystem") {
+		t.Fatalf("open: want fs refusal, got %v", err)
+	}
+	fresh := filepath.Join(dir, "sub", DBFileName)
+	if err := Init(t.Context(), fresh, testDecls()...); err == nil || !strings.Contains(err.Error(), "unsupported filesystem") {
+		t.Fatalf("init: want fs refusal, got %v", err)
+	}
+	if utils.FileExists(fresh) {
+		t.Fatal("init created WAL state on refused filesystem")
+	}
+}
