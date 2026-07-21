@@ -1,0 +1,231 @@
+// Package daemon is the resident supervisor for VMs the cocoon CLI created: it
+// adopts their VMM processes, observes exits, and converges metadata and host
+// networking without becoming a dependency of any CLI verb.
+package daemon
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"sync/atomic"
+	"time"
+
+	"github.com/projecteru2/core/log"
+
+	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/utils"
+)
+
+const (
+	// DefaultReconcileInterval floors how often a full pass runs; meta events drive faster ones.
+	DefaultReconcileInterval = 5 * time.Second
+
+	// wakeDebounce coalesces event bursts into one pass: the json engine's View
+	// holds a cross-process namespace lock, so an unthrottled daemon would stall
+	// every concurrent CLI invocation.
+	wakeDebounce = 200 * time.Millisecond
+
+	lockFileName = "daemon.lock"
+)
+
+// ErrAlreadyRunning reports another daemon instance holding the single-instance lock.
+var ErrAlreadyRunning = errors.New("another cocoon daemon is already running")
+
+// Supervisor is the hypervisor-backend surface supervision runs through.
+type Supervisor interface {
+	Type() string
+	ScanSupervision(ctx context.Context) (hypervisor.SupervisionScan, error)
+	ObserveVMM(ctx context.Context, rec *hypervisor.VMRecord) (utils.ProcRef, error)
+	TryLockVMOps(ctx context.Context, vmID string) (func(), bool, error)
+	PeekRecord(ctx context.Context, vmID string) (*hypervisor.VMRecord, error)
+	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
+	QuiesceIfPending(ctx context.Context, vmID string) error
+	ReconcileToRunning(ctx context.Context, vmID string)
+	CollectStaleCreate(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error
+}
+
+// Config carries the daemon's runtime knobs and injected collaborators.
+type Config struct {
+	RootDir           string
+	ReconcileInterval time.Duration
+	// GCInterval enables the periodic GC run; zero leaves GC to the CLI.
+	GCInterval time.Duration
+	GC         func(context.Context) error
+	// APIAddr is the read-only API's unix socket path; empty disables it.
+	APIAddr     string
+	APISockMode uint32
+}
+
+// Daemon supervises every configured backend from one process.
+type Daemon struct {
+	conf      Config
+	store     meta.Store
+	backends  map[string]Supervisor
+	order     []Supervisor
+	watcher   *procWatcher
+	gcRunning atomic.Bool
+	state     *cache
+}
+
+// New builds a daemon over already-wired backends; store is the shared meta store the CLI also writes.
+func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) {
+	if conf.RootDir == "" {
+		return nil, fmt.Errorf("root dir must not be empty")
+	}
+	if len(backends) == 0 {
+		return nil, fmt.Errorf("no hypervisor backends to supervise")
+	}
+	if conf.ReconcileInterval <= 0 {
+		conf.ReconcileInterval = DefaultReconcileInterval
+	}
+	byType := make(map[string]Supervisor, len(backends))
+	for _, b := range backends {
+		byType[b.Type()] = b
+	}
+	return &Daemon{
+		conf:     conf,
+		store:    store,
+		backends: byType,
+		order:    backends,
+		watcher:  newProcWatcher(),
+		state:    newCache(),
+	}, nil
+}
+
+// Run supervises until ctx is canceled; it returns ErrAlreadyRunning when another instance holds the lock.
+func (d *Daemon) Run(ctx context.Context) error {
+	logger := log.WithFunc("daemon.Run")
+	unlock, err := d.lockInstance(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := d.watcher.start(ctx); err != nil {
+		return fmt.Errorf("start process watcher: %w", err)
+	}
+	defer d.watcher.close()
+
+	if d.conf.APIAddr != "" {
+		stopAPI, err := d.serveAPI(ctx)
+		if err != nil {
+			return fmt.Errorf("serve api: %w", err)
+		}
+		defer stopAPI()
+	}
+
+	events, release := d.subscribe(ctx)
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+
+	ticker := time.NewTicker(d.conf.ReconcileInterval)
+	defer ticker.Stop()
+	gcTick := d.gcTicker()
+	defer gcTick.Stop()
+
+	logger.Infof(ctx, "supervising %d backend(s), reconcile every %s", len(d.order), d.conf.ReconcileInterval)
+	d.reconcile(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			// The meta layer never closes a subscriber channel, so a dead
+			// subscription is invisible: the ticker is the correctness floor and
+			// also the resubscribe cadence.
+			if events == nil {
+				events, release = d.subscribe(ctx)
+			}
+			d.reconcile(ctx)
+		case <-events:
+			if !d.settle(ctx) {
+				return nil
+			}
+			drain(events)
+			d.reconcile(ctx)
+		case ev := <-d.watcher.exits:
+			d.handleExit(ctx, ev)
+		case <-gcTick.C:
+			d.runGC(ctx)
+		}
+	}
+}
+
+func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
+	dir := filepath.Join(d.conf.RootDir, "locks")
+	if err := utils.EnsureDirs(dir); err != nil {
+		return nil, err
+	}
+	l := flock.New(filepath.Join(dir, lockFileName))
+	ok, err := l.TryLock(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire daemon lock: %w", err)
+	}
+	if !ok {
+		return nil, ErrAlreadyRunning
+	}
+	return func() { _ = l.Unlock(ctx) }, nil
+}
+
+// subscribe returns a coalesced meta change signal; a nil channel degrades to ticker-only reconciliation.
+func (d *Daemon) subscribe(ctx context.Context) (<-chan struct{}, func()) {
+	ch, release, err := d.store.Events(ctx)
+	if err != nil {
+		log.WithFunc("daemon.subscribe").Warnf(ctx, "meta events unavailable, reconciling on the ticker only: %v", err)
+		return nil, nil
+	}
+	return ch, release
+}
+
+// settle waits out the debounce window; false means the daemon is shutting down.
+func (d *Daemon) settle(ctx context.Context) bool {
+	timer := time.NewTimer(wakeDebounce)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (d *Daemon) gcTicker() *time.Ticker {
+	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
+		// A stopped ticker's channel never fires, so the select arm stays inert.
+		t := time.NewTicker(time.Hour)
+		t.Stop()
+		return t
+	}
+	return time.NewTicker(d.conf.GCInterval)
+}
+
+// runGC starts a collection unless one is still in flight; it runs off the
+// supervision loop so a slow sweep cannot delay convergence.
+func (d *Daemon) runGC(ctx context.Context) {
+	if !d.gcRunning.CompareAndSwap(false, true) {
+		log.WithFunc("daemon.runGC").Warn(ctx, "skip gc: previous run still active")
+		return
+	}
+	go func() {
+		defer d.gcRunning.Store(false)
+		if err := d.conf.GC(ctx); err != nil {
+			log.WithFunc("daemon.runGC").Error(ctx, err, "gc run")
+		}
+	}()
+}
+
+func drain(ch <-chan struct{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}

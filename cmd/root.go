@@ -15,6 +15,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	cmddaemon "github.com/cocoonstack/cocoon/cmd/daemon"
 	cmdimages "github.com/cocoonstack/cocoon/cmd/images"
 	cmdmeta "github.com/cocoonstack/cocoon/cmd/meta"
 	cmdothers "github.com/cocoonstack/cocoon/cmd/others"
@@ -88,6 +89,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(cmdvm.Command(cmdvm.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmdsnapshot.Command(cmdsnapshot.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmdmeta.Command(cmdmeta.Handler{BaseHandler: base}))
+	cmd.AddCommand(cmddaemon.Command(cmddaemon.Handler{BaseHandler: base}))
 	for _, c := range cmdothers.Commands(cmdothers.Handler{BaseHandler: base}) {
 		cmd.AddCommand(c)
 	}
