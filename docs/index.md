@@ -33,6 +33,8 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - [Firecracker backend](firecracker.md) — what `--fc` trades for ~125ms
   boots and <5 MiB overhead
 - [Garbage collection](gc.md) — cross-module GC and snapshot LRU eviction
+- [Daemon](daemon.md) — the optional resident supervisor: crash convergence,
+  transition tracking, read-only API
 - [OS images](os-image.md) — the official Ubuntu/Android/Windows images
   and the build harness
 - [Known issues](known-issues.md) — limitations, workarounds, upstream

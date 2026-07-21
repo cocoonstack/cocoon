@@ -13,7 +13,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **Data disks & runtime attach** — extra virtio-blk disks at create/clone time; hot-plug vhost-user-fs shares, VFIO PCI devices, and external raw disks (CH)
 - **Windows guests** — UEFI + Hyper-V enlightenments via the cocoonstack CH/firmware forks
 - **Firecracker backend** — `--fc` for ~125ms boots and <5 MiB per-VM overhead (OCI images only)
-- **Zero-daemon architecture** — one hypervisor process per VM; modular lock-safe GC with snapshot LRU eviction
+- **Daemon-optional architecture** — one hypervisor process per VM, every command standalone; `cocoon daemon` optionally adopts running VMs to converge crashes as they happen; modular lock-safe GC with snapshot LRU eviction
 - **Switchable metadata engine** — json files by default, opt-in sqlite (`meta_backend: sqlite`) for concurrent-create scale; crash-resumable offline conversion both ways (`cocoon meta convert`)
 
 ## Quick Start
@@ -39,7 +39,7 @@ cocoon vm clone base --name fresh
 cocoon vm rm --force my-vm fresh
 ```
 
-Full walkthroughs: [Installation](docs/install.md) · [CLI reference](docs/cli.md) · [Images](docs/images.md) · [VM lifecycle](docs/vm.md) · [Networking](docs/networking.md) · [Snapshots & clone](docs/snapshots.md) · [Device attach](docs/devices.md) · [Windows](docs/windows.md) · [Firecracker](docs/firecracker.md) · [GC](docs/gc.md) · [OS images](docs/os-image.md) · [Known issues](docs/known-issues.md)
+Full walkthroughs: [Installation](docs/install.md) · [CLI reference](docs/cli.md) · [Images](docs/images.md) · [VM lifecycle](docs/vm.md) · [Networking](docs/networking.md) · [Snapshots & clone](docs/snapshots.md) · [Device attach](docs/devices.md) · [Windows](docs/windows.md) · [Firecracker](docs/firecracker.md) · [GC](docs/gc.md) · [Daemon](docs/daemon.md) · [OS images](docs/os-image.md) · [Known issues](docs/known-issues.md)
 
 ## Development
 
