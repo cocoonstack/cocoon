@@ -24,6 +24,8 @@ import (
 
 const opGet = "get"
 
+var benchPayload = json.RawMessage(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
+
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: storebench update|get <engine> <n> <ops> [dir]")
@@ -268,8 +270,6 @@ func argDir(i int) string {
 	}
 	return dir
 }
-
-var benchPayload = json.RawMessage(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
 
 // uniquePayload defeats any identical-bytes write elision so replace ops
 // measure a REAL durable commit.

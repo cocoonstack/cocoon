@@ -3,6 +3,7 @@ package sqlite
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,21 @@ const (
 	inverseWorkers = 8
 	inverseOps     = 10
 )
+
+// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome
+// under extreme oversubscription (§4); reconciliation still demands exact counts.
+func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
+	t.Helper()
+	for {
+		err := s.Update(t.Context(), sc, meta.CommitDurable, fn)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, meta.ErrBusy) {
+			t.Fatalf("update: %v", err)
+		}
+	}
+}
 
 func stormWorkers() int {
 	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
@@ -122,14 +138,12 @@ func TestMultiProcessWorker(t *testing.T) {
 	ctx := t.Context()
 	for i := range ops {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
-		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		updateRetry(t, s, meta.Scope{Write: "alpha"}, func(w meta.Writer) error {
 			if err := w.PutRaw(ctx, "alpha", "records", id, json.RawMessage(`{"n":`+strconv.Itoa(i)+`}`), false); err != nil {
 				return err
 			}
 			return w.PutRaw(ctx, "alpha", "names", "name-"+id, json.RawMessage(`"`+id+`"`), false)
-		}); err != nil {
-			t.Fatalf("insert %s: %v", id, err)
-		}
+		})
 	}
 }
 
@@ -190,7 +204,7 @@ func TestInverseScopeWorker(t *testing.T) {
 	ctx := t.Context()
 	for i := range inverseOps {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
-		if err := s.Update(ctx, meta.Scope{Write: write, Read: []string{read}}, meta.CommitDurable, func(w meta.Writer) error {
+		updateRetry(t, s, meta.Scope{Write: write, Read: []string{read}}, func(w meta.Writer) error {
 			seen := 0
 			if err := w.ScanRaw(ctx, read, "records", func(string, json.RawMessage) error {
 				seen++
@@ -199,9 +213,7 @@ func TestInverseScopeWorker(t *testing.T) {
 				return err
 			}
 			return w.PutRaw(ctx, write, "records", id, json.RawMessage(`{"peer":`+strconv.Itoa(seen)+`}`), false)
-		}); err != nil {
-			t.Fatalf("insert %s: %v", id, err)
-		}
+		})
 	}
 }
 
@@ -284,7 +296,7 @@ func TestKillStormWorker(t *testing.T) {
 	ctx := t.Context()
 	for i := range 1000 {
 		txn := fmt.Sprintf("r%s-t%d", round, i)
-		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		updateRetry(t, s, meta.Scope{Write: "alpha"}, func(w meta.Writer) error {
 			for k := range killTxnLen {
 				id := fmt.Sprintf("%s/%d", txn, k)
 				if err := w.PutRaw(ctx, "alpha", "records", id, json.RawMessage(`{"k":`+strconv.Itoa(k)+`}`), false); err != nil {
@@ -292,9 +304,7 @@ func TestKillStormWorker(t *testing.T) {
 				}
 			}
 			return nil
-		}); err != nil {
-			t.Fatalf("txn %s: %v", txn, err)
-		}
+		})
 		fmt.Printf("ACK %s\n", txn)
 	}
 }

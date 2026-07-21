@@ -495,8 +495,6 @@ func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedO
 	return mapErr(err)
 }
 
-func (h *txHandle) Mode() meta.CommitMode { return h.mode }
-
 func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
 	ts, ok := h.sm[ns+"\x00"+table]
 	if !ok {

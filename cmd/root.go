@@ -101,8 +101,7 @@ func initConfig(ctx context.Context) error {
 	}
 	if err := viper.ReadInConfig(); err != nil {
 		// No config file is OK; a corrupt/unreadable one is not.
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
 			return fmt.Errorf("read config: %w", err)
 		}
 	}

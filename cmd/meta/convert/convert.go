@@ -237,22 +237,26 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 // the imported data survives a later torn main (§9: never less resilient
 // than steady state).
 func duplicateGeneration(spec Spec, nsName string) error {
-	for _, jns := range spec.JSON {
-		if jns.Name != nsName {
-			continue
-		}
-		data, err := os.ReadFile(jns.FilePath)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil // empty namespace wrote no file
-		}
-		if err != nil {
-			return err
-		}
-		if err := utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644); err != nil {
-			return err
-		}
+	jns, ok := findJSON(spec, nsName)
+	if !ok {
+		return nil
 	}
-	return nil
+	data, err := os.ReadFile(jns.FilePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // empty namespace wrote no file
+	}
+	if err != nil {
+		return err
+	}
+	return utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644)
+}
+
+func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
+	i := slices.IndexFunc(spec.JSON, func(j metajson.Namespace) bool { return j.Name == nsName })
+	if i < 0 {
+		return metajson.Namespace{}, false
+	}
+	return spec.JSON[i], true
 }
 
 func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord) error {
@@ -397,11 +401,9 @@ func sourceFiles(spec Spec, target, nsName string) []string {
 	if target == EngineJSON {
 		return []string{spec.DBPath}
 	}
-	for _, jns := range spec.JSON {
-		if jns.Name == nsName {
-			// Both json generations are authority (§6).
-			return []string{jns.FilePath, jns.FilePath + ".prev"}
-		}
+	if jns, ok := findJSON(spec, nsName); ok {
+		// Both json generations are authority (§6).
+		return []string{jns.FilePath, jns.FilePath + ".prev"}
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -38,6 +39,13 @@ func Backup(ctx context.Context, dbPath, destPath string) (err error) {
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
 		return merr
 	}
+	// Concurrent backups to one destination share the tmp path; without
+	// mutual exclusion one run's cleanup yanks the other's tmp mid-verify.
+	l := flock.New(destPath + ".lock")
+	if lerr := l.Lock(ctx); lerr != nil {
+		return lerr
+	}
+	defer func() { err = errors.Join(err, l.Unlock(ctx)) }()
 	tmp := destPath + ".tmp"
 	// A stale temp from a crashed run would block VACUUM INTO; the published
 	// backup is untouched, so clearing it is safe.

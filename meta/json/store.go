@@ -349,8 +349,6 @@ func (w *txWriter) DeleteRaw(_ context.Context, ns, table, id string, relaxedOK 
 	return nil
 }
 
-func (w *txWriter) Mode() meta.CommitMode { return w.mode }
-
 func (w *txWriter) check(ns string, relaxedOK bool) error {
 	if ns != w.write {
 		return fmt.Errorf("write %s: %w", ns, meta.ErrScope)
