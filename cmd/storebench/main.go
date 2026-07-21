@@ -188,12 +188,14 @@ func runMicro(ctx context.Context, engine, op string, n, ops int, dir string) er
 				return w.PutRaw(ctx, ns, hypervisor.TableRecords, id, benchPayload, false)
 			})
 		case "replace":
+			body := uniquePayload(i)
 			err = store.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
-				return w.PutRaw(ctx, ns, hypervisor.TableRecords, seed[i%n], benchPayload, false)
+				return w.PutRaw(ctx, ns, hypervisor.TableRecords, seed[i%n], body, false)
 			})
 		case "relaxed":
+			body := uniquePayload(i)
 			err = store.Update(ctx, meta.Scope{Write: ns}, meta.CommitRelaxed, func(w meta.Writer) error {
-				return w.PutRaw(ctx, ns, hypervisor.TableRecords, seed[i%n], benchPayload, true)
+				return w.PutRaw(ctx, ns, hypervisor.TableRecords, seed[i%n], body, true)
 			})
 		case "delete":
 			err = store.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
@@ -268,6 +270,12 @@ func argDir(i int) string {
 }
 
 var benchPayload = json.RawMessage(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
+
+// uniquePayload defeats any identical-bytes write elision so replace ops
+// measure a REAL durable commit.
+func uniquePayload(i int) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
+}
 
 type benchConfig struct{ dir string }
 
