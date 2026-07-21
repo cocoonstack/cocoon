@@ -26,7 +26,3 @@ func (p *poller) close() error {
 	close(p.done)
 	return nil
 }
-
-func openPidfd(int) (int, error) { return 0, errNoProcNotify }
-
-func closeFD(int) {}

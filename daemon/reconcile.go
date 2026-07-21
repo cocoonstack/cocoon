@@ -41,7 +41,7 @@ func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus
 		key := watchKey{backend: b.Type(), vmID: rec.ID}
 		live := false
 		if _, tombstoned := scan.Tombstoned[rec.ID]; !tombstoned {
-			live = d.reconcileVM(ctx, b, key, rec)
+			live = d.reconcileVM(ctx, b, key, rec, scan.Procs)
 		}
 		out = append(out, newVMStatus(b.Type(), rec, live, d.watcher.pidOf(key), now))
 	}
@@ -50,13 +50,13 @@ func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus
 }
 
 // reconcileVM applies the supervision rules to one record and reports whether a VMM generation is live.
-func (d *Daemon) reconcileVM(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord) bool {
+func (d *Daemon) reconcileVM(ctx context.Context, b Supervisor, key watchKey, rec *hypervisor.VMRecord, procs utils.ProcScan) bool {
 	// A creating placeholder is never promoted: a clone launches its VMM before the record is complete.
 	if rec.State == types.VMStateCreating {
 		d.collectOwnerless(ctx, b, rec)
 		return false
 	}
-	proc, err := b.ObserveVMM(ctx, rec)
+	proc, err := b.ObserveVMMIn(ctx, rec, procs)
 	switch {
 	case err == nil:
 		d.adoptLive(ctx, b, key, rec, proc)
@@ -89,18 +89,15 @@ func (d *Daemon) adoptLive(ctx context.Context, b Supervisor, key watchKey, rec 
 	if err != nil || fresh == nil || fresh.Quarantine != "" {
 		return
 	}
-	if fresh.State == types.VMStateRunning || fresh.State == types.VMStateCreating {
-		return
-	}
 	if again, obsErr := b.ObserveVMM(ctx, fresh); obsErr != nil || again != proc {
 		return
 	}
-	b.ReconcileToRunning(ctx, key.vmID)
-	log.WithFunc("daemon.adoptLive").Warnf(ctx, "adopted live VM %s whose record read %s", key.vmID, fresh.State)
-	// Re-read: the repair bumped the generation the watch must fence against.
-	if after, err := b.PeekRecord(ctx, key.vmID); err == nil && after != nil {
-		d.watcher.ensure(key, proc, after.TransitionGeneration)
+	gen := b.ReconcileToRunning(ctx, key.vmID)
+	if gen == 0 {
+		return
 	}
+	log.WithFunc("daemon.adoptLive").Warnf(ctx, "adopted live VM %s whose record read %s", key.vmID, fresh.State)
+	d.watcher.ensure(key, proc, gen)
 }
 
 // convergeDead lands the stop transition, or retries a quiesce the last stop could not finish.
@@ -122,18 +119,13 @@ func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, r
 		return
 	}
 	logger := log.WithFunc("daemon.convergeDead")
-	if hypervisor.NeedsDeadConvergence(fresh) {
-		if err := b.ConvergeDead(ctx, key.vmID, fresh.TransitionGeneration, time.Now()); err != nil {
-			logger.Errorf(ctx, err, "converge %s", key.vmID)
-			return
-		}
-		logger.Warnf(ctx, "VM %s exited outside a cocoon stop", key.vmID)
+	exited := hypervisor.NeedsDeadConvergence(fresh)
+	if err := b.ConvergeDead(ctx, key.vmID, fresh.TransitionGeneration, time.Now()); err != nil {
+		logger.Errorf(ctx, err, "converge %s", key.vmID)
 		return
 	}
-	if fresh.QuiescePending {
-		if err := b.QuiesceIfPending(ctx, key.vmID); err != nil {
-			logger.Errorf(ctx, err, "retry quiesce %s", key.vmID)
-		}
+	if exited {
+		logger.Warnf(ctx, "VM %s exited outside a cocoon stop", key.vmID)
 	}
 }
 

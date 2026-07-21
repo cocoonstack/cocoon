@@ -15,6 +15,7 @@ const (
 
 	TransitionBoot           TransitionReason = "boot"
 	TransitionRestart        TransitionReason = "restart"
+	TransitionClone          TransitionReason = "clone"
 	TransitionRestore        TransitionReason = "restore"
 	TransitionStopUser       TransitionReason = "stop-user"
 	TransitionError          TransitionReason = "error"

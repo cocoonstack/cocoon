@@ -3,6 +3,8 @@ package hypervisor
 import (
 	"context"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -25,6 +27,18 @@ func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
 		return nil
 	}
 	return b.Net.Recover(ctx, &rec.VM)
+}
+
+// quiesceAfterStop runs the quiesce a just-committed stop scheduled. Gated on the
+// pre-stop record so an unplumbed VM pays no extra read — a stop cannot change what
+// that predicate reads. Best-effort: a failure keeps the pending flag for a later pass.
+func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord) {
+	if !needsQuiesce(rec) {
+		return
+	}
+	if err := b.QuiesceIfPending(ctx, id); err != nil {
+		log.WithFunc(b.Typ+".quiesceAfterStop").Warnf(ctx, "%v", err)
+	}
 }
 
 func (b *Backend) quiesceNetwork(ctx context.Context, vm *types.VM) error {

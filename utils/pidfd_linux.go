@@ -46,3 +46,13 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 	}
 	return true, waitDead(ctx, pid, killWaitTimeout)
 }
+
+// OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
+func OpenPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
+
+// CloseFD closes a raw descriptor, ignoring a zero or negative one.
+func CloseFD(fd int) {
+	if fd > 0 {
+		_ = unix.Close(fd)
+	}
+}

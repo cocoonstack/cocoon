@@ -41,11 +41,6 @@ type Reserver interface {
 	LockVMOps(ctx context.Context, vmID string) (func(), error)
 }
 
-// EntryGuarded lets cmd-layer flows run the tombstone entry guard under the ops lock before an entrypoint, so a half-removed resource is never rebuilt.
-type EntryGuarded interface {
-	EntryGuard(ctx context.Context, id string) error
-}
-
 // Direct is an optional interface for hypervisors that support clone/restore from a local snapshot directory.
 type Direct interface {
 	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)

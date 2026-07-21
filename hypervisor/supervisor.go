@@ -15,10 +15,28 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// SupervisionScan is one reconcile pass's view of a backend namespace.
+var _ Supervisable = (*Backend)(nil)
+
+// Supervisable is the backend surface a resident supervisor drives; every
+// hypervisor backend embeds *Backend and satisfies it.
+type Supervisable interface {
+	Type() string
+	ScanSupervision(ctx context.Context) (SupervisionScan, error)
+	ObserveVMM(ctx context.Context, rec *VMRecord) (utils.ProcRef, error)
+	ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.ProcScan) (utils.ProcRef, error)
+	TryLockVMOps(ctx context.Context, vmID string) (func(), bool, error)
+	PeekRecord(ctx context.Context, vmID string) (*VMRecord, error)
+	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
+	ReconcileToRunning(ctx context.Context, vmID string) uint64
+	CollectStaleCreate(ctx context.Context, vmID string, rec *VMRecord) error
+}
+
+// SupervisionScan is one reconcile pass's view of a backend namespace, plus the
+// single /proc walk its liveness checks share.
 type SupervisionScan struct {
 	Records    []*VMRecord
 	Tombstoned map[string]struct{}
+	Procs      utils.ProcScan
 }
 
 // ScanSupervision reads every record plus the unfinished-delete set in one
@@ -44,14 +62,32 @@ func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) 
 	}); err != nil {
 		return SupervisionScan{}, err
 	}
+	// Outside the transaction: the json engine holds the namespace flock for the
+	// whole closure, and this walks every process on the host.
+	procs, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
+	if err != nil {
+		return SupervisionScan{}, fmt.Errorf("scan /proc for %s: %w", b.Typ, err)
+	}
+	scan.Procs = procs
 	return scan, nil
 }
 
 // ObserveVMM returns the live VMM's process generation, ErrNotRunning when none
 // is live, or an error when liveness is inconclusive and the caller must retry.
 func (b *Backend) ObserveVMM(ctx context.Context, rec *VMRecord) (utils.ProcRef, error) {
+	return b.observe(ctx, rec, nil)
+}
+
+// ObserveVMMIn is ObserveVMM against a pass-wide /proc walk. It is for deciding
+// what work to attempt: anything that then mutates must re-observe freshly under
+// the ops lock, because the scan predates the lock.
+func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.ProcScan) (utils.ProcRef, error) {
+	return b.observe(ctx, rec, &scan)
+}
+
+func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcScan) (utils.ProcRef, error) {
 	var ref utils.ProcRef
-	err := b.WithRunningVM(ctx, rec, func(pid int) error {
+	err := b.withRunningVM(ctx, rec, scan, func(pid int) error {
 		var refErr error
 		ref, refErr = utils.ProcRefOf(pid)
 		return refErr
@@ -79,8 +115,7 @@ func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(),
 // write against a record that transitioned since the observation, so a stale
 // event cannot date or re-label a newer transition; observedAt dates the stop.
 func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
-	pending, err := b.convergeDeadRecord(ctx, id, gen, observedAt)
-	if err != nil || !pending {
+	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
 	}
 	return b.QuiesceIfPending(ctx, id)
@@ -88,13 +123,10 @@ func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, obser
 
 // convergeDeadRecord commits the stop transition and publishes its staged
 // metering entry; the network quiesce it schedules is the caller's to run.
-func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64, observedAt time.Time) (bool, error) {
-	var (
-		emit    []metering.Entry
-		pending bool
-	)
+func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
+	var emit []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
-		emit, pending = nil, false
+		emit = nil
 		r, err := t.Get(id)
 		if err != nil || r == nil {
 			return err
@@ -108,13 +140,12 @@ func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64,
 		}
 		markTransition(r, types.VMStateStopped, types.TransitionUnexpectedExit, observedAt)
 		r.QuiescePending = needsQuiesce(r)
-		pending = r.QuiescePending
 		return t.Put(id, r)
 	}); err != nil {
-		return false, err
+		return err
 	}
 	b.emitAll(ctx, emit)
-	return pending, nil
+	return nil
 }
 
 // QuiesceIfPending brings a stopped VM's host NICs down and clears the flag
@@ -177,7 +208,7 @@ func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
 	if !NeedsDeadConvergence(rec) {
 		return
 	}
-	if _, err := b.convergeDeadRecord(ctx, rec.ID, rec.TransitionGeneration, timeNow()); err != nil {
+	if err := b.convergeDeadRecord(ctx, rec.ID, rec.TransitionGeneration, timeNow()); err != nil {
 		log.WithFunc(b.Typ+".convergeCrashedStart").Warnf(ctx, "converge crashed VM %s: %v", rec.ID, err)
 	}
 }

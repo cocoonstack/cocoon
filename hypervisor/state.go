@@ -25,6 +25,13 @@ const (
 
 // WithRunningVM calls fn if rec still points to a live VM process.
 func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid int) error) error {
+	return b.withRunningVM(ctx, rec, nil, fn)
+}
+
+// withRunningVM resolves liveness against scan when the caller already walked
+// /proc for this pass; a nil scan walks it now. The fallback walk is per-call,
+// so a batch that skips it turns N walks into one.
+func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
 	logger := log.WithFunc(b.Typ + ".WithRunningVM")
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	if pidErr != nil && !errors.Is(pidErr, fs.ErrNotExist) {
@@ -35,7 +42,7 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 		return fn(pid)
 	}
 	// Covers pidfile/socket cleaned up before VMM exited. Fail-closed if scan errors so callers don't treat inconclusive state as ErrNotRunning.
-	scanned, scanErr := utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
+	scanned, scanErr := b.scanFor(scan, sockPath)
 	if scanErr != nil {
 		return fmt.Errorf("vm %s: pidfile-based check failed and /proc scan errored: %w (resolve the host issue and retry)", rec.ID, scanErr)
 	}
@@ -44,6 +51,13 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 	}
 	logger.Warnf(ctx, "VM %s recovered live pids %v via cmdline scan", rec.ID, scanned)
 	return fn(scanned[0])
+}
+
+func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) {
+	if scan != nil {
+		return scan.Find(sockPath), nil
+	}
+	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
 }
 
 // IsAPISocketLive: (true,nil)=confirmed live; (false,nil)=ENOENT/ECONNREFUSED; (true,err)=fail-closed for unknown dial errors.
@@ -194,21 +208,24 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	})
 }
 
-// ReconcileToRunning flips State→Running for a drifted record whose process is alive; the caller holds the VM ops lock. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
-func (b *Backend) ReconcileToRunning(ctx context.Context, id string) {
+// ReconcileToRunning flips State→Running for a drifted record whose process is alive and returns the generation it committed (zero when it changed nothing); the caller holds the VM ops lock. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
+func (b *Backend) ReconcileToRunning(ctx context.Context, id string) uint64 {
 	now := timeNow()
 	var (
 		emit   bool
+		gen    uint64
 		shape  metering.Shape
 		reason metering.Reason
 	)
 	if err := b.update(ctx, func(t *vmTx) error {
-		emit = false
+		emit, gen = false, 0
 		r, err := t.Get(id)
 		if err != nil {
 			return err
 		}
-		if r == nil || r.State == types.VMStateRunning {
+		// A quarantined or still-creating record is nobody's to promote: repairing it
+		// would clear StoppedAt and the pending quiesce for a VM that never committed.
+		if r == nil || r.State == types.VMStateRunning || r.State == types.VMStateCreating || r.Quarantine != "" {
 			return nil
 		}
 		emitReason, transition := bootReasons(r.FirstBooted)
@@ -216,6 +233,7 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) {
 		markTransition(r, types.VMStateRunning, transition, now)
 		r.StoppedAt = nil
 		r.QuiescePending = false
+		gen = r.TransitionGeneration
 		if open {
 			return t.Put(id, r)
 		}
@@ -227,11 +245,12 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) {
 		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".ReconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
-		return
+		return 0
 	}
 	if emit {
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 	}
+	return gen
 }
 
 // detachedWrite returns a context for bookkeeping writes that must survive caller cancellation, bounded by persistTimeout.

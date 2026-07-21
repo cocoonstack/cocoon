@@ -32,18 +32,8 @@ const (
 // ErrAlreadyRunning reports another daemon instance holding the single-instance lock.
 var ErrAlreadyRunning = errors.New("another cocoon daemon is already running")
 
-// Supervisor is the hypervisor-backend surface supervision runs through.
-type Supervisor interface {
-	Type() string
-	ScanSupervision(ctx context.Context) (hypervisor.SupervisionScan, error)
-	ObserveVMM(ctx context.Context, rec *hypervisor.VMRecord) (utils.ProcRef, error)
-	TryLockVMOps(ctx context.Context, vmID string) (func(), bool, error)
-	PeekRecord(ctx context.Context, vmID string) (*hypervisor.VMRecord, error)
-	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
-	QuiesceIfPending(ctx context.Context, vmID string) error
-	ReconcileToRunning(ctx context.Context, vmID string)
-	CollectStaleCreate(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error
-}
+// Supervisor is the backend surface supervision drives.
+type Supervisor = hypervisor.Supervisable
 
 // Config carries the daemon's runtime knobs and injected collaborators.
 type Config struct {
@@ -115,7 +105,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		defer stopAPI()
 	}
 
-	events, release, subErr := d.subscribe(ctx)
+	events, release, subErr := d.store.Events(ctx)
 	if subErr != nil {
 		logger.Warnf(ctx, "meta change events unavailable, reconciling on the ticker only: %v", subErr)
 	}
@@ -139,7 +129,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ticker.C:
 			// A dead subscription is invisible — the meta layer never closes a subscriber channel — so the ticker doubles as the resubscribe cadence.
 			if events == nil {
-				if ch, rel, retryErr := d.subscribe(ctx); retryErr == nil {
+				if ch, rel, retryErr := d.store.Events(ctx); retryErr == nil {
 					events, release = ch, rel
 					logger.Info(ctx, "meta change events restored")
 				}
@@ -175,11 +165,6 @@ func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
 		return nil, ErrAlreadyRunning
 	}
 	return func() { _ = l.Unlock(ctx) }, nil
-}
-
-// subscribe returns a coalesced meta change signal; on error the caller degrades to ticker-only reconciliation.
-func (d *Daemon) subscribe(ctx context.Context) (<-chan struct{}, func(), error) {
-	return d.store.Events(ctx)
 }
 
 // settle waits out the debounce window; false means the daemon is shutting down.

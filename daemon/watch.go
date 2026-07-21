@@ -67,7 +67,7 @@ func (w *procWatcher) close() {
 	for key, entry := range w.byKey {
 		delete(w.byKey, key)
 		delete(w.byFD, entry.fd)
-		closeFD(entry.fd)
+		utils.CloseFD(entry.fd)
 	}
 	if w.poll != nil {
 		_ = w.poll.close()
@@ -90,24 +90,24 @@ func (w *procWatcher) ensure(key watchKey, proc utils.ProcRef, gen uint64) {
 		return
 	}
 
-	fd, err := openPidfd(proc.PID)
+	fd, err := utils.OpenPidfd(proc.PID)
 	if err != nil {
 		return
 	}
 	// Re-verify after the open: a pid recycled in between would bind the wrong process.
 	if again, err := utils.ProcRefOf(proc.PID); err != nil || again != proc {
-		closeFD(fd)
+		utils.CloseFD(fd)
 		return
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, taken := w.byKey[key]; w.closed || taken || w.poll == nil {
-		closeFD(fd)
+		utils.CloseFD(fd)
 		return
 	}
 	if err := w.poll.add(fd); err != nil {
-		closeFD(fd)
+		utils.CloseFD(fd)
 		return
 	}
 	w.byKey[key] = watchEntry{proc: proc, gen: gen, fd: fd}
@@ -180,5 +180,5 @@ func (w *procWatcher) evictLocked(key watchKey, fd int) {
 	if w.poll != nil {
 		_ = w.poll.remove(fd)
 	}
-	closeFD(fd)
+	utils.CloseFD(fd)
 }

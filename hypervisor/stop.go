@@ -60,13 +60,8 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", id, err)
 	}
-	// Still under the caller's ops lock: an idle TAP's TC redirect storms softirqs until its host NICs go down (#130). A failure keeps the pending flag for a later pass.
-	// Gated on the pre-stop record so an unplumbed VM's stop pays no extra read; the stop cannot have changed what that predicate reads.
-	if needsQuiesce(&rec) {
-		if err := b.QuiesceIfPending(ctx, id); err != nil {
-			logger.Warnf(ctx, "%v", err)
-		}
-	}
+	// Still under the caller's ops lock: an idle TAP's TC redirect storms softirqs until its host NICs go down (#130).
+	b.quiesceAfterStop(ctx, id, &rec)
 	return nil
 }
 

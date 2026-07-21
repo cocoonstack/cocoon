@@ -67,6 +67,9 @@ func (b *Backend) cloneBase(
 func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string) error {
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.VM = *info
+		// info was built in the backend subpackage, which cannot reach markTransition;
+		// without this the clone commits a running record at generation zero.
+		markTransition(r, info.State, types.TransitionClone, timeNow())
 		r.BootConfig = bootCfg
 		r.FirstBooted = true
 		if blobIDs != nil {

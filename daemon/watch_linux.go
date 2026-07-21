@@ -52,11 +52,3 @@ func (p *poller) wait(out []int) (int, error) {
 }
 
 func (p *poller) close() error { return unix.Close(p.epfd) }
-
-func openPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
-
-func closeFD(fd int) {
-	if fd > 0 {
-		_ = unix.Close(fd)
-	}
-}

@@ -9,9 +9,6 @@ type ProcRef struct {
 	Start uint64
 }
 
-// Valid reports whether the ref names an observed process.
-func (p ProcRef) Valid() bool { return p.PID > 0 }
-
 // ProcRefOf captures pid's current generation; where the start time is
 // unreadable the pid alone identifies the process and reuse is undetectable.
 func ProcRefOf(pid int) (ProcRef, error) {

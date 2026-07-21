@@ -59,6 +59,10 @@ func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.Supervisio
 	return scan, nil
 }
 
+func (f *fakeSupervisor) ObserveVMMIn(ctx context.Context, rec *hypervisor.VMRecord, _ utils.ProcScan) (utils.ProcRef, error) {
+	return f.ObserveVMM(ctx, rec)
+}
+
 func (f *fakeSupervisor) ObserveVMM(_ context.Context, rec *hypervisor.VMRecord) (utils.ProcRef, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -90,35 +94,35 @@ func (f *fakeSupervisor) PeekRecord(_ context.Context, vmID string) (*hypervisor
 	return f.records[vmID], nil
 }
 
+// ConvergeDead mirrors the real composition: the record transition when one is
+// due, then the pending quiesce.
 func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, _ time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen})
-	if rec := f.records[vmID]; rec != nil {
+	rec := f.records[vmID]
+	if rec != nil && hypervisor.NeedsDeadConvergence(rec) && rec.TransitionGeneration == gen {
+		f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen})
 		rec.State = types.VMStateStopped
 		rec.TransitionGeneration++
 	}
-	return nil
-}
-
-func (f *fakeSupervisor) QuiesceIfPending(_ context.Context, vmID string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.quiesced = append(f.quiesced, vmID)
-	if rec := f.records[vmID]; rec != nil {
+	if rec != nil && rec.QuiescePending {
+		f.quiesced = append(f.quiesced, vmID)
 		rec.QuiescePending = false
 	}
 	return nil
 }
 
-func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) {
+func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) uint64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.adopted = append(f.adopted, vmID)
-	if rec := f.records[vmID]; rec != nil {
-		rec.State = types.VMStateRunning
-		rec.TransitionGeneration++
+	rec := f.records[vmID]
+	if rec == nil || rec.Quarantine != "" || rec.State == types.VMStateCreating {
+		return 0
 	}
+	f.adopted = append(f.adopted, vmID)
+	rec.State = types.VMStateRunning
+	rec.TransitionGeneration++
+	return rec.TransitionGeneration
 }
 
 func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {

@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -111,10 +113,7 @@ func (c *cache) publish(all []VMStatus, healthy bool, at time.Time) {
 	}
 	c.byKey, c.order = next, all
 	c.healthy, c.lastPass = healthy, at
-	subs := make([]chan changeEvent, 0, len(c.subs))
-	for _, ch := range c.subs {
-		subs = append(subs, ch)
-	}
+	subs := slices.Collect(maps.Values(c.subs))
 	c.mu.Unlock()
 
 	for _, ev := range events {

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	cocoond "github.com/cocoonstack/cocoon/daemon"
 )
 
-// apiSockName is the read-only API socket's default name under the run dir.
 const apiSockName = "cocoond.sock"
 
 // Handler runs the resident supervisor.
@@ -65,10 +65,9 @@ func daemonConfig(cmd *cobra.Command, conf *config.Config) (cocoond.Config, erro
 	sockMode, _ := cmd.Flags().GetUint32("api-socket-mode")
 
 	addr, _ := cmd.Flags().GetString("api-socket")
+	addr = cmp.Or(addr, filepath.Join(conf.RunDir, apiSockName))
 	if noAPI, _ := cmd.Flags().GetBool("no-api"); noAPI {
 		addr = ""
-	} else if addr == "" {
-		addr = filepath.Join(conf.RunDir, apiSockName)
 	}
 
 	return cocoond.Config{

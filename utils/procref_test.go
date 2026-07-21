@@ -11,7 +11,7 @@ func TestProcRefOfSelfIsStable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcRefOf: %v", err)
 	}
-	if first.PID != pid || !first.Valid() {
+	if first.PID != pid {
 		t.Fatalf("got %+v, want a valid ref for pid %d", first, pid)
 	}
 	second, err := ProcRefOf(pid)
@@ -28,11 +28,5 @@ func TestProcRefOfRejectsInvalidPID(t *testing.T) {
 		if ref, err := ProcRefOf(pid); err == nil {
 			t.Errorf("pid %d: got %+v, want an error", pid, ref)
 		}
-	}
-}
-
-func TestProcRefZeroValueIsNotValid(t *testing.T) {
-	if (ProcRef{}).Valid() {
-		t.Error("the zero ProcRef reported valid")
 	}
 }
