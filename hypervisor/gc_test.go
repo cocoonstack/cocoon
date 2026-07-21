@@ -32,8 +32,7 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vm lock: %v", err)
 	}
-	l := lk
-	if ok, err := l.TryLock(ctx); err != nil || !ok {
+	if ok, err := lk.TryLock(ctx); err != nil || !ok {
 		t.Fatalf("hold ops lock: ok=%v err=%v", ok, err)
 	}
 	snap := VMGCSnapshot{reasons: map[string]string{id: "stale-creating"}}
@@ -44,7 +43,7 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 		t.Fatal("record must survive while the ops lock is held (ownership kept)")
 	}
 
-	if err := l.Unlock(ctx); err != nil {
+	if err := lk.Unlock(ctx); err != nil {
 		t.Fatalf("unlock: %v", err)
 	}
 	if err := b.gcCollect(ctx, []string{id}, snap); err != nil {

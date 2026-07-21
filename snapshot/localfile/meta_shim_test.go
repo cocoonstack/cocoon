@@ -13,8 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
-// difference back. Production code never uses it.
 // snapshotIndex mirrors the legacy top-level DB shape for shim-based tests.
 type snapshotIndex struct {
 	Snapshots map[string]*snapshot.SnapshotRecord `json:"snapshots"`
@@ -25,6 +23,8 @@ func (idx *snapshotIndex) Init() {
 	utils.InitNamedIndex(&idx.Snapshots, &idx.Names)
 }
 
+// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
+// difference back. Production code never uses it.
 func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshotIndex) error) error {
 	return lf.update(ctx, func(t *snapTx) error {
 		before, idx, err := materializeSnapIndex(t)
@@ -54,9 +54,6 @@ func materializeSnapIndex(t *snapTx) (*snapshotIndex, *snapshotIndex, error) {
 	idx.Init()
 	var err error
 	if idx.Snapshots, err = t.All(); err != nil {
-		return nil, nil, err
-	}
-	if err := t.Scan(func(string, *snapshot.SnapshotRecord) error { return nil }); err != nil {
 		return nil, nil, err
 	}
 	for _, rec := range idx.Snapshots {

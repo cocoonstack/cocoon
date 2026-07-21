@@ -94,13 +94,7 @@ func TestForEach_Concurrent(t *testing.T) {
 	var cur atomic.Int32
 
 	result := ForEach(t.Context(), []string{"a", "b", "c", "d", "e"}, func(_ context.Context, _ string) error {
-		n := cur.Add(1)
-		for {
-			old := peak.Load()
-			if n <= old || peak.CompareAndSwap(old, n) {
-				break
-			}
-		}
+		raisePeak(&peak, cur.Add(1))
 		time.Sleep(50 * time.Millisecond)
 		cur.Add(-1)
 		return nil
@@ -119,13 +113,7 @@ func TestForEach_WithConcurrencyLimit(t *testing.T) {
 	var cur atomic.Int32
 
 	result := ForEach(t.Context(), []string{"a", "b", "c", "d", "e"}, func(_ context.Context, _ string) error {
-		n := cur.Add(1)
-		for {
-			old := peak.Load()
-			if n <= old || peak.CompareAndSwap(old, n) {
-				break
-			}
-		}
+		raisePeak(&peak, cur.Add(1))
 		time.Sleep(50 * time.Millisecond)
 		cur.Add(-1)
 		return nil
@@ -226,13 +214,7 @@ func TestMap_WithConcurrencyLimit(t *testing.T) {
 	var cur atomic.Int32
 
 	results, err := Map(t.Context(), []int{1, 2, 3, 4, 5}, func(_ context.Context, _, n int) (int, error) {
-		c := cur.Add(1)
-		for {
-			old := peak.Load()
-			if c <= old || peak.CompareAndSwap(old, c) {
-				break
-			}
-		}
+		raisePeak(&peak, cur.Add(1))
 		time.Sleep(50 * time.Millisecond)
 		cur.Add(-1)
 		return n * 10, nil
@@ -260,6 +242,16 @@ func TestMap_IndexPassedCorrectly(t *testing.T) {
 	for i, got := range results {
 		if got != want[i] {
 			t.Errorf("results[%d]: got %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+// raisePeak records n into peak when it is a new maximum.
+func raisePeak(peak *atomic.Int32, n int32) {
+	for {
+		old := peak.Load()
+		if n <= old || peak.CompareAndSwap(old, n) {
+			return
 		}
 	}
 }

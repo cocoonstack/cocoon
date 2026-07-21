@@ -1356,7 +1356,6 @@ func TestExportToDir_RejectNonEmpty(t *testing.T) {
 	}
 }
 
-// testID generates a random snapshot ID for tests.
 func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
