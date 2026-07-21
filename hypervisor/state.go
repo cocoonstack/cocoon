@@ -172,6 +172,38 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
+// markFailedOperation records retryable host-network convergence after an
+// operation may have brought plumbing up without committing a usable VMM.
+// The daemon re-observes liveness before acting: a surviving VMM is adopted,
+// while a dead one is quiesced and clears the pending bit.
+func (b *Backend) markFailedOperation(ctx context.Context, id string, markError bool) {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
+	now := timeNow()
+	if err := b.update(ctx, func(t *vmTx) error {
+		r, err := t.Get(id)
+		if err != nil || r == nil {
+			return err
+		}
+		changed := false
+		if markError && r.State != types.VMStateError {
+			markTransition(r, types.VMStateError, types.TransitionError, now)
+			changed = true
+		}
+		pending := needsQuiesce(r)
+		if r.QuiescePending != pending {
+			r.QuiescePending = pending
+			changed = true
+		}
+		if !changed {
+			return nil
+		}
+		return t.Put(id, r)
+	}); err != nil {
+		log.WithFunc(b.Typ+".markFailedOperation").Errorf(ctx, err, "persist failed operation for VM %s", id)
+	}
+}
+
 // QuarantineVM marks the VM error and persists the quarantine reason (see VMRecord.Quarantine).
 func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)

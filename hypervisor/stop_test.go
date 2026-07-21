@@ -53,6 +53,78 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	}
 }
 
+func TestStopAfterUnexpectedExitIsIdempotent(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-stop-race"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[id]
+		r.TransitionGeneration = 7
+		r.LastTransitionReason = types.TransitionUnexpectedExit
+		r.QuiescePending = true
+		r.NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed unexpected exit: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+
+	if err := b.StopOneLocked(ctx, id, StopSpec{}); err != nil {
+		t.Fatalf("StopOneLocked: %v", err)
+	}
+	rec := recordOf(t, b, id)
+	if rec.TransitionGeneration != 7 || rec.LastTransitionReason != types.TransitionUnexpectedExit {
+		t.Fatalf("generation = %d, reason = %s; want 7/unexpected-exit", rec.TransitionGeneration, rec.LastTransitionReason)
+	}
+	if quiesced != 1 || rec.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, rec.QuiescePending)
+	}
+}
+
+func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	ctx := t.Context()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		r := idx.VMs[id]
+		r.State = types.VMStateStopped
+		r.TransitionGeneration = 7
+		r.NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed stale stopped record: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+
+	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error {
+		return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
+	}})
+	if err != nil {
+		t.Fatalf("StopOneLocked: %v", err)
+	}
+	rec := recordOf(t, b, id)
+	if rec.TransitionGeneration != 8 || rec.LastTransitionReason != types.TransitionStopUser {
+		t.Fatalf("generation = %d, reason = %s; want 8/stop-user", rec.TransitionGeneration, rec.LastTransitionReason)
+	}
+	if quiesced != 1 || rec.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, rec.QuiescePending)
+	}
+}
+
 // TestDeleteAllForceStopsUnderLock drives the full force path against a live
 // stub VMM: the delete body holds the ops lock while stopLocked runs, so this
 // deadlocks (and times out) if the stop variant re-takes the lock.

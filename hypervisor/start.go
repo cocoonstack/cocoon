@@ -49,19 +49,19 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	return runWrapped(rec, spec.Wrap, func() error {
 		// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
 		if err := b.RecoverNetwork(ctx, rec); err != nil {
-			b.MarkError(ctx, id)
+			b.markFailedOperation(ctx, id, true)
 			return fmt.Errorf("recover network: %w", err)
 		}
 		sockPath := SocketPath(rec.RunDir)
 		pid, err := spec.Launch(ctx, rec, sockPath)
 		if err != nil {
-			b.MarkError(ctx, id)
+			b.markFailedOperation(ctx, id, true)
 			return fmt.Errorf("launch VM: %w", err)
 		}
 		if spec.PostLaunch != nil {
 			if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
 				b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
-				b.MarkError(ctx, id)
+				b.markFailedOperation(ctx, id, true)
 				return fmt.Errorf("configure VM: %w", err)
 			}
 		}

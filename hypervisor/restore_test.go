@@ -103,6 +103,54 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 	}
 }
 
+func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-restore-network-fail"
+	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
+	runDir := shortTempDir(t)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+
+	_, err := b.DirectRestoreSequence(ctx, id, DirectRestoreSpec{
+		VMCfg:     &types.VMConfig{Config: types.Config{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}},
+		SrcDir:    t.TempDir(),
+		Preflight: func(string, *VMRecord) error { return nil },
+		Kill:      func(context.Context, string, *VMRecord) error { return nil },
+		Populate:  func(*VMRecord, string) error { return nil },
+		AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
+			return nil, errors.New("launch boom")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected restore failure")
+	}
+	rec := recordOf(t, b, id)
+	if rec.State != types.VMStateError || !rec.QuiescePending {
+		t.Fatalf("state = %s, pending = %v; want error/true", rec.State, rec.QuiescePending)
+	}
+	if err := b.ConvergeDead(ctx, id, rec.TransitionGeneration, timeNow()); err != nil {
+		t.Fatalf("ConvergeDead: %v", err)
+	}
+	after := recordOf(t, b, id)
+	if quiesced != 1 || after.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, after.QuiescePending)
+	}
+}
+
 func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-merge-fail"

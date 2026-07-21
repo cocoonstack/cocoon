@@ -173,7 +173,9 @@ func (b *Backend) restoreCore(
 		return afterErr
 	}
 	if err := runWrapped(rec, wrap, inner); err != nil {
-		b.FailRestore(ctx, vmID, rec.State)
+		// Kill already completed, so any host networking left up must remain
+		// durable retry work even when a stopped origin stays retryable.
+		b.markFailedOperation(ctx, vmID, rec.State != types.VMStateStopped)
 		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, sourceSnapshotID)

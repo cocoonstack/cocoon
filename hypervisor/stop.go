@@ -52,13 +52,16 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	shutdownErr := b.WithRunningVM(ctx, &rec, func(pid int) error {
 		return spec.Shutdown(ctx, &rec, sockPath, pid)
 	})
+	settled := errors.Is(shutdownErr, ErrNotRunning) && rec.State == types.VMStateStopped && !hasOpenComputeInterval(&rec)
 	if err := b.HandleStopResult(ctx, id, rec.RunDir, spec.RuntimeFiles, shutdownErr); err != nil {
 		return err
 	}
-	// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
-	logger := log.WithFunc(b.Typ + ".StopOneLocked")
-	if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
-		logger.Warnf(ctx, "mark stopped %s: %v", id, err)
+	if !settled {
+		// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
+		logger := log.WithFunc(b.Typ + ".StopOneLocked")
+		if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
+			logger.Warnf(ctx, "mark stopped %s: %v", id, err)
+		}
 	}
 	// Still under the caller's ops lock: an idle TAP's TC redirect storms softirqs until its host NICs go down (#130).
 	b.quiesceAfterStop(ctx, id, &rec)
