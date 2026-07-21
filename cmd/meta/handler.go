@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
-	"github.com/cocoonstack/cocoon/meta/convert"
+	"github.com/cocoonstack/cocoon/cmd/meta/convert"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 )
 
