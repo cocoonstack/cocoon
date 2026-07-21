@@ -163,6 +163,9 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 		// transient probe would delete the shared lock file on release.
 		l := flock.New(jns.LockPath)
 		ok, err := l.TryLock(ctx)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
