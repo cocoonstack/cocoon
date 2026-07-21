@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -180,22 +179,17 @@ func detectLocalImportSource(filePath string) (importSourceKind, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	var magic [4]byte
-	n, readErr := io.ReadFull(f, magic[:])
-	if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
-		return 0, fmt.Errorf("peek %s: %w", filePath, readErr)
+	head, err := utils.FileHead(f, 4)
+	if err != nil {
+		return 0, fmt.Errorf("peek %s: %w", filePath, err)
 	}
-
-	if n >= 2 && bytes.Equal(magic[:2], utils.GzipMagic) {
+	if bytes.HasPrefix(head, utils.GzipMagic) {
 		return importSourceStream, nil
 	}
-	if n >= 4 && bytes.Equal(magic[:4], utils.Qcow2Magic) {
+	if bytes.HasPrefix(head, utils.Qcow2Magic) {
 		return importSourceQcow2, nil
 	}
 
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return 0, fmt.Errorf("seek %s: %w", filePath, err)
-	}
 	if _, err := tar.NewReader(f).Next(); err != nil {
 		return 0, fmt.Errorf("cannot detect file type for %s (expected qcow2 or tar)", filePath)
 	}

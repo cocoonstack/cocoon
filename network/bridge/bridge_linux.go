@@ -181,7 +181,7 @@ func (b *Bridge) List(_ context.Context) ([]*types.Network, error) {
 
 // RegisterGC reclaims orphan bt* TAP devices.
 func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, GCModule(b.conf.RootDir))
+	gc.Register(orch, GCModule())
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -22,13 +21,9 @@ type patchOptions struct {
 
 // patchCHConfig patches specific fields in config.json while preserving all unknown fields that CH adds internally (platform, cpus.topology, etc.).
 func patchCHConfig(path string, opts *patchOptions) error {
-	rawData, err := os.ReadFile(path) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
 	var raw map[string]json.RawMessage
-	if e := json.Unmarshal(rawData, &raw); e != nil {
-		return fmt.Errorf("decode raw %s: %w", path, e)
+	if err := utils.ReadJSONFile(path, &raw); err != nil {
+		return err
 	}
 
 	diskCount := rawArrayLen(raw["disks"])

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 
-	gofrsflock "github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
@@ -107,12 +106,11 @@ func (lf *LocalFile) finishSnapTeardown(ctx context.Context, id, leaseID string,
 // recoverSnapTombstone drives id's tombstone under a freshly acquired
 // exclusive lease: leased rolls back, deleting rolls forward.
 func (lf *LocalFile) recoverSnapTombstone(ctx context.Context, id string) error {
-	fl := gofrsflock.New(lf.conf.LeasePath(id))
-	locked, err := fl.TryLock()
+	fl, ok, err := lf.tryExclusiveLease(id)
 	if err != nil {
-		return fmt.Errorf("lease snapshot %s: %w", id, err)
+		return err
 	}
-	if !locked {
+	if !ok {
 		return nil // an active holder will meet the tombstone at its own entrypoint
 	}
 	defer fl.Close() //nolint:errcheck

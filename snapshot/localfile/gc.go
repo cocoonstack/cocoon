@@ -11,7 +11,6 @@ import (
 	"slices"
 	"time"
 
-	gofrsflock "github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
@@ -139,15 +138,12 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					break
 				}
 				// Exclusive lease: an active clone/restore/export holds it shared; skip and retry next cycle.
-				fl := gofrsflock.New(conf.LeasePath(id))
-				locked, lockErr := fl.TryLock()
+				fl, ok, lockErr := lf.tryExclusiveLease(id)
 				if lockErr != nil {
-					_ = fl.Close()
-					errs = append(errs, fmt.Errorf("lease snapshot %s: %w", id, lockErr))
+					errs = append(errs, lockErr)
 					continue
 				}
-				if !locked {
-					_ = fl.Close()
+				if !ok {
 					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
 					continue
 				}

@@ -31,8 +31,10 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 
 	// Heavy work (downloads, EROFS conversion, blob renames) runs outside any transaction under finishImport's per-digest locks; the up-to-date pre-check is racy but benign since the whole flow is idempotent per digest.
 	var upToDate bool
+	var knownBootHexes map[string]struct{}
 	if err := store.View(ctx, func(idx *imageIndex) error {
 		upToDate = isUpToDate(conf, idx, ref, digestHex)
+		knownBootHexes = collectBootHexes(idx)
 		return nil
 	}); err != nil {
 		return err
@@ -40,13 +42,6 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 	if upToDate {
 		logger.Debugf(ctx, "Already up to date: %s (digest: sha256:%s)", ref, digestHex)
 		return nil
-	}
-	var knownBootHexes map[string]struct{}
-	if err := store.View(ctx, func(idx *imageIndex) error {
-		knownBootHexes = collectBootHexes(idx)
-		return nil
-	}); err != nil {
-		return err
 	}
 
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(layers)})

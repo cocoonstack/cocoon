@@ -53,7 +53,7 @@ func (h Handler) GC(cmd *cobra.Command, _ []string) error {
 		hyper.RegisterGC(o)
 	}
 	netProvider.RegisterGC(o)
-	gc.Register(o, bridge.GCModule(conf.RootDir))
+	gc.Register(o, bridge.GCModule())
 	snapBackend.RegisterGC(o)
 	return o.Run(ctx)
 }

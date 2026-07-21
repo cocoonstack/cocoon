@@ -34,8 +34,8 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	}
 	defer release()
 
-	if err = os.MkdirAll(dataDir, 0o750); err != nil {
-		return "", fmt.Errorf("create data dir: %w", err)
+	if err = utils.EnsureDirs(dataDir); err != nil {
+		return "", err
 	}
 	defer func() {
 		if err != nil {

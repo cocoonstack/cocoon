@@ -122,16 +122,27 @@ func IsRetryable(err error) bool {
 	return true
 }
 
-// DoAPIWithRetry wraps DoAPI in DoWithRetry; successCodes[0] is primary, codes[1:] are also accepted (silent nil-body).
+// DoAPIWithRetry wraps DoAPIOnce in DoWithRetry; successCodes[0] is primary, codes[1:] are also accepted (silent nil-body).
 func DoAPIWithRetry(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
 	return DoWithRetry(ctx, func() ([]byte, error) {
-		return doAPI(ctx, hc, method, url, body, successCodes...)
+		return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
 	})
 }
 
-// DoAPIOnce sends a single non-retried request; use for non-idempotent endpoints where retry would surface as duplicate/conflict (e.g. vm.add-fs, snapshot/create).
+// DoAPIOnce sends a single non-retried request with successCodes defaulting to 204 (codes[1:] are tolerated alts, nil body); use for non-idempotent endpoints where retry would surface as duplicate/conflict (e.g. vm.add-fs, snapshot/create).
 func DoAPIOnce(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
-	return doAPI(ctx, hc, method, url, body, successCodes...)
+	primary := http.StatusNoContent
+	if len(successCodes) > 0 {
+		primary = successCodes[0]
+	}
+	resp, apiErr := DoAPI(ctx, hc, method, url, body, primary)
+	if apiErr == nil {
+		return resp, nil
+	}
+	if ae, ok := errors.AsType[*APIError](apiErr); ok && len(successCodes) > 1 && slices.Contains(successCodes[1:], ae.Code) {
+		return nil, nil
+	}
+	return nil, apiErr
 }
 
 // DoJSONOnce marshals payload and sends it via DoAPIOnce; kind names the payload in the marshal error.
@@ -150,20 +161,4 @@ func DoJSONWithRetry[T any](ctx context.Context, hc *http.Client, method, url, k
 		return nil, fmt.Errorf("marshal %s: %w", kind, err)
 	}
 	return DoAPIWithRetry(ctx, hc, method, url, body, successCodes...)
-}
-
-// doAPI is DoAPI with successCodes defaulting to 204; codes[1:] are tolerated alts (return nil body).
-func doAPI(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
-	primary := http.StatusNoContent
-	if len(successCodes) > 0 {
-		primary = successCodes[0]
-	}
-	resp, apiErr := DoAPI(ctx, hc, method, url, body, primary)
-	if apiErr == nil {
-		return resp, nil
-	}
-	if ae, ok := errors.AsType[*APIError](apiErr); ok && len(successCodes) > 1 && slices.Contains(successCodes[1:], ae.Code) {
-		return nil, nil
-	}
-	return nil, apiErr
 }

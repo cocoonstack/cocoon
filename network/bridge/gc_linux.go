@@ -23,7 +23,7 @@ type bridgeSnapshot struct {
 }
 
 // GCModule returns a GC module reclaiming orphan bt* TAP devices; it needs no Bridge instance.
-func GCModule(_ string) gc.Module[bridgeSnapshot] {
+func GCModule() gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: typ,
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {

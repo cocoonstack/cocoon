@@ -39,11 +39,18 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	if err != nil {
 		return "", nil, err
 	}
-	// Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Error VMs are allowed through (quarantine sets Error too) — restore rebuilds the run dir, so it is the recovery path start.go redirects a crashed restore to; FailRestore leaves a running-origin failure in Error with no quarantine reason, and rejecting it here would dead-end at vm rm.
-	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
-		return "", nil, fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)
+	if err := restorableState(vmID, &rec); err != nil {
+		return "", nil, err
 	}
 	return vmID, &rec, nil
+}
+
+// restorableState allows Running, Stopped and Error origins. Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Error VMs are allowed through (quarantine sets Error too) — restore rebuilds the run dir, so it is the recovery path start.go redirects a crashed restore to; FailRestore leaves a running-origin failure in Error with no quarantine reason, and rejecting it here would dead-end at vm rm.
+func restorableState(vmID string, rec *VMRecord) error {
+	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
+		return fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)
+	}
+	return nil
 }
 
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
@@ -91,18 +98,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	if preflightErr := spec.Preflight(stagingDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
 	}
-	oldShape := shapeFromConfig(rec.Config)
-	if killErr := spec.Kill(ctx, vmID, rec); killErr != nil {
-		return nil, killErr
-	}
-	b.emitRestoreComputeStop(ctx, vmID, oldShape, spec.SourceSnapshotID)
-
-	var result *types.VM
-	inner := func() error {
-		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
-		if err := markRestoreDirty(rec.RunDir); err != nil {
-			return err
-		}
+	apply := func(rec *VMRecord) error {
 		if spec.BeforeMerge != nil {
 			if err := spec.BeforeMerge(rec); err != nil {
 				// The sweep may already have deleted snapshot files; a stopped origin would otherwise stay startable on mixed state.
@@ -115,16 +111,9 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
-		var afterErr error
-		result, afterErr = spec.AfterExtract(ctx, vmID, spec.VMCfg, rec)
-		return afterErr
+		return nil
 	}
-	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
-		b.FailRestore(ctx, vmID, rec.State)
-		return nil, err
-	}
-	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
-	return result, nil
+	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, spec.Wrap, apply, spec.AfterExtract)
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
@@ -141,31 +130,49 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
 	}
-	oldShape := shapeFromConfig(rec.Config)
-	if killErr := spec.Kill(ctx, vmID, rec); killErr != nil {
-		return nil, killErr
-	}
-	b.emitRestoreComputeStop(ctx, vmID, oldShape, spec.SourceSnapshotID)
-
-	var result *types.VM
-	inner := func() error {
-		if err := markRestoreDirty(rec.RunDir); err != nil {
-			return err
-		}
+	apply := func(rec *VMRecord) error {
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
 			// Populate cleans then clones with no rollback; a partial run dir must quarantine regardless of origin, like the merge.
 			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
+		return nil
+	}
+	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, spec.Wrap, apply, spec.AfterExtract)
+}
+
+// restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
+func (b *Backend) restoreCore(
+	ctx context.Context, vmID string, rec *VMRecord, vmCfg *types.VMConfig, sourceSnapshotID string,
+	kill func(ctx context.Context, vmID string, rec *VMRecord) error,
+	wrap func(*VMRecord, func() error) error,
+	apply func(*VMRecord) error,
+	afterExtract func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error),
+) (*types.VM, error) {
+	oldShape := shapeFromConfig(rec.Config)
+	if killErr := kill(ctx, vmID, rec); killErr != nil {
+		return nil, killErr
+	}
+	b.emitRestoreComputeStop(ctx, vmID, oldShape, sourceSnapshotID)
+
+	var result *types.VM
+	inner := func() error {
+		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
+		if err := markRestoreDirty(rec.RunDir); err != nil {
+			return err
+		}
+		if err := apply(rec); err != nil {
+			return err
+		}
 		var afterErr error
-		result, afterErr = spec.AfterExtract(ctx, vmID, spec.VMCfg, rec)
+		result, afterErr = afterExtract(ctx, vmID, vmCfg, rec)
 		return afterErr
 	}
-	if err := runWrapped(rec, spec.Wrap, inner); err != nil {
+	if err := runWrapped(rec, wrap, inner); err != nil {
 		b.FailRestore(ctx, vmID, rec.State)
 		return nil, err
 	}
-	b.emitRestoreSuccess(ctx, result, oldShape, spec.SourceSnapshotID)
+	b.emitRestoreSuccess(ctx, result, oldShape, sourceSnapshotID)
 	return result, nil
 }
 
@@ -182,13 +189,13 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 		unlock()
 		return "", nil, nil, err
 	}
-	if gErr := b.EntryGuard(ctx, vmID); gErr != nil {
-		return fail(gErr)
-	}
-	// Revalidate under the lock: the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.
-	vmID, rec, err := b.ResolveForRestore(ctx, vmID)
+	// Revalidate under the lock (from the guard's own transaction): the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.
+	rec, err := b.EntryGuardLoad(ctx, vmID)
 	if err != nil {
 		return fail(err)
+	}
+	if sErr := restorableState(vmID, &rec); sErr != nil {
+		return fail(sErr)
 	}
 	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
 		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
@@ -196,7 +203,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
 		return fail(fmt.Errorf("network invariants violated: %w", vErr))
 	}
-	return vmID, rec, unlock, nil
+	return vmID, &rec, unlock, nil
 }
 
 // emitRestoreComputeStop closes the compute interval after a confirmed kill; fail-closed on DB error and skip on vanished record so the ledger never gets a phantom entry.

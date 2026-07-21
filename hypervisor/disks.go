@@ -75,22 +75,11 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 		if spec.Size < MinDataDiskSize {
 			return nil, fmt.Errorf("data disk %s: size %d below %d minimum", spec.Name, spec.Size, MinDataDiskSize)
 		}
-		path := filepath.Join(baseDir, DataDiskBaseName(spec.Name))
-		if err := createSparseFile(path, spec.Size); err != nil {
-			return nil, fmt.Errorf("data disk %s: %w", spec.Name, err)
-		}
-		switch spec.FSType {
-		case types.FSTypeExt4:
-			if err := InitCOWFilesystem(ctx, path); err != nil {
-				return nil, fmt.Errorf("data disk %s: mkfs: %w", spec.Name, err)
-			}
-		case types.FSTypeNone:
-			// raw, user formats inside guest
-		default:
+		if spec.FSType != types.FSTypeExt4 && spec.FSType != types.FSTypeNone {
 			return nil, fmt.Errorf("data disk %s: fstype %q not supported", spec.Name, spec.FSType)
 		}
 		out = append(out, &types.StorageConfig{
-			Path:       path,
+			Path:       filepath.Join(baseDir, DataDiskBaseName(spec.Name)),
 			RO:         false,
 			Serial:     spec.Name,
 			Role:       types.StorageRoleData,
@@ -98,6 +87,20 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			FSType:     spec.FSType,
 			DirectIO:   spec.DirectIO,
 		})
+	}
+	// Fan out sparse-create + mkfs like copyPairs: on the create path, wall time is the slowest disk, not the sum.
+	if _, err := utils.Map(ctx, specs, func(ctx context.Context, i int, spec types.DataDiskSpec) (struct{}, error) {
+		if err := createSparseFile(out[i].Path, spec.Size); err != nil {
+			return struct{}{}, fmt.Errorf("data disk %s: %w", spec.Name, err)
+		}
+		if spec.FSType == types.FSTypeExt4 {
+			if err := InitCOWFilesystem(ctx, out[i].Path); err != nil {
+				return struct{}{}, fmt.Errorf("data disk %s: mkfs: %w", spec.Name, err)
+			}
+		}
+		return struct{}{}, nil
+	}); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

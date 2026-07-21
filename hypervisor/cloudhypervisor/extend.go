@@ -228,10 +228,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
 	// Entrypoint discipline (design §5): device attach is reference-creating.
-	if gErr := ch.EntryGuard(ctx, vmID); gErr != nil {
-		return fail(gErr)
-	}
-	rec, err := ch.LoadRecord(ctx, vmID)
+	rec, err := ch.EntryGuardLoad(ctx, vmID)
 	if err != nil {
 		return fail(err)
 	}

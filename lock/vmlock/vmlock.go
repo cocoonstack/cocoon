@@ -2,11 +2,10 @@
 package vmlock
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // Path returns the lock file path for vmID under rootDir.
@@ -17,8 +16,8 @@ func Path(rootDir, vmID string) string {
 // New returns vmID's operation lock, creating the lock directory on demand.
 func New(rootDir, vmID string) (*flock.Lock, error) {
 	p := Path(rootDir, vmID)
-	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-		return nil, fmt.Errorf("ensure vm lock dir: %w", err)
+	if err := utils.EnsureDirs(filepath.Dir(p)); err != nil {
+		return nil, err
 	}
 	return flock.New(p), nil
 }
