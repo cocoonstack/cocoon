@@ -10,8 +10,16 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
+	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/types"
 )
+
+var (
+	netOnce sync.Once
+	netSeam *NetProviders
+)
+
+var _ hypervisor.VMNetwork = (*NetProviders)(nil)
 
 // NetProviders resolves and caches the network provider each VM's record names;
 // one instance is shared across concurrent VM operations.
@@ -21,6 +29,13 @@ type NetProviders struct {
 	mu     sync.Mutex
 	cni    network.Network
 	bridge map[string]network.Network
+}
+
+// NetworkSeam returns the process-wide host-networking seam, so both hypervisor
+// backends share one provider cache rather than building one each.
+func NetworkSeam(conf *config.Config) *NetProviders {
+	netOnce.Do(func() { netSeam = NewNetProviders(conf) })
+	return netSeam
 }
 
 func NewNetProviders(conf *config.Config) *NetProviders {
@@ -52,11 +67,6 @@ func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 	return p, nil
 }
 
-// Lifecycle is the locked network convergence the hypervisor runs on start and stop.
-func (n *NetProviders) Lifecycle() hypervisor.NetLifecycle {
-	return hypervisor.NetLifecycle{Recover: n.recoverNetwork, Quiesce: n.quiesceNetwork}
-}
-
 func (n *NetProviders) cniLocked() (network.Network, error) {
 	if n.cni == nil {
 		p, err := InitNetwork(n.conf)
@@ -68,10 +78,10 @@ func (n *NetProviders) cniLocked() (network.Network, error) {
 	return n.cni, nil
 }
 
-// recoverNetwork verifies the VM's plumbing, rebuilding it when missing and lifting the
+// Recover verifies the VM's plumbing, rebuilding it when missing and lifting the
 // stop-time quiesce otherwise. Its error aborts the launch: booting a VM whose
 // host networking is half-built strands it with no way to reach the network.
-func (n *NetProviders) recoverNetwork(ctx context.Context, vm *types.VM) error {
+func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	backend := vm.ResolvedNetBackend()
 	if backend == "" || (backend == types.BackendBridge && len(vm.NetworkConfigs) == 0) {
 		return nil
@@ -83,7 +93,7 @@ func (n *NetProviders) recoverNetwork(ctx context.Context, vm *types.VM) error {
 	if p.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
 		return p.Unquiesce(ctx, vm.ID)
 	}
-	log.WithFunc("core.NetProviders.recoverNetwork").Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
+	log.WithFunc("core.NetProviders.Recover").Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
 	if _, prepErr := p.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
 		return fmt.Errorf("prepare netns: %w", prepErr)
 	}
@@ -94,10 +104,31 @@ func (n *NetProviders) recoverNetwork(ctx context.Context, vm *types.VM) error {
 	return err
 }
 
-func (n *NetProviders) quiesceNetwork(ctx context.Context, vm *types.VM) error {
+// Quiesce brings a stopped VM's host NICs down.
+func (n *NetProviders) Quiesce(ctx context.Context, vm *types.VM) error {
 	p, err := n.ForVM(vm)
 	if err != nil {
 		return err
 	}
 	return p.Quiesce(ctx, vm.ID)
+}
+
+// Cleanup releases a VM's networking inside the delete protocol; a partial CNI
+// failure leaves the tombstone for retry or GC to resume.
+func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
+	bridgenet.CleanupTAPs([]string{vmID})
+	p, err := n.cniOnly()
+	if err != nil {
+		// Lazy CNI; OK to skip for bridge-only setups.
+		return nil
+	}
+	_, err = p.Delete(ctx, []string{vmID})
+	return err
+}
+
+// cniOnly resolves the CNI provider without a VM record, for the ID-only teardown path.
+func (n *NetProviders) cniOnly() (network.Network, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.cniLocked()
 }

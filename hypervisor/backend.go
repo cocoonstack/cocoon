@@ -70,10 +70,8 @@ type Backend struct {
 	Meta     meta.Store
 	Metering metering.Recorder
 
-	// NetCleanup releases a VM's host networking during delete/recovery.
-	NetCleanup NetTeardown
-	// NetLife converges host networking inside the VM ops lock on start and stop.
-	NetLife NetLifecycle
+	// Net converges host networking inside the VM ops lock; nil disables it.
+	Net VMNetwork
 }
 
 // NewBackend wires shared init: EnsureDirs, the backend's namespace on the
@@ -95,12 +93,6 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store met
 }
 
 func (b *Backend) Type() string { return b.Typ }
-
-// SetNetCleanup injects the network teardown used by delete and recovery.
-func (b *Backend) SetNetCleanup(fn NetTeardown) { b.NetCleanup = fn }
-
-// SetNetLifecycle injects the locked network convergence used by start, stop and supervision.
-func (b *Backend) SetNetLifecycle(nl NetLifecycle) { b.NetLife = nl }
 
 // LaunchSpec is the per-call input to Backend.LaunchVMProcess.
 type LaunchSpec struct {

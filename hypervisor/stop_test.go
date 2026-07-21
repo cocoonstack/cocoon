@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/metering"
+	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -153,5 +154,38 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	}
 	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
 		t.Fatal("migrated run dir must be removed")
+	}
+}
+
+// A forced delete of a running VM stops it first, and that stop already closes
+// the compute interval; emitting again from the pre-stop record would bill two
+// stops against one start.
+func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	ctx := t.Context()
+	rec := meteringcapture.New()
+	b.Metering = rec
+	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
+		t.Fatalf("BatchMarkStarted: %v", err)
+	}
+
+	stopLocked := func(ctx context.Context, id string) error {
+		return b.StopOneLocked(ctx, id, StopSpec{
+			RuntimeFiles: []string{APISocketName},
+			Shutdown:     func(context.Context, *VMRecord, string, int) error { return nil },
+		})
+	}
+	if _, err := b.DeleteAll(ctx, []string{id}, true, stopLocked, nil); err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+
+	stops := 0
+	for _, e := range rec.Entries() {
+		if e.Kind == metering.KindVMComputeStop {
+			stops++
+		}
+	}
+	if stops != 1 {
+		t.Errorf("got %d vm.compute.stop for one start, want 1: %+v", stops, rec.Entries())
 	}
 }

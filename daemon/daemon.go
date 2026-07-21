@@ -153,6 +153,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.reconcile(ctx)
 		case ev := <-d.watcher.exits:
 			d.handleExit(ctx, ev)
+			// The convergence just written wakes this daemon's own subscription; its pass already ran.
+			drain(events)
 		case <-gcTick.C:
 			d.runGC(ctx)
 		}

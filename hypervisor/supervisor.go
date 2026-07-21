@@ -15,14 +15,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// NetLifecycle converges a VM's host networking. The command layer supplies it
-// so a state transition and its network action share one VM ops lock instead of
-// splitting across an unlock window.
-type NetLifecycle struct {
-	Recover func(ctx context.Context, vm *types.VM) error
-	Quiesce func(ctx context.Context, vm *types.VM) error
-}
-
 // SupervisionScan is one reconcile pass's view of a backend namespace.
 type SupervisionScan struct {
 	Records    []*VMRecord
@@ -130,7 +122,7 @@ func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64,
 // pending work its own stop scheduled. The caller holds the VM ops lock and has
 // established that no VMM is live.
 func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
-	if b.NetLife.Quiesce == nil {
+	if b.Net == nil {
 		return nil
 	}
 	var (
@@ -147,19 +139,10 @@ func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
 	}); err != nil || vm == nil {
 		return err
 	}
-	if err := b.NetLife.Quiesce(ctx, vm); err != nil {
+	if err := b.quiesceNetwork(ctx, vm); err != nil {
 		return fmt.Errorf("quiesce network for VM %s (pending kept): %w", id, err)
 	}
 	return b.clearQuiescePending(ctx, id, gen)
-}
-
-// RecoverNetwork rebuilds and un-quiesces a VM's host plumbing before launch;
-// the caller holds the VM ops lock.
-func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
-	if b.NetLife.Recover == nil {
-		return nil
-	}
-	return b.NetLife.Recover(ctx, &rec.VM)
 }
 
 // CollectStaleCreate terminates any orphan VMM and runs the delete protocol for
@@ -170,7 +153,7 @@ func (b *Backend) CollectStaleCreate(ctx context.Context, id string, rec *VMReco
 	if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
 		return fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err)
 	}
-	return b.deleteVMProtocol(ctx, id, rec, b.NetCleanup)
+	return b.deleteVMProtocol(ctx, id, rec)
 }
 
 // clearQuiescePending is relaxed: losing the clear only costs one idempotent re-quiesce on a later pass.
@@ -189,6 +172,11 @@ func (b *Backend) clearQuiescePending(ctx context.Context, id string, gen uint64
 // It schedules no quiesce of its own: the launch about to follow brings the same
 // plumbing up, and a failed launch leaves the pending flag for a later pass.
 func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
+	// Prechecked in memory: rec is fresh from the entry guard under the ops lock, and a
+	// transaction that would decide there is nothing to do still takes the namespace flock.
+	if !NeedsDeadConvergence(rec) {
+		return
+	}
 	if _, err := b.convergeDeadRecord(ctx, rec.ID, rec.TransitionGeneration, timeNow()); err != nil {
 		log.WithFunc(b.Typ+".convergeCrashedStart").Warnf(ctx, "converge crashed VM %s: %v", rec.ID, err)
 	}

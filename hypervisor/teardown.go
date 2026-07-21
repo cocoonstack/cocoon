@@ -23,10 +23,6 @@ type vmCleanup struct {
 	LogDir string `json:"log_dir,omitempty"`
 }
 
-// NetTeardown releases a VM's host networking; the command layer supplies it
-// so record deletion and network teardown share one VM lock (design §5).
-type NetTeardown func(ctx context.Context, vmID string) error
-
 func (b *Backend) tombstones() *tombstone.Table {
 	return tombstone.NewTable(b.Meta, b.NS)
 }
@@ -35,7 +31,7 @@ func (b *Backend) tombstones() *tombstone.Table {
 // lock: lease with full payload → deleting → slow teardown → fenced finalize.
 // A crash at any point leaves a phase-directed tombstone a later worker
 // resumes.
-func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord, teardown NetTeardown) error {
+func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord) error {
 	ts := b.tombstones()
 	cl := vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
 	cleanup, err := tombstone.MarshalCleanup(cl)
@@ -67,16 +63,14 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 	}); err != nil {
 		return err
 	}
-	return b.finishVMTeardown(ctx, id, leaseID, cl, teardown)
+	return b.finishVMTeardown(ctx, id, leaseID, cl)
 }
 
 // finishVMTeardown runs the slow cleanup outside any transaction, then the
 // fenced finalize that deletes record, name and tombstone together.
-func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl vmCleanup, teardown NetTeardown) error {
-	if teardown != nil {
-		if err := teardown(ctx, id); err != nil {
-			return fmt.Errorf("vm %s network teardown (tombstone kept, retry or gc resumes): %w", id, err)
-		}
+func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl vmCleanup) error {
+	if err := b.cleanupNetwork(ctx, id); err != nil {
+		return fmt.Errorf("vm %s network teardown (tombstone kept, retry or gc resumes): %w", id, err)
 	}
 	if err := RemoveVMDirs(cl.RunDir, cl.LogDir); err != nil {
 		return fmt.Errorf("cleanup VM dirs (tombstone kept, retry or gc resumes): %w", err)
@@ -101,7 +95,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 // recoverVMTombstone drives id's tombstone to completion under the held ops
 // lock: leased rolls back (record stays live), deleting rolls forward from
 // the payload. done reports the entity was finalized (record gone).
-func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown NetTeardown) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
+func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
 	ts := b.tombstones()
 	var (
 		rec     *tombstone.Record
@@ -121,19 +115,11 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown Ne
 	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
 		return false, fmt.Errorf("tombstone %s payload: %w", id, err)
 	}
-	if err := b.finishVMTeardown(ctx, id, leaseID, cl, teardown); err != nil {
+	if err := b.finishVMTeardown(ctx, id, leaseID, cl); err != nil {
 		return false, err
 	}
 	log.WithFunc(b.Typ+".recoverVMTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
 	return true, nil
-}
-
-// EntryGuard enforces the entrypoint discipline under a held ops lock:
-// roll a leased tombstone back in place; drive a deleting one to completion —
-// including the injected network cleanup — and refuse the operation.
-func (b *Backend) EntryGuard(ctx context.Context, id string) error {
-	_, err := b.entryGuard(ctx, id)
-	return err
 }
 
 // EntryGuardLoad is EntryGuard returning the VM's record from the guard's own
@@ -162,7 +148,7 @@ func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) 
 	if !errors.Is(err, ErrTombstoned) {
 		return rec, err
 	}
-	if _, rerr := b.recoverVMTombstone(ctx, id, b.NetCleanup); rerr != nil {
+	if _, rerr := b.recoverVMTombstone(ctx, id); rerr != nil {
 		return nil, fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
 	}
 	return nil, fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)

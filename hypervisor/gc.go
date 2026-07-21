@@ -142,7 +142,7 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	var errs []error
 	for _, id := range ids {
 		b.withOpsTryLock(ctx, id, func() {
-			if _, err := b.recoverVMTombstone(ctx, id, b.NetCleanup); err != nil {
+			if _, err := b.recoverVMTombstone(ctx, id); err != nil {
 				errs = append(errs, fmt.Errorf("recover %s: %w", id, err))
 			}
 		})

@@ -30,8 +30,7 @@ var hypervisorFactories = []hypervisorFactory{
 // wireHypervisor builds a backend factory over the shared store and recorder.
 func wireHypervisor[H interface {
 	hypervisor.Hypervisor
-	SetNetCleanup(hypervisor.NetTeardown)
-	SetNetLifecycle(hypervisor.NetLifecycle)
+	SetNetwork(hypervisor.VMNetwork)
 }](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
 	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)
@@ -42,23 +41,8 @@ func wireHypervisor[H interface {
 		if err != nil {
 			return nil, err
 		}
-		h.SetNetCleanup(netCleanup(c))
-		h.SetNetLifecycle(NewNetProviders(c).Lifecycle())
+		h.SetNetwork(NetworkSeam(c))
 		return h, nil
-	}
-}
-
-// netCleanup runs inside the delete protocol under the VM lock; a partial CNI failure leaves the tombstone for retry/GC to resume.
-func netCleanup(c *config.Config) hypervisor.NetTeardown {
-	return func(ctx context.Context, vmID string) error {
-		bridgenet.CleanupTAPs([]string{vmID})
-		netProvider, initErr := InitNetwork(c)
-		if initErr != nil {
-			// Lazy CNI; OK to skip for bridge-only setups.
-			return nil
-		}
-		_, err := netProvider.Delete(ctx, []string{vmID})
-		return err
 	}
 }
 

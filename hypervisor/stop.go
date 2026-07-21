@@ -141,7 +141,14 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	}
 	shape := shapeFromConfig(rec.Config)
 	hadRunningInterval := hasOpenComputeInterval(rec)
-	if err := b.deleteVMProtocol(ctx, id, rec, b.NetCleanup); err != nil {
+	if stoppedByUs {
+		// The stop above closed the interval and emitted its own compute.stop; the
+		// pre-stop copy still reads open, and emitting from it double-closes the ledger.
+		if fresh, freshErr := b.LoadRecord(ctx, id); freshErr == nil {
+			hadRunningInterval = hasOpenComputeInterval(&fresh)
+		}
+	}
+	if err := b.deleteVMProtocol(ctx, id, rec); err != nil {
 		return err
 	}
 	computeReason := metering.ReasonStopCrash

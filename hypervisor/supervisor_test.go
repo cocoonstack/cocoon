@@ -131,7 +131,7 @@ func TestConvergeDeadQuiescesPlumbedVM(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 	var quiesced []string
-	b.SetNetLifecycle(NetLifecycle{Quiesce: func(_ context.Context, vm *types.VM) error {
+	b.SetNetwork(stubNetwork{quiesce: func(_ context.Context, vm *types.VM) error {
 		quiesced = append(quiesced, vm.ID)
 		return nil
 	}})
@@ -151,7 +151,7 @@ func TestConvergeDeadKeepsPendingWhenQuiesceFails(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
-	b.SetNetLifecycle(NetLifecycle{Quiesce: func(context.Context, *types.VM) error {
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
 		return fmt.Errorf("netns gone")
 	}})
 
@@ -172,7 +172,7 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
-	b.SetNetLifecycle(NetLifecycle{Quiesce: func(context.Context, *types.VM) error {
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
 		// A concurrent stop transitions the record while the quiesce is in flight.
 		return b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped)
 	}})
