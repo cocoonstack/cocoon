@@ -54,7 +54,6 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		return err
 	}
-	h.quiesceNetwork(ctx, conf, hyper, []string{vm.ID})
 	logger.Infof(ctx, "VM hibernated; snapshot %s (resume: cocoon vm restore %s %s)", snapID, vmRef, cmp.Or(name, snapID))
 	return nil
 }

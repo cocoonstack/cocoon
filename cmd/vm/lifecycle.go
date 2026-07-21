@@ -19,7 +19,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/network"
+
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -56,10 +56,6 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for hyper, refs := range routed {
-		h.recoverNetwork(ctx, conf, hyper, refs)
-	}
-
 	return batchRoutedCmd(ctx, cmd, "start", "started", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Start(ctx, refs)
 	})
@@ -82,7 +78,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-		return h.stopAndQuiesce(ctx, conf, hyper, refs)
+		return hyper.Stop(ctx, refs)
 	})
 }
 
@@ -203,148 +199,9 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if force {
-		for hyper, refs := range routed {
-			_, _ = h.stopAndQuiesce(ctx, conf, hyper, refs)
-		}
-	}
-
 	return batchRoutedCmd(ctx, cmd, "rm", "deleted", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Delete(ctx, refs, force)
 	})
-}
-
-func (h Handler) recoverNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) {
-	logger := log.WithFunc("cmd.vm.recoverNetwork")
-
-	// Lazy CNI; OK to skip for bridge-only setups.
-	var cniProvider network.Network
-	if p, err := cmdcore.InitNetwork(conf); err == nil {
-		cniProvider = p
-	}
-
-	bridgeProviders := map[string]network.Network{}
-
-	// Single List → byID map avoids one Inspect-per-ref under DB lock.
-	all, err := hyper.List(ctx)
-	if err != nil {
-		logger.Warnf(ctx, "list VMs for recovery: %v", err)
-		return
-	}
-	byID := make(map[string]*types.VM, len(all))
-	for _, vm := range all {
-		byID[vm.ID] = vm
-	}
-
-	for _, ref := range refs {
-		vm := byID[ref]
-		if vm == nil {
-			continue
-		}
-		// A corrupt record (null NIC entry) must not grow fresh plumbing here; start will refuse it with a typed error.
-		if err := types.ValidateNetworkConfigs(vm.NetworkConfigs); err != nil {
-			logger.Warnf(ctx, "skip network recovery for VM %s: %v", vm.ID, err)
-			continue
-		}
-		backend := vm.ResolvedNetBackend()
-		if backend == "" {
-			continue
-		}
-		if backend == types.BackendBridge && len(vm.NetworkConfigs) == 0 {
-			continue
-		}
-		netProvider, provErr := providerForVM(conf, cniProvider, bridgeProviders, vm)
-		if provErr != nil {
-			logger.Warnf(ctx, "skip recovery for VM %s: %v", vm.ID, provErr)
-			continue
-		}
-		recoverOne := func(vm *types.VM) {
-			if netProvider.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
-				if err := netProvider.Unquiesce(ctx, vm.ID); err != nil {
-					logger.Warnf(ctx, "unquiesce network for VM %s: %v", vm.ID, err)
-				}
-				return
-			}
-			logger.Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
-			if _, prepErr := netProvider.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
-				logger.Warnf(ctx, "prepare netns for VM %s: %v (start will fail)", vm.ID, prepErr)
-				return
-			}
-			if len(vm.NetworkConfigs) == 0 {
-				return
-			}
-			if _, recoverErr := netProvider.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...); recoverErr != nil {
-				logger.Warnf(ctx, "recover network for VM %s: %v (start will fail)", vm.ID, recoverErr)
-			}
-		}
-		// Ops lock serializes verify-and-rebuild: two concurrent starts would both see missing plumbing, double-ADD, and the loser's rollback DEL would tear down the winner's network.
-		locker, ok := hyper.(hypervisor.Reserver)
-		if !ok {
-			recoverOne(vm)
-			continue
-		}
-		unlock, lockErr := locker.LockVMOps(ctx, vm.ID)
-		if lockErr != nil {
-			logger.Warnf(ctx, "skip network recovery for VM %s: ops lock: %v", vm.ID, lockErr)
-			continue
-		}
-		// Entry discipline before healing: an interrupted delete must finish
-		// and refuse, never get its network rebuilt (§9).
-		if g, ok := hyper.(hypervisor.EntryGuarded); ok {
-			if gErr := g.EntryGuard(ctx, vm.ID); gErr != nil {
-				logger.Warnf(ctx, "skip network recovery for VM %s: %v", vm.ID, gErr)
-				unlock()
-				continue
-			}
-		}
-		// Recheck under the lock from the fresh record: the pre-lock List snapshot may predate a completed rm or net resize.
-		if fresh, inspectErr := hyper.Inspect(ctx, vm.ID); inspectErr == nil {
-			recoverOne(fresh)
-		}
-		unlock()
-	}
-}
-
-func (h Handler) stopAndQuiesce(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-	stopped, err := hyper.Stop(ctx, refs)
-	h.quiesceNetwork(ctx, conf, hyper, stopped)
-	return stopped, err
-}
-
-// quiesceNetwork brings each stopped VM's host NICs down — Stop's counterpart to Start's recoverNetwork — so an idle TAP's TC redirect can't storm softirqs. Best-effort: a quiesce failure never blocks the stop.
-func (h Handler) quiesceNetwork(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, ids []string) {
-	if len(ids) == 0 {
-		return
-	}
-	logger := log.WithFunc("cmd.vm.quiesceNetwork")
-
-	var cniProvider network.Network
-	if p, err := cmdcore.InitNetwork(conf); err == nil {
-		cniProvider = p
-	}
-	bridgeProviders := map[string]network.Network{}
-
-	for _, id := range ids {
-		vm, err := hyper.Inspect(ctx, id)
-		if err != nil {
-			logger.Warnf(ctx, "inspect VM %s for quiesce: %v", id, err)
-			continue
-		}
-		if vm == nil {
-			continue
-		}
-		if vm.ResolvedNetBackend() == "" || len(vm.NetworkConfigs) == 0 {
-			continue
-		}
-		netProvider, provErr := providerForVM(conf, cniProvider, bridgeProviders, vm)
-		if provErr != nil {
-			logger.Warnf(ctx, "skip quiesce for VM %s: %v", id, provErr)
-			continue
-		}
-		if err := netProvider.Quiesce(ctx, id); err != nil {
-			logger.Warnf(ctx, "quiesce network for VM %s: %v", id, err)
-		}
-	}
 }
 
 // applyStopFlags maps --force (-1 = immediate kill; #82: FC guests without i8042 never answer CtrlAltDel) and --timeout onto the stop window; rm has no --timeout flag, that read no-ops.
@@ -357,33 +214,6 @@ func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 	case timeout > 0:
 		conf.StopTimeoutSeconds = timeout
 	}
-}
-
-// providerForVM picks the provider from VM state. cniProvider may be nil; bridgeCache must be non-nil.
-func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache map[string]network.Network, vm *types.VM) (network.Network, error) {
-	if vm == nil {
-		return nil, fmt.Errorf("no VM record")
-	}
-	if vm.ResolvedNetBackend() == types.BackendBridge {
-		dev := vm.ResolvedNetBridgeDev()
-		if dev == "" {
-			return nil, fmt.Errorf("bridge backend but no bridge device persisted")
-		}
-		if cached, ok := bridgeCache[dev]; ok {
-			return cached, nil
-		}
-		p, err := cmdcore.InitBridgeNetwork(conf, dev)
-		if err != nil {
-			return nil, err
-		}
-		bridgeCache[dev] = p
-		return p, nil
-	}
-	// "cni" or empty (backward compat).
-	if cniProvider != nil {
-		return cniProvider, nil
-	}
-	return cmdcore.InitNetwork(conf)
 }
 
 // batchRoutedCmd runs fn per routed hypervisor, logging each success (unless JSON), then wraps the last error, emits JSON, or logs the empty case.

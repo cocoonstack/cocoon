@@ -17,4 +17,7 @@ type VMRecord struct {
 
 	// Quarantine names why start must refuse (e.g. partial restore merge); only a successful restore clears it — stop's state flip cannot.
 	Quarantine string `json:"quarantine,omitempty"`
+
+	// QuiescePending survives a crash between the stop transition and the network Quiesce, so a later pass retries it.
+	QuiescePending bool `json:"quiesce_pending,omitempty"`
 }

@@ -2,6 +2,7 @@ package hypervisor
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -57,6 +58,48 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 	loaded, _ := b.LoadRecord(ctx, id)
 	if loaded.State != types.VMStateError {
 		t.Errorf("state = %s, want error", loaded.State)
+	}
+}
+
+func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	const id = "vm-launch-fail"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+
+	err := b.StartSequence(ctx, id, StartSpec{
+		Launch: func(context.Context, *VMRecord, string) (int, error) {
+			cancel()
+			return 0, errors.New("launch canceled")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected launch failure")
+	}
+	rec := recordOf(t, b, id)
+	if rec.State != types.VMStateError || !rec.QuiescePending {
+		t.Fatalf("state = %s, pending = %v; want error/true", rec.State, rec.QuiescePending)
+	}
+	if err := b.ConvergeDead(t.Context(), id, rec.TransitionGeneration, timeNow()); err != nil {
+		t.Fatalf("ConvergeDead: %v", err)
+	}
+	after := recordOf(t, b, id)
+	if quiesced != 1 || after.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, after.QuiescePending)
 	}
 }
 

@@ -19,15 +19,15 @@ func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
 		// A stopped origin has no live VMM: a transient liveness-scan error must not brick the wake — nothing was mutated, retry converges.
-		b.FailRestore(ctx, vmID, rec.State)
+		b.failRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
 	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
 	return nil
 }
 
-// FailRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
-func (b *Backend) FailRestore(ctx context.Context, vmID string, origin types.VMState) {
+// failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
+func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMState) {
 	if origin == types.VMStateStopped {
 		return
 	}
@@ -45,7 +45,7 @@ func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, 
 	return vmID, &rec, nil
 }
 
-// restorableState allows Running, Stopped and Error origins. Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Error VMs are allowed through (quarantine sets Error too) — restore rebuilds the run dir, so it is the recovery path start.go redirects a crashed restore to; FailRestore leaves a running-origin failure in Error with no quarantine reason, and rejecting it here would dead-end at vm rm.
+// restorableState allows Running, Stopped and Error origins. Stopped restores too (hibernate resume): the sequence cold-spawns a fresh VMM either way and the kill step tolerates a dead one. Error VMs are allowed through (quarantine sets Error too) — restore rebuilds the run dir, so it is the recovery path start.go redirects a crashed restore to; failRestore leaves a running-origin failure in Error with no quarantine reason, and rejecting it here would dead-end at vm rm.
 func restorableState(vmID string, rec *VMRecord) error {
 	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
 		return fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)
@@ -57,11 +57,11 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	now := timeNow()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
-		r.State = types.VMStateRunning
+		markTransition(r, types.VMStateRunning, types.TransitionRestore, now)
 		r.Quarantine = ""
 		r.StartedAt = &now
 		r.StoppedAt = nil
-		r.UpdatedAt = now
+		r.QuiescePending = false
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
@@ -164,12 +164,17 @@ func (b *Backend) restoreCore(
 		if err := apply(rec); err != nil {
 			return err
 		}
+		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
+		if err := b.RecoverNetwork(ctx, rec); err != nil {
+			return fmt.Errorf("recover network: %w", err)
+		}
 		var afterErr error
 		result, afterErr = afterExtract(ctx, vmID, vmCfg, rec)
 		return afterErr
 	}
 	if err := runWrapped(rec, wrap, inner); err != nil {
-		b.FailRestore(ctx, vmID, rec.State)
+		// The kill already ran, so networking left up stays durable retry work even for a retryable stopped origin.
+		b.markFailedOperation(ctx, vmID, rec.State != types.VMStateStopped)
 		return nil, err
 	}
 	b.emitRestoreSuccess(ctx, result, oldShape, sourceSnapshotID)
@@ -219,9 +224,8 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
-		r.State = types.VMStateStopped
+		markTransition(r, types.VMStateStopped, types.TransitionRestore, now)
 		r.StoppedAt = &now
-		r.UpdatedAt = now
 		closed = true
 		return t.Put(vmID, r)
 	}); err != nil {

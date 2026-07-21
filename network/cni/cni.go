@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -201,7 +202,12 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	for _, rec := range records {
 		ifNames = append(ifNames, rec.IfName)
 	}
-	return setLinkStateFn(netnsPath(vmID), ifNames, up)
+	nsPath := netnsPath(vmID)
+	// A host reboot wipes netns but not records; with no netns there is nothing left to quiesce, and failing would retry forever.
+	if _, err := statNetnsFn(nsPath); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return setLinkStateFn(nsPath, ifNames, up)
 }
 
 // confListByName resolves a conflist by name; empty name returns the default (first alphabetically).

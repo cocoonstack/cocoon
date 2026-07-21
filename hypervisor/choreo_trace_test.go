@@ -126,7 +126,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load VM1 pre-delete: %v", err)
 	}
-	record("delete", "", b.deleteVMProtocol(ctx, "VM1", &vm1, nil))
+	record("delete", "", b.deleteVMProtocol(ctx, "VM1", &vm1))
 	_, err = b.ResolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 

@@ -51,9 +51,12 @@ cocoon
 │   ├── init                       Initialize a fresh sqlite meta store (requires meta_backend=sqlite)
 │   ├── convert                    Convert existing metadata to the configured meta_backend (crash-resumable)
 │   └── backup DEST                Back up the sqlite meta store to a single consistent file
+├── daemon [flags]                 Supervise cocoon-managed VMs (optional resident process)
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]
 ```
+
+`daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
 The meta engine is selected by `meta_backend` in the config: `json` (default) or `sqlite`; `meta convert` always converts TO the effective backend.
 

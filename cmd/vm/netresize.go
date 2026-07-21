@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/network"
@@ -52,5 +53,5 @@ func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
 	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
 		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
 	}
-	return providerForVM(conf, nil, map[string]network.Network{}, vm)
+	return cmdcore.NewNetProviders(conf).ForVM(vm)
 }

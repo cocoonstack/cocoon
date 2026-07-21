@@ -142,7 +142,7 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	var errs []error
 	for _, id := range ids {
 		b.withOpsTryLock(ctx, id, func() {
-			if _, err := b.recoverVMTombstone(ctx, id, b.NetCleanup); err != nil {
+			if _, err := b.recoverVMTombstone(ctx, id); err != nil {
 				errs = append(errs, fmt.Errorf("recover %s: %w", id, err))
 			}
 		})
@@ -188,11 +188,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			if rec.State != types.VMStateCreating || !rec.UpdatedAt.Before(cutoff) {
 				return
 			}
-			if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
-				errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
-				return
-			}
-			if err := b.deleteVMProtocol(ctx, id, rec, b.NetCleanup); err != nil {
+			if err := b.CollectStaleCreate(ctx, id, rec); err != nil {
 				errs = append(errs, fmt.Errorf("collect %s: %w", id, err))
 				return
 			}
@@ -286,14 +282,11 @@ func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
 
 // withOpsTryLock runs fn holding the VM ops lock, reporting false (fn skipped) when an in-flight operation owns it; GC never blocks on ops locks, so the reversed order vs. the ops-outer/index-inner convention cannot deadlock.
 func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bool {
-	l, err := opsLock(b.Conf, vmID)
-	if err != nil {
+	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
+	if err != nil || !ok {
 		return false
 	}
-	if ok, err := l.TryLock(ctx); err != nil || !ok {
-		return false
-	}
-	defer func() { _ = l.Unlock(ctx) }()
+	defer unlock()
 	fn()
 	return true
 }

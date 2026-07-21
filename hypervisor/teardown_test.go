@@ -39,11 +39,11 @@ func TestDeleteProtocolFullRun(t *testing.T) {
 	rec := seedProtoVM(t, b, "vmproto1")
 
 	var tornDown []string
-	teardown := func(_ context.Context, id string) error {
+	b.SetNetwork(stubNetwork{cleanup: func(_ context.Context, id string) error {
 		tornDown = append(tornDown, id)
 		return nil
-	}
-	if err := b.deleteVMProtocol(ctx, "vmproto1", rec, teardown); err != nil {
+	}})
+	if err := b.deleteVMProtocol(ctx, "vmproto1", rec); err != nil {
 		t.Fatalf("protocol: %v", err)
 	}
 	if len(tornDown) != 1 || tornDown[0] != "vmproto1" {
@@ -74,14 +74,16 @@ func TestDeleteProtocolTeardownFailureKeepsTombstoneThenConverges(t *testing.T) 
 
 	boom := errors.New("cni down")
 	failing := func(context.Context, string) error { return boom }
-	if err := b.deleteVMProtocol(ctx, "vmproto2", rec, failing); !errors.Is(err, boom) {
+	b.SetNetwork(stubNetwork{cleanup: failing})
+	if err := b.deleteVMProtocol(ctx, "vmproto2", rec); !errors.Is(err, boom) {
 		t.Fatalf("want teardown failure surfaced, got %v", err)
 	}
 	// Record stays live over a deleting tombstone; the retry rolls forward.
 	if _, err := b.LoadRecord(ctx, "vmproto2"); err != nil {
 		t.Fatalf("record must stay live through deleting: %v", err)
 	}
-	done, err := b.recoverVMTombstone(ctx, "vmproto2", nil)
+	b.SetNetwork(stubNetwork{})
+	done, err := b.recoverVMTombstone(ctx, "vmproto2")
 	if err != nil || !done {
 		t.Fatalf("roll forward: done=%v err=%v", done, err)
 	}
@@ -108,7 +110,7 @@ func TestRecoverLeasedRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := b.recoverVMTombstone(ctx, "vmproto3", nil)
+	done, err := b.recoverVMTombstone(ctx, "vmproto3")
 	if err != nil || done {
 		t.Fatalf("leased must roll back, not finalize: done=%v err=%v", done, err)
 	}
@@ -144,7 +146,7 @@ func TestTombstoneFencingABA(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Worker B recovers under a NEW lease and finalizes.
-	done, err := b.recoverVMTombstone(ctx, "vmproto4", nil)
+	done, err := b.recoverVMTombstone(ctx, "vmproto4")
 	if err != nil || !done {
 		t.Fatalf("recover: done=%v err=%v", done, err)
 	}
@@ -174,7 +176,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.EntryGuard(ctx, "vmproto5"); err != nil {
+	if err := entryGuardOnly(ctx, b, "vmproto5"); err != nil {
 		t.Fatalf("leased guard must roll back and proceed: %v", err)
 	}
 
@@ -191,7 +193,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	err = b.EntryGuard(ctx, "vmproto5")
+	err = entryGuardOnly(ctx, b, "vmproto5")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting guard must refuse after recovery: %v", err)
 	}
@@ -257,10 +259,10 @@ func TestLiveHolderKeepsLease(t *testing.T) {
 func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	var netTorn []string
-	b.NetCleanup = func(_ context.Context, id string) error {
+	b.SetNetwork(stubNetwork{cleanup: func(_ context.Context, id string) error {
 		netTorn = append(netTorn, id)
 		return nil
-	}
+	}})
 	ctx := t.Context()
 	rec := seedProtoVM(t, b, "vmentry1")
 	ts := b.tombstones()
@@ -305,4 +307,38 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	if len(netTorn) != 1 || netTorn[0] != "vmentry1" {
 		t.Fatalf("entry-driven recovery skipped the injected network cleanup: %v", netTorn)
 	}
+}
+
+// stubNetwork stands in for the injected host-networking seam; unset hooks are no-ops.
+type stubNetwork struct {
+	recover func(context.Context, *types.VM) error
+	quiesce func(context.Context, *types.VM) error
+	cleanup func(context.Context, string) error
+}
+
+func (s stubNetwork) Recover(ctx context.Context, vm *types.VM) error {
+	if s.recover == nil {
+		return nil
+	}
+	return s.recover(ctx, vm)
+}
+
+func (s stubNetwork) Quiesce(ctx context.Context, vm *types.VM) error {
+	if s.quiesce == nil {
+		return nil
+	}
+	return s.quiesce(ctx, vm)
+}
+
+func (s stubNetwork) Cleanup(ctx context.Context, vmID string) error {
+	if s.cleanup == nil {
+		return nil
+	}
+	return s.cleanup(ctx, vmID)
+}
+
+// entryGuardOnly exercises the entry guard the way an entrypoint does, discarding the record.
+func entryGuardOnly(ctx context.Context, b *Backend, id string) error {
+	_, err := b.entryGuard(ctx, id)
+	return err
 }

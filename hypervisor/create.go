@@ -78,13 +78,16 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 		if err != nil {
 			return err
 		}
-		return t.Put(id, &VMRecord{
+		rec := &VMRecord{
 			VM:           *info,
 			BootConfig:   bootCfg,
 			ImageBlobIDs: blobIDs,
 			RunDir:       existing.RunDir,
 			LogDir:       existing.LogDir,
-		})
+		}
+		// The subpackage building info cannot reach markTransition; without this both create states share generation zero.
+		markTransition(rec, info.State, types.TransitionCreate, timeNow())
+		return t.Put(id, rec)
 	}); err != nil {
 		return err
 	}
