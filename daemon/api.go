@@ -32,9 +32,7 @@ type vmsResponse struct {
 	VMs []VMStatus `json:"vms"`
 }
 
-// healthResponse reports whether the loop is running, and how many VMs the last
-// pass could not converge. Degraded VMs do not make it unready: restarting the
-// daemon does not fix a VM nobody can converge, and a restart loop is worse.
+// healthResponse: degraded VMs do not flip readiness — a daemon restart cannot fix a VM nobody can converge.
 type healthResponse struct {
 	OK       bool      `json:"ok"`
 	Degraded int       `json:"degraded"`
@@ -109,9 +107,7 @@ func (d *Daemon) handleVMs(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, vmsResponse{VMs: all})
 }
 
-// handleEvents streams changes after an opening snapshot. It replays nothing: a
-// reconnecting client compares per-VM generations against the new snapshot to
-// find transitions it missed.
+// handleEvents streams changes after an opening snapshot; it replays nothing, so a reconnecting client diffs per-VM generations against the fresh snapshot.
 func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 	events, release := d.state.subscribe()
 	defer release()

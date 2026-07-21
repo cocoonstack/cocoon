@@ -6,7 +6,6 @@ import "errors"
 
 var errNoProcNotify = errors.New("process-exit notification is unsupported on this OS")
 
-// poller is inert off Linux: nothing is ever watched, so wait only parks until close.
 type poller struct {
 	done chan struct{}
 }

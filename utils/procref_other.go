@@ -4,8 +4,7 @@ package utils
 
 import "fmt"
 
-// procStartTime has no portable source outside Linux; a live pid degrades to
-// pid-only identity, which cannot detect pid reuse.
+// procStartTime has no portable source outside Linux; identity degrades to pid-only.
 func procStartTime(pid int) (uint64, error) {
 	if !IsProcessAlive(pid) {
 		return 0, fmt.Errorf("process %d is not alive", pid)

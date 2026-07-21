@@ -35,7 +35,7 @@ func TestFailRestoreSparesStoppedOrigin(t *testing.T) {
 				t.Fatalf("seed state: %v", err)
 			}
 
-			b.FailRestore(t.Context(), id, tt.origin)
+			b.failRestore(t.Context(), id, tt.origin)
 
 			rec, err := b.LoadRecord(t.Context(), id)
 			if err != nil {

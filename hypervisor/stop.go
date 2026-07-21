@@ -140,8 +140,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	shape := shapeFromConfig(rec.Config)
 	hadRunningInterval := hasOpenComputeInterval(rec)
 	if stoppedByUs {
-		// The stop above closed the interval and emitted its own compute.stop; the
-		// pre-stop copy still reads open, and emitting from it double-closes the ledger.
+		// The stop above already emitted its compute.stop; the pre-stop copy still reads open.
 		if fresh, freshErr := b.LoadRecord(ctx, id); freshErr == nil {
 			hadRunningInterval = hasOpenComputeInterval(&fresh)
 		}

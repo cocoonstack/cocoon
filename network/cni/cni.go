@@ -203,9 +203,7 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 		ifNames = append(ifNames, rec.IfName)
 	}
 	nsPath := netnsPath(vmID)
-	// A host reboot wipes every netns while the records survive; with no netns
-	// there is no plumbing left to quiesce, and failing here would leave a stop's
-	// pending work retrying for the rest of the daemon's life.
+	// A host reboot wipes netns but not records; with no netns there is nothing left to quiesce, and failing would retry forever.
 	if _, err := statNetnsFn(nsPath); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

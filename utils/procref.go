@@ -1,20 +1,13 @@
 package utils
 
-import "fmt"
-
-// ProcRef identifies one process generation: a pid plus its start time, so a
-// recycled pid reads as a different process rather than the original one.
+// ProcRef is one process generation: pid plus start time, so a recycled pid reads as a different process.
 type ProcRef struct {
 	PID   int
 	Start uint64
 }
 
-// ProcRefOf captures pid's current generation; where the start time is
-// unreadable the pid alone identifies the process and reuse is undetectable.
+// ProcRefOf captures pid's current generation.
 func ProcRefOf(pid int) (ProcRef, error) {
-	if pid <= 0 {
-		return ProcRef{}, fmt.Errorf("invalid pid %d", pid)
-	}
 	start, err := procStartTime(pid)
 	if err != nil {
 		return ProcRef{}, err

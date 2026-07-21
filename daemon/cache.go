@@ -90,12 +90,6 @@ func newCache() *cache {
 	return &cache{byKey: map[watchKey]VMStatus{}, subs: map[int]chan changeEvent{}}
 }
 
-func (c *cache) size() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.order)
-}
-
 // publish replaces the snapshot and emits the diff against the previous pass.
 func (c *cache) publish(all []VMStatus, healthy bool, degraded int, at time.Time) {
 	next := make(map[watchKey]VMStatus, len(all))

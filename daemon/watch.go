@@ -33,11 +33,10 @@ type watchEntry struct {
 type procWatcher struct {
 	exits chan exitEvent
 
-	mu     sync.Mutex
-	byKey  map[watchKey]watchEntry
-	byFD   map[int]watchKey
-	poll   *poller
-	closed bool
+	mu    sync.Mutex
+	byKey map[watchKey]watchEntry
+	byFD  map[int]watchKey
+	poll  *poller
 }
 
 func newProcWatcher() *procWatcher {
@@ -63,15 +62,12 @@ func (w *procWatcher) start(ctx context.Context) error {
 func (w *procWatcher) close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.closed = true
 	for key, entry := range w.byKey {
 		delete(w.byKey, key)
 		delete(w.byFD, entry.fd)
 		utils.CloseFD(entry.fd)
 	}
-	if w.poll != nil {
-		_ = w.poll.close()
-	}
+	_ = w.poll.close()
 }
 
 // ensure watches proc for key, replacing any entry naming a different generation.
@@ -84,11 +80,7 @@ func (w *procWatcher) ensure(key watchKey, proc utils.ProcRef, gen uint64) {
 		}
 		w.evictLocked(key, cur.fd)
 	}
-	closed := w.closed
 	w.mu.Unlock()
-	if closed {
-		return
-	}
 
 	fd, err := utils.OpenPidfd(proc.PID)
 	if err != nil {
@@ -102,10 +94,6 @@ func (w *procWatcher) ensure(key watchKey, proc utils.ProcRef, gen uint64) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, taken := w.byKey[key]; w.closed || taken || w.poll == nil {
-		utils.CloseFD(fd)
-		return
-	}
 	if err := w.poll.add(fd); err != nil {
 		utils.CloseFD(fd)
 		return
@@ -177,8 +165,6 @@ func (w *procWatcher) fire(ctx context.Context, fd int) {
 func (w *procWatcher) evictLocked(key watchKey, fd int) {
 	delete(w.byKey, key)
 	delete(w.byFD, fd)
-	if w.poll != nil {
-		_ = w.poll.remove(fd)
-	}
+	_ = w.poll.remove(fd)
 	utils.CloseFD(fd)
 }

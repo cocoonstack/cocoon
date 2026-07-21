@@ -110,7 +110,7 @@ type VM struct {
 	// SnapshotIDs tracks snapshots created from this VM; populated by toVM() from VMRecord.SnapshotIDs.
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
 
-	// TransitionGeneration increments once per committed state transition, so a consumer that missed events can tell a transition it has not handled from one it has.
+	// TransitionGeneration increments once per committed transition, letting a consumer spot transitions it missed.
 	TransitionGeneration uint64           `json:"transition_generation,omitempty"`
 	LastTransitionReason TransitionReason `json:"last_transition_reason,omitempty"`
 	LastTransitionAt     *time.Time       `json:"last_transition_at,omitempty"`

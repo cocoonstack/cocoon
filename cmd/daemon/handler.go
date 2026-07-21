@@ -80,7 +80,7 @@ func daemonConfig(cmd *cobra.Command, conf *config.Config) (cocoond.Config, erro
 	}, nil
 }
 
-// gcRunner builds the orchestrator per run so a sweep always reads fresh state; nil keeps GC a CLI verb.
+// gcRunner builds the orchestrator per run so each sweep reads fresh state.
 func gcRunner(conf *config.Config, interval time.Duration) func(context.Context) error {
 	if interval <= 0 {
 		return nil

@@ -12,8 +12,7 @@ import (
 // startTimeField is starttime's 0-based index among the stat fields that follow comm's closing paren.
 const startTimeField = 19
 
-// procStartTime reads pid's start time from /proc/<pid>/stat. Parsing resumes
-// after the last ')' because comm is unquoted and may itself contain parens.
+// procStartTime reads /proc/<pid>/stat; parsing resumes after the last ')' because comm may itself contain parens.
 func procStartTime(pid int) (uint64, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)) //nolint:gosec // internal runtime path
 	if err != nil {

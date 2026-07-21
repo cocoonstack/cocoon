@@ -1,6 +1,4 @@
-// Package daemon is the resident supervisor for VMs the cocoon CLI created: it adopts their
-// VMM processes, observes exits, and converges metadata and host networking — optionally, so no
-// CLI verb depends on it.
+// Package daemon is the optional resident supervisor: it adopts the CLI's VMM processes, observes exits, and converges metadata and host networking.
 package daemon
 
 import (
@@ -60,12 +58,6 @@ type Daemon struct {
 
 // New builds a daemon over already-wired backends; store is the shared meta store the CLI also writes.
 func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) {
-	if conf.RootDir == "" {
-		return nil, fmt.Errorf("root dir must not be empty")
-	}
-	if len(backends) == 0 {
-		return nil, fmt.Errorf("no hypervisor backends to supervise")
-	}
 	if conf.ReconcileInterval <= 0 {
 		conf.ReconcileInterval = DefaultReconcileInterval
 	}
@@ -179,8 +171,7 @@ func (d *Daemon) settle(ctx context.Context) bool {
 	}
 }
 
-// gcTick returns the periodic-GC channel and its stop. GC is off unless an
-// interval is configured; a nil channel never fires, so the select arm goes inert.
+// gcTick returns the periodic-GC channel and its stop; with GC off (the default) the nil channel keeps the select arm inert.
 func (d *Daemon) gcTick() (<-chan time.Time, func()) {
 	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
 		return nil, func() {}

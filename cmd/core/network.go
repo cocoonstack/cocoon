@@ -21,8 +21,7 @@ var (
 
 var _ hypervisor.VMNetwork = (*NetProviders)(nil)
 
-// NetProviders resolves and caches the network provider each VM's record names;
-// one instance is shared across concurrent VM operations.
+// NetProviders resolves and caches the network provider each VM's record names.
 type NetProviders struct {
 	conf *config.Config
 
@@ -31,8 +30,7 @@ type NetProviders struct {
 	bridge map[string]network.Network
 }
 
-// NetworkSeam returns the process-wide host-networking seam, so both hypervisor
-// backends share one provider cache rather than building one each.
+// NetworkSeam returns the process-wide seam, so both backends share one provider cache.
 func NetworkSeam(conf *config.Config) *NetProviders {
 	netOnce.Do(func() { netSeam = NewNetProviders(conf) })
 	return netSeam
@@ -44,9 +42,6 @@ func NewNetProviders(conf *config.Config) *NetProviders {
 
 // ForVM picks the provider from the VM's persisted network state.
 func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
-	if vm == nil {
-		return nil, fmt.Errorf("no VM record")
-	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if vm.ResolvedNetBackend() != types.BackendBridge {
@@ -78,9 +73,7 @@ func (n *NetProviders) cniLocked() (network.Network, error) {
 	return n.cni, nil
 }
 
-// Recover verifies the VM's plumbing, rebuilding it when missing and lifting the
-// stop-time quiesce otherwise. Its error aborts the launch: booting a VM whose
-// host networking is half-built strands it with no way to reach the network.
+// Recover verifies, rebuilds or un-quiesces the VM's plumbing; its error aborts the launch, since half-built networking strands the guest.
 func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	backend := vm.ResolvedNetBackend()
 	if backend == "" || (backend == types.BackendBridge && len(vm.NetworkConfigs) == 0) {

@@ -9,8 +9,7 @@ import (
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
-// NewGCOrchestrator registers every collector: image, hypervisor (both backends,
-// so a sweep protects blobs pinned by either), network and snapshot.
+// NewGCOrchestrator registers every collector; both hypervisor backends join so a sweep protects blobs pinned by either.
 func NewGCOrchestrator(ctx context.Context, conf *config.Config, snapOpts ...localfile.Option) (*gc.Orchestrator, error) {
 	backends, err := InitImageBackends(ctx, conf)
 	if err != nil {
