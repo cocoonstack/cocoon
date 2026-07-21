@@ -16,6 +16,7 @@ import (
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	cmdimages "github.com/cocoonstack/cocoon/cmd/images"
+	cmdmeta "github.com/cocoonstack/cocoon/cmd/meta"
 	cmdothers "github.com/cocoonstack/cocoon/cmd/others"
 	cmdsnapshot "github.com/cocoonstack/cocoon/cmd/snapshot"
 	cmdvm "github.com/cocoonstack/cocoon/cmd/vm"
@@ -75,6 +76,7 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("stop_timeout_seconds", 30)
 	viper.SetDefault("pool_size", runtime.NumCPU())
 	viper.SetDefault("pull_conns", 8)
+	viper.SetDefault("meta_backend", "json")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.max_size", 500)
 	viper.SetDefault("log.max_age", 28)
@@ -85,6 +87,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(cmdimages.Command(cmdimages.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmdvm.Command(cmdvm.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmdsnapshot.Command(cmdsnapshot.Handler{BaseHandler: base}))
+	cmd.AddCommand(cmdmeta.Command(cmdmeta.Handler{BaseHandler: base}))
 	for _, c := range cmdothers.Commands(cmdothers.Handler{BaseHandler: base}) {
 		cmd.AddCommand(c)
 	}
@@ -98,8 +101,7 @@ func initConfig(ctx context.Context) error {
 	}
 	if err := viper.ReadInConfig(); err != nil {
 		// No config file is OK; a corrupt/unreadable one is not.
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
 			return fmt.Errorf("read config: %w", err)
 		}
 	}

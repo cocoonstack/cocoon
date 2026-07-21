@@ -11,6 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringfile "github.com/cocoonstack/cocoon/metering/file"
+	"github.com/cocoonstack/cocoon/metering/metalog"
 	meteringstderr "github.com/cocoonstack/cocoon/metering/stderr"
 )
 
@@ -34,12 +35,24 @@ func MeteringRecorder(ctx context.Context, conf *config.Config) metering.Recorde
 
 func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	switch conf.Metering.Backend {
-	case "", "file":
+	case "", config.MeteringFile:
 		return buildFileRecorder(ctx, conf)
-	case "nop":
+	case config.MeteringNop:
 		return metering.NopRecorder{}
-	case "stderr":
+	case config.MeteringStderr:
 		return meteringstderr.New()
+	case config.MeteringMeta:
+		// The json engine writes the metering namespace under this dir.
+		if err := os.MkdirAll(filepath.Join(conf.RootDir, meteringSubdir), 0o750); err != nil {
+			log.WithFunc("core.buildRecorder").Warnf(ctx, "mkdir metering dir: %v; metering disabled", err)
+			return metering.NopRecorder{}
+		}
+		s, err := MetaStore(conf)
+		if err != nil {
+			log.WithFunc("core.buildRecorder").Warnf(ctx, "meta store: %v; metering disabled", err)
+			return metering.NopRecorder{}
+		}
+		return metalog.New(s)
 	default:
 		log.WithFunc("core.buildRecorder").Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
 		return metering.NopRecorder{}

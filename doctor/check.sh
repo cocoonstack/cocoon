@@ -16,6 +16,7 @@ COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 COCOON_LOG_DIR="${COCOON_LOG_DIR:-/var/log/cocoon}"
 COCOON_CNI_CONF_DIR="${COCOON_CNI_CONF_DIR:-/etc/cni/net.d}"
 COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
+COCOON_META_BACKEND="${COCOON_META_BACKEND:-json}"
 
 # Dependency versions
 CH_VERSION="${CH_VERSION:-v51.1}"
@@ -63,6 +64,7 @@ Environment variables:
   CNI_VERSION   CNI plugins version         (default: ${CNI_VERSION})
   COCOON_ROOT_DIR / COCOON_RUN_DIR / COCOON_LOG_DIR
   COCOON_CNI_CONF_DIR / COCOON_CNI_BIN_DIR
+  COCOON_META_BACKEND Metadata engine       (default: ${COCOON_META_BACKEND})
 EOF
             exit 0
             ;;
@@ -258,6 +260,21 @@ check_dir() {
 }
 
 check_dir "$COCOON_ROOT_DIR"
+
+if [ "$COCOON_META_BACKEND" = "sqlite" ]; then
+    # SQLite WAL needs coherent shared memory; report the same filesystem
+    # refusal enforced by cocoon open/init/convert (design v2.29 clause 4).
+    meta_fstype=$(stat -f -c %T "$COCOON_ROOT_DIR" 2>/dev/null || echo unknown)
+    case "$meta_fstype" in
+        nfs*|cifs|smb*|fuse*)
+            fail "meta root on $meta_fstype: sqlite WAL needs coherent shared memory; cocoon refuses this filesystem"
+            ;;
+        *)
+            pass "meta root filesystem ($meta_fstype) supports WAL"
+            ;;
+    esac
+fi
+
 check_dir "$COCOON_RUN_DIR"
 check_dir "$COCOON_LOG_DIR"
 check_dir "${COCOON_ROOT_DIR}/cloudhypervisor/db"

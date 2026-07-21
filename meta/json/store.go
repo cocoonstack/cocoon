@@ -128,7 +128,7 @@ func (s *Store) Close() error {
 	defer s.mu.Unlock()
 	s.closed = true
 	if s.events != nil {
-		s.events.stop()
+		s.events.b.Stop()
 		s.events = nil
 	}
 	return nil
@@ -348,8 +348,6 @@ func (w *txWriter) DeleteRaw(_ context.Context, ns, table, id string, relaxedOK 
 	w.model.Delete(table, id)
 	return nil
 }
-
-func (w *txWriter) Mode() meta.CommitMode { return w.mode }
 
 func (w *txWriter) check(ns string, relaxedOK bool) error {
 	if ns != w.write {

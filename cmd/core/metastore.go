@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	"github.com/projecteru2/core/log"
@@ -13,15 +14,18 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/metering/metalog"
 	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
 var (
 	metaOnce  sync.Once
-	metaStore *metajson.Store
+	metaStore meta.Store
 	metaErr   error
 
 	// vmTables maps the legacy vms.json fields onto the vms-namespace tables;
@@ -47,24 +51,76 @@ var (
 	}}
 )
 
+// MetaNamespaces lists every namespace with its tables — the engine-neutral
+// declaration both engines consume.
+func MetaNamespaces() []metasqlite.Namespace {
+	return []metasqlite.Namespace{
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: localfile.NamespaceName, Tables: []string{localfile.TableRecords, localfile.TableNames, tombstone.TableName}},
+		{Name: oci.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
+		{Name: cloudimg.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
+		{Name: cni.NamespaceName, Tables: []string{cni.TableRecords, tombstone.TableName}},
+		{Name: metalog.NamespaceName, Tables: []string{metalog.TableEntries}},
+	}
+}
+
+// MetaJSONNamespaces declares the json engine's namespace set: legacy file
+// locations and field mappings, consumed by open and by conversion.
+func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
+	chCfg := cloudhypervisor.NewConfig(conf)
+	fcCfg := firecracker.NewConfig(conf)
+	snapCfg := localfile.NewConfig(conf)
+	cniCfg := cni.NewConfig(conf)
+	ociCfg := oci.NewConfig(conf.RootDir, 0)
+	cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
+	return []metajson.Namespace{
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
+		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
+		{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
+		{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
+		{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
+		{
+			Name:     metalog.NamespaceName,
+			FilePath: filepath.Join(conf.RootDir, meteringSubdir, "log.json"),
+			LockPath: filepath.Join(conf.RootDir, meteringSubdir, "log.lock"),
+			Codec:    metajson.GenericCodec{},
+		},
+	}
+}
+
+// MetaDBPath is the sqlite engine's database under the meta root.
+func MetaDBPath(conf *config.Config) string {
+	return filepath.Join(conf.RootDir, "meta", metasqlite.DBFileName)
+}
+
 // MetaStore builds the process-wide meta store once — one store, every
 // namespace — and injects it into every backend (design §10 P0 boundary).
-func MetaStore(conf *config.Config) (*metajson.Store, error) {
+// The engine follows conf.MetaBackend: json (default) or sqlite.
+func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
-		chCfg := cloudhypervisor.NewConfig(conf)
-		fcCfg := firecracker.NewConfig(conf)
-		snapCfg := localfile.NewConfig(conf)
-		cniCfg := cni.NewConfig(conf)
-		ociCfg := oci.NewConfig(conf.RootDir, 0)
-		cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
-		metaStore, metaErr = metajson.Open(
-			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
-			metajson.Namespace{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
-			metajson.Namespace{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
-			metajson.Namespace{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
-			metajson.Namespace{Name: cloudimg.NamespaceName, FilePath: cloudimgCfg.IndexFile(), LockPath: cloudimgCfg.IndexLock(), Codec: imageTables},
-			metajson.Namespace{Name: cni.NamespaceName, FilePath: cniCfg.IndexFile(), LockPath: cniCfg.IndexLock(), Codec: netTables},
-		)
+		// Ordinary opens of EITHER engine refuse while a conversion is in
+		// flight (§6); the json engine cannot see the manifest itself.
+		if err := metasqlite.RefuseManifest(MetaDBPath(conf)); err != nil {
+			metaErr = err
+			return
+		}
+		// Assign the interface only on success: a typed-nil store would pass
+		// CloseMetaStore's nil check and panic.
+		if conf.MetaBackend == "sqlite" {
+			if s, err := metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...); err != nil {
+				metaErr = err
+			} else {
+				metaStore = s
+			}
+			return
+		}
+		if s, err := metajson.Open(MetaJSONNamespaces(conf)...); err != nil {
+			metaErr = err
+		} else {
+			metaStore = s
+		}
 	})
 	return metaStore, metaErr
 }

@@ -73,7 +73,6 @@ type Writer interface {
 	Reader
 	PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error
 	DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error
-	Mode() CommitMode
 }
 
 func relaxedOK(opts []WriteOpt) bool {

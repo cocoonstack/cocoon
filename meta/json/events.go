@@ -4,16 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
-	"time"
 
 	"github.com/fsnotify/fsnotify"
-)
 
-const (
-	eventsDebounce   = 50 * time.Millisecond
-	eventsSafetyPoll = 5 * time.Second
+	"github.com/cocoonstack/cocoon/meta"
 )
 
 // Events subscribes to committed-change signals: fsnotify confirmed against each file's (inode, size, mtime) identity, with a safety poll as a floor for missed events.
@@ -30,20 +25,18 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 		}
 		s.events = n
 	}
-	ch, release := s.events.subscribe()
+	ch, release := s.events.b.Subscribe()
 	stop := context.AfterFunc(ctx, release)
 	return ch, func() { stop(); release() }, nil
 }
 
+// notifier holds the engine-specific change detector; tokens are touched
+// only by the init call and the Run goroutine.
 type notifier struct {
-	watcher *fsnotify.Watcher
+	b       *meta.Broadcaster
+	watcher *fsnotify.Watcher // kept for the severed-watch test seam
 	files   []string
-	done    chan struct{}
-
-	mu     sync.Mutex
-	subs   map[int]chan struct{}
-	nextID int
-	tokens map[string]fileToken
+	tokens  map[string]fileToken
 }
 
 func newNotifier(nss map[string]*nsState) (*notifier, error) {
@@ -51,12 +44,7 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &notifier{
-		watcher: watcher,
-		done:    make(chan struct{}),
-		subs:    map[int]chan struct{}{},
-		tokens:  map[string]fileToken{},
-	}
+	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, tokens: map[string]fileToken{}}
 	dirs := map[string]struct{}{}
 	for _, st := range nss {
 		n.files = append(n.files, st.def.FilePath)
@@ -68,75 +56,12 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 			return nil, err
 		}
 	}
-	n.checkAndBroadcast()
-	go n.loop()
+	n.check()
+	go n.b.Run(n.check, testWatchErrs)
 	return n, nil
 }
 
-func (n *notifier) subscribe() (chan struct{}, func()) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	id := n.nextID
-	n.nextID++
-	ch := make(chan struct{}, 1)
-	n.subs[id] = ch
-	var once sync.Once
-	return ch, func() {
-		once.Do(func() {
-			n.mu.Lock()
-			defer n.mu.Unlock()
-			delete(n.subs, id)
-		})
-	}
-}
-
-func (n *notifier) stop() {
-	close(n.done)
-	_ = n.watcher.Close()
-}
-
-func (n *notifier) loop() {
-	watchErrs := testWatchErrs // seam snapshot at spawn; nil outside tests
-	timer := time.NewTimer(0)
-	if !timer.Stop() {
-		<-timer.C
-	}
-	pending := false
-	poll := time.NewTicker(eventsSafetyPoll)
-	defer poll.Stop()
-
-	for {
-		select {
-		case <-n.done:
-			return
-		case _, ok := <-n.watcher.Events:
-			if !ok {
-				return
-			}
-			if !pending {
-				timer.Reset(eventsDebounce)
-				pending = true
-			}
-		case _, ok := <-n.watcher.Errors:
-			// Overflow or watch error: re-read the token immediately and signal if it moved.
-			if !ok {
-				return
-			}
-			n.checkAndBroadcast()
-		case <-watchErrs:
-			n.checkAndBroadcast()
-		case <-timer.C:
-			pending = false
-			n.checkAndBroadcast()
-		case <-poll.C:
-			n.checkAndBroadcast()
-		}
-	}
-}
-
-func (n *notifier) checkAndBroadcast() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+func (n *notifier) check() {
 	changed := false
 	for _, f := range n.files {
 		tok := statToken(f)
@@ -145,14 +70,8 @@ func (n *notifier) checkAndBroadcast() {
 			changed = true
 		}
 	}
-	if !changed {
-		return
-	}
-	for _, ch := range n.subs {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
+	if changed {
+		n.b.Broadcast()
 	}
 }
 

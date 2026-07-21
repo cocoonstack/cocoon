@@ -378,3 +378,37 @@ func TestCleanUpdateSkipsCommit(t *testing.T) {
 		t.Fatal("clean transaction rewrote the namespace file")
 	}
 }
+
+func TestTrailingDataFallsBackToPrev(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	s := newStore(t, dir, "alpha")
+	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	path := filepath.Join(dir, "alpha.json")
+
+	for gen := 1; gen <= 2; gen++ {
+		v := map[string]int{"gen": gen}
+		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+			if gen == 1 {
+				return c.Insert(ctx, w, "a", &v)
+			}
+			return c.Replace(ctx, w, "a", &v)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Legacy json.Unmarshal rejected trailing bytes; the streaming decoder
+	// must too, so this main is corrupt and .prev is served.
+	main, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(main, []byte("{}garbage")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s2 := newStore(t, dir, "alpha")
+	got, err := mustGet(t, s2, "alpha", "a")
+	if err != nil || (*got)["gen"] != 1 {
+		t.Fatalf("trailing-data main was served instead of .prev: %v, %v", got, err)
+	}
+}
