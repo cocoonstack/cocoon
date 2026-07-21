@@ -39,7 +39,7 @@ type Supervisor = hypervisor.Supervisable
 type Config struct {
 	RootDir           string
 	ReconcileInterval time.Duration
-	// GCInterval enables the periodic GC run; zero leaves GC to the CLI.
+	// GCInterval enables the periodic GC run; zero (the default) leaves GC a CLI verb.
 	GCInterval time.Duration
 	GC         func(context.Context) error
 	// APIAddr is the read-only API's unix socket path; empty disables it.
@@ -117,8 +117,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	ticker := time.NewTicker(d.conf.ReconcileInterval)
 	defer ticker.Stop()
-	gcTick := d.gcTicker()
-	defer gcTick.Stop()
+	gcTick, stopGC := d.gcTick()
+	defer stopGC()
 
 	logger.Infof(ctx, "supervising %d backend(s), reconcile every %s", len(d.order), d.conf.ReconcileInterval)
 	d.reconcile(ctx)
@@ -145,7 +145,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.handleExit(ctx, ev)
 			// The convergence just written wakes this daemon's own subscription; its pass already ran.
 			drain(events)
-		case <-gcTick.C:
+		case <-gcTick:
 			d.runGC(ctx)
 		}
 	}
@@ -179,14 +179,14 @@ func (d *Daemon) settle(ctx context.Context) bool {
 	}
 }
 
-func (d *Daemon) gcTicker() *time.Ticker {
+// gcTick returns the periodic-GC channel and its stop. GC is off unless an
+// interval is configured; a nil channel never fires, so the select arm goes inert.
+func (d *Daemon) gcTick() (<-chan time.Time, func()) {
 	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
-		// A stopped ticker's channel never fires, so the select arm stays inert.
-		t := time.NewTicker(time.Hour)
-		t.Stop()
-		return t
+		return nil, func() {}
 	}
-	return time.NewTicker(d.conf.GCInterval)
+	t := time.NewTicker(d.conf.GCInterval)
+	return t.C, t.Stop
 }
 
 // runGC starts a collection off the supervision loop, unless one is still in flight.
