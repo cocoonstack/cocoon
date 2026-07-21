@@ -15,31 +15,35 @@ import (
 // reconcile runs one idempotent pass over every backend and republishes the API snapshot.
 func (d *Daemon) reconcile(ctx context.Context) {
 	all := make([]VMStatus, 0, d.state.size())
-	healthy := true
+	healthy, degraded := true, 0
 	for _, b := range d.order {
-		st, err := d.reconcileBackend(ctx, b)
+		st, failed, err := d.reconcileBackend(ctx, b)
+		// Only a scan failure is unhealthy: 503 means "restarting me might help",
+		// and restarting fixes a store the daemon cannot read. Per-VM failures are
+		// reported as degraded instead — one VM nobody can converge must not put a
+		// working daemon into a restart loop.
 		if err != nil {
 			healthy = false
 		}
+		degraded += failed
 		all = append(all, st...)
 	}
-	d.state.publish(all, healthy, time.Now())
+	d.state.publish(all, healthy, degraded, time.Now())
 }
 
-// reconcileBackend returns the backend's statuses plus the first failure the pass
-// hit. A busy ops lock is not a failure — it is the normal way supervision yields
-// to a command — but anything else means the pass did not fully succeed, which is
-// what /healthz reports.
-func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus, error) {
+// reconcileBackend returns the backend's statuses, how many VMs the pass could
+// not converge, and any scan failure. A busy ops lock is not a failure — it is
+// the normal way supervision yields to a command.
+func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus, int, error) {
 	scan, err := b.ScanSupervision(ctx)
 	if err != nil {
 		log.WithFunc("daemon.reconcileBackend").Errorf(ctx, err, "scan %s", b.Type())
-		return nil, err
+		return nil, 0, err
 	}
 	now := time.Now()
 	seen := make(map[string]struct{}, len(scan.Records))
 	out := make([]VMStatus, 0, len(scan.Records))
-	var failed error
+	failed := 0
 	for _, rec := range scan.Records {
 		seen[rec.ID] = struct{}{}
 		key := watchKey{backend: b.Type(), vmID: rec.ID}
@@ -50,11 +54,13 @@ func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus
 		} else {
 			live, vmErr = d.reconcileVM(ctx, b, key, rec, scan.Procs)
 		}
-		failed = cmpErr(failed, vmErr)
+		if vmErr != nil {
+			failed++
+		}
 		out = append(out, newVMStatus(b.Type(), rec, live, d.watcher.pidOf(key), now))
 	}
 	d.watcher.dropAbsent(b.Type(), seen)
-	return out, failed
+	return out, failed, nil
 }
 
 // reconcileVM applies the supervision rules to one record and reports whether a VMM generation is live.
@@ -237,12 +243,4 @@ func (d *Daemon) tryLock(ctx context.Context, b Supervisor, vmID string) (func()
 		return nil, false, err
 	}
 	return unlock, ok, nil
-}
-
-// cmpErr keeps the first failure of a pass; later ones are already logged where they happened.
-func cmpErr(first, next error) error {
-	if first != nil {
-		return first
-	}
-	return next
 }

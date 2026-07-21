@@ -28,6 +28,7 @@ type fakeSupervisor struct {
 	observeErr error
 
 	resumeErr error
+	scanErr   error
 
 	converged []convergeCall
 	adopted   []string
@@ -55,6 +56,9 @@ func (f *fakeSupervisor) Type() string { return "fake-hv" }
 func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.SupervisionScan, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.scanErr != nil {
+		return hypervisor.SupervisionScan{}, f.scanErr
+	}
 	scan := hypervisor.SupervisionScan{Tombstoned: f.tombstoned}
 	for _, rec := range f.records {
 		scan.Records = append(scan.Records, rec)
@@ -342,19 +346,23 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 	}
 }
 
-// /healthz promises a full pass succeeded, so a real failure must make the pass
-// unhealthy — while a busy ops lock, which is how supervision yields to a
-// command, must not.
-func TestPassHealthReflectsFailuresButNotBusyLocks(t *testing.T) {
+// A VM the pass could not converge is reported degraded, not unready: restarting
+// the daemon does not fix it, and 503 would put a working daemon in a restart
+// loop. A busy ops lock is not a failure at all — it is how supervision yields.
+func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	tests := []struct {
-		name    string
-		arrange func(*fakeSupervisor)
-		healthy bool
+		name     string
+		arrange  func(*fakeSupervisor)
+		degraded int
 	}{
-		{"clean pass", func(*fakeSupervisor) {}, true},
-		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, true},
-		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, false},
-		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, false},
+		{"clean pass", func(*fakeSupervisor) {}, 0},
+		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, 0},
+		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, 1},
+		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, 1},
+		{"delete cannot finish", func(f *fakeSupervisor) {
+			f.tombstoned["vm1"] = struct{}{}
+			f.resumeErr = fmt.Errorf("cni down")
+		}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -363,21 +371,25 @@ func TestPassHealthReflectsFailuresButNotBusyLocks(t *testing.T) {
 			d := newTestDaemon(t, f)
 			d.reconcile(t.Context())
 
-			if _, healthy, _ := d.state.snapshot(); healthy != tt.healthy {
-				t.Errorf("got healthy=%v, want %v", healthy, tt.healthy)
+			_, h := d.state.snapshot()
+			if h.degraded != tt.degraded {
+				t.Errorf("got degraded=%d, want %d", h.degraded, tt.degraded)
+			}
+			if !h.ok {
+				t.Error("a pass that ran reported unready; only a scan failure may")
 			}
 		})
 	}
 }
 
-func TestPassUnhealthyWhenAnInterruptedDeleteCannotFinish(t *testing.T) {
+// A backend the daemon cannot even scan is the one case where restarting might help.
+func TestPassUnreadyWhenABackendCannotBeScanned(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
-	f.tombstoned["vm1"] = struct{}{}
-	f.resumeErr = fmt.Errorf("cni down")
+	f.scanErr = fmt.Errorf("meta store unavailable")
 	d := newTestDaemon(t, f)
 	d.reconcile(t.Context())
 
-	if _, healthy, _ := d.state.snapshot(); healthy {
-		t.Error("a delete that could not be finished reported a healthy pass")
+	if _, h := d.state.snapshot(); h.ok {
+		t.Error("a backend that could not be scanned still reported ready")
 	}
 }

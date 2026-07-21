@@ -31,12 +31,12 @@ func TestCachePublishesAddedThenModified(t *testing.T) {
 	events, release := c.subscribe()
 	defer release()
 
-	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, time.Now())
+	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, 0, time.Now())
 	if got := collect(t, events); len(got) != 1 || got[0].Kind != changeAdded {
 		t.Fatalf("got %+v, want one ADDED", got)
 	}
 
-	c.publish([]VMStatus{statusOf("vm1", types.VMStateStopped, 2, false)}, true, time.Now())
+	c.publish([]VMStatus{statusOf("vm1", types.VMStateStopped, 2, false)}, true, 0, time.Now())
 	got := collect(t, events)
 	if len(got) != 1 || got[0].Kind != changeModified {
 		t.Fatalf("got %+v, want one MODIFIED", got)
@@ -49,11 +49,11 @@ func TestCachePublishesAddedThenModified(t *testing.T) {
 func TestCacheEmitsNothingForAnUnchangedPass(t *testing.T) {
 	c := newCache()
 	st := statusOf("vm1", types.VMStateRunning, 1, true)
-	c.publish([]VMStatus{st}, true, time.Now())
+	c.publish([]VMStatus{st}, true, 0, time.Now())
 	events, release := c.subscribe()
 	defer release()
 
-	c.publish([]VMStatus{st}, true, time.Now())
+	c.publish([]VMStatus{st}, true, 0, time.Now())
 	if got := collect(t, events); len(got) != 0 {
 		t.Errorf("got %+v, want no events when nothing a consumer acts on changed", got)
 	}
@@ -61,11 +61,11 @@ func TestCacheEmitsNothingForAnUnchangedPass(t *testing.T) {
 
 func TestCachePublishesDeleted(t *testing.T) {
 	c := newCache()
-	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, time.Now())
+	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, 0, time.Now())
 	events, release := c.subscribe()
 	defer release()
 
-	c.publish(nil, true, time.Now())
+	c.publish(nil, true, 0, time.Now())
 	got := collect(t, events)
 	if len(got) != 1 || got[0].Kind != changeDeleted || got[0].Status.ID != "vm1" {
 		t.Fatalf("got %+v, want one DELETED for vm1", got)
@@ -75,17 +75,20 @@ func TestCachePublishesDeleted(t *testing.T) {
 func TestCacheSnapshotCarriesHealth(t *testing.T) {
 	c := newCache()
 	at := time.Now()
-	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, false, at)
+	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, false, 2, at)
 
-	all, healthy, lastPass := c.snapshot()
+	all, h := c.snapshot()
 	if len(all) != 1 {
 		t.Fatalf("got %d statuses, want 1", len(all))
 	}
-	if healthy {
+	if h.ok {
 		t.Error("a pass that failed a backend scan reported healthy")
 	}
-	if !lastPass.Equal(at) {
-		t.Errorf("got last pass %v, want %v", lastPass, at)
+	if h.degraded != 2 {
+		t.Errorf("got degraded %d, want 2", h.degraded)
+	}
+	if !h.lastPass.Equal(at) {
+		t.Errorf("got last pass %v, want %v", h.lastPass, at)
 	}
 }
 
@@ -95,7 +98,7 @@ func TestCacheReleaseStopsDelivery(t *testing.T) {
 	events, release := c.subscribe()
 	release()
 
-	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, time.Now())
+	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, 0, time.Now())
 	if got := collect(t, events); len(got) != 0 {
 		t.Errorf("got %+v, want nothing after release", got)
 	}

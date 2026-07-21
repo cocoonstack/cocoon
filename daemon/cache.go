@@ -66,12 +66,20 @@ type changeEvent struct {
 	Status VMStatus   `json:"vm"`
 }
 
+// health is one pass's outcome: whether it ran at all, and how many VMs it could not converge.
+type health struct {
+	ok       bool
+	degraded int
+	lastPass time.Time
+}
+
 // cache holds the last published pass and fans its diff out to stream subscribers.
 type cache struct {
 	mu       sync.RWMutex
 	byKey    map[watchKey]VMStatus
 	order    []VMStatus
 	healthy  bool
+	degraded int
 	lastPass time.Time
 
 	nextSub int
@@ -89,7 +97,7 @@ func (c *cache) size() int {
 }
 
 // publish replaces the snapshot and emits the diff against the previous pass.
-func (c *cache) publish(all []VMStatus, healthy bool, at time.Time) {
+func (c *cache) publish(all []VMStatus, healthy bool, degraded int, at time.Time) {
 	next := make(map[watchKey]VMStatus, len(all))
 	for _, st := range all {
 		next[watchKey{backend: st.Backend, vmID: st.ID}] = st
@@ -112,7 +120,7 @@ func (c *cache) publish(all []VMStatus, healthy bool, at time.Time) {
 		}
 	}
 	c.byKey, c.order = next, all
-	c.healthy, c.lastPass = healthy, at
+	c.healthy, c.degraded, c.lastPass = healthy, degraded, at
 	subs := slices.Collect(maps.Values(c.subs))
 	c.mu.Unlock()
 
@@ -126,10 +134,10 @@ func (c *cache) publish(all []VMStatus, healthy bool, at time.Time) {
 	}
 }
 
-func (c *cache) snapshot() ([]VMStatus, bool, time.Time) {
+func (c *cache) snapshot() ([]VMStatus, health) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.order, c.healthy, c.lastPass
+	return c.order, health{ok: c.healthy, degraded: c.degraded, lastPass: c.lastPass}
 }
 
 // subscribe returns the change stream plus its release; the caller must drain it or lose events.

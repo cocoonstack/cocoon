@@ -65,7 +65,7 @@ record once and applies the same idempotent rules:
 | committed, not `running` | live | repair to `running` under the lock, then watch it |
 | any | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
-| unfinished delete tombstone | any | leave it to the entry guard and GC |
+| unfinished delete tombstone | any | finish the delete — supervision starts deletes of its own, so it resumes them |
 
 Exits are detected with `pidfd` + `epoll`, so the normal path costs no polling;
 the ticker is the correctness floor for anything the watcher missed, including
@@ -94,8 +94,8 @@ Supervision needs to tell a transition it has seen from one it has not, so every
 committed state change stamps the record:
 
 - `transition_generation` — increments once per committed transition;
-- `last_transition_reason` — `boot`, `restart`, `restore`, `stop-user`, `error`,
-  or `unexpected-exit`;
+- `last_transition_reason` — `create`, `boot`, `restart`, `clone`, `restore`,
+  `stop-user`, `error`, or `unexpected-exit`;
 - `last_transition_at`.
 
 `cocoon vm inspect` shows all three.
@@ -114,7 +114,11 @@ curl --unix-socket /var/lib/cocoon/run/cocoond.sock http://localhost/v1/vms
 curl --unix-socket /var/lib/cocoon/run/cocoond.sock -N http://localhost/v1/events
 ```
 
-- `GET /healthz` — 200 only while a full pass has succeeded recently, 503 otherwise.
+- `GET /healthz` — 200 while the loop is running and its last pass is recent;
+  503 only when a backend could not be scanned at all or the loop has stalled,
+  since that is the case where restarting the daemon might help. VMs the pass
+  could not converge are reported as a `degraded` count instead — a single VM
+  nobody can converge must not put a working daemon into a restart loop.
 - `GET /v1/vms` — every supervised VM: persisted state, transition triple, current
   liveness, watched pid.
 - `GET /v1/events` — SSE. Opens with a `sync` snapshot, then streams `ADDED`,

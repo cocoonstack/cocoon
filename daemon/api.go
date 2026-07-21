@@ -32,9 +32,12 @@ type vmsResponse struct {
 	VMs []VMStatus `json:"vms"`
 }
 
-// healthResponse reports whether a full pass succeeded inside the freshness window.
+// healthResponse reports whether the loop is running, and how many VMs the last
+// pass could not converge. Degraded VMs do not make it unready: restarting the
+// daemon does not fix a VM nobody can converge, and a restart loop is worse.
 type healthResponse struct {
 	OK       bool      `json:"ok"`
+	Degraded int       `json:"degraded"`
 	LastPass time.Time `json:"last_pass"`
 	VMs      int       `json:"vms"`
 }
@@ -92,17 +95,17 @@ func (d *Daemon) routes() http.Handler {
 }
 
 func (d *Daemon) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	all, healthy, lastPass := d.state.snapshot()
-	ok := healthy && !lastPass.IsZero() && time.Since(lastPass) < healthStaleFactor*d.conf.ReconcileInterval
+	all, h := d.state.snapshot()
+	ok := h.ok && !h.lastPass.IsZero() && time.Since(h.lastPass) < healthStaleFactor*d.conf.ReconcileInterval
 	status := http.StatusOK
 	if !ok {
 		status = http.StatusServiceUnavailable
 	}
-	writeJSON(w, status, healthResponse{OK: ok, LastPass: lastPass, VMs: len(all)})
+	writeJSON(w, status, healthResponse{OK: ok, Degraded: h.degraded, LastPass: h.lastPass, VMs: len(all)})
 }
 
 func (d *Daemon) handleVMs(w http.ResponseWriter, _ *http.Request) {
-	all, _, _ := d.state.snapshot()
+	all, _ := d.state.snapshot()
 	writeJSON(w, http.StatusOK, vmsResponse{VMs: all})
 }
 
@@ -117,7 +120,7 @@ func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	rc := http.NewResponseController(w)
 
-	all, _, _ := d.state.snapshot()
+	all, _ := d.state.snapshot()
 	if err := writeSSE(w, rc, "sync", vmsResponse{VMs: all}); err != nil {
 		return
 	}
