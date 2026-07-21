@@ -13,11 +13,7 @@ func SplitRanges(size int64, n int) [][2]int64 {
 	chunk := (size + int64(n) - 1) / int64(n)
 	ranges := make([][2]int64, 0, n)
 	for start := int64(0); start < size; start += chunk {
-		end := start + chunk - 1
-		if end >= size {
-			end = size - 1
-		}
-		ranges = append(ranges, [2]int64{start, end})
+		ranges = append(ranges, [2]int64{start, min(start+chunk-1, size-1)})
 	}
 	return ranges
 }
