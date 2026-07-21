@@ -98,9 +98,9 @@ func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) 
 // Run supervises until ctx is canceled; it returns ErrAlreadyRunning when another instance holds the lock.
 func (d *Daemon) Run(ctx context.Context) error {
 	logger := log.WithFunc("daemon.Run")
-	unlock, err := d.lockInstance(ctx)
-	if err != nil {
-		return err
+	unlock, lockErr := d.lockInstance(ctx)
+	if lockErr != nil {
+		return lockErr
 	}
 	defer unlock()
 
@@ -110,14 +110,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer d.watcher.close()
 
 	if d.conf.APIAddr != "" {
-		stopAPI, err := d.serveAPI(ctx)
-		if err != nil {
-			return fmt.Errorf("serve api: %w", err)
+		stopAPI, apiErr := d.serveAPI(ctx)
+		if apiErr != nil {
+			return fmt.Errorf("serve api: %w", apiErr)
 		}
 		defer stopAPI()
 	}
 
-	events, release := d.subscribe(ctx)
+	events, release, subErr := d.subscribe(ctx)
+	if subErr != nil {
+		logger.Warnf(ctx, "meta change events unavailable, reconciling on the ticker only: %v", subErr)
+	}
 	defer func() {
 		if release != nil {
 			release()
@@ -138,9 +141,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ticker.C:
 			// The meta layer never closes a subscriber channel, so a dead
 			// subscription is invisible: the ticker is the correctness floor and
-			// also the resubscribe cadence.
+			// also the resubscribe cadence. Retries stay silent — only the first
+			// failure and the recovery are worth a line.
 			if events == nil {
-				events, release = d.subscribe(ctx)
+				if ch, rel, retryErr := d.subscribe(ctx); retryErr == nil {
+					events, release = ch, rel
+					logger.Info(ctx, "meta change events restored")
+				}
 			}
 			d.reconcile(ctx)
 		case <-events:
@@ -173,14 +180,9 @@ func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
 	return func() { _ = l.Unlock(ctx) }, nil
 }
 
-// subscribe returns a coalesced meta change signal; a nil channel degrades to ticker-only reconciliation.
-func (d *Daemon) subscribe(ctx context.Context) (<-chan struct{}, func()) {
-	ch, release, err := d.store.Events(ctx)
-	if err != nil {
-		log.WithFunc("daemon.subscribe").Warnf(ctx, "meta events unavailable, reconciling on the ticker only: %v", err)
-		return nil, nil
-	}
-	return ch, release
+// subscribe returns a coalesced meta change signal; on error the caller degrades to ticker-only reconciliation.
+func (d *Daemon) subscribe(ctx context.Context) (<-chan struct{}, func(), error) {
+	return d.store.Events(ctx)
 }
 
 // settle waits out the debounce window; false means the daemon is shutting down.

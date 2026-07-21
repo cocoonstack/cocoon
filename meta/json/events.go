@@ -2,6 +2,8 @@ package json
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -51,7 +53,10 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 		dirs[filepath.Dir(st.def.FilePath)] = struct{}{}
 	}
 	for dir := range dirs {
-		if err := watcher.Add(dir); err != nil {
+		// A namespace whose owning backend has not run yet has no directory to
+		// watch; the safety poll still covers it and a later subscribe picks the
+		// watch up, so a missing dir must not disable the whole subscription.
+		if err := watcher.Add(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			_ = watcher.Close()
 			return nil, err
 		}

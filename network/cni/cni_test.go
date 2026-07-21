@@ -3,6 +3,7 @@ package cni
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -305,6 +306,27 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	}
 }
 
+func TestQuiesceSkipsMissingNetns(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	called := false
+	origSet := setLinkStateFn
+	setLinkStateFn = func(string, []string, bool) error { called = true; return nil }
+	origStat := statNetnsFn
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
+	t.Cleanup(func() { setLinkStateFn, statNetnsFn = origSet, origStat })
+
+	seedRecords(t, c, "vm1", "eth0")
+
+	// A host reboot wipes every netns while the records survive; with no plumbing
+	// left, a stop's pending quiesce must settle instead of retrying forever.
+	if err := c.Quiesce(t.Context(), "vm1"); err != nil {
+		t.Fatalf("Quiesce with a missing netns: %v", err)
+	}
+	if called {
+		t.Error("tried to enter a netns that no longer exists")
+	}
+}
+
 func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	var gotNS string
@@ -317,6 +339,9 @@ func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { setLinkStateFn = origSet })
+	origStat := statNetnsFn
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
+	t.Cleanup(func() { statNetnsFn = origStat })
 
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
