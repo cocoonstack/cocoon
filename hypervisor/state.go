@@ -28,9 +28,7 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 	return b.withRunningVM(ctx, rec, nil, fn)
 }
 
-// withRunningVM resolves liveness against scan when the caller already walked
-// /proc for this pass; a nil scan walks it now. The fallback walk is per-call,
-// so a batch that skips it turns N walks into one.
+// withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.
 func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
 	logger := log.WithFunc(b.Typ + ".WithRunningVM")
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
@@ -172,10 +170,7 @@ func (b *Backend) MarkError(ctx context.Context, id string) {
 	}
 }
 
-// markFailedOperation records retryable host-network convergence after an
-// operation may have brought plumbing up without committing a usable VMM.
-// The daemon re-observes liveness before acting: a surviving VMM is adopted,
-// while a dead one is quiesced and clears the pending bit.
+// markFailedOperation records retryable network convergence after an operation may have brought plumbing up without committing a usable VMM; the daemon re-observes before acting on it.
 func (b *Backend) markFailedOperation(ctx context.Context, id string, markError bool) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
@@ -245,8 +240,8 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	})
 }
 
-// ReconcileToRunning flips State→Running for a drifted record whose process is alive and returns the generation it committed (zero when it changed nothing); the caller holds the VM ops lock. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
-func (b *Backend) ReconcileToRunning(ctx context.Context, id string) uint64 {
+// ReconcileToRunning flips a drifted record with a live process back to Running under the caller's ops lock, returning the committed generation (zero if unchanged); without an open interval it emits a fresh compute.start so a later stop stays matched.
+func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, error) {
 	now := timeNow()
 	var (
 		emit   bool
@@ -260,8 +255,7 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) uint64 {
 		if err != nil {
 			return err
 		}
-		// A quarantined or still-creating record is nobody's to promote: repairing it
-		// would clear StoppedAt and the pending quiesce for a VM that never committed.
+		// A quarantined or still-creating record is nobody's to promote.
 		if r == nil || r.State == types.VMStateRunning || r.State == types.VMStateCreating || r.Quarantine != "" {
 			return nil
 		}
@@ -282,12 +276,12 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) uint64 {
 		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".ReconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
-		return 0
+		return 0, err
 	}
 	if emit {
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 	}
-	return gen
+	return gen, nil
 }
 
 // detachedWrite returns a context for bookkeeping writes that must survive caller cancellation, bounded by persistTimeout.
@@ -300,7 +294,7 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// markTransition stamps one committed state change; every record state write goes through it so generations stay dense enough to fence a stale observation against a newer transition.
+// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations.
 func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
 	r.State = state
 	r.TransitionGeneration++
@@ -309,12 +303,11 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 	r.UpdatedAt = at
 }
 
-// needsQuiesce reports whether the VM owns host plumbing a stop must bring down; it mirrors the provider selection, where a missing backend or NIC set means there is nothing to quiesce.
+// needsQuiesce reports whether the VM owns host plumbing a stop must bring down.
 func needsQuiesce(r *VMRecord) bool {
 	return r != nil && r.ResolvedNetBackend() != "" && len(r.NetworkConfigs) > 0
 }
 
-// bootReasons maps first-boot state onto the metering and transition vocabularies, which name the same event.
 func bootReasons(firstBooted bool) (metering.Reason, types.TransitionReason) {
 	if firstBooted {
 		return metering.ReasonRestart, types.TransitionRestart

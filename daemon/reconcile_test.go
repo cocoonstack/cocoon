@@ -119,17 +119,17 @@ func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64
 	return nil
 }
 
-func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) uint64 {
+func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) (uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rec := f.records[vmID]
 	if rec == nil || rec.Quarantine != "" || rec.State == types.VMStateCreating {
-		return 0
+		return 0, nil
 	}
 	f.adopted = append(f.adopted, vmID)
 	rec.State = types.VMStateRunning
 	rec.TransitionGeneration++
-	return rec.TransitionGeneration
+	return rec.TransitionGeneration, nil
 }
 
 func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool, error) {

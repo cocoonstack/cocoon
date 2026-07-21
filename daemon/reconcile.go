@@ -14,14 +14,11 @@ import (
 
 // reconcile runs one idempotent pass over every backend and republishes the API snapshot.
 func (d *Daemon) reconcile(ctx context.Context) {
-	all := make([]VMStatus, 0, d.state.size())
+	var all []VMStatus
 	healthy, degraded := true, 0
 	for _, b := range d.order {
 		st, failed, err := d.reconcileBackend(ctx, b)
-		// Only a scan failure is unhealthy: 503 means "restarting me might help",
-		// and restarting fixes a store the daemon cannot read. Per-VM failures are
-		// reported as degraded instead — one VM nobody can converge must not put a
-		// working daemon into a restart loop.
+		// Only a scan failure is unhealthy: a restart fixes an unreadable store, not a VM nobody can converge.
 		if err != nil {
 			healthy = false
 		}
@@ -31,9 +28,7 @@ func (d *Daemon) reconcile(ctx context.Context) {
 	d.state.publish(all, healthy, degraded, time.Now())
 }
 
-// reconcileBackend returns the backend's statuses, how many VMs the pass could
-// not converge, and any scan failure. A busy ops lock is not a failure — it is
-// the normal way supervision yields to a command.
+// reconcileBackend returns the backend's statuses, how many VMs the pass could not converge, and any scan failure; a busy ops lock is not a failure.
 func (d *Daemon) reconcileBackend(ctx context.Context, b Supervisor) ([]VMStatus, int, error) {
 	scan, err := b.ScanSupervision(ctx)
 	if err != nil {
@@ -103,9 +98,9 @@ func (d *Daemon) adoptLive(ctx context.Context, b Supervisor, key watchKey, rec 
 	if again, obsErr := b.ObserveVMM(ctx, fresh); obsErr != nil || again != proc {
 		return obsErr
 	}
-	gen := b.ReconcileToRunning(ctx, key.vmID)
-	if gen == 0 {
-		return nil
+	gen, err := b.ReconcileToRunning(ctx, key.vmID)
+	if err != nil || gen == 0 {
+		return err
 	}
 	log.WithFunc("daemon.adoptLive").Warnf(ctx, "adopted live VM %s whose record read %s", key.vmID, fresh.State)
 	d.watcher.ensure(key, proc, gen)
@@ -127,8 +122,9 @@ func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, r
 	if err != nil || fresh == nil {
 		return err
 	}
-	if !d.confirmDead(ctx, b, fresh) {
-		return nil
+	dead, err := d.confirmDead(ctx, b, fresh)
+	if !dead {
+		return err
 	}
 	logger := log.WithFunc("daemon.convergeDead")
 	exited := hypervisor.NeedsDeadConvergence(fresh)
@@ -162,11 +158,7 @@ func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hyperv
 	return nil
 }
 
-// resumeDelete finishes a delete a previous worker left mid-protocol. Supervision
-// starts deletes of its own when it collects an ownerless placeholder, so it must
-// also resume them: a crash or a transient teardown failure after the deleting
-// mark would otherwise strand the record and its name reservation until someone
-// runs gc by hand.
+// resumeDelete finishes a delete a previous worker left mid-protocol; supervision starts deletes of its own, and an unfinished one strands the record and its name until a manual gc.
 func (d *Daemon) resumeDelete(ctx context.Context, b Supervisor, vmID string) error {
 	unlock, ok, err := d.tryLock(ctx, b, vmID)
 	if !ok {
@@ -204,9 +196,6 @@ func (d *Daemon) handleExit(ctx context.Context, ev exitEvent) {
 // convergeExit runs the locked half of handleExit; the pass that follows must not be inside the lock it takes.
 func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 	b := d.backends[ev.key.backend]
-	if b == nil {
-		return false
-	}
 	unlock, ok, _ := d.tryLock(ctx, b, ev.key.vmID)
 	if !ok {
 		return false
@@ -217,7 +206,7 @@ func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 		return false
 	}
 	// A newer transition owns the record; this event may not date or label it.
-	if rec.TransitionGeneration != ev.gen || !d.confirmDead(ctx, b, rec) {
+	if dead, _ := d.confirmDead(ctx, b, rec); rec.TransitionGeneration != ev.gen || !dead {
 		return false
 	}
 	logger := log.WithFunc("daemon.handleExit")
@@ -229,10 +218,13 @@ func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 	return true
 }
 
-// confirmDead re-observes under the ops lock; a live or inconclusive result defers the work to a later pass.
-func (d *Daemon) confirmDead(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) bool {
+// confirmDead re-observes under the ops lock; live and inconclusive both defer the work, but only inconclusive is a failure worth counting.
+func (d *Daemon) confirmDead(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) (bool, error) {
 	_, err := b.ObserveVMM(ctx, rec)
-	return errors.Is(err, hypervisor.ErrNotRunning)
+	if errors.Is(err, hypervisor.ErrNotRunning) {
+		return true, nil
+	}
+	return false, err
 }
 
 // tryLock reports ok=false for a busy lock and for a lock error alike; only the error is worth logging, and only it makes the pass unhealthy.

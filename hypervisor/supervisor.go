@@ -17,8 +17,7 @@ import (
 
 var _ Supervisable = (*Backend)(nil)
 
-// Supervisable is the backend surface a resident supervisor drives; every
-// hypervisor backend embeds *Backend and satisfies it.
+// Supervisable is the backend surface a resident supervisor drives.
 type Supervisable interface {
 	Type() string
 	ScanSupervision(ctx context.Context) (SupervisionScan, error)
@@ -27,22 +26,19 @@ type Supervisable interface {
 	TryLockVMOps(ctx context.Context, vmID string) (func(), bool, error)
 	PeekRecord(ctx context.Context, vmID string) (*VMRecord, error)
 	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
-	ReconcileToRunning(ctx context.Context, vmID string) uint64
+	ReconcileToRunning(ctx context.Context, vmID string) (uint64, error)
 	CollectStaleCreate(ctx context.Context, vmID string, rec *VMRecord) error
 	RecoverTombstone(ctx context.Context, vmID string) (bool, error)
 }
 
-// SupervisionScan is one reconcile pass's view of a backend namespace, plus the
-// single /proc walk its liveness checks share.
+// SupervisionScan is one reconcile pass's view of a backend namespace plus the single /proc walk its liveness checks share.
 type SupervisionScan struct {
 	Records    []*VMRecord
 	Tombstoned map[string]struct{}
 	Procs      utils.ProcScan
 }
 
-// ScanSupervision reads every record plus the unfinished-delete set in one
-// transaction: the json engine holds the namespace lock for the whole closure,
-// so a pass must never widen this into per-VM reads.
+// ScanSupervision reads every record plus the unfinished-delete set in one transaction; the json engine holds the namespace flock for the whole closure, so never widen this into per-VM reads.
 func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) {
 	var scan SupervisionScan
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -63,7 +59,6 @@ func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) 
 	}); err != nil {
 		return SupervisionScan{}, err
 	}
-	// Outside the transaction: this walks every process on the host, and the json engine holds the namespace flock for the whole closure.
 	procs, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		return SupervisionScan{}, fmt.Errorf("scan /proc for %s: %w", b.Typ, err)
@@ -72,13 +67,12 @@ func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) 
 	return scan, nil
 }
 
-// ObserveVMM returns the live VMM's process generation, ErrNotRunning when none
-// is live, or an error when liveness is inconclusive and the caller must retry.
+// ObserveVMM returns the live VMM's process generation, ErrNotRunning when none is live, or an error when liveness is inconclusive.
 func (b *Backend) ObserveVMM(ctx context.Context, rec *VMRecord) (utils.ProcRef, error) {
 	return b.observe(ctx, rec, nil)
 }
 
-// ObserveVMMIn is ObserveVMM against a pass-wide /proc walk; it decides what work to attempt, so anything that then mutates must re-observe freshly under the ops lock.
+// ObserveVMMIn is ObserveVMM against a pass-wide /proc walk; mutations must still re-observe freshly under the ops lock.
 func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.ProcScan) (utils.ProcRef, error) {
 	return b.observe(ctx, rec, &scan)
 }
@@ -93,8 +87,7 @@ func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcSc
 	return ref, err
 }
 
-// TryLockVMOps takes the VM ops lock without blocking; ok=false with a nil error
-// means another operation owns it and the caller should retry on a later pass.
+// TryLockVMOps takes the VM ops lock without blocking; ok=false with a nil error means another operation owns it.
 func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(), ok bool, err error) {
 	l, err := opsLock(b.Conf, vmID)
 	if err != nil {
@@ -107,11 +100,8 @@ func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(),
 	return func() { _ = l.Unlock(ctx) }, true, nil
 }
 
-// ConvergeDead lands the transition for a VMM that exited outside a cocoon stop,
-// then runs any network quiesce it schedules. The caller holds the VM ops lock
-// and has conclusively observed that no VMM generation is live. gen fences the
-// write against a record that transitioned since the observation, so a stale
-// event cannot date or re-label a newer transition; observedAt dates the stop.
+// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop, then runs the quiesce it schedules; the caller holds the ops lock and observed no live VMM.
+// gen fences the write so a stale observation cannot date or re-label a newer transition.
 func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
 	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
@@ -119,8 +109,7 @@ func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, obser
 	return b.QuiesceIfPending(ctx, id)
 }
 
-// convergeDeadRecord commits the stop transition and publishes its staged
-// metering entry; the network quiesce it schedules is the caller's to run.
+// convergeDeadRecord commits the stop transition and publishes its staged metering entry; the quiesce it schedules is the caller's to run.
 func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
 	var emit []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
@@ -135,8 +124,7 @@ func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64,
 		if hasOpenComputeInterval(r) {
 			emit = []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shapeFromConfig(r.Config), observedAt)}
 		}
-		// Dated whether or not a ledger interval was open: StoppedAt is when the VM was
-		// observed stopped, and a record predating the interval bookkeeping still has one.
+		// StoppedAt is observation time, owed even to records predating the interval bookkeeping.
 		r.StoppedAt = &observedAt
 		markTransition(r, types.VMStateStopped, types.TransitionUnexpectedExit, observedAt)
 		r.QuiescePending = needsQuiesce(r)
@@ -148,10 +136,7 @@ func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64,
 	return nil
 }
 
-// QuiesceIfPending brings a stopped VM's host NICs down and clears the flag
-// under the generation it observed, so a VM restarted in between keeps the
-// pending work its own stop scheduled. The caller holds the VM ops lock and has
-// established that no VMM is live.
+// QuiesceIfPending runs a scheduled quiesce and clears the flag fenced on the generation it read; the caller holds the ops lock with no VMM live.
 func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
 	if b.Net == nil {
 		return nil
@@ -176,10 +161,7 @@ func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
 	return b.clearQuiescePending(ctx, id, gen)
 }
 
-// CollectStaleCreate terminates any orphan VMM and runs the delete protocol for
-// a creating placeholder whose owner is gone, freeing the name reservation. The
-// caller holds the VM ops lock, which is itself the proof of ownerlessness:
-// create and clone hold it from prereserve through the final record commit.
+// CollectStaleCreate reclaims an ownerless creating placeholder; the held ops lock is the proof of ownerlessness, since create and clone hold it from prereserve through the final commit.
 func (b *Backend) CollectStaleCreate(ctx context.Context, id string, rec *VMRecord) error {
 	if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
 		return fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err)
@@ -187,9 +169,7 @@ func (b *Backend) CollectStaleCreate(ctx context.Context, id string, rec *VMReco
 	return b.deleteVMProtocol(ctx, id, rec)
 }
 
-// RecoverTombstone drives an unfinished delete to completion under the held ops
-// lock, reporting whether the record is now gone. Supervision needs it because it
-// starts deletes of its own.
+// RecoverTombstone drives an unfinished delete to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (bool, error) {
 	return b.recoverVMTombstone(ctx, id)
 }
@@ -206,11 +186,8 @@ func (b *Backend) clearQuiescePending(ctx context.Context, id string, gen uint64
 	})
 }
 
-// convergeCrashedStart closes a crashed VM's ledger interval on the start path.
-// It schedules no quiesce of its own: the launch about to follow brings the same
-// plumbing up, and a failed launch leaves the pending flag for a later pass.
+// convergeCrashedStart closes a crashed VM's ledger on the start path, skipping the quiesce the imminent launch would undo; the in-memory precheck exists because even an empty transaction takes the namespace flock.
 func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
-	// Prechecked in memory: rec is fresh from the entry guard, and a transaction that decides nothing to do still takes the namespace flock.
 	if !NeedsDeadConvergence(rec) {
 		return
 	}
@@ -219,7 +196,7 @@ func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
 	}
 }
 
-// NeedsDeadConvergence reports whether a record still claims a VM the ledger or the state field thinks is up. Creating placeholders are excluded: their owner is the create path, and the stale-create protocol collects them.
+// NeedsDeadConvergence reports whether a record still claims a VM as up; creating placeholders are the stale-create protocol's to collect.
 func NeedsDeadConvergence(r *VMRecord) bool {
 	if r == nil || r.State == types.VMStateCreating {
 		return false

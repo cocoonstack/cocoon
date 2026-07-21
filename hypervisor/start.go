@@ -96,7 +96,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	switch {
 	case runErr == nil:
 		if rec.State != types.VMStateRunning {
-			b.ReconcileToRunning(ctx, id)
+			_, _ = b.ReconcileToRunning(ctx, id)
 		}
 		return nil, nil
 	case errors.Is(runErr, ErrNotRunning):
