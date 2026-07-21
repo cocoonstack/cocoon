@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -135,7 +136,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	// A background PASSIVE checkpoint keeps the WAL short so committing
 	// writers rarely pay the autocheckpoint stall themselves.
 	s.cpDone = make(chan struct{})
-	go checkpointLoop(s.readers, s.cpDone)
+	go checkpointLoop(s.readers, dbPath, s.cpDone)
 	return s, nil
 }
 
@@ -168,17 +169,24 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if err != nil {
 		return err
 	}
+	wait := time.Since(start)
 	h := &txHandle{ctx: ctx, tx: tx, sm: sm, scope: scopeSet(nss), write: sc.Write, mode: mode}
 	if err := fn(h); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
+	commitStart := time.Now()
 	if err := tx.Commit(); err != nil {
 		_ = tx.Rollback()
 		return mapErr(err)
 	}
-	if d := time.Since(start); d > slowTxnWarn {
-		log.WithFunc("meta.sqlite.Update").Warnf(ctx, "slow transaction on %s: %s", sc.Write, d)
+	// §4 observability: writer wait, transaction and commit durations.
+	commit, total := time.Since(commitStart), time.Since(start)
+	logger := log.WithFunc("meta.sqlite.Update")
+	if total > slowTxnWarn {
+		logger.Warnf(ctx, "slow transaction on %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
+	} else {
+		logger.Debugf(ctx, "txn %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
 	}
 	return nil
 }
@@ -344,7 +352,10 @@ func prepareStmts(db *sql.DB, nss map[string]Namespace, writer bool) (map[string
 	return m, nil
 }
 
-func checkpointLoop(db *sql.DB, done <-chan struct{}) {
+func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
+	// Detached engine goroutine: it outlives every caller ctx by design.
+	ctx := context.Background()
+	logger := log.WithFunc("meta.sqlite.checkpoint")
 	t := time.NewTicker(checkpointInterval)
 	defer t.Stop()
 	for {
@@ -352,7 +363,17 @@ func checkpointLoop(db *sql.DB, done <-chan struct{}) {
 		case <-done:
 			return
 		case <-t.C:
-			_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+			start := time.Now()
+			var busy, frames, moved int
+			if err := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &frames, &moved); err != nil || frames == 0 {
+				continue
+			}
+			// §4 observability: WAL bytes and checkpoint duration.
+			var walBytes int64
+			if st, serr := os.Stat(dbPath + "-wal"); serr == nil {
+				walBytes = st.Size()
+			}
+			logger.Debugf(ctx, "passive checkpoint: %d/%d frames, wal %dB, %s", moved, frames, walBytes, time.Since(start))
 		}
 	}
 }
