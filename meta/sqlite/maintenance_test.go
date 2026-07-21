@@ -24,7 +24,7 @@ func TestBackupFidelity(t *testing.T) {
 	}
 
 	dest := filepath.Join(dir, "backup", "meta.db")
-	if err := Backup(filepath.Join(dir, DBFileName), dest); err != nil {
+	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
 		t.Fatalf("backup: %v", err)
 	}
 	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
@@ -43,7 +43,7 @@ func TestBackupFidelity(t *testing.T) {
 		t.Fatalf("view backup: %v", err)
 	}
 
-	if err := Backup(filepath.Join(dir, DBFileName), dest); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("want overwrite refusal, got %v", err)
 	}
 }

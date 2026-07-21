@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -16,20 +17,20 @@ import (
 // initialized meta_state row per namespace, all in ONE transaction — a crash
 // mid-init leaves nothing or a complete store (§6). An empty database is a
 // failed init and is restarted; anything else is left for the operator.
-func Init(dbPath string, namespaces ...Namespace) error {
+func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
 	}
-	return initStore(dbPath, namespaces)
+	return initStore(ctx, dbPath, namespaces)
 }
 
 // InitForRecovery is Init without the manifest guard — the conversion tool
 // creates its target while the manifest is necessarily present (§6).
-func InitForRecovery(dbPath string, namespaces ...Namespace) error {
-	return initStore(dbPath, namespaces)
+func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace) error {
+	return initStore(ctx, dbPath, namespaces)
 }
 
-func initStore(dbPath string, namespaces []Namespace) (err error) {
+func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
@@ -50,39 +51,39 @@ func initStore(dbPath string, namespaces []Namespace) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return mapErr(err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if err := createSchema(tx, namespaces); err != nil {
+	if err := createSchema(ctx, tx, namespaces); err != nil {
 		return err
 	}
 	// Identity pragmas ride the same transaction as the schema: a crash
 	// leaves nothing (or an empty file) or a complete store, never a
 	// half-identified one (§6).
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA application_id = %d", ApplicationID)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA application_id = %d", ApplicationID)); err != nil {
 		return mapErr(err)
 	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", UserVersion)); err != nil {
 		return mapErr(err)
 	}
 	return mapErr(tx.Commit())
 }
 
-func createSchema(tx *sql.Tx, namespaces []Namespace) error {
-	if _, err := tx.Exec(`CREATE TABLE meta_state (
+func createSchema(ctx context.Context, tx *sql.Tx, namespaces []Namespace) error {
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE meta_state (
 		namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL,
 		source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT)`); err != nil {
 		return mapErr(err)
 	}
 	for _, ns := range namespaces {
 		for _, tbl := range ns.Tables {
-			if _, err := tx.Exec("CREATE TABLE " + tableName(ns.Name, tbl) + " (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL)"); err != nil {
+			if _, err := tx.ExecContext(ctx, "CREATE TABLE "+tableName(ns.Name, tbl)+" (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL)"); err != nil {
 				return mapErr(err)
 			}
 		}
-		if _, err := tx.Exec("INSERT INTO meta_state (namespace, state, records, applied_at) VALUES (?, 'initialized', 0, datetime('now'))", ns.Name); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO meta_state (namespace, state, records, applied_at) VALUES (?, 'initialized', 0, datetime('now'))", ns.Name); err != nil {
 			return mapErr(err)
 		}
 	}

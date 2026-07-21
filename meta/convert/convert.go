@@ -71,7 +71,7 @@ func Run(ctx context.Context, spec Spec, target string) error {
 			return err
 		}
 	}
-	if err := retireSources(spec, target); err != nil {
+	if err := retireSources(ctx, spec, target); err != nil {
 		return err
 	}
 	return finishManifest(spec.MetaRoot)
@@ -95,7 +95,7 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 			return serr
 		}
 	}
-	dst, err := openTarget(spec, target)
+	dst, err := openTarget(ctx, spec, target)
 	if err != nil {
 		return err
 	}
@@ -173,12 +173,12 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 	return metasqlite.OpenForRecovery(spec.DBPath, spec.Decls...)
 }
 
-func openTarget(spec Spec, target string) (meta.Store, error) {
+func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, error) {
 	if target == EngineJSON {
 		return metajson.Open(spec.JSON...)
 	}
 	if !utils.FileExists(spec.DBPath) {
-		if err := metasqlite.InitForRecovery(spec.DBPath, spec.Decls...); err != nil {
+		if err := metasqlite.InitForRecovery(ctx, spec.DBPath, spec.Decls...); err != nil {
 			return nil, err
 		}
 	}
@@ -198,7 +198,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 		}
 	}
 	if m.Target == EngineSQLite {
-		if err := metasqlite.MarkConverted(spec.DBPath, ns.Name, rec.Files[0], rec.SHA256, rec.Records); err != nil {
+		if err := metasqlite.MarkConverted(ctx, spec.DBPath, ns.Name, rec.Files[0], rec.SHA256, rec.Records); err != nil {
 			return err
 		}
 	}
@@ -315,9 +315,9 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 // retireSources aside-renames every source file after full verification; a
 // sqlite source checkpoints to a single file first (§6). Runs with both
 // engines closed; already-renamed files are skipped, so a crash here reruns.
-func retireSources(spec Spec, target string) error {
+func retireSources(ctx context.Context, spec Spec, target string) error {
 	if target == EngineJSON && utils.FileExists(spec.DBPath) {
-		if err := metasqlite.Checkpoint(spec.DBPath); err != nil {
+		if err := metasqlite.Checkpoint(ctx, spec.DBPath); err != nil {
 			return err
 		}
 	}

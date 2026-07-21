@@ -156,7 +156,7 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	if err := saveManifest(spec.MetaRoot, m); err != nil {
 		t.Fatalf("save manifest: %v", err)
 	}
-	dst, err := openTarget(spec, "sqlite")
+	dst, err := openTarget(ctx, spec, "sqlite")
 	if err != nil {
 		t.Fatalf("open target: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestTargetNotFreshRefused(t *testing.T) {
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")
 
-	if err := metasqlite.Init(spec.DBPath, spec.Decls...); err != nil {
+	if err := metasqlite.Init(ctx, spec.DBPath, spec.Decls...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
@@ -246,7 +246,7 @@ func TestOrdinaryOpenRefusedDuringConversion(t *testing.T) {
 	if _, err := metasqlite.Open(spec.DBPath, spec.Decls...); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
 		t.Fatalf("want in-flight refusal, got %v", err)
 	}
-	if err := metasqlite.Init(spec.DBPath, spec.Decls...); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
+	if err := metasqlite.Init(t.Context(), spec.DBPath, spec.Decls...); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
 		t.Fatalf("want init refusal, got %v", err)
 	}
 }

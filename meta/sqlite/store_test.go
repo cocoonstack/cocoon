@@ -18,7 +18,7 @@ func newStore(t *testing.T, dir string, nss ...string) *Store {
 	}
 	path := filepath.Join(dir, DBFileName)
 	if !utils.FileExists(path) {
-		if err := Init(path, decls...); err != nil {
+		if err := Init(t.Context(), path, decls...); err != nil {
 			t.Fatalf("init: %v", err)
 		}
 	}

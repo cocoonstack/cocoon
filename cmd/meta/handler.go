@@ -17,7 +17,7 @@ type Handler struct {
 }
 
 func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
-	_, conf, err := h.Init(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
@@ -25,7 +25,7 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("meta init applies to the sqlite backend; meta_backend is %q", conf.MetaBackend)
 	}
 	dbPath := cmdcore.MetaDBPath(conf)
-	if err := metasqlite.Init(dbPath, cmdcore.MetaNamespaces()...); err != nil {
+	if err := metasqlite.Init(ctx, dbPath, cmdcore.MetaNamespaces()...); err != nil {
 		return err
 	}
 	fmt.Printf("initialized %s\n", dbPath)
@@ -58,14 +58,14 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Backup(cmd *cobra.Command, args []string) error {
-	_, conf, err := h.Init(cmd)
+	ctx, conf, err := h.Init(cmd)
 	if err != nil {
 		return err
 	}
 	if conf.MetaBackend != "sqlite" {
 		return fmt.Errorf("meta backup applies to the sqlite backend; meta_backend is %q", conf.MetaBackend)
 	}
-	if err := metasqlite.Backup(cmdcore.MetaDBPath(conf), args[0]); err != nil {
+	if err := metasqlite.Backup(ctx, cmdcore.MetaDBPath(conf), args[0]); err != nil {
 		return err
 	}
 	fmt.Printf("backed up to %s\n", args[0])

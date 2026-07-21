@@ -28,14 +28,15 @@ func main() {
 		os.Exit(2)
 	}
 	mode, engine := os.Args[1], os.Args[2]
+	ctx := context.Background()
 	var err error
 	switch mode {
 	case "update", "get":
-		err = runLoop(mode, engine, atoi(os.Args[3]), atoi(os.Args[4]), argDir(5))
+		err = runLoop(ctx, mode, engine, atoi(os.Args[3]), atoi(os.Args[4]), argDir(5))
 	case "create":
-		err = runCreate(engine, atoi(os.Args[3]), atoi(os.Args[4]), atoi(os.Args[5]), argDir(6))
+		err = runCreate(ctx, engine, atoi(os.Args[3]), atoi(os.Args[4]), atoi(os.Args[5]), argDir(6))
 	case "createworker":
-		err = runWorker(engine, os.Args[3], atoi(os.Args[4]), os.Args[5])
+		err = runWorker(ctx, engine, os.Args[3], atoi(os.Args[4]), os.Args[5])
 	default:
 		err = fmt.Errorf("unknown mode %q", mode)
 	}
@@ -45,9 +46,8 @@ func main() {
 	}
 }
 
-func runLoop(mode, engine string, n, ops int, dir string) error {
-	ctx := context.Background()
-	b, err := openBackend(engine, dir)
+func runLoop(ctx context.Context, mode, engine string, n, ops int, dir string) error {
+	b, err := openBackend(ctx, engine, dir)
 	if err != nil {
 		return err
 	}
@@ -85,9 +85,8 @@ func runLoop(mode, engine string, n, ops int, dir string) error {
 	return nil
 }
 
-func runCreate(engine string, workers, per, resident int, dir string) error {
-	ctx := context.Background()
-	b, err := openBackend(engine, dir)
+func runCreate(ctx context.Context, engine string, workers, per, resident int, dir string) error {
+	b, err := openBackend(ctx, engine, dir)
 	if err != nil {
 		return err
 	}
@@ -126,9 +125,8 @@ func runCreate(engine string, workers, per, resident int, dir string) error {
 
 // runWorker performs `per` creates (reserve placeholder + finalize to
 // running) — the meta half of one VM creation each.
-func runWorker(engine, prefix string, per int, dir string) error {
-	ctx := context.Background()
-	b, err := openBackend(engine, dir)
+func runWorker(ctx context.Context, engine, prefix string, per int, dir string) error {
+	b, err := openBackend(ctx, engine, dir)
 	if err != nil {
 		return err
 	}
@@ -147,21 +145,21 @@ func runWorker(engine, prefix string, per int, dir string) error {
 	return nil
 }
 
-func openBackend(engine, dir string) (*hypervisor.Backend, error) {
-	store, err := openStore(engine, dir)
+func openBackend(ctx context.Context, engine, dir string) (*hypervisor.Backend, error) {
+	store, err := openStore(ctx, engine, dir)
 	if err != nil {
 		return nil, err
 	}
 	return hypervisor.NewBackend("bench", benchConfig{dir: dir}, nil, store)
 }
 
-func openStore(engine, dir string) (meta.Store, error) {
+func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 	ns := hypervisor.VMNamespaceName("bench")
 	if engine == "sqlite" {
 		decl := metasqlite.Namespace{Name: ns, Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs}}
 		path := filepath.Join(dir, metasqlite.DBFileName)
 		if _, err := os.Stat(path); err != nil {
-			if err := metasqlite.Init(path, decl); err != nil {
+			if err := metasqlite.Init(ctx, path, decl); err != nil {
 				return nil, err
 			}
 		}

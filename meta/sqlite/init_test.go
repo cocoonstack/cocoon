@@ -15,10 +15,10 @@ func testDecls() []Namespace {
 
 func TestInitRefusesExisting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := Init(path, testDecls()...); err != nil {
+	if err := Init(t.Context(), path, testDecls()...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := Init(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "refusing to reinitialize") {
+	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "refusing to reinitialize") {
 		t.Fatalf("want reinit refusal, got %v", err)
 	}
 }
@@ -28,7 +28,7 @@ func TestFailedInitRestarts(t *testing.T) {
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Init(path, testDecls()...); err != nil {
+	if err := Init(t.Context(), path, testDecls()...); err != nil {
 		t.Fatalf("init over crashed init: %v", err)
 	}
 	if _, err := Open(path, testDecls()...); err != nil {
@@ -48,7 +48,7 @@ func TestInitIdentityAtomicWithSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.Close()
-	if err := Init(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
+	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
 		t.Fatalf("want loud refusal on half-identified db, got %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestForeignPopulatedDBRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.Close()
-	if err := Init(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
+	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
 		t.Fatalf("want foreign-db refusal, got %v", err)
 	}
 	if !utils.FileExists(path) {
@@ -80,7 +80,7 @@ func TestIdentityFailClosed(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), DBFileName)
-			if err := Init(path, testDecls()...); err != nil {
+			if err := Init(t.Context(), path, testDecls()...); err != nil {
 				t.Fatalf("init: %v", err)
 			}
 			db, err := open(path, "FULL", true)
@@ -100,7 +100,7 @@ func TestIdentityFailClosed(t *testing.T) {
 
 func TestUninitializedNamespaceRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := Init(path, testDecls()...); err != nil {
+	if err := Init(t.Context(), path, testDecls()...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	extra := append(testDecls(), Namespace{Name: "late", Tables: []string{"records"}})
