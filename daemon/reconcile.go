@@ -209,7 +209,7 @@ func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 	if dead, _ := d.confirmDead(ctx, b, rec); rec.TransitionGeneration != ev.gen || !dead {
 		return false
 	}
-	logger := log.WithFunc("daemon.handleExit")
+	logger := log.WithFunc("daemon.convergeExit")
 	if err := b.ConvergeDead(ctx, ev.key.vmID, ev.gen, ev.at); err != nil {
 		logger.Errorf(ctx, err, "converge %s", ev.key.vmID)
 		return false

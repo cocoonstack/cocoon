@@ -53,5 +53,5 @@ func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
 	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
 		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
 	}
-	return cmdcore.NewNetProviders(conf).ForVM(vm)
+	return cmdcore.NetworkSeam(conf).ForVM(vm)
 }

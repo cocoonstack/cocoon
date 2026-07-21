@@ -122,8 +122,10 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool,
 	return true, nil
 }
 
-// EntryGuardLoad is EntryGuard returning the VM's record from the guard's own
-// transaction, sparing lock-held entry paths a second whole-namespace read.
+// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock —
+// roll a leased tombstone back, drive a deleting one to completion and refuse —
+// returning the record from the guard's own transaction, sparing lock-held
+// entry paths a second whole-namespace read.
 func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
 	rec, err := b.entryGuard(ctx, id)
 	if err != nil {

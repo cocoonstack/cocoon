@@ -32,11 +32,11 @@ type NetProviders struct {
 
 // NetworkSeam returns the process-wide seam, so both backends share one provider cache.
 func NetworkSeam(conf *config.Config) *NetProviders {
-	netOnce.Do(func() { netSeam = NewNetProviders(conf) })
+	netOnce.Do(func() { netSeam = newNetProviders(conf) })
 	return netSeam
 }
 
-func NewNetProviders(conf *config.Config) *NetProviders {
+func newNetProviders(conf *config.Config) *NetProviders {
 	return &NetProviders{conf: conf, bridge: map[string]network.Network{}}
 }
 

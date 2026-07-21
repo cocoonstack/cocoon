@@ -26,13 +26,22 @@ func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
 	return b.Net.Recover(ctx, &rec.VM)
 }
 
-// quiesceAfterStop runs the quiesce a just-committed stop scheduled, gated on the pre-stop record so an unplumbed VM pays no extra read; a failure keeps the pending flag for a later pass.
-func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord) {
-	if !needsQuiesce(rec) {
+// quiesceAfterStop runs the quiesce a just-committed stop scheduled without re-reading the record: under the caller's ops lock the committed generation is rec's, plus one exactly when the stop just landed its transition. A quiesce failure keeps the pending flag for a later pass.
+func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord, transitioned bool) {
+	gen, pending := rec.TransitionGeneration, rec.QuiescePending
+	if transitioned {
+		gen, pending = gen+1, needsQuiesce(rec)
+	}
+	if !pending {
 		return
 	}
-	if err := b.QuiesceIfPending(ctx, id); err != nil {
-		log.WithFunc(b.Typ+".quiesceAfterStop").Warnf(ctx, "%v", err)
+	logger := log.WithFunc(b.Typ + ".quiesceAfterStop")
+	if err := b.quiesceNetwork(ctx, &rec.VM); err != nil {
+		logger.Warnf(ctx, "quiesce network for VM %s (pending kept): %v", id, err)
+		return
+	}
+	if err := b.clearQuiescePending(ctx, id, gen); err != nil {
+		logger.Warnf(ctx, "clear pending quiesce for VM %s: %v", id, err)
 	}
 }
 
