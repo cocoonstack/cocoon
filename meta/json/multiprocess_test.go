@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
 )
@@ -250,5 +251,48 @@ func TestAckWorker(t *testing.T) {
 			t.Fatalf("insert %s: %v", id, err)
 		}
 		fmt.Printf("ACK %s\n", id)
+	}
+}
+
+// TestEventsExternalProcess is §9's cross-process signal gate for the json
+// engine: another process's committed rename must reach subscribers here.
+func TestEventsExternalProcess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("multi-process gate skipped in -short")
+	}
+	dir := t.TempDir()
+	s := newStore(t, dir, "alpha")
+	ch, release, err := s.Events(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestEventsWriterWorker$", "-test.count=1") //nolint:gosec
+	cmd.Env = append(os.Environ(), "META_MP_DIR="+dir)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("external writer: %v", err)
+	}
+	select {
+	case <-ch:
+	case <-time.After(8 * time.Second):
+		t.Fatal("no event for external-process commit")
+	}
+}
+
+// TestEventsWriterWorker is the helper-process body.
+func TestEventsWriterWorker(t *testing.T) {
+	dir := os.Getenv("META_MP_DIR")
+	if dir == "" {
+		t.Skip("helper process only")
+	}
+	s := newStore(t, dir, "alpha")
+	ctx := t.Context()
+	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	v := map[string]int{"ext": 1}
+	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "ext", &v)
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -31,6 +31,16 @@ const (
 	EngineSQLite = "sqlite"
 )
 
+// testCrashStep injects crashes between protocol steps (§9 gate); nil in prod.
+var testCrashStep func(step string) error
+
+func crashStep(step string) error {
+	if testCrashStep == nil {
+		return nil
+	}
+	return testCrashStep(step)
+}
+
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
 	MetaRoot string // manifest directory (parent of the sqlite DB)
@@ -95,11 +105,17 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 			return serr
 		}
 	}
+	if err := crashStep("manifest-saved"); err != nil {
+		return err
+	}
 	dst, err := openTarget(ctx, spec, target)
 	if err != nil {
 		return err
 	}
 	defer dst.Close() //nolint:errcheck
+	if err := crashStep("target-opened"); err != nil {
+		return err
+	}
 	for _, ns := range spec.Decls {
 		rec := m.Namespaces[ns.Name]
 		if rec == nil {
@@ -197,13 +213,46 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 			return err
 		}
 	}
+	if err := crashStep("ns-copied"); err != nil {
+		return err
+	}
 	if m.Target == EngineSQLite {
 		if err := metasqlite.MarkConverted(ctx, spec.DBPath, ns.Name, rec.Files[0], rec.SHA256, rec.Records); err != nil {
 			return err
 		}
+		if err := crashStep("ns-marked"); err != nil {
+			return err
+		}
+	} else if err := duplicateGeneration(spec, ns.Name); err != nil {
+		return err
 	}
 	rec.Done = true
-	return saveManifest(spec.MetaRoot, m)
+	if err := saveManifest(spec.MetaRoot, m); err != nil {
+		return err
+	}
+	return crashStep("ns-done")
+}
+
+// duplicateGeneration copies a freshly written json target to its .prev so
+// the imported data survives a later torn main (§9: never less resilient
+// than steady state).
+func duplicateGeneration(spec Spec, nsName string) error {
+	for _, jns := range spec.JSON {
+		if jns.Name != nsName {
+			continue
+		}
+		data, err := os.ReadFile(jns.FilePath)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // empty namespace wrote no file
+		}
+		if err != nil {
+			return err
+		}
+		if err := utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord) error {
@@ -320,6 +369,9 @@ func retireSources(ctx context.Context, spec Spec, target string) error {
 		if err := metasqlite.Checkpoint(ctx, spec.DBPath); err != nil {
 			return err
 		}
+		if err := crashStep("checkpointed"); err != nil {
+			return err
+		}
 	}
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	for _, ns := range spec.Decls {
@@ -331,6 +383,9 @@ func retireSources(ctx context.Context, spec Spec, target string) error {
 				return err
 			}
 			if err := utils.SyncParentDir(filepath.Dir(f)); err != nil {
+				return err
+			}
+			if err := crashStep("source-renamed"); err != nil {
 				return err
 			}
 		}

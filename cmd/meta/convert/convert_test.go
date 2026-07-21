@@ -1,9 +1,14 @@
 package convert
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -262,4 +267,181 @@ func TestConvertRefusesUnsupportedFS(t *testing.T) {
 	if utils.FileExists(spec.DBPath) {
 		t.Fatal("convert created target WAL state on refused filesystem")
 	}
+}
+
+func TestCrashRerunMatrix(t *testing.T) {
+	errCrash := errors.New("injected crash")
+	forward := []string{"manifest-saved", "target-opened", "ns-copied", "ns-marked", "ns-done", "source-renamed"}
+	reverse := []string{"manifest-saved", "target-opened", "ns-copied", "ns-done", "checkpointed", "source-renamed"}
+
+	run := func(t *testing.T, target string, steps []string) {
+		for _, step := range steps {
+			t.Run(target+"/"+step, func(t *testing.T) {
+				spec := testSpec(t, "vms")
+				seedJSON(t, spec, "vms")
+				if target == "json" {
+					// Reverse direction starts from a sqlite store.
+					if err := Run(t.Context(), spec, "sqlite"); err != nil {
+						t.Fatalf("forward convert: %v", err)
+					}
+				}
+				testCrashStep = func(at string) error {
+					if at == step {
+						return errCrash
+					}
+					return nil
+				}
+				err := Run(t.Context(), spec, target)
+				testCrashStep = nil
+				if !errors.Is(err, errCrash) {
+					t.Fatalf("step %s: want injected crash, got %v", step, err)
+				}
+				if rerr := Run(t.Context(), spec, target); rerr != nil {
+					t.Fatalf("rerun after crash at %s: %v", step, rerr)
+				}
+				var store meta.Store
+				var oerr error
+				if target == "sqlite" {
+					store, oerr = metasqlite.Open(spec.DBPath, spec.Decls...)
+				} else {
+					store, oerr = metajson.Open(spec.JSON...)
+				}
+				if oerr != nil {
+					t.Fatalf("open target after rerun: %v", oerr)
+				}
+				defer store.Close() //nolint:errcheck
+				if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
+					t.Fatalf("content after rerun at %s: %v", step, got)
+				}
+			})
+		}
+	}
+	run(t, "sqlite", forward)
+	run(t, "json", reverse)
+}
+
+func TestDistinctGenerationsRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	spec := testSpec(t, "vms")
+	// Two committed generations: main and .prev are DISTINCT (§9).
+	js, err := metajson.Open(spec.JSON...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for gen := 1; gen <= 2; gen++ {
+		err = js.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+			return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"gen":`+strconv.Itoa(gen)+`}`), false)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = js.Close()
+	if !utils.FileExists(spec.JSON[0].FilePath + ".prev") {
+		t.Fatal("precondition: .prev generation missing")
+	}
+
+	if err := Run(ctx, spec, "sqlite"); err != nil {
+		t.Fatalf("convert to sqlite: %v", err)
+	}
+	for _, f := range []string{spec.JSON[0].FilePath, spec.JSON[0].FilePath + ".prev"} {
+		if utils.FileExists(f) {
+			t.Fatalf("json generation %s not retired aside", f)
+		}
+	}
+	if err := Run(ctx, spec, "json"); err != nil {
+		t.Fatalf("convert back to json: %v", err)
+	}
+
+	// Corrupt the new main: the served generation must be the imported one,
+	// never a stranded pre-conversion .prev (§9).
+	main, err := os.ReadFile(spec.JSON[0].FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.JSON[0].FilePath, append(main, []byte("garbage")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	js2, err := metajson.Open(spec.JSON...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer js2.Close() //nolint:errcheck
+	if got := scanAll(t, js2, "vms"); got["records/id1"] != `{"gen":2}` {
+		t.Fatalf("served generation after torn main: %v", got)
+	}
+}
+
+// TestUncheckpointedWALReverseConversion: a commit stranded in the WAL by a
+// killed process must survive the checkpoint-then-aside reverse conversion (§9).
+func TestUncheckpointedWALReverseConversion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("multi-process gate skipped in -short")
+	}
+	if os.Getenv("META_MP_DIR") != "" {
+		t.Skip("helper process only")
+	}
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("forward convert: %v", err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestWALWriterWorker$", "-test.count=1") //nolint:gosec
+	cmd.Env = append(os.Environ(), "META_MP_DIR="+spec.MetaRoot, "META_MP_DB="+spec.DBPath)
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(pipe)
+	for sc.Scan() {
+		if strings.HasPrefix(sc.Text(), "ACK") {
+			break
+		}
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	if st, werr := os.Stat(spec.DBPath + "-wal"); werr != nil || st.Size() == 0 {
+		t.Fatalf("precondition: WAL empty (err=%v), the gate would be vacuous", werr)
+	}
+
+	if err := Run(t.Context(), spec, "json"); err != nil {
+		t.Fatalf("reverse convert: %v", err)
+	}
+	js, err := metajson.Open(spec.JSON...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer js.Close() //nolint:errcheck
+	if got := scanAll(t, js, "vms"); got["records/walrec"] != `{"wal":1}` {
+		t.Fatalf("WAL-stranded commit lost across reverse conversion: %v", got)
+	}
+}
+
+// TestWALWriterWorker commits one durable record, acks, and hangs until killed
+// so the WAL is never checkpointed by a clean close.
+func TestWALWriterWorker(t *testing.T) {
+	db := os.Getenv("META_MP_DB")
+	if db == "" {
+		t.Skip("helper process only")
+	}
+	decls := []metasqlite.Namespace{{Name: "vms", Tables: testTables}}
+	s, err := metasqlite.Open(db, decls...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	err = s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+		return w.PutRaw(ctx, "vms", "records", "walrec", json.RawMessage(`{"wal":1}`), false)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("ACK")
+	select {} //nolint:staticcheck // hang until SIGKILL keeps the WAL un-checkpointed
 }

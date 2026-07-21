@@ -36,6 +36,7 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 // — it outlives every Events caller and ends at stop.
 type notifier struct {
 	b       *meta.Broadcaster
+	watcher *fsnotify.Watcher // kept for the severed-watch test seam
 	pinned  *sql.Conn
 	pinDB   *sql.DB
 	ctx     context.Context
@@ -71,7 +72,7 @@ func newNotifier(dbPath string) (*notifier, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	n := &notifier{b: meta.NewBroadcaster(watcher), pinned: conn, pinDB: db, ctx: ctx, cancel: cancel}
+	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, pinned: conn, pinDB: db, ctx: ctx, cancel: cancel}
 	n.version, _ = n.dataVersion()
 	go n.b.Run(n.check, nil)
 	return n, nil
