@@ -23,7 +23,7 @@ import (
 )
 
 var hypervisorFactories = []hypervisorFactory{
-	{config.HypervisorCH, wireHypervisor(cloudhypervisor.New)},
+	{config.HypervisorCloudHypervisor, wireHypervisor(cloudhypervisor.New)},
 	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
 }
 

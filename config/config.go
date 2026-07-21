@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	HypervisorCH          HypervisorType = "cloud-hypervisor"
-	HypervisorFirecracker HypervisorType = "firecracker"
+	HypervisorCloudHypervisor HypervisorType = "cloud-hypervisor"
+	HypervisorFirecracker     HypervisorType = "firecracker"
 
 	// defaultPullConns is the default concurrent Range connections per cloud-image download.
 	defaultPullConns = 8
@@ -65,7 +65,7 @@ func (c *Config) Hypervisor() HypervisorType {
 	if c.UseFirecracker {
 		return HypervisorFirecracker
 	}
-	return HypervisorCH
+	return HypervisorCloudHypervisor
 }
 
 // EffectivePoolSize returns PoolSize if set, otherwise runtime.NumCPU().

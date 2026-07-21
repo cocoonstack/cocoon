@@ -55,7 +55,7 @@ var (
 // declaration both engines consume.
 func MetaNamespaces() []metasqlite.Namespace {
 	return []metasqlite.Namespace{
-		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
 		{Name: localfile.NamespaceName, Tables: []string{localfile.TableRecords, localfile.TableNames, tombstone.TableName}},
 		{Name: oci.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
@@ -75,7 +75,7 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 	ociCfg := oci.NewConfig(conf.RootDir, 0)
 	cloudimgCfg := cloudimg.NewConfig(conf.RootDir, 0)
 	return []metajson.Namespace{
-		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCH)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
 		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
 		{Name: oci.NamespaceName, FilePath: ociCfg.IndexFile(), LockPath: ociCfg.IndexLock(), Codec: imageTables},
