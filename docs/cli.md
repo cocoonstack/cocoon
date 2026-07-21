@@ -47,9 +47,15 @@ cocoon
 │   ├── export [flags] SNAPSHOT    Export snapshot to portable archive (or stdout)
 │   └── import [flags] [FILE]      Import snapshot from archive (or stdin)
 ├── gc [flags]                     Remove unreferenced blobs, VM dirs; --snapshot for LRU snapshot eviction
+├── meta
+│   ├── init                       Initialize a fresh sqlite meta store (requires meta_backend=sqlite)
+│   ├── convert                    Convert existing metadata to the configured meta_backend (crash-resumable)
+│   └── backup DEST                Back up the sqlite meta store to a single consistent file
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]
 ```
+
+The meta engine is selected by `meta_backend` in the config: `json` (default) or `sqlite`; `meta convert` always converts TO the effective backend.
 
 ## Global Flags
 
