@@ -42,6 +42,11 @@ const (
 	}`
 )
 
+var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: TableRecords},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func TestLoadConfLists(t *testing.T) {
 	t.Run("empty dir errors", func(t *testing.T) {
 		dir := t.TempDir()
@@ -351,11 +356,6 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 }
 
 // newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
-var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "networks", Table: TableRecords},
-	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
-}}
-
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
 	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))

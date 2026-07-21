@@ -28,6 +28,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "snapshots", Table: TableRecords},
+	{Key: "names", Table: TableNames},
+	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+}}
+
 func TestNew(t *testing.T) {
 	dir := t.TempDir()
 	lf, err := New(&config.Config{RootDir: dir}, metering.NopRecorder{}, newTestMetaStore(t, &config.Config{RootDir: dir}))
@@ -1513,12 +1519,6 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 	}
 	return id
 }
-
-var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "snapshots", Table: TableRecords},
-	{Key: "names", Table: TableNames},
-	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
-}}
 
 // testSnapNamespace mirrors the composition root's snapshots declaration.
 func testSnapNamespace(conf *config.Config) metajson.Namespace {
