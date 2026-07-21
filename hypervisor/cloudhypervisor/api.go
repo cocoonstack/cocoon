@@ -69,10 +69,9 @@ type chQueueAffinity struct {
 }
 
 type chBalloon struct {
-	ID                string `json:"id,omitempty"`
-	Size              int64  `json:"size"`
-	DeflateOnOOM      bool   `json:"deflate_on_oom,omitempty"`
-	FreePageReporting bool   `json:"free_page_reporting,omitempty"`
+	Size              int64 `json:"size"`
+	DeflateOnOOM      bool  `json:"deflate_on_oom,omitempty"`
+	FreePageReporting bool  `json:"free_page_reporting,omitempty"`
 }
 
 type chRNG struct {
@@ -105,8 +104,7 @@ type chDevice struct {
 
 // chPciDeviceInfo is the response body from vm.add-fs / vm.add-device / vm.add-disk / vm.add-net (HTTP 200).
 type chPciDeviceInfo struct {
-	ID  string `json:"id"`
-	BDF string `json:"bdf"`
+	ID string `json:"id"`
 }
 
 type chVMInfoResponse struct {

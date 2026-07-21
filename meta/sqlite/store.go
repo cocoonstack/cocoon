@@ -290,6 +290,15 @@ func (s *Store) verifyIdentity() error {
 	return nil
 }
 
+// RefuseManifest fails when a conversion manifest sits beside dbPath, meaning an offline conversion is unfinished.
+func RefuseManifest(dbPath string) error {
+	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
+	if utils.FileExists(manifest) {
+		return fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
+	}
+	return nil
+}
+
 func tableName(ns, table string) string {
 	return quoteIdent(ns + "__" + table)
 }
@@ -410,6 +419,11 @@ func mapErr(err error) error {
 	}
 }
 
+var (
+	_ meta.Reader = (*txHandle)(nil)
+	_ meta.Writer = (*txHandle)(nil)
+)
+
 // txHandle implements Reader/Writer over one transaction; values are
 // detached by construction (every read allocates from row scans).
 type txHandle struct {
@@ -420,11 +434,6 @@ type txHandle struct {
 	write string
 	mode  meta.CommitMode
 }
-
-var (
-	_ meta.Reader = (*txHandle)(nil)
-	_ meta.Writer = (*txHandle)(nil)
-)
 
 func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error) {
 	if err := h.checkRead(ns); err != nil {
@@ -516,14 +525,6 @@ func (h *txHandle) checkWrite(ns string, relaxedOK bool) error {
 	}
 	if h.mode == meta.CommitRelaxed && !relaxedOK {
 		return fmt.Errorf("write %s: %w", ns, meta.ErrDurabilityContract)
-	}
-	return nil
-}
-
-func RefuseManifest(dbPath string) error {
-	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
-	if utils.FileExists(manifest) {
-		return fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
 	}
 	return nil
 }

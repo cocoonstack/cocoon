@@ -386,9 +386,12 @@ func providerForVM(conf *config.Config, cniProvider network.Network, bridgeCache
 	return cmdcore.InitNetwork(conf)
 }
 
-// runRoutedLoop runs fn per routed hypervisor, logging each success under logTag (unless JSON), and returns all done ids plus the last error.
-func runRoutedLoop(ctx context.Context, logTag, pastTense string, wantJSON bool, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) (allDone []string, lastErr error) {
-	logger := log.WithFunc(logTag)
+// batchRoutedCmd runs fn per routed hypervisor, logging each success (unless JSON), then wraps the last error, emits JSON, or logs the empty case.
+func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
+	logger := log.WithFunc("cmd.vm." + name)
+	wantJSON := cliutil.WantJSON(cmd)
+	var allDone []string
+	var lastErr error
 	for hyper, refs := range routed {
 		done, err := fn(hyper, refs)
 		if !wantJSON {
@@ -401,11 +404,6 @@ func runRoutedLoop(ctx context.Context, logTag, pastTense string, wantJSON bool,
 			lastErr = err
 		}
 	}
-	return allDone, lastErr
-}
-
-// finishRoutedCmd is the shared tail for routed batch commands: wrap lastErr, emit JSON, or log the empty-case message.
-func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, pastTense string, allDone []string, lastErr error) error {
 	if lastErr != nil {
 		return fmt.Errorf("%s: %w", name, lastErr)
 	}
@@ -413,15 +411,9 @@ func finishRoutedCmd(ctx context.Context, cmd *cobra.Command, logTag, name, past
 		return jsonErr
 	}
 	if len(allDone) == 0 {
-		log.WithFunc(logTag).Infof(ctx, "no VMs %s", pastTense)
+		logger.Infof(ctx, "no VMs %s", pastTense)
 	}
 	return nil
-}
-
-func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
-	logTag := "cmd.vm." + name
-	allDone, lastErr := runRoutedLoop(ctx, logTag, pastTense, cliutil.WantJSON(cmd), routed, fn)
-	return finishRoutedCmd(ctx, cmd, logTag, name, pastTense, allDone, lastErr)
 }
 
 // collectAttachedDevices reads fs/vfio devices; errors are logged and dropped so inspect tolerates a flaky vm.info.

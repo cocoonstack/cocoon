@@ -68,6 +68,11 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 			filePath, digestHex[:12], verifyHex[:12])
 	}
 
+	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
+}
+
+// finishQcow2Import commits the temp blob and logs the completion line shared by every import variant.
+func finishQcow2Import(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, tmpPath, digestHex string, logger *log.Fields) error {
 	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
 		return err
 	}
@@ -101,12 +106,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 
 	digestHex := hex.EncodeToString(h.Sum(nil))
 	logger.Debugf(ctx, "buffered stream -> sha256:%s", digestHex[:12])
-
-	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
-		return err
-	}
-	logger.Infof(ctx, "import complete: %s -> sha256:%s", name, digestHex)
-	return nil
+	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
 }
 
 func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
@@ -145,12 +145,7 @@ func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[im
 
 	digestHex := hex.EncodeToString(h.Sum(nil))
 	logger.Debugf(ctx, "concatenated %d file(s) -> sha256:%s", len(file), digestHex[:12])
-
-	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
-		return err
-	}
-	logger.Infof(ctx, "import complete: %s -> sha256:%s", name, digestHex)
-	return nil
+	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
 }
 
 func sniffConcatHead(file []string) error {

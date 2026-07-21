@@ -132,14 +132,40 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string, teardown Ne
 // roll a leased tombstone back in place; drive a deleting one to completion —
 // including the injected network cleanup — and refuse the operation.
 func (b *Backend) EntryGuard(ctx context.Context, id string) error {
-	err := b.update(ctx, func(t *vmTx) error { return b.guardVMTombstone(ctx, t, id) })
+	_, err := b.entryGuard(ctx, id)
+	return err
+}
+
+// EntryGuardLoad is EntryGuard returning the VM's record from the guard's own
+// transaction, sparing lock-held entry paths a second whole-namespace read.
+func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
+	rec, err := b.entryGuard(ctx, id)
+	if err != nil {
+		return VMRecord{}, err
+	}
+	if rec == nil {
+		return VMRecord{}, fmt.Errorf("%q not found", id)
+	}
+	return *rec, nil
+}
+
+func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) {
+	var rec *VMRecord
+	err := b.update(ctx, func(t *vmTx) error {
+		if err := b.guardVMTombstone(ctx, t, id); err != nil {
+			return err
+		}
+		var getErr error
+		rec, getErr = t.Get(id)
+		return getErr
+	})
 	if !errors.Is(err, ErrTombstoned) {
-		return err
+		return rec, err
 	}
 	if _, rerr := b.recoverVMTombstone(ctx, id, b.NetCleanup); rerr != nil {
-		return fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
+		return nil, fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
 	}
-	return fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
+	return nil, fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
 }
 
 // guardVMTombstone refuses tombstoned VMs inside the entrypoint's own

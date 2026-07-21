@@ -166,10 +166,7 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 		unlock()
 		return "", VMRecord{}, "", nil, err
 	}
-	if gErr := b.EntryGuard(ctx, vmID); gErr != nil {
-		return fail(gErr)
-	}
-	rec, err := b.LoadRecord(ctx, vmID)
+	rec, err := b.EntryGuardLoad(ctx, vmID)
 	if err != nil {
 		return fail(err)
 	}

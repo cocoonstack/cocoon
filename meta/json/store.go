@@ -297,11 +297,11 @@ func crash(step string) error {
 	return testCrashStep(step)
 }
 
+var _ meta.Reader = (*txReader)(nil)
+
 type txReader struct {
 	models map[string]*loaded
 }
-
-var _ meta.Reader = (*txReader)(nil)
 
 func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (json.RawMessage, bool, error) {
 	l, ok := r.models[ns]
@@ -324,14 +324,14 @@ func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn func(id strin
 	})
 }
 
+var _ meta.Writer = (*txWriter)(nil)
+
 type txWriter struct {
 	txReader
 	write string
 	model *Model
 	mode  meta.CommitMode
 }
-
-var _ meta.Writer = (*txWriter)(nil)
 
 func (w *txWriter) PutRaw(_ context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
 	if err := w.check(ns, relaxedOK); err != nil {

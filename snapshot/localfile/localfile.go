@@ -136,8 +136,8 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 		}
 	}()
 
-	if err = os.MkdirAll(dataDir, 0o750); err != nil {
-		return "", fmt.Errorf("create data dir: %w", err)
+	if err = utils.EnsureDirs(dataDir); err != nil {
+		return "", err
 	}
 	if err = utils.ExtractTar(dataDir, stream); err != nil {
 		return "", fmt.Errorf("extract snapshot data: %w", err)
@@ -258,16 +258,28 @@ func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, gcModule(lf, lf.gcPolicy))
 }
 
-// acquireBuildLease exclusively leases id while its data dir is being built (Create/Import), so rm/GC cannot resolve-and-delete the half-written dir.
-func (lf *LocalFile) acquireBuildLease(id string) (func(), error) {
-	fl := gofrsflock.New(lf.conf.LeasePath(id))
+// tryExclusiveLease TryLocks id's lease file; ok=false means an active holder. The caller owns fl.Close() when ok.
+func (lf *LocalFile) tryExclusiveLease(id string) (fl *gofrsflock.Flock, ok bool, err error) {
+	fl = gofrsflock.New(lf.conf.LeasePath(id))
 	locked, err := fl.TryLock()
 	if err != nil {
 		_ = fl.Close()
-		return nil, fmt.Errorf("lease snapshot %s: %w", id, err)
+		return nil, false, fmt.Errorf("lease snapshot %s: %w", id, err)
 	}
 	if !locked {
 		_ = fl.Close()
+		return nil, false, nil
+	}
+	return fl, true, nil
+}
+
+// acquireBuildLease exclusively leases id while its data dir is being built (Create/Import), so rm/GC cannot resolve-and-delete the half-written dir.
+func (lf *LocalFile) acquireBuildLease(id string) (func(), error) {
+	fl, ok, err := lf.tryExclusiveLease(id)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, fmt.Errorf("snapshot %s is in use", id)
 	}
 	return func() { _ = fl.Close() }, nil
@@ -290,14 +302,11 @@ func (lf *LocalFile) acquireReadLease(ctx context.Context, id string) (func(), e
 
 // deleteOne is idempotent under concurrent rm; the rival's emit is skipped so the ledger keeps exactly one stop per snapshot.
 func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
-	fl := gofrsflock.New(lf.conf.LeasePath(id))
-	locked, err := fl.TryLock()
+	fl, ok, err := lf.tryExclusiveLease(id)
 	if err != nil {
-		_ = fl.Close()
-		return fmt.Errorf("lease snapshot %s: %w", id, err)
+		return err
 	}
-	if !locked {
-		_ = fl.Close()
+	if !ok {
 		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
 	}
 	defer fl.Close() //nolint:errcheck

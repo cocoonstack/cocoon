@@ -270,10 +270,8 @@ func runtimeFileToCLIArg(c *chRuntimeFile) string {
 		return "file=" + c.File
 	case "socket":
 		return "socket=" + c.Socket
-	case "tty":
-		return "tty"
 	default:
-		return strings.ToLower(c.Mode) // "off", "null", "pty"
+		return strings.ToLower(c.Mode) // "off", "null", "tty", "pty"
 	}
 }
 

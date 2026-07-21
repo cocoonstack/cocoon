@@ -24,9 +24,7 @@ func tryFiclone(dst, src string, sync SyncMode) error {
 		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd()); errno != 0 {
 			return fmt.Errorf("ficlone: %w", errno)
 		}
-		// FICLONE only shares extents; honor the caller's durability request
-		// like SparseCopy does, or a Sync export is silently non-durable on
-		// the CoW filesystems where the fast path succeeds.
+		// FICLONE only shares extents — still honor Sync, or the fast path silently drops durability.
 		if sync == Sync {
 			if err := dstFile.Sync(); err != nil {
 				return fmt.Errorf("sync dst: %w", err)

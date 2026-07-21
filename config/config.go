@@ -106,7 +106,6 @@ func (c *Config) Validate() error {
 }
 
 // DNSServers parses the DNS string into a slice of server addresses.
-// Returns an error if any entry is not a valid IP address.
 func (c *Config) DNSServers() ([]string, error) {
 	if c.DNS == "" {
 		return nil, nil

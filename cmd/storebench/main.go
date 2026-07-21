@@ -266,7 +266,8 @@ func argDir(i int) string {
 	}
 	dir, err := os.MkdirTemp("", "storebench-*")
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
 	return dir
 }
@@ -285,8 +286,6 @@ func (c benchConfig) PIDFileName() string                 { return "pid" }
 func (c benchConfig) TerminateGracePeriod() time.Duration { return time.Second }
 func (c benchConfig) SocketWaitTimeout() time.Duration    { return time.Second }
 func (c benchConfig) EffectivePoolSize() int              { return 4 }
-func (c benchConfig) IndexFile() string                   { return filepath.Join(c.dir, "vms.json") }
-func (c benchConfig) IndexLock() string                   { return filepath.Join(c.dir, "vms.lock") }
 func (c benchConfig) EnsureDirs() error                   { return nil }
 func (c benchConfig) RunDir() string                      { return c.dir }
 func (c benchConfig) LogDir() string                      { return c.dir }

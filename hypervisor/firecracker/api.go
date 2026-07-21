@@ -75,12 +75,10 @@ type fcSnapshotCreate struct {
 }
 
 type fcSnapshotLoad struct {
-	SnapshotPath        string              `json:"snapshot_path"`
-	MemBackend          fcSnapshotMemBE     `json:"mem_backend"`
-	EnableDiffSnapshots bool                `json:"enable_diff_snapshots,omitempty"`
-	ResumeVM            bool                `json:"resume_vm,omitempty"`
-	NetworkOverrides    []fcNetworkOverride `json:"network_overrides,omitempty"`
-	VsockOverride       *fcVsockOverride    `json:"vsock_override,omitempty"`
+	SnapshotPath     string              `json:"snapshot_path"`
+	MemBackend       fcSnapshotMemBE     `json:"mem_backend"`
+	NetworkOverrides []fcNetworkOverride `json:"network_overrides,omitempty"`
+	VsockOverride    *fcVsockOverride    `json:"vsock_override,omitempty"`
 }
 
 // fcNetworkOverride overrides a network interface from the snapshot with a new TAP device (FC v1.14+, PR #4731).
