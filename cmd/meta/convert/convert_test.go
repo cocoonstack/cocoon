@@ -445,3 +445,33 @@ func TestWALWriterWorker(t *testing.T) {
 	fmt.Println("ACK")
 	select {} //nolint:staticcheck // hang until SIGKILL keeps the WAL un-checkpointed
 }
+
+// TestConvertSkipsNeverWrittenNamespace: a namespace whose lock dir was
+// never created (subsystem never ran) must not fail the quiesce probe.
+func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	late := metajson.Namespace{
+		Name:     "latecomer",
+		FilePath: filepath.Join(spec.MetaRoot, "..", "notready", "late.json"),
+		LockPath: filepath.Join(spec.MetaRoot, "..", "notready", "late.lock"),
+		Codec:    metajson.GenericCodec{},
+	}
+	spec.JSON = append(spec.JSON, late)
+	spec.Decls = append(spec.Decls, metasqlite.Namespace{Name: "latecomer", Tables: testTables})
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("convert with never-written namespace: %v", err)
+	}
+	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("open after convert: %v", err)
+	}
+	defer sq.Close() //nolint:errcheck
+	if got := scanAll(t, sq, "vms"); len(got) != 4 {
+		t.Fatalf("content: %v", got)
+	}
+	_ = sq.Close()
+	if err := Run(t.Context(), spec, "json"); err != nil {
+		t.Fatalf("reverse convert with never-written namespace: %v", err)
+	}
+}

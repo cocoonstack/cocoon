@@ -163,9 +163,6 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 		// transient probe would delete the shared lock file on release.
 		l := flock.New(jns.LockPath)
 		ok, err := l.TryLock(ctx)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
 		if err != nil {
 			return err
 		}
@@ -179,9 +176,23 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 	return nil
 }
 
+// ensureJSONDirs creates namespace dirs for subsystems that never ran —
+// their absence means empty, and the engine's flock needs the dir to exist.
+func ensureJSONDirs(spec Spec) error {
+	for _, jns := range spec.JSON {
+		if err := os.MkdirAll(filepath.Dir(jns.LockPath), 0o750); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == EngineSQLite {
+		if err := ensureJSONDirs(spec); err != nil {
+			return nil, err
+		}
 		return metajson.Open(spec.JSON...)
 	}
 	// The driver would create an empty file on first touch; a missing source
@@ -194,6 +205,9 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 
 func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, error) {
 	if target == EngineJSON {
+		if err := ensureJSONDirs(spec); err != nil {
+			return nil, err
+		}
 		return metajson.Open(spec.JSON...)
 	}
 	if !utils.FileExists(spec.DBPath) {
