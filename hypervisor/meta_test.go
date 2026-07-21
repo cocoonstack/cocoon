@@ -13,7 +13,6 @@ import (
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
@@ -53,7 +52,12 @@ type VMIndex struct {
 }
 
 func (idx *VMIndex) Init() {
-	utils.InitNamedIndex(&idx.VMs, &idx.Names)
+	if idx.VMs == nil {
+		idx.VMs = map[string]*VMRecord{}
+	}
+	if idx.Names == nil {
+		idx.Names = map[string]string{}
+	}
 }
 
 // dbUpdate is the test-only whole-index shim: materialize, run fn, write the

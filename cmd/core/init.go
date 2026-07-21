@@ -65,18 +65,6 @@ type hypervisorFactory struct {
 	ctor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
 }
 
-func InitBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, hypervisor.Hypervisor, error) {
-	backends, err := InitImageBackends(ctx, conf)
-	if err != nil {
-		return nil, nil, err
-	}
-	hyper, err := InitHypervisor(ctx, conf)
-	if err != nil {
-		return nil, nil, err
-	}
-	return backends, hyper, nil
-}
-
 func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, error) {
 	ociStore, cloudimgStore, err := InitImageBackendsForPull(ctx, conf)
 	if err != nil {

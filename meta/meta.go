@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -73,6 +74,17 @@ type Writer interface {
 	Reader
 	PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error
 	DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error
+}
+
+// CheckWriteScope enforces write scope (clause 2) and durability (clause 5) for one write.
+func CheckWriteScope(ns, write string, mode CommitMode, relaxedOK bool) error {
+	if ns != write {
+		return fmt.Errorf("write %s: %w", ns, ErrScope)
+	}
+	if mode == CommitRelaxed && !relaxedOK {
+		return fmt.Errorf("write %s: %w", ns, ErrDurabilityContract)
+	}
+	return nil
 }
 
 func relaxedOK(opts []WriteOpt) bool {

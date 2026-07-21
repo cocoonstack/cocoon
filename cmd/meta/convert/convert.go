@@ -305,7 +305,7 @@ func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 	if err := src.View(ctx, []string{ns.Name}, func(r meta.Reader) error {
 		for _, tbl := range ns.Tables {
 			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw json.RawMessage) error {
-				rows = append(rows, row{tbl, id, slices.Clone(raw)})
+				rows = append(rows, row{tbl, id, raw})
 				return nil
 			}); err != nil {
 				return err
@@ -358,7 +358,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 		for _, tbl := range ns.Tables {
 			collected := map[string]json.RawMessage{}
 			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw json.RawMessage) error {
-				collected[id] = slices.Clone(raw)
+				collected[id] = raw
 				return nil
 			}); err != nil {
 				return err

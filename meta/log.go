@@ -74,7 +74,7 @@ func (l *Log[R]) Scan(ctx context.Context, r Reader, after Seq, fn func(Seq, *R)
 			return fmt.Errorf("%s/%s id %q: %v: %w", l.ns, l.table, id, err, ErrCorrupt)
 		}
 		if Seq(n) > after {
-			items = append(items, item{Seq(n), slices.Clone(raw)})
+			items = append(items, item{Seq(n), raw})
 		}
 		return nil
 	}); err != nil {
