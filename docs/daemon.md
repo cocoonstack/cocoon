@@ -76,6 +76,12 @@ and belongs to whatever runs on top of cocoon. It also refuses to guess a cause:
 an adopted process cannot report why it died, so every exit outside a cocoon stop
 is recorded as `unexpected-exit`.
 
+If you do build a restart policy on top, trigger it on the `unexpected-exit`
+transition rather than on your own kill. `cocoon vm start` issued in the same
+instant a VMM is killed races that VMM's teardown and fails its launch timeout —
+with or without a daemon. Waiting for the transition costs about 30ms and makes
+the restart reliable.
+
 ## Transition tracking
 
 Supervision needs to tell a transition it has seen from one it has not, so every
