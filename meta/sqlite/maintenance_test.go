@@ -126,7 +126,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 	held := make(chan struct{})
 	release := make(chan struct{})
 	go func() {
-		_ = s1.Update(context.Background(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+		_ = s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
 			close(held)
 			<-release
 			return nil
@@ -152,7 +152,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 // concurrent run's stale-tmp cleanup yanks the first run's tmp mid-verify
 // and publishes an empty backup with a nil error.
 func TestBackupConcurrentSameDest(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
 	err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
