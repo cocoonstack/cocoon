@@ -1,0 +1,14 @@
+//go:build !linux
+
+package utils
+
+import "fmt"
+
+// procStartTime has no portable source outside Linux; a live pid degrades to
+// pid-only identity, which cannot detect pid reuse.
+func procStartTime(pid int) (uint64, error) {
+	if !IsProcessAlive(pid) {
+		return 0, fmt.Errorf("process %d is not alive", pid)
+	}
+	return 0, nil
+}

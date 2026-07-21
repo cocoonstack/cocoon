@@ -57,11 +57,11 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	now := timeNow()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.Config = *vmCfg
-		r.State = types.VMStateRunning
+		markTransition(r, types.VMStateRunning, types.TransitionRestore, now)
 		r.Quarantine = ""
 		r.StartedAt = &now
 		r.StoppedAt = nil
-		r.UpdatedAt = now
+		r.QuiescePending = false
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
@@ -164,6 +164,10 @@ func (b *Backend) restoreCore(
 		if err := apply(rec); err != nil {
 			return err
 		}
+		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
+		if err := b.RecoverNetwork(ctx, rec); err != nil {
+			return fmt.Errorf("recover network: %w", err)
+		}
 		var afterErr error
 		result, afterErr = afterExtract(ctx, vmID, vmCfg, rec)
 		return afterErr
@@ -219,9 +223,8 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		if r == nil || !hasOpenComputeInterval(r) {
 			return nil
 		}
-		r.State = types.VMStateStopped
+		markTransition(r, types.VMStateStopped, types.TransitionRestore, now)
 		r.StoppedAt = &now
-		r.UpdatedAt = now
 		closed = true
 		return t.Put(vmID, r)
 	}); err != nil {

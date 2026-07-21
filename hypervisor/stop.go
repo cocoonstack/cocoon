@@ -56,8 +56,16 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 		return err
 	}
 	// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
+	logger := log.WithFunc(b.Typ + ".StopOneLocked")
 	if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
-		log.WithFunc(b.Typ+".StopOneLocked").Warnf(ctx, "mark stopped %s: %v", id, err)
+		logger.Warnf(ctx, "mark stopped %s: %v", id, err)
+	}
+	// Still under the caller's ops lock: an idle TAP's TC redirect storms softirqs until its host NICs go down (#130). A failure keeps the pending flag for a later pass.
+	// Gated on the pre-stop record so an unplumbed VM's stop pays no extra read; the stop cannot have changed what that predicate reads.
+	if needsQuiesce(&rec) {
+		if err := b.QuiesceIfPending(ctx, id); err != nil {
+			logger.Warnf(ctx, "%v", err)
+		}
 	}
 	return nil
 }

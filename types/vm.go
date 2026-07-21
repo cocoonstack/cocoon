@@ -12,6 +12,13 @@ const (
 	VMStateRunning  VMState = "running"  // CH process alive, guest is up
 	VMStateStopped  VMState = "stopped"  // CH process has exited cleanly
 	VMStateError    VMState = "error"    // start, stop, or restore failed
+
+	TransitionBoot           TransitionReason = "boot"
+	TransitionRestart        TransitionReason = "restart"
+	TransitionRestore        TransitionReason = "restore"
+	TransitionStopUser       TransitionReason = "stop-user"
+	TransitionError          TransitionReason = "error"
+	TransitionUnexpectedExit TransitionReason = "unexpected-exit" // any exit outside a cocoon stop; an adopted process cannot report its cause
 )
 
 var (
@@ -24,6 +31,9 @@ var (
 
 // VMState represents the lifecycle state of a VM.
 type VMState string
+
+// TransitionReason annotates why a VM last changed state.
+type TransitionReason string
 
 // VMConfig describes the resources requested for a new VM.
 type VMConfig struct {
@@ -97,6 +107,11 @@ type VM struct {
 
 	// SnapshotIDs tracks snapshots created from this VM; populated by toVM() from VMRecord.SnapshotIDs.
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
+
+	// TransitionGeneration increments once per committed state transition, so a consumer that missed events can tell a transition it has not handled from one it has.
+	TransitionGeneration uint64           `json:"transition_generation,omitempty"`
+	LastTransitionReason TransitionReason `json:"last_transition_reason,omitempty"`
+	LastTransitionAt     *time.Time       `json:"last_transition_at,omitempty"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`

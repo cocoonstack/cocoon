@@ -47,6 +47,11 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 		return fmt.Errorf("network invariants violated: %w", vErr)
 	}
 	return runWrapped(rec, spec.Wrap, func() error {
+		// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
+		if err := b.RecoverNetwork(ctx, rec); err != nil {
+			b.MarkError(ctx, id)
+			return fmt.Errorf("recover network: %w", err)
+		}
 		sockPath := SocketPath(rec.RunDir)
 		pid, err := spec.Launch(ctx, rec, sockPath)
 		if err != nil {
@@ -91,13 +96,11 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	switch {
 	case runErr == nil:
 		if rec.State != types.VMStateRunning {
-			b.reconcileToRunning(ctx, id)
+			b.ReconcileToRunning(ctx, id)
 		}
 		return nil, nil
 	case errors.Is(runErr, ErrNotRunning):
-		if hasOpenComputeInterval(&rec) {
-			b.closeStaleComputeInterval(ctx, &rec)
-		}
+		b.convergeCrashedStart(ctx, &rec)
 	default:
 		return nil, fmt.Errorf("reconcile running VM %s: %w", id, runErr)
 	}

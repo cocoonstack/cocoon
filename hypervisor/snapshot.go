@@ -150,6 +150,11 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	if uErr := b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped); uErr != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
 	}
+	if needsQuiesce(&rec) {
+		if qErr := b.QuiesceIfPending(ctx, vmID); qErr != nil {
+			logger.Warnf(ctx, "%v", qErr)
+		}
+	}
 	return nil
 }
 

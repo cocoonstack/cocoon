@@ -446,7 +446,7 @@ func TestReconcileToRunningFromError(t *testing.T) {
 	b.MarkError(ctx, "vm1")
 	rec.Reset()
 
-	b.reconcileToRunning(ctx, "vm1")
+	b.ReconcileToRunning(ctx, "vm1")
 
 	loaded, err := b.LoadRecord(ctx, "vm1")
 	if err != nil {
@@ -472,7 +472,7 @@ func TestReconcileToRunningOrphanLaunchEmitsStart(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 2<<30, 20<<30, false)
 
-	b.reconcileToRunning(ctx, "vm1")
+	b.ReconcileToRunning(ctx, "vm1")
 
 	loaded, _ := b.LoadRecord(ctx, "vm1")
 	if loaded.State != types.VMStateRunning {
@@ -496,7 +496,7 @@ func TestReconcileToRunningOrphanLaunchAfterFirstBoot(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	b.reconcileToRunning(ctx, "vm1")
+	b.ReconcileToRunning(ctx, "vm1")
 
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Reason != metering.ReasonRestart {
@@ -510,7 +510,7 @@ func TestReconcileToRunningIdempotent(t *testing.T) {
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	rec.Reset()
 
-	b.reconcileToRunning(ctx, "vm1")
+	b.ReconcileToRunning(ctx, "vm1")
 
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("idempotent reconcile must not emit; got %d", len(got))

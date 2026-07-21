@@ -103,13 +103,17 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	}
 	now := timeNow()
 	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
-		r.State = state
-		r.UpdatedAt = now
-		if state == types.VMStateStopped && hasOpenComputeInterval(r) {
-			r.StoppedAt = &now
-			return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
+		if state != types.VMStateStopped {
+			markTransition(r, state, types.TransitionError, now)
+			return nil
 		}
-		return nil
+		markTransition(r, state, types.TransitionStopUser, now)
+		r.QuiescePending = needsQuiesce(r)
+		if !hasOpenComputeInterval(r) {
+			return nil
+		}
+		r.StoppedAt = &now
+		return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
 	})
 }
 
@@ -159,9 +163,8 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 		if err != nil || r == nil {
 			return err
 		}
-		r.State = types.VMStateError
+		markTransition(r, types.VMStateError, types.TransitionError, now)
 		r.Quarantine = reason
-		r.UpdatedAt = now
 		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
@@ -176,52 +179,23 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	now := timeNow()
 	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
 		shape := shapeFromConfig(r.Config)
+		emitReason, transition := bootReasons(r.FirstBooted)
 		var staged []metering.Entry
 		if hasOpenComputeInterval(r) {
 			staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
 		}
-		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, bootOrRestartReason(r.FirstBooted), shape, now))
-		r.State = types.VMStateRunning
+		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, emitReason, shape, now))
+		markTransition(r, types.VMStateRunning, transition, now)
 		r.StartedAt = &now
 		r.StoppedAt = nil
-		r.UpdatedAt = now
 		r.FirstBooted = true
+		r.QuiescePending = false
 		return staged
 	})
 }
 
-// closeStaleComputeInterval emits stop-crash and writes StoppedAt; precondition: caller confirmed the process is dead. Self-healing if the record vanishes (concurrent rm) or was already closed: skip emit.
-func (b *Backend) closeStaleComputeInterval(ctx context.Context, rec *VMRecord) {
-	now := timeNow()
-	closed := false
-	if err := b.update(ctx, func(t *vmTx) error {
-		closed = false
-		r, err := t.Get(rec.ID)
-		if err != nil {
-			return err
-		}
-		if r == nil || !hasOpenComputeInterval(r) {
-			return nil
-		}
-		if r.State == types.VMStateRunning {
-			r.State = types.VMStateStopped
-		}
-		r.StoppedAt = &now
-		r.UpdatedAt = now
-		closed = true
-		return t.Put(rec.ID, r)
-	}); err != nil {
-		log.WithFunc(b.Typ+".closeStaleComputeInterval").Warnf(ctx, "close interval for %s: %v", rec.ID, err)
-		return
-	}
-	if !closed {
-		return
-	}
-	b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStop, rec.ID, metering.ReasonStopCrash, shapeFromConfig(rec.Config), now))
-}
-
-// reconcileToRunning flips State→Running for a drifted record whose process is alive. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
-func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
+// ReconcileToRunning flips State→Running for a drifted record whose process is alive; the caller holds the VM ops lock. With an open compute interval (Error after Running) the ledger already matches; without one (rare orphan: BatchMarkStarted's DB write failed after a successful launch) we emit a fresh compute.start so a later stop doesn't fire an unmatched compute.stop.
+func (b *Backend) ReconcileToRunning(ctx context.Context, id string) {
 	now := timeNow()
 	var (
 		emit   bool
@@ -237,23 +211,22 @@ func (b *Backend) reconcileToRunning(ctx context.Context, id string) {
 		if r == nil || r.State == types.VMStateRunning {
 			return nil
 		}
-		if hasOpenComputeInterval(r) {
-			r.State = types.VMStateRunning
-			r.StoppedAt = nil
-			r.UpdatedAt = now
+		emitReason, transition := bootReasons(r.FirstBooted)
+		open := hasOpenComputeInterval(r)
+		markTransition(r, types.VMStateRunning, transition, now)
+		r.StoppedAt = nil
+		r.QuiescePending = false
+		if open {
 			return t.Put(id, r)
 		}
 		emit = true
 		shape = shapeFromConfig(r.Config)
-		reason = bootOrRestartReason(r.FirstBooted)
-		r.State = types.VMStateRunning
+		reason = emitReason
 		r.StartedAt = &now
-		r.StoppedAt = nil
-		r.UpdatedAt = now
 		r.FirstBooted = true
 		return t.Put(id, r)
 	}); err != nil {
-		log.WithFunc(b.Typ+".reconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
+		log.WithFunc(b.Typ+".ReconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
 		return
 	}
 	if emit {
@@ -271,9 +244,24 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-func bootOrRestartReason(firstBooted bool) metering.Reason {
+// markTransition stamps one committed state change; every record state write goes through it so generations stay dense enough to fence a stale observation against a newer transition.
+func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
+	r.State = state
+	r.TransitionGeneration++
+	r.LastTransitionReason = reason
+	r.LastTransitionAt = &at
+	r.UpdatedAt = at
+}
+
+// needsQuiesce reports whether the VM owns host plumbing a stop must bring down; it mirrors the provider selection, where a missing backend or NIC set means there is nothing to quiesce.
+func needsQuiesce(r *VMRecord) bool {
+	return r != nil && r.ResolvedNetBackend() != "" && len(r.NetworkConfigs) > 0
+}
+
+// bootReasons maps first-boot state onto the metering and transition vocabularies, which name the same event.
+func bootReasons(firstBooted bool) (metering.Reason, types.TransitionReason) {
 	if firstBooted {
-		return metering.ReasonRestart
+		return metering.ReasonRestart, types.TransitionRestart
 	}
-	return metering.ReasonBoot
+	return metering.ReasonBoot, types.TransitionBoot
 }
