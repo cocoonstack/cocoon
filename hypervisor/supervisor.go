@@ -62,8 +62,7 @@ func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) 
 	}); err != nil {
 		return SupervisionScan{}, err
 	}
-	// Outside the transaction: the json engine holds the namespace flock for the
-	// whole closure, and this walks every process on the host.
+	// Outside the transaction: this walks every process on the host, and the json engine holds the namespace flock for the whole closure.
 	procs, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		return SupervisionScan{}, fmt.Errorf("scan /proc for %s: %w", b.Typ, err)
@@ -78,9 +77,7 @@ func (b *Backend) ObserveVMM(ctx context.Context, rec *VMRecord) (utils.ProcRef,
 	return b.observe(ctx, rec, nil)
 }
 
-// ObserveVMMIn is ObserveVMM against a pass-wide /proc walk. It is for deciding
-// what work to attempt: anything that then mutates must re-observe freshly under
-// the ops lock, because the scan predates the lock.
+// ObserveVMMIn is ObserveVMM against a pass-wide /proc walk; it decides what work to attempt, so anything that then mutates must re-observe freshly under the ops lock.
 func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.ProcScan) (utils.ProcRef, error) {
 	return b.observe(ctx, rec, &scan)
 }
@@ -203,8 +200,7 @@ func (b *Backend) clearQuiescePending(ctx context.Context, id string, gen uint64
 // It schedules no quiesce of its own: the launch about to follow brings the same
 // plumbing up, and a failed launch leaves the pending flag for a later pass.
 func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
-	// Prechecked in memory: rec is fresh from the entry guard under the ops lock, and a
-	// transaction that would decide there is nothing to do still takes the namespace flock.
+	// Prechecked in memory: rec is fresh from the entry guard, and a transaction that decides nothing to do still takes the namespace flock.
 	if !NeedsDeadConvergence(rec) {
 		return
 	}
