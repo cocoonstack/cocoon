@@ -145,7 +145,7 @@ Applies to `cocoon vm restore`:
 
 | Flag          | Default | Description                                                                                            |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `--restore-mode` | `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require the snapshot file to remain on disk and a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
+| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--force`     | `false` | Skip the snapshot-belongs-to-VM check (only meaningful with `--from-dir`)                              |
 

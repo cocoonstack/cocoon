@@ -505,26 +505,3 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 		t.Fatalf("vm.add-disk paths = %v, want %v", added, want)
 	}
 }
-
-func TestCloneRestoreMode(t *testing.T) {
-	tests := []struct {
-		name string
-		mode string
-		mem  chMemory
-		want string
-	}{
-		{"default plain gets mmap", "", chMemory{}, "mmap"},
-		{"default hugepages stays copy", "", chMemory{HugePages: true}, ""},
-		{"default shared stays copy", "", chMemory{Shared: true}, ""},
-		{"explicit copy wins", "copy", chMemory{}, "copy"},
-		{"explicit ondemand wins", "ondemand", chMemory{}, "ondemand"},
-		{"explicit mmap on hugepages degrades", "mmap", chMemory{HugePages: true}, "copy"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := cloneRestoreMode(t.Context(), tt.mode, tt.mem); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}

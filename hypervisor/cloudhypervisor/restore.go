@@ -1,6 +1,7 @@
 package cloudhypervisor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -113,10 +114,10 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
 }
 
-// resolveRestoreMode downgrades an explicit mmap request on a hugepages/shared snapshot to eager copy with a warning; CH would downgrade silently.
+// resolveRestoreMode defaults plain private-anon snapshots to mmap — the mapping vm.restore takes keeps the staged file's inode alive past snapshot GC — and downgrades an explicit mmap on hugepages/shared to eager copy with a warning; CH would downgrade silently.
 func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 	if !mem.HugePages && !mem.Shared {
-		return mode
+		return cmp.Or(mode, restoreModeMmap)
 	}
 	logger := log.WithFunc("cloudhypervisor.resolveRestoreMode")
 	switch mode {
