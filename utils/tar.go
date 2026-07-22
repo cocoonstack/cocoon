@@ -54,7 +54,7 @@ func TarDir(tw *tar.Writer, dir string) error {
 	return nil
 }
 
-// ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped.
+// ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped. It never fsyncs — callers needing durability follow with SyncTree.
 func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 	tr := tar.NewReader(r)
 	for {
@@ -112,9 +112,9 @@ func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) e
 }
 
 // extractFileSparse restores a sparse file from its segment map.
-func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string) error {
+func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string) (err error) {
 	var segments []sparseSegment
-	if err := json.Unmarshal([]byte(mapJSON), &segments); err != nil {
+	if err = json.Unmarshal([]byte(mapJSON), &segments); err != nil {
 		return fmt.Errorf("decode sparse map: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 	if err != nil {
 		return err
 	}
-	defer f.Close() //nolint:errcheck
+	defer func() { err = errors.Join(err, f.Close()) }()
 
 	if err := f.Truncate(realSize); err != nil {
 		return err
@@ -137,15 +137,15 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 		}
 	}
 
-	return f.Sync()
+	return nil
 }
 
-func extractFile(path string, r io.Reader, perm os.FileMode) error {
+func extractFile(path string, r io.Reader, perm os.FileMode) (err error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm) //nolint:gosec
 	if err != nil {
 		return err
 	}
-	defer f.Close() //nolint:errcheck
+	defer func() { err = errors.Join(err, f.Close()) }()
 
 	bp := sparseBlockPool.Get().(*[]byte)
 	buf := *bp
@@ -178,7 +178,7 @@ func extractFile(path string, r io.Reader, perm os.FileMode) error {
 		}
 	}
 
-	return f.Sync()
+	return nil
 }
 
 // writeBlockSparse seeks over all-zero chunks instead of writing them.

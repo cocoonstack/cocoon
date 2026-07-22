@@ -419,14 +419,8 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, err
 	}
 
-	if conf.UseFirecracker && vmCfg.Windows {
-		return nil, nil, nil, fmt.Errorf("--fc and --windows are mutually exclusive: Firecracker does not support Windows guests")
-	}
-	if conf.UseFirecracker && vmCfg.SharedMemory {
-		return nil, nil, nil, fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
-	}
-	if conf.UseFirecracker && vmCfg.HugePages {
-		return nil, nil, nil, fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	if err = validateBackendFlags(conf, vmCfg); err != nil {
+		return nil, nil, nil, err
 	}
 	bridgeDev, _ := cmd.Flags().GetString("bridge")
 	if bridgeDev != "" && vmCfg.Network != "" {
@@ -446,11 +440,8 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if vmCfg.Windows && bootCfg.KernelPath != "" {
-		return nil, nil, nil, fmt.Errorf("--windows requires cloudimg (UEFI boot), got OCI direct boot image")
-	}
-	if conf.UseFirecracker && bootCfg.KernelPath == "" {
-		return nil, nil, nil, fmt.Errorf("--fc requires OCI images (direct kernel boot): Firecracker does not support UEFI/cloudimg boot")
+	if err = validateBootCompat(conf, vmCfg, bootCfg); err != nil {
+		return nil, nil, nil, err
 	}
 	cmdcore.EnsureFirmwarePath(conf, bootCfg)
 
@@ -483,6 +474,33 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
 	}
 	return ctx, info, hyper, nil
+}
+
+// validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create and debug so the capability gate list cannot drift.
+func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
+	if !conf.UseFirecracker {
+		return nil
+	}
+	switch {
+	case vmCfg.Windows:
+		return fmt.Errorf("--fc and --windows are mutually exclusive: Firecracker does not support Windows guests")
+	case vmCfg.SharedMemory:
+		return fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
+	case vmCfg.HugePages:
+		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	}
+	return nil
+}
+
+func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *types.BootConfig) error {
+	directBoot := hypervisor.IsDirectBoot(bootCfg)
+	if vmCfg.Windows && directBoot {
+		return fmt.Errorf("--windows requires cloudimg (UEFI boot), got OCI direct boot image")
+	}
+	if conf.UseFirecracker && !directBoot {
+		return fmt.Errorf("--fc requires OCI images (direct kernel boot): Firecracker does not support UEFI/cloudimg boot")
+	}
+	return nil
 }
 
 // pinResolvedBlobs holds the resolved image's digest locks until the reserve

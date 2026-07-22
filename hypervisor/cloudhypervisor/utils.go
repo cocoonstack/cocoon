@@ -181,8 +181,7 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 	case restoreModeMmap:
 		cfg.MemoryRestoreMode = chMemoryRestoreMmap
 	default:
-		// Fail loud rather than silently falling back to eager copy — a
-		// misspelled or wrong-case mode is a ~6x restore-latency regression.
+		// Fail loud: a misspelled mode silently falling back to eager copy is a ~6x restore-latency regression.
 		return fmt.Errorf("unknown restore mode %q", restoreMode)
 	}
 	body, err := json.Marshal(cfg)

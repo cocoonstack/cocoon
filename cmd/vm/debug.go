@@ -44,11 +44,8 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if conf.UseFirecracker && vmCfg.SharedMemory {
-		return fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
-	}
-	if conf.UseFirecracker && vmCfg.HugePages {
-		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	if err = validateBackendFlags(conf, vmCfg); err != nil {
+		return err
 	}
 	if len(vmCfg.DataDisks) > 0 {
 		fmt.Fprintln(os.Stderr, "warning: --data-disk is ignored in debug mode (debug only prints the hypervisor launch command; data disks need PrepareDataDisks to materialize)")
@@ -58,11 +55,11 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err = validateBootCompat(conf, vmCfg, boot); err != nil {
+		return err
+	}
 
 	if conf.UseFirecracker {
-		if boot.KernelPath == "" {
-			return fmt.Errorf("--fc requires OCI images (direct kernel boot)")
-		}
 		// FC requires uncompressed ELF kernel — resolve vmlinux path for debug output.
 		if err := firecracker.EnsureVmlinuxBoot(boot); err != nil {
 			return err

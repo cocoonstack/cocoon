@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/meta/contracttest"
 )
 
 const (
@@ -70,27 +70,10 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	dir := t.TempDir()
 	_ = newStore(t, dir, "alpha") // parent initializes once; workers only open
 	workers := stormWorkers()
-	cmds := make([]*exec.Cmd, 0, workers)
-	for w := range workers {
-		cmd := exec.Command(os.Args[0], "-test.run=TestMultiProcessWorker$", "-test.count=1") //nolint:gosec
-		cmd.Env = append(
-			os.Environ(),
-			"META_MP_DIR="+dir,
-			"META_MP_WORKER="+strconv.Itoa(w),
-			fmt.Sprintf("META_MP_OPS=%d", mpOps),
-		)
-		out := &bytes.Buffer{}
-		cmd.Stdout, cmd.Stderr = out, out
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("start worker %d: %v", w, err)
-		}
-		cmds = append(cmds, cmd)
-	}
-	for w, cmd := range cmds {
-		if err := cmd.Wait(); err != nil {
-			t.Fatalf("worker %d failed: %v\n%s", w, err, cmd.Stdout)
-		}
-	}
+	cmds := contracttest.SpawnWorkers(t, workers, "TestMultiProcessWorker", func(w int) []string {
+		return []string{"META_MP_DIR=" + dir, "META_MP_WORKER=" + strconv.Itoa(w), fmt.Sprintf("META_MP_OPS=%d", mpOps)}
+	})
+	contracttest.WaitWorkers(t, cmds, "failed")
 
 	s := newStore(t, dir, "alpha")
 	records := map[string]struct{}{}
@@ -157,27 +140,10 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	dir := t.TempDir()
 	_ = newStore(t, dir, "alpha", "beta")
 	scopes := []string{"alpha:beta", "beta:alpha"}
-	cmds := make([]*exec.Cmd, 0, 2*inverseWorkers)
-	for w := range 2 * inverseWorkers {
-		cmd := exec.Command(os.Args[0], "-test.run=TestInverseScopeWorker$", "-test.count=1") //nolint:gosec
-		cmd.Env = append(
-			os.Environ(),
-			"META_MP_DIR="+dir,
-			"META_MP_WORKER="+strconv.Itoa(w),
-			"META_MP_SCOPE="+scopes[w%2],
-		)
-		out := &bytes.Buffer{}
-		cmd.Stdout, cmd.Stderr = out, out
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("start worker %d: %v", w, err)
-		}
-		cmds = append(cmds, cmd)
-	}
-	for w, cmd := range cmds {
-		if err := cmd.Wait(); err != nil {
-			t.Fatalf("worker %d failed (deadlock or error): %v\n%s", w, err, cmd.Stdout)
-		}
-	}
+	cmds := contracttest.SpawnWorkers(t, 2*inverseWorkers, "TestInverseScopeWorker", func(w int) []string {
+		return []string{"META_MP_DIR=" + dir, "META_MP_WORKER=" + strconv.Itoa(w), "META_MP_SCOPE=" + scopes[w%2]}
+	})
+	contracttest.WaitWorkers(t, cmds, "failed (deadlock or error)")
 	s := newStore(t, dir, "alpha", "beta")
 	for _, ns := range []string{"alpha", "beta"} {
 		total := 0

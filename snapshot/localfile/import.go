@@ -70,6 +70,11 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 		return "", err
 	}
 
+	// Files and dir entries durable before the record exists (ExtractTar never fsyncs).
+	if err = utils.SyncTree(dataDir); err != nil {
+		return "", fmt.Errorf("sync snapshot to disk: %w", err)
+	}
+
 	size, sizeErr := utils.DirSize(dataDir)
 	if sizeErr != nil {
 		return "", fmt.Errorf("compute data dir size: %w", sizeErr)
