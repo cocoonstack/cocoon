@@ -44,7 +44,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 		return nil, fmt.Errorf("parse CH config: %w", err)
 	}
 
-	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
+	vmCfg.RestoreMode = cloneRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
 
 	meta, err := ch.conf.LoadAndValidateMeta(runDir)
 	if err != nil {
@@ -230,6 +230,14 @@ func (ch *CloudHypervisor) ensureCloneCidata(vmID string, vmCfg *types.VMConfig,
 		})
 	}
 	return storageConfigs, nil
+}
+
+// cloneRestoreMode defaults clones of plain private-anon snapshots to the mmap fast path (zero eager copy, page cache shared across sibling clones); explicit modes win. Safe against snapshot GC: the extracted memory file is mapped at restore time and the mapping keeps its inode alive.
+func cloneRestoreMode(ctx context.Context, mode string, mem chMemory) string {
+	if mode == "" && !mem.HugePages && !mem.Shared {
+		return restoreModeMmap
+	}
+	return resolveRestoreMode(ctx, mode, mem)
 }
 
 func parseCHConfig(path string) (*chVMConfig, error) {
