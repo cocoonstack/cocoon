@@ -34,25 +34,24 @@ func TestValidateRestoreNICs(t *testing.T) {
 	}
 }
 
-func TestValidateRestoreMode(t *testing.T) {
+func TestResolveRestoreMode(t *testing.T) {
 	tests := []struct {
-		name    string
-		mode    string
-		mem     chMemory
-		wantErr bool
+		name string
+		mode string
+		mem  chMemory
+		want string
 	}{
-		{"empty mode any mem", "", chMemory{HugePages: true, Shared: true}, false},
-		{"copy any mem", "copy", chMemory{HugePages: true}, false},
-		{"ondemand hugepages", "ondemand", chMemory{HugePages: true}, false},
-		{"mmap plain", "mmap", chMemory{}, false},
-		{"mmap hugepages", "mmap", chMemory{HugePages: true}, true},
-		{"mmap shared", "mmap", chMemory{Shared: true}, true},
+		{"empty mode any mem", "", chMemory{HugePages: true, Shared: true}, ""},
+		{"copy any mem", "copy", chMemory{HugePages: true}, "copy"},
+		{"ondemand hugepages", "ondemand", chMemory{HugePages: true}, "ondemand"},
+		{"mmap plain", "mmap", chMemory{}, "mmap"},
+		{"mmap hugepages degrades to copy", "mmap", chMemory{HugePages: true}, "copy"},
+		{"mmap shared degrades to copy", "mmap", chMemory{Shared: true}, "copy"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateRestoreMode(tt.mode, tt.mem)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("got err=%v, wantErr=%v", err, tt.wantErr)
+			if got := resolveRestoreMode(t.Context(), tt.mode, tt.mem); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}

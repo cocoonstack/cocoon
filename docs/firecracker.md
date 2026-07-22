@@ -32,7 +32,7 @@ cocoon vm clone my-snap --name clone-vm
 | Memory balloon | Y | Y |
 | qcow2 storage | Y | N |
 | Interactive console | Y | Y |
-| HugePages | Y | N (would break snapshot restore) |
+| HugePages | Y (opt-in `--hugepages`) | N (would break snapshot restore) |
 | Boot time | ~200-500ms | ~125ms |
 | Memory overhead | ~10-20 MiB/VM | <5 MiB/VM |
 

@@ -21,7 +21,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		Snapshot:         snapshot,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
-			return ch.preflightRestore(srcDir, rec, vmCfg.RestoreMode)
+			return ch.preflightRestore(ctx, srcDir, rec, vmCfg)
 		},
 		Kill: ch.killForRestore,
 		// Same sweep as DirectRestore's Populate: stale snapshot files from a previous incarnation must not survive the merge.
@@ -35,14 +35,12 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 	})
 }
 
-func (ch *CloudHypervisor) preflightRestore(srcDir string, rec *hypervisor.VMRecord, restoreMode string) error {
+func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) error {
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
 		return fmt.Errorf("parse snapshot config: %w", err)
 	}
-	if err := validateRestoreMode(restoreMode, chCfg.Memory); err != nil {
-		return err
-	}
+	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
 	if err := ch.conf.PreflightRestore(srcDir, rec, func(dir string, sidecar []*types.StorageConfig) error {
 		return validateSnapshotIntegrityParsed(dir, sidecar, chCfg)
 	}); err != nil {
@@ -115,12 +113,21 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
 }
 
-// validateRestoreMode rejects an explicit mmap request that CH would silently downgrade to eager copy: CoW restore needs plain private-anon guest memory.
-func validateRestoreMode(mode string, mem chMemory) error {
-	if mode != "mmap" || (!mem.HugePages && !mem.Shared) {
-		return nil
+// resolveRestoreMode downgrades an explicit mmap request on a hugepages/shared snapshot to eager copy with a warning — CH would downgrade silently, since CoW restore needs plain private-anon guest memory.
+func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
+	if !mem.HugePages && !mem.Shared {
+		return mode
 	}
-	return fmt.Errorf("restore-mode mmap is incompatible with this snapshot's memory config (hugepages=%t, shared=%t) and CH would silently fall back to eager copy; rebuild the golden without hugepages/shared memory or drop --restore-mode mmap", mem.HugePages, mem.Shared)
+	logger := log.WithFunc("cloudhypervisor.resolveRestoreMode")
+	switch mode {
+	case restoreModeMmap:
+		logger.Warnf(ctx, "restore-mode mmap needs plain private-anon snapshot memory (hugepages=%t, shared=%t): falling back to eager copy; rebuild the golden without hugepages/shared for the fast path", mem.HugePages, mem.Shared)
+		return restoreModeCopy
+	case "", restoreModeCopy:
+		// Normal operation for a hugepages/shared VM, not warn-worthy: eager copy is its only mode.
+		logger.Debugf(ctx, "snapshot memory (hugepages=%t, shared=%t) rules out the mmap fast path; memory loads via eager copy", mem.HugePages, mem.Shared)
+	}
+	return mode
 }
 
 // validateRestoreNICs rejects restore when the VM's NIC identity drifted since capture (net resize): vm.restore replays the snapshot's guest MACs verbatim, which would diverge from the live CNI/DB identity.

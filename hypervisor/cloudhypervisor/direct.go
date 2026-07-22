@@ -24,7 +24,7 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 		SrcDir:           srcDir,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
-			return ch.preflightRestore(srcDir, rec, vmCfg.RestoreMode)
+			return ch.preflightRestore(ctx, srcDir, rec, vmCfg)
 		},
 		Kill: ch.killForRestore,
 		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
