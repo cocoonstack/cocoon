@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestDevPath(t *testing.T) {

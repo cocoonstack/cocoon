@@ -101,6 +101,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--data-disk` | empty (repeatable) | Attach an extra data disk: `size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]`. See [Data Disks](vm.md#data-disks) |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |
+| `--hugepages` | `false`         | Back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap |
 
 ### Clone Flags
 

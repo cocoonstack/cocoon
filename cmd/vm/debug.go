@@ -47,6 +47,9 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if conf.UseFirecracker && vmCfg.SharedMemory {
 		return fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
 	}
+	if conf.UseFirecracker && vmCfg.HugePages {
+		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	}
 	if len(vmCfg.DataDisks) > 0 {
 		fmt.Fprintln(os.Stderr, "warning: --data-disk is ignored in debug mode (debug only prints the hypervisor launch command; data disks need PrepareDataDisks to materialize)")
 	}
@@ -221,8 +224,11 @@ func printCommonCHArgs(s chDebugSpec) {
 		cpuExtra = ",kvm_hyperv=on"
 	}
 	memExtra := ""
+	if s.VMCfg.HugePages {
+		memExtra += ",hugepages=on"
+	}
 	if s.VMCfg.SharedMemory {
-		memExtra = ",shared=on"
+		memExtra += ",shared=on"
 	}
 	fmt.Printf("  --cpus boot=%d,max=%d%s \\\n", s.VMCfg.CPU, s.MaxCPU, cpuExtra)
 	fmt.Printf("  --memory size=%dM%s \\\n", s.VMCfg.Memory>>20, memExtra) //nolint:mnd

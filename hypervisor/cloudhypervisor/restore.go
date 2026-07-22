@@ -113,7 +113,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
 }
 
-// resolveRestoreMode downgrades an explicit mmap request on a hugepages/shared snapshot to eager copy with a warning — CH would downgrade silently, since CoW restore needs plain private-anon guest memory.
+// resolveRestoreMode downgrades an explicit mmap request on a hugepages/shared snapshot to eager copy with a warning; CH would downgrade silently.
 func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 	if !mem.HugePages && !mem.Shared {
 		return mode
@@ -124,7 +124,6 @@ func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 		logger.Warnf(ctx, "restore-mode mmap needs plain private-anon snapshot memory (hugepages=%t, shared=%t): falling back to eager copy; rebuild the golden without hugepages/shared for the fast path", mem.HugePages, mem.Shared)
 		return restoreModeCopy
 	case "", restoreModeCopy:
-		// Normal operation for a hugepages/shared VM, not warn-worthy: eager copy is its only mode.
 		logger.Debugf(ctx, "snapshot memory (hugepages=%t, shared=%t) rules out the mmap fast path; memory loads via eager copy", mem.HugePages, mem.Shared)
 	}
 	return mode
