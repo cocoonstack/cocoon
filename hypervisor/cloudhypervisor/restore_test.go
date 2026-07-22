@@ -41,8 +41,12 @@ func TestResolveRestoreMode(t *testing.T) {
 		mem  chMemory
 		want string
 	}{
-		{"empty mode any mem", "", chMemory{HugePages: true, Shared: true}, ""},
+		{"default plain gets mmap", "", chMemory{}, "mmap"},
+		{"default hugepages stays copy", "", chMemory{HugePages: true}, ""},
+		{"default shared stays copy", "", chMemory{Shared: true}, ""},
+		{"explicit copy wins", "copy", chMemory{}, "copy"},
 		{"copy any mem", "copy", chMemory{HugePages: true}, "copy"},
+		{"explicit ondemand wins", "ondemand", chMemory{}, "ondemand"},
 		{"ondemand hugepages", "ondemand", chMemory{HugePages: true}, "ondemand"},
 		{"mmap plain", "mmap", chMemory{}, "mmap"},
 		{"mmap hugepages degrades to copy", "mmap", chMemory{HugePages: true}, "copy"},

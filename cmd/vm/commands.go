@@ -131,7 +131,7 @@ func Command(h Handler) *cobra.Command {
 		},
 		RunE: h.Restore,
 	}
-	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; ondemand/mmap require the snapshot file to remain on disk; hugepages/shared snapshots degrade mmap to copy with a warning)")
+	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
 	cliutil.AddOutputFlag(restoreCmd)
