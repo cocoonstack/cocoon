@@ -27,6 +27,9 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 	if vmCfg.SharedMemory {
 		return nil, fmt.Errorf("firecracker does not support shared memory (vhost-user-fs)")
 	}
+	if vmCfg.HugePages {
+		return nil, fmt.Errorf("firecracker does not support hugepages (restore cannot map hugetlbfs-backed snapshots)")
+	}
 	if !hypervisor.IsDirectBoot(bootCfg) {
 		return nil, fmt.Errorf("firecracker requires direct kernel boot (OCI image)")
 	}

@@ -131,7 +131,7 @@ func Command(h Handler) *cobra.Command {
 		},
 		RunE: h.Restore,
 	}
-	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; ondemand/mmap require the snapshot file to remain on disk; mmap needs a plain private-anon snapshot — no hugepages/shared)")
+	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; ondemand/mmap require the snapshot file to remain on disk; hugepages/shared snapshots degrade mmap to copy with a warning)")
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
 	cliutil.AddOutputFlag(restoreCmd)
@@ -319,6 +319,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (use page cache instead; CH only)")
 	cmd.Flags().Bool("windows", false, "Windows guest (UEFI boot, kvm_hyperv=on, no cidata)")
 	cmd.Flags().Bool("shared-memory", false, "enable CH memory shared=on; required to attach vhost-user-fs later (CH only, fixed for VM lifetime)")
+	cmd.Flags().Bool("hugepages", false, "back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap")
 	cmd.Flags().StringArray("data-disk", nil, "extra data disk: size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]; repeatable")
 }
 

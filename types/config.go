@@ -21,4 +21,6 @@ type Config struct {
 	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
 	// SharedMemory toggles CH memory shared=on (vhost-user-fs prerequisite); fixed at create, persists through clone/restore.
 	SharedMemory bool `json:"shared_memory,omitempty"`
+	// HugePages backs CH guest memory with hugetlbfs (costs snapshots the mmap fast path); fixed at create, persists through clone/restore.
+	HugePages bool `json:"hugepages,omitempty"`
 }

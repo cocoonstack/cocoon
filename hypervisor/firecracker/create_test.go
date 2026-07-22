@@ -3,9 +3,12 @@ package firecracker
 import (
 	"bytes"
 	"compress/gzip"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestDevPath(t *testing.T) {
@@ -118,4 +121,24 @@ func zstdCompress(t *testing.T, data []byte) []byte {
 		t.Fatalf("zstd close: %v", err)
 	}
 	return out
+}
+
+func TestCreateRejectsUnsupportedMemoryConfig(t *testing.T) {
+	fc := &Firecracker{}
+	tests := []struct {
+		name string
+		cfg  types.Config
+		want string
+	}{
+		{"shared memory", types.Config{SharedMemory: true}, "shared memory"},
+		{"hugepages", types.Config{HugePages: true}, "hugepages"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := fc.Create(t.Context(), "vm1", &types.VMConfig{Config: tt.cfg}, nil, types.NetSetup{}, nil)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("got %v, want a %q rejection", err, tt.want)
+			}
+		})
+	}
 }

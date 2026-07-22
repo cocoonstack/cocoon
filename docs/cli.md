@@ -101,6 +101,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--data-disk` | empty (repeatable) | Attach an extra data disk: `size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]`. See [Data Disks](vm.md#data-disks) |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |
+| `--hugepages` | `false`         | Back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap |
 
 ### Clone Flags
 
@@ -144,7 +145,7 @@ Applies to `cocoon vm restore`:
 
 | Flag          | Default | Description                                                                                            |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `--restore-mode` | `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require the snapshot file to remain on disk and a CH build with matching support — an older CH silently ignores the field and restores by copy |
+| `--restore-mode` | `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require the snapshot file to remain on disk and a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--force`     | `false` | Skip the snapshot-belongs-to-VM check (only meaningful with `--from-dir`)                              |
 

@@ -53,7 +53,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **DNS configuration** — custom DNS servers injected into VMs via kernel cmdline (OCI) or cloud-init network-config (cloudimg)
 - **Cloud-init metadata** — automatic NoCloud cidata FAT12 disk for cloudimg VMs (hostname, configurable user/password via `--user`/`--password`, multi-NIC Netplan v2 network-config); cidata is automatically skipped on subsequent boots
 - **User data disks** — `--data-disk` attaches additional virtio-blk disks per VM, with optional ext4 mkfs at create time, cloud-init `mounts:` auto-mount on cloudimg+CH (via `/dev/disk/by-id/virtio-<name>`), per-disk DirectIO override, and 1:1 inheritance through snapshot/clone/restore; `vm clone --data-disk` adds fresh disks to a clone and `vm disk attach/detach` hot-plugs existing raw files on a running VM (both CH only)
-- **Hugepages** — automatic detection of host hugepage configuration; Cloud Hypervisor VM memory backed by hugepages when available (never used for Firecracker, whose snapshots cannot restore from hugetlbfs)
+- **Hugepages** — opt-in via `vm create --hugepages` (Cloud Hypervisor only); backs VM memory with hugetlbfs at the cost of the mmap restore fast path for that VM's snapshots (never supported on Firecracker, whose snapshots cannot restore from hugetlbfs)
 - **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation

@@ -425,6 +425,9 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	if conf.UseFirecracker && vmCfg.SharedMemory {
 		return nil, nil, nil, fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
 	}
+	if conf.UseFirecracker && vmCfg.HugePages {
+		return nil, nil, nil, fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	}
 	bridgeDev, _ := cmd.Flags().GetString("bridge")
 	if bridgeDev != "" && vmCfg.Network != "" {
 		return nil, nil, nil, fmt.Errorf("--bridge and --network are mutually exclusive")

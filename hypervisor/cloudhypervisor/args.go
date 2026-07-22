@@ -9,7 +9,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -49,7 +48,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig
 
 	cfg := &chVMConfig{
 		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: maxVCPUs, KVMHyperV: rec.Config.Windows},
-		Memory:   chMemory{Size: mem, HugePages: utils.DetectHugePages(), Shared: rec.Config.SharedMemory},
+		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory},
 		RNG:      chRNG{Src: "/dev/urandom"},
 		Watchdog: true,
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},

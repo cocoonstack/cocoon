@@ -29,6 +29,10 @@ const (
 
 	chAPIBase = "http://localhost/api/v1/"
 
+	restoreModeCopy     = "copy"
+	restoreModeOnDemand = "ondemand"
+	restoreModeMmap     = "mmap"
+
 	// chMemoryRestoreOnDemand lazily pages in guest memory via userfaultfd instead of a full upfront copy.
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
 	// chMemoryRestoreMmap maps the snapshot file copy-on-write, sharing page cache across clones of one snapshot.
@@ -171,10 +175,10 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 		SourceURL: "file://" + sourceDir,
 	}
 	switch restoreMode {
-	case "", "copy": // eager copy is CH's default; leave MemoryRestoreMode unset
-	case "ondemand":
+	case "", restoreModeCopy: // eager copy is CH's default; leave MemoryRestoreMode unset
+	case restoreModeOnDemand:
 		cfg.MemoryRestoreMode = chMemoryRestoreOnDemand
-	case "mmap":
+	case restoreModeMmap:
 		cfg.MemoryRestoreMode = chMemoryRestoreMmap
 	default:
 		// Fail loud rather than silently falling back to eager copy — a
