@@ -1,4 +1,4 @@
-// Package vmlock resolves per-VM operation locks by vmID alone, so recordless orphan-netns GC can still find them; the lock file is never deleted by cleanup.
+// Package vmlock resolves per-VM operation locks by vmID alone, so recordless consumers (orphan-netns GC, dead-source clone leases) derive the path without a record. Locks are transient: an exclusive release unlinks the file while still holding it, and every acquirer — including SharedLease — rebinds when it lands on an unlinked inode, so lease files self-clean instead of accumulating one per VM ever created.
 package vmlock
 
 import (
@@ -8,9 +8,15 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const lockSuffix = ".lock"
+
 // Path returns the lock file path for vmID under rootDir.
 func Path(rootDir, vmID string) string {
-	return filepath.Join(rootDir, "locks", "vm", vmID+".lock")
+	return filepath.Join(lockDir(rootDir), vmID+lockSuffix)
+}
+
+func lockDir(rootDir string) string {
+	return filepath.Join(rootDir, "locks", "vm")
 }
 
 // New returns vmID's operation lock, creating the lock directory on demand.
@@ -19,5 +25,5 @@ func New(rootDir, vmID string) (*flock.Lock, error) {
 	if err := utils.EnsureDirs(filepath.Dir(p)); err != nil {
 		return nil, err
 	}
-	return flock.New(p), nil
+	return flock.NewTransient(p), nil
 }

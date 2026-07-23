@@ -118,8 +118,26 @@ func (l *Lock) pathBound() bool {
 	if err != nil {
 		return false
 	}
-	cur, err := os.Stat(l.path)
+	return BoundToPath(held, l.path)
+}
+
+// BoundToPath reports whether held still describes the inode bound to path — the shared half of every transient acquirer's stale-inode check.
+func BoundToPath(held fs.FileInfo, path string) bool {
+	cur, err := os.Stat(path)
 	return err == nil && os.SameFile(held, cur)
+}
+
+// ReclaimTransient removes path's transient lock file when nobody holds it; false with a nil error means the lock was busy.
+func ReclaimTransient(ctx context.Context, path string) (bool, error) {
+	l := NewTransient(path)
+	ok, err := l.TryLock(ctx)
+	if err != nil || !ok {
+		return false, err
+	}
+	if err := l.Unlock(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // dropFlock releases the kernel lock while keeping the in-process token, for requeueing on a fresh inode.
