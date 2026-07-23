@@ -113,7 +113,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, spec.Wrap, apply, spec.AfterExtract)
+	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, apply, spec.AfterExtract)
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
@@ -138,14 +138,13 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, spec.Wrap, apply, spec.AfterExtract)
+	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, apply, spec.AfterExtract)
 }
 
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
 func (b *Backend) restoreCore(
 	ctx context.Context, vmID string, rec *VMRecord, vmCfg *types.VMConfig, sourceSnapshotID string,
 	kill func(ctx context.Context, vmID string, rec *VMRecord) error,
-	wrap func(*VMRecord, func() error) error,
 	apply func(*VMRecord) error,
 	afterExtract func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error),
 ) (*types.VM, error) {
@@ -172,7 +171,7 @@ func (b *Backend) restoreCore(
 		result, afterErr = afterExtract(ctx, vmID, vmCfg, rec)
 		return afterErr
 	}
-	if err := runWrapped(rec, wrap, inner); err != nil {
+	if err := inner(); err != nil {
 		// The kill already ran, so networking left up stays durable retry work even for a retryable stopped origin.
 		b.markFailedOperation(ctx, vmID, rec.State != types.VMStateStopped)
 		return nil, err

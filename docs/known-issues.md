@@ -180,9 +180,9 @@ See [cocoonstack/windows](https://github.com/cocoonstack/windows) for download a
 
 Firecracker snapshots store absolute host paths in the vmstate binary (Rust serde format, not patchable). This means:
 
-- **Same-host clone/restore**: works without restrictions
+- **Same-host clone/restore**: restore always resolves disks through the live record's own run dir, never the snapshot's recorded paths; clone rejects a missing source drive whose recorded path falls outside the current managed `run_dir`
 - **Cross-host export/import**: requires the target host to use **identical `root_dir` and `run_dir`** (default: `/var/lib/cocoon` and `/var/lib/cocoon/run`) and have the **same OCI image pulled**
-- **Drive path redirect**: Cocoon uses a temporary symlink to redirect the source COW path to the clone's COW during `snapshot/load`. This requires a COW flock to serialize with concurrent operations
+- **Drive path redirect**: during `snapshot/load` Cocoon bind-mounts the clone's disks over the source-absolute paths inside a private mount namespace, holding a shared per-VM lease on the source so concurrent source operations wait; a dead source gets an empty placeholder file to bind over. The host namespace is never mutated
 
 This is a fundamental Firecracker design limitation. Cloud Hypervisor snapshots do not have this restriction because CH stores device config in a patchable JSON format (`config.json`).
 

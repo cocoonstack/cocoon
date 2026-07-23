@@ -1,15 +1,23 @@
 package firecracker
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -41,140 +49,228 @@ func TestRedirectedDriveIndices(t *testing.T) {
 	}
 }
 
-// Pins createDriveRedirects to redirectedDriveIndices: a symlink appears exactly where the shared function says.
-func TestCreateDriveRedirectsMatchesIndices(t *testing.T) {
-	dir := t.TempDir()
-	src := []*types.StorageConfig{
-		{Path: filepath.Join(dir, "gone", "layer.img")}, // shared layer, same both sides
-		{Path: filepath.Join(dir, "gone", "cow.raw")},   // source path no longer exists
-		{Path: writeTestFile(t, dir, "data.img")},       // source still present: backed up
+func TestPlaceholderCoalescesConcurrentRecordReads(t *testing.T) {
+	rootDir := t.TempDir()
+	runRoot := filepath.Join(rootDir, "run", "firecracker")
+	if err := os.MkdirAll(runRoot, 0o750); err != nil {
+		t.Fatalf("setup run root: %v", err)
 	}
-	dst := []*types.StorageConfig{
-		{Path: src[0].Path},
-		{Path: writeTestFile(t, dir, "clone-cow.raw")},
-		{Path: writeTestFile(t, dir, "clone-data.img")},
+	src := []*types.StorageConfig{{Path: filepath.Join(runRoot, "gone", "cow.raw")}}
+	dst := []*types.StorageConfig{{Path: writeTestFile(t, rootDir, "clone-cow.raw")}}
+	var recordReads atomic.Int64
+	lookup := func(string) (bool, error) {
+		recordReads.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		return false, nil
 	}
 
-	release, err := holdRedirectDirs(t.Context(), src, dst)
-	if err != nil {
-		t.Fatalf("holdRedirectDirs: %v", err)
+	const clones = 64
+	start := make(chan struct{})
+	errs := make(chan error, clones)
+	var wg sync.WaitGroup
+	for range clones {
+		wg.Go(func() {
+			<-start
+			plan, err := holdBindableRedirects(t.Context(), rootDir, runRoot, src, dst, lookup)
+			if plan != nil {
+				plan.close()
+			}
+			errs <- err
+		})
 	}
-	defer release()
-	redirects, err := createDriveRedirects(src, dst)
-	if err != nil {
-		t.Fatalf("createDriveRedirects: %v", err)
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("hold bindable redirects: %v", err)
+		}
 	}
-	defer cleanupDriveRedirects(redirects)
-
-	want := redirectedDriveIndices(src, dst)
-	if len(redirects) != len(want) {
-		t.Fatalf("%d redirects for indices %v", len(redirects), want)
-	}
-	for n, i := range want {
-		if redirects[n].symlinkPath != src[i].Path {
-			t.Errorf("redirect %d at %q, want %q", n, redirects[n].symlinkPath, src[i].Path)
-		}
-		target, readErr := os.Readlink(src[i].Path)
-		if readErr != nil {
-			t.Fatalf("drive %d not symlinked: %v", i, readErr)
-		}
-		if target != dst[i].Path {
-			t.Errorf("drive %d links to %q, want %q", i, target, dst[i].Path)
-		}
+	if got := recordReads.Load(); got != 1 {
+		t.Fatalf("source record reads = %d, want 1", got)
 	}
 }
 
-// The recreated source dir is recordless: while redirects live, its held ops lock is the only thing keeping the GC orphan scan from reaping it mid-clone.
-func TestHoldRedirectDirsFencesGCAndCleansUp(t *testing.T) {
-	dir := t.TempDir()
-	gone := filepath.Join(dir, "gone")
+// Dead-source clones share the VM lock while GC and VM mutation remain excluded.
+func TestHoldBindableRedirectsCreatesPlaceholderAndSharesVMLock(t *testing.T) {
+	rootDir := t.TempDir()
+	runRoot := filepath.Join(rootDir, "run", "firecracker")
+	if err := os.MkdirAll(runRoot, 0o750); err != nil {
+		t.Fatalf("setup run root: %v", err)
+	}
+	gone := filepath.Join(runRoot, "gone")
 	src := []*types.StorageConfig{
 		{Path: filepath.Join(gone, "cow.raw")},
 		{Path: filepath.Join(gone, "data-x.raw")},
 	}
 	dst := []*types.StorageConfig{
-		{Path: writeTestFile(t, dir, "clone-cow.raw")},
-		{Path: writeTestFile(t, dir, "clone-data-x.raw")},
+		{Path: writeTestFile(t, rootDir, "clone-cow.raw")},
+		{Path: writeTestFile(t, rootDir, "clone-data-x.raw")},
 	}
 
-	release, err := holdRedirectDirs(t.Context(), src, dst)
+	recordReads := 0
+	deadSource := func(string) (bool, error) {
+		recordReads++
+		return false, nil
+	}
+	plan1, err := holdBindableRedirects(t.Context(), rootDir, runRoot, src, dst, deadSource)
 	if err != nil {
-		t.Fatalf("holdRedirectDirs: %v", err)
+		t.Fatalf("first holdBindableRedirects: %v", err)
 	}
-	gcLock := flock.New(filepath.Join(gone, hypervisor.OpsLockName))
+	t.Cleanup(plan1.close)
+	if len(plan1.binds) != 2 {
+		t.Fatalf("bind count = %d, want 2", len(plan1.binds))
+	}
+	if recordReads != len(src) {
+		t.Fatalf("source record reads = %d, want %d", recordReads, len(src))
+	}
+	for _, sc := range src {
+		if fi, statErr := os.Lstat(sc.Path); statErr != nil || !fi.Mode().IsRegular() {
+			t.Fatalf("placeholder %s: fi=%v err=%v", sc.Path, fi, statErr)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	plan2, err := holdBindableRedirects(ctx, rootDir, runRoot, src, dst, deadSource)
+	if err != nil {
+		t.Fatalf("second shared holdBindableRedirects: %v", err)
+	}
+	t.Cleanup(plan2.close)
+	if recordReads != len(src) {
+		t.Fatalf("existing placeholders did not suppress repeated record reads: %d", recordReads)
+	}
+	if len(plan2.files()) != 1 {
+		t.Fatalf("inherited lease files = %d, want 1", len(plan2.files()))
+	}
+	gcLock, err := vmlock.New(rootDir, "gone")
+	if err != nil {
+		t.Fatalf("new GC lock: %v", err)
+	}
 	if got, tryErr := gcLock.TryLock(t.Context()); tryErr != nil || got {
-		t.Fatalf("GC ops TryLock must fail while redirect dirs are held: got=%v err=%v", got, tryErr)
+		t.Fatalf("exclusive VM lock while readers hold: got=%v err=%v", got, tryErr)
 	}
-
-	release()
-	if _, err := os.Stat(gone); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("recreated source dir not removed on release: %v", err)
+	plan1.close()
+	if got, tryErr := gcLock.TryLock(t.Context()); tryErr != nil || got {
+		t.Fatalf("exclusive VM lock while second reader holds: got=%v err=%v", got, tryErr)
 	}
-}
-
-// A clone killed mid-window leaves a dangling redirect symlink with no backup; the next acquire must clear it or every later clone fails with EEXIST.
-func TestRecoverStaleBackupClearsDanglingRedirect(t *testing.T) {
-	runRoot := t.TempDir()
-	srcDir := filepath.Join(runRoot, "GONE")
-	if err := os.Mkdir(srcDir, 0o750); err != nil {
-		t.Fatalf("setup src dir: %v", err)
+	plan2.close()
+	if got, tryErr := gcLock.TryLock(t.Context()); tryErr != nil || !got {
+		t.Fatalf("exclusive VM lock after readers release: got=%v err=%v", got, tryErr)
 	}
-	cow := filepath.Join(srcDir, "cow.raw")
-	if err := os.Symlink(filepath.Join(runRoot, "CLONE", "cow.raw"), cow); err != nil {
-		t.Fatalf("setup symlink: %v", err)
-	}
-
-	recoverStaleBackup(runRoot, cow)
-
-	if _, err := os.Lstat(cow); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("dangling redirect not cleared: %v", err)
-	}
-	if err := os.Symlink("target", cow); err != nil {
-		t.Fatalf("path not reusable after recovery: %v", err)
+	if err := gcLock.Unlock(t.Context()); err != nil {
+		t.Fatalf("unlock GC lock: %v", err)
 	}
 }
 
-// Imported metadata can name any path; a symlink outside the run root must survive recovery even when its target points into the run root.
-func TestRecoverStaleBackupPreservesForeignSymlink(t *testing.T) {
-	dir := t.TempDir()
-	runRoot := filepath.Join(dir, "run")
-	cow := filepath.Join(dir, "current-cow")
-	if err := os.Symlink(filepath.Join(runRoot, "LIVE", "cow.raw"), cow); err != nil {
-		t.Fatalf("setup symlink: %v", err)
+func TestHoldBindableRedirectsRejectsMissingLiveSource(t *testing.T) {
+	rootDir := t.TempDir()
+	runRoot := filepath.Join(rootDir, "run", "firecracker")
+	if err := os.MkdirAll(runRoot, 0o750); err != nil {
+		t.Fatalf("setup run root: %v", err)
 	}
+	source := filepath.Join(runRoot, "live", "cow.raw")
+	destination := writeTestFile(t, rootDir, "clone-cow.raw")
+	src := []*types.StorageConfig{{Path: source}}
+	dst := []*types.StorageConfig{{Path: destination}}
 
-	recoverStaleBackup(runRoot, cow)
-
-	if fi, err := os.Lstat(cow); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Fatalf("foreign symlink must be preserved: fi=%v err=%v", fi, err)
+	_, err := holdBindableRedirects(t.Context(), rootDir, runRoot, src, dst, func(string) (bool, error) {
+		return true, nil
+	})
+	if err == nil {
+		t.Fatal("missing drive of a live source VM must fail")
 	}
-}
-
-func TestRecoverStaleBackupRestoresBackup(t *testing.T) {
-	dir := t.TempDir()
-	cow := filepath.Join(dir, "cow.raw")
-	backup := writeTestFile(t, dir, "cow.raw"+cloneBackupSuffix)
-	if err := os.Symlink("dangling-target", cow); err != nil {
-		t.Fatalf("setup symlink: %v", err)
+	if _, statErr := os.Lstat(source); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("live source placeholder created: %v", statErr)
 	}
-
-	recoverStaleBackup(filepath.Join(dir, "run"), cow)
-
-	if fi, err := os.Lstat(cow); err != nil || !fi.Mode().IsRegular() {
-		t.Fatalf("backup not restored over redirect: fi=%v err=%v", fi, err)
+	lock, lockErr := vmlock.New(rootDir, "live")
+	if lockErr != nil {
+		t.Fatalf("new VM lock: %v", lockErr)
 	}
-	if _, err := os.Stat(backup); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("backup file left behind: %v", err)
+	if got, tryErr := lock.TryLock(t.Context()); tryErr != nil || !got {
+		t.Fatalf("VM lock leaked after rejection: got=%v err=%v", got, tryErr)
+	}
+	if err := lock.Unlock(t.Context()); err != nil {
+		t.Fatalf("unlock VM lock: %v", err)
 	}
 }
 
-func TestBindableRedirects(t *testing.T) {
+func TestHoldBindableRedirectsRejectsUnmanagedMissingSource(t *testing.T) {
+	rootDir := t.TempDir()
+	runRoot := filepath.Join(rootDir, "run", "firecracker")
+	if err := os.MkdirAll(runRoot, 0o750); err != nil {
+		t.Fatalf("setup run root: %v", err)
+	}
+	destination := writeTestFile(t, rootDir, "clone-cow.raw")
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{"outside run root", filepath.Join(rootDir, "foreign", "cow.raw")},
+		{"reserved db directory", filepath.Join(runRoot, "db", "cow.raw")},
+		{"reserved clone-lock directory", filepath.Join(runRoot, hypervisor.CloneLocksDirName, "cow.raw")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := []*types.StorageConfig{{Path: tt.source}}
+			dst := []*types.StorageConfig{{Path: destination}}
+			if _, err := holdBindableRedirects(t.Context(), rootDir, runRoot, src, dst, func(string) (bool, error) {
+				return false, nil
+			}); err == nil {
+				t.Fatal("unmanaged missing source must fail")
+			}
+			if _, err := os.Lstat(tt.source); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("source path mutated: %v", err)
+			}
+		})
+	}
+}
+
+func TestDeadSourceLeaseFencesRealGC(t *testing.T) {
+	fc := newTestFC(t)
+	const sourceID = "dead-golden"
+	source := filepath.Join(fc.Conf.VMRunDir(sourceID), "cow.raw")
+	destination := writeTestFile(t, t.TempDir(), "clone-cow.raw")
+	src := []*types.StorageConfig{{Path: source}}
+	dst := []*types.StorageConfig{{Path: destination}}
+	plan, err := holdBindableRedirects(t.Context(), fc.Conf.RootDirPath(), fc.Conf.RunDir(), src, dst, func(id string) (bool, error) {
+		rec, peekErr := fc.PeekRecord(t.Context(), id)
+		return rec != nil, peekErr
+	})
+	if err != nil {
+		t.Fatalf("hold bindable redirects: %v", err)
+	}
+	t.Cleanup(plan.close)
+	collect := func() {
+		t.Helper()
+		module := fc.BuildGCModule()
+		snapshot, readErr := module.ReadDB(t.Context())
+		if readErr != nil {
+			t.Fatalf("GC read: %v", readErr)
+		}
+		ids := module.Resolve(t.Context(), snapshot, nil)
+		if !slices.Contains(ids, sourceID) {
+			t.Fatalf("GC candidates %v do not include %s", ids, sourceID)
+		}
+		if collectErr := module.Collect(t.Context(), ids, snapshot); collectErr != nil {
+			t.Fatalf("GC collect: %v", collectErr)
+		}
+	}
+
+	collect()
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("GC removed leased placeholder: %v", err)
+	}
+	plan.close()
+	collect()
+	if _, err := os.Stat(fc.Conf.VMRunDir(sourceID)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("GC did not reclaim released dead source: %v", err)
+	}
+}
+
+func TestRedirectBinds(t *testing.T) {
 	dir := t.TempDir()
 	regular := writeTestFile(t, dir, "cow.raw")
-	linked := filepath.Join(dir, "linked.raw")
-	if err := os.Symlink(regular, linked); err != nil {
-		t.Fatalf("setup symlink: %v", err)
-	}
 	dst := writeTestFile(t, dir, "clone-cow.raw")
 	regular2 := writeTestFile(t, dir, "data.raw")
 	sc := func(p string) []*types.StorageConfig { return []*types.StorageConfig{{Path: p}} }
@@ -183,25 +279,66 @@ func TestBindableRedirects(t *testing.T) {
 		name     string
 		src, dst []*types.StorageConfig
 		want     [][2]string
+		wantErr  bool
 	}{
-		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}},
-		{"missing source", sc(filepath.Join(dir, "gone.raw")), sc(dst), nil},
-		{"symlinked source", sc(linked), sc(dst), nil},
-		{"no redirects", sc(regular), sc(regular), nil},
+		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}, false},
+		{"missing source is planned", sc(filepath.Join(dir, "gone.raw")), sc(dst), [][2]string{{filepath.Join(dir, "gone.raw"), dst}}, false},
+		{"no redirects", sc(regular), sc(regular), nil, false},
+		{
+			"duplicate src",
+			[]*types.StorageConfig{{Path: regular}, {Path: regular}},
+			[]*types.StorageConfig{{Path: dst}, {Path: regular2}},
+			nil,
+			true,
+		},
 		{
 			"duplicate dst",
 			[]*types.StorageConfig{{Path: regular}, {Path: regular2}},
 			[]*types.StorageConfig{{Path: dst}, {Path: dst}},
 			nil,
+			true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := bindableRedirects(tt.src, tt.dst); !slices.Equal(got, tt.want) {
+			got, err := redirectBinds(tt.src, tt.dst)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !slices.Equal(got, tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
+}
+
+func newTestFC(t *testing.T) *Firecracker {
+	t.Helper()
+	dir := t.TempDir()
+	conf := &config.Config{
+		RootDir: dir,
+		RunDir:  filepath.Join(dir, "run"),
+		LogDir:  filepath.Join(dir, "log"),
+	}
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     hypervisor.VMNamespaceName(typ),
+		FilePath: NewConfig(conf).IndexFile(),
+		LockPath: NewConfig(conf).IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "vms", Table: hypervisor.TableRecords},
+			{Key: "names", Table: hypervisor.TableNames},
+			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	fc, err := New(conf, nil, store)
+	if err != nil {
+		t.Fatalf("new firecracker: %v", err)
+	}
+	return fc
 }
 
 func writeTestFile(t *testing.T, dir, name string) string {
@@ -211,4 +348,28 @@ func writeTestFile(t *testing.T, dir, name string) string {
 		t.Fatalf("setup %s: %v", name, err)
 	}
 	return p
+}
+
+// A symlink source is unusable outright: the legacy redirect residue it could represent is no longer healed.
+func TestHoldBindableRedirectsRejectsSymlinkSource(t *testing.T) {
+	fc := newTestFC(t)
+	srcDir := fc.Conf.VMRunDir("SRC")
+	if err := os.MkdirAll(srcDir, 0o750); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	target := writeTestFile(t, srcDir, "real.raw")
+	link := filepath.Join(srcDir, "cow.raw")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	src := []*types.StorageConfig{{Path: link, Role: types.StorageRoleCOW}}
+	dst := []*types.StorageConfig{{Path: filepath.Join(t.TempDir(), "clone.raw"), Role: types.StorageRoleCOW}}
+	_, err := holdBindableRedirects(t.Context(), fc.Conf.RootDirPath(), fc.Conf.RunDir(), src, dst, func(string) (bool, error) {
+		t.Fatal("record lookup must not run for a symlink source")
+		return false, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("got %v, want a not-a-regular-file rejection", err)
+	}
 }

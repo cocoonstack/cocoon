@@ -110,7 +110,6 @@ type RestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        func(stagingDir string, rec *VMRecord) error
 	Kill             func(ctx context.Context, vmID string, rec *VMRecord) error
-	Wrap             func(rec *VMRecord, fn func() error) error
 	BeforeMerge      func(rec *VMRecord) error
 	AfterExtract     func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 }
@@ -122,17 +121,15 @@ type DirectRestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        func(srcDir string, rec *VMRecord) error
 	Kill             func(ctx context.Context, vmID string, rec *VMRecord) error
-	Wrap             func(rec *VMRecord, fn func() error) error
 	Populate         func(rec *VMRecord, srcDir string) error
 	AfterExtract     func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 }
 
-// StartSpec carries StartSequence inputs; Wrap (optional) encloses launch through the Running flip, inside the ops lock.
+// StartSpec carries StartSequence inputs.
 type StartSpec struct {
 	RuntimeFiles []string
 	Launch       func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
 	PostLaunch   func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
-	Wrap         func(rec *VMRecord, fn func() error) error
 }
 
 // StopSpec carries StopOneSequence inputs.
@@ -155,7 +152,6 @@ type SnapshotSpec struct {
 	Pause        func(rec *VMRecord, hc *http.Client) error
 	Resume       func(rec *VMRecord, hc *http.Client) error
 	Capture      func(rec *VMRecord, hc *http.Client, tmpDir string) error
-	Wrap         func(rec *VMRecord, fn func() error) error
 	AfterCapture func(rec *VMRecord, tmpDir string) error
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*SnapshotMeta, error)
 }
@@ -165,11 +161,4 @@ type HibernateSpec struct {
 	SnapshotSpec
 	Terminate    func(rec *VMRecord, hc *http.Client, pid int) error
 	RuntimeFiles []string
-}
-
-func runWrapped(rec *VMRecord, wrap func(*VMRecord, func() error) error, fn func() error) error {
-	if wrap != nil {
-		return wrap(rec, fn)
-	}
-	return fn()
 }

@@ -47,10 +47,6 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			}
 			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
-		// Lock writable disks in dictionary order so a concurrent clone's rename+symlink can't race the reflink.
-		Wrap: func(rec *hypervisor.VMRecord, fn func() error) error {
-			return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
-		},
 		BuildMeta: buildSnapshotMeta,
 	}
 }

@@ -2,13 +2,16 @@ package firecracker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/projecteru2/core/log"
@@ -17,6 +20,8 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const relayResponseTimeout = 5 * time.Second
 
 // Start launches FC, configures via REST, then InstanceStart.
 func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, error) {
@@ -31,10 +36,6 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 		},
 		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
 			return fc.configureVM(ctx, utils.NewSocketHTTPClient(sockPath), rec)
-		},
-		// A clone symlink-redirects the source COW to its own writable disk (createDriveRedirects); launching through that window would open the clone's disk.
-		Wrap: func(rec *hypervisor.VMRecord, fn func() error) error {
-			return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
 		},
 	})
 }
@@ -119,8 +120,41 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	return nil
 }
 
+// cloneLeaseControl is the parent's half of the relay lease protocol; a nil control (no leases held) no-ops.
+type cloneLeaseControl struct {
+	commands  *os.File
+	responses *os.File
+}
+
+func (c *cloneLeaseControl) close() {
+	if c == nil {
+		return
+	}
+	closeFile(c.commands)
+	closeFile(c.responses)
+	c.commands = nil
+	c.responses = nil
+}
+
+func (c *cloneLeaseControl) commit() error {
+	if c == nil {
+		return nil
+	}
+	defer c.close()
+	if _, err := c.commands.Write([]byte{relayCommitLeasesCommand}); err != nil {
+		return err
+	}
+	return waitRelayLeaseResponse(c.responses, relayLeaseCommitAck, "commit")
+}
+
 // launchProcess starts firecracker, sets up PTY+console relay, waits for socket.
 func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string) (int, error) {
+	pid, _, err := fc.launchProcessWithLeases(ctx, rec, sockPath, netnsPath, nil)
+	return pid, err
+}
+
+// launchProcessWithLeases keeps inherited source-VM leases in the console relay until the caller confirms clone setup.
+func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
 	fcLog := fc.LogFilePath(rec.LogDir)
 	// FC opens log O_WRONLY|O_APPEND without O_CREATE — touch first.
 	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
@@ -130,7 +164,7 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 	// Create PTY pair: slave → FC stdin/stdout, master → console relay.
 	master, slave, err := pty.Open()
 	if err != nil {
-		return 0, fmt.Errorf("open pty: %w", err)
+		return 0, nil, fmt.Errorf("open pty: %w", err)
 	}
 	defer slave.Close() //nolint:errcheck
 
@@ -145,7 +179,6 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
-
 	pid, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:       fcCmd,
 		PIDPath:   fc.PIDFilePath(rec.RunDir),
@@ -154,14 +187,21 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 		OnFail:    func() { _ = master.Close() },
 	})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid)
-	if relayErr == nil {
+	leaseControl, relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid, leaseFiles)
+	switch {
+	case relayErr == nil:
 		// Master fd ownership transferred to relay; close parent's copy.
 		_ = master.Close()
-	} else {
+	case len(leaseFiles) > 0:
+		_ = master.Close()
+		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
+		_ = fcCmd.Process.Kill()
+		_ = fcCmd.Wait()
+		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
+	default:
 		log.WithFunc("firecracker.launchProcess").Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
@@ -172,29 +212,42 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 			_ = master.Close()
 		}
 	}()
-	return pid, nil
+	return pid, leaseControl, nil
 }
 
 // startConsoleRelay forks a relay that holds the PTY master, serves console.sock, and exits when fcPID dies.
-func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, master *os.File, fcPID int) error {
+func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, master *os.File, fcPID int, leaseFiles []*os.File) (*cloneLeaseControl, error) {
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 
 	listener, err := net.Listen("unix", consoleSock)
 	if err != nil {
-		return fmt.Errorf("listen %s: %w", consoleSock, err)
+		return nil, fmt.Errorf("listen %s: %w", consoleSock, err)
 	}
 	ul := listener.(*net.UnixListener)
 	ul.SetUnlinkOnClose(false) // keep socket file on disk after Close
 	listenerFile, err := ul.File()
 	_ = ul.Close() // close Go's copy; the dup in listenerFile survives
 	if err != nil {
-		return fmt.Errorf("listener fd: %w", err)
+		return nil, fmt.Errorf("listener fd: %w", err)
 	}
 	defer listenerFile.Close() //nolint:errcheck
 
 	self, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("os.Executable: %w", err)
+		return nil, fmt.Errorf("os.Executable: %w", err)
+	}
+	var controlReader, controlWriter, readyReader, readyWriter *os.File
+	if len(leaseFiles) > 0 {
+		controlReader, controlWriter, err = os.Pipe()
+		if err != nil {
+			return nil, fmt.Errorf("source-lease control pipe: %w", err)
+		}
+		readyReader, readyWriter, err = os.Pipe()
+		if err != nil {
+			closeFile(controlReader)
+			closeFile(controlWriter)
+			return nil, fmt.Errorf("source-lease ready pipe: %w", err)
+		}
 	}
 
 	// shell out because self-exec spawns a detached console-relay process that survives the parent.
@@ -202,13 +255,75 @@ func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, maste
 	relayCmd.Env = []string{
 		relayEnvKey + "=1",
 		relayPIDEnvKey + "=" + strconv.Itoa(fcPID),
+		relayLeaseCountEnvKey + "=" + strconv.Itoa(len(leaseFiles)),
 	}
 	relayCmd.ExtraFiles = []*os.File{master, listenerFile}
+	if controlReader != nil {
+		relayCmd.Env = append(
+			relayCmd.Env,
+			relayBinaryEnvKey+"="+fc.conf.BinaryName(),
+			relaySocketEnvKey+"="+hypervisor.SocketPath(runDir),
+		)
+		relayCmd.ExtraFiles = append(relayCmd.ExtraFiles, controlReader, readyWriter)
+	}
+	relayCmd.ExtraFiles = append(relayCmd.ExtraFiles, leaseFiles...)
 	relayCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if startErr := relayCmd.Start(); startErr != nil {
-		return fmt.Errorf("start relay: %w", startErr)
+		closeFile(controlReader)
+		closeFile(controlWriter)
+		closeFile(readyReader)
+		closeFile(readyWriter)
+		return nil, fmt.Errorf("start relay: %w", startErr)
+	}
+	if controlReader == nil {
+		go relayCmd.Wait() //nolint:errcheck
+		return nil, nil
+	}
+	closeFile(controlReader)
+	closeFile(readyWriter)
+	if readyErr := waitRelayLeaseReady(readyReader); readyErr != nil {
+		closeFile(controlWriter)
+		closeFile(readyReader)
+		_ = relayCmd.Process.Kill()
+		_ = relayCmd.Wait()
+		return nil, readyErr
 	}
 	go relayCmd.Wait() //nolint:errcheck
-	return nil
+	return &cloneLeaseControl{commands: controlWriter, responses: readyReader}, nil
+}
+
+func waitRelayLeaseReady(ready *os.File) error {
+	return waitRelayLeaseResponse(ready, relayLeaseReadyCommand, "readiness")
+}
+
+func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
+	if response == nil {
+		return fmt.Errorf("source-lease relay %s response pipe is nil", phase)
+	}
+	result := make(chan error, 1)
+	go func() {
+		var command [1]byte
+		_, err := io.ReadFull(response, command[:])
+		if err == nil && command[0] != want {
+			err = fmt.Errorf("unexpected response %d", command[0])
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if err != nil {
+			return fmt.Errorf("source-lease relay %s: %w", phase, err)
+		}
+		return nil
+	case <-time.After(relayResponseTimeout):
+		closeErr := response.Close()
+		return errors.Join(fmt.Errorf("source-lease relay %s timed out", phase), closeErr)
+	}
+}
+
+func closeFile(file *os.File) {
+	if file != nil {
+		_ = file.Close()
+	}
 }

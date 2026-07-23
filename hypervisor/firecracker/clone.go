@@ -2,6 +2,8 @@ package firecracker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,17 +18,18 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/flock"
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const cloneBackupSuffix = ".cocoon-clone-backup"
+const sourcePlaceholderProbeInterval = 2 * time.Millisecond
 
 var errBindSetup = errors.New("bind-mount clone redirect unavailable")
 
-type driveRedirect struct {
-	symlinkPath string
-	backupPath  string
+type bindRedirectPlan struct {
+	binds  [][2]string
+	leases []*vmlock.SharedLease
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -72,18 +75,19 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
-	launch := func() (int, error) {
-		return fc.launchProcess(ctx, &hypervisor.VMRecord{
+	launch := func(leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
+		return fc.launchProcessWithLeases(ctx, &hypervisor.VMRecord{
 			VM:     types.VM{ID: vmID},
 			RunDir: runDir,
 			LogDir: logDir,
-		}, sockPath, net.NetnsPath)
+		}, sockPath, net.NetnsPath, leaseFiles)
 	}
-	pid, cloneErr := fc.startCloneVM(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
+	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
 	if cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
 	}
+	defer plan.close()
 
 	info := &types.VM{
 		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
@@ -93,87 +97,88 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 	hypervisor.SetRunningSockets(info, runDir)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
+		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
+	}
+	// The record is durable and a delivered commit byte (or relay exit) releases the leases; an unconfirmed release must not kill a committed VM.
+	if err := leaseControl.commit(); err != nil {
+		logger.Warnf(ctx, "source VM lease release unconfirmed: %v", err)
 	}
 
 	logger.Infof(ctx, "VM %s cloned from snapshot", vmID)
 	return info, nil
 }
 
-// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors. The load fast path bind-mounts the clone disks over the source-absolute paths in a private mount namespace (no host mutation, siblings run parallel); a missing/symlinked source or denied unshare falls back to symlink-redirects under the source-disk locks.
+// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors. Clone disks are bind-mounted over source-absolute paths in a private mount namespace, so siblings load in parallel without replacing host paths with symlinks.
 func (fc *Firecracker) startCloneVM(
 	ctx context.Context,
-	launch func() (int, error),
+	launch func([]*os.File) (int, *cloneLeaseControl, error),
 	sockPath, runDir string,
 	networkConfigs []*types.NetworkConfig,
 	srcConfigs, dstConfigs []*types.StorageConfig,
-) (int, error) {
-	pid, err := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, srcConfigs, dstConfigs)
+) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
+	pid, leaseControl, plan, err := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, srcConfigs, dstConfigs)
 	if err != nil {
-		return 0, err
+		return 0, nil, nil, err
 	}
 	if err := fc.resumeAndReanchorClone(ctx, pid, sockPath, runDir, srcConfigs, dstConfigs); err != nil {
-		return 0, err
+		leaseControl.close()
+		plan.close()
+		return 0, nil, nil, err
 	}
-	return pid, nil
+	return pid, leaseControl, plan, nil
 }
 
 func (fc *Firecracker) loadCloneSnapshot(
 	ctx context.Context,
-	launch func() (int, error),
+	launch func([]*os.File) (int, *cloneLeaseControl, error),
 	sockPath, runDir string,
 	networkConfigs []*types.NetworkConfig,
 	srcConfigs, dstConfigs []*types.StorageConfig,
-) (int, error) {
+) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 	netOverrides := buildNetworkOverrides(networkConfigs)
 	vsockPath := hypervisor.VsockSockPath(runDir)
 
-	if binds := bindableRedirects(srcConfigs, dstConfigs); len(binds) > 0 {
-		pid, err := launchWithBinds(binds, launch)
-		switch {
-		case err == nil:
-			if loadErr := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); loadErr != nil {
-				fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
-				return 0, fmt.Errorf("snapshot/load: %w", loadErr)
-			}
-			if verifyErr := verifyDriveFDs(pid, binds); verifyErr != nil {
-				fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
-				return 0, fmt.Errorf("bind redirect lost during load (source mutated concurrently, retry): %w", verifyErr)
-			}
-			return pid, nil
-		case !errors.Is(err, errBindSetup):
-			return 0, fmt.Errorf("launch FC: %w", err)
-		}
-	}
-
-	// TODO: retire this symlink fallback once mount-ns has soaked a release — dead sources need only the dir locks plus a placeholder mountpoint to bind over.
-	pid, err := launch()
+	plan, err := holdBindableRedirects(ctx, fc.Conf.RootDirPath(), fc.Conf.RunDir(), srcConfigs, dstConfigs, func(id string) (bool, error) {
+		rec, peekErr := fc.PeekRecord(ctx, id)
+		return rec != nil, peekErr
+	})
 	if err != nil {
-		return 0, fmt.Errorf("launch FC: %w", err)
+		return 0, nil, nil, fmt.Errorf("prepare bind redirects: %w", err)
 	}
-	// FC holds the drive fds once load returns, so the locks cover only the redirect window; resume and re-anchor run lock-free.
-	if lockErr := fc.withSourceWritableDisksLocked(ctx, srcConfigs, func() error {
-		releaseDirs, holdErr := holdRedirectDirs(ctx, srcConfigs, dstConfigs)
-		if holdErr != nil {
-			return holdErr
-		}
-		defer releaseDirs()
-		redirects, redirectErr := createDriveRedirects(srcConfigs, dstConfigs)
-		if redirectErr != nil {
-			return fmt.Errorf("drive redirect: %w", redirectErr)
-		}
-		defer cleanupDriveRedirects(redirects)
 
-		if loadErr := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); loadErr != nil {
-			return fmt.Errorf("snapshot/load: %w", loadErr)
-		}
-		return nil
-	}); lockErr != nil {
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
-		return 0, lockErr
+	var (
+		pid          int
+		leaseControl *cloneLeaseControl
+	)
+	if len(plan.binds) == 0 {
+		pid, leaseControl, err = launch(nil)
+	} else {
+		pid, err = launchWithBinds(plan.binds, func() (int, error) {
+			var launchErr error
+			pid, leaseControl, launchErr = launch(plan.files())
+			return pid, launchErr
+		})
 	}
-	return pid, nil
+	if err != nil {
+		leaseControl.close()
+		plan.close()
+		return 0, nil, nil, fmt.Errorf("launch FC: %w", err)
+	}
+	if err := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); err != nil {
+		leaseControl.close()
+		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		plan.close()
+		return 0, nil, nil, fmt.Errorf("snapshot/load: %w", err)
+	}
+	if err := verifyDriveFDs(pid, plan.binds); err != nil {
+		leaseControl.close()
+		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		plan.close()
+		return 0, nil, nil, fmt.Errorf("bind redirect lost during load (source mutated concurrently): %w", err)
+	}
+	return pid, leaseControl, plan, nil
 }
 
 func (fc *Firecracker) resumeAndReanchorClone(
@@ -221,7 +226,7 @@ func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*type
 	return configs, nil
 }
 
-// redirectedDriveIndices lists drives whose source and clone paths differ — the one source of truth for both createDriveRedirects and the re-anchor loop, which must never diverge.
+// redirectedDriveIndices lists drives whose source and clone paths differ — the one source of truth for both bind redirects and the re-anchor loop, which must never diverge.
 func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int {
 	var indices []int
 	for i, src := range srcConfigs {
@@ -232,119 +237,198 @@ func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int
 	return indices
 }
 
-// bindableRedirects returns dst-over-src bind pairs; nil when any source is not a pristine regular file (missing, or a crashed clone's symlink awaiting the locked path's healing) or a dst repeats — a shared dst inode would mask a detached sibling bind in verifyDriveFDs.
-func bindableRedirects(srcConfigs, dstConfigs []*types.StorageConfig) [][2]string {
+// redirectBinds returns dst-over-src bind pairs; repeated source or destination paths cannot represent distinct drives safely.
+func redirectBinds(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, error) {
 	var binds [][2]string
-	seen := make(map[string]struct{})
+	seenSources := make(map[string]struct{})
+	seenDestinations := make(map[string]struct{})
 	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
-		fi, err := os.Lstat(srcConfigs[i].Path)
-		if err != nil || !fi.Mode().IsRegular() {
-			return nil
+		if _, dup := seenSources[srcConfigs[i].Path]; dup {
+			return nil, fmt.Errorf("duplicate snapshot drive path %s", srcConfigs[i].Path)
 		}
-		if _, dup := seen[dstConfigs[i].Path]; dup {
-			return nil
+		seenSources[srcConfigs[i].Path] = struct{}{}
+		if _, dup := seenDestinations[dstConfigs[i].Path]; dup {
+			return nil, fmt.Errorf("duplicate clone drive path %s", dstConfigs[i].Path)
 		}
-		seen[dstConfigs[i].Path] = struct{}{}
+		seenDestinations[dstConfigs[i].Path] = struct{}{}
 		binds = append(binds, [2]string{srcConfigs[i].Path, dstConfigs[i].Path})
 	}
-	return binds
+	return binds, nil
 }
 
-func createDriveRedirects(srcConfigs, dstConfigs []*types.StorageConfig) ([]driveRedirect, error) {
-	var redirects []driveRedirect
-	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
-		src := srcConfigs[i]
-		r := driveRedirect{symlinkPath: src.Path}
+// holdBindableRedirects holds shared VM-operation leases for managed sources and creates regular bind mountpoints for dead sources.
+func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig, sourceRecordExists func(string) (bool, error)) (*bindRedirectPlan, error) {
+	binds, err := redirectBinds(srcConfigs, dstConfigs)
+	if err != nil {
+		return nil, err
+	}
+	leases, err := holdManagedSourceVMLeases(ctx, rootDir, runRoot, srcConfigs, dstConfigs)
+	if err != nil {
+		return nil, err
+	}
+	plan := &bindRedirectPlan{binds: binds, leases: leases}
+	fail := func(err error) (*bindRedirectPlan, error) {
+		plan.close()
+		return nil, err
+	}
+	for _, bind := range binds {
+		if sourceErr := ensureBindableSource(ctx, runRoot, bind[0], sourceRecordExists); sourceErr != nil {
+			return fail(sourceErr)
+		}
+	}
+	return plan, nil
+}
 
-		if _, err := os.Stat(src.Path); err == nil {
-			backup := src.Path + cloneBackupSuffix
-			if renameErr := os.Rename(src.Path, backup); renameErr != nil {
-				cleanupDriveRedirects(redirects)
-				return nil, fmt.Errorf("backup source drive %s: %w", src.Path, renameErr)
+func ensureBindableSource(ctx context.Context, runRoot, path string, sourceRecordExists func(string) (bool, error)) error {
+	ready, err := classifySource(path)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return nil
+	}
+	id, managed := hypervisor.VMIDFromRunPath(runRoot, path)
+	if !managed {
+		return fmt.Errorf("unusable source %s is outside the managed run root", path)
+	}
+	lockDir := filepath.Join(runRoot, hypervisor.CloneLocksDirName)
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		return fmt.Errorf("create clone lock dir: %w", err)
+	}
+	lock := newCOWPathLock(lockDir, path)
+	for {
+		locked, lockErr := lock.TryLock(ctx)
+		if lockErr != nil {
+			return fmt.Errorf("prepare source VM %s: %w", id, lockErr)
+		}
+		if locked {
+			prepareErr := prepareManagedSourceLocked(path, id, sourceRecordExists)
+			unlockErr := lock.Unlock(ctx)
+			return errors.Join(prepareErr, unlockErr)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("prepare source VM %s: %w", id, ctx.Err())
+		case <-time.After(sourcePlaceholderProbeInterval):
+			ready, probeErr := classifySource(path)
+			if probeErr != nil {
+				return probeErr
 			}
-			r.backupPath = backup
-		}
-
-		if linkErr := os.Symlink(dstConfigs[i].Path, src.Path); linkErr != nil {
-			if r.backupPath != "" {
-				_ = os.Rename(r.backupPath, src.Path)
+			if ready {
+				return nil
 			}
-			cleanupDriveRedirects(redirects)
-			return nil, fmt.Errorf("symlink drive redirect %s → %s: %w", src.Path, dstConfigs[i].Path, linkErr)
-		}
-		redirects = append(redirects, r)
-	}
-	return redirects, nil
-}
-
-func cleanupDriveRedirects(redirects []driveRedirect) {
-	for _, r := range redirects {
-		_ = os.Remove(r.symlinkPath)
-		if r.backupPath != "" {
-			_ = os.Rename(r.backupPath, r.symlinkPath)
 		}
 	}
 }
 
-// holdRedirectDirs recreates missing parents of redirected source paths and holds their ops locks: the dirs are recordless, and the GC orphan scan reaps any unlocked recordless dir mid-clone.
-func holdRedirectDirs(ctx context.Context, srcConfigs, dstConfigs []*types.StorageConfig) (func(), error) {
-	var dirs []string
-	seen := make(map[string]struct{})
+func prepareManagedSourceLocked(path, id string, sourceRecordExists func(string) (bool, error)) error {
+	ready, err := classifySource(path)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return nil
+	}
+	exists, err := sourceRecordExists(id)
+	if err != nil {
+		return fmt.Errorf("inspect source VM %s: %w", id, err)
+	}
+	if exists {
+		return fmt.Errorf("source VM %s still exists but drive %s is missing", id, path)
+	}
+	return createBindPlaceholder(path)
+}
+
+// classifySource reports whether the bind source is a ready regular file; absent is the only other non-error state.
+func classifySource(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	switch {
+	case err == nil && info.Mode().IsRegular():
+		return true, nil
+	case err == nil:
+		return false, fmt.Errorf("source %s is not a regular file", path)
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, fmt.Errorf("inspect source %s: %w", path, err)
+	}
+}
+
+func (p *bindRedirectPlan) files() []*os.File {
+	files := make([]*os.File, 0, len(p.leases))
+	for _, lease := range p.leases {
+		files = append(files, lease.File())
+	}
+	return files
+}
+
+func (p *bindRedirectPlan) close() {
+	for _, lease := range slices.Backward(p.leases) {
+		_ = lease.Close()
+	}
+}
+
+func newCOWPathLock(lockDir, cowPath string) *flock.Lock {
+	sum := sha256.Sum256([]byte(cowPath))
+	return flock.NewTransient(filepath.Join(lockDir, hex.EncodeToString(sum[:8])+"-"+filepath.Base(cowPath)+".clone.lock"))
+}
+
+func createBindPlaceholder(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.Mkdir(dir, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("create bind placeholder dir: %w", err)
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("inspect bind placeholder dir: %w", err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("bind placeholder parent %s is not a directory", dir)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // direct child of the configured managed run root
+	if errors.Is(err, fs.ErrExist) {
+		fi, statErr := os.Lstat(path)
+		if statErr == nil && fi.Mode().IsRegular() {
+			return nil
+		}
+		return fmt.Errorf("bind placeholder %s changed concurrently", path)
+	}
+	if err != nil {
+		return fmt.Errorf("create bind placeholder: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close bind placeholder: %w", err)
+	}
+	return nil
+}
+
+func managedSourceVMIDs(runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) []string {
+	var ids []string
 	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
-		dir := filepath.Dir(srcConfigs[i].Path)
-		if _, ok := seen[dir]; ok {
-			continue
-		}
-		seen[dir] = struct{}{}
-		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			dirs = append(dirs, dir)
+		if id, ok := hypervisor.VMIDFromRunPath(runRoot, srcConfigs[i].Path); ok {
+			ids = append(ids, id)
 		}
 	}
-	slices.Sort(dirs)
-	locks := make([]*flock.Lock, 0, len(dirs))
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) ([]*vmlock.SharedLease, error) {
+	var leases []*vmlock.SharedLease
 	release := func() {
-		for i, l := range slices.Backward(locks) {
-			_ = l.Unlock(ctx)
-			_ = os.Remove(dirs[i])
+		for _, lease := range slices.Backward(leases) {
+			_ = lease.Close()
 		}
 	}
-	for _, dir := range dirs {
-		l, err := lockRecreatedDir(ctx, dir)
+	for _, id := range managedSourceVMIDs(runRoot, srcConfigs, dstConfigs) {
+		lease, err := vmlock.NewSharedLease(ctx, rootDir, id)
 		if err != nil {
 			release()
-			return nil, err
+			return nil, fmt.Errorf("lease source VM %s: %w", id, err)
 		}
-		locks = append(locks, l)
+		leases = append(leases, lease)
 	}
-	return release, nil
-}
-
-// lockRecreatedDir mkdirs+locks with retry: a concurrent GC collect can remove the still-empty dir between MkdirAll and the flock open.
-func lockRecreatedDir(ctx context.Context, dir string) (*flock.Lock, error) {
-	for {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return nil, fmt.Errorf("recreate source dir: %w", err)
-		}
-		l := flock.NewTransient(filepath.Join(dir, hypervisor.OpsLockName))
-		switch err := l.Lock(ctx); {
-		case err == nil:
-			return l, nil
-		case !errors.Is(err, fs.ErrNotExist):
-			return nil, err
-		}
-	}
-}
-
-// recoverStaleBackup clears a crashed clone's redirect symlink and restores its backup; caller must hold the COW lock. Imported metadata paths are untrusted: a symlink is removed only with a backup beside it or when it sits inside the managed run root, where every cocoon redirect lives and nothing foreign does.
-func recoverStaleBackup(runRoot, cowPath string) {
-	backup := cowPath + cloneBackupSuffix
-	_, backupErr := os.Lstat(backup)
-	if fi, err := os.Lstat(cowPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		if backupErr == nil || hypervisor.IsUnderDir(cowPath, runRoot) {
-			_ = os.Remove(cowPath)
-		}
-	}
-	_ = os.Rename(backup, cowPath)
+	return leases, nil
 }
 
 func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOverride {

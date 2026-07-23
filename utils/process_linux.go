@@ -90,3 +90,22 @@ func verifyProcessCmdline(pid int, binaryName, expectArg string) (bool, error) {
 	}
 	return strings.Contains(rest, expectArg), nil
 }
+
+// verifyProcessForTermination fails closed when /proc cannot prove the PID's identity.
+func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, error) {
+	return verifyForTermination(pid, binaryName, expectArg, verifyProcessCmdline, IsProcessAlive)
+}
+
+func verifyForTermination(pid int, binaryName, expectArg string, verify func(int, string, string) (bool, error), alive func(int) bool) (bool, error) {
+	if pid <= 0 {
+		return false, nil
+	}
+	match, err := verify(pid, binaryName, expectArg)
+	if err == nil {
+		return match, nil
+	}
+	if !alive(pid) {
+		return false, nil
+	}
+	return false, fmt.Errorf("verify process %d identity: %w", pid, err)
+}

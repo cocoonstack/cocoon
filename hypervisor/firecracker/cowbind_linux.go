@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// launchWithBinds runs launch on a throwaway locked thread inside a private mount namespace with each dst bind-mounted over its src, so FC resolves source-absolute drive paths without touching the host namespace. The thread is never unlocked: it dies with the goroutine, taking the namespace along.
+// launchWithBinds runs launch on a throwaway locked thread inside a private mount namespace with each dst bind-mounted over its src, so FC resolves source-absolute drive paths without symlink swaps. The thread is never unlocked: it dies with the goroutine, taking the namespace along.
 func launchWithBinds(binds [][2]string, launch func() (int, error)) (int, error) {
 	type result struct {
 		pid int
