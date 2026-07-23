@@ -12,18 +12,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta/contracttest"
 )
 
-type crashPoint struct {
-	step string
-	err  error
-}
-
-func (c *crashPoint) hook(step string) error {
-	if step == c.step {
-		return c.err
-	}
-	return nil
-}
-
 func TestContract(t *testing.T) {
 	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
 		return newStore(t, t.TempDir(), nss...)
@@ -380,6 +368,18 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 	if err != nil || (*got)["gen"] != 1 {
 		t.Fatalf("trailing-data main was served instead of .prev: %v, %v", got, err)
 	}
+}
+
+type crashPoint struct {
+	step string
+	err  error
+}
+
+func (c *crashPoint) hook(step string) error {
+	if step == c.step {
+		return c.err
+	}
+	return nil
 }
 
 func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {

@@ -57,6 +57,13 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
+func ReconcileState(vm *types.VM) string {
+	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
+		return "stopped (stale)"
+	}
+	return string(vm.State)
+}
+
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	vms := []*types.VMConfig{vmCfg}
 	var owner imagebackend.Images
@@ -140,13 +147,6 @@ func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref 
 	)
 }
 
-func ReconcileState(vm *types.VM) string {
-	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
-		return "stopped (stale)"
-	}
-	return string(vm.State)
-}
-
 // CloseOnCancel closes c when ctx is canceled; callers `defer CloseOnCancel(ctx, c)()` to stop the watcher on return.
 func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 	return context.AfterFunc(ctx, func() {
@@ -225,8 +225,11 @@ func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, c
 	return snapID, nil
 }
 
+// typed is the backend constraint resolveOwner reports matches by.
+type typed interface{ Type() string }
+
 // resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).
-func resolveOwner[T interface{ Type() string }](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
+func resolveOwner[T typed](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
 	var matches []T
 	var zero T
 	for _, b := range backends {
@@ -250,6 +253,27 @@ func resolveOwner[T interface{ Type() string }](backends []T, ref string, found 
 		}
 		return zero, fmt.Errorf("%w (backends: %s)", ambiguous, strings.Join(names, ", "))
 	}
+}
+
+// resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
+func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
+	var resolved *types.VM
+	owner, err := resolveOwner(
+		hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
+			vm, err := h.Inspect(ctx, ref)
+			if err == nil && vm != nil {
+				resolved = vm
+				return true, nil
+			}
+			if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
+				return false, err
+			}
+			return false, nil
+		},
+		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound),
+		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
+	)
+	return owner, resolved, err
 }
 
 // validateRefShape rejects URL/OCI ref mismatches early so backends don't surface misleading downstream errors.
@@ -278,25 +302,4 @@ func digestPullRef(image, digest, imageType string) string {
 		return image
 	}
 	return ref.Context().String() + "@" + digest
-}
-
-// resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
-func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
-	var resolved *types.VM
-	owner, err := resolveOwner(
-		hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
-			vm, err := h.Inspect(ctx, ref)
-			if err == nil && vm != nil {
-				resolved = vm
-				return true, nil
-			}
-			if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
-				return false, err
-			}
-			return false, nil
-		},
-		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound),
-		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
-	)
-	return owner, resolved, err
 }
