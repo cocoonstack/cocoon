@@ -19,10 +19,10 @@ COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
 COCOON_META_BACKEND="${COCOON_META_BACKEND:-json}"
 
 # Dependency versions
-CH_VERSION="${CH_VERSION:-v51.1}"
+CH_VERSION="${CH_VERSION:-v53.0}"
 FC_VERSION="${FC_VERSION:-v1.16.1}"
 FW_VERSION="${FW_VERSION:-0.5.0}"
-CNI_VERSION="${CNI_VERSION:-v1.9.0}"
+CNI_VERSION="${CNI_VERSION:-v1.9.1}"
 
 # Architecture detection
 ARCH=$(uname -m)
