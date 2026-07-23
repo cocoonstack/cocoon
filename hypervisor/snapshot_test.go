@@ -157,7 +157,7 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 }
 
 func TestValidateMetaPathsResidentExemption(t *testing.T) {
-	// Resident disks travel inside the snapshot: a pre-migration COW path must not block restore/clone of the VM's own history.
+	// Resident disks travel inside the snapshot, so path validation treats a resident entry as provenance only; clone additionally requires source paths under the managed run dir at bind time.
 	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
 		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
 	}}

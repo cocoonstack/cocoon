@@ -80,8 +80,8 @@ func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(conte
 	return b.ForEachVM(ctx, ids, "Stop", stopOne)
 }
 
-// DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it. wrap (optional) encloses the locked per-VM deletion — FC passes its writable-disk locks so a clone's symlink-redirect window cannot be deleted from under it.
-func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error, wrap func(rec *VMRecord, fn func() error) error) ([]string, error) {
+// DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.
+func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -101,13 +101,11 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 		if loadErr != nil {
 			return loadErr
 		}
-		return runWrapped(&rec, wrap, func() error {
-			return b.deleteOneLocked(ctx, id, force, stopLocked, &rec, procScan)
-		})
+		return b.deleteOneLocked(ctx, id, force, stopLocked, &rec, procScan)
 	})
 }
 
-// deleteOneLocked is DeleteAll's per-VM body, run under the ops lock (and the backend wrap).
+// deleteOneLocked is DeleteAll's per-VM body, run under the ops lock.
 func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked func(context.Context, string) error, rec *VMRecord, procScan utils.ProcScan) error {
 	sockPath := SocketPath(rec.RunDir)
 	stoppedByUs := false

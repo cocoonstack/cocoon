@@ -58,7 +58,11 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 		return err
 	}
 
-	if !VerifyProcessCmdline(pid, binaryName, expectArg) {
+	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+	if err != nil {
+		return err
+	}
+	if !match {
 		return nil
 	}
 	proc, err := os.FindProcess(pid)
@@ -70,17 +74,21 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 		if !IsProcessAlive(pid) {
 			return nil
 		}
-		return killAndWait(ctx, proc, pid)
+		return killAndWait(ctx, proc, pid, binaryName, expectArg)
 	}
 
 	if err := waitDead(ctx, pid, gracePeriod); err == nil {
 		return nil
 	}
 
-	return killAndWait(ctx, proc, pid)
+	return killAndWait(ctx, proc, pid, binaryName, expectArg)
 }
 
-func killAndWait(ctx context.Context, proc *os.Process, pid int) error {
+func killAndWait(ctx context.Context, proc *os.Process, pid int, binaryName, expectArg string) error {
+	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+	if err != nil || !match {
+		return err
+	}
 	_ = proc.Kill()
 	return waitDead(ctx, pid, killWaitTimeout)
 }

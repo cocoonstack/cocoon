@@ -12,17 +12,17 @@ import (
 
 // terminateWithPidfd uses pidfd_open + pidfd_send_signal for TOCTOU-safe process termination. Returns false if pidfd is unavailable (kernel < 5.3).
 func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
-	if !VerifyProcessCmdline(pid, binaryName, expectArg) {
-		return true, nil
-	}
-
 	fd, err := unix.PidfdOpen(pid, 0)
 	if err != nil {
 		return false, nil
 	}
 	defer func() { _ = unix.Close(fd) }()
 
-	if !VerifyProcessCmdline(pid, binaryName, expectArg) {
+	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+	if err != nil {
+		return true, err
+	}
+	if !match {
 		return true, nil
 	}
 

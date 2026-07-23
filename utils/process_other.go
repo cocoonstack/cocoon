@@ -19,3 +19,7 @@ func FindVMMByCmdline(_, _ string) ([]int, error) {
 func verifyProcessCmdline(_ int, _, _ string) (bool, error) {
 	return false, errVerifyUnsupported
 }
+
+func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, error) {
+	return VerifyProcessCmdline(pid, binaryName, expectArg), nil
+}

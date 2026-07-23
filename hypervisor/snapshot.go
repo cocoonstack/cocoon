@@ -83,7 +83,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 			return spec.Capture(&rec, hc, tmpDir)
 		})
 	}
-	if err = runWrapped(&rec, spec.Wrap, captureWindow); err != nil {
+	if err = captureWindow(); err != nil {
 		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
@@ -138,7 +138,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			return nil
 		})
 	}
-	if err = runWrapped(&rec, spec.Wrap, window); err != nil {
+	if err = window(); err != nil {
 		if killFailed {
 			b.MarkError(ctx, vmID)
 		}

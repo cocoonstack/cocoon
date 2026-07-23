@@ -53,3 +53,31 @@ func TestScanProcsByBinaryReadErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestVerifyForTerminationFailsClosed(t *testing.T) {
+	injected := errors.New("injected cmdline read failure")
+	failing := func(int, string, string) (bool, error) { return false, injected }
+	matching := func(int, string, string) (bool, error) { return true, nil }
+
+	tests := []struct {
+		name    string
+		pid     int
+		verify  func(int, string, string) (bool, error)
+		alive   func(int) bool
+		want    bool
+		wantErr error
+	}{
+		{"read error on live process fails closed", 42, failing, func(int) bool { return true }, false, injected},
+		{"read error on dead process is a clean miss", 42, failing, func(int) bool { return false }, false, nil},
+		{"clean match passes through", 42, matching, func(int) bool { return true }, true, nil},
+		{"non-positive pid never matches", 0, matching, func(int) bool { return true }, false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := verifyForTermination(tt.pid, "vmm", "sock", tt.verify, tt.alive)
+			if got != tt.want || !errors.Is(err, tt.wantErr) {
+				t.Errorf("got (%v, %v), want (%v, %v)", got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}

@@ -36,9 +36,7 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecra
 	return &Firecracker{Backend: backend, conf: cfg}, nil
 }
 
-// Delete removes VMs. Running VMs require force=true (stops them first). The writable-disk locks keep deletion out of a clone's symlink-redirect window.
+// Delete removes VMs. Running VMs require force=true (stops them first); a live clone's shared lease blocks the whole delete.
 func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
-	return fc.DeleteAll(ctx, refs, force, fc.stopOneLocked, func(rec *hypervisor.VMRecord, fn func() error) error {
-		return fc.withSourceWritableDisksLocked(ctx, rec.StorageConfigs, fn)
-	})
+	return fc.DeleteAll(ctx, refs, force, fc.stopOneLocked)
 }

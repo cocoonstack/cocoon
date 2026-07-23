@@ -46,31 +46,29 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 		b.MarkError(ctx, id)
 		return fmt.Errorf("network invariants violated: %w", vErr)
 	}
-	return runWrapped(rec, spec.Wrap, func() error {
-		// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
-		if err := b.RecoverNetwork(ctx, rec); err != nil {
+	// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
+	if err = b.RecoverNetwork(ctx, rec); err != nil {
+		b.markFailedOperation(ctx, id, true)
+		return fmt.Errorf("recover network: %w", err)
+	}
+	sockPath := SocketPath(rec.RunDir)
+	pid, err := spec.Launch(ctx, rec, sockPath)
+	if err != nil {
+		b.markFailedOperation(ctx, id, true)
+		return fmt.Errorf("launch VM: %w", err)
+	}
+	if spec.PostLaunch != nil {
+		if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
+			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
 			b.markFailedOperation(ctx, id, true)
-			return fmt.Errorf("recover network: %w", err)
+			return fmt.Errorf("configure VM: %w", err)
 		}
-		sockPath := SocketPath(rec.RunDir)
-		pid, err := spec.Launch(ctx, rec, sockPath)
-		if err != nil {
-			b.markFailedOperation(ctx, id, true)
-			return fmt.Errorf("launch VM: %w", err)
-		}
-		if spec.PostLaunch != nil {
-			if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
-				b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
-				b.markFailedOperation(ctx, id, true)
-				return fmt.Errorf("configure VM: %w", err)
-			}
-		}
-		// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
-		if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
-			log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
-		}
-		return nil
-	})
+	}
+	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
+	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
+		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
+	}
+	return nil
 }
 
 // PrepareStart loads the record, refuses quarantined VMs, verifies not-running, ensures dirs exist.
