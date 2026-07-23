@@ -19,12 +19,12 @@ jobs:
             goarch: arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: 'go.mod'
 
@@ -43,7 +43,7 @@ jobs:
           go build -ldflags "${LDFLAGS}" -o cocoon-${{ matrix.goos }}-${{ matrix.goarch }} .
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: cocoon-${{ matrix.goos }}-${{ matrix.goarch }}
           path: cocoon-${{ matrix.goos }}-${{ matrix.goarch }}

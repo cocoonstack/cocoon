@@ -18,7 +18,7 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 ## Tool versions
-GOLANGCILINT_VERSION ?= v2.9.0
+GOLANGCILINT_VERSION ?= v2.12.2
 GOLANGCILINT_ROOT := $(LOCALBIN)/golangci-lint-$(GOLANGCILINT_VERSION)
 GOLANGCILINT := $(GOLANGCILINT_ROOT)/golangci-lint
 
@@ -31,7 +31,7 @@ GOIMPORTS := $(LOCALBIN)/goimports-$(GOIMPORTS_VERSION)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT)
 $(GOLANGCILINT):
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOLANGCILINT_ROOT) $(GOLANGCILINT_VERSION)
+	GOBIN=$(GOLANGCILINT_ROOT) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
 
 .PHONY: gofumpt
 gofumpt: $(GOFMT)

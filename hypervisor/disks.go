@@ -14,8 +14,8 @@ import (
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
-	out, err := exec.CommandContext(
-		ctx, //nolint:gosec
+	out, err := exec.CommandContext( //nolint:gosec
+		ctx,
 		"mkfs.ext4", "-F", "-m", "0", "-q",
 		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
 		path,

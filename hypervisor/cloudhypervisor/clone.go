@@ -114,7 +114,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
-	args := []string{"--api-socket", sockPath}
+	args := []string{apiSocketFlag, sockPath}
 	ch.saveCmdline(ctx, &hypervisor.VMRecord{RunDir: runDir}, args)
 
 	pid, err := ch.launchProcess(ctx, &hypervisor.VMRecord{
