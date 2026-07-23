@@ -154,6 +154,77 @@ func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 	})
 }
 
+// EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
+func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, name string) error {
+	if err := (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+		return err
+	}
+	if name == "" {
+		return nil
+	}
+	if _, err := snapBackend.Inspect(ctx, name); err == nil {
+		return fmt.Errorf("snapshot name %q already exists", name)
+	} else if !errors.Is(err, snapshot.ErrNotFound) {
+		return fmt.Errorf("check snapshot name: %w", err)
+	}
+	return nil
+}
+
+// SnapshotNameFlags reads the --name/--description pair and rejects a taken name.
+func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
+	name, _ = cmd.Flags().GetString("name")
+	description, _ = cmd.Flags().GetString("description")
+	if err = EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
+		return "", "", err
+	}
+	return name, description, nil
+}
+
+// CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
+func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
+	name, description, err := SnapshotNameFlags(ctx, cmd, snapBackend)
+	if err != nil {
+		return "", err
+	}
+	cfg, srcDir, err := capture()
+	if err != nil {
+		return "", err
+	}
+	return PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
+}
+
+// PersistSnapshotDir stores a finalized capture dir, preferring a direct in-place move (DirectCreator) when srcDir shares a filesystem with the backend's data dir, and falling back to a tar stream otherwise (cross-filesystem, or a backend without DirectCreator such as a remote store). srcDir is consumed on every path.
+func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
+	cfg.Name = name
+	cfg.Description = description
+	if dc, ok := snapBackend.(snapshot.DirectCreator); ok {
+		id, done, err := dc.CreateFromDir(ctx, cfg, srcDir)
+		if err != nil {
+			os.RemoveAll(srcDir) //nolint:errcheck,gosec // consume srcDir on every path: a failed direct save must not leave the GB capture dir behind
+			return "", fmt.Errorf("save snapshot: %w", err)
+		}
+		if done {
+			log.WithFunc("core.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
+			return id, nil
+		}
+	}
+	return PersistSnapshotStream(ctx, snapBackend, cfg, utils.TarDirStreamWithRemove(srcDir), name, description)
+}
+
+// PersistSnapshotStream labels cfg and stores the stream, closing it either way.
+func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, stream io.ReadCloser, name, description string) (string, error) {
+	defer stream.Close() //nolint:errcheck
+	defer CloseOnCancel(ctx, stream)()
+	cfg.Name = name
+	cfg.Description = description
+	log.WithFunc("core.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
+	snapID, err := snapBackend.Create(ctx, cfg, stream)
+	if err != nil {
+		return "", fmt.Errorf("save snapshot: %w", err)
+	}
+	return snapID, nil
+}
+
 // resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).
 func resolveOwner[T interface{ Type() string }](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
 	var matches []T
@@ -228,75 +299,4 @@ func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref str
 		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
 	)
 	return owner, resolved, err
-}
-
-// EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
-func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, name string) error {
-	if err := (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
-		return err
-	}
-	if name == "" {
-		return nil
-	}
-	if _, err := snapBackend.Inspect(ctx, name); err == nil {
-		return fmt.Errorf("snapshot name %q already exists", name)
-	} else if !errors.Is(err, snapshot.ErrNotFound) {
-		return fmt.Errorf("check snapshot name: %w", err)
-	}
-	return nil
-}
-
-// SnapshotNameFlags reads the --name/--description pair and rejects a taken name.
-func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
-	name, _ = cmd.Flags().GetString("name")
-	description, _ = cmd.Flags().GetString("description")
-	if err = EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
-		return "", "", err
-	}
-	return name, description, nil
-}
-
-// CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
-func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
-	name, description, err := SnapshotNameFlags(ctx, cmd, snapBackend)
-	if err != nil {
-		return "", err
-	}
-	cfg, srcDir, err := capture()
-	if err != nil {
-		return "", err
-	}
-	return PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
-}
-
-// PersistSnapshotDir stores a finalized capture dir, preferring a direct in-place move (DirectCreator) when srcDir shares a filesystem with the backend's data dir, and falling back to a tar stream otherwise (cross-filesystem, or a backend without DirectCreator such as a remote store). srcDir is consumed on every path.
-func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
-	cfg.Name = name
-	cfg.Description = description
-	if dc, ok := snapBackend.(snapshot.DirectCreator); ok {
-		id, done, err := dc.CreateFromDir(ctx, cfg, srcDir)
-		if err != nil {
-			os.RemoveAll(srcDir) //nolint:errcheck,gosec // consume srcDir on every path: a failed direct save must not leave the GB capture dir behind
-			return "", fmt.Errorf("save snapshot: %w", err)
-		}
-		if done {
-			log.WithFunc("core.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
-			return id, nil
-		}
-	}
-	return PersistSnapshotStream(ctx, snapBackend, cfg, utils.TarDirStreamWithRemove(srcDir), name, description)
-}
-
-// PersistSnapshotStream labels cfg and stores the stream, closing it either way.
-func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, stream io.ReadCloser, name, description string) (string, error) {
-	defer stream.Close() //nolint:errcheck
-	defer CloseOnCancel(ctx, stream)()
-	cfg.Name = name
-	cfg.Description = description
-	log.WithFunc("core.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
-	snapID, err := snapBackend.Create(ctx, cfg, stream)
-	if err != nil {
-		return "", fmt.Errorf("save snapshot: %w", err)
-	}
-	return snapID, nil
 }

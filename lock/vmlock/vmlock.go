@@ -15,10 +15,6 @@ func Path(rootDir, vmID string) string {
 	return filepath.Join(lockDir(rootDir), vmID+lockSuffix)
 }
 
-func lockDir(rootDir string) string {
-	return filepath.Join(rootDir, "locks", "vm")
-}
-
 // New returns vmID's operation lock, creating the lock directory on demand.
 func New(rootDir, vmID string) (*flock.Lock, error) {
 	p := Path(rootDir, vmID)
@@ -26,4 +22,8 @@ func New(rootDir, vmID string) (*flock.Lock, error) {
 		return nil, err
 	}
 	return flock.NewTransient(p), nil
+}
+
+func lockDir(rootDir string) string {
+	return filepath.Join(rootDir, "locks", "vm")
 }

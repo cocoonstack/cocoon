@@ -11,28 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func seedProtoVM(t *testing.T, b *Backend, id string) *VMRecord {
-	t.Helper()
-	runDir, logDir := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(runDir, "cow.raw"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.ReserveVM(t.Context(), id, &types.VMConfig{Name: "proto-" + id}, nil, runDir, logDir); err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
-		r.State = types.VMStateStopped
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &rec
-}
-
 func TestDeleteProtocolFullRun(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -307,6 +285,28 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	if len(netTorn) != 1 || netTorn[0] != "vmentry1" {
 		t.Fatalf("entry-driven recovery skipped the injected network cleanup: %v", netTorn)
 	}
+}
+
+func seedProtoVM(t *testing.T, b *Backend, id string) *VMRecord {
+	t.Helper()
+	runDir, logDir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(runDir, "cow.raw"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ReserveVM(t.Context(), id, &types.VMConfig{Name: "proto-" + id}, nil, runDir, logDir); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := b.LoadRecord(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &rec
 }
 
 // stubNetwork stands in for the injected host-networking seam; unset hooks are no-ops.

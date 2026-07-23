@@ -58,21 +58,6 @@ func LookupOne[E Entry](images map[string]*E, id string, normalizers ...func(str
 	return refs[0], images[refs[0]], true
 }
 
-// refsShareDigest reports whether every ref names the same digest (tag aliases of one image).
-func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
-	first := images[refs[0]]
-	if first == nil {
-		return false
-	}
-	for _, ref := range refs[1:] {
-		e := images[ref]
-		if e == nil || (*e).EntryID() != (*first).EntryID() {
-			return false
-		}
-	}
-	return true
-}
-
 // LookupRefs returns all ref keys matching id by exact key, normalizer, or digest prefix.
 func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) []string {
 	if entry, ok := images[id]; ok && entry != nil {
@@ -105,6 +90,21 @@ func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(st
 		}
 	}
 	return refs
+}
+
+// refsShareDigest reports whether every ref names the same digest (tag aliases of one image).
+func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
+	first := images[refs[0]]
+	if first == nil {
+		return false
+	}
+	for _, ref := range refs[1:] {
+		e := images[ref]
+		if e == nil || (*e).EntryID() != (*first).EntryID() {
+			return false
+		}
+	}
+	return true
 }
 
 // deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps

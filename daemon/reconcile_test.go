@@ -37,15 +37,6 @@ type fakeSupervisor struct {
 	resumed   []string
 }
 
-func newFake() *fakeSupervisor {
-	return &fakeSupervisor{
-		records:    map[string]*hypervisor.VMRecord{},
-		tombstoned: map[string]struct{}{},
-		live:       map[string]utils.ProcRef{},
-		busy:       map[string]struct{}{},
-	}
-}
-
 func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
 	f.records[rec.ID] = rec
 	return f
@@ -150,19 +141,6 @@ func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *h
 	f.collected = append(f.collected, vmID)
 	delete(f.records, vmID)
 	return nil
-}
-
-func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
-	t.Helper()
-	d, err := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return d
-}
-
-func runningRec(id string, gen uint64) *hypervisor.VMRecord {
-	return &hypervisor.VMRecord{VM: types.VM{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}}
 }
 
 func TestReconcileConvergesDeadRunningRecord(t *testing.T) {
@@ -392,4 +370,26 @@ func TestPassUnreadyWhenABackendCannotBeScanned(t *testing.T) {
 	if _, h := d.state.snapshot(); h.ok {
 		t.Error("a backend that could not be scanned still reported ready")
 	}
+}
+
+func newFake() *fakeSupervisor {
+	return &fakeSupervisor{
+		records:    map[string]*hypervisor.VMRecord{},
+		tombstoned: map[string]struct{}{},
+		live:       map[string]utils.ProcRef{},
+		busy:       map[string]struct{}{},
+	}
+}
+
+func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
+	t.Helper()
+	d, err := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return d
+}
+
+func runningRec(id string, gen uint64) *hypervisor.VMRecord {
+	return &hypervisor.VMRecord{VM: types.VM{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}}
 }

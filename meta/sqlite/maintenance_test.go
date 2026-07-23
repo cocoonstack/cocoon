@@ -11,25 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-func backupGet(t *testing.T, dest, id string) (string, bool) {
-	t.Helper()
-	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
-	if err != nil {
-		t.Fatalf("open backup %s: %v", dest, err)
-	}
-	defer b.Close() //nolint:errcheck
-	var raw json.RawMessage
-	var ok bool
-	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
-		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("view backup: %v", err)
-	}
-	return string(raw), ok
-}
-
 func TestBackupFidelity(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -182,4 +163,23 @@ func TestBackupConcurrentSameDest(t *testing.T) {
 	if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
 		t.Fatalf("published backup invalid after concurrent runs: %q ok=%v", raw, ok)
 	}
+}
+
+func backupGet(t *testing.T, dest, id string) (string, bool) {
+	t.Helper()
+	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
+	if err != nil {
+		t.Fatalf("open backup %s: %v", dest, err)
+	}
+	defer b.Close() //nolint:errcheck
+	var raw json.RawMessage
+	var ok bool
+	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
+		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("view backup: %v", err)
+	}
+	return string(raw), ok
 }

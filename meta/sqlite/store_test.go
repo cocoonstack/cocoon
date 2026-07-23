@@ -9,6 +9,18 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+func TestContract(t *testing.T) {
+	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
+		return newStore(t, t.TempDir(), nss...)
+	})
+}
+
+func TestContractForcedRetryEngine(t *testing.T) {
+	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
+		return contracttest.ForcedRetry(newStore(t, t.TempDir(), nss...))
+	})
+}
+
 func newStore(t *testing.T, dir string, nss ...string) *Store {
 	t.Helper()
 	decls := make([]Namespace, 0, len(nss))
@@ -27,16 +39,4 @@ func newStore(t *testing.T, dir string, nss ...string) *Store {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
-}
-
-func TestContract(t *testing.T) {
-	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
-		return newStore(t, t.TempDir(), nss...)
-	})
-}
-
-func TestContractForcedRetryEngine(t *testing.T) {
-	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
-		return contracttest.ForcedRetry(newStore(t, t.TempDir(), nss...))
-	})
 }

@@ -24,37 +24,6 @@ func (c *crashPoint) hook(step string) error {
 	return nil
 }
 
-func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {
-	t.Helper()
-	c := meta.NewCollection[map[string]int](s, ns, "records")
-	var rec *map[string]int
-	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
-		var err error
-		rec, err = c.Get(t.Context(), r, id)
-		return err
-	})
-	return rec, err
-}
-
-func newStore(t *testing.T, dir string, nss ...string) *Store {
-	t.Helper()
-	defs := make([]Namespace, 0, len(nss))
-	for _, ns := range nss {
-		defs = append(defs, Namespace{
-			Name:     ns,
-			FilePath: filepath.Join(dir, ns+".json"),
-			LockPath: filepath.Join(dir, ns+".lock"),
-			Codec:    GenericCodec{},
-		})
-	}
-	s, err := Open(defs...)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
-
 func TestContract(t *testing.T) {
 	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
 		return newStore(t, t.TempDir(), nss...)
@@ -411,4 +380,35 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 	if err != nil || (*got)["gen"] != 1 {
 		t.Fatalf("trailing-data main was served instead of .prev: %v, %v", got, err)
 	}
+}
+
+func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {
+	t.Helper()
+	c := meta.NewCollection[map[string]int](s, ns, "records")
+	var rec *map[string]int
+	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
+		var err error
+		rec, err = c.Get(t.Context(), r, id)
+		return err
+	})
+	return rec, err
+}
+
+func newStore(t *testing.T, dir string, nss ...string) *Store {
+	t.Helper()
+	defs := make([]Namespace, 0, len(nss))
+	for _, ns := range nss {
+		defs = append(defs, Namespace{
+			Name:     ns,
+			FilePath: filepath.Join(dir, ns+".json"),
+			LockPath: filepath.Join(dir, ns+".lock"),
+			Codec:    GenericCodec{},
+		})
+	}
+	s, err := Open(defs...)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }

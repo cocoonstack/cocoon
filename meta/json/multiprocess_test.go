@@ -21,15 +21,6 @@ const (
 	inverseOps     = 10
 )
 
-// stormWorkers is the design's 256-process gate by default; constrained CI
-// runners dial it down via COCOON_STORM_WORKERS (full scale runs offline).
-func stormWorkers() int {
-	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
-		return v
-	}
-	return 256
-}
-
 // TestMultiProcessCorrectness is the design §9 gate with real processes, not
 // goroutines: every worker's acknowledged insert must be present afterwards,
 // every failure a mapped taxonomy error, and the reopened store uncorrupted.
@@ -255,4 +246,13 @@ func TestEventsWriterWorker(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// stormWorkers is the design's 256-process gate by default; constrained CI
+// runners dial it down via COCOON_STORM_WORKERS (full scale runs offline).
+func stormWorkers() int {
+	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
+		return v
+	}
+	return 256
 }

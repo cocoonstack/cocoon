@@ -10,6 +10,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
+func OpenPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
+
+// CloseFD closes a raw descriptor, ignoring a zero or negative one.
+func CloseFD(fd int) {
+	if fd > 0 {
+		_ = unix.Close(fd)
+	}
+}
+
 // terminateWithPidfd uses pidfd_open + pidfd_send_signal for TOCTOU-safe process termination. Returns false if pidfd is unavailable (kernel < 5.3).
 func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
 	fd, err := unix.PidfdOpen(pid, 0)
@@ -45,14 +55,4 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 		}
 	}
 	return true, waitDead(ctx, pid, killWaitTimeout)
-}
-
-// OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
-func OpenPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
-
-// CloseFD closes a raw descriptor, ignoring a zero or negative one.
-func CloseFD(fd int) {
-	if fd > 0 {
-		_ = unix.Close(fd)
-	}
 }

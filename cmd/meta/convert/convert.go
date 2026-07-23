@@ -29,13 +29,6 @@ const asideSuffix = ".converted-"
 // testCrashStep injects crashes between protocol steps (§9 gate); nil in prod.
 var testCrashStep func(step string) error
 
-func crashStep(step string) error {
-	if testCrashStep == nil {
-		return nil
-	}
-	return testCrashStep(step)
-}
-
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
 	MetaRoot string // manifest directory (parent of the sqlite DB)
@@ -80,6 +73,13 @@ func Run(ctx context.Context, spec Spec, target string) error {
 		return err
 	}
 	return finishManifest(spec.MetaRoot)
+}
+
+func crashStep(step string) error {
+	if testCrashStep == nil {
+		return nil
+	}
+	return testCrashStep(step)
 }
 
 func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {

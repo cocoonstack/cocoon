@@ -53,57 +53,6 @@ func (lf *LocalFile) dbRead(ctx context.Context, fn func(*snapshotIndex) error) 
 	})
 }
 
-func materializeSnapIndex(t *snapTx) (*snapshotIndex, *snapshotIndex, error) {
-	idx := &snapshotIndex{}
-	idx.Init()
-	var err error
-	if idx.Snapshots, err = t.All(); err != nil {
-		return nil, nil, err
-	}
-	for _, rec := range idx.Snapshots {
-		if rec != nil && rec.Name != "" {
-			if id, ok, err := t.NameGet(rec.Name); err != nil {
-				return nil, nil, err
-			} else if ok {
-				idx.Names[rec.Name] = id
-			}
-		}
-	}
-	before := &snapshotIndex{Snapshots: maps.Clone(idx.Snapshots), Names: maps.Clone(idx.Names)}
-	return before, idx, nil
-}
-
-func writeBackSnapIndex(t *snapTx, before, after *snapshotIndex) error {
-	for id := range before.Snapshots {
-		if after.Snapshots[id] == nil {
-			if err := t.Del(id); err != nil {
-				return err
-			}
-		}
-	}
-	for id, rec := range after.Snapshots {
-		if rec == nil {
-			continue
-		}
-		if err := t.Put(id, rec); err != nil {
-			return err
-		}
-	}
-	for name := range before.Names {
-		if _, ok := after.Names[name]; !ok {
-			if err := t.NameDel(name); err != nil {
-				return err
-			}
-		}
-	}
-	for name, id := range after.Names {
-		if err := t.NameSet(name, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
 // and requires byte-identical output to the legacy storage layer's writes.
 func TestLegacyDifferentialTrace(t *testing.T) {
@@ -172,4 +121,55 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	if string(got) != string(after) {
 		t.Fatalf("differential trace diverged:\n got: %s\nwant: %s", got, after)
 	}
+}
+
+func materializeSnapIndex(t *snapTx) (*snapshotIndex, *snapshotIndex, error) {
+	idx := &snapshotIndex{}
+	idx.Init()
+	var err error
+	if idx.Snapshots, err = t.All(); err != nil {
+		return nil, nil, err
+	}
+	for _, rec := range idx.Snapshots {
+		if rec != nil && rec.Name != "" {
+			if id, ok, err := t.NameGet(rec.Name); err != nil {
+				return nil, nil, err
+			} else if ok {
+				idx.Names[rec.Name] = id
+			}
+		}
+	}
+	before := &snapshotIndex{Snapshots: maps.Clone(idx.Snapshots), Names: maps.Clone(idx.Names)}
+	return before, idx, nil
+}
+
+func writeBackSnapIndex(t *snapTx, before, after *snapshotIndex) error {
+	for id := range before.Snapshots {
+		if after.Snapshots[id] == nil {
+			if err := t.Del(id); err != nil {
+				return err
+			}
+		}
+	}
+	for id, rec := range after.Snapshots {
+		if rec == nil {
+			continue
+		}
+		if err := t.Put(id, rec); err != nil {
+			return err
+		}
+	}
+	for name := range before.Names {
+		if _, ok := after.Names[name]; !ok {
+			if err := t.NameDel(name); err != nil {
+				return err
+			}
+		}
+	}
+	for name, id := range after.Names {
+		if err := t.NameSet(name, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

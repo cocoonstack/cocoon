@@ -10,10 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func testDecls() []Namespace {
-	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
-}
-
 func TestInitRefusesExisting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
 	if err := Init(t.Context(), path, testDecls()...); err != nil {
@@ -165,4 +161,8 @@ func TestUnsupportedFSRefused(t *testing.T) {
 	if utils.FileExists(fresh) {
 		t.Fatal("init created WAL state on refused filesystem")
 	}
+}
+
+func testDecls() []Namespace {
+	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
 }
