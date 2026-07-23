@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -106,6 +107,34 @@ func TestUninitializedNamespaceRefused(t *testing.T) {
 	extra := append(testDecls(), Namespace{Name: "late", Tables: []string{"records"}})
 	if _, err := Open(path, extra...); err == nil || !strings.Contains(err.Error(), "uninitialized") {
 		t.Fatalf("want uninitialized refusal, got %v", err)
+	}
+}
+
+func TestInitIfMissingRaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() {
+			errs[i] = InitIfMissing(t.Context(), path, testDecls()...)
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("racer %d: %v", i, err)
+		}
+	}
+	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("idempotent recheck: %v", err)
+	}
+	s, err := Open(path, testDecls()...)
+	if err != nil {
+		t.Fatalf("open bootstrapped store: %v", err)
+	}
+	_ = s.Close()
+	if utils.FileExists(filepath.Join(filepath.Dir(path), initLockName)) {
+		t.Fatal("transient init lock left behind")
 	}
 }
 

@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const initLockName = "init.lock"
 
 // Init creates a fresh store: schema DDL, identity pragmas and one
 // initialized meta_state row per namespace, all in ONE transaction — a crash
@@ -28,6 +31,23 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 // creates its target while the manifest is necessarily present (§6).
 func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
+}
+
+// InitIfMissing bootstraps a fresh store, serializing racing processes
+// behind a transient flock; an existing database is a no-op.
+func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) (err error) {
+	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
+		return merr
+	}
+	lk := flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName))
+	if lerr := lk.Lock(ctx); lerr != nil {
+		return lerr
+	}
+	defer func() { err = errors.Join(err, lk.Unlock(ctx)) }()
+	if utils.FileExists(dbPath) {
+		return nil
+	}
+	return Init(ctx, dbPath, namespaces...)
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {

@@ -8,6 +8,7 @@ import (
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/cmd/meta/convert"
+	"github.com/cocoonstack/cocoon/config"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 )
 
@@ -21,8 +22,8 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if conf.MetaBackend != "sqlite" {
-		return fmt.Errorf("meta init applies to the sqlite backend; meta_backend is %q", conf.MetaBackend)
+	if b := cmdcore.ResolveMetaBackend(conf); b != config.MetaBackendSQLite {
+		return fmt.Errorf("meta init applies to the sqlite backend; effective meta_backend is %q", b)
 	}
 	dbPath := cmdcore.MetaDBPath(conf)
 	if err := metasqlite.Init(ctx, dbPath, cmdcore.MetaNamespaces()...); err != nil {
@@ -41,7 +42,7 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 	// always moves the OTHER engine's data into the effective backend.
 	target := conf.MetaBackend
 	if target == "" {
-		target = "json"
+		target = config.MetaBackendSQLite
 	}
 	dbPath := cmdcore.MetaDBPath(conf)
 	spec := convert.Spec{
@@ -62,8 +63,8 @@ func (h Handler) Backup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if conf.MetaBackend != "sqlite" {
-		return fmt.Errorf("meta backup applies to the sqlite backend; meta_backend is %q", conf.MetaBackend)
+	if b := cmdcore.ResolveMetaBackend(conf); b != config.MetaBackendSQLite {
+		return fmt.Errorf("meta backup applies to the sqlite backend; effective meta_backend is %q", b)
 	}
 	if err := metasqlite.Backup(ctx, cmdcore.MetaDBPath(conf), args[0]); err != nil {
 		return err
