@@ -19,7 +19,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
-
 	"github.com/cocoonstack/cocoon/types"
 )
 

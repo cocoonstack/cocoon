@@ -62,17 +62,6 @@ func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 	return p, nil
 }
 
-func (n *NetProviders) cniLocked() (network.Network, error) {
-	if n.cni == nil {
-		p, err := InitNetwork(n.conf)
-		if err != nil {
-			return nil, err
-		}
-		n.cni = p
-	}
-	return n.cni, nil
-}
-
 // Recover verifies, rebuilds or un-quiesces the VM's plumbing; its error aborts the launch, since half-built networking strands the guest.
 func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	backend := vm.ResolvedNetBackend()
@@ -124,4 +113,15 @@ func (n *NetProviders) cniOnly() (network.Network, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.cniLocked()
+}
+
+func (n *NetProviders) cniLocked() (network.Network, error) {
+	if n.cni == nil {
+		p, err := InitNetwork(n.conf)
+		if err != nil {
+			return nil, err
+		}
+		n.cni = p
+	}
+	return n.cni, nil
 }
