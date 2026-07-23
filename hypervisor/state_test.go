@@ -537,6 +537,95 @@ func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 	}
 }
 
+func TestPrepareStartRefusesQuarantined(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
+
+	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM")
+	}
+
+	// Stop's state flip must not lift the quarantine.
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
+	}
+}
+
+func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-staging"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir := t.TempDir()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = runDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		t.Fatalf("mk tombstone: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
+		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
+	}
+}
+
+func TestPrepareStartRefusesCreating(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
+		t.Fatalf("ReserveVM: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+		t.Fatal("PrepareStart must refuse a creating placeholder")
+	}
+}
+
+// TestForcedRetryStateOps is the design §10 gate: the migrated
+// UpdateStates/BatchMarkStarted run on a forced-retry engine (every closure
+// executes twice) and must emit each metering entry exactly once.
+func TestForcedRetryStateOps(t *testing.T) {
+	const typ = "test-hv"
+	dir := t.TempDir()
+	rec := meteringcapture.New()
+	b := &Backend{
+		Typ:      typ,
+		NS:       VMNamespaceName(typ),
+		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Meta:     contracttest.ForcedRetry(testNamespace(t, typ, dir)),
+		Metering: rec,
+	}
+	ctx := t.Context()
+	seedVMRecord(t, b, "vm1", 2, 1<<30, 10<<30, false)
+
+	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
+		t.Fatalf("BatchMarkStarted under forced retry: %v", err)
+	}
+	if starts := rec.Entries(); len(starts) != 1 || starts[0].Kind != metering.KindVMComputeStart {
+		t.Fatalf("want exactly one compute.start, got %+v", starts)
+	}
+	rec.Reset()
+
+	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateStates under forced retry: %v", err)
+	}
+	if stops := rec.Entries(); len(stops) != 1 || stops[0].Kind != metering.KindVMComputeStop {
+		t.Fatalf("want exactly one compute.stop, got %+v", stops)
+	}
+	loaded, err := b.LoadRecord(ctx, "vm1")
+	if err != nil || loaded.State != types.VMStateStopped {
+		t.Fatalf("state after forced-retry ops: %+v %v", loaded, err)
+	}
+}
+
 func newDiskStubConfig(t *testing.T) stubBackendConfig {
 	dir := t.TempDir()
 	return stubBackendConfig{
@@ -630,94 +719,5 @@ func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage in
 		return nil
 	}); err != nil {
 		t.Fatalf("set running: %v", err)
-	}
-}
-
-func TestPrepareStartRefusesQuarantined(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
-
-	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
-		t.Fatal("PrepareStart must refuse a quarantined VM")
-	}
-
-	// Stop's state flip must not lift the quarantine.
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
-	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
-		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
-	}
-}
-
-func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	const id = "vm-staging"
-	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
-	runDir := t.TempDir()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = runDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
-		t.Fatalf("mk tombstone: %v", err)
-	}
-	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
-		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
-	}
-}
-
-func TestPrepareStartRefusesCreating(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
-		t.Fatalf("ReserveVM: %v", err)
-	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
-		t.Fatal("PrepareStart must refuse a creating placeholder")
-	}
-}
-
-// TestForcedRetryStateOps is the design §10 gate: the migrated
-// UpdateStates/BatchMarkStarted run on a forced-retry engine (every closure
-// executes twice) and must emit each metering entry exactly once.
-func TestForcedRetryStateOps(t *testing.T) {
-	const typ = "test-hv"
-	dir := t.TempDir()
-	rec := meteringcapture.New()
-	b := &Backend{
-		Typ:      typ,
-		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
-		Meta:     contracttest.ForcedRetry(testNamespace(t, typ, dir)),
-		Metering: rec,
-	}
-	ctx := t.Context()
-	seedVMRecord(t, b, "vm1", 2, 1<<30, 10<<30, false)
-
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted under forced retry: %v", err)
-	}
-	if starts := rec.Entries(); len(starts) != 1 || starts[0].Kind != metering.KindVMComputeStart {
-		t.Fatalf("want exactly one compute.start, got %+v", starts)
-	}
-	rec.Reset()
-
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates under forced retry: %v", err)
-	}
-	if stops := rec.Entries(); len(stops) != 1 || stops[0].Kind != metering.KindVMComputeStop {
-		t.Fatalf("want exactly one compute.stop, got %+v", stops)
-	}
-	loaded, err := b.LoadRecord(ctx, "vm1")
-	if err != nil || loaded.State != types.VMStateStopped {
-		t.Fatalf("state after forced-retry ops: %+v %v", loaded, err)
 	}
 }

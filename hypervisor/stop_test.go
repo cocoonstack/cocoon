@@ -186,18 +186,6 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 }
 
-// shortTempDir is a /tmp-based TempDir: unix socket paths built under
-// t.TempDir() can exceed the ~104-byte sockaddr cap (EINVAL on dial).
-func shortTempDir(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "cocoon-test-")
-	if err != nil {
-		t.Fatalf("temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
-
 func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -260,4 +248,16 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	if stops != 1 {
 		t.Errorf("got %d vm.compute.stop for one start, want 1: %+v", stops, rec.Entries())
 	}
+}
+
+// shortTempDir is a /tmp-based TempDir: unix socket paths built under
+// t.TempDir() can exceed the ~104-byte sockaddr cap (EINVAL on dial).
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "cocoon-test-")
+	if err != nil {
+		t.Fatalf("temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
