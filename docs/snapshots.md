@@ -37,6 +37,18 @@ A snapshot contains the full VM state:
 
 CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so growing them at clone time would not be honored. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones must keep the snapshot's NIC topology — `--nics` is rejected because FC's `network_overrides` only retargets existing interfaces, it cannot add or drop them. Fresh data disks can be added to a Cloud Hypervisor clone via `--data-disk` (hot-added after restore); Firecracker rejects it — no hotplug. Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.
 
+### Memory Restore Modes & Concurrency
+
+Cloud Hypervisor clones restore guest memory via `--restore-mode`:
+
+- **`mmap`** (default for clones of plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires the cocoonstack CH build.
+- **`copy`** (default for `vm restore`, and the fallback whenever the snapshot uses hugepages or shared memory): eager full-memory load; the degradation from an explicit `mmap` request is logged as a warning.
+- **`ondemand`**: userfaultfd paging; pages load on first guest access.
+
+Firecracker restore is always memory-mapped by design and takes no mode flag.
+
+Concurrent clones are first-class: sibling clones of one snapshot run fully in parallel, and each clone holds a shared per-VM lease on its source for the duration of setup — a concurrent `vm rm`/`vm restore` of the source waits for the burst to finish instead of destroying work in flight. A source that was already deleted still clones (its drives travel inside the snapshot).
+
 ### Post-Clone Guest Setup
 
 After cloning, the guest resumes with new NICs (MAC addresses are handled automatically via NIC hot-swap during clone), but the guest OS still has the old IP configuration. You must reconfigure networking inside the guest:
