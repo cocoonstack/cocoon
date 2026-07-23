@@ -22,57 +22,6 @@ var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
-// VMIndex mirrors the legacy whole-index shape for shim-based tests.
-type VMIndex struct {
-	VMs        map[string]*VMRecord `json:"vms"`
-	Names      map[string]string    `json:"names"`
-	OrphanDirs []string             `json:"orphan_dirs,omitempty"`
-}
-
-func (idx *VMIndex) Init() {
-	if idx.VMs == nil {
-		idx.VMs = map[string]*VMRecord{}
-	}
-	if idx.Names == nil {
-		idx.Names = map[string]string{}
-	}
-}
-
-// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
-// difference back. Production code never uses it.
-func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
-	return b.update(ctx, func(t *vmTx) error {
-		before, idx, err := materialize(t)
-		if err != nil {
-			return err
-		}
-		if err := fn(idx); err != nil {
-			return err
-		}
-		return writeBack(t, before, idx)
-	})
-}
-
-// dbRead is the test-only whole-index read shim.
-func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
-	return b.view(ctx, func(t *vmTx) error {
-		_, idx, err := materialize(t)
-		if err != nil {
-			return err
-		}
-		return fn(idx)
-	})
-}
-
-// addOrphanDir survives only for fixtures/shims: production writes cleanup
-// intent through tombstone payloads now.
-func (t *vmTx) addOrphanDir(dir string) error {
-	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
-		return err
-	}
-	return t.w.PutRaw(t.ctx, t.ns, TableOrphanDirs, dir, json.RawMessage(`{}`), false)
-}
-
 // TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
 // and requires byte-identical output to what the LEGACY storage layer wrote
 // for the same operations (fixtures generated at master by cmd/fixturegen).
@@ -175,6 +124,57 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 	if _, statErr := os.Stat(vmlock.Path(b.Conf.RootDirPath(), id)); statErr != nil {
 		t.Fatalf("lock file not at the shared path: %v", statErr)
 	}
+}
+
+// VMIndex mirrors the legacy whole-index shape for shim-based tests.
+type VMIndex struct {
+	VMs        map[string]*VMRecord `json:"vms"`
+	Names      map[string]string    `json:"names"`
+	OrphanDirs []string             `json:"orphan_dirs,omitempty"`
+}
+
+func (idx *VMIndex) Init() {
+	if idx.VMs == nil {
+		idx.VMs = map[string]*VMRecord{}
+	}
+	if idx.Names == nil {
+		idx.Names = map[string]string{}
+	}
+}
+
+// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
+// difference back. Production code never uses it.
+func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
+	return b.update(ctx, func(t *vmTx) error {
+		before, idx, err := materialize(t)
+		if err != nil {
+			return err
+		}
+		if err := fn(idx); err != nil {
+			return err
+		}
+		return writeBack(t, before, idx)
+	})
+}
+
+// dbRead is the test-only whole-index read shim.
+func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
+	return b.view(ctx, func(t *vmTx) error {
+		_, idx, err := materialize(t)
+		if err != nil {
+			return err
+		}
+		return fn(idx)
+	})
+}
+
+// addOrphanDir survives only for fixtures/shims: production writes cleanup
+// intent through tombstone payloads now.
+func (t *vmTx) addOrphanDir(dir string) error {
+	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
+		return err
+	}
+	return t.w.PutRaw(t.ctx, t.ns, TableOrphanDirs, dir, json.RawMessage(`{}`), false)
 }
 
 // newTestMetaStore opens a meta store over the given index paths for one backend type.

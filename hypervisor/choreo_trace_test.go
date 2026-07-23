@@ -13,19 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-type choreoStep struct {
-	Op       string   `json:"op"`
-	ErrClass string   `json:"err_class"`
-	ErrMsg   string   `json:"err_msg,omitempty"`
-	Result   string   `json:"result,omitempty"`
-	Metering []string `json:"metering,omitempty"`
-}
-
-type choreoTrace struct {
-	Steps      []choreoStep `json:"steps"`
-	FinalBytes string       `json:"final_bytes"`
-}
-
 // TestLegacyChoreographyTrace is the P0 differential gate (design §10): the
 // legacy implementation ran this exact op sequence and recorded returned
 // values, error identities and final bytes; the migrated boundary must
@@ -171,4 +158,17 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	if got := string(final); got != golden.FinalBytes {
 		t.Errorf("final namespace bytes drift:\n got: %s\nwant: %s", got, golden.FinalBytes)
 	}
+}
+
+type choreoStep struct {
+	Op       string   `json:"op"`
+	ErrClass string   `json:"err_class"`
+	ErrMsg   string   `json:"err_msg,omitempty"`
+	Result   string   `json:"result,omitempty"`
+	Metering []string `json:"metering,omitempty"`
+}
+
+type choreoTrace struct {
+	Steps      []choreoStep `json:"steps"`
+	FinalBytes string       `json:"final_bytes"`
 }
