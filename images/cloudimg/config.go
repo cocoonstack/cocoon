@@ -21,7 +21,7 @@ type Config struct {
 
 func NewConfig(rootDir string, pullConns int) *Config {
 	return &Config{
-		BaseConfig: images.BaseConfig{RootDir: rootDir, Subdir: "cloudimg", BlobExt: ".qcow2"},
+		BaseConfig: images.BaseConfig{RootDir: rootDir, Subdir: "cloudimg", BlobExt: ".qcow2", Name: NamespaceName},
 		PullConns:  utils.OrDefault(pullConns, defaultPullConns),
 	}
 }
