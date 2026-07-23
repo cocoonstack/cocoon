@@ -25,6 +25,9 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 	if b := cmdcore.ResolveMetaBackend(conf); b != config.MetaBackendSQLite {
 		return fmt.Errorf("meta init applies to the sqlite backend; effective meta_backend is %q", b)
 	}
+	if cmdcore.LegacyJSONPresent(conf) {
+		return fmt.Errorf("legacy json metadata present; a fresh sqlite store would shadow it — run `cocoon meta convert`")
+	}
 	dbPath := cmdcore.MetaDBPath(conf)
 	if err := metasqlite.Init(ctx, dbPath, cmdcore.MetaNamespaces()...); err != nil {
 		return err

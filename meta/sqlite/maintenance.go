@@ -35,17 +35,18 @@ func Checkpoint(ctx context.Context, dbPath string) error {
 // Backup replaces destPath with a consistent single-file copy: VACUUM INTO
 // a temp file, integrity-check, fsync, atomic rename, parent-dir sync (§4).
 // A previously published backup stays intact until the rename commits (§9).
-func Backup(ctx context.Context, dbPath, destPath string) (err error) {
+func Backup(ctx context.Context, dbPath, destPath string) error {
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
 		return merr
 	}
 	// Concurrent backups to one destination share the tmp path; without
 	// mutual exclusion one run's cleanup yanks the other's tmp mid-verify.
-	l := flock.New(destPath + ".lock")
-	if lerr := l.Lock(ctx); lerr != nil {
-		return lerr
-	}
-	defer func() { err = errors.Join(err, l.Unlock(ctx)) }()
+	return withFlock(ctx, flock.New(destPath+".lock"), func() error {
+		return backupLocked(ctx, dbPath, destPath)
+	})
+}
+
+func backupLocked(ctx context.Context, dbPath, destPath string) (err error) {
 	tmp := destPath + ".tmp"
 	// A stale temp from a crashed run would block VACUUM INTO; the published
 	// backup is untouched, so clearing it is safe.
@@ -110,4 +111,12 @@ func withDB(dbPath string, fn func(*sql.DB) error) (err error) {
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
 	return fn(db)
+}
+
+func withFlock(ctx context.Context, l *flock.Lock, fn func() error) (err error) {
+	if lerr := l.Lock(ctx); lerr != nil {
+		return lerr
+	}
+	defer func() { err = errors.Join(err, l.Unlock(ctx)) }()
+	return fn()
 }

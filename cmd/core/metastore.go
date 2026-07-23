@@ -102,13 +102,15 @@ func ResolveMetaBackend(conf *config.Config) string {
 	if utils.FileExists(MetaDBPath(conf)) {
 		return config.MetaBackendSQLite
 	}
-	if legacyJSONPresent(conf) {
+	if LegacyJSONPresent(conf) {
 		return config.MetaBackendJSON
 	}
 	return config.MetaBackendSQLite
 }
 
-func legacyJSONPresent(conf *config.Config) bool {
+// LegacyJSONPresent reports whether any json-engine namespace file exists
+// under the root — data a fresh sqlite store must never shadow.
+func LegacyJSONPresent(conf *config.Config) bool {
 	for _, ns := range MetaJSONNamespaces(conf) {
 		if utils.FileExists(ns.FilePath) {
 			return true
@@ -156,21 +158,6 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 	return metaStore, metaErr
 }
 
-// openSQLiteStore opens the sqlite engine, bootstrapping a completely fresh
-// root; a legacy json root never bootstraps — that would shadow its data.
-func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
-	if !utils.FileExists(dbPath) && !legacyJSONPresent(conf) {
-		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
-			return nil, err
-		}
-	}
-	s, err := metasqlite.Open(dbPath, MetaNamespaces()...)
-	if err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
 // CloseMetaStore ends the store's unified lifecycle at command teardown
 // (design §10 P0); a process that never opened it is a no-op.
 func CloseMetaStore(ctx context.Context) {
@@ -180,4 +167,19 @@ func CloseMetaStore(ctx context.Context) {
 	if err := metaStore.Close(); err != nil {
 		log.WithFunc("core.CloseMetaStore").Warnf(ctx, "close meta store: %v", err)
 	}
+}
+
+// openSQLiteStore opens the sqlite engine, bootstrapping a completely fresh
+// root; a legacy json root never bootstraps — that would shadow its data.
+func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
+	if !utils.FileExists(dbPath) && !LegacyJSONPresent(conf) {
+		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
+			return nil, err
+		}
+	}
+	s, err := metasqlite.Open(dbPath, MetaNamespaces()...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }

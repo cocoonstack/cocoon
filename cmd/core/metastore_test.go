@@ -10,27 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func resetMetaStore() {
-	metaOnce = sync.Once{}
-	metaStore = nil
-	metaErr = nil
-}
-
-func testConf(t *testing.T) *config.Config {
-	dir := t.TempDir()
-	return &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
-}
-
-func writeLegacyJSON(t *testing.T, conf *config.Config) {
-	p := MetaJSONNamespaces(conf)[0].FilePath
-	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(`{"vms":{},"names":{}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // A failed engine open must leave the interface nil so CloseMetaStore's nil
 // check holds — a typed-nil store would panic at command teardown.
 func TestMetaStoreOpenErrorThenCloseNoPanic(t *testing.T) {
@@ -101,5 +80,26 @@ func TestResolveMetaBackend(t *testing.T) {
 	conf.MetaBackend = "json"
 	if b := ResolveMetaBackend(conf); b != "json" {
 		t.Fatalf("explicit setting must win, got %q", b)
+	}
+}
+
+func resetMetaStore() {
+	metaOnce = sync.Once{}
+	metaStore = nil
+	metaErr = nil
+}
+
+func testConf(t *testing.T) *config.Config {
+	dir := t.TempDir()
+	return &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
+}
+
+func writeLegacyJSON(t *testing.T, conf *config.Config) {
+	p := MetaJSONNamespaces(conf)[0].FilePath
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(`{"vms":{},"names":{}}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

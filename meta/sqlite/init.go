@@ -35,19 +35,16 @@ func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace
 
 // InitIfMissing bootstraps a fresh store, serializing racing processes
 // behind a transient flock; an existing database is a no-op.
-func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) (err error) {
+func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
-	lk := flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName))
-	if lerr := lk.Lock(ctx); lerr != nil {
-		return lerr
-	}
-	defer func() { err = errors.Join(err, lk.Unlock(ctx)) }()
-	if utils.FileExists(dbPath) {
-		return nil
-	}
-	return Init(ctx, dbPath, namespaces...)
+	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
+		if utils.FileExists(dbPath) {
+			return nil
+		}
+		return Init(ctx, dbPath, namespaces...)
+	})
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {

@@ -262,11 +262,17 @@ check_dir() {
 check_dir "$COCOON_ROOT_DIR"
 
 # Mirror cocoon's auto-resolution: an existing store binds its engine, fresh
-# roots get sqlite.
+# roots get sqlite. The json probe list matches MetaJSONNamespaces.
+legacy_json_present() {
+    for f in cloudhypervisor/db/vms.json firecracker/db/vms.json \
+        snapshot/db/snapshots.json oci/db/images.json cloudimg/db/images.json \
+        cni/db/networks.json metering/log.json; do
+        [ -e "$COCOON_ROOT_DIR/$f" ] && return 0
+    done
+    return 1
+}
 if [ -z "$COCOON_META_BACKEND" ]; then
-    if [ -e "$COCOON_ROOT_DIR/meta/meta.db" ]; then
-        COCOON_META_BACKEND=sqlite
-    elif [ -e "$COCOON_ROOT_DIR/cloudhypervisor/db/vms.json" ] || [ -e "$COCOON_ROOT_DIR/firecracker/db/vms.json" ]; then
+    if [ ! -e "$COCOON_ROOT_DIR/meta/meta.db" ] && legacy_json_present; then
         COCOON_META_BACKEND=json
     else
         COCOON_META_BACKEND=sqlite
