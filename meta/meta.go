@@ -1,5 +1,5 @@
 // Package meta is the unified metadata layer: record-granularity
-// transactions over per-deployment engines (json today, sqlite planned).
+// transactions over per-deployment engines (sqlite default, json legacy).
 package meta
 
 import (

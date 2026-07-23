@@ -379,30 +379,6 @@ func testEvents(t *testing.T, factory Factory) {
 	}
 }
 
-type retryStore struct {
-	meta.Store
-}
-
-func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
-	err := r.Store.Update(ctx, sc, mode, func(w meta.Writer) error {
-		if err := fn(w); err != nil {
-			return err
-		}
-		return errForcedRollback
-	})
-	if err != nil && !errors.Is(err, errForcedRollback) {
-		return err
-	}
-	return r.Store.Update(ctx, sc, mode, fn)
-}
-
-func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
-	t.Helper()
-	if err := s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, fn); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // testLogCursor asserts §9's log contract: committed Seq unique and strictly
 // increasing, a rolled-back append never surfaces in Scan (its number may be
 // reused or left as a gap), Scan(after) exclusive and in order.
@@ -457,5 +433,29 @@ func testLogCursor(t *testing.T, factory Factory) {
 	}
 	if seqs[0] != s2 || seqs[1] != s3 {
 		t.Fatalf("scan seqs: want [%d %d], got %v", s2, s3, seqs)
+	}
+}
+
+type retryStore struct {
+	meta.Store
+}
+
+func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
+	err := r.Store.Update(ctx, sc, mode, func(w meta.Writer) error {
+		if err := fn(w); err != nil {
+			return err
+		}
+		return errForcedRollback
+	})
+	if err != nil && !errors.Is(err, errForcedRollback) {
+		return err
+	}
+	return r.Store.Update(ctx, sc, mode, fn)
+}
+
+func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
+	t.Helper()
+	if err := s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, fn); err != nil {
+		t.Fatal(err)
 	}
 }
