@@ -5,6 +5,7 @@ package vmlock
 import (
 	"os/exec"
 	"testing"
+	"time"
 )
 
 func TestSharedLeaseInheritanceSurvivesParentDescriptorClose(t *testing.T) {
@@ -80,5 +81,48 @@ func TestSharedLeaseInheritanceSurvivesChildExit(t *testing.T) {
 	}
 	if err := writer.Unlock(t.Context()); err != nil {
 		t.Fatalf("unlock writer: %v", err)
+	}
+}
+
+// The split regression: an exclusive transient release unlinks the inode a waiting lease acquired; the lease must rebind so a later exclusive still sees it.
+func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
+	rootDir := t.TempDir()
+	ctx := t.Context()
+	ex, err := New(rootDir, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ex.Lock(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	leaseCh := make(chan *SharedLease, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		lease, err := NewSharedLease(ctx, rootDir, "source")
+		errCh <- err
+		leaseCh <- lease
+	}()
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("lease acquired despite the held exclusive: %v", err)
+	case <-time.After(20 * time.Millisecond): // the lease is blocked on the held exclusive
+	}
+	if err := ex.Unlock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("lease after exclusive unlink: %v", err)
+	}
+	lease := <-leaseCh
+	defer lease.Close() //nolint:errcheck
+
+	probe, err := New(rootDir, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, tryErr := probe.TryLock(ctx); tryErr != nil || got {
+		t.Fatalf("exclusive acquired despite a live lease (split lock): got=%v err=%v", got, tryErr)
 	}
 }

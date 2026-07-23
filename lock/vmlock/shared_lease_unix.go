@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,7 +23,7 @@ type SharedLease struct {
 	file *os.File
 }
 
-// NewSharedLease acquires vmID's shared operation lease.
+// NewSharedLease acquires vmID's shared operation lease, rebinding whenever a transient exclusive release unlinked the inode it acquired.
 func NewSharedLease(ctx context.Context, rootDir, vmID string) (*SharedLease, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("acquire shared VM lease: %w", err)
@@ -31,25 +32,20 @@ func NewSharedLease(ctx context.Context, rootDir, vmID string) (*SharedLease, er
 	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create VM lease directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // VM lock path under the configured root
-	if err != nil {
-		return nil, fmt.Errorf("open VM lease %s: %w", path, err)
-	}
 	for {
-		err = unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB)
-		switch {
-		case err == nil:
-			return &SharedLease{file: f}, nil
-		case !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN):
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // VM lock path under the configured root
+		if err != nil {
+			return nil, fmt.Errorf("open VM lease %s: %w", path, err)
+		}
+		lease, err := flockSharedBound(ctx, f, path)
+		if err != nil {
 			_ = f.Close()
 			return nil, fmt.Errorf("acquire shared VM lease %s: %w", path, err)
 		}
-		select {
-		case <-ctx.Done():
-			_ = f.Close()
-			return nil, fmt.Errorf("acquire shared VM lease %s: %w", path, ctx.Err())
-		case <-time.After(sharedLeaseRetryDelay):
+		if lease != nil {
+			return lease, nil
 		}
+		_ = f.Close()
 	}
 }
 
@@ -64,4 +60,29 @@ func (l *SharedLease) Close() error {
 	err := l.file.Close()
 	l.file = nil
 	return err
+}
+
+// flockSharedBound holds LOCK_SH on f once it is the inode bound to path; nil,nil means the inode went stale and the caller must reopen.
+func flockSharedBound(ctx context.Context, f *os.File, path string) (*SharedLease, error) {
+	for {
+		err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB)
+		switch {
+		case err == nil:
+			held, statErr := f.Stat()
+			if statErr != nil {
+				return nil, statErr
+			}
+			if flock.BoundToPath(held, path) {
+				return &SharedLease{file: f}, nil
+			}
+			return nil, nil
+		case !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN):
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(sharedLeaseRetryDelay):
+		}
+	}
 }

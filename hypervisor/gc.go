@@ -248,12 +248,12 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 		if infoErr != nil || info.ModTime().After(cutoff) {
 			continue
 		}
-		l := flock.NewTransient(filepath.Join(dir, e.Name()))
-		if ok, tryErr := l.TryLock(ctx); tryErr != nil || !ok {
+		ok, reclaimErr := flock.ReclaimTransient(ctx, filepath.Join(dir, e.Name()))
+		if reclaimErr != nil {
+			errs = append(errs, reclaimErr)
 			continue
 		}
-		if unlockErr := l.Unlock(ctx); unlockErr != nil {
-			errs = append(errs, unlockErr)
+		if !ok {
 			continue
 		}
 		logger.Infof(ctx, "collected clone lock %s reason=stale-clone-lock", e.Name())

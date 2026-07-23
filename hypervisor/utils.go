@@ -448,7 +448,7 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 	}, nil
 }
 
-// opsLock resolves the VMID-keyed operation lock, kept outside every cleanup set so teardown never splits a held inode.
+// opsLock resolves the VMID-keyed operation lock; the transient unlink-on-release keeps lease files from accumulating, and every acquirer rebinds on a stale inode.
 func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
 	return vmlock.New(conf.RootDirPath(), vmID)
 }

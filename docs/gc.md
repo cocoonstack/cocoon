@@ -40,6 +40,7 @@ Reasons:
 - **images (oci, cloudimg)**: `unreferenced`
 - **cni**: `orphan` (netns without active VM)
 - **bridge**: `orphan-tap`
+- **vmlock**: `orphan-lease` (lease file for a VM no backend knows)
 
 ### Snapshot LRU Eviction
 
