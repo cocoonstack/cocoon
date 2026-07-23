@@ -303,8 +303,8 @@ func holdRedirectDirs(ctx context.Context, srcConfigs, dstConfigs []*types.Stora
 	slices.Sort(dirs)
 	locks := make([]*flock.Lock, 0, len(dirs))
 	release := func() {
-		for i := len(locks) - 1; i >= 0; i-- {
-			_ = locks[i].Unlock(ctx)
+		for i, l := range slices.Backward(locks) {
+			_ = l.Unlock(ctx)
 			_ = os.Remove(dirs[i])
 		}
 	}

@@ -27,7 +27,8 @@ const (
 	stateJSONName   = "state.json"
 	memoryRangeFile = "memory-range" // prefix shared by all per-region memory-range-* files in a CH snapshot
 
-	chAPIBase = "http://localhost/api/v1/"
+	chAPIBase     = "http://localhost/api/v1/"
+	apiSocketFlag = "--api-socket"
 
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"

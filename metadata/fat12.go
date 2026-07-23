@@ -97,7 +97,7 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 			}
 		}
 		b.data = append(b.data, content)
-		b.nextCluster += uint16(numClusters)
+		b.nextCluster += uint16(numClusters) //nolint:gosec
 	}
 
 	// Generate 8.3 short name — with ~N suffix when LFN is needed.
@@ -220,7 +220,7 @@ func setFATEntry(fat []byte, cluster int, val uint16) {
 	} else {
 		word = (word & 0x000F) | ((val & 0x0FFF) << 4) //nolint:mnd
 	}
-	fat[off] = byte(word)
+	fat[off] = byte(word)        //nolint:gosec
 	fat[off+1] = byte(word >> 8) //nolint:mnd
 }
 

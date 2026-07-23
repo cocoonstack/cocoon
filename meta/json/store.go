@@ -162,9 +162,9 @@ func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() err
 		}
 	}
 	defer func() {
-		for i := len(states) - 1; i >= 0; i-- {
-			if err := states[i].locker.Unlock(ctx); err != nil {
-				logger.Errorf(ctx, err, "unlock %s", states[i].def.Name)
+		for _, st := range slices.Backward(states) {
+			if err := st.locker.Unlock(ctx); err != nil {
+				logger.Errorf(ctx, err, "unlock %s", st.def.Name)
 			}
 		}
 	}()

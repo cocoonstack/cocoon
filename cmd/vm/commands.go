@@ -8,6 +8,11 @@ import (
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
+const (
+	useAttachVM = "attach VM"
+	useDetachVM = "detach VM"
+)
+
 func Command(h Handler) *cobra.Command {
 	vmCmd := &cobra.Command{
 		Use:   "vm",
@@ -211,7 +216,7 @@ func buildDiskCommand(h Handler) *cobra.Command {
 	}
 
 	attach := &cobra.Command{
-		Use:   "attach VM",
+		Use:   useAttachVM,
 		Short: "Hot-attach an existing raw disk file to a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DiskAttach,
@@ -225,7 +230,7 @@ func buildDiskCommand(h Handler) *cobra.Command {
 	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
-		Use:   "detach VM",
+		Use:   useDetachVM,
 		Short: "Detach a hot-attached disk from a running VM (keeps the backing file)",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DiskDetach,
@@ -245,7 +250,7 @@ func buildFsCommand(h Handler) *cobra.Command {
 	}
 
 	attach := &cobra.Command{
-		Use:   "attach VM",
+		Use:   useAttachVM,
 		Short: "Attach a vhost-user-fs device to a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.FsAttach,
@@ -259,7 +264,7 @@ func buildFsCommand(h Handler) *cobra.Command {
 	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
-		Use:   "detach VM",
+		Use:   useDetachVM,
 		Short: "Detach a vhost-user-fs device from a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.FsDetach,
@@ -279,7 +284,7 @@ func buildDeviceCommand(h Handler) *cobra.Command {
 	}
 
 	attach := &cobra.Command{
-		Use:   "attach VM",
+		Use:   useAttachVM,
 		Short: "Attach a VFIO PCI device to a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DeviceAttach,
@@ -290,7 +295,7 @@ func buildDeviceCommand(h Handler) *cobra.Command {
 	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
-		Use:   "detach VM",
+		Use:   useDetachVM,
 		Short: "Detach a VFIO PCI device from a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DeviceDetach,

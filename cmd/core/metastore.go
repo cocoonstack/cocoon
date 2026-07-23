@@ -23,6 +23,8 @@ import (
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
+const keyTombstones = "tombstones"
+
 var (
 	metaOnce  sync.Once
 	metaStore meta.Store
@@ -34,20 +36,20 @@ var (
 		{Key: "vms", Table: hypervisor.TableRecords},
 		{Key: "names", Table: hypervisor.TableNames},
 		{Key: "orphan_dirs", Table: hypervisor.TableOrphanDirs, Optional: true, StringList: true},
-		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
 	snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "snapshots", Table: localfile.TableRecords},
 		{Key: "names", Table: localfile.TableNames},
-		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
 	netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "networks", Table: cni.TableRecords},
-		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
 	imageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "images", Table: images.TableRecords},
-		{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
 )
 

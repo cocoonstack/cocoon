@@ -89,7 +89,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig
 }
 
 func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
-	args := []string{"--api-socket", socketPath}
+	args := []string{apiSocketFlag, socketPath}
 
 	var cpuKV kvBuilder
 	cpuKV.add(fmt.Sprintf("boot=%d", cfg.CPUs.BootVCPUs))
