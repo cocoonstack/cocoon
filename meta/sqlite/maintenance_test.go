@@ -111,8 +111,14 @@ func TestBackupRefusals(t *testing.T) {
 	if utils.FileExists(missing) {
 		t.Fatal("backup created the missing source")
 	}
+	if err := os.WriteFile(missing, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "uninitialized store") {
+		t.Fatalf("want uninitialized refusal, got %v", err)
+	}
 	if err := Init(t.Context(), missing, testDecls()...); err != nil {
-		t.Fatalf("init: %v", err)
+		t.Fatalf("init over crashed file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)

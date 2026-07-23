@@ -169,10 +169,11 @@ func CloseMetaStore(ctx context.Context) {
 	}
 }
 
-// openSQLiteStore opens the sqlite engine, bootstrapping a completely fresh
-// root; a legacy json root never bootstraps — that would shadow its data.
+// openSQLiteStore opens the sqlite engine, bootstrapping a fresh root or
+// repairing a crashed bootstrap; a legacy json root never bootstraps — that
+// would shadow its data.
 func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
-	if !utils.FileExists(dbPath) && !LegacyJSONPresent(conf) {
+	if !LegacyJSONPresent(conf) {
 		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
 			return nil, err
 		}

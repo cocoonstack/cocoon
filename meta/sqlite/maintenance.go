@@ -42,6 +42,11 @@ func Backup(ctx context.Context, dbPath, destPath string) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
 	}
+	if partial, err := failedInit(dbPath); err != nil {
+		return err
+	} else if partial {
+		return fmt.Errorf("%s is an uninitialized store; nothing to back up", dbPath)
+	}
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
 		return merr
 	}

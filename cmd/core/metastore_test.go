@@ -59,6 +59,26 @@ func TestMetaStoreKeepsLegacyJSON(t *testing.T) {
 	resetMetaStore()
 }
 
+func TestMetaStoreRepairsCrashedBootstrap(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	if err := os.MkdirAll(filepath.Dir(MetaDBPath(conf)), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(MetaDBPath(conf), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := MetaStore(conf)
+	if err != nil {
+		t.Fatalf("repair crashed bootstrap: %v", err)
+	}
+	if s == nil {
+		t.Fatal("nil store")
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+}
+
 func TestResolveMetaBackend(t *testing.T) {
 	conf := testConf(t)
 	if b := ResolveMetaBackend(conf); b != "sqlite" {

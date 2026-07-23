@@ -35,6 +35,10 @@ func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace
 
 // InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
 func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
+	// Fast path: a healthy store skips the lock entirely.
+	if need, err := initNeeded(dbPath); err != nil || !need {
+		return err
+	}
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
