@@ -27,7 +27,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -140,7 +140,7 @@ jobs:
       matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -230,7 +230,7 @@ jobs:
 
       - name: Cache raw Google system images
         if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: os-image/${{ matrix.name }}/${{ matrix.tag }}/.cache-gapps16
           key: gapps16-sysimg-${{ hashFiles(format('os-image/{0}/{1}/prepare-gapps16.sh', matrix.name, matrix.tag)) }}
