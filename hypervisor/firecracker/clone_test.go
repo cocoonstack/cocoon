@@ -312,6 +312,30 @@ func TestRedirectBinds(t *testing.T) {
 	}
 }
 
+// A symlink source is unusable outright: the legacy redirect residue it could represent is no longer healed.
+func TestHoldBindableRedirectsRejectsSymlinkSource(t *testing.T) {
+	fc := newTestFC(t)
+	srcDir := fc.Conf.VMRunDir("SRC")
+	if err := os.MkdirAll(srcDir, 0o750); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	target := writeTestFile(t, srcDir, "real.raw")
+	link := filepath.Join(srcDir, "cow.raw")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	src := []*types.StorageConfig{{Path: link, Role: types.StorageRoleCOW}}
+	dst := []*types.StorageConfig{{Path: filepath.Join(t.TempDir(), "clone.raw"), Role: types.StorageRoleCOW}}
+	_, err := holdBindableRedirects(t.Context(), fc.Conf.RootDirPath(), fc.Conf.RunDir(), src, dst, func(string) (bool, error) {
+		t.Fatal("record lookup must not run for a symlink source")
+		return false, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("got %v, want a not-a-regular-file rejection", err)
+	}
+}
+
 func newTestFC(t *testing.T) *Firecracker {
 	t.Helper()
 	dir := t.TempDir()
@@ -348,28 +372,4 @@ func writeTestFile(t *testing.T, dir, name string) string {
 		t.Fatalf("setup %s: %v", name, err)
 	}
 	return p
-}
-
-// A symlink source is unusable outright: the legacy redirect residue it could represent is no longer healed.
-func TestHoldBindableRedirectsRejectsSymlinkSource(t *testing.T) {
-	fc := newTestFC(t)
-	srcDir := fc.Conf.VMRunDir("SRC")
-	if err := os.MkdirAll(srcDir, 0o750); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	target := writeTestFile(t, srcDir, "real.raw")
-	link := filepath.Join(srcDir, "cow.raw")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
-
-	src := []*types.StorageConfig{{Path: link, Role: types.StorageRoleCOW}}
-	dst := []*types.StorageConfig{{Path: filepath.Join(t.TempDir(), "clone.raw"), Role: types.StorageRoleCOW}}
-	_, err := holdBindableRedirects(t.Context(), fc.Conf.RootDirPath(), fc.Conf.RunDir(), src, dst, func(string) (bool, error) {
-		t.Fatal("record lookup must not run for a symlink source")
-		return false, nil
-	})
-	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("got %v, want a not-a-regular-file rejection", err)
-	}
 }

@@ -32,6 +32,20 @@ type bindRedirectPlan struct {
 	leases []*vmlock.SharedLease
 }
 
+func (p *bindRedirectPlan) files() []*os.File {
+	files := make([]*os.File, 0, len(p.leases))
+	for _, lease := range p.leases {
+		files = append(files, lease.File())
+	}
+	return files
+}
+
+func (p *bindRedirectPlan) close() {
+	for _, lease := range slices.Backward(p.leases) {
+		_ = lease.Close()
+	}
+}
+
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
 	return fc.CloneFromStream(ctx, vmID, vmCfg, net, snapshotConfig, snapshot, fc.cloneAfterExtract)
 }
@@ -351,20 +365,6 @@ func classifySource(path string) (bool, error) {
 		return false, nil
 	default:
 		return false, fmt.Errorf("inspect source %s: %w", path, err)
-	}
-}
-
-func (p *bindRedirectPlan) files() []*os.File {
-	files := make([]*os.File, 0, len(p.leases))
-	for _, lease := range p.leases {
-		files = append(files, lease.File())
-	}
-	return files
-}
-
-func (p *bindRedirectPlan) close() {
-	for _, lease := range slices.Backward(p.leases) {
-		_ = lease.Close()
 	}
 }
 
