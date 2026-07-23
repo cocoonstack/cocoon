@@ -27,9 +27,18 @@ var hypervisorFactories = []hypervisorFactory{
 	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
 }
 
+// hypervisorCtor builds a fully wired backend for one config.
+type hypervisorCtor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
+
 type hypervisorFactory struct {
 	typ  config.HypervisorType
-	ctor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
+	ctor hypervisorCtor
+}
+
+// networkedHypervisor is the constructor contract wireHypervisor adapts: a backend that accepts the network seam.
+type networkedHypervisor interface {
+	hypervisor.Hypervisor
+	SetNetwork(hypervisor.VMNetwork)
 }
 
 func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, error) {
@@ -149,10 +158,7 @@ func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[stri
 }
 
 // wireHypervisor builds a backend factory over the shared store and recorder.
-func wireHypervisor[H interface {
-	hypervisor.Hypervisor
-	SetNetwork(hypervisor.VMNetwork)
-}](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
+func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) hypervisorCtor {
 	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)
 		if err != nil {
