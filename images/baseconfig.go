@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -13,6 +15,7 @@ type BaseConfig struct {
 	RootDir string
 	Subdir  string
 	BlobExt string
+	Name    string
 }
 
 func (c *BaseConfig) BackendDir() string { return filepath.Join(c.RootDir, c.Subdir) }
@@ -27,6 +30,20 @@ func (c *BaseConfig) BlobLockPath(hex string) string {
 
 func (c *BaseConfig) IndexFile() string { return filepath.Join(c.DBDir(), "images.json") }
 func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "images.lock") }
+
+// JSONNamespace is an image backend's json meta namespace; the codec is
+// shared by every image backend, so it lives here beside TableRecords.
+func (c *BaseConfig) JSONNamespace() metajson.Namespace {
+	return metajson.Namespace{
+		Name:     c.Name,
+		FilePath: c.IndexFile(),
+		LockPath: c.IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "images", Table: TableRecords},
+			{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
+		}},
+	}
+}
 
 func (c *BaseConfig) BlobPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+c.BlobExt)

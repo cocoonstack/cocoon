@@ -4,12 +4,27 @@ import (
 	"context"
 
 	"github.com/cocoonstack/cocoon/meta"
+	metajson "github.com/cocoonstack/cocoon/meta/json"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
 const (
 	NamespaceName = "networks"
 	TableRecords  = "records"
 )
+
+// JSONNamespace is the single source of truth for this backend's json meta layout.
+func (c *Config) JSONNamespace() metajson.Namespace {
+	return metajson.Namespace{
+		Name:     NamespaceName,
+		FilePath: c.IndexFile(),
+		LockPath: c.IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "networks", Table: TableRecords},
+			{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
+		}},
+	}
+}
 
 // netTx is the CNI view of one meta transaction: a records-only namespace
 // with the vm_id secondary lookup served by scan.
