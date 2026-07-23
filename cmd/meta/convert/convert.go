@@ -201,10 +201,8 @@ func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, erro
 	if target == config.MetaBackendJSON {
 		return metajson.Open(spec.JSON...)
 	}
-	if !utils.FileExists(spec.DBPath) {
-		if err := metasqlite.InitForRecovery(ctx, spec.DBPath, spec.Decls...); err != nil {
-			return nil, err
-		}
+	if err := metasqlite.InitForRecoveryIfNeeded(ctx, spec.DBPath, spec.Decls...); err != nil {
+		return nil, err
 	}
 	return metasqlite.OpenForRecovery(spec.DBPath, spec.Decls...)
 }

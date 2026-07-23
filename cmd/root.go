@@ -77,8 +77,7 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("stop_timeout_seconds", 30)
 	viper.SetDefault("pool_size", runtime.NumCPU())
 	viper.SetDefault("pull_conns", 8)
-	// Empty default keeps the key registered so AutomaticEnv binds
-	// COCOON_META_BACKEND; the engine itself resolves via ResolveMetaBackend.
+	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
 	viper.SetDefault("meta_backend", "")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.max_size", 500)

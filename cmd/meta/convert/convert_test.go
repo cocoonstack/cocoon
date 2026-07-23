@@ -417,6 +417,40 @@ func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 	}
 }
 
+func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
+	errCrash := errors.New("injected crash")
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	testCrashStep = func(at string) error {
+		if at == "manifest-saved" {
+			return errCrash
+		}
+		return nil
+	}
+	err := Run(t.Context(), spec, "sqlite")
+	testCrashStep = nil
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("want injected crash, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(spec.DBPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.DBPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("rerun over crashed target init: %v", err)
+	}
+	store, err := metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("open target: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+	if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
+		t.Fatalf("content after rerun: %v", got)
+	}
+}
+
 func testSpec(t *testing.T, nss ...string) Spec {
 	t.Helper()
 	root := t.TempDir()

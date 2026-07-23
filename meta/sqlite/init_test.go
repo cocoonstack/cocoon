@@ -134,6 +134,19 @@ func TestInitIfMissingRaces(t *testing.T) {
 	}
 }
 
+func TestInitIfMissingRepairsCrashedInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("bootstrap over crashed init: %v", err)
+	}
+	if _, err := Open(path, testDecls()...); err != nil {
+		t.Fatalf("open repaired store: %v", err)
+	}
+}
+
 func TestOpenDoesNotCreate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
 	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta init") {

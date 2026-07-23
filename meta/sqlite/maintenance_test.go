@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestBackupFidelity(t *testing.T) {
@@ -96,6 +99,26 @@ func TestBackupCrashSteps(t *testing.T) {
 		if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
 			t.Fatalf("rerun after %s: %v", step, err)
 		}
+	}
+}
+
+func TestBackupRefusals(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, DBFileName)
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "no sqlite store") {
+		t.Fatalf("want missing-store refusal, got %v", err)
+	}
+	if utils.FileExists(missing) {
+		t.Fatal("backup created the missing source")
+	}
+	if err := Init(t.Context(), missing, testDecls()...); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
+		t.Fatalf("want manifest refusal, got %v", err)
 	}
 }
 

@@ -33,18 +33,27 @@ func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace
 	return initStore(ctx, dbPath, namespaces)
 }
 
-// InitIfMissing bootstraps a fresh store, serializing racing processes
-// behind a transient flock; an existing database is a no-op.
+// InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
 func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
 	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
-		if utils.FileExists(dbPath) {
-			return nil
+		need, err := initNeeded(dbPath)
+		if err != nil || !need {
+			return err
 		}
 		return Init(ctx, dbPath, namespaces...)
 	})
+}
+
+// InitForRecoveryIfNeeded creates or repairs the conversion target, passing a completed one through.
+func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
+	need, err := initNeeded(dbPath)
+	if err != nil || !need {
+		return err
+	}
+	return InitForRecovery(ctx, dbPath, namespaces...)
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
@@ -108,6 +117,13 @@ func createSchema(ctx context.Context, tx *sql.Tx, namespaces []Namespace) error
 		}
 	}
 	return nil
+}
+
+func initNeeded(dbPath string) (bool, error) {
+	if !utils.FileExists(dbPath) {
+		return true, nil
+	}
+	return failedInit(dbPath)
 }
 
 // failedInit reports whether dbPath is a crashed init. Init is atomic, so
