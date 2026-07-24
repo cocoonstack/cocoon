@@ -136,9 +136,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
 func (b *Backend) restoreCore(
 	ctx context.Context, vmID string, rec *VMRecord, vmCfg *types.VMConfig, sourceSnapshotID string,
-	kill func(ctx context.Context, vmID string, rec *VMRecord) error,
-	apply func(*VMRecord) error,
-	afterExtract func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error),
+	kill KillHook, apply func(*VMRecord) error, afterExtract AfterExtractHook,
 ) (*types.VM, error) {
 	oldShape := shapeFromConfig(rec.Config)
 	if killErr := kill(ctx, vmID, rec); killErr != nil {

@@ -103,15 +103,24 @@ type LaunchSpec struct {
 	OnFail    func()
 }
 
+// PreflightHook validates rec against the snapshot source dir before anything is applied.
+type PreflightHook func(dir string, rec *VMRecord) error
+
+// KillHook stops the origin VM process before the destructive phase rewrites the run dir.
+type KillHook func(ctx context.Context, vmID string, rec *VMRecord) error
+
+// AfterExtractHook finalizes the restored record and returns the resulting VM.
+type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
+
 // RestoreSpec carries backend hooks for Backend.RestoreSequence.
 type RestoreSpec struct {
 	VMCfg            *types.VMConfig
 	Snapshot         io.Reader
 	SourceSnapshotID string
-	Preflight        func(stagingDir string, rec *VMRecord) error
-	Kill             func(ctx context.Context, vmID string, rec *VMRecord) error
+	Preflight        PreflightHook
+	Kill             KillHook
 	BeforeMerge      func(rec *VMRecord) error
-	AfterExtract     func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
+	AfterExtract     AfterExtractHook
 }
 
 // DirectRestoreSpec is RestoreSpec for a local srcDir; Populate replaces staging+merge.
@@ -119,10 +128,10 @@ type DirectRestoreSpec struct {
 	VMCfg            *types.VMConfig
 	SrcDir           string
 	SourceSnapshotID string
-	Preflight        func(srcDir string, rec *VMRecord) error
-	Kill             func(ctx context.Context, vmID string, rec *VMRecord) error
+	Preflight        PreflightHook
+	Kill             KillHook
 	Populate         func(rec *VMRecord, srcDir string) error
-	AfterExtract     func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
+	AfterExtract     AfterExtractHook
 }
 
 // StartSpec carries StartSequence inputs.
