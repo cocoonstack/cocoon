@@ -14,7 +14,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **Windows guests** — UEFI + Hyper-V enlightenments via the cocoonstack CH/firmware forks
 - **Firecracker backend** — `--fc` for ~125ms boots and <5 MiB per-VM overhead (OCI images only)
 - **Daemon-optional architecture** — one hypervisor process per VM, every command standalone; `cocoon daemon` optionally adopts running VMs to converge crashes as they happen; modular lock-safe GC with snapshot LRU eviction
-- **Switchable metadata engine** — json files by default, opt-in sqlite (`meta_backend: sqlite`) for concurrent-create scale; crash-resumable offline conversion both ways (`cocoon meta convert`)
+- **Switchable metadata engine** — sqlite by default (fresh roots bootstrap themselves; flat performance at high VM counts), legacy json roots keep working as-is; crash-resumable offline conversion both ways (`cocoon meta convert`)
 
 ## Quick Start
 

@@ -297,7 +297,6 @@ func TestCreate(t *testing.T) {
 		t.Fatal("expected non-empty ID")
 	}
 
-	// Verify data files were extracted.
 	dataDir := lf.conf.SnapshotDataDir(id)
 	for _, name := range []string{"cow.raw", "state.json"} {
 		if _, err := os.Stat(filepath.Join(dataDir, name)); err != nil {
@@ -491,17 +490,14 @@ func TestDelete(t *testing.T) {
 		t.Errorf("deleted: got %v, want [%s]", deleted, id)
 	}
 
-	// Data dir should be gone.
 	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("expected data dir to be removed")
 	}
 
-	// Inspect should fail.
 	if _, err := lf.Inspect(ctx, id); !errors.Is(err, snapshot.ErrNotFound) {
 		t.Errorf("expected ErrNotFound after delete, got %v", err)
 	}
 
-	// List should be empty.
 	list, _ := lf.List(ctx)
 	if len(list) != 0 {
 		t.Errorf("expected 0 after delete, got %d", len(list))
@@ -546,7 +542,6 @@ func TestDelete_Multiple(t *testing.T) {
 		t.Errorf("expected 2 deleted, got %d", len(deleted))
 	}
 
-	// m2 should still exist.
 	list, _ := lf.List(ctx)
 	if len(list) != 1 || list[0].Name != "m2" {
 		t.Errorf("expected only m2 remaining, got %v", list)
@@ -563,7 +558,6 @@ func TestDelete_DuplicateRefs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pass the same ref twice — should deduplicate.
 	deleted, err := lf.Delete(ctx, []string{id, "dedup"})
 	if err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -714,14 +708,12 @@ func TestDataDir_ImageBlobIDsIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Get config via DataDir, mutate the returned ImageBlobIDs.
 	_, got1, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got1.ImageBlobIDs["injected"] = struct{}{}
 
-	// Get config again — mutation should NOT be visible.
 	_, got2, _, err := lf.DataDir(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -808,7 +800,6 @@ func TestRestore_DataStream(t *testing.T) {
 	}
 	defer rc.Close()
 
-	// Read the tar stream and find state.json.
 	tr := tar.NewReader(rc)
 	found := false
 	for {
@@ -892,7 +883,6 @@ func TestRestore_ImageBlobIDsIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Get config via Restore, mutate returned ImageBlobIDs.
 	got1, rc1, err := lf.Restore(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -900,7 +890,6 @@ func TestRestore_ImageBlobIDsIsolation(t *testing.T) {
 	rc1.Close()
 	got1.ImageBlobIDs["injected"] = struct{}{}
 
-	// Get config again — mutation should NOT be visible.
 	got2, rc2, err := lf.Restore(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -939,7 +928,6 @@ func TestExportImport_Roundtrip(t *testing.T) {
 		t.Error("imported snapshot should get a new ID")
 	}
 
-	// Verify metadata was preserved (except overridden name and ID).
 	s, err := lf.Inspect(ctx, importedID)
 	if err != nil {
 		t.Fatalf("Inspect imported: %v", err)
@@ -957,7 +945,6 @@ func TestExportImport_Roundtrip(t *testing.T) {
 		t.Errorf("Memory: got %d, want %d", s.Memory, int64(1<<30))
 	}
 
-	// Verify data files were imported.
 	dataDir := lf.conf.SnapshotDataDir(importedID)
 	for name, wantContent := range origFiles {
 		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
@@ -1010,7 +997,6 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	// Build a gzip-compressed tar archive with snapshot.json + data files.
 	wantCfg := types.SnapshotExport{
 		Version: 1,
 		Config: types.SnapshotConfig{
@@ -1053,7 +1039,6 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 	tw.Close()
 	gw.Close()
 
-	// Import from the in-memory reader.
 	importedID, err := lf.Import(ctx, &buf, "", "")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
@@ -1070,7 +1055,6 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		t.Errorf("CPU: got %d, want 2", s.CPU)
 	}
 
-	// Verify data file.
 	dataDir := lf.conf.SnapshotDataDir(importedID)
 	got, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
 	if err != nil {
@@ -1119,7 +1103,6 @@ func TestImport_FromRawTarReader(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	// Build a raw (uncompressed) tar archive with snapshot.json + data files.
 	wantCfg := types.SnapshotExport{
 		Version: 1,
 		Config: types.SnapshotConfig{
@@ -1266,12 +1249,10 @@ func TestImport_InvalidStream(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	// Too short to peek.
 	if _, err := lf.Import(ctx, strings.NewReader("x"), "", ""); err == nil {
 		t.Fatal("expected error for 1-byte input")
 	}
 
-	// Peekable but not a valid tar.
 	if _, err := lf.Import(ctx, strings.NewReader("this is not a tar archive"), "", ""); err == nil {
 		t.Fatal("expected error for non-tar input")
 	}
@@ -1406,6 +1387,42 @@ func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
 	}
 }
 
+// TestImportPinsEnvelopeBlobs pins the digest-lock hook: Import must hold the
+// injected pinner over exactly the envelope's blob IDs while committing.
+func TestImportPinsEnvelopeBlobs(t *testing.T) {
+	src := newTestLF(t)
+	ctx := t.Context()
+	id := makeExportableSnapshot(t, src, "pin-src", map[string][]byte{"cow.raw": []byte("x")})
+	stream, err := src.Export(ctx, id)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer stream.Close()
+
+	var pinned []string
+	released := false
+	dir := t.TempDir()
+	conf := &config.Config{RootDir: dir}
+	dst, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf),
+		WithBlobPinner(func(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
+			pinned = slices.Sorted(maps.Keys(blobIDs))
+			return func() { released = true }, nil
+		}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := dst.Import(ctx, stream, "pin-dst", ""); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if want := []string{"blob1"}; !slices.Equal(pinned, want) {
+		t.Fatalf("pinner got %v, want %v", pinned, want)
+	}
+	if !released {
+		t.Fatal("pin never released")
+	}
+}
+
 func testID(t *testing.T) string {
 	t.Helper()
 	return utils.GenerateID()
@@ -1534,40 +1551,4 @@ func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
-}
-
-// TestImportPinsEnvelopeBlobs pins the digest-lock hook: Import must hold the
-// injected pinner over exactly the envelope's blob IDs while committing.
-func TestImportPinsEnvelopeBlobs(t *testing.T) {
-	src := newTestLF(t)
-	ctx := t.Context()
-	id := makeExportableSnapshot(t, src, "pin-src", map[string][]byte{"cow.raw": []byte("x")})
-	stream, err := src.Export(ctx, id)
-	if err != nil {
-		t.Fatalf("export: %v", err)
-	}
-	defer stream.Close()
-
-	var pinned []string
-	released := false
-	dir := t.TempDir()
-	conf := &config.Config{RootDir: dir}
-	dst, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf),
-		WithBlobPinner(func(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
-			pinned = slices.Sorted(maps.Keys(blobIDs))
-			return func() { released = true }, nil
-		}))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	if _, err := dst.Import(ctx, stream, "pin-dst", ""); err != nil {
-		t.Fatalf("import: %v", err)
-	}
-	if want := []string{"blob1"}; !slices.Equal(pinned, want) {
-		t.Fatalf("pinner got %v, want %v", pinned, want)
-	}
-	if !released {
-		t.Fatal("pin never released")
-	}
 }

@@ -14,6 +14,9 @@ const (
 	HypervisorCloudHypervisor HypervisorType = "cloud-hypervisor"
 	HypervisorFirecracker     HypervisorType = "firecracker"
 
+	MetaBackendJSON   = "json"
+	MetaBackendSQLite = "sqlite"
+
 	// defaultPullConns is the default concurrent Range connections per cloud-image download.
 	defaultPullConns = 8
 	// maxPullConns caps it so a misconfigured pull_conns can't exhaust file descriptors.
@@ -43,7 +46,8 @@ type Config struct {
 	PoolSize int `json:"pool_size" mapstructure:"pool_size"`
 	// PullConns: concurrent HTTP Range connections per cloud-image download; <=0 = 8.
 	PullConns int `json:"pull_conns" mapstructure:"pull_conns"`
-	// MetaBackend selects the metadata engine: "json" (default) or "sqlite".
+	// MetaBackend selects the metadata engine: "json" or "sqlite"; empty
+	// auto-resolves (an existing store binds its engine, fresh roots get sqlite).
 	MetaBackend string `json:"meta_backend,omitempty" mapstructure:"meta_backend"`
 	// CNIConfDir: CNI plugin configuration dir. Default: /etc/cni/net.d.
 	CNIConfDir string `json:"cni_conf_dir" mapstructure:"cni_conf_dir"`
@@ -99,7 +103,7 @@ func (c *Config) Validate() error {
 	if err := c.Metering.Validate(); err != nil {
 		return err
 	}
-	if c.MetaBackend != "" && c.MetaBackend != "json" && c.MetaBackend != "sqlite" {
+	if c.MetaBackend != "" && c.MetaBackend != MetaBackendJSON && c.MetaBackend != MetaBackendSQLite {
 		return fmt.Errorf("meta_backend %q is not one of json|sqlite", c.MetaBackend)
 	}
 	return nil

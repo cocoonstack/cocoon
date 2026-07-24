@@ -16,11 +16,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-type hibernateCalls struct {
-	resumed    bool
-	terminated bool
-}
-
 func TestHibernateSequencePersistFailureResumesAndRollsBack(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	calls := &hibernateCalls{}
@@ -113,6 +108,11 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 	if len(rec.SnapshotIDs) != 1 {
 		t.Errorf("persisted snapshot id missing from record: %v", rec.SnapshotIDs)
 	}
+}
+
+type hibernateCalls struct {
+	resumed    bool
+	terminated bool
 }
 
 // newHibernateTestVM seeds a running VM whose RunDir holds a live stub VMM process, so WithRunningVM lets the sequence proceed.

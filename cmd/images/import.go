@@ -207,7 +207,7 @@ func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
 	}
 
 	var inner *bufio.Reader
-	if peek[0] == 0x1f && peek[1] == 0x8b {
+	if bytes.HasPrefix(peek, utils.GzipMagic) {
 		gr, gzErr := gzip.NewReader(br)
 		if gzErr != nil {
 			return nil, 0, nil, fmt.Errorf("gzip: %w", gzErr)

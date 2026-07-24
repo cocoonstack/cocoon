@@ -20,65 +20,6 @@ import (
 
 var testTables = []string{"records", "names", "tombstones"}
 
-func testSpec(t *testing.T, nss ...string) Spec {
-	t.Helper()
-	root := t.TempDir()
-	spec := Spec{MetaRoot: filepath.Join(root, "meta"), DBPath: filepath.Join(root, "meta", metasqlite.DBFileName)}
-	for _, ns := range nss {
-		spec.Decls = append(spec.Decls, metasqlite.Namespace{Name: ns, Tables: testTables})
-		spec.JSON = append(spec.JSON, metajson.Namespace{
-			Name:     ns,
-			FilePath: filepath.Join(root, ns+".json"),
-			LockPath: filepath.Join(root, ns+".lock"),
-			Codec:    metajson.GenericCodec{},
-		})
-	}
-	return spec
-}
-
-func seedJSON(t *testing.T, spec Spec, ns string) {
-	t.Helper()
-	s, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatalf("open json: %v", err)
-	}
-	defer s.Close() //nolint:errcheck
-	err = s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
-		for id, raw := range map[string]string{"id1": `{"v":1}`, "id2": `{"v":2}`} {
-			if err := w.PutRaw(t.Context(), ns, "records", id, json.RawMessage(raw), false); err != nil {
-				return err
-			}
-		}
-		if err := w.PutRaw(t.Context(), ns, "names", "alpha", json.RawMessage(`"id1"`), false); err != nil {
-			return err
-		}
-		return w.PutRaw(t.Context(), ns, "tombstones", "id9", json.RawMessage(`{"dead":true}`), false)
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-}
-
-func scanAll(t *testing.T, s meta.Store, ns string) map[string]string {
-	t.Helper()
-	got := map[string]string{}
-	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
-		for _, tbl := range testTables {
-			if err := r.ScanRaw(t.Context(), ns, tbl, func(id string, raw json.RawMessage) error {
-				got[tbl+"/"+id] = string(raw)
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("scan %s: %v", ns, err)
-	}
-	return got
-}
-
 func TestRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	spec := testSpec(t, "vms", "images")
@@ -474,4 +415,97 @@ func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 	if err := Run(t.Context(), spec, "json"); err != nil {
 		t.Fatalf("reverse convert with never-written namespace: %v", err)
 	}
+}
+
+func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
+	errCrash := errors.New("injected crash")
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	testCrashStep = func(at string) error {
+		if at == "manifest-saved" {
+			return errCrash
+		}
+		return nil
+	}
+	err := Run(t.Context(), spec, "sqlite")
+	testCrashStep = nil
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("want injected crash, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(spec.DBPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.DBPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("rerun over crashed target init: %v", err)
+	}
+	store, err := metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("open target: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+	if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
+		t.Fatalf("content after rerun: %v", got)
+	}
+}
+
+func testSpec(t *testing.T, nss ...string) Spec {
+	t.Helper()
+	root := t.TempDir()
+	spec := Spec{MetaRoot: filepath.Join(root, "meta"), DBPath: filepath.Join(root, "meta", metasqlite.DBFileName)}
+	for _, ns := range nss {
+		spec.Decls = append(spec.Decls, metasqlite.Namespace{Name: ns, Tables: testTables})
+		spec.JSON = append(spec.JSON, metajson.Namespace{
+			Name:     ns,
+			FilePath: filepath.Join(root, ns+".json"),
+			LockPath: filepath.Join(root, ns+".lock"),
+			Codec:    metajson.GenericCodec{},
+		})
+	}
+	return spec
+}
+
+func seedJSON(t *testing.T, spec Spec, ns string) {
+	t.Helper()
+	s, err := metajson.Open(spec.JSON...)
+	if err != nil {
+		t.Fatalf("open json: %v", err)
+	}
+	defer s.Close() //nolint:errcheck
+	err = s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
+		for id, raw := range map[string]string{"id1": `{"v":1}`, "id2": `{"v":2}`} {
+			if err := w.PutRaw(t.Context(), ns, "records", id, json.RawMessage(raw), false); err != nil {
+				return err
+			}
+		}
+		if err := w.PutRaw(t.Context(), ns, "names", "alpha", json.RawMessage(`"id1"`), false); err != nil {
+			return err
+		}
+		return w.PutRaw(t.Context(), ns, "tombstones", "id9", json.RawMessage(`{"dead":true}`), false)
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+}
+
+func scanAll(t *testing.T, s meta.Store, ns string) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
+		for _, tbl := range testTables {
+			if err := r.ScanRaw(t.Context(), ns, tbl, func(id string, raw json.RawMessage) error {
+				got[tbl+"/"+id] = string(raw)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan %s: %v", ns, err)
+	}
+	return got
 }

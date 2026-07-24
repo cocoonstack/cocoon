@@ -11,15 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-func waitEvent(t *testing.T, ch <-chan struct{}, within time.Duration, what string) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(within):
-		t.Fatalf("no event within %s (%s)", within, what)
-	}
-}
-
 // TestEventsExternalProcess is §9's cross-process signal gate: a commit by
 // ANOTHER process must reach this process's subscribers.
 func TestEventsExternalProcess(t *testing.T) {
@@ -106,4 +97,13 @@ func TestEventsSeveredWatchPollFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitEvent(t, ch, 8*time.Second, "poll fallback after severed watch")
+}
+
+func waitEvent(t *testing.T, ch <-chan struct{}, within time.Duration, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(within):
+		t.Fatalf("no event within %s (%s)", within, what)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -21,9 +22,14 @@ import (
 	"github.com/cocoonstack/cocoon/metering/metalog"
 	"github.com/cocoonstack/cocoon/network/cni"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
-const keyTombstones = "tombstones"
+const (
+	keyTombstones = "tombstones"
+
+	metaBootstrapTimeout = 10 * time.Second
+)
 
 var (
 	metaOnce  sync.Once
@@ -86,26 +92,62 @@ func MetaDBPath(conf *config.Config) string {
 	return filepath.Join(conf.RootDir, "meta", metasqlite.DBFileName)
 }
 
+// ResolveMetaBackend returns the effective engine: an explicit setting wins,
+// then an existing store binds (meta.db → sqlite, legacy json files → json),
+// and a fresh root gets sqlite.
+func ResolveMetaBackend(conf *config.Config) string {
+	if conf.MetaBackend != "" {
+		return conf.MetaBackend
+	}
+	if utils.FileExists(MetaDBPath(conf)) {
+		return config.MetaBackendSQLite
+	}
+	if LegacyJSONPresent(conf) {
+		return config.MetaBackendJSON
+	}
+	return config.MetaBackendSQLite
+}
+
+// LegacyJSONPresent reports whether any json-engine namespace file exists
+// under the root — data a fresh sqlite store must never shadow.
+func LegacyJSONPresent(conf *config.Config) bool {
+	for _, ns := range MetaJSONNamespaces(conf) {
+		if utils.FileExists(ns.FilePath) {
+			return true
+		}
+	}
+	return false
+}
+
 // MetaStore builds the process-wide meta store once — one store, every
 // namespace — and injects it into every backend (design §10 P0 boundary).
-// The engine follows conf.MetaBackend: json (default) or sqlite.
+// The engine follows ResolveMetaBackend; a fresh sqlite root bootstraps
+// itself.
 func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
+		// Bootstrap owns its context: the store outlives any single caller,
+		// and a canceled first caller must not poison the Once for everyone.
+		ctx, cancel := context.WithTimeout(context.Background(), metaBootstrapTimeout)
+		defer cancel()
 		// Ordinary opens of EITHER engine refuse while a conversion is in
 		// flight (§6); the json engine cannot see the manifest itself.
-		if err := metasqlite.RefuseManifest(MetaDBPath(conf)); err != nil {
+		dbPath := MetaDBPath(conf)
+		if err := metasqlite.RefuseManifest(dbPath); err != nil {
 			metaErr = err
 			return
 		}
 		// Assign the interface only on success: a typed-nil store would pass
 		// CloseMetaStore's nil check and panic.
-		if conf.MetaBackend == "sqlite" {
-			if s, err := metasqlite.Open(MetaDBPath(conf), MetaNamespaces()...); err != nil {
+		if ResolveMetaBackend(conf) == config.MetaBackendSQLite {
+			if s, err := openSQLiteStore(ctx, conf, dbPath); err != nil {
 				metaErr = err
 			} else {
 				metaStore = s
 			}
 			return
+		}
+		if conf.MetaBackend == "" {
+			log.WithFunc("core.MetaStore").Info(ctx, "legacy json meta store in use; `cocoon meta convert` upgrades it to sqlite")
 		}
 		if s, err := metajson.Open(MetaJSONNamespaces(conf)...); err != nil {
 			metaErr = err
@@ -125,4 +167,20 @@ func CloseMetaStore(ctx context.Context) {
 	if err := metaStore.Close(); err != nil {
 		log.WithFunc("core.CloseMetaStore").Warnf(ctx, "close meta store: %v", err)
 	}
+}
+
+// openSQLiteStore opens the sqlite engine, bootstrapping a fresh root or
+// repairing a crashed bootstrap; a legacy json root never bootstraps — that
+// would shadow its data.
+func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
+	if !LegacyJSONPresent(conf) {
+		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
+			return nil, err
+		}
+	}
+	s, err := metasqlite.Open(dbPath, MetaNamespaces()...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }

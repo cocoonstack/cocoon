@@ -10,33 +10,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// seedPlumbedVM gives a running VM the persisted network state a stop must quiesce.
-func seedPlumbedVM(t *testing.T, b *Backend, id string) {
-	t.Helper()
-	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].NetSetup = types.NetSetup{
-			NetBackend:     types.BackendCNI,
-			NetworkConfigs: []*types.NetworkConfig{{}},
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed network: %v", err)
-	}
-}
-
-func recordOf(t *testing.T, b *Backend, id string) *VMRecord {
-	t.Helper()
-	rec, err := b.PeekRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("peek %s: %v", id, err)
-	}
-	if rec == nil {
-		t.Fatalf("record %s is gone", id)
-	}
-	return rec
-}
-
 func TestConvergeDeadMarksUnexpectedExit(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -359,4 +332,31 @@ func TestUpdateStatesLeavesACreatedRecordUndated(t *testing.T) {
 	if got := recordOf(t, b, "vm1"); got.StoppedAt != nil {
 		t.Errorf("got StoppedAt %v for a VM that never ran, want nil", got.StoppedAt)
 	}
+}
+
+// seedPlumbedVM gives a running VM the persisted network state a stop must quiesce.
+func seedPlumbedVM(t *testing.T, b *Backend, id string) {
+	t.Helper()
+	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+}
+
+func recordOf(t *testing.T, b *Backend, id string) *VMRecord {
+	t.Helper()
+	rec, err := b.PeekRecord(t.Context(), id)
+	if err != nil {
+		t.Fatalf("peek %s: %v", id, err)
+	}
+	if rec == nil {
+		t.Fatalf("record %s is gone", id)
+	}
+	return rec
 }

@@ -12,159 +12,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-type convergeCall struct {
-	vmID string
-	gen  uint64
-}
-
-// fakeSupervisor scripts one backend's record set, liveness and lock state.
-type fakeSupervisor struct {
-	mu         sync.Mutex
-	records    map[string]*hypervisor.VMRecord
-	tombstoned map[string]struct{}
-	live       map[string]utils.ProcRef
-	busy       map[string]struct{}
-	lockErr    error
-	observeErr error
-
-	resumeErr error
-	scanErr   error
-
-	converged []convergeCall
-	adopted   []string
-	collected []string
-	quiesced  []string
-	resumed   []string
-}
-
-func newFake() *fakeSupervisor {
-	return &fakeSupervisor{
-		records:    map[string]*hypervisor.VMRecord{},
-		tombstoned: map[string]struct{}{},
-		live:       map[string]utils.ProcRef{},
-		busy:       map[string]struct{}{},
-	}
-}
-
-func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
-	f.records[rec.ID] = rec
-	return f
-}
-
-func (f *fakeSupervisor) Type() string { return "fake-hv" }
-
-func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.SupervisionScan, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.scanErr != nil {
-		return hypervisor.SupervisionScan{}, f.scanErr
-	}
-	scan := hypervisor.SupervisionScan{Tombstoned: f.tombstoned}
-	for _, rec := range f.records {
-		scan.Records = append(scan.Records, rec)
-	}
-	return scan, nil
-}
-
-func (f *fakeSupervisor) ObserveVMMIn(ctx context.Context, rec *hypervisor.VMRecord, _ utils.ProcScan) (utils.ProcRef, error) {
-	return f.ObserveVMM(ctx, rec)
-}
-
-func (f *fakeSupervisor) ObserveVMM(_ context.Context, rec *hypervisor.VMRecord) (utils.ProcRef, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.observeErr != nil {
-		return utils.ProcRef{}, f.observeErr
-	}
-	proc, ok := f.live[rec.ID]
-	if !ok {
-		return utils.ProcRef{}, hypervisor.ErrNotRunning
-	}
-	return proc, nil
-}
-
-func (f *fakeSupervisor) TryLockVMOps(_ context.Context, vmID string) (func(), bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.lockErr != nil {
-		return nil, false, f.lockErr
-	}
-	if _, held := f.busy[vmID]; held {
-		return nil, false, nil
-	}
-	return func() {}, true, nil
-}
-
-func (f *fakeSupervisor) PeekRecord(_ context.Context, vmID string) (*hypervisor.VMRecord, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.records[vmID], nil
-}
-
-// ConvergeDead mirrors the real composition: the record transition when one is
-// due, then the pending quiesce.
-func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, _ time.Time) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	rec := f.records[vmID]
-	if rec != nil && hypervisor.NeedsDeadConvergence(rec) && rec.TransitionGeneration == gen {
-		f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen})
-		rec.State = types.VMStateStopped
-		rec.TransitionGeneration++
-	}
-	if rec != nil && rec.QuiescePending {
-		f.quiesced = append(f.quiesced, vmID)
-		rec.QuiescePending = false
-	}
-	return nil
-}
-
-func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) (uint64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	rec := f.records[vmID]
-	if rec == nil || rec.Quarantine != "" || rec.State == types.VMStateCreating {
-		return 0, nil
-	}
-	f.adopted = append(f.adopted, vmID)
-	rec.State = types.VMStateRunning
-	rec.TransitionGeneration++
-	return rec.TransitionGeneration, nil
-}
-
-func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.resumed = append(f.resumed, vmID)
-	if f.resumeErr != nil {
-		return false, f.resumeErr
-	}
-	delete(f.records, vmID)
-	delete(f.tombstoned, vmID)
-	return true, nil
-}
-
-func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.collected = append(f.collected, vmID)
-	delete(f.records, vmID)
-	return nil
-}
-
-func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
-	t.Helper()
-	d, err := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return d
-}
-
-func runningRec(id string, gen uint64) *hypervisor.VMRecord {
-	return &hypervisor.VMRecord{VM: types.VM{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}}
-}
-
 func TestReconcileConvergesDeadRunningRecord(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 7))
 	newTestDaemon(t, f).reconcile(t.Context())
@@ -392,4 +239,157 @@ func TestPassUnreadyWhenABackendCannotBeScanned(t *testing.T) {
 	if _, h := d.state.snapshot(); h.ok {
 		t.Error("a backend that could not be scanned still reported ready")
 	}
+}
+
+type convergeCall struct {
+	vmID string
+	gen  uint64
+}
+
+// fakeSupervisor scripts one backend's record set, liveness and lock state.
+type fakeSupervisor struct {
+	mu         sync.Mutex
+	records    map[string]*hypervisor.VMRecord
+	tombstoned map[string]struct{}
+	live       map[string]utils.ProcRef
+	busy       map[string]struct{}
+	lockErr    error
+	observeErr error
+
+	resumeErr error
+	scanErr   error
+
+	converged []convergeCall
+	adopted   []string
+	collected []string
+	quiesced  []string
+	resumed   []string
+}
+
+func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
+	f.records[rec.ID] = rec
+	return f
+}
+
+func (f *fakeSupervisor) Type() string { return "fake-hv" }
+
+func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.SupervisionScan, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.scanErr != nil {
+		return hypervisor.SupervisionScan{}, f.scanErr
+	}
+	scan := hypervisor.SupervisionScan{Tombstoned: f.tombstoned}
+	for _, rec := range f.records {
+		scan.Records = append(scan.Records, rec)
+	}
+	return scan, nil
+}
+
+func (f *fakeSupervisor) ObserveVMMIn(ctx context.Context, rec *hypervisor.VMRecord, _ utils.ProcScan) (utils.ProcRef, error) {
+	return f.ObserveVMM(ctx, rec)
+}
+
+func (f *fakeSupervisor) ObserveVMM(_ context.Context, rec *hypervisor.VMRecord) (utils.ProcRef, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.observeErr != nil {
+		return utils.ProcRef{}, f.observeErr
+	}
+	proc, ok := f.live[rec.ID]
+	if !ok {
+		return utils.ProcRef{}, hypervisor.ErrNotRunning
+	}
+	return proc, nil
+}
+
+func (f *fakeSupervisor) TryLockVMOps(_ context.Context, vmID string) (func(), bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.lockErr != nil {
+		return nil, false, f.lockErr
+	}
+	if _, held := f.busy[vmID]; held {
+		return nil, false, nil
+	}
+	return func() {}, true, nil
+}
+
+func (f *fakeSupervisor) PeekRecord(_ context.Context, vmID string) (*hypervisor.VMRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.records[vmID], nil
+}
+
+// ConvergeDead mirrors the real composition: the record transition when one is
+// due, then the pending quiesce.
+func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, _ time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rec := f.records[vmID]
+	if rec != nil && hypervisor.NeedsDeadConvergence(rec) && rec.TransitionGeneration == gen {
+		f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen})
+		rec.State = types.VMStateStopped
+		rec.TransitionGeneration++
+	}
+	if rec != nil && rec.QuiescePending {
+		f.quiesced = append(f.quiesced, vmID)
+		rec.QuiescePending = false
+	}
+	return nil
+}
+
+func (f *fakeSupervisor) ReconcileToRunning(_ context.Context, vmID string) (uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rec := f.records[vmID]
+	if rec == nil || rec.Quarantine != "" || rec.State == types.VMStateCreating {
+		return 0, nil
+	}
+	f.adopted = append(f.adopted, vmID)
+	rec.State = types.VMStateRunning
+	rec.TransitionGeneration++
+	return rec.TransitionGeneration, nil
+}
+
+func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resumed = append(f.resumed, vmID)
+	if f.resumeErr != nil {
+		return false, f.resumeErr
+	}
+	delete(f.records, vmID)
+	delete(f.tombstoned, vmID)
+	return true, nil
+}
+
+func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.collected = append(f.collected, vmID)
+	delete(f.records, vmID)
+	return nil
+}
+
+func newFake() *fakeSupervisor {
+	return &fakeSupervisor{
+		records:    map[string]*hypervisor.VMRecord{},
+		tombstoned: map[string]struct{}{},
+		live:       map[string]utils.ProcRef{},
+		busy:       map[string]struct{}{},
+	}
+}
+
+func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
+	t.Helper()
+	d, err := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return d
+}
+
+func runningRec(id string, gen uint64) *hypervisor.VMRecord {
+	return &hypervisor.VMRecord{VM: types.VM{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}}
 }

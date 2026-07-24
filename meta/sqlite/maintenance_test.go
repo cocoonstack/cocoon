@@ -4,31 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/utils"
 )
-
-func backupGet(t *testing.T, dest, id string) (string, bool) {
-	t.Helper()
-	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
-	if err != nil {
-		t.Fatalf("open backup %s: %v", dest, err)
-	}
-	defer b.Close() //nolint:errcheck
-	var raw json.RawMessage
-	var ok bool
-	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
-		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("view backup: %v", err)
-	}
-	return string(raw), ok
-}
 
 func TestBackupFidelity(t *testing.T) {
 	ctx := t.Context()
@@ -118,6 +102,32 @@ func TestBackupCrashSteps(t *testing.T) {
 	}
 }
 
+func TestBackupRefusals(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, DBFileName)
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "no sqlite store") {
+		t.Fatalf("want missing-store refusal, got %v", err)
+	}
+	if utils.FileExists(missing) {
+		t.Fatal("backup created the missing source")
+	}
+	if err := os.WriteFile(missing, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "uninitialized store") {
+		t.Fatalf("want uninitialized refusal, got %v", err)
+	}
+	if err := Init(t.Context(), missing, testDecls()...); err != nil {
+		t.Fatalf("init over crashed file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
+		t.Fatalf("want manifest refusal, got %v", err)
+	}
+}
+
 func TestBusyCtxDeadline(t *testing.T) {
 	dir := t.TempDir()
 	s1 := newStore(t, dir, "vms")
@@ -182,4 +192,23 @@ func TestBackupConcurrentSameDest(t *testing.T) {
 	if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
 		t.Fatalf("published backup invalid after concurrent runs: %q ok=%v", raw, ok)
 	}
+}
+
+func backupGet(t *testing.T, dest, id string) (string, bool) {
+	t.Helper()
+	b, err := Open(dest, Namespace{Name: "vms", Tables: []string{"records", "names", "tombstones"}})
+	if err != nil {
+		t.Fatalf("open backup %s: %v", dest, err)
+	}
+	defer b.Close() //nolint:errcheck
+	var raw json.RawMessage
+	var ok bool
+	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
+		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("view backup: %v", err)
+	}
+	return string(raw), ok
 }

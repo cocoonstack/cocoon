@@ -8,24 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func statusOf(id string, state types.VMState, gen uint64, live bool) VMStatus {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: id, State: state, TransitionGeneration: gen}}
-	return newVMStatus("fake-hv", rec, live, 0, time.Now())
-}
-
-func collect(t *testing.T, ch <-chan changeEvent) []changeEvent {
-	t.Helper()
-	var got []changeEvent
-	for {
-		select {
-		case ev := <-ch:
-			got = append(got, ev)
-		default:
-			return got
-		}
-	}
-}
-
 func TestCachePublishesAddedThenModified(t *testing.T) {
 	c := newCache()
 	events, release := c.subscribe()
@@ -101,5 +83,23 @@ func TestCacheReleaseStopsDelivery(t *testing.T) {
 	c.publish([]VMStatus{statusOf("vm1", types.VMStateRunning, 1, true)}, true, 0, time.Now())
 	if got := collect(t, events); len(got) != 0 {
 		t.Errorf("got %+v, want nothing after release", got)
+	}
+}
+
+func statusOf(id string, state types.VMState, gen uint64, live bool) VMStatus {
+	rec := &hypervisor.VMRecord{VM: types.VM{ID: id, State: state, TransitionGeneration: gen}}
+	return newVMStatus("fake-hv", rec, live, 0, time.Now())
+}
+
+func collect(t *testing.T, ch <-chan changeEvent) []changeEvent {
+	t.Helper()
+	var got []changeEvent
+	for {
+		select {
+		case ev := <-ch:
+			got = append(got, ev)
+		default:
+			return got
+		}
 	}
 }

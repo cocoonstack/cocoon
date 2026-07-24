@@ -13,10 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-type gcTestEntry struct {
-	Digest string `json:"digest"`
-}
-
 var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "images", Table: TableRecords},
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
@@ -79,13 +75,6 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	if len(removed) != 1 || removed[0] != "deadbeef" {
 		t.Fatalf("unreferenced blob not collected: %v", removed)
 	}
-}
-
-type fixtureEntry struct {
-	Ref       string    `json:"ref"`
-	Digest    string    `json:"manifest_digest"`
-	Size      int64     `json:"size"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
@@ -215,4 +204,15 @@ func TestPinBlobs(t *testing.T) {
 	if _, err := PinBlobs(cfg, map[string]struct{}{"cafebabe": {}}); err == nil {
 		t.Fatal("pin of a missing blob must fail")
 	}
+}
+
+type gcTestEntry struct {
+	Digest string `json:"digest"`
+}
+
+type fixtureEntry struct {
+	Ref       string    `json:"ref"`
+	Digest    string    `json:"manifest_digest"`
+	Size      int64     `json:"size"`
+	CreatedAt time.Time `json:"created_at"`
 }

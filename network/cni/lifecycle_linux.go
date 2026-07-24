@@ -117,7 +117,6 @@ func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC str
 	return mac, err
 }
 
-// tcRedirectInNS runs TC redirect setup inside target netns.
 func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, error) {
 	link, err := netlink.LinkByName(ifName)
 	if err != nil {

@@ -4,14 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/utils"
 )
-
-func testDecls() []Namespace {
-	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
-}
 
 func TestInitRefusesExisting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
@@ -109,6 +106,47 @@ func TestUninitializedNamespaceRefused(t *testing.T) {
 	}
 }
 
+func TestInitIfMissingRaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() {
+			errs[i] = InitIfMissing(t.Context(), path, testDecls()...)
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("racer %d: %v", i, err)
+		}
+	}
+	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("idempotent recheck: %v", err)
+	}
+	s, err := Open(path, testDecls()...)
+	if err != nil {
+		t.Fatalf("open bootstrapped store: %v", err)
+	}
+	_ = s.Close()
+	if utils.FileExists(filepath.Join(filepath.Dir(path), initLockName)) {
+		t.Fatal("transient init lock left behind")
+	}
+}
+
+func TestInitIfMissingRepairsCrashedInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("bootstrap over crashed init: %v", err)
+	}
+	if _, err := Open(path, testDecls()...); err != nil {
+		t.Fatalf("open repaired store: %v", err)
+	}
+}
+
 func TestOpenDoesNotCreate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
 	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta init") {
@@ -136,4 +174,8 @@ func TestUnsupportedFSRefused(t *testing.T) {
 	if utils.FileExists(fresh) {
 		t.Fatal("init created WAL state on refused filesystem")
 	}
+}
+
+func testDecls() []Namespace {
+	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
 }

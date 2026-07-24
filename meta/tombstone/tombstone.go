@@ -139,17 +139,6 @@ func (t *Table) Finalize(ctx context.Context, w meta.Writer, id, leaseID string)
 	return t.recs.Delete(ctx, w, id)
 }
 
-func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (*Record, error) {
-	rec, err := t.Get(ctx, w, id)
-	if err != nil {
-		return nil, err
-	}
-	if rec == nil || rec.LeaseID != leaseID {
-		return nil, fmt.Errorf("tombstone %s/%s: %w", t.ns, id, ErrLost)
-	}
-	return rec, nil
-}
-
 // PendingIDs lists every tombstoned id (the recovery sweep's work list).
 func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error) {
 	var ids []string
@@ -200,6 +189,17 @@ func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Reco
 		return rec, taken.LeaseID, t.Rollback(ctx, w, id, taken.LeaseID)
 	}
 	return rec, taken.LeaseID, nil
+}
+
+func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (*Record, error) {
+	rec, err := t.Get(ctx, w, id)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil || rec.LeaseID != leaseID {
+		return nil, fmt.Errorf("tombstone %s/%s: %w", t.ns, id, ErrLost)
+	}
+	return rec, nil
 }
 
 // MarshalCleanup encodes a namespace-defined cleanup payload.

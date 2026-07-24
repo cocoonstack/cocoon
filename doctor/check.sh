@@ -16,7 +16,7 @@ COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 COCOON_LOG_DIR="${COCOON_LOG_DIR:-/var/log/cocoon}"
 COCOON_CNI_CONF_DIR="${COCOON_CNI_CONF_DIR:-/etc/cni/net.d}"
 COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
-COCOON_META_BACKEND="${COCOON_META_BACKEND:-json}"
+COCOON_META_BACKEND="${COCOON_META_BACKEND:-}"
 
 # Dependency versions
 CH_VERSION="${CH_VERSION:-v53.0}"
@@ -64,7 +64,7 @@ Environment variables:
   CNI_VERSION   CNI plugins version         (default: ${CNI_VERSION})
   COCOON_ROOT_DIR / COCOON_RUN_DIR / COCOON_LOG_DIR
   COCOON_CNI_CONF_DIR / COCOON_CNI_BIN_DIR
-  COCOON_META_BACKEND Metadata engine       (default: ${COCOON_META_BACKEND})
+  COCOON_META_BACKEND Metadata engine       (default: auto — existing store wins, fresh roots get sqlite)
 EOF
             exit 0
             ;;
@@ -260,6 +260,24 @@ check_dir() {
 }
 
 check_dir "$COCOON_ROOT_DIR"
+
+# Mirror cocoon's auto-resolution: an existing store binds its engine, fresh
+# roots get sqlite. The json probe list matches MetaJSONNamespaces.
+legacy_json_present() {
+    for f in cloudhypervisor/db/vms.json firecracker/db/vms.json \
+        snapshot/db/snapshots.json oci/db/images.json cloudimg/db/images.json \
+        cni/db/networks.json metering/log.json; do
+        [ -e "$COCOON_ROOT_DIR/$f" ] && return 0
+    done
+    return 1
+}
+if [ -z "$COCOON_META_BACKEND" ]; then
+    if [ ! -e "$COCOON_ROOT_DIR/meta/meta.db" ] && legacy_json_present; then
+        COCOON_META_BACKEND=json
+    else
+        COCOON_META_BACKEND=sqlite
+    fi
+fi
 
 if [ "$COCOON_META_BACKEND" = "sqlite" ]; then
     # SQLite WAL needs coherent shared memory; report the same filesystem

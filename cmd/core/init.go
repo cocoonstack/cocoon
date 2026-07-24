@@ -27,28 +27,18 @@ var hypervisorFactories = []hypervisorFactory{
 	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
 }
 
-// wireHypervisor builds a backend factory over the shared store and recorder.
-func wireHypervisor[H interface {
-	hypervisor.Hypervisor
-	SetNetwork(hypervisor.VMNetwork)
-}](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) func(context.Context, *config.Config) (hypervisor.Hypervisor, error) {
-	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
-		store, err := MetaStore(c)
-		if err != nil {
-			return nil, err
-		}
-		h, err := newFn(c, MeteringRecorder(ctx, c), store)
-		if err != nil {
-			return nil, err
-		}
-		h.SetNetwork(NetworkSeam(c))
-		return h, nil
-	}
-}
+// hypervisorCtor builds a fully wired backend for one config.
+type hypervisorCtor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
 
 type hypervisorFactory struct {
 	typ  config.HypervisorType
-	ctor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
+	ctor hypervisorCtor
+}
+
+// networkedHypervisor is the constructor contract wireHypervisor adapts: a backend that accepts the network seam.
+type networkedHypervisor interface {
+	hypervisor.Hypervisor
+	SetNetwork(hypervisor.VMNetwork)
 }
 
 func InitImageBackends(ctx context.Context, conf *config.Config) ([]imagebackend.Images, error) {
@@ -76,41 +66,6 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 	ociStore.SetPinnedElsewhere(recheck)
 	cloudimgStore.SetPinnedElsewhere(recheck)
 	return ociStore, cloudimgStore, nil
-}
-
-// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
-func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
-	type pinner interface {
-		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
-	}
-	return func(ctx context.Context) (map[string]struct{}, error) {
-		hypers, err := InitAllHypervisors(ctx, conf)
-		if err != nil {
-			return nil, err
-		}
-		snapBackend, err := InitSnapshot(ctx, conf)
-		if err != nil {
-			return nil, err
-		}
-		sources := make([]pinner, 0, len(hypers)+1)
-		for _, h := range hypers {
-			if p, ok := h.(pinner); ok {
-				sources = append(sources, p)
-			}
-		}
-		if p, ok := snapBackend.(pinner); ok {
-			sources = append(sources, p)
-		}
-		pins := map[string]struct{}{}
-		for _, s := range sources {
-			m, err := s.PinnedBlobIDs(ctx)
-			if err != nil {
-				return nil, err
-			}
-			maps.Copy(pins, m)
-		}
-		return pins, nil
-	}
 }
 
 func InitHypervisor(ctx context.Context, conf *config.Config) (hypervisor.Hypervisor, error) {
@@ -200,4 +155,55 @@ func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[stri
 		return nil, err
 	}
 	return func() { releaseOCI(); releaseCloudimg() }, nil
+}
+
+// wireHypervisor builds a backend factory over the shared store and recorder.
+func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) hypervisorCtor {
+	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
+		store, err := MetaStore(c)
+		if err != nil {
+			return nil, err
+		}
+		h, err := newFn(c, MeteringRecorder(ctx, c), store)
+		if err != nil {
+			return nil, err
+		}
+		h.SetNetwork(NetworkSeam(c))
+		return h, nil
+	}
+}
+
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
+func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
+	type pinner interface {
+		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
+	}
+	return func(ctx context.Context) (map[string]struct{}, error) {
+		hypers, err := InitAllHypervisors(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		snapBackend, err := InitSnapshot(ctx, conf)
+		if err != nil {
+			return nil, err
+		}
+		sources := make([]pinner, 0, len(hypers)+1)
+		for _, h := range hypers {
+			if p, ok := h.(pinner); ok {
+				sources = append(sources, p)
+			}
+		}
+		if p, ok := snapBackend.(pinner); ok {
+			sources = append(sources, p)
+		}
+		pins := map[string]struct{}{}
+		for _, s := range sources {
+			m, err := s.PinnedBlobIDs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			maps.Copy(pins, m)
+		}
+		return pins, nil
+	}
 }

@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+const initLockName = "init.lock"
 
 // Init creates a fresh store: schema DDL, identity pragmas and one
 // initialized meta_state row per namespace, all in ONE transaction — a crash
@@ -28,6 +31,33 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 // creates its target while the manifest is necessarily present (§6).
 func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
+}
+
+// InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
+func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
+	// Fast path: a healthy store skips the lock entirely.
+	if need, err := initNeeded(dbPath); err != nil || !need {
+		return err
+	}
+	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
+		return merr
+	}
+	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
+		need, err := initNeeded(dbPath)
+		if err != nil || !need {
+			return err
+		}
+		return Init(ctx, dbPath, namespaces...)
+	})
+}
+
+// InitForRecoveryIfNeeded creates or repairs the conversion target, passing a completed one through.
+func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
+	need, err := initNeeded(dbPath)
+	if err != nil || !need {
+		return err
+	}
+	return InitForRecovery(ctx, dbPath, namespaces...)
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
@@ -91,6 +121,13 @@ func createSchema(ctx context.Context, tx *sql.Tx, namespaces []Namespace) error
 		}
 	}
 	return nil
+}
+
+func initNeeded(dbPath string) (bool, error) {
+	if !utils.FileExists(dbPath) {
+		return true, nil
+	}
+	return failedInit(dbPath)
 }
 
 // failedInit reports whether dbPath is a crashed init. Init is atomic, so

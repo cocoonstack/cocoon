@@ -24,6 +24,28 @@ func ScanProcsByBinary(binaryName string) (ProcScan, error) {
 	return scanProcsByBinary(binaryName, os.ReadFile, IsProcessAlive)
 }
 
+// Find returns the cached pids whose cmdline contains expectArg, sorted numerically; empty expectArg matches all.
+func (s ProcScan) Find(expectArg string) []int {
+	var pids []int
+	for _, e := range s {
+		_, rest, _ := strings.Cut(e.cmdline, "\x00")
+		if expectArg == "" || strings.Contains(rest, expectArg) {
+			pids = append(pids, e.pid)
+		}
+	}
+	slices.Sort(pids)
+	return pids
+}
+
+// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find(); batch callers should use ScanProcsByBinary directly to share one /proc walk.
+func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
+	scan, err := ScanProcsByBinary(binaryName)
+	if err != nil {
+		return nil, err
+	}
+	return scan.Find(expectArg), nil
+}
+
 func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error), alive func(int) bool) (ProcScan, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -51,28 +73,6 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 		scan = append(scan, procEntry{pid: pid, cmdline: string(data)})
 	}
 	return scan, nil
-}
-
-// Find returns the cached pids whose cmdline contains expectArg, sorted numerically; empty expectArg matches all.
-func (s ProcScan) Find(expectArg string) []int {
-	var pids []int
-	for _, e := range s {
-		_, rest, _ := strings.Cut(e.cmdline, "\x00")
-		if expectArg == "" || strings.Contains(rest, expectArg) {
-			pids = append(pids, e.pid)
-		}
-	}
-	slices.Sort(pids)
-	return pids
-}
-
-// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find(); batch callers should use ScanProcsByBinary directly to share one /proc walk.
-func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
-	scan, err := ScanProcsByBinary(binaryName)
-	if err != nil {
-		return nil, err
-	}
-	return scan.Find(expectArg), nil
 }
 
 // Match argv[0] basename strictly + expectArg substring so "bash -c 'cloud-hypervisor ...'" can't impersonate the VMM.

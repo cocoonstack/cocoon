@@ -12,34 +12,6 @@ import (
 
 const exitWaitBudget = 5 * time.Second
 
-// startVictim launches a process the test can kill, returning its generation.
-func startVictim(t *testing.T) (*exec.Cmd, utils.ProcRef) {
-	t.Helper()
-	cmd := exec.Command("sleep", "30")
-	if err := cmd.Start(); err != nil {
-		t.Skipf("cannot start a victim process: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
-	proc, err := utils.ProcRefOf(cmd.Process.Pid)
-	if err != nil {
-		t.Fatalf("ProcRefOf: %v", err)
-	}
-	return cmd, proc
-}
-
-func startWatcher(t *testing.T) *procWatcher {
-	t.Helper()
-	w := newProcWatcher()
-	if err := w.start(t.Context()); err != nil {
-		t.Fatalf("start watcher: %v", err)
-	}
-	t.Cleanup(w.close)
-	return w
-}
-
 func TestWatcherReportsProcessExit(t *testing.T) {
 	cmd, proc := startVictim(t)
 	w := startWatcher(t)
@@ -115,4 +87,32 @@ func TestWatcherKeepsOtherBackendsOnDropAbsent(t *testing.T) {
 	if got := w.pidOf(key); got != proc.PID {
 		t.Errorf("got watched pid %d, want another backend's scan to leave this watch alone", got)
 	}
+}
+
+// startVictim launches a process the test can kill, returning its generation.
+func startVictim(t *testing.T) (*exec.Cmd, utils.ProcRef) {
+	t.Helper()
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start a victim process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	proc, err := utils.ProcRefOf(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf("ProcRefOf: %v", err)
+	}
+	return cmd, proc
+}
+
+func startWatcher(t *testing.T) *procWatcher {
+	t.Helper()
+	w := newProcWatcher()
+	if err := w.start(t.Context()); err != nil {
+		t.Fatalf("start watcher: %v", err)
+	}
+	t.Cleanup(w.close)
+	return w
 }

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
@@ -23,23 +24,10 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	asideSuffix = ".converted-"
-
-	// EngineJSON/EngineSQLite are the meta_backend values.
-	EngineJSON   = "json"
-	EngineSQLite = "sqlite"
-)
+const asideSuffix = ".converted-"
 
 // testCrashStep injects crashes between protocol steps (§9 gate); nil in prod.
 var testCrashStep func(step string) error
-
-func crashStep(step string) error {
-	if testCrashStep == nil {
-		return nil
-	}
-	return testCrashStep(step)
-}
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
@@ -66,7 +54,7 @@ type NSRecord struct {
 
 // Run performs (or resumes) the cutover to target ("sqlite" or "json").
 func Run(ctx context.Context, spec Spec, target string) error {
-	if target != EngineSQLite && target != EngineJSON {
+	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
 	m, err := loadManifest(spec.MetaRoot)
@@ -85,6 +73,13 @@ func Run(ctx context.Context, spec Spec, target string) error {
 		return err
 	}
 	return finishManifest(spec.MetaRoot)
+}
+
+func crashStep(step string) error {
+	if testCrashStep == nil {
+		return nil
+	}
+	return testCrashStep(step)
 }
 
 func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {
@@ -150,7 +145,7 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 // means live cocoon processes, and converting under them could lose writes
 // landing on a namespace already marked done.
 func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
-	if target == EngineJSON {
+	if target == config.MetaBackendJSON {
 		// sqlite source: an empty durable transaction fails ErrBusy while a
 		// writer is mid-flight.
 		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
@@ -191,7 +186,7 @@ func ensureJSONDirs(spec Spec) error {
 
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
-	if target == EngineSQLite {
+	if target == config.MetaBackendSQLite {
 		return metajson.Open(spec.JSON...)
 	}
 	// The driver would create an empty file on first touch; a missing source
@@ -203,13 +198,11 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 }
 
 func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, error) {
-	if target == EngineJSON {
+	if target == config.MetaBackendJSON {
 		return metajson.Open(spec.JSON...)
 	}
-	if !utils.FileExists(spec.DBPath) {
-		if err := metasqlite.InitForRecovery(ctx, spec.DBPath, spec.Decls...); err != nil {
-			return nil, err
-		}
+	if err := metasqlite.InitForRecoveryIfNeeded(ctx, spec.DBPath, spec.Decls...); err != nil {
+		return nil, err
 	}
 	return metasqlite.OpenForRecovery(spec.DBPath, spec.Decls...)
 }
@@ -229,7 +222,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 	if err := crashStep("ns-copied"); err != nil {
 		return err
 	}
-	if m.Target == EngineSQLite {
+	if m.Target == config.MetaBackendSQLite {
 		if err := metasqlite.MarkConverted(ctx, spec.DBPath, ns.Name, rec.Files[0], rec.SHA256, rec.Records); err != nil {
 			return err
 		}
@@ -382,7 +375,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 // sqlite source checkpoints to a single file first (§6). Runs with both
 // engines closed; already-renamed files are skipped, so a crash here reruns.
 func retireSources(ctx context.Context, spec Spec, target string) error {
-	if target == EngineJSON && utils.FileExists(spec.DBPath) {
+	if target == config.MetaBackendJSON && utils.FileExists(spec.DBPath) {
 		if err := metasqlite.Checkpoint(ctx, spec.DBPath); err != nil {
 			return err
 		}
@@ -411,7 +404,7 @@ func retireSources(ctx context.Context, spec Spec, target string) error {
 }
 
 func sourceFiles(spec Spec, target, nsName string) []string {
-	if target == EngineJSON {
+	if target == config.MetaBackendJSON {
 		return []string{spec.DBPath}
 	}
 	if jns, ok := findJSON(spec, nsName); ok {

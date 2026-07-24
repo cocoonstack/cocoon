@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-type fakeActive map[string]struct{}
-
-func (f fakeActive) ActiveVMIDs() map[string]struct{} { return f }
-
 func TestGCModuleSweepsOnlyUnknownUnheldLocks(t *testing.T) {
 	root := t.TempDir()
 	ctx := t.Context()
@@ -74,3 +70,7 @@ func TestOpsLockUnlinksOnRelease(t *testing.T) {
 		t.Errorf("lock file survived release: %v", err)
 	}
 }
+
+type fakeActive map[string]struct{}
+
+func (f fakeActive) ActiveVMIDs() map[string]struct{} { return f }

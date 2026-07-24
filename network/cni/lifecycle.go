@@ -176,18 +176,6 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// guardAdd finishes an interrupted teardown before new NICs are plumbed; a completed deleting roll-forward refuses the Add.
-func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
-	rolledForward, err := c.recoverTombstone(ctx, vmID)
-	if err != nil {
-		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
-	}
-	if rolledForward {
-		return fmt.Errorf("vm %s network teardown was interrupted; recovery completed, retry the operation: %w", vmID, meta.ErrConflict)
-	}
-	return nil
-}
-
 // Remove tears down NIC plumbing for the given indices; preserves the netns. A failed NIC keeps its DB record so retry / vm rm / GC can still release its CNI resources.
 func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	if len(indices) == 0 {
@@ -225,6 +213,18 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		subset = append(subset, r.ID)
 	}
 	return c.teardownProtocol(ctx, vmID, subset, true)
+}
+
+// guardAdd finishes an interrupted teardown before new NICs are plumbed; a completed deleting roll-forward refuses the Add.
+func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
+	rolledForward, err := c.recoverTombstone(ctx, vmID)
+	if err != nil {
+		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
+	}
+	if rolledForward {
+		return fmt.Errorf("vm %s network teardown was interrupted; recovery completed, retry the operation: %w", vmID, meta.ErrConflict)
+	}
+	return nil
 }
 
 // stageNICIntents reclaims stale slots and lands every fresh NIC's intent record in one write before any plugin ADD: GC gets per-NIC release context at the cost of a single fsync on the claim path.
@@ -371,8 +371,7 @@ func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Net
 			return info, nil
 		}
 	}
-	// IPv6-only plugin results are not persisted; surface the drop instead of
-	// silently recording Network: nil.
+	// IPv6-only plugin results are not persisted; log the drop instead of silently recording nil.
 	log.WithFunc("cni.extractNetworkInfo").Warnf(ctx,
 		"CNI result has %d IPs but no IPv4; skipping network info (IPv6-only is unsupported)", len(newResult.IPs))
 	return nil, nil

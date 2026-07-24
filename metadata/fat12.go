@@ -31,17 +31,6 @@ const (
 	writeBufSize = 64 << 10
 )
 
-// fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
-type fat12Builder struct {
-	label       string
-	fat         []byte   // single FAT copy (written twice)
-	rootDir     []byte   // root directory area
-	data        [][]byte // file data in cluster-allocation order
-	nextCluster uint16   // next free cluster (starts at 2)
-	rootUsed    int      // root directory entries consumed
-	shortSeq    int      // counter for ~N short-name suffixes
-}
-
 // CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
 func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 	b := newFAT12Builder(label)
@@ -52,6 +41,17 @@ func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 		}
 	}
 	return b.writeTo(w)
+}
+
+// fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
+type fat12Builder struct {
+	label       string
+	fat         []byte   // single FAT copy (written twice)
+	rootDir     []byte   // root directory area
+	data        [][]byte // file data in cluster-allocation order
+	nextCluster uint16   // next free cluster (starts at 2)
+	rootUsed    int      // root directory entries consumed
+	shortSeq    int      // counter for ~N short-name suffixes
 }
 
 func newFAT12Builder(label string) *fat12Builder {

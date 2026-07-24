@@ -25,41 +25,6 @@ const (
 	inverseOps     = 10
 )
 
-// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome
-// under extreme oversubscription (§4); reconciliation still demands exact counts.
-func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
-	t.Helper()
-	for {
-		err := s.Update(t.Context(), sc, meta.CommitDurable, fn)
-		if err == nil {
-			return
-		}
-		if !errors.Is(err, meta.ErrBusy) {
-			t.Fatalf("update: %v", err)
-		}
-	}
-}
-
-func stormWorkers() int {
-	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
-		return v
-	}
-	return 256
-}
-
-func integrityCheck(t *testing.T, dir string) {
-	t.Helper()
-	db, err := open(filepath.Join(dir, DBFileName), "FULL", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close() //nolint:errcheck
-	var result string
-	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil || result != "ok" {
-		t.Fatalf("integrity check: %q err=%v", result, err)
-	}
-}
-
 // TestMultiProcessCorrectness is §9's real-process storm for the sqlite
 // engine: acknowledged inserts and their name rows all present, names
 // referentially consistent, zero corruption on reopen.
@@ -275,5 +240,40 @@ func TestKillStormWorker(t *testing.T) {
 			return nil
 		})
 		fmt.Printf("ACK %s\n", txn)
+	}
+}
+
+// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome
+// under extreme oversubscription (§4); reconciliation still demands exact counts.
+func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
+	t.Helper()
+	for {
+		err := s.Update(t.Context(), sc, meta.CommitDurable, fn)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, meta.ErrBusy) {
+			t.Fatalf("update: %v", err)
+		}
+	}
+}
+
+func stormWorkers() int {
+	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
+		return v
+	}
+	return 256
+}
+
+func integrityCheck(t *testing.T, dir string) {
+	t.Helper()
+	db, err := open(filepath.Join(dir, DBFileName), "FULL", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+	var result string
+	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil || result != "ok" {
+		t.Fatalf("integrity check: %q err=%v", result, err)
 	}
 }

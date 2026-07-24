@@ -9,46 +9,6 @@ import (
 	"github.com/cocoonstack/cocoon/snapshot"
 )
 
-// injectSnapTombstone plants a dead owner's tombstone for id in the given phase.
-func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone.Phase) {
-	t.Helper()
-	ctx := t.Context()
-	ts := lf.tombstones()
-	if err := lf.update(ctx, func(tx *snapTx) error {
-		rec, err := tx.Get(id)
-		if err != nil {
-			return err
-		}
-		cl, err := tombstone.MarshalCleanup(snapCleanup{Name: rec.Name, DataDir: rec.DataDir})
-		if err != nil {
-			return err
-		}
-		leaseID, err := ts.Lease(ctx, tx.Writer(), id, tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cl})
-		if err != nil {
-			return err
-		}
-		if phase == tombstone.PhaseDeleting {
-			return ts.MarkDeleting(ctx, tx.Writer(), id, leaseID)
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("inject tombstone: %v", err)
-	}
-}
-
-func snapTombstonePresent(t *testing.T, lf *LocalFile, id string) bool {
-	t.Helper()
-	var present bool
-	if err := lf.view(t.Context(), func(tx *snapTx) error {
-		rec, err := lf.tombstones().Get(t.Context(), tx.Reader(), id)
-		present = rec != nil
-		return err
-	}); err != nil {
-		t.Fatalf("view tombstone: %v", err)
-	}
-	return present
-}
-
 func TestSharedLeaseEscalationLeasedRollsBack(t *testing.T) {
 	lf := newTestLF(t)
 	id := makeExportableSnapshot(t, lf, "esc-leased", map[string][]byte{"disk.raw": []byte("data")})
@@ -98,4 +58,44 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 	if _, _, _, err := lf.DataDir(t.Context(), "esc-deleting"); !errors.Is(err, snapshot.ErrNotFound) {
 		t.Errorf("name still resolves after roll-forward: %v", err)
 	}
+}
+
+// injectSnapTombstone plants a dead owner's tombstone for id in the given phase.
+func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone.Phase) {
+	t.Helper()
+	ctx := t.Context()
+	ts := lf.tombstones()
+	if err := lf.update(ctx, func(tx *snapTx) error {
+		rec, err := tx.Get(id)
+		if err != nil {
+			return err
+		}
+		cl, err := tombstone.MarshalCleanup(snapCleanup{Name: rec.Name, DataDir: rec.DataDir})
+		if err != nil {
+			return err
+		}
+		leaseID, err := ts.Lease(ctx, tx.Writer(), id, tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cl})
+		if err != nil {
+			return err
+		}
+		if phase == tombstone.PhaseDeleting {
+			return ts.MarkDeleting(ctx, tx.Writer(), id, leaseID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("inject tombstone: %v", err)
+	}
+}
+
+func snapTombstonePresent(t *testing.T, lf *LocalFile, id string) bool {
+	t.Helper()
+	var present bool
+	if err := lf.view(t.Context(), func(tx *snapTx) error {
+		rec, err := lf.tombstones().Get(t.Context(), tx.Reader(), id)
+		present = rec != nil
+		return err
+	}); err != nil {
+		t.Fatalf("view tombstone: %v", err)
+	}
+	return present
 }

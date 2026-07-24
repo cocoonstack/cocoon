@@ -57,6 +57,13 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
+func ReconcileState(vm *types.VM) string {
+	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
+		return "stopped (stale)"
+	}
+	return string(vm.State)
+}
+
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	vms := []*types.VMConfig{vmCfg}
 	var owner imagebackend.Images
@@ -140,94 +147,11 @@ func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref 
 	)
 }
 
-func ReconcileState(vm *types.VM) string {
-	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
-		return "stopped (stale)"
-	}
-	return string(vm.State)
-}
-
 // CloseOnCancel closes c when ctx is canceled; callers `defer CloseOnCancel(ctx, c)()` to stop the watcher on return.
 func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 	return context.AfterFunc(ctx, func() {
 		c.Close() //nolint:errcheck,gosec
 	})
-}
-
-// resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).
-func resolveOwner[T interface{ Type() string }](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
-	var matches []T
-	var zero T
-	for _, b := range backends {
-		ok, err := found(b)
-		if err != nil {
-			return zero, fmt.Errorf("inspect %s in %s: %w", ref, b.Type(), err)
-		}
-		if ok {
-			matches = append(matches, b)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return zero, notFound
-	case 1:
-		return matches[0], nil
-	default:
-		names := make([]string, len(matches))
-		for i, b := range matches {
-			names[i] = b.Type()
-		}
-		return zero, fmt.Errorf("%w (backends: %s)", ambiguous, strings.Join(names, ", "))
-	}
-}
-
-// validateRefShape rejects URL/OCI ref mismatches early so backends don't surface misleading downstream errors.
-func validateRefShape(ref, imageType string) error {
-	switch imageType {
-	case types.ImageTypeCloudImg:
-		if !cliutil.IsURL(ref) {
-			return fmt.Errorf("cloudimg ref %q is not an http(s) URL (imported or bare OCI ref?)", ref)
-		}
-	case types.ImageTypeOCI:
-		if _, err := name.ParseReference(ref); err != nil {
-			return fmt.Errorf("oci ref %q is not a valid OCI reference: %w", ref, err)
-		}
-	}
-	return nil
-}
-
-// digestPullRef pins OCI pulls by digest; returns image as-is for others.
-func digestPullRef(image, digest, imageType string) string {
-	if digest == "" || imageType != types.ImageTypeOCI {
-		return image
-	}
-	// OCI: convert "registry/repo:tag" → "registry/repo@sha256:..."
-	ref, err := name.ParseReference(image)
-	if err != nil {
-		return image
-	}
-	return ref.Context().String() + "@" + digest
-}
-
-// resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
-func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
-	var resolved *types.VM
-	owner, err := resolveOwner(
-		hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
-			vm, err := h.Inspect(ctx, ref)
-			if err == nil && vm != nil {
-				resolved = vm
-				return true, nil
-			}
-			if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
-				return false, err
-			}
-			return false, nil
-		},
-		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound),
-		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
-	)
-	return owner, resolved, err
 }
 
 // EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
@@ -299,4 +223,83 @@ func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, c
 		return "", fmt.Errorf("save snapshot: %w", err)
 	}
 	return snapID, nil
+}
+
+// typed is the backend constraint resolveOwner reports matches by.
+type typed interface{ Type() string }
+
+// resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).
+func resolveOwner[T typed](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
+	var matches []T
+	var zero T
+	for _, b := range backends {
+		ok, err := found(b)
+		if err != nil {
+			return zero, fmt.Errorf("inspect %s in %s: %w", ref, b.Type(), err)
+		}
+		if ok {
+			matches = append(matches, b)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return zero, notFound
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, len(matches))
+		for i, b := range matches {
+			names[i] = b.Type()
+		}
+		return zero, fmt.Errorf("%w (backends: %s)", ambiguous, strings.Join(names, ", "))
+	}
+}
+
+// resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
+func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
+	var resolved *types.VM
+	owner, err := resolveOwner(
+		hypers, ref, func(h hypervisor.Hypervisor) (bool, error) {
+			vm, err := h.Inspect(ctx, ref)
+			if err == nil && vm != nil {
+				resolved = vm
+				return true, nil
+			}
+			if err != nil && !errors.Is(err, hypervisor.ErrNotFound) {
+				return false, err
+			}
+			return false, nil
+		},
+		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrNotFound),
+		fmt.Errorf("vm %s: %w", ref, hypervisor.ErrAmbiguous),
+	)
+	return owner, resolved, err
+}
+
+// validateRefShape rejects URL/OCI ref mismatches early so backends don't surface misleading downstream errors.
+func validateRefShape(ref, imageType string) error {
+	switch imageType {
+	case types.ImageTypeCloudImg:
+		if !cliutil.IsURL(ref) {
+			return fmt.Errorf("cloudimg ref %q is not an http(s) URL (imported or bare OCI ref?)", ref)
+		}
+	case types.ImageTypeOCI:
+		if _, err := name.ParseReference(ref); err != nil {
+			return fmt.Errorf("oci ref %q is not a valid OCI reference: %w", ref, err)
+		}
+	}
+	return nil
+}
+
+// digestPullRef pins OCI pulls by digest; returns image as-is for others.
+func digestPullRef(image, digest, imageType string) string {
+	if digest == "" || imageType != types.ImageTypeOCI {
+		return image
+	}
+	// OCI: convert "registry/repo:tag" → "registry/repo@sha256:..."
+	ref, err := name.ParseReference(image)
+	if err != nil {
+		return image
+	}
+	return ref.Context().String() + "@" + digest
 }
