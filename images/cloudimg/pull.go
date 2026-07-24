@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	// urlDownloadTimeout is the overall timeout for cloud image URL downloads.
 	urlDownloadTimeout = 30 * time.Minute
 
 	// maxDownloadBytes is the maximum allowed download size (20 GiB).
@@ -60,7 +59,6 @@ func (pc *progressCounter) add(n int64) {
 	}
 }
 
-// countingWriter forwards writes to w while reporting byte counts to a shared progressCounter.
 type countingWriter struct {
 	w  io.Writer
 	pc *progressCounter

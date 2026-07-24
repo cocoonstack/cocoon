@@ -60,7 +60,6 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 	}
 }
 
-// injectSnapTombstone plants a dead owner's tombstone for id in the given phase.
 func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone.Phase) {
 	t.Helper()
 	ctx := t.Context()

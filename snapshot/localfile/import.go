@@ -46,8 +46,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	if err = utils.ExtractTar(dataDir, tarReader); err != nil {
 		return "", fmt.Errorf("extract archive: %w", err)
 	}
-	// Drain to true EOF before Close: tar stops at its end-of-archive blocks,
-	// and gzip only verifies the CRC32/size trailer once the stream is read out.
+	// Drain to true EOF before Close: tar stops at its end-of-archive blocks, and gzip only verifies the CRC32/size trailer once the stream is read out.
 	if gzCloser != nil {
 		if _, err = io.Copy(io.Discard, tarReader); err != nil {
 			return "", fmt.Errorf("gzip integrity check: %w", err)

@@ -97,8 +97,6 @@ func (idx *snapshotIndex) Init() {
 	}
 }
 
-// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
-// difference back. Production code never uses it.
 func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshotIndex) error) error {
 	return lf.update(ctx, func(t *snapTx) error {
 		before, idx, err := materializeSnapIndex(t)
@@ -112,7 +110,6 @@ func (lf *LocalFile) dbUpdate(ctx context.Context, fn func(*snapshotIndex) error
 	})
 }
 
-// dbRead is the test-only whole-index read shim.
 func (lf *LocalFile) dbRead(ctx context.Context, fn func(*snapshotIndex) error) error {
 	return lf.view(ctx, func(t *snapTx) error {
 		_, idx, err := materializeSnapIndex(t)

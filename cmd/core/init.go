@@ -27,7 +27,6 @@ var hypervisorFactories = []hypervisorFactory{
 	{config.HypervisorFirecracker, wireHypervisor(firecracker.New)},
 }
 
-// hypervisorCtor builds a fully wired backend for one config.
 type hypervisorCtor func(context.Context, *config.Config) (hypervisor.Hypervisor, error)
 
 type hypervisorFactory struct {
@@ -157,7 +156,6 @@ func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[stri
 	return func() { releaseOCI(); releaseCloudimg() }, nil
 }
 
-// wireHypervisor builds a backend factory over the shared store and recorder.
 func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.Recorder, meta.Store) (H, error)) hypervisorCtor {
 	return func(ctx context.Context, c *config.Config) (hypervisor.Hypervisor, error) {
 		store, err := MetaStore(c)

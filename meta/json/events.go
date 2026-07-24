@@ -13,7 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// Events subscribes to committed-change signals: fsnotify confirmed against each file's (inode, size, mtime) identity, with a safety poll as a floor for missed events.
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -32,8 +31,7 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	return ch, func() { stop(); release() }, nil
 }
 
-// notifier holds the engine-specific change detector; tokens are touched
-// only by the init call and the Run goroutine.
+// tokens are touched only by newNotifier and the Run goroutine, never concurrently.
 type notifier struct {
 	b       *meta.Broadcaster
 	watcher *fsnotify.Watcher // kept for the severed-watch test seam

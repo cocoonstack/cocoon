@@ -14,8 +14,6 @@ type Handler struct {
 	cmdcore.BaseHandler
 }
 
-// resolveRunningVM finds ref's hypervisor, inspects it, and requires a running VM.
-// op prefixes the wrapped errors (e.g. "exec", "reseed").
 func (h Handler) resolveRunningVM(ctx context.Context, conf *config.Config, op, ref string) (*types.VM, error) {
 	hyper, err := cmdcore.FindHypervisor(ctx, conf, ref)
 	if err != nil {

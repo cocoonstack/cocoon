@@ -128,7 +128,6 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 	_ = cmd.Wait()
 
 	if IsProcessAlive(pid) {
-		// PID recycled extremely fast — skip rather than fail.
 		t.Skip("PID recycled too quickly, skipping")
 	}
 }
@@ -144,7 +143,6 @@ func TestVerifyProcessCmdline_InvalidPID(t *testing.T) {
 
 func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
 	pid := os.Getpid()
-	// On Linux, this checks /proc/pid/cmdline; on other platforms falls back to IsProcessAlive.
 	result := VerifyProcessCmdline(pid, "definitely-not-the-binary", "definitely-not-the-arg")
 	_ = result // Just verify no panic.
 }
@@ -179,7 +177,6 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 		t.Fatalf("TerminateProcess: %v", err)
 	}
 
-	// Wait for reaper goroutine to confirm exit.
 	<-waitDone
 }
 

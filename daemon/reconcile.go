@@ -165,13 +165,14 @@ func (d *Daemon) resumeDelete(ctx context.Context, b Supervisor, vmID string) er
 		return err
 	}
 	defer unlock()
+	logger := log.WithFunc("daemon.resumeDelete")
 	done, err := b.RecoverTombstone(ctx, vmID)
 	if err != nil {
-		log.WithFunc("daemon.resumeDelete").Errorf(ctx, err, "resume interrupted delete of %s", vmID)
+		logger.Errorf(ctx, err, "resume interrupted delete of %s", vmID)
 		return err
 	}
 	if done {
-		log.WithFunc("daemon.resumeDelete").Warnf(ctx, "finished an interrupted delete of VM %s", vmID)
+		logger.Warnf(ctx, "finished an interrupted delete of VM %s", vmID)
 	}
 	return nil
 }

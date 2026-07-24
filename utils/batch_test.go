@@ -246,7 +246,6 @@ func TestMap_IndexPassedCorrectly(t *testing.T) {
 	}
 }
 
-// raisePeak records n into peak when it is a new maximum.
 func raisePeak(peak *atomic.Int32, n int32) {
 	for {
 		old := peak.Load()

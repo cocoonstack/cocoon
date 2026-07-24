@@ -225,7 +225,6 @@ func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, c
 	return snapID, nil
 }
 
-// typed is the backend constraint resolveOwner reports matches by.
 type typed interface{ Type() string }
 
 // resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).

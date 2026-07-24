@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 
@@ -43,10 +44,7 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 	}
 	// The configured backend is the sole target authority (§6): convert
 	// always moves the OTHER engine's data into the effective backend.
-	target := conf.MetaBackend
-	if target == "" {
-		target = config.MetaBackendSQLite
-	}
+	target := cmp.Or(conf.MetaBackend, config.MetaBackendSQLite)
 	dbPath := cmdcore.MetaDBPath(conf)
 	spec := convert.Spec{
 		MetaRoot: filepath.Dir(dbPath),

@@ -182,14 +182,15 @@ func (d *Daemon) gcTick() (<-chan time.Time, func()) {
 
 // runGC starts a collection off the supervision loop, unless one is still in flight.
 func (d *Daemon) runGC(ctx context.Context) {
+	logger := log.WithFunc("daemon.runGC")
 	if !d.gcRunning.CompareAndSwap(false, true) {
-		log.WithFunc("daemon.runGC").Warn(ctx, "skip gc: previous run still active")
+		logger.Warn(ctx, "skip gc: previous run still active")
 		return
 	}
 	go func() {
 		defer d.gcRunning.Store(false)
 		if err := d.conf.GC(ctx); err != nil {
-			log.WithFunc("daemon.runGC").Error(ctx, err, "gc run")
+			logger.Error(ctx, err, "gc run")
 		}
 	}()
 }

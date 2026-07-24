@@ -14,7 +14,6 @@ import (
 	"sync"
 )
 
-// PAX record keys for Cocoon's sparse tar format.
 const (
 	paxSparseMap  = "COCOON.sparse.map"
 	paxSparseSize = "COCOON.sparse.size"
@@ -191,7 +190,6 @@ func writeBlockSparse(f *os.File, chunk []byte) (hole bool, err error) {
 	return false, err
 }
 
-// isAllZero reports whether every byte in b is zero.
 func isAllZero(b []byte) bool {
 	for len(b) >= 8 {
 		if binary.NativeEndian.Uint64(b) != 0 {

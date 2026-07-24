@@ -62,9 +62,6 @@ func (m *Model) Delete(tbl, id string) {
 // Dirty reports whether any write touched the model since decode.
 func (m *Model) Dirty() bool { return m.dirty }
 
-// markClean resets Dirty after decode — loading populates via Put.
-func (m *Model) markClean() { m.dirty = false }
-
 // Scan yields (tbl, id) pairs in insertion order; fn errors abort and propagate.
 func (m *Model) Scan(tbl string, fn func(id string, raw json.RawMessage) error) error {
 	t := m.tables[tbl]
@@ -92,6 +89,9 @@ func (m *Model) Len(tbl string) int {
 func (m *Model) TableNames() []string {
 	return slices.Sorted(maps.Keys(m.tables))
 }
+
+// markClean resets Dirty after decode — loading populates via Put.
+func (m *Model) markClean() { m.dirty = false }
 
 type table struct {
 	ids  []string

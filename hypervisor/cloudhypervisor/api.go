@@ -3,7 +3,6 @@ package cloudhypervisor
 import "encoding/json"
 
 type chVMConfig struct {
-	// Optional — nil omitted from JSON.
 	Payload *chPayload     `json:"payload,omitempty"`
 	Balloon *chBalloon     `json:"balloon,omitempty"`
 	Serial  *chRuntimeFile `json:"serial,omitempty"`

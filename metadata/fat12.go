@@ -100,7 +100,6 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 		b.nextCluster += uint16(numClusters) //nolint:gosec
 	}
 
-	// Generate 8.3 short name — with ~N suffix when LFN is needed.
 	lfn := needsLFN(name)
 	var shortName [11]byte
 	if lfn {
@@ -170,7 +169,6 @@ func (b *fat12Builder) writeTo(w io.Writer) error {
 		}
 	}
 
-	// Zero-fill the remaining data area.
 	clear(sector)
 	for range totalSectors - firstDataSec - dataSectors {
 		if _, err := bw.Write(sector); err != nil {

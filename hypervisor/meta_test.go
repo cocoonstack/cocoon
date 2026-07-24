@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -219,7 +220,7 @@ func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
 	if idx.OrphanDirs, err = t.orphanDirs(); err != nil {
 		return nil, nil, err
 	}
-	snapshot := &VMIndex{VMs: maps.Clone(idx.VMs), Names: maps.Clone(idx.Names), OrphanDirs: append([]string(nil), idx.OrphanDirs...)}
+	snapshot := &VMIndex{VMs: maps.Clone(idx.VMs), Names: maps.Clone(idx.Names), OrphanDirs: slices.Clone(idx.OrphanDirs)}
 	return snapshot, idx, nil
 }
 

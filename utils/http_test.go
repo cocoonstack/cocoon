@@ -33,7 +33,6 @@ func TestNewSocketHTTPClient_DialsSocket(t *testing.T) {
 	}
 	defer ln.Close()
 
-	// serve one request
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -170,7 +169,6 @@ func TestDoAPI_ConnectionError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected connection error")
 	}
-	// Should NOT be APIError — it's a transport-level error.
 	var ae *APIError
 	if errors.As(err, &ae) {
 		t.Errorf("expected non-APIError, got APIError{%d}", ae.Code)
@@ -186,7 +184,7 @@ func TestDoAPI_InvalidURL(t *testing.T) {
 
 func TestDoAPI_ContextCanceled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(5 * time.Second) // slow server
+		time.Sleep(5 * time.Second)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

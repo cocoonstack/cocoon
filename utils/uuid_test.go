@@ -8,7 +8,6 @@ import (
 func TestUUIDv5_Format(t *testing.T) {
 	id := UUIDv5("test-name")
 
-	// UUID format: 8-4-4-4-12
 	parts := strings.Split(id, "-")
 	if len(parts) != 5 {
 		t.Fatalf("expected 5 parts, got %d: %q", len(parts), id)

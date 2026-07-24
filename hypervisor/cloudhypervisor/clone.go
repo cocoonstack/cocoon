@@ -36,7 +36,7 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 
 func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
 	networkConfigs := net.NetworkConfigs
-	logger := log.WithFunc("cloudhypervisor.Clone")
+	logger := log.WithFunc("cloudhypervisor.cloneAfterExtract")
 
 	chConfigPath := filepath.Join(runDir, configJSONName)
 	chCfg, err := parseCHConfig(chConfigPath)

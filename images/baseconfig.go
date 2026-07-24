@@ -31,8 +31,7 @@ func (c *BaseConfig) BlobLockPath(hex string) string {
 func (c *BaseConfig) IndexFile() string { return filepath.Join(c.DBDir(), "images.json") }
 func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "images.lock") }
 
-// JSONNamespace is an image backend's json meta namespace; the codec is
-// shared by every image backend, so it lives here beside TableRecords.
+// JSONNamespace is an image backend's json meta namespace.
 func (c *BaseConfig) JSONNamespace() metajson.Namespace {
 	return metajson.Namespace{
 		Name:     c.Name,

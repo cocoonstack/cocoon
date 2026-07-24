@@ -20,7 +20,6 @@ func TestWatchFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write via atomic rename (same pattern as AtomicWriteFile).
 	if err := AtomicWriteFile(target, []byte(`{"v":1}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +56,6 @@ func TestWatchFileDebounce(t *testing.T) {
 		t.Fatal("timed out waiting for debounced signal")
 	}
 
-	// No second signal should arrive within the debounce window.
 	select {
 	case <-ch:
 		t.Fatal("unexpected second signal within debounce window")
@@ -80,7 +78,6 @@ func TestWatchFileCancel(t *testing.T) {
 
 	cancel()
 
-	// Channel should be closed after ctx cancel.
 	select {
 	case _, ok := <-ch:
 		if ok {

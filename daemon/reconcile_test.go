@@ -41,7 +41,6 @@ func TestReconcileSkipsOnLockError(t *testing.T) {
 	}
 }
 
-// An inconclusive liveness probe must never be read as an exit.
 func TestReconcileSkipsInconclusiveLiveness(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.observeErr = fmt.Errorf("/proc scan errored")
@@ -193,9 +192,7 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 	}
 }
 
-// A VM the pass could not converge is reported degraded, not unready: restarting
-// the daemon does not fix it, and 503 would put a working daemon in a restart
-// loop. A busy ops lock is not a failure at all — it is how supervision yields.
+// A VM the pass could not converge is degraded, not unready — a restart cannot fix it, and a busy ops lock is not a failure at all.
 func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -321,8 +318,6 @@ func (f *fakeSupervisor) PeekRecord(_ context.Context, vmID string) (*hypervisor
 	return f.records[vmID], nil
 }
 
-// ConvergeDead mirrors the real composition: the record transition when one is
-// due, then the pending quiesce.
 func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, _ time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -29,7 +29,6 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 	})
 }
 
-// restoreAfterExtractCOW adapts restoreAfterExtract to the RestoreSpec/DirectRestoreSpec AfterExtract signature using the recorded COW path.
 func (fc *Firecracker) restoreAfterExtractCOW(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 	cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
 	if cowPath == "" {
@@ -44,13 +43,12 @@ func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hyp
 	}, runtimeFiles)
 }
 
-// terminateVMM force-terminates rec's VMM; shared by restore and hibernate.
 func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecord, pid int) error {
 	return fc.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {
-	logger := log.WithFunc("firecracker.Restore")
+	logger := log.WithFunc("firecracker.restoreAfterExtract")
 
 	snapshotCOW := filepath.Join(rec.RunDir, hypervisor.COWRawFileName)
 	if snapshotCOW != cowPath {

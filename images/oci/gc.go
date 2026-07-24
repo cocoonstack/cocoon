@@ -32,7 +32,6 @@ func (o *OCI) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, 
 	o.pinnedElsewhere = fn
 }
 
-// PinBlobs implements images.Images: digest locks held while the caller commits a pin.
 func (o *OCI) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
 	return images.PinBlobs(&o.conf.BaseConfig, blobIDs)
 }

@@ -166,7 +166,6 @@ func (v *VM) ResolvedNetBridgeDev() string {
 	return ""
 }
 
-// firstNIC returns NIC[0] (nil when absent or the entry is null).
 func (v *VM) firstNIC() *NetworkConfig {
 	if v == nil || len(v.NetworkConfigs) == 0 {
 		return nil

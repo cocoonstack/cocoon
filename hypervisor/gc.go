@@ -125,19 +125,6 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	}
 }
 
-// VMIDFromRunPath reports the VM owning a `<runRoot>/<vmID>/<file>` path, excluding the reserved infrastructure dirs.
-func VMIDFromRunPath(runRoot, path string) (string, bool) {
-	dir := filepath.Clean(filepath.Dir(path))
-	if filepath.Dir(dir) != filepath.Clean(runRoot) {
-		return "", false
-	}
-	id := filepath.Base(dir)
-	if _, reserved := gcReservedDirNames[id]; reserved {
-		return "", false
-	}
-	return id, true
-}
-
 func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
@@ -322,4 +309,17 @@ func (b *Backend) ensureOrphanVMMDead(ctx context.Context, runDir string) error 
 		}
 	}
 	return nil
+}
+
+// VMIDFromRunPath reports the VM owning a `<runRoot>/<vmID>/<file>` path, excluding the reserved infrastructure dirs.
+func VMIDFromRunPath(runRoot, path string) (string, bool) {
+	dir := filepath.Clean(filepath.Dir(path))
+	if filepath.Dir(dir) != filepath.Clean(runRoot) {
+		return "", false
+	}
+	id := filepath.Base(dir)
+	if _, reserved := gcReservedDirNames[id]; reserved {
+		return "", false
+	}
+	return id, true
 }

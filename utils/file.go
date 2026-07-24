@@ -153,6 +153,7 @@ func RemoveMatching(ctx context.Context, dir string, match func(os.DirEntry) boo
 		return []error{fmt.Errorf("read %s: %w", dir, err)}
 	}
 
+	logger := log.WithFunc("utils.RemoveMatching")
 	var errs []error
 	for _, e := range entries {
 		if !match(e) {
@@ -162,7 +163,7 @@ func RemoveMatching(ctx context.Context, dir string, match func(os.DirEntry) boo
 		if err := os.RemoveAll(path); err != nil {
 			errs = append(errs, fmt.Errorf("remove %s: %w", path, err))
 		} else {
-			log.WithFunc("utils.RemoveMatching").Infof(ctx, "collected %s", path)
+			logger.Infof(ctx, "collected %s", path)
 		}
 	}
 	return errs
@@ -185,7 +186,7 @@ func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) 
 	return result, nil
 }
 
-// copyWithCleanup opens src and creates dst, runs fn to copy the bytes, and removes dst if fn or the final close fails. fn must not close dst.
+// fn must not close dst.
 func copyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) (err error) {
 	srcFile, err := os.Open(src) //nolint:gosec // caller-controlled internal path
 	if err != nil {

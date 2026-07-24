@@ -40,7 +40,6 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 		if !IsProcessAlive(pid) {
 			return true, nil
 		}
-		// SIGTERM via pidfd failed but process is alive; escalate via pidfd.
 		_ = unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0)
 		return true, waitDead(ctx, pid, killWaitTimeout)
 	}

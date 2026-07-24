@@ -90,7 +90,6 @@ func TestEnsureImage_SkipsBadShape(t *testing.T) {
 	}
 }
 
-// Acceptance counterpart: well-formed refs must reach Pull.
 func TestEnsureImage_AcceptsGoodShape(t *testing.T) {
 	tests := []struct {
 		name      string

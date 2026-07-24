@@ -215,7 +215,6 @@ func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 	}
 }
 
-// batchRoutedCmd runs fn per routed hypervisor, logging each success (unless JSON), then wraps the last error, emits JSON, or logs the empty case.
 func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
 	logger := log.WithFunc("cmd.vm." + name)
 	wantJSON := cliutil.WantJSON(cmd)

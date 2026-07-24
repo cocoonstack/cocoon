@@ -267,7 +267,7 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
 	if spec.Existing != nil {
 		if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifName); delErr != nil {
-			log.WithFunc("cni.Add").Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
+			log.WithFunc("cni.nicRuntime").Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifName, delErr)
 		}
 		if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
 			rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
@@ -304,7 +304,7 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 		logIP = netInfo.IP
 		logGW = netInfo.Gateway
 	}
-	log.WithFunc("cni.Add").Debugf(ctx, "NIC %d: %s ip=%s gw=%s tap=%s mac=%s",
+	log.WithFunc("cni.provisionNIC").Debugf(ctx, "NIC %d: %s ip=%s gw=%s tap=%s mac=%s",
 		spec.Index, ifName, logIP, logGW, tapName, mac)
 
 	return &types.NetworkConfig{

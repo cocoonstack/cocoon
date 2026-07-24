@@ -34,6 +34,7 @@ func MeteringRecorder(ctx context.Context, conf *config.Config) metering.Recorde
 }
 
 func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
+	logger := log.WithFunc("core.buildRecorder")
 	switch conf.Metering.Backend {
 	case "", config.MeteringFile:
 		return buildFileRecorder(ctx, conf)
@@ -44,33 +45,34 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	case config.MeteringMeta:
 		// The json engine writes the metering namespace under this dir.
 		if err := os.MkdirAll(filepath.Join(conf.RootDir, meteringSubdir), 0o750); err != nil {
-			log.WithFunc("core.buildRecorder").Warnf(ctx, "mkdir metering dir: %v; metering disabled", err)
+			logger.Warnf(ctx, "mkdir metering dir: %v; metering disabled", err)
 			return metering.NopRecorder{}
 		}
 		s, err := MetaStore(conf)
 		if err != nil {
-			log.WithFunc("core.buildRecorder").Warnf(ctx, "meta store: %v; metering disabled", err)
+			logger.Warnf(ctx, "meta store: %v; metering disabled", err)
 			return metering.NopRecorder{}
 		}
 		return metalog.New(s)
 	default:
-		log.WithFunc("core.buildRecorder").Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
+		logger.Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
 		return metering.NopRecorder{}
 	}
 }
 
 func buildFileRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
+	logger := log.WithFunc("core.buildFileRecorder")
 	path := conf.Metering.File.Path
 	if path == "" {
 		path = filepath.Join(conf.RootDir, meteringSubdir, meteringFile)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		log.WithFunc("core.buildFileRecorder").Warnf(ctx, "mkdir %s: %v; metering disabled", filepath.Dir(path), err)
+		logger.Warnf(ctx, "mkdir %s: %v; metering disabled", filepath.Dir(path), err)
 		return metering.NopRecorder{}
 	}
 	r, err := meteringfile.New(path)
 	if err != nil {
-		log.WithFunc("core.buildFileRecorder").Warnf(ctx, "open ledger: %v; metering disabled", err)
+		logger.Warnf(ctx, "open ledger: %v; metering disabled", err)
 		return metering.NopRecorder{}
 	}
 	return r

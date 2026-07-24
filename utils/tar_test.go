@@ -316,7 +316,6 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 }
 
 func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
-	// 1MB logical, one 4KB data segment at offset 8192.
 	const realSize = 1024 * 1024
 	dataContent := bytes.Repeat([]byte{0xAA}, 4096)
 	segments := []sparseSegment{{Offset: 8192, Length: 4096}}
@@ -335,17 +334,14 @@ func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
 		t.Fatalf("logical size: got %d, want %d", len(got), realSize)
 	}
 
-	// Before the segment: zeros.
 	for i := range 8192 {
 		if got[i] != 0 {
 			t.Fatalf("byte %d: expected 0, got %d", i, got[i])
 		}
 	}
-	// The segment itself.
 	if !bytes.Equal(got[8192:8192+4096], dataContent) {
 		t.Error("data segment content mismatch")
 	}
-	// After the segment: zeros.
 	for i := 8192 + 4096; i < realSize; i++ {
 		if got[i] != 0 {
 			t.Fatalf("byte %d: expected 0, got %d", i, got[i])
@@ -354,7 +350,6 @@ func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
 }
 
 func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
-	// 64KB logical, three data segments.
 	const realSize = 64 * 1024
 	seg1 := bytes.Repeat([]byte{0x11}, 4096)
 	seg2 := bytes.Repeat([]byte{0x22}, 4096)
@@ -380,7 +375,6 @@ func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
 		t.Fatalf("size: got %d, want %d", len(got), realSize)
 	}
 
-	// Verify each segment and holes between them.
 	if !bytes.Equal(got[0:4096], seg1) {
 		t.Error("segment 1 mismatch")
 	}
@@ -402,7 +396,6 @@ func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
 }
 
 func TestExtractTar_Sparse_EntireFileIsHole(t *testing.T) {
-	// 32KB logical, no data segments at all.
 	const realSize = 32 * 1024
 	buf := makeTarSparse(t, "allhole.bin", realSize, nil, nil)
 	dir := t.TempDir()
@@ -464,7 +457,6 @@ func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
 }
 
 func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
-	// Archive with one regular file and one sparse file.
 	const realSize = 8192
 	dataContent := []byte("hello sparse")
 	segments := []sparseSegment{{Offset: 4096, Length: int64(len(dataContent))}}
@@ -559,7 +551,6 @@ func TestExtractFile_NoZeroBlocks(t *testing.T) {
 }
 
 func TestExtractFile_MixedZeroAndData(t *testing.T) {
-	// Pattern: [4KB zeros] [4KB data] [4KB zeros] [4KB data]
 	zeroBlock := make([]byte, sparseBlockSize)
 	dataBlock := bytes.Repeat([]byte{0xCC}, sparseBlockSize)
 	data := slices.Concat(zeroBlock, dataBlock, zeroBlock, dataBlock)
@@ -603,7 +594,6 @@ func TestExtractFile_EndsWithHole(t *testing.T) {
 }
 
 func TestExtractFile_PartialBlock(t *testing.T) {
-	// Data that doesn't align to sparseBlockSize.
 	data := bytes.Repeat([]byte{0xEE}, sparseBlockSize+100)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "partial.bin")
@@ -623,7 +613,7 @@ func TestExtractFile_PartialBlock(t *testing.T) {
 
 func TestExtractFile_PartialZeroBlock(t *testing.T) {
 	// Partial trailing block of zeros — still should produce correct size.
-	data := make([]byte, sparseBlockSize+500) // all zeros, not block-aligned
+	data := make([]byte, sparseBlockSize+500)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pzero.bin")
 
@@ -764,7 +754,6 @@ func TestWriteBlockSparse_ZeroBlock(t *testing.T) {
 		t.Error("expected hole=true for zero block")
 	}
 
-	// File position should have advanced by 4096.
 	pos, _ := f.Seek(0, io.SeekCurrent)
 	if pos != 4096 {
 		t.Errorf("position: got %d, want 4096", pos)
@@ -774,7 +763,6 @@ func TestWriteBlockSparse_ZeroBlock(t *testing.T) {
 func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	srcDir := t.TempDir()
 
-	// 128KB dense file + small file.
 	large := bytes.Repeat([]byte{0xFE}, 128*1024)
 	small := []byte("tiny config")
 	if err := os.WriteFile(filepath.Join(srcDir, "large.bin"), large, 0o644); err != nil {
@@ -813,7 +801,6 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	}
 }
 
-// openAndTarFile is a test helper that opens a file and writes it via tarFileFrom.
 func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
@@ -827,7 +814,6 @@ func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
 	return tarFileFrom(tw, f, fi, nameInTar)
 }
 
-// makeTar builds a plain tar archive in memory from name→content pairs.
 func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer

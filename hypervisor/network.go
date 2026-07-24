@@ -26,7 +26,7 @@ func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
 	return b.Net.Recover(ctx, &rec.VM)
 }
 
-// quiesceAfterStop runs the quiesce a just-committed stop scheduled without re-reading the record: under the caller's ops lock the committed generation is rec's, plus one exactly when the stop just landed its transition. A quiesce failure keeps the pending flag for a later pass.
+// Under the caller's ops lock the committed generation is rec's, plus one exactly when the stop just landed its transition.
 func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord, transitioned bool) {
 	gen, pending := rec.TransitionGeneration, rec.QuiescePending
 	if transitioned {

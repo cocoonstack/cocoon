@@ -164,9 +164,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 
-	// Staged "a" merges, then staged file "b" cannot rename over the run
-	// dir's directory "b": the merge fails halfway through, which must
-	// quarantine even a stopped origin.
+	// Staged file "b" cannot rename over the run dir's directory "b", so the merge fails halfway through.
 	if err := os.MkdirAll(filepath.Join(runDir, "b"), 0o750); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -275,8 +273,7 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 	}
 }
 
-// A corrupt persisted record (null storage/NIC entry) must fail restore preflight
-// with a clean invariants error, not panic in ValidateMetaPaths/ValidateRoleSequence.
+// A corrupt persisted record (null storage/NIC entry) must fail preflight with a clean invariants error, not panic.
 func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 	tests := []struct {
 		name    string

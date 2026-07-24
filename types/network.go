@@ -1,6 +1,9 @@
 package types
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Network backend identifiers stored in NetworkConfig.Backend.
 const (
@@ -37,10 +40,8 @@ type Network struct {
 
 // ValidateNetworkConfigs rejects nil NIC entries (null in a persisted record) at load boundaries so downstream consumers may dereference freely.
 func ValidateNetworkConfigs(configs []*NetworkConfig) error {
-	for i, nc := range configs {
-		if nc == nil {
-			return fmt.Errorf("network config %d: nil", i)
-		}
+	if i := slices.Index(configs, nil); i >= 0 {
+		return fmt.Errorf("network config %d: nil", i)
 	}
 	return nil
 }

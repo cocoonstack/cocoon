@@ -172,7 +172,6 @@ func TestAtomicWriteJSON_Unmarshalable(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.json")
 
-	// Channels can't be marshaled.
 	err := AtomicWriteJSON(path, make(chan int))
 	if err == nil {
 		t.Fatal("expected error for unmarshalable value")

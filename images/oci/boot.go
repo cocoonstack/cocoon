@@ -58,6 +58,8 @@ func healCachedBootFiles(ctx context.Context, conf *Config, layers []v1.Layer, r
 }
 
 func selfHealBootFiles(ctx context.Context, j layerJob, digestHex string) {
+	logger := log.WithFunc("oci.selfHealBootFiles")
+
 	if j.result.kernelPath != "" && j.result.initrdPath != "" {
 		return
 	}
@@ -74,7 +76,7 @@ func selfHealBootFiles(ctx context.Context, j layerJob, digestHex string) {
 		return
 	}
 
-	log.WithFunc("oci.selfHealBootFiles").Warnf(ctx, "Layer %d: sha256:%s attempting boot file recovery", j.idx, digestHex[:12])
+	logger.Warnf(ctx, "Layer %d: sha256:%s attempting boot file recovery", j.idx, digestHex[:12])
 	kp, ip := recoverBootFiles(ctx, j.layer, j.workDir, j.idx, digestHex)
 	j.result.kernelPath = cmp.Or(j.result.kernelPath, kp)
 	j.result.initrdPath = cmp.Or(j.result.initrdPath, ip)

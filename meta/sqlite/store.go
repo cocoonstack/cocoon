@@ -50,6 +50,12 @@ type Namespace struct {
 	Tables []string
 }
 
+// tableStmts holds one table's prepared statements; scan/put/del are nil on
+// read-only handles.
+type tableStmts struct {
+	get, scan, put, del *sql.Stmt
+}
+
 var _ meta.Store = (*Store)(nil)
 
 // Store is the sqlite engine: writerDurable/writerRelaxed single-conn
@@ -68,12 +74,6 @@ type Store struct {
 
 	mu       sync.Mutex // guards notifier lazy-init against concurrent Events/Close
 	notifier *notifier
-}
-
-// tableStmts holds one table's prepared statements; scan/put/del are nil on
-// read-only handles.
-type tableStmts struct {
-	get, scan, put, del *sql.Stmt
 }
 
 // Open verifies identity, version and per-namespace meta_state, then builds
@@ -364,7 +364,7 @@ func prepareStmts(db *sql.DB, nss map[string]Namespace, writer bool) (map[string
 func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 	// Detached engine goroutine: it outlives every caller ctx by design.
 	ctx := context.Background()
-	logger := log.WithFunc("meta.sqlite.checkpoint")
+	logger := log.WithFunc("meta.sqlite.checkpointLoop")
 	t := time.NewTicker(checkpointInterval)
 	defer t.Stop()
 	for {

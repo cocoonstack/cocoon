@@ -55,7 +55,6 @@ func SparseCopy(dst, src string, sync SyncMode) error {
 	})
 }
 
-// scanDataSegments uses SEEK_DATA/SEEK_HOLE to find all data regions in f.
 func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 	var segments []sparseSegment
 	offset := int64(0)

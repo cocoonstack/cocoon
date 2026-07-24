@@ -23,7 +23,6 @@ func TestSplitRanges(t *testing.T) {
 			if last := ranges[len(ranges)-1][1]; last != size-1 {
 				t.Errorf("size=%d n=%d: last end %d, want %d", size, n, last, size-1)
 			}
-			// contiguous + non-overlapping: each start is the previous end + 1
 			for i := 1; i < len(ranges); i++ {
 				if ranges[i][0] != ranges[i-1][1]+1 {
 					t.Errorf("size=%d n=%d: gap/overlap at %d: %v after %v", size, n, i, ranges[i], ranges[i-1])

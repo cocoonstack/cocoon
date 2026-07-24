@@ -55,7 +55,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend)
 	}
 	networkConfigs := net.NetworkConfigs
-	logger := log.WithFunc("firecracker.Clone")
+	logger := log.WithFunc("firecracker.cloneAfterExtract")
 
 	meta, err := fc.conf.LoadAndValidateMeta(runDir)
 	if err != nil {

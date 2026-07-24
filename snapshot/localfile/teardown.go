@@ -140,7 +140,7 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	if err := lf.finishSnapTeardown(ctx, id, leaseID, cl); err != nil {
 		return err
 	}
-	log.WithFunc("localfile.recoverSnapTombstone").Warnf(ctx, "rolled forward interrupted delete of snapshot %s", id)
+	log.WithFunc("localfile.recoverSnapTombstoneLocked").Warnf(ctx, "rolled forward interrupted delete of snapshot %s", id)
 	return nil
 }
 

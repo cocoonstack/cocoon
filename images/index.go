@@ -27,7 +27,6 @@ type Index[E any] struct {
 	Images map[string]*E `json:"images"`
 }
 
-// Init implements storage.Initer. Called automatically by storejson.Store after loading.
 func (idx *Index[E]) Init() {
 	if idx.Images == nil {
 		idx.Images = make(map[string]*E)
@@ -131,7 +130,6 @@ func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[strin
 	return deleted, nil
 }
 
-// entryToImage converts a single index entry to *types.Image.
 func entryToImage[E Entry](entry *E, typ string, sizer func(*E) int64) *types.Image {
 	if entry == nil {
 		return nil
@@ -146,7 +144,6 @@ func entryToImage[E Entry](entry *E, typ string, sizer func(*E) int64) *types.Im
 	}
 }
 
-// listImages iterates the index and builds a list of types.Image.
 func listImages[E Entry](images map[string]*E, typ string, sizer func(*E) int64) []*types.Image {
 	return utils.MapValues(images, func(ep *E) *types.Image {
 		return entryToImage(ep, typ, sizer)

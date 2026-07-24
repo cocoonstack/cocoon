@@ -19,7 +19,6 @@ const (
 	cocoonNetIDPrefix = "cocoon-net-"
 )
 
-// kvBuilder accumulates key=value CLI fragments.
 type kvBuilder []string
 
 func (b kvBuilder) String() string { return strings.Join(b, ",") }
@@ -176,7 +175,7 @@ func cocoonNetID(mac string) string {
 	return cocoonNetIDPrefix + strings.ReplaceAll(mac, ":", "")
 }
 
-// serialConsoleFor returns the serial/console devices for the boot mode: direct-boot gets a CH-allocated PTY, UEFI the console socket. Launch args and restore-time config.json patching must agree on this rule.
+// Launch args and restore-time config.json patching must agree on this rule.
 func serialConsoleFor(directBoot bool, consoleSock string) (serial, console *chRuntimeFile) {
 	if directBoot {
 		return &chRuntimeFile{Mode: "Off"}, &chRuntimeFile{Mode: "Pty"}
@@ -184,7 +183,6 @@ func serialConsoleFor(directBoot bool, consoleSock string) (serial, console *chR
 	return &chRuntimeFile{Mode: "Socket", Socket: consoleSock}, &chRuntimeFile{Mode: "Off"}
 }
 
-// effectiveDirectIO applies the per-disk override, else the VM-level default (writable disks get O_DIRECT unless disabled).
 func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
 	if sc.DirectIO != nil {
 		return *sc.DirectIO
@@ -216,7 +214,6 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 		d.Sparse = true
 	}
 
-	// Pin writable blk queues to vCPUs.
 	if cpuCount > 1 && !storageConfig.RO {
 		d.QueueAffinity = make([]chQueueAffinity, cpuCount)
 		for i := range d.QueueAffinity {

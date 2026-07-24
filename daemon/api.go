@@ -46,13 +46,14 @@ func (d *Daemon) serveAPI(ctx context.Context) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	logger := log.WithFunc("daemon.serveAPI")
 	srv := &http.Server{Handler: d.routes(), ReadHeaderTimeout: apiReadHeaderTimeout}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.WithFunc("daemon.serveAPI").Error(ctx, err, "api server")
+			logger.Error(ctx, err, "api server")
 		}
 	}()
-	log.WithFunc("daemon.serveAPI").Infof(ctx, "read-only api on %s", d.conf.APIAddr)
+	logger.Infof(ctx, "read-only api on %s", d.conf.APIAddr)
 	return func() {
 		shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), apiShutdownTimeout)
 		defer cancel()

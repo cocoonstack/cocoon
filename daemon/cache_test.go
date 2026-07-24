@@ -74,7 +74,6 @@ func TestCacheSnapshotCarriesHealth(t *testing.T) {
 	}
 }
 
-// A released subscription must not keep receiving, and must not block later passes.
 func TestCacheReleaseStopsDelivery(t *testing.T) {
 	c := newCache()
 	events, release := c.subscribe()

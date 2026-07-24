@@ -72,7 +72,6 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// printFCDebug prints Firecracker launch sequence as shell commands.
 func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig, fcBin string) {
 	cowPath := fmt.Sprintf("cow-%s.raw", vmCfg.Name)
 	memMiB := int(vmCfg.Memory >> 20)     //nolint:mnd

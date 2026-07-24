@@ -8,8 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// vmTx is the hypervisor's domain view of one meta transaction: the shared
-// named-index pattern plus the ordered orphan-dir intent list.
 type vmTx struct {
 	*meta.NamedTx[VMRecord]
 
@@ -38,7 +36,6 @@ func (t *vmTx) resolveMany(refs []string) ([]string, error) {
 	return t.ResolveMany(refs, ErrNotFound)
 }
 
-// orphanDirs returns the ordered cleanup-intent list.
 func (t *vmTx) orphanDirs() ([]string, error) {
 	var dirs []string
 	if err := t.r.ScanRaw(t.ctx, t.ns, TableOrphanDirs, func(dir string, _ json.RawMessage) error {

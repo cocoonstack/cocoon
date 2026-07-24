@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// Cross-platform SparseCopy tests; Linux-only sparsity assertions live in sparse_linux_test.go.
-
 func TestSparseCopy_BasicContent(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")

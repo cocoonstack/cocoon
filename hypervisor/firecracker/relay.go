@@ -143,7 +143,6 @@ func RunRelay(ctx context.Context) {
 		}()
 	}
 
-	// Monitor FC process — close listener when FC exits.
 	go func() {
 		for {
 			if !utils.IsProcessAlive(fcPID) {
@@ -161,7 +160,6 @@ func RunRelay(ctx context.Context) {
 	bc := &broadcaster{master: master}
 	go bc.readLoop()
 
-	// Accept loop — one active console session at a time.
 	for {
 		conn, acceptErr := listener.Accept()
 		if acceptErr != nil {

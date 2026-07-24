@@ -83,7 +83,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	return nil
 }
 
-// rewindAndTarFull seeks f to the start and writes it as a non-sparse tar entry.
 func rewindAndTarFull(tw *tar.Writer, f *os.File, fi os.FileInfo, path, nameInTar string) error {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("seek %s: %w", path, err)

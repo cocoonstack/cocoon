@@ -109,7 +109,6 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 		t.Fatalf("second deleteOne (idempotent): %v", err)
 	}
 
-	// Exactly 2 entries: Create's start + the first deleteOne's stop.
 	entries := rec.Entries()
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (start + 1× stop); kinds = %v", len(entries), kinds(entries))
@@ -839,8 +838,6 @@ func TestRestore_CloseWaitsForGoroutine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Close without reading — the background goroutine should still complete
-	// without hanging, and Close should not panic.
 	if err := rc.Close(); err != nil {
 		// A broken pipe or similar error is acceptable here since we didn't
 		// consume the stream — but it must not hang or panic.
@@ -964,7 +961,6 @@ func TestExportImport_ViaBuffer(t *testing.T) {
 
 	makeExportableSnapshot(t, lf, "buf-src", map[string][]byte{"data.bin": []byte("hello")})
 
-	// Export to a buffer (simulates writing to a file).
 	exportStream, err := lf.Export(ctx, "buf-src")
 	if err != nil {
 		t.Fatalf("Export: %v", err)
@@ -975,7 +971,6 @@ func TestExportImport_ViaBuffer(t *testing.T) {
 	}
 	exportStream.Close()
 
-	// Import from buffer (simulates reading from a file or pipe).
 	importedID, err := lf.Import(ctx, &buf, "buf-imported", "new desc")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
@@ -1387,8 +1382,6 @@ func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
 	}
 }
 
-// TestImportPinsEnvelopeBlobs pins the digest-lock hook: Import must hold the
-// injected pinner over exactly the envelope's blob IDs while committing.
 func TestImportPinsEnvelopeBlobs(t *testing.T) {
 	src := newTestLF(t)
 	ctx := t.Context()
@@ -1428,13 +1421,11 @@ func testID(t *testing.T) string {
 	return utils.GenerateID()
 }
 
-// newTestLF creates a LocalFile backed by a temp directory.
 func newTestLF(t *testing.T) *LocalFile {
 	t.Helper()
 	return newTestLFWithRecorder(t, metering.NopRecorder{})
 }
 
-// newTestLFWithRecorder lets tests inject a CaptureRecorder for emit assertions.
 func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
 	t.Helper()
 	dir := t.TempDir()
@@ -1446,7 +1437,6 @@ func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
 	return lf
 }
 
-// writeCaptureDir stages a capture directory (like a hypervisor's snapshot tmp dir) for CreateFromDir.
 func writeCaptureDir(t *testing.T, dir string, files map[string][]byte) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -1460,7 +1450,6 @@ func writeCaptureDir(t *testing.T, dir string, files map[string][]byte) string {
 	return dir
 }
 
-// readDirFiles reads a directory's regular files into a name→content map.
 func readDirFiles(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -1481,7 +1470,6 @@ func readDirFiles(t *testing.T, dir string) map[string]string {
 	return out
 }
 
-// makeTar builds a tar archive in memory from a map of name→content.
 func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -1511,7 +1499,6 @@ func kinds(entries []metering.Entry) []metering.Kind {
 	return out
 }
 
-// makeExportableSnapshot creates a snapshot with data files and returns its name.
 func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[string][]byte) string {
 	t.Helper()
 	ctx := t.Context()
@@ -1542,7 +1529,6 @@ func testSnapNamespace(conf *config.Config) metajson.Namespace {
 	return metajson.Namespace{Name: NamespaceName, FilePath: cfg.IndexFile(), LockPath: cfg.IndexLock(), Codec: testSnapTables}
 }
 
-// newTestMetaStore opens the snapshot namespace over conf for tests.
 func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(testSnapNamespace(conf))

@@ -25,7 +25,6 @@ func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 
 	result := readRawJSON(t, path)
 
-	// Top-level: platform must survive.
 	platform, ok := result["platform"].(map[string]any)
 	if !ok {
 		t.Fatal("platform section lost")
@@ -34,13 +33,11 @@ func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 		t.Errorf("platform.uuid lost: got %v", platform["uuid"])
 	}
 
-	// cpus: topology and max_phys_bits must survive.
 	cpus := result["cpus"].(map[string]any)
 	if _, ok := cpus["max_phys_bits"]; !ok {
 		t.Error("cpus.max_phys_bits lost")
 	}
 
-	// memory: hotplug_method, shared, thp must survive.
 	mem := result["memory"].(map[string]any)
 	if _, ok := mem["hotplug_method"]; !ok {
 		t.Error("memory.hotplug_method lost")
@@ -49,7 +46,6 @@ func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 		t.Error("memory.thp lost")
 	}
 
-	// disks: pci_segment, disable_io_uring, id must survive.
 	disks := result["disks"].([]any)
 	for i, d := range disks {
 		disk := d.(map[string]any)
@@ -64,7 +60,6 @@ func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 		}
 	}
 
-	// net: pci_segment, id must survive.
 	nets := result["net"].([]any)
 	net0 := nets[0].(map[string]any)
 	if net0["id"] != "_net0" {
@@ -97,7 +92,6 @@ func TestPatchCHConfig_UpdatesDiskPaths(t *testing.T) {
 		t.Errorf("disk[1].path: got %v, want /new/cow.raw", disk1["path"])
 	}
 
-	// Original device IDs preserved.
 	if disk0["id"] != "_disk0" {
 		t.Errorf("disk[0].id changed: got %v", disk0["id"])
 	}
@@ -291,8 +285,7 @@ func TestRebuildBootConfig(t *testing.T) {
 }
 
 func TestRestorePatchStorageConfigs_DropsAppendedCidata(t *testing.T) {
-	// Snapshot lacked cidata; ensureCloneCidata appended one. Filter must
-	// drop just that cidata, preserving any data disks at the tail-1 spot.
+	// Snapshot lacked cidata; ensureCloneCidata appended one — drop only that, keep data disks.
 	configs := []*types.StorageConfig{
 		{Path: "/o", Role: types.StorageRoleLayer},
 		{Path: "/d1", Role: types.StorageRoleData},
@@ -363,10 +356,7 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 	go srv.Serve(ln) //nolint:errcheck
 	t.Cleanup(func() { _ = srv.Close() })
 
-	// Snapshot lacked cidata, so ensureCloneCidata appended one — and the clone's
-	// new --data-disk config landed after it. The hot-plug must pick the Role
-	// match, not the last element (which double-attached the data disk and never
-	// attached cidata).
+	// The clone's --data-disk lands after the appended cidata, so hot-plug must match by Role, not last element.
 	storageConfigs := []*types.StorageConfig{
 		{Path: "/store/cow.raw", Role: types.StorageRoleCOW, Serial: "cocoon-cow"},
 		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
@@ -403,7 +393,6 @@ func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
 	return path
 }
 
-// readRawJSON reads a JSON file back into a generic map.
 func readRawJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)

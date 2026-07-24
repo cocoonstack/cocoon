@@ -165,9 +165,7 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 }
 
-// TestGCModule_LRURevalidatesAccess pins design §5 step 2 for LRU picks: a
-// snapshot touched between ReadDB and Collect is no longer the record the
-// policy chose — it must survive the stale candidate list.
+// TestGCModule_LRURevalidatesAccess pins design §5 step 2: a snapshot touched between ReadDB and Collect must survive the stale candidate list.
 func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -495,7 +493,6 @@ func sortedKeys(m map[string]string) []string {
 	return slices.Sorted(maps.Keys(m))
 }
 
-// withRecorder swaps the emit recorder for assertion tests.
 func withRecorder(lf *LocalFile, rec metering.Recorder) *LocalFile {
 	lf.metering = rec
 	return lf

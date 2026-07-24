@@ -121,7 +121,6 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	return syncCommitted(target, mode)
 }
 
-// Close stops the event notifier; namespace files need no teardown.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -223,7 +222,8 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	if prevDecodeErr != nil {
 		return nil, code(errors.Join(fmt.Errorf("decode %s: %w", def.FilePath, decodeErr), prevDecodeErr), meta.ErrCorrupt)
 	}
-	log.WithFunc("meta.json.loadNamespace").Warnf(ctx, "%s undecodable (%v); recovered the previous generation", def.FilePath, decodeErr)
+	logger := log.WithFunc("meta.json.loadNamespace")
+	logger.Warnf(ctx, "%s undecodable (%v); recovered the previous generation", def.FilePath, decodeErr)
 	prev.markClean()
 	return &loaded{model: prev, recovered: true}, nil
 }

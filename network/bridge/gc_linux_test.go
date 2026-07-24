@@ -15,7 +15,6 @@ func TestParseTAPName(t *testing.T) {
 		{name: "btabc-3", wantPrefix: "abc", wantOK: true},
 		{name: "btabc-def-5", wantPrefix: "abc-def", wantOK: true},
 
-		// negative
 		{name: "wrong-prefix-0"},
 		{name: "bt"},
 		{name: "bt-0"}, // empty prefix

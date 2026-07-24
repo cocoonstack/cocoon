@@ -15,7 +15,6 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	// Create a 1MB all-sparse file (just truncate, no data written).
 	f, err := os.Create(src)
 	if err != nil {
 		t.Fatal(err)
@@ -139,8 +138,6 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	// Create a file with multiple data/hole segments:
-	// [hole 0-64K] [data 64K-68K] [hole 68K-128K] [data 128K-132K] [hole 132K-256K]
 	const size = 256 * 1024
 	f, err := os.Create(src)
 	if err != nil {
@@ -173,7 +170,6 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 	}
 }
 
-// writeAt writes data at the given offset in f, leaving a hole before it if offset > current size.
 func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
 	t.Helper()
 	if _, err := f.WriteAt(data, offset); err != nil {
@@ -195,7 +191,6 @@ func fileBlocks(t *testing.T, path string) int64 {
 	return st.Blocks
 }
 
-// readFull reads the entire file contents.
 func readFull(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)

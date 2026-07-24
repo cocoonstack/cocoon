@@ -29,6 +29,8 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 
 // finishImport commits blobs, then records the entry in one pure transaction; verb names the operation for logging.
 func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
+	logger := log.WithFunc("oci.finishImport")
+
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseCommit, Index: -1, Total: len(results)})
 	var locks images.BlobLocks
 	defer locks.Release()
@@ -53,7 +55,7 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 		return err
 	}
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseDone, Index: -1, Total: len(results)})
-	log.WithFunc("oci.finishImport").Infof(ctx, "%s: %s (digest: %s, layers: %d)", verb, name, manifestDigest, len(results))
+	logger.Infof(ctx, "%s: %s (digest: %s, layers: %d)", verb, name, manifestDigest, len(results))
 	return nil
 }
 

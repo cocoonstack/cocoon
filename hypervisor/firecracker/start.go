@@ -42,6 +42,8 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 
 // configureVM sends pre-boot config via REST then InstanceStart.
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
+	logger := log.WithFunc("firecracker.configureVM")
+
 	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
 	// No hugepages: FC's File restore backend cannot map hugetlbfs-backed snapshots, which would break hibernate/clone (#155).
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
@@ -64,7 +66,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	for i, sc := range rec.StorageConfigs {
 		driveID := fmt.Sprintf(driveIDFmt, i)
 		if sc.Role == types.StorageRoleData && sc.DirectIO != nil {
-			log.WithFunc("firecracker.configureVM").Warnf(ctx,
+			logger.Warnf(ctx,
 				"directio on data disk %s ignored: FC has no DirectIO knob (IoEngine=Async fixed)",
 				sc.Serial)
 		}
@@ -147,7 +149,6 @@ func (c *cloneLeaseControl) commit() error {
 	return waitRelayLeaseResponse(c.responses, relayLeaseCommitAck, "commit")
 }
 
-// launchProcess starts firecracker, sets up PTY+console relay, waits for socket.
 func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string) (int, error) {
 	pid, _, err := fc.launchProcessWithLeases(ctx, rec, sockPath, netnsPath, nil)
 	return pid, err
@@ -155,6 +156,8 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 
 // launchProcessWithLeases keeps inherited source-VM leases in the console relay until the caller confirms clone setup.
 func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
+	logger := log.WithFunc("firecracker.launchProcessWithLeases")
+
 	fcLog := fc.LogFilePath(rec.LogDir)
 	// FC opens log O_WRONLY|O_APPEND without O_CREATE — touch first.
 	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
@@ -202,7 +205,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = fcCmd.Wait()
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
-		log.WithFunc("firecracker.launchProcess").Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
+		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
 	go func() {

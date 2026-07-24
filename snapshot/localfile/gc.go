@@ -164,8 +164,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						return ok && rec.LastAccessedAt.Equal(m.lastAccessed)
 					}
 				}
-				// Record-backed candidates go through the phase protocol; a
-				// recordless leftover dir converges by plain removal.
+				// Record-backed candidates go through the phase protocol; a recordless leftover dir converges by plain removal.
 				deleted, hyp, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
 					_ = fl.Close()

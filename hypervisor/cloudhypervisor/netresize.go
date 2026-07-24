@@ -63,7 +63,7 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 }
 
 func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vmID string, rec *hypervisor.VMRecord, plumbing netresize.Plumbing, from, target int, res netresize.Result) (netresize.Result, error) {
-	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	logger := log.WithFunc("cloudhypervisor.netResizeAdd")
 	res.Added = make([]netresize.NIC, 0, target-from)
 	for i := from; i < target; i++ {
 		ncs, err := plumbing.Add(ctx, vmID, &rec.Config, network.AddSpec{Index: i})
@@ -112,7 +112,7 @@ func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Cl
 	if nicPersisted(rec, nc.MAC) {
 		return true, nil
 	}
-	logger := log.WithFunc("cloudhypervisor.NetResize.add")
+	logger := log.WithFunc("cloudhypervisor.resolveFailedPersist")
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*ejectWaitTimeout)
 	defer cancel()
 	// Wait for B0EJ before host teardown (symmetric with netResizeRemove).
@@ -128,7 +128,7 @@ func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Cl
 }
 
 func (ch *CloudHypervisor) netResizeRemove(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing, current, target int, res netresize.Result) (netresize.Result, error) {
-	logger := log.WithFunc("cloudhypervisor.NetResize.remove")
+	logger := log.WithFunc("cloudhypervisor.netResizeRemove")
 	res.Removed = make([]netresize.NIC, 0, current-target)
 	macToID := make(map[string]string, len(info.Config.Nets))
 	for _, n := range info.Config.Nets {
@@ -186,7 +186,6 @@ func (ch *CloudHypervisor) truncateNetworkConfigs(ctx context.Context, vmID stri
 	})
 }
 
-// nicPersisted reports whether rec already carries a NIC with mac.
 func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
 	return rec != nil && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
 		return nc != nil && strings.EqualFold(nc.MAC, mac)
@@ -195,7 +194,7 @@ func nicPersisted(rec *hypervisor.VMRecord, mac string) bool {
 
 // reconcileOrphanNICs removes cocoon-managed CH devices whose MAC the record does not know — leftovers of a resize interrupted between vm.add-net and the DB write — and best-effort reclaims their host slot (bridge TAPs have no DB record, and a leftover TAP wedges every retry at CreateTAP).
 func reconcileOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoResponse, vmID string, ncs []*types.NetworkConfig, plumbing netresize.Plumbing) error {
-	logger := log.WithFunc("cloudhypervisor.NetResize.reconcile")
+	logger := log.WithFunc("cloudhypervisor.reconcileOrphanNICs")
 	known := make(map[string]struct{}, len(ncs))
 	for _, nc := range ncs {
 		if nc != nil {

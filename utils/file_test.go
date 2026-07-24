@@ -95,7 +95,6 @@ func TestScanFileStems_Basic(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Add a subdirectory with matching suffix — should be skipped.
 	os.Mkdir(filepath.Join(dir, "skip.erofs"), 0o755) //nolint:errcheck
 
 	stems, err := ScanFileStems(dir, ".erofs")
@@ -170,7 +169,6 @@ func TestScanSubdirs_Empty(t *testing.T) {
 }
 
 func TestScanSubdirs_ReadDirError(t *testing.T) {
-	// Scan a file path instead of dir — should return error (not ENOENT).
 	dir := t.TempDir()
 	file := filepath.Join(dir, "not_a_dir")
 	os.WriteFile(file, []byte("x"), 0o644) //nolint:errcheck
@@ -308,9 +306,8 @@ func TestRemoveMatching_RemoveAllError(t *testing.T) {
 	sub := filepath.Join(dir, "protected")
 	os.Mkdir(sub, 0o755)                                              //nolint:errcheck
 	os.WriteFile(filepath.Join(sub, "inner.txt"), []byte("x"), 0o644) //nolint:errcheck
-	// Make the subdir unremovable by removing write perm on parent.
-	os.Chmod(sub, 0o444)                       //nolint:errcheck
-	t.Cleanup(func() { os.Chmod(sub, 0o755) }) //nolint:errcheck
+	os.Chmod(sub, 0o444)                                              //nolint:errcheck
+	t.Cleanup(func() { os.Chmod(sub, 0o755) })                        //nolint:errcheck
 
 	errs := RemoveMatching(t.Context(), dir, func(e os.DirEntry) bool {
 		return e.Name() == "protected"

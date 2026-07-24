@@ -71,7 +71,6 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
 }
 
-// finishQcow2Import commits the temp blob and logs the completion line shared by every import variant.
 func finishQcow2Import(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, tmpPath, digestHex string, logger *log.Fields) error {
 	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
 		return err

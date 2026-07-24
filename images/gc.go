@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/projecteru2/core/log"
-
 	gofrsflock "github.com/gofrs/flock"
+	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/utils"

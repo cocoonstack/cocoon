@@ -15,7 +15,6 @@ func (b *Backend) makeEntry(kind metering.Kind, vmID string, reason metering.Rea
 	}
 }
 
-// makeSourceEntry stamps an entry carrying SourceSnapshotID (clone/restore lineage).
 func (b *Backend) makeSourceEntry(kind metering.Kind, vmID, sourceSnapshotID string, reason metering.Reason, shape metering.Shape, now time.Time) metering.Entry {
 	e := b.makeEntry(kind, vmID, reason, shape, now)
 	e.SourceSnapshotID = sourceSnapshotID
@@ -28,7 +27,7 @@ func (b *Backend) emitAll(ctx context.Context, entries []metering.Entry) {
 	}
 }
 
-// emitOpenInterval fires the storage.start + compute.start pair; caller-provided now keeps adjacent stop/start timestamps aligned.
+// now comes from the caller so adjacent stop/start timestamps stay aligned.
 func (b *Backend) emitOpenInterval(ctx context.Context, vm *types.VM, reason metering.Reason, sourceSnapshotID string, now time.Time) {
 	shape := shapeFromConfig(vm.Config)
 	for _, kind := range []metering.Kind{metering.KindVMStorageStart, metering.KindVMComputeStart} {
@@ -36,7 +35,6 @@ func (b *Backend) emitOpenInterval(ctx context.Context, vm *types.VM, reason met
 	}
 }
 
-// emitDeleteClose fires storage.stop unconditionally; compute.stop only when an interval was open.
 func (b *Backend) emitDeleteClose(ctx context.Context, vmID string, shape metering.Shape, computeReason metering.Reason, hadRunningInterval bool) {
 	now := timeNow()
 	if hadRunningInterval {

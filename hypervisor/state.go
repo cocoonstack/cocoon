@@ -30,7 +30,7 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 
 // withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.
 func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
-	logger := log.WithFunc(b.Typ + ".WithRunningVM")
+	logger := log.WithFunc(b.Typ + ".withRunningVM")
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	if pidErr != nil && !errors.Is(pidErr, fs.ErrNotExist) {
 		logger.Warnf(ctx, "read PID file: %v", pidErr)
@@ -134,9 +134,7 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	})
 }
 
-// batchUpdateVMs mutates each present id in one transaction; mutate's
-// metering entries stage inside the closure and publish only after commit,
-// so a retried closure cannot double-emit (meta contract clause 1).
+// Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit (meta contract clause 1).
 func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
 	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {

@@ -10,7 +10,6 @@ import (
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
-// ociTracker logs OCI pull/import phases; pullMsg renders the PhasePull line.
 func ociTracker(ctx context.Context, logger *log.Fields, name string, pullMsg func(total int) string) progress.Tracker {
 	return progress.NewTracker(func(e ociProgress.Event) {
 		switch e.Phase {
@@ -26,7 +25,7 @@ func ociTracker(ctx context.Context, logger *log.Fields, name string, pullMsg fu
 	})
 }
 
-// cloudimgImportTracker logs cloudimg import phases; downloadMsg renders the PhaseDownload line (imports have no byte progress — pullCloudimg keeps its own progress-bar tracker).
+// Imports have no byte progress; pullCloudimg keeps its own progress-bar tracker.
 func cloudimgImportTracker(ctx context.Context, logger *log.Fields, name string, downloadMsg func() string) progress.Tracker {
 	return progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {

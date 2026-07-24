@@ -256,10 +256,7 @@ func TestEventsForcedOverflow(t *testing.T) {
 
 // TestDurableSyncOrder is the §9 durability gate at the engine level: a
 // CommitDurable ack happens only after rename → main fsync → prev fsync →
-// parent-dir fsync all ran (a mis-wired durable path would skip them), while
-// CommitRelaxed relinquishes the post-main syncs — which is why it is allowed
-// to disappear. With the crash-boundary tests asserting every intermediate
-// state recovers, acked-durable-survives-power-loss follows from fs contract.
+// parent-dir fsync all ran, while CommitRelaxed relinquishes the post-main syncs.
 func TestDurableSyncOrder(t *testing.T) {
 	var steps []string
 	testCrashStep = func(step string) error { steps = append(steps, step); return nil }

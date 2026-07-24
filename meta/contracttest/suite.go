@@ -47,17 +47,6 @@ type record struct {
 	N    int    `json:"n"`
 }
 
-func get1(t *testing.T, s meta.Store, c *meta.Collection[record]) (*record, error) {
-	t.Helper()
-	var rec *record
-	err := s.View(t.Context(), []string{nsAlpha}, func(r meta.Reader) error {
-		var err error
-		rec, err = c.Get(t.Context(), r, "a")
-		return err
-	})
-	return rec, err
-}
-
 func testCRUD(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
@@ -451,6 +440,17 @@ func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.Commit
 		return err
 	}
 	return r.Store.Update(ctx, sc, mode, fn)
+}
+
+func get1(t *testing.T, s meta.Store, c *meta.Collection[record]) (*record, error) {
+	t.Helper()
+	var rec *record
+	err := s.View(t.Context(), []string{nsAlpha}, func(r meta.Reader) error {
+		var err error
+		rec, err = c.Get(t.Context(), r, "a")
+		return err
+	})
+	return rec, err
 }
 
 func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {

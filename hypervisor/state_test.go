@@ -332,13 +332,7 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 }
 
 func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
-	// Three records distinguish the three cases that must end up correctly in
-	// the ledger:
-	//   - vm-stopped: DB Stopped, process dead → launched → emit
-	//   - vm-running: DB Running, process alive → no launch → no emit
-	//   - vm-stale:   DB Running, process dead, relaunched → emit
-	// The bug being locked down: an earlier impl had BatchMarkStarted skip
-	// anything with r.State==Running, which silently dropped vm-stale.
+	// BatchMarkStarted skipping every r.State==Running silently drops vm-stale (DB Running, process dead, relaunched).
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm-stopped", 1, 1<<30, 10<<30, false)

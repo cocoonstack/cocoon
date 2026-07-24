@@ -62,7 +62,7 @@ func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 	return p, nil
 }
 
-// Recover verifies, rebuilds or un-quiesces the VM's plumbing; its error aborts the launch, since half-built networking strands the guest.
+// A recover error aborts the launch, since half-built networking strands the guest.
 func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	backend := vm.ResolvedNetBackend()
 	if backend == "" || (backend == types.BackendBridge && len(vm.NetworkConfigs) == 0) {
@@ -86,7 +86,6 @@ func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	return err
 }
 
-// Quiesce brings a stopped VM's host NICs down.
 func (n *NetProviders) Quiesce(ctx context.Context, vm *types.VM) error {
 	p, err := n.ForVM(vm)
 	if err != nil {
@@ -95,8 +94,7 @@ func (n *NetProviders) Quiesce(ctx context.Context, vm *types.VM) error {
 	return p.Quiesce(ctx, vm.ID)
 }
 
-// Cleanup releases a VM's networking inside the delete protocol; a partial CNI
-// failure leaves the tombstone for retry or GC to resume.
+// A partial CNI failure leaves the tombstone for retry or GC to resume.
 func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
 	bridgenet.CleanupTAPs([]string{vmID})
 	p, err := n.cniOnly()

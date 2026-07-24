@@ -14,6 +14,7 @@ import (
 
 // Console returns a caller-closed bidirectional stream to the VM console: console.sock (UEFI) or the CH-allocated PTY (OCI).
 func (ch *CloudHypervisor) Console(ctx context.Context, ref string) (io.ReadWriteCloser, error) {
+	logger := log.WithFunc("cloudhypervisor.Console")
 	id, rec, err := ch.ResolveAndLoad(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -28,7 +29,7 @@ func (ch *CloudHypervisor) Console(ctx context.Context, ref string) (io.ReadWrit
 			return fmt.Errorf("no console path for VM %s", id)
 		}
 
-		log.WithFunc("cloudhypervisor.Console").Debugf(ctx, "resolved console path for VM %s: %s", id, path)
+		logger.Debugf(ctx, "resolved console path for VM %s: %s", id, path)
 		fi, statErr := os.Stat(path)
 		if statErr != nil {
 			return fmt.Errorf("stat console path %s: %w", path, statErr)

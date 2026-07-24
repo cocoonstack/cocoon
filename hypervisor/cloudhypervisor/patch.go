@@ -105,7 +105,6 @@ func rawArrayLen(raw json.RawMessage) int {
 	return len(arr)
 }
 
-// setField marshals value and stores it in obj[key].
 func setField(obj map[string]json.RawMessage, key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -115,7 +114,6 @@ func setField(obj map[string]json.RawMessage, key string, value any) error {
 	return nil
 }
 
-// patchRawArray unmarshals a JSON array, applies fn to each element's raw map, and returns the patched array. Validates array length == count.
 func patchRawArray(raw json.RawMessage, count int, fn func(int, map[string]json.RawMessage) error) (json.RawMessage, error) {
 	var arr []json.RawMessage
 	if err := json.Unmarshal(raw, &arr); err != nil {
@@ -141,7 +139,6 @@ func patchRawArray(raw json.RawMessage, count int, fn func(int, map[string]json.
 	return json.Marshal(arr)
 }
 
-// patchRawObject unmarshals a JSON object, applies fn, and returns the patched object.
 func patchRawObject(raw json.RawMessage, fn func(map[string]json.RawMessage) error) (json.RawMessage, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {

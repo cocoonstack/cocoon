@@ -93,7 +93,6 @@ func killAndWait(ctx context.Context, proc *os.Process, pid int, binaryName, exp
 	return waitDead(ctx, pid, killWaitTimeout)
 }
 
-// waitDead polls until pid no longer responds to kill(0), bounded by timeout.
 func waitDead(ctx context.Context, pid int, timeout time.Duration) error {
 	return WaitFor(ctx, timeout, time.Millisecond, func() (bool, error) {
 		return !IsProcessAlive(pid), nil

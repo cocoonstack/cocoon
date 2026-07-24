@@ -46,9 +46,7 @@ func commit(
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
-	// Per-digest lock spans rename→index-commit: GC's TryLock cannot delete a
-	// blob that is on disk but not yet indexed (design §5). The rename runs
-	// outside any transaction; the index write is one pure transaction.
+	// Lock spans rename→index-commit so GC cannot delete a blob that is on disk but not yet indexed (design §5).
 	var blobLocks images.BlobLocks
 	defer blobLocks.Release()
 	if err := blobLocks.Lock(conf.BlobLockPath(digestHex)); err != nil {
@@ -97,7 +95,6 @@ func prepareTmpBlob(
 		return tmpBlobPath, nil
 	}
 
-	// Slow path: serialize per-digest conversion work.
 	lockPath := conf.tmpBlobPath(digestHex) + ".lock"
 	convertLock := flock.New(lockPath)
 	if err := convertLock.Lock(ctx); err != nil {
