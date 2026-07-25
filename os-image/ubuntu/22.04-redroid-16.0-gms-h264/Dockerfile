@@ -19,9 +19,6 @@ FROM ubuntu:22.04
 
 ARG TARGETARCH
 ARG DOCKER_CHANNEL=stable
-ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
-ARG SCRCPY_RFB_TAG=master
-ARG SCRCPY_RFB_COMMIT
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -109,6 +106,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     50. Non-H.264 clients fall back to a lazily decoded
 #     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
 #     server or framebuffer scraping hop. ---
+ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
+ARG SCRCPY_RFB_TAG=master
+# Bump to adopt a new scrcpy-rfb release; kept out of the top ARG block because an
+# in-scope ARG joins every later cache key, so a bump there rebuilds the whole image.
+ARG SCRCPY_RFB_COMMIT=00d1cab5b8c626e8361e5539a861c2668a2e4b76
 RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     if [ "$TARGETARCH" = arm64 ]; then sed 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.mit.edu/ubuntu-ports|g' /etc/apt/sources.list > /etc/apt/sources.list.d/mit-ports.list; fi && \
     apt_ensure() { for i in 1 2 3 4 5 6 7 8; do apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends "$@" && return 0; echo "apt retry $i for: $*" >&2; sleep 15; done; return 1; } && \
@@ -119,10 +121,11 @@ RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     BASE="https://github.com/$SCRCPY_RFB_REPO/releases/download/$SCRCPY_RFB_TAG" && \
     ARTIFACT="scrcpy-rfb-linux-$TARGETARCH" && \
     curl -fsSL "$BASE/build-info.json" -o /tmp/scrcpy-rfb/build-info.json && \
-    if [ -z "$SCRCPY_RFB_COMMIT" ]; then \
-      SCRCPY_RFB_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)"; \
-    fi && \
+    RELEASE_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)" && \
+    if [ -z "$SCRCPY_RFB_COMMIT" ]; then SCRCPY_RFB_COMMIT="$RELEASE_COMMIT"; fi && \
     printf '%s' "$SCRCPY_RFB_COMMIT" | grep -Eq '^[0-9a-f]{40}$' && \
+    { [ "$SCRCPY_RFB_COMMIT" = "$RELEASE_COMMIT" ] || \
+      { echo "scrcpy-rfb $SCRCPY_RFB_TAG is at $RELEASE_COMMIT, not the pinned $SCRCPY_RFB_COMMIT" >&2; exit 1; }; } && \
     cd /tmp/scrcpy-rfb && \
     for f in "$ARTIFACT" scrcpy-server-secure.jar "su1000-linux-$TARGETARCH"; do \
       curl -fsSL "$BASE/$f?commit=$SCRCPY_RFB_COMMIT" -o "$f" && \

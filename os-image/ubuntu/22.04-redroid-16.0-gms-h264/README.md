@@ -183,7 +183,9 @@ docker buildx build --load --platform linux/amd64 -t local/android:16.0-gms-h264
 `build.sh` is a bake-only worker: it verifies ReDroid is a single physical layer,
 bakes the restart-primed container into a vfs Docker store, and hardlink-dedups +
 tars it to `docker-data-<arch>.tar`. The VM Dockerfile resolves the scrcpy-rfb
-release itself (no build-arg from the shared step).
+release itself (no build-arg from the shared step): `SCRCPY_RFB_COMMIT` pins the
+commit the `master` release must be at, and both `Dockerfile` and
+`remoteview.Dockerfile` have to be bumped together to adopt a newer one.
 
 Export a Cocoon-importable rootfs (per arch):
 

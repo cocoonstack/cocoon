@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
 ARG SCRCPY_RFB_TAG=master
-ARG SCRCPY_RFB_COMMIT
+ARG SCRCPY_RFB_COMMIT=00d1cab5b8c626e8361e5539a861c2668a2e4b76
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     adb curl ca-certificates libjpeg-turbo8 zlib1g && \
@@ -15,10 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     BASE="https://github.com/$SCRCPY_RFB_REPO/releases/download/$SCRCPY_RFB_TAG" && \
     ARTIFACT="scrcpy-rfb-linux-$TARGETARCH" && \
     curl -fsSL "$BASE/build-info.json" -o /tmp/scrcpy-rfb/build-info.json && \
-    if [ -z "$SCRCPY_RFB_COMMIT" ]; then \
-      SCRCPY_RFB_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)"; \
-    fi && \
+    RELEASE_COMMIT="$(sed -n 's/.*"commit": "\([0-9a-f]\{40\}\)".*/\1/p' /tmp/scrcpy-rfb/build-info.json)" && \
+    if [ -z "$SCRCPY_RFB_COMMIT" ]; then SCRCPY_RFB_COMMIT="$RELEASE_COMMIT"; fi && \
     printf '%s' "$SCRCPY_RFB_COMMIT" | grep -Eq '^[0-9a-f]{40}$' && \
+    { [ "$SCRCPY_RFB_COMMIT" = "$RELEASE_COMMIT" ] || \
+      { echo "scrcpy-rfb $SCRCPY_RFB_TAG is at $RELEASE_COMMIT, not the pinned $SCRCPY_RFB_COMMIT" >&2; exit 1; }; } && \
     cd /tmp/scrcpy-rfb && \
     for f in "$ARTIFACT" scrcpy-server-secure.jar "su1000-linux-$TARGETARCH"; do \
       curl -fsSL "$BASE/$f?commit=$SCRCPY_RFB_COMMIT" -o "$f" && \
