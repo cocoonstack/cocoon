@@ -1,6 +1,9 @@
 .PHONY: all build test lint vet fmt fmt-check deps clean coverage cloc help
 
 REPO_PATH := github.com/cocoonstack/cocoon
+
+## Target OSes for vet / lint
+GOOSES ?= linux darwin
 REVISION := $(shell git rev-parse HEAD || echo unknown)
 BUILTAT := $(shell date +%Y-%m-%dT%H:%M:%S)
 VERSION := $(shell git describe --tags $(shell git rev-list --tags --max-count=1) 2>/dev/null || echo dev)
@@ -71,13 +74,17 @@ coverage: test ## Generate and display coverage report
 
 # --- Code quality ---
 
-vet: ## Run go vet for all target platforms
-	GOOS=linux GOARCH=amd64 go vet ./...
-	GOOS=darwin GOARCH=amd64 go vet ./...
+vet: ## Run go vet on every target OS
+	@for goos in $(GOOSES); do \
+		echo "==> go vet GOOS=$$goos"; \
+		GOOS=$$goos go vet ./... || exit 1; \
+	done
 
-lint: golangci-lint ## Run golangci-lint for all target platforms
-	GOOS=linux GOARCH=amd64 $(GOLANGCILINT) run
-	GOOS=darwin GOARCH=amd64 $(GOLANGCILINT) run
+lint: golangci-lint ## Run golangci-lint on every target OS
+	@for goos in $(GOOSES); do \
+		echo "==> golangci-lint GOOS=$$goos"; \
+		GOOS=$$goos $(GOLANGCILINT) run ./... || exit 1; \
+	done
 
 fmt: gofumpt goimports ## Format code with gofumpt and goimports
 	$(GOFMT) -extra -l -w .
