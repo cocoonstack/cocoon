@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
+	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -37,11 +41,14 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 }
 
 // reseedAfterResume fires the best-effort reseed, re-inspecting only when the in-process record lacks VsockSocket — a zero value would silently no-op.
-func (h Handler) reseedAfterResume(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
+// It hands the reseed to a detached child by default: the vsock dial waits out the guest's post-resume wakeup (tens of ms, growing with snapshot age), which would otherwise sit on every clone/restore critical path.
+func (h Handler) reseedAfterResume(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
 	if vm.VsockSocket == "" {
 		vm = refreshVM(ctx, hyper, vm)
 	}
-	signalReseed(ctx, vm, regenMachineID)
+	if vm.VsockSocket == "" || vm.Config.Windows || !detachReseed(ctx, conf, vm, regenMachineID) {
+		signalReseed(ctx, vm, regenMachineID)
+	}
 }
 
 // reseedVM pushes fresh entropy and a CRNG reseed order over vsock; only a failed dial retries (the agent re-listens shortly after resume) — a live agent's reply is final.
@@ -82,6 +89,26 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 		return nil
 	}
 	return fmt.Errorf("reseed: dial agent: %w", dialErr)
+}
+
+// detachReseed re-execs `cocoon vm reseed` as a session-detached child and reports whether the hand-off started; resolved dirs travel as flags so file- or flag-configured parents behave like env-configured ones.
+func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenMachineID bool) bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	args := []string{"--root-dir", conf.RootDir, "--run-dir", conf.RunDir, "--log-dir", conf.LogDir, "vm", "reseed"}
+	if regenMachineID {
+		args = append(args, "--machine-id")
+	}
+	c := exec.Command(exe, append(args, vm.ID)...) //nolint:gosec // self re-exec: path from os.Executable, args are internal flags/IDs
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		log.WithFunc("cmd.vm.reseed").Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
+		return false
+	}
+	go c.Wait() //nolint:errcheck
+	return true
 }
 
 // signalReseed is the non-fatal clone/restore wrapper: reports whether a reseed was attempted (false = Windows or no vsock) and never fails the calling command.
