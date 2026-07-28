@@ -26,14 +26,6 @@ func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord
 	return nil
 }
 
-// failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
-func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMState) {
-	if origin == types.VMStateStopped {
-		return
-	}
-	b.MarkError(ctx, vmID)
-}
-
 func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, *VMRecord, error) {
 	vmID, rec, err := b.ResolveAndLoad(ctx, vmRef)
 	if err != nil {
@@ -131,6 +123,14 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		return nil
 	}
 	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, apply, spec.AfterExtract)
+}
+
+// failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
+func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMState) {
+	if origin == types.VMStateStopped {
+		return
+	}
+	b.MarkError(ctx, vmID)
 }
 
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.

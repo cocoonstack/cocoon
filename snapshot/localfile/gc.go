@@ -58,6 +58,39 @@ type snapshotGCSnapshot struct {
 
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
+// PinnedBlobIDs reports every image blob pinned by a snapshot record — image GC's under-digest-lock recheck source.
+func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
+	pins := map[string]struct{}{}
+	if err := lf.view(ctx, func(t *snapTx) error {
+		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+			maps.Copy(pins, rec.ImageBlobIDs)
+			return nil
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return pins, nil
+}
+
+// gcRecover resumes existing snapshot tombstones by phase before discovery.
+func (lf *LocalFile) gcRecover(ctx context.Context) []error {
+	var ids []string
+	if err := lf.view(ctx, func(t *snapTx) error {
+		var err error
+		ids, err = lf.tombstones().PendingIDs(ctx, t.Reader())
+		return err
+	}); err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, id := range ids {
+		if err := lf.recoverSnapTombstone(ctx, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
 func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot] {
 	conf, recorder := lf.conf, lf.metering
 	return gc.Module[snapshotGCSnapshot]{
@@ -194,20 +227,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
-// PinnedBlobIDs reports every image blob pinned by a snapshot record — image GC's under-digest-lock recheck source.
-func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
-	pins := map[string]struct{}{}
-	if err := lf.view(ctx, func(t *snapTx) error {
-		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
-			maps.Copy(pins, rec.ImageBlobIDs)
-			return nil
-		})
-	}); err != nil {
-		return nil, err
-	}
-	return pins, nil
-}
-
 // pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {
@@ -321,23 +340,4 @@ func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]sn
 	}); err != nil {
 		logger.Warnf(ctx, "persist backfilled SizeBytes: %v", err)
 	}
-}
-
-// gcRecover resumes existing snapshot tombstones by phase before discovery.
-func (lf *LocalFile) gcRecover(ctx context.Context) []error {
-	var ids []string
-	if err := lf.view(ctx, func(t *snapTx) error {
-		var err error
-		ids, err = lf.tombstones().PendingIDs(ctx, t.Reader())
-		return err
-	}); err != nil {
-		return []error{err}
-	}
-	var errs []error
-	for _, id := range ids {
-		if err := lf.recoverSnapTombstone(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errs
 }

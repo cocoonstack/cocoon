@@ -26,6 +26,20 @@ const opGet = "get"
 
 var benchPayload = json.RawMessage(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
 
+type benchConfig struct{ dir string }
+
+func (c benchConfig) BinaryName() string                  { return "bench" }
+func (c benchConfig) RootDirPath() string                 { return c.dir }
+func (c benchConfig) PIDFileName() string                 { return "pid" }
+func (c benchConfig) TerminateGracePeriod() time.Duration { return time.Second }
+func (c benchConfig) SocketWaitTimeout() time.Duration    { return time.Second }
+func (c benchConfig) EffectivePoolSize() int              { return 4 }
+func (c benchConfig) EnsureDirs() error                   { return nil }
+func (c benchConfig) RunDir() string                      { return c.dir }
+func (c benchConfig) LogDir() string                      { return c.dir }
+func (c benchConfig) VMRunDir(id string) string           { return filepath.Join(c.dir, id) }
+func (c benchConfig) VMLogDir(id string) string           { return filepath.Join(c.dir, id) }
+
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: storebench update|get <engine> <n> <ops> [dir]")
@@ -277,17 +291,3 @@ func argDir(i int) string {
 func uniquePayload(i int) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
 }
-
-type benchConfig struct{ dir string }
-
-func (c benchConfig) BinaryName() string                  { return "bench" }
-func (c benchConfig) RootDirPath() string                 { return c.dir }
-func (c benchConfig) PIDFileName() string                 { return "pid" }
-func (c benchConfig) TerminateGracePeriod() time.Duration { return time.Second }
-func (c benchConfig) SocketWaitTimeout() time.Duration    { return time.Second }
-func (c benchConfig) EffectivePoolSize() int              { return 4 }
-func (c benchConfig) EnsureDirs() error                   { return nil }
-func (c benchConfig) RunDir() string                      { return c.dir }
-func (c benchConfig) LogDir() string                      { return c.dir }
-func (c benchConfig) VMRunDir(id string) string           { return filepath.Join(c.dir, id) }
-func (c benchConfig) VMLogDir(id string) string           { return filepath.Join(c.dir, id) }

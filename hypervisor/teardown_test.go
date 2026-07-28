@@ -287,28 +287,6 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	}
 }
 
-func seedProtoVM(t *testing.T, b *Backend, id string) *VMRecord {
-	t.Helper()
-	runDir, logDir := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(runDir, "cow.raw"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.ReserveVM(t.Context(), id, &types.VMConfig{Name: "proto-" + id}, nil, runDir, logDir); err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
-		r.State = types.VMStateStopped
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &rec
-}
-
 // stubNetwork stands in for the injected host-networking seam; unset hooks are no-ops.
 type stubNetwork struct {
 	recover func(context.Context, *types.VM) error
@@ -335,6 +313,28 @@ func (s stubNetwork) Cleanup(ctx context.Context, vmID string) error {
 		return nil
 	}
 	return s.cleanup(ctx, vmID)
+}
+
+func seedProtoVM(t *testing.T, b *Backend, id string) *VMRecord {
+	t.Helper()
+	runDir, logDir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(runDir, "cow.raw"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ReserveVM(t.Context(), id, &types.VMConfig{Name: "proto-" + id}, nil, runDir, logDir); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := b.LoadRecord(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &rec
 }
 
 // entryGuardOnly exercises the entry guard the way an entrypoint does, discarding the record.

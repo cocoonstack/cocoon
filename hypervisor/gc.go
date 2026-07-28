@@ -188,7 +188,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			if rec.State != types.VMStateCreating || !rec.UpdatedAt.Before(cutoff) {
 				return
 			}
-			if err := b.CollectStaleCreate(ctx, id, rec); err != nil {
+			if err := b.collectStaleCreate(ctx, id, rec); err != nil {
 				errs = append(errs, fmt.Errorf("collect %s: %w", id, err))
 				return
 			}

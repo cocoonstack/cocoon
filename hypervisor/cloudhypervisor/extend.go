@@ -13,7 +13,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
-	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -21,16 +20,6 @@ import (
 )
 
 const chStatePaused = "Paused"
-
-var (
-	_ disk.Attacher     = (*CloudHypervisor)(nil)
-	_ disk.Lister       = (*CloudHypervisor)(nil)
-	_ fs.Attacher       = (*CloudHypervisor)(nil)
-	_ fs.Lister         = (*CloudHypervisor)(nil)
-	_ vfio.Attacher     = (*CloudHypervisor)(nil)
-	_ vfio.Lister       = (*CloudHypervisor)(nil)
-	_ netresize.Resizer = (*CloudHypervisor)(nil)
-)
 
 func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
 	if err := spec.Normalize(); err != nil {

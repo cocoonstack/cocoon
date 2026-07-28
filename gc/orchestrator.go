@@ -20,11 +20,6 @@ type Orchestrator struct {
 // New returns an Orchestrator with no registered modules.
 func New() *Orchestrator { return &Orchestrator{} }
 
-// Register is package-level because Go methods can't have type params.
-func Register[S any](o *Orchestrator, m Module[S]) {
-	o.modules = append(o.modules, m)
-}
-
 // Run executes one GC cycle: recover tombstones by phase, then snapshot →
 // resolve → collect; modules revalidate every destructive decision under
 // their own entity locks (§5 loose-snapshot rule).
@@ -69,6 +64,11 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	logger.Infof(ctx, "completed: %s (failures: %d, duration: %s)",
 		formatSummary(summary), len(errs), time.Since(start).Truncate(time.Millisecond))
 	return errors.Join(errs...)
+}
+
+// Register is package-level because Go methods can't have type params.
+func Register[S any](o *Orchestrator, m Module[S]) {
+	o.modules = append(o.modules, m)
 }
 
 // formatSummary renders counts as `m1=N m2=M`, sorted.

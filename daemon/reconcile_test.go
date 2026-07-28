@@ -263,11 +263,6 @@ type fakeSupervisor struct {
 	resumed   []string
 }
 
-func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
-	f.records[rec.ID] = rec
-	return f
-}
-
 func (f *fakeSupervisor) Type() string { return "fake-hv" }
 
 func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.SupervisionScan, error) {
@@ -303,11 +298,9 @@ func (f *fakeSupervisor) ObserveVMM(_ context.Context, rec *hypervisor.VMRecord)
 func (f *fakeSupervisor) TryLockVMOps(_ context.Context, vmID string) (func(), bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.lockErr != nil {
-		return nil, false, f.lockErr
-	}
-	if _, held := f.busy[vmID]; held {
-		return nil, false, nil
+	busy, err := f.lockState(vmID)
+	if err != nil || busy {
+		return nil, false, err
 	}
 	return func() {}, true, nil
 }
@@ -359,12 +352,40 @@ func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool,
 	return true, nil
 }
 
-func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {
+func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (hypervisor.StaleCreateOutcome, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	busy, err := f.lockState(vmID)
+	if err != nil {
+		return "", err
+	}
+	if busy {
+		return hypervisor.StaleCreateBusy, nil
+	}
+	rec := f.records[vmID]
+	if rec == nil {
+		return hypervisor.StaleCreateNotFound, nil
+	}
+	if rec.State != types.VMStateCreating {
+		return hypervisor.StaleCreateNotCreating, nil
+	}
 	f.collected = append(f.collected, vmID)
 	delete(f.records, vmID)
-	return nil
+	return hypervisor.StaleCreateCollected, nil
+}
+
+// lockState reads the scripted lock condition; the caller holds f.mu.
+func (f *fakeSupervisor) lockState(vmID string) (busy bool, err error) {
+	if f.lockErr != nil {
+		return false, f.lockErr
+	}
+	_, held := f.busy[vmID]
+	return held, nil
+}
+
+func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
+	f.records[rec.ID] = rec
+	return f
 }
 
 func newFake() *fakeSupervisor {

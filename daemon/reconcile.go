@@ -138,23 +138,17 @@ func (d *Daemon) convergeDead(ctx context.Context, b Supervisor, key watchKey, r
 	return nil
 }
 
-// collectOwnerless reclaims a creating placeholder whose owner died; a free ops lock is the proof, since create and clone hold it from prereserve through the final record commit.
+// collectOwnerless routes a creating placeholder to the backend's shared stale-create reclaim; busy and raced outcomes are healthy skips.
 func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hypervisor.VMRecord) error {
-	unlock, ok, err := d.tryLock(ctx, b, rec.ID)
-	if !ok {
-		return err
-	}
-	defer unlock()
-	fresh, err := b.PeekRecord(ctx, rec.ID)
-	if err != nil || fresh == nil || fresh.State != types.VMStateCreating {
-		return err
-	}
 	logger := log.WithFunc("daemon.collectOwnerless")
-	if err := b.CollectStaleCreate(ctx, rec.ID, fresh); err != nil {
+	outcome, err := b.ReconcileStaleCreate(ctx, rec.ID)
+	if err != nil {
 		logger.Errorf(ctx, err, "collect ownerless create %s", rec.ID)
 		return err
 	}
-	logger.Warnf(ctx, "collected ownerless creating VM %s", rec.ID)
+	if outcome == hypervisor.StaleCreateCollected {
+		logger.Warnf(ctx, "collected ownerless creating VM %s", rec.ID)
+	}
 	return nil
 }
 

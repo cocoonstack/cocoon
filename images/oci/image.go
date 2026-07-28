@@ -10,6 +10,10 @@ import (
 
 type imageIndex = images.Index[imageEntry]
 
+type layerEntry struct {
+	Digest images.Digest `json:"digest"`
+}
+
 // Paths derive from digests at runtime; not stored.
 type imageEntry struct {
 	Ref            string        `json:"ref"`
@@ -31,10 +35,6 @@ func (e imageEntry) DigestHexes() []string {
 		hexes[i] = l.Digest.Hex()
 	}
 	return hexes
-}
-
-type layerEntry struct {
-	Digest images.Digest `json:"digest"`
 }
 
 // normalizeRef expands a short OCI ref (e.g. "ubuntu:24.04" → "docker.io/library/ubuntu:24.04").

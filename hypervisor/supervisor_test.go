@@ -236,7 +236,7 @@ func TestNeedsDeadConvergence(t *testing.T) {
 	}
 }
 
-func TestCollectStaleCreateFreesTheName(t *testing.T) {
+func TestReconcileStaleCreateCollectsAndFreesTheName(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	cfg := &types.VMConfig{Name: "alpha", Config: types.Config{CPU: 1}}
@@ -244,14 +244,61 @@ func TestCollectStaleCreateFreesTheName(t *testing.T) {
 		t.Fatalf("ReserveVM: %v", err)
 	}
 
-	if err := b.CollectStaleCreate(ctx, "vm1", recordOf(t, b, "vm1")); err != nil {
-		t.Fatalf("CollectStaleCreate: %v", err)
+	outcome, err := b.ReconcileStaleCreate(ctx, "vm1")
+	if err != nil || outcome != StaleCreateCollected {
+		t.Fatalf("got (%q, %v), want collected", outcome, err)
 	}
 	if rec, err := b.PeekRecord(ctx, "vm1"); err != nil || rec != nil {
 		t.Errorf("got record %v (err %v), want it collected", rec, err)
 	}
 	if _, err := b.ResolveRef(ctx, "alpha"); err == nil {
 		t.Error("the name is still reserved; a retry would be blocked until GC")
+	}
+}
+
+// A held ops lock is the create owner still working; the record must survive untouched.
+func TestReconcileStaleCreateRefusesInFlightCreate(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	cfg := &types.VMConfig{Name: "alpha", Config: types.Config{CPU: 1}}
+	if err := b.ReserveVM(ctx, "vm1", cfg, nil, t.TempDir(), t.TempDir()); err != nil {
+		t.Fatalf("ReserveVM: %v", err)
+	}
+	held, err := b.LockVMOps(ctx, "vm1")
+	if err != nil {
+		t.Fatalf("LockVMOps: %v", err)
+	}
+	defer held()
+
+	outcome, err := b.ReconcileStaleCreate(ctx, "vm1")
+	if err != nil || outcome != StaleCreateBusy {
+		t.Fatalf("got (%q, %v), want busy", outcome, err)
+	}
+	if rec, err := b.PeekRecord(ctx, "vm1"); err != nil || rec == nil {
+		t.Errorf("got record %v (err %v), want the in-flight create untouched", rec, err)
+	}
+}
+
+func TestReconcileStaleCreateRefusesNonCreating(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedRunningVM(t, b, "vm1", 1, 1<<30, 10<<30)
+
+	outcome, err := b.ReconcileStaleCreate(ctx, "vm1")
+	if err != nil || outcome != StaleCreateNotCreating {
+		t.Fatalf("got (%q, %v), want not-creating", outcome, err)
+	}
+	if got := recordOf(t, b, "vm1").State; got != types.VMStateRunning {
+		t.Errorf("got state %q, want the record untouched at running", got)
+	}
+}
+
+func TestReconcileStaleCreateReportsMissingRecord(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+
+	outcome, err := b.ReconcileStaleCreate(t.Context(), "ghost")
+	if err != nil || outcome != StaleCreateNotFound {
+		t.Fatalf("got (%q, %v), want not-found", outcome, err)
 	}
 }
 

@@ -31,18 +31,6 @@ const (
 	writeBufSize = 64 << 10
 )
 
-// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
-func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
-	b := newFAT12Builder(label)
-
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		if err := b.addFile(name, files[name]); err != nil {
-			return err
-		}
-	}
-	return b.writeTo(w)
-}
-
 // fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
 type fat12Builder struct {
 	label       string
@@ -204,6 +192,18 @@ func (b *fat12Builder) makeBootSector() []byte {
 	copy(boot[54:62], "FAT12   ")     //nolint:mnd
 	boot[510], boot[511] = 0x55, 0xAA //nolint:mnd
 	return boot
+}
+
+// CreateFAT12 streams a 1 MiB FAT12 image with VFAT long-filename support to w.
+func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
+	b := newFAT12Builder(label)
+
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		if err := b.addFile(name, files[name]); err != nil {
+			return err
+		}
+	}
+	return b.writeTo(w)
 }
 
 // setFATEntry writes a 12-bit value into the FAT at the given cluster index.

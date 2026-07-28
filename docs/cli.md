@@ -25,6 +25,7 @@ cocoon
 │   ├── reseed [--machine-id] VM   Force a CRNG reseed inside the guest (fresh entropy over vsock)
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
+│   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
 │   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
 │   ├── status [VM...]             Watch VM status in real time
@@ -204,6 +205,19 @@ cocoon vm restore my-vm --from-dir /unrelated/lineage --force
 ```
 
 The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image's blobs may not be present locally — `EnsureImage` reads `image_blob_ids` from the envelope and pulls as needed.
+
+### Reconcile Stale Create
+
+`cocoon vm reconcile-stale-create VM` reclaims a `creating` placeholder whose owning create or clone died mid-flight, freeing the record and its name. A free VM ops lock is the proof of ownerlessness — create and clone hold it from prereserve through the final record commit — so the verb never races an in-flight operation and needs no age heuristics (contrast `vm rm --force`, which queues behind a live clone and then deletes the freshly created VM). With `--output json` it prints `{"id": "...", "outcome": "..."}`:
+
+| Outcome | Meaning |
+|------|-------------|
+| `collected` | Placeholder reclaimed; record and name are free |
+| `busy` | An in-flight operation owns the VM; nothing was touched — not worth retrying blindly |
+| `not-creating` | The record has left the creating state; nothing was touched |
+| `not-found` | No record under that ref (already collected, or never existed) |
+
+All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orphan VMM that would not die). At a startup reconcile, `busy` means an external create or clone legitimately owns the record: leave it un-indexed and revisit on the next pass — it either becomes a live VM or becomes collectable. The [daemon](daemon.md)'s ownerless-create reconcile and [GC](gc.md)'s `stale-creating` sweep run the same reclaim; this verb is for embedders that must clear skeletons synchronously (e.g. a startup reconcile) without waiting for either.
 
 ### Reseed Flags
 
