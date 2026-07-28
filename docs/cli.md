@@ -217,7 +217,7 @@ The dir is read-only across the call, so multiple clones of the same dir (golden
 | `not-creating` | The record has left the creating state; nothing was touched |
 | `not-found` | No record under that ref (already collected, or never existed) |
 
-All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orphan VMM that would not die). The [daemon](daemon.md)'s ownerless-create reconcile and [GC](gc.md)'s `stale-creating` sweep run the same reclaim; this verb is for embedders that must clear skeletons synchronously (e.g. a startup reconcile) without waiting for either.
+All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orphan VMM that would not die). At a startup reconcile, `busy` means an external create or clone legitimately owns the record: leave it un-indexed and revisit on the next pass — it either becomes a live VM or becomes collectable. The [daemon](daemon.md)'s ownerless-create reconcile and [GC](gc.md)'s `stale-creating` sweep run the same reclaim; this verb is for embedders that must clear skeletons synchronously (e.g. a startup reconcile) without waiting for either.
 
 ### Reseed Flags
 
