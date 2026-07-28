@@ -122,6 +122,14 @@ func Command(h Handler) *cobra.Command {
 	rmCmd.Flags().Bool("force", false, "force delete running VMs (immediate SIGTERM/SIGKILL, no graceful window)")
 	cliutil.AddOutputFlag(rmCmd)
 
+	reconcileStaleCreateCmd := &cobra.Command{
+		Use:   "reconcile-stale-create VM",
+		Short: "Reclaim an ownerless creating placeholder (refuses while a create or clone is in flight)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.ReconcileStaleCreate,
+	}
+	cliutil.AddOutputFlag(reconcileStaleCreateCmd)
+
 	restoreCmd := &cobra.Command{
 		Use:   "restore [flags] VM [SNAPSHOT]",
 		Short: "Restore a running or stopped VM to a previous snapshot (or a directory via --from-dir)",
@@ -184,6 +192,7 @@ func Command(h Handler) *cobra.Command {
 		reseedCmd,
 		logsCmd,
 		rmCmd,
+		reconcileStaleCreateCmd,
 		restoreCmd,
 		hibernateCmd,
 		debugCmd,

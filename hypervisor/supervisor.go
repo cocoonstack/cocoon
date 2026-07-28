@@ -15,7 +15,21 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const (
+	// StaleCreateCollected reports the ownerless placeholder was reclaimed.
+	StaleCreateCollected StaleCreateOutcome = "collected"
+	// StaleCreateBusy reports an in-flight operation owns the VM; nothing was touched.
+	StaleCreateBusy StaleCreateOutcome = "busy"
+	// StaleCreateNotCreating reports the record left the creating state; not a stale create.
+	StaleCreateNotCreating StaleCreateOutcome = "not-creating"
+	// StaleCreateNotFound reports no record exists under the id.
+	StaleCreateNotFound StaleCreateOutcome = "not-found"
+)
+
 var _ Supervisable = (*Backend)(nil)
+
+// StaleCreateOutcome reports what ReconcileStaleCreate did with the record.
+type StaleCreateOutcome string
 
 // Supervisable is the backend surface a resident supervisor drives.
 type Supervisable interface {
@@ -27,7 +41,7 @@ type Supervisable interface {
 	PeekRecord(ctx context.Context, vmID string) (*VMRecord, error)
 	ConvergeDead(ctx context.Context, vmID string, gen uint64, observedAt time.Time) error
 	ReconcileToRunning(ctx context.Context, vmID string) (uint64, error)
-	CollectStaleCreate(ctx context.Context, vmID string, rec *VMRecord) error
+	ReconcileStaleCreate(ctx context.Context, vmID string) (StaleCreateOutcome, error)
 	RecoverTombstone(ctx context.Context, vmID string) (bool, error)
 }
 
@@ -161,17 +175,43 @@ func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
 	return b.clearQuiescePending(ctx, id, gen)
 }
 
-// CollectStaleCreate reclaims an ownerless creating placeholder; the held ops lock is the proof of ownerlessness, since create and clone hold it from prereserve through the final commit.
-func (b *Backend) CollectStaleCreate(ctx context.Context, id string, rec *VMRecord) error {
-	if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
-		return fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err)
+// ReconcileStaleCreate reclaims id when it is an ownerless creating placeholder; a free ops lock is the proof of ownerlessness, since create and clone hold it from prereserve through the final record commit.
+func (b *Backend) ReconcileStaleCreate(ctx context.Context, id string) (StaleCreateOutcome, error) {
+	unlock, ok, err := b.TryLockVMOps(ctx, id)
+	if err != nil {
+		return "", err
 	}
-	return b.deleteVMProtocol(ctx, id, rec)
+	if !ok {
+		return StaleCreateBusy, nil
+	}
+	defer unlock()
+	rec, err := b.PeekRecord(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if rec == nil {
+		return StaleCreateNotFound, nil
+	}
+	if rec.State != types.VMStateCreating {
+		return StaleCreateNotCreating, nil
+	}
+	if err := b.collectStaleCreate(ctx, id, rec); err != nil {
+		return "", err
+	}
+	return StaleCreateCollected, nil
 }
 
 // RecoverTombstone drives an unfinished delete to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (bool, error) {
 	return b.recoverVMTombstone(ctx, id)
+}
+
+// collectStaleCreate runs the reclaim under the caller's held ops lock: no orphan VMM may survive, then the tombstoned delete protocol.
+func (b *Backend) collectStaleCreate(ctx context.Context, id string, rec *VMRecord) error {
+	if err := b.ensureOrphanVMMDead(ctx, rec.RunDir); err != nil {
+		return fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err)
+	}
+	return b.deleteVMProtocol(ctx, id, rec)
 }
 
 // clearQuiescePending is relaxed: losing the clear only costs one idempotent re-quiesce on a later pass.

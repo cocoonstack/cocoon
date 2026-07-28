@@ -24,12 +24,17 @@ import (
 )
 
 func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, error) {
+	owner, _, err := FindVM(ctx, conf, ref)
+	return owner, err
+}
+
+// FindVM resolves ref to its owning hypervisor and the resolved VM.
+func FindVM(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	hypers, err := InitAllHypervisors(ctx, conf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	owner, _, err := resolveVMOwner(ctx, hypers, ref)
-	return owner, err
+	return resolveVMOwner(ctx, hypers, ref)
 }
 
 func ListAllVMs(ctx context.Context, hypers []hypervisor.Hypervisor) ([]*types.VM, error) {

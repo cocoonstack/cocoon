@@ -359,12 +359,25 @@ func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool,
 	return true, nil
 }
 
-func (f *fakeSupervisor) CollectStaleCreate(_ context.Context, vmID string, _ *hypervisor.VMRecord) error {
+func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (hypervisor.StaleCreateOutcome, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.lockErr != nil {
+		return "", f.lockErr
+	}
+	if _, held := f.busy[vmID]; held {
+		return hypervisor.StaleCreateBusy, nil
+	}
+	rec := f.records[vmID]
+	if rec == nil {
+		return hypervisor.StaleCreateNotFound, nil
+	}
+	if rec.State != types.VMStateCreating {
+		return hypervisor.StaleCreateNotCreating, nil
+	}
 	f.collected = append(f.collected, vmID)
 	delete(f.records, vmID)
-	return nil
+	return hypervisor.StaleCreateCollected, nil
 }
 
 func newFake() *fakeSupervisor {
