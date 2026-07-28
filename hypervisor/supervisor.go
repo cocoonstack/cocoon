@@ -16,14 +16,10 @@ import (
 )
 
 const (
-	// StaleCreateCollected reports the ownerless placeholder was reclaimed.
-	StaleCreateCollected StaleCreateOutcome = "collected"
-	// StaleCreateBusy reports an in-flight operation owns the VM; nothing was touched.
-	StaleCreateBusy StaleCreateOutcome = "busy"
-	// StaleCreateNotCreating reports the record left the creating state; not a stale create.
-	StaleCreateNotCreating StaleCreateOutcome = "not-creating"
-	// StaleCreateNotFound reports no record exists under the id.
-	StaleCreateNotFound StaleCreateOutcome = "not-found"
+	StaleCreateCollected   StaleCreateOutcome = "collected"    // ownerless placeholder reclaimed; record and name freed
+	StaleCreateBusy        StaleCreateOutcome = "busy"         // in-flight operation owns the VM; nothing touched
+	StaleCreateNotCreating StaleCreateOutcome = "not-creating" // record left the creating state under the lock
+	StaleCreateNotFound    StaleCreateOutcome = "not-found"    // no record under the id
 )
 
 // StaleCreateOutcome reports what ReconcileStaleCreate did with the record.

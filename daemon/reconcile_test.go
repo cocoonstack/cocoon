@@ -298,11 +298,9 @@ func (f *fakeSupervisor) ObserveVMM(_ context.Context, rec *hypervisor.VMRecord)
 func (f *fakeSupervisor) TryLockVMOps(_ context.Context, vmID string) (func(), bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.lockErr != nil {
-		return nil, false, f.lockErr
-	}
-	if _, held := f.busy[vmID]; held {
-		return nil, false, nil
+	busy, err := f.lockState(vmID)
+	if err != nil || busy {
+		return nil, false, err
 	}
 	return func() {}, true, nil
 }
@@ -357,10 +355,11 @@ func (f *fakeSupervisor) RecoverTombstone(_ context.Context, vmID string) (bool,
 func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (hypervisor.StaleCreateOutcome, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.lockErr != nil {
-		return "", f.lockErr
+	busy, err := f.lockState(vmID)
+	if err != nil {
+		return "", err
 	}
-	if _, held := f.busy[vmID]; held {
+	if busy {
 		return hypervisor.StaleCreateBusy, nil
 	}
 	rec := f.records[vmID]
@@ -373,6 +372,15 @@ func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (h
 	f.collected = append(f.collected, vmID)
 	delete(f.records, vmID)
 	return hypervisor.StaleCreateCollected, nil
+}
+
+// lockState reads the scripted lock condition; the caller holds f.mu.
+func (f *fakeSupervisor) lockState(vmID string) (busy bool, err error) {
+	if f.lockErr != nil {
+		return false, f.lockErr
+	}
+	_, held := f.busy[vmID]
+	return held, nil
 }
 
 func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
