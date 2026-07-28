@@ -620,15 +620,6 @@ func TestForcedRetryStateOps(t *testing.T) {
 	}
 }
 
-func newDiskStubConfig(t *testing.T) stubBackendConfig {
-	dir := t.TempDir()
-	return stubBackendConfig{
-		rootDir:   dir,
-		indexFile: filepath.Join(dir, "index.json"),
-		indexLock: filepath.Join(dir, "index.lock"),
-	}
-}
-
 // stubBackendConfig satisfies BackendConfig for tests that only exercise the
 // metering wiring; unused methods panic so accidental dependence shows up loud.
 type stubBackendConfig struct {
@@ -667,6 +658,15 @@ func (c meteringStubConfig) VMLogDir(string) string { return c.vmRunRoot }
 func (c meteringStubConfig) RunDir() string { return c.vmRunRoot }
 
 func (c meteringStubConfig) LogDir() string { return c.vmRunRoot }
+
+func newDiskStubConfig(t *testing.T) stubBackendConfig {
+	dir := t.TempDir()
+	return stubBackendConfig{
+		rootDir:   dir,
+		indexFile: filepath.Join(dir, "index.json"),
+		indexLock: filepath.Join(dir, "index.lock"),
+	}
+}
 
 func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) {
 	t.Helper()

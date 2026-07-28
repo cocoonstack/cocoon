@@ -28,36 +28,6 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 	return b.withRunningVM(ctx, rec, nil, fn)
 }
 
-// withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.
-func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
-	logger := log.WithFunc(b.Typ + ".withRunningVM")
-	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
-	if pidErr != nil && !errors.Is(pidErr, fs.ErrNotExist) {
-		logger.Warnf(ctx, "read PID file: %v", pidErr)
-	}
-	sockPath := SocketPath(rec.RunDir)
-	if utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
-		return fn(pid)
-	}
-	// Covers pidfile/socket cleaned up before VMM exited. Fail-closed if scan errors so callers don't treat inconclusive state as ErrNotRunning.
-	scanned, scanErr := b.scanFor(scan, sockPath)
-	if scanErr != nil {
-		return fmt.Errorf("vm %s: pidfile-based check failed and /proc scan errored: %w (resolve the host issue and retry)", rec.ID, scanErr)
-	}
-	if len(scanned) == 0 {
-		return ErrNotRunning
-	}
-	logger.Warnf(ctx, "VM %s recovered live pids %v via cmdline scan", rec.ID, scanned)
-	return fn(scanned[0])
-}
-
-func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) {
-	if scan != nil {
-		return scan.Find(sockPath), nil
-	}
-	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
-}
-
 // IsAPISocketLive: (true,nil)=confirmed live; (false,nil)=ENOENT/ECONNREFUSED; (true,err)=fail-closed for unknown dial errors.
 func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, error) {
 	sock := SocketPath(rec.RunDir)
@@ -134,66 +104,10 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	})
 }
 
-// Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit (meta contract clause 1).
-func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
-	var emits []metering.Entry
-	if err := b.update(ctx, func(t *vmTx) error {
-		staged := []metering.Entry{}
-		for _, id := range ids {
-			r, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if r == nil {
-				continue
-			}
-			staged = append(staged, mutate(r, id)...)
-			if err := t.Put(id, r); err != nil {
-				return err
-			}
-		}
-		emits = staged
-		return nil
-	}); err != nil {
-		return err
-	}
-	b.emitAll(ctx, emits)
-	return nil
-}
-
 // MarkError flips a single VM's state to VMStateError, logging on persist failure.
 func (b *Backend) MarkError(ctx context.Context, id string) {
 	if err := b.UpdateStates(ctx, []string{id}, types.VMStateError); err != nil {
 		log.WithFunc(b.Typ+".MarkError").Errorf(ctx, err, "mark VM %s error", id)
-	}
-}
-
-// markFailedOperation records retryable network convergence after an operation may have brought plumbing up without committing a usable VMM; the daemon re-observes before acting on it.
-func (b *Backend) markFailedOperation(ctx context.Context, id string, markError bool) {
-	ctx, cancel := detachedWrite(ctx)
-	defer cancel()
-	now := timeNow()
-	if err := b.update(ctx, func(t *vmTx) error {
-		r, err := t.Get(id)
-		if err != nil || r == nil {
-			return err
-		}
-		changed := false
-		if markError && r.State != types.VMStateError {
-			markTransition(r, types.VMStateError, types.TransitionError, now)
-			changed = true
-		}
-		pending := needsQuiesce(r)
-		if r.QuiescePending != pending {
-			r.QuiescePending = pending
-			changed = true
-		}
-		if !changed {
-			return nil
-		}
-		return t.Put(id, r)
-	}); err != nil {
-		log.WithFunc(b.Typ+".markFailedOperation").Errorf(ctx, err, "persist failed operation for VM %s", id)
 	}
 }
 
@@ -280,6 +194,92 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 	}
 	return gen, nil
+}
+
+// withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.
+func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
+	logger := log.WithFunc(b.Typ + ".withRunningVM")
+	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
+	if pidErr != nil && !errors.Is(pidErr, fs.ErrNotExist) {
+		logger.Warnf(ctx, "read PID file: %v", pidErr)
+	}
+	sockPath := SocketPath(rec.RunDir)
+	if utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
+		return fn(pid)
+	}
+	// Covers pidfile/socket cleaned up before VMM exited. Fail-closed if scan errors so callers don't treat inconclusive state as ErrNotRunning.
+	scanned, scanErr := b.scanFor(scan, sockPath)
+	if scanErr != nil {
+		return fmt.Errorf("vm %s: pidfile-based check failed and /proc scan errored: %w (resolve the host issue and retry)", rec.ID, scanErr)
+	}
+	if len(scanned) == 0 {
+		return ErrNotRunning
+	}
+	logger.Warnf(ctx, "VM %s recovered live pids %v via cmdline scan", rec.ID, scanned)
+	return fn(scanned[0])
+}
+
+func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) {
+	if scan != nil {
+		return scan.Find(sockPath), nil
+	}
+	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
+}
+
+// Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit (meta contract clause 1).
+func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
+	var emits []metering.Entry
+	if err := b.update(ctx, func(t *vmTx) error {
+		staged := []metering.Entry{}
+		for _, id := range ids {
+			r, err := t.Get(id)
+			if err != nil {
+				return err
+			}
+			if r == nil {
+				continue
+			}
+			staged = append(staged, mutate(r, id)...)
+			if err := t.Put(id, r); err != nil {
+				return err
+			}
+		}
+		emits = staged
+		return nil
+	}); err != nil {
+		return err
+	}
+	b.emitAll(ctx, emits)
+	return nil
+}
+
+// markFailedOperation records retryable network convergence after an operation may have brought plumbing up without committing a usable VMM; the daemon re-observes before acting on it.
+func (b *Backend) markFailedOperation(ctx context.Context, id string, markError bool) {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
+	now := timeNow()
+	if err := b.update(ctx, func(t *vmTx) error {
+		r, err := t.Get(id)
+		if err != nil || r == nil {
+			return err
+		}
+		changed := false
+		if markError && r.State != types.VMStateError {
+			markTransition(r, types.VMStateError, types.TransitionError, now)
+			changed = true
+		}
+		pending := needsQuiesce(r)
+		if r.QuiescePending != pending {
+			r.QuiescePending = pending
+			changed = true
+		}
+		if !changed {
+			return nil
+		}
+		return t.Put(id, r)
+	}); err != nil {
+		log.WithFunc(b.Typ+".markFailedOperation").Errorf(ctx, err, "persist failed operation for VM %s", id)
+	}
 }
 
 // detachedWrite returns a context for bookkeeping writes that must survive caller cancellation, bounded by persistTimeout.

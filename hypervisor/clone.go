@@ -43,6 +43,25 @@ func (b *Backend) CloneFromStream(
 	})
 }
 
+// FinalizeClone persists the record and emits the clone open-interval pair.
+func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string) error {
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
+		r.VM = *info
+		// The subpackage building info cannot reach markTransition; without this the clone commits at generation zero.
+		markTransition(r, info.State, types.TransitionClone, timeNow())
+		r.BootConfig = bootCfg
+		r.FirstBooted = true
+		if blobIDs != nil {
+			r.ImageBlobIDs = blobIDs
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	b.emitOpenInterval(ctx, info, metering.ReasonClone, sourceSnapshotID, timeNow())
+	return nil
+}
+
 func (b *Backend) cloneBase(
 	ctx context.Context, vmID string, vmCfg *types.VMConfig,
 	net types.NetSetup, snapshotConfig *types.SnapshotConfig,
@@ -61,23 +80,4 @@ func (b *Backend) cloneBase(
 		return nil, err
 	}
 	return afterExtract(ctx, vmID, vmCfg, net, runDir, logDir, now, snapshotConfig.ID)
-}
-
-// FinalizeClone persists the record and emits the clone open-interval pair.
-func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string) error {
-	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
-		r.VM = *info
-		// The subpackage building info cannot reach markTransition; without this the clone commits at generation zero.
-		markTransition(r, info.State, types.TransitionClone, timeNow())
-		r.BootConfig = bootCfg
-		r.FirstBooted = true
-		if blobIDs != nil {
-			r.ImageBlobIDs = blobIDs
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	b.emitOpenInterval(ctx, info, metering.ReasonClone, sourceSnapshotID, timeNow())
-	return nil
 }

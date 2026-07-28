@@ -299,6 +299,106 @@ func (s *Store) verifyIdentity() error {
 	return nil
 }
 
+var (
+	_ meta.Reader = (*txHandle)(nil)
+	_ meta.Writer = (*txHandle)(nil)
+)
+
+// txHandle implements Reader/Writer over one transaction; values are
+// detached by construction (every read allocates from row scans).
+type txHandle struct {
+	ctx   context.Context
+	tx    *sql.Tx
+	sm    map[string]tableStmts
+	scope map[string]struct{}
+	write string
+	mode  meta.CommitMode
+}
+
+func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error) {
+	if err := h.checkRead(ns); err != nil {
+		return nil, false, err
+	}
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return nil, false, err
+	}
+	var data []byte
+	err = h.tx.StmtContext(ctx, ts.get).QueryRowContext(ctx, id).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, mapErr(err)
+	}
+	return data, true, nil
+}
+
+func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error {
+	if err := h.checkRead(ns); err != nil {
+		return err
+	}
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	rows, err := h.tx.StmtContext(ctx, ts.scan).QueryContext(ctx)
+	if err != nil {
+		return mapErr(err)
+	}
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var id string
+		var data []byte
+		if err := rows.Scan(&id, &data); err != nil {
+			return mapErr(err)
+		}
+		if err := fn(id, data); err != nil {
+			return err
+		}
+	}
+	return mapErr(rows.Err())
+}
+
+func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
+	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
+		return err
+	}
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	_, err = h.tx.StmtContext(ctx, ts.put).ExecContext(ctx, id, []byte(raw))
+	return mapErr(err)
+}
+
+func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error {
+	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
+		return err
+	}
+	ts, err := h.stmts(ns, table)
+	if err != nil {
+		return err
+	}
+	_, err = h.tx.StmtContext(ctx, ts.del).ExecContext(ctx, id)
+	return mapErr(err)
+}
+
+func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
+	ts, ok := h.sm[ns+"\x00"+table]
+	if !ok {
+		return tableStmts{}, fmt.Errorf("table %s/%s not declared: %w", ns, table, meta.ErrScope)
+	}
+	return ts, nil
+}
+
+func (h *txHandle) checkRead(ns string) error {
+	if _, ok := h.scope[ns]; !ok {
+		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
+	}
+	return nil
+}
+
 func tableName(ns, table string) string {
 	return quoteIdent(ns + "__" + table)
 }
@@ -417,104 +517,4 @@ func mapErr(err error) error {
 	default:
 		return err
 	}
-}
-
-var (
-	_ meta.Reader = (*txHandle)(nil)
-	_ meta.Writer = (*txHandle)(nil)
-)
-
-// txHandle implements Reader/Writer over one transaction; values are
-// detached by construction (every read allocates from row scans).
-type txHandle struct {
-	ctx   context.Context
-	tx    *sql.Tx
-	sm    map[string]tableStmts
-	scope map[string]struct{}
-	write string
-	mode  meta.CommitMode
-}
-
-func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error) {
-	if err := h.checkRead(ns); err != nil {
-		return nil, false, err
-	}
-	ts, err := h.stmts(ns, table)
-	if err != nil {
-		return nil, false, err
-	}
-	var data []byte
-	err = h.tx.StmtContext(ctx, ts.get).QueryRowContext(ctx, id).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, mapErr(err)
-	}
-	return data, true, nil
-}
-
-func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error {
-	if err := h.checkRead(ns); err != nil {
-		return err
-	}
-	ts, err := h.stmts(ns, table)
-	if err != nil {
-		return err
-	}
-	rows, err := h.tx.StmtContext(ctx, ts.scan).QueryContext(ctx)
-	if err != nil {
-		return mapErr(err)
-	}
-	defer rows.Close() //nolint:errcheck
-	for rows.Next() {
-		var id string
-		var data []byte
-		if err := rows.Scan(&id, &data); err != nil {
-			return mapErr(err)
-		}
-		if err := fn(id, data); err != nil {
-			return err
-		}
-	}
-	return mapErr(rows.Err())
-}
-
-func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
-	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
-		return err
-	}
-	ts, err := h.stmts(ns, table)
-	if err != nil {
-		return err
-	}
-	_, err = h.tx.StmtContext(ctx, ts.put).ExecContext(ctx, id, []byte(raw))
-	return mapErr(err)
-}
-
-func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error {
-	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
-		return err
-	}
-	ts, err := h.stmts(ns, table)
-	if err != nil {
-		return err
-	}
-	_, err = h.tx.StmtContext(ctx, ts.del).ExecContext(ctx, id)
-	return mapErr(err)
-}
-
-func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
-	ts, ok := h.sm[ns+"\x00"+table]
-	if !ok {
-		return tableStmts{}, fmt.Errorf("table %s/%s not declared: %w", ns, table, meta.ErrScope)
-	}
-	return ts, nil
-}
-
-func (h *txHandle) checkRead(ns string) error {
-	if _, ok := h.scope[ns]; !ok {
-		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
-	}
-	return nil
 }

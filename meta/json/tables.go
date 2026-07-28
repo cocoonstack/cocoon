@@ -23,6 +23,22 @@ type TableSpec struct {
 	StringList bool
 }
 
+var _ Codec = TableCodec{}
+
+// TableCodec is the declaration-only codec for pure table-shaped namespaces:
+// a subsystem states its legacy field layout and owns no codec code.
+type TableCodec struct {
+	Specs []TableSpec
+}
+
+func (c TableCodec) Decode(data []byte) (*Model, error) {
+	return DecodeTables(data, c.Specs)
+}
+
+func (c TableCodec) Encode(m *Model) ([]byte, error) {
+	return EncodeTables(m, c.Specs)
+}
+
 // DecodeTables loads specs' map fields into a fresh Model (sorted insertion,
 // matching what encoding/json always wrote). Single streaming pass — a whole-file
 // unmarshal into raw messages tokenizes the payload twice.
@@ -113,22 +129,6 @@ func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 		}
 	}
 	return append(buf, '}', '\n'), nil
-}
-
-var _ Codec = TableCodec{}
-
-// TableCodec is the declaration-only codec for pure table-shaped namespaces:
-// a subsystem states its legacy field layout and owns no codec code.
-type TableCodec struct {
-	Specs []TableSpec
-}
-
-func (c TableCodec) Decode(data []byte) (*Model, error) {
-	return DecodeTables(data, c.Specs)
-}
-
-func (c TableCodec) Encode(m *Model) ([]byte, error) {
-	return EncodeTables(m, c.Specs)
 }
 
 func appendKey(buf []byte, key string) []byte {

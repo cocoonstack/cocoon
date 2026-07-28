@@ -263,11 +263,6 @@ type fakeSupervisor struct {
 	resumed   []string
 }
 
-func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
-	f.records[rec.ID] = rec
-	return f
-}
-
 func (f *fakeSupervisor) Type() string { return "fake-hv" }
 
 func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.SupervisionScan, error) {
@@ -378,6 +373,11 @@ func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (h
 	f.collected = append(f.collected, vmID)
 	delete(f.records, vmID)
 	return hypervisor.StaleCreateCollected, nil
+}
+
+func (f *fakeSupervisor) put(rec *hypervisor.VMRecord) *fakeSupervisor {
+	f.records[rec.ID] = rec
+	return f
 }
 
 func newFake() *fakeSupervisor {

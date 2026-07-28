@@ -23,6 +23,21 @@ type vmCleanup struct {
 	LogDir string `json:"log_dir,omitempty"`
 }
 
+// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock —
+// roll a leased tombstone back, drive a deleting one to completion and refuse —
+// returning the record from the guard's own transaction, sparing lock-held
+// entry paths a second whole-namespace read.
+func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
+	rec, err := b.entryGuard(ctx, id)
+	if err != nil {
+		return VMRecord{}, err
+	}
+	if rec == nil {
+		return VMRecord{}, fmt.Errorf("%q not found", id)
+	}
+	return *rec, nil
+}
+
 func (b *Backend) tombstones() *tombstone.Table {
 	return tombstone.NewTable(b.Meta, b.NS)
 }
@@ -120,21 +135,6 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool,
 	}
 	log.WithFunc(b.Typ+".recoverVMTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
 	return true, nil
-}
-
-// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock —
-// roll a leased tombstone back, drive a deleting one to completion and refuse —
-// returning the record from the guard's own transaction, sparing lock-held
-// entry paths a second whole-namespace read.
-func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
-	rec, err := b.entryGuard(ctx, id)
-	if err != nil {
-		return VMRecord{}, err
-	}
-	if rec == nil {
-		return VMRecord{}, fmt.Errorf("%q not found", id)
-	}
-	return *rec, nil
 }
 
 func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) {

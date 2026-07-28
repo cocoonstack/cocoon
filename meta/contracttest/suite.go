@@ -25,6 +25,28 @@ var errForcedRollback = errors.New("forced rollback")
 // Factory returns a fresh Store serving the given namespaces; the suite owns its lifetime.
 type Factory func(t *testing.T, namespaces []string) meta.Store
 
+type record struct {
+	Name string `json:"name"`
+	N    int    `json:"n"`
+}
+
+type retryStore struct {
+	meta.Store
+}
+
+func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
+	err := r.Store.Update(ctx, sc, mode, func(w meta.Writer) error {
+		if err := fn(w); err != nil {
+			return err
+		}
+		return errForcedRollback
+	})
+	if err != nil && !errors.Is(err, errForcedRollback) {
+		return err
+	}
+	return r.Store.Update(ctx, sc, mode, fn)
+}
+
 // Run executes the full contract suite against factory.
 func Run(t *testing.T, factory Factory) {
 	t.Run("CRUD", func(t *testing.T) { testCRUD(t, factory) })
@@ -41,11 +63,6 @@ func Run(t *testing.T, factory Factory) {
 
 // ForcedRetry wraps s so every Update closure runs twice — once rolled back, once for real — enforcing pure retryable closures.
 func ForcedRetry(s meta.Store) meta.Store { return &retryStore{Store: s} }
-
-type record struct {
-	Name string `json:"name"`
-	N    int    `json:"n"`
-}
 
 func testCRUD(t *testing.T, factory Factory) {
 	ctx := t.Context()
@@ -423,23 +440,6 @@ func testLogCursor(t *testing.T, factory Factory) {
 	if seqs[0] != s2 || seqs[1] != s3 {
 		t.Fatalf("scan seqs: want [%d %d], got %v", s2, s3, seqs)
 	}
-}
-
-type retryStore struct {
-	meta.Store
-}
-
-func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
-	err := r.Store.Update(ctx, sc, mode, func(w meta.Writer) error {
-		if err := fn(w); err != nil {
-			return err
-		}
-		return errForcedRollback
-	})
-	if err != nil && !errors.Is(err, errForcedRollback) {
-		return err
-	}
-	return r.Store.Update(ctx, sc, mode, fn)
 }
 
 func get1(t *testing.T, s meta.Store, c *meta.Collection[record]) (*record, error) {

@@ -26,8 +26,6 @@ const (
 	StaleCreateNotFound StaleCreateOutcome = "not-found"
 )
 
-var _ Supervisable = (*Backend)(nil)
-
 // StaleCreateOutcome reports what ReconcileStaleCreate did with the record.
 type StaleCreateOutcome string
 
@@ -91,16 +89,6 @@ func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.Pr
 	return b.observe(ctx, rec, &scan)
 }
 
-func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcScan) (utils.ProcRef, error) {
-	var ref utils.ProcRef
-	err := b.withRunningVM(ctx, rec, scan, func(pid int) error {
-		var refErr error
-		ref, refErr = utils.ProcRefOf(pid)
-		return refErr
-	})
-	return ref, err
-}
-
 // TryLockVMOps takes the VM ops lock without blocking; ok=false with a nil error means another operation owns it.
 func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(), ok bool, err error) {
 	l, err := opsLock(b.Conf, vmID)
@@ -121,33 +109,6 @@ func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, obser
 		return err
 	}
 	return b.QuiesceIfPending(ctx, id)
-}
-
-// convergeDeadRecord commits the stop transition and publishes its staged metering entry; the quiesce it schedules is the caller's to run.
-func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
-	var emit []metering.Entry
-	if err := b.update(ctx, func(t *vmTx) error {
-		emit = nil
-		r, err := t.Get(id)
-		if err != nil || r == nil {
-			return err
-		}
-		if r.TransitionGeneration != gen || !NeedsDeadConvergence(r) {
-			return nil
-		}
-		if hasOpenComputeInterval(r) {
-			emit = []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shapeFromConfig(r.Config), observedAt)}
-		}
-		// StoppedAt is observation time, owed even to records predating the interval bookkeeping.
-		r.StoppedAt = &observedAt
-		markTransition(r, types.VMStateStopped, types.TransitionUnexpectedExit, observedAt)
-		r.QuiescePending = needsQuiesce(r)
-		return t.Put(id, r)
-	}); err != nil {
-		return err
-	}
-	b.emitAll(ctx, emit)
-	return nil
 }
 
 // QuiesceIfPending runs a scheduled quiesce and clears the flag fenced on the generation it read; the caller holds the ops lock with no VMM live.
@@ -204,6 +165,43 @@ func (b *Backend) ReconcileStaleCreate(ctx context.Context, id string) (StaleCre
 // RecoverTombstone drives an unfinished delete to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (bool, error) {
 	return b.recoverVMTombstone(ctx, id)
+}
+
+func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcScan) (utils.ProcRef, error) {
+	var ref utils.ProcRef
+	err := b.withRunningVM(ctx, rec, scan, func(pid int) error {
+		var refErr error
+		ref, refErr = utils.ProcRefOf(pid)
+		return refErr
+	})
+	return ref, err
+}
+
+// convergeDeadRecord commits the stop transition and publishes its staged metering entry; the quiesce it schedules is the caller's to run.
+func (b *Backend) convergeDeadRecord(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
+	var emit []metering.Entry
+	if err := b.update(ctx, func(t *vmTx) error {
+		emit = nil
+		r, err := t.Get(id)
+		if err != nil || r == nil {
+			return err
+		}
+		if r.TransitionGeneration != gen || !NeedsDeadConvergence(r) {
+			return nil
+		}
+		if hasOpenComputeInterval(r) {
+			emit = []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shapeFromConfig(r.Config), observedAt)}
+		}
+		// StoppedAt is observation time, owed even to records predating the interval bookkeeping.
+		r.StoppedAt = &observedAt
+		markTransition(r, types.VMStateStopped, types.TransitionUnexpectedExit, observedAt)
+		r.QuiescePending = needsQuiesce(r)
+		return t.Put(id, r)
+	}); err != nil {
+		return err
+	}
+	b.emitAll(ctx, emit)
+	return nil
 }
 
 // collectStaleCreate runs the reclaim under the caller's held ops lock: no orphan VMM may survive, then the tombstoned delete protocol.

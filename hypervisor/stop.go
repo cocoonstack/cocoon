@@ -105,6 +105,15 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 	})
 }
 
+func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
+	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
+		b.MarkError(ctx, id)
+		return shutdownErr
+	}
+	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+	return nil
+}
+
 // deleteOneLocked is DeleteAll's per-VM body, run under the ops lock.
 func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked func(context.Context, string) error, rec *VMRecord, procScan utils.ProcScan) error {
 	sockPath := SocketPath(rec.RunDir)
@@ -154,14 +163,5 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 		computeReason = metering.ReasonStopUser
 	}
 	b.emitDeleteClose(ctx, id, shape, computeReason, hadRunningInterval)
-	return nil
-}
-
-func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
-	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
-		b.MarkError(ctx, id)
-		return shutdownErr
-	}
-	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 	return nil
 }
