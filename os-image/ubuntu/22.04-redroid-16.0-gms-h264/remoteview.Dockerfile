@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
 ARG SCRCPY_RFB_TAG=master
-ARG SCRCPY_RFB_COMMIT=00d1cab5b8c626e8361e5539a861c2668a2e4b76
+ARG SCRCPY_RFB_COMMIT=9bdf6ed2b50953589ef153c18f087bcaafc429d9
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     adb curl ca-certificates libjpeg-turbo8 zlib1g && \

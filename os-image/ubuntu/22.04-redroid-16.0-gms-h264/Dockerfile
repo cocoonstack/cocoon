@@ -110,7 +110,7 @@ ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
 ARG SCRCPY_RFB_TAG=master
 # Bump to adopt a new scrcpy-rfb release; kept out of the top ARG block because an
 # in-scope ARG joins every later cache key, so a bump there rebuilds the whole image.
-ARG SCRCPY_RFB_COMMIT=00d1cab5b8c626e8361e5539a861c2668a2e4b76
+ARG SCRCPY_RFB_COMMIT=9bdf6ed2b50953589ef153c18f087bcaafc429d9
 RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     if [ "$TARGETARCH" = arm64 ]; then sed 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.mit.edu/ubuntu-ports|g' /etc/apt/sources.list > /etc/apt/sources.list.d/mit-ports.list; fi && \
     apt_ensure() { for i in 1 2 3 4 5 6 7 8; do apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends "$@" && return 0; echo "apt retry $i for: $*" >&2; sleep 15; done; return 1; } && \
