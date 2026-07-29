@@ -17,12 +17,16 @@ import (
 )
 
 func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader, sourceSnapshotID string) (*types.VM, error) {
+	// Preflight's validated meta feeds AfterExtract: cocoon.json is merged verbatim, so re-reading it would decode identical bytes.
+	var meta *hypervisor.SnapshotMeta
 	return ch.RestoreSequence(ctx, vmRef, hypervisor.RestoreSpec{
 		VMCfg:            vmCfg,
 		Snapshot:         snapshot,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
-			return ch.preflightRestore(ctx, srcDir, rec, vmCfg)
+			var err error
+			meta, err = ch.preflightRestore(ctx, srcDir, rec, vmCfg)
+			return err
 		},
 		Kill: ch.killForRestore,
 		// Same sweep as DirectRestore's Populate: stale snapshot files from a previous incarnation must not survive the merge.
@@ -31,23 +35,24 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
-			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot)
+			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot, meta)
 		},
 	})
 }
 
-func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) error {
+func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) (*hypervisor.SnapshotMeta, error) {
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
-		return fmt.Errorf("parse snapshot config: %w", err)
+		return nil, fmt.Errorf("parse snapshot config: %w", err)
 	}
 	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
-	if err := ch.conf.PreflightRestore(srcDir, rec, func(dir string, sidecar []*types.StorageConfig) error {
+	meta, err := ch.conf.PreflightRestore(srcDir, rec, func(dir string, sidecar []*types.StorageConfig) error {
 		return validateSnapshotIntegrityParsed(dir, sidecar, chCfg)
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return validateRestoreNICs(chCfg, rec)
+	return meta, validateRestoreNICs(chCfg, rec)
 }
 
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
@@ -61,15 +66,11 @@ func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMR
 	return ch.forceTerminate(ctx, hc, rec.ID, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
-func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, directBoot bool) (_ *types.VM, err error) {
+func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, directBoot bool, meta *hypervisor.SnapshotMeta) (_ *types.VM, err error) {
 	logger := log.WithFunc("cloudhypervisor.restoreAfterExtract")
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
-	meta, metaErr := ch.conf.LoadAndValidateMeta(rec.RunDir)
-	if metaErr != nil {
-		return nil, fmt.Errorf("load snapshot meta: %w", metaErr)
-	}
 	diskCount := len(meta.StorageConfigs)
 	if diskCount > len(rec.StorageConfigs) {
 		return nil, fmt.Errorf("snapshot has %d disks, VM record has %d", diskCount, len(rec.StorageConfigs))

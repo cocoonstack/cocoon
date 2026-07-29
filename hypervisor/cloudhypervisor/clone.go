@@ -35,15 +35,19 @@ func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.
 }
 
 func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
+	chCfg, err := parseCHConfig(filepath.Join(runDir, configJSONName))
+	if err != nil {
+		return nil, fmt.Errorf("parse CH config: %w", err)
+	}
+	return ch.cloneAfterExtractParsed(ctx, vmID, vmCfg, net, runDir, logDir, now, sourceSnapshotID, chCfg)
+}
+
+// cloneAfterExtractParsed is cloneAfterExtract minus the config.json parse; DirectClone passes the copy step's parse of the verbatim-copied source.
+func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("cloudhypervisor.cloneAfterExtract")
 
 	chConfigPath := filepath.Join(runDir, configJSONName)
-	chCfg, err := parseCHConfig(chConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("parse CH config: %w", err)
-	}
-
 	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
 
 	meta, err := ch.conf.LoadAndValidateMeta(runDir)

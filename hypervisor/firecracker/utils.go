@@ -14,7 +14,8 @@ const pidFileName = "fc.pid"
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.VsockSockName}
 
 func (fc *Firecracker) preflightRestore(srcDir string, rec *hypervisor.VMRecord) error {
-	return fc.conf.PreflightRestore(srcDir, rec, snapshotIntegrity)
+	_, err := fc.conf.PreflightRestore(srcDir, rec, snapshotIntegrity)
+	return err
 }
 
 // snapshotIntegrity runs the cross-backend checks + asserts FC vmstate+mem files exist (sidecar is the only disk-shape source for FC).
