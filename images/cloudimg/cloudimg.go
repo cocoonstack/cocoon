@@ -21,10 +21,11 @@ var _ images.Images = (*CloudImg)(nil)
 
 // CloudImg stores cloud image blobs for UEFI boot under Cloud Hypervisor.
 type CloudImg struct {
+	images.Ops[imageEntry]
+
 	conf            *Config
 	store           *images.Store[imageEntry]
 	pullGroup       singleflight.Group
-	ops             images.Ops[imageEntry]
 	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
 }
 
@@ -41,7 +42,7 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 	c := &CloudImg{
 		conf:  cfg,
 		store: store,
-		ops: images.Ops[imageEntry]{
+		Ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,
 			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id) },
@@ -74,19 +75,6 @@ func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tra
 
 func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
 	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
-}
-
-// Inspect returns (nil, nil) if not found.
-func (c *CloudImg) Inspect(ctx context.Context, id string) (*types.Image, error) {
-	return c.ops.Inspect(ctx, id)
-}
-
-func (c *CloudImg) List(ctx context.Context) ([]*types.Image, error) {
-	return c.ops.List(ctx)
-}
-
-func (c *CloudImg) Delete(ctx context.Context, ids []string) ([]string, error) {
-	return c.ops.Delete(ctx, ids)
 }
 
 // Config resolves cloud images to qcow2 storage plus firmware boot config.

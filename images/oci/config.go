@@ -24,7 +24,7 @@ func NewConfig(rootDir string, poolSize int) *Config {
 }
 
 func (c *Config) EnsureDirs() error {
-	if err := c.EnsureBaseDirs(); err != nil {
+	if err := c.BaseConfig.EnsureDirs(); err != nil {
 		return err
 	}
 	return utils.EnsureDirs(c.BootBaseDir())

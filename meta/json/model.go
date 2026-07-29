@@ -8,6 +8,11 @@ import (
 	"slices"
 )
 
+type table struct {
+	ids  []string
+	recs map[string]json.RawMessage
+}
+
 // Model is one namespace's decoded state: named tables preserving insertion
 // order — loaded file order first, new ids appended — which legacy codecs
 // rely on for order-sensitive fields.
@@ -92,8 +97,3 @@ func (m *Model) TableNames() []string {
 
 // markClean resets Dirty after decode — loading populates via Put.
 func (m *Model) markClean() { m.dirty = false }
-
-type table struct {
-	ids  []string
-	recs map[string]json.RawMessage
-}

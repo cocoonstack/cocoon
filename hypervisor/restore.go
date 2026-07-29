@@ -97,7 +97,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, apply, spec.AfterExtract)
+	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
@@ -122,7 +122,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, vmID, rec, spec.VMCfg, spec.SourceSnapshotID, spec.Kill, apply, spec.AfterExtract)
+	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
 }
 
 // failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
@@ -133,40 +133,48 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 	b.MarkError(ctx, vmID)
 }
 
+// restoreRun is restoreCore's locked input set, common to both restore sequences.
+type restoreRun struct {
+	vmID             string
+	rec              *VMRecord
+	vmCfg            *types.VMConfig
+	sourceSnapshotID string
+	kill             KillHook
+	apply            func(*VMRecord) error
+	afterExtract     AfterExtractHook
+}
+
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
-func (b *Backend) restoreCore(
-	ctx context.Context, vmID string, rec *VMRecord, vmCfg *types.VMConfig, sourceSnapshotID string,
-	kill KillHook, apply func(*VMRecord) error, afterExtract AfterExtractHook,
-) (*types.VM, error) {
-	oldShape := shapeFromConfig(rec.Config)
-	if killErr := kill(ctx, vmID, rec); killErr != nil {
+func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, error) {
+	oldShape := shapeFromConfig(run.rec.Config)
+	if killErr := run.kill(ctx, run.vmID, run.rec); killErr != nil {
 		return nil, killErr
 	}
-	b.emitRestoreComputeStop(ctx, vmID, oldShape, sourceSnapshotID)
+	b.emitRestoreComputeStop(ctx, run.vmID, oldShape, run.sourceSnapshotID)
 
 	var result *types.VM
 	inner := func() error {
 		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
-		if err := markRestoreDirty(rec.RunDir); err != nil {
+		if err := markRestoreDirty(run.rec.RunDir); err != nil {
 			return err
 		}
-		if err := apply(rec); err != nil {
+		if err := run.apply(run.rec); err != nil {
 			return err
 		}
 		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
-		if err := b.RecoverNetwork(ctx, rec); err != nil {
+		if err := b.RecoverNetwork(ctx, run.rec); err != nil {
 			return fmt.Errorf("recover network: %w", err)
 		}
 		var afterErr error
-		result, afterErr = afterExtract(ctx, vmID, vmCfg, rec)
+		result, afterErr = run.afterExtract(ctx, run.vmID, run.vmCfg, run.rec)
 		return afterErr
 	}
 	if err := inner(); err != nil {
 		// The kill already ran, so networking left up stays durable retry work even for a retryable stopped origin.
-		b.markFailedOperation(ctx, vmID, rec.State != types.VMStateStopped)
+		b.markFailedOperation(ctx, run.vmID, run.rec.State != types.VMStateStopped)
 		return nil, err
 	}
-	b.emitRestoreSuccess(ctx, result, oldShape, sourceSnapshotID)
+	b.emitRestoreSuccess(ctx, result, oldShape, run.sourceSnapshotID)
 	return result, nil
 }
 

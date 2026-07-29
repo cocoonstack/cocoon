@@ -28,7 +28,7 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.snapshot.save")
+	logger := log.WithFunc("cmd.snapshot.Save")
 
 	vmRef := args[0]
 	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
@@ -136,7 +136,7 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.snapshot.export")
+	logger := log.WithFunc("cmd.snapshot.Export")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.snapshot.import")
+	logger := log.WithFunc("cmd.snapshot.Import")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -263,7 +263,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.WithFunc("cmd.snapshot.rm")
+	logger := log.WithFunc("cmd.snapshot.RM")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err

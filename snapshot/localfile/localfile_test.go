@@ -270,6 +270,38 @@ func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
 	}
 }
 
+// TestNameOwnerSeesPendingReservation pins what a killed save leaves behind: the
+// pending record still holds the name in the index, so Inspect reports not-found
+// while insertRecord rejects the reuse. The save preflight resolves through the
+// index for exactly this reason — otherwise the capture runs to completion first.
+func TestNameOwnerSeesPendingReservation(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "pending-snap"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+
+	if _, err := lf.Inspect(ctx, "pending-snap"); !errors.Is(err, snapshot.ErrNotFound) {
+		t.Fatalf("Inspect on a pending record = %v, want ErrNotFound", err)
+	}
+	owner, held, err := lf.NameOwner(ctx, "pending-snap")
+	if err != nil {
+		t.Fatalf("NameOwner: %v", err)
+	}
+	if !held || owner != id {
+		t.Fatalf("NameOwner = (%q, %v), want (%q, true)", owner, held, id)
+	}
+	if _, held, err = lf.NameOwner(ctx, "never-taken"); err != nil || held {
+		t.Fatalf("NameOwner on a free name = (%v, %v), want (nil, false)", err, held)
+	}
+
+	lf.rollbackCreate(ctx, id, "pending-snap")
+	if _, held, err = lf.NameOwner(ctx, "pending-snap"); err != nil || held {
+		t.Fatalf("NameOwner after rollback = (%v, %v), want the name released", err, held)
+	}
+}
+
 func TestCreate(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()

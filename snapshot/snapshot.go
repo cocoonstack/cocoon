@@ -18,6 +18,11 @@ type DirectCreator interface {
 	CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (id string, ok bool, err error)
 }
 
+// NameHolder is an optional interface for backends whose name index can be held by a record Inspect does not resolve — a pending one left by a save that died before it could roll back. The save preflight consults it so a taken name is rejected up front instead of after the whole capture has been written.
+type NameHolder interface {
+	NameOwner(ctx context.Context, name string) (id string, held bool, err error)
+}
+
 // CompressedExporter is an optional interface for backends that support exporting with compression (e.g. gzip). The default Export produces raw tar.
 type CompressedExporter interface {
 	ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error)

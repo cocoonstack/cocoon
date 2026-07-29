@@ -21,10 +21,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// TestReconcileOrphanNICs covers the interrupted-resize fault window: a CH
-// device whose MAC the VM record does not know must be ejected AND its host
-// TAP slot reclaimed before a retry adds alongside it (a leftover bridge TAP
-// wedges every retry); recorded and boot-time (_net*) devices must survive.
+// TestReconcileOrphanNICs covers the interrupted-resize window: an unrecorded-MAC device must be ejected and its host TAP slot reclaimed (a leftover bridge TAP wedges every retry); recorded and boot-time (_net*) devices survive.
 func TestReconcileOrphanNICs(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
@@ -49,10 +46,7 @@ func TestReconcileOrphanNICs(t *testing.T) {
 	}
 }
 
-// TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout pins the slow-guest path:
-// a timed-out B0EJ wait must still reclaim the orphan's host TAP slot — after
-// a late eject the device vanishes from vm.info and no later reconcile could
-// ever see this TAP again.
+// TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout pins the slow-guest path: a timed-out B0EJ wait still reclaims the orphan's TAP slot, since after a late eject no later reconcile could ever see it.
 func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},

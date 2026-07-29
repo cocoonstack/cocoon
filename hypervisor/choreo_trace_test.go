@@ -13,10 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// TestLegacyChoreographyTrace is the P0 differential gate (design §10): the
-// legacy implementation ran this exact op sequence and recorded returned
-// values, error identities and final bytes; the migrated boundary must
-// reproduce every step.
+// TestLegacyChoreographyTrace is the P0 differential gate (design §10): the migrated boundary must reproduce the legacy run's returned values, error identities and final bytes step for step.
 func TestLegacyChoreographyTrace(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "legacy-choreo-trace.json"))
 	if err != nil {

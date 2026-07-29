@@ -100,10 +100,7 @@ func (ch *CloudHypervisor) netResizeAdd(ctx context.Context, hc *http.Client, vm
 	return res, nil
 }
 
-// resolveFailedPersist re-reads the record after a failed NIC persist (fsync
-// can fail after the rename landed) and tears down only on a conclusive miss:
-// removing a committed NIC would strand record-without-device, unhealable by a
-// same-target retry. Lockless read so a GC index lock can't fake a miss.
+// resolveFailedPersist tears down a failed NIC persist only on a conclusive lockless re-read miss: fsync can fail after the rename landed, and removing a committed NIC strands record-without-device beyond any retry.
 func (ch *CloudHypervisor) resolveFailedPersist(ctx context.Context, hc *http.Client, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, chID string, i int) (bool, error) {
 	rec, err := ch.PeekRecord(ctx, vmID)
 	if err != nil {
@@ -211,10 +208,7 @@ func reconcileOrphanNICs(ctx context.Context, hc *http.Client, info *chVMInfoRes
 		if err := removeDeviceVM(ctx, hc, n.ID); err != nil {
 			return fmt.Errorf("eject orphan NIC %s: %w", n.ID, err)
 		}
-		// Reclaim the host slot even when the eject wait times out (same
-		// pattern as resolveFailedPersist's rollback): once the guest finishes
-		// a late eject the device vanishes from vm.info, so no later reconcile
-		// would ever see this TAP again and it would wedge retries at CreateTAP.
+		// Reclaim the host slot even on eject-wait timeout: a late guest eject removes the device from vm.info, so no later reconcile would see this TAP and retries wedge at CreateTAP.
 		ejectErr := waitDeviceEjected(ctx, hc, n.ID)
 		if idx, ok := network.TAPIndex(n.TAP); ok {
 			if rmErr := plumbing.Remove(ctx, vmID, idx); rmErr != nil {

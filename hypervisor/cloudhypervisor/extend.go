@@ -23,6 +23,15 @@ import (
 
 const chStatePaused = "Paused"
 
+// makeBodyFn builds a device endpoint's request body from the record reloaded under the ops lock.
+type makeBodyFn func(rec *hypervisor.VMRecord) any
+
+// preCheckFn vets the under-lock vm.info snapshot before a device mutation.
+type preCheckFn func(*chVMInfoResponse) error
+
+// findIDFn resolves the device id to detach from the under-lock vm.info snapshot.
+type findIDFn func(*chVMInfoResponse) (string, error)
+
 func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
 	if err := spec.Normalize(); err != nil {
 		return "", err
@@ -230,11 +239,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	return hc, rec, info, unlock, nil
 }
 
-func (ch *CloudHypervisor) attachWith(
-	ctx context.Context, vmRef, endpoint string,
-	makeBody func(rec *hypervisor.VMRecord) any, fallbackID string,
-	preCheck func(*chVMInfoResponse) error,
-) (string, error) {
+func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint string, makeBody makeBodyFn, fallbackID string, preCheck preCheckFn) (string, error) {
 	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return "", err
@@ -269,10 +274,7 @@ func (ch *CloudHypervisor) attachWith(
 	return fallbackID, nil
 }
 
-func (ch *CloudHypervisor) detachWith(
-	ctx context.Context, vmRef string,
-	findID func(*chVMInfoResponse) (string, error),
-) error {
+func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn) error {
 	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err

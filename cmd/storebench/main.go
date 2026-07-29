@@ -1,7 +1,4 @@
-// storebench times meta-engine operations through the hypervisor backend:
-// `update`/`get` are single-process loops at resident N (P0 paired gate and
-// §9 anchors); `create` fans out worker PROCESSES doing reserve+finalize on
-// one shared store — the concurrent VM-creation shape (§9).
+// storebench times meta-engine operations through the hypervisor backend: update/get loop in-process at resident N, create fans out worker processes doing reserve+finalize on one shared store (§9's concurrent VM-creation shape).
 package main
 
 import (

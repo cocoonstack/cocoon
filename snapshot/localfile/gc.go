@@ -18,12 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	// pendingGCGrace lets a slow-storage snapshot finish before GC reclaims a pending record.
-	pendingGCGrace = 24 * time.Hour
-
-	reasonOrphan = "orphan"
-)
+const reasonOrphan = "orphan"
 
 // EvictionPolicy controls LRU snapshot eviction; Enabled with zero criteria evicts all non-pending.
 type EvictionPolicy struct {
@@ -98,7 +93,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		Recover: lf.gcRecover,
 		ReadDB: func(ctx context.Context) (snapshotGCSnapshot, error) {
 			snap := snapshotGCSnapshot{policy: policy, reasons: make(map[string]string)}
-			cutoff := time.Now().Add(-pendingGCGrace)
 			if err := lf.view(ctx, func(t *snapTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
@@ -107,9 +101,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.Pending {
-						if rec.CreatedAt.Before(cutoff) {
-							snap.stalePending = append(snap.stalePending, id)
-						}
+						snap.stalePending = append(snap.stalePending, id)
 						return nil
 					}
 					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
@@ -163,21 +155,20 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		},
 		Collect: func(ctx context.Context, ids []string, snap snapshotGCSnapshot) error {
 			logger := log.WithFunc("gc.snapshot")
-			cutoff := time.Now().Add(-pendingGCGrace)
 			var errs []error
 			for _, id := range ids {
 				if err := ctx.Err(); err != nil {
 					errs = append(errs, err)
 					break
 				}
-				// Exclusive lease: an active clone/restore/export holds it shared; skip and retry next cycle.
+				// Exclusive lease: an active save holds it exclusively (build lease) and readers (clone/restore/export) hold it shared, so acquiring it is the proof a pending record's owner died — no age gate needed.
 				fl, ok, lockErr := lf.tryExclusiveLease(id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
 					continue
 				}
 				if !ok {
-					logger.Warnf(ctx, "skip %s: leased by an active reader", id)
+					logger.Warnf(ctx, "skip %s: leased by an active holder", id)
 					continue
 				}
 				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
@@ -186,7 +177,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					pending, sawRecord = rec.Pending, true
 					switch snap.reasons[id] {
 					case "stale-pending":
-						return rec.Pending && rec.CreatedAt.Before(cutoff)
+						return rec.Pending
 					case "missing-dir":
 						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
 						return errors.Is(statErr, fs.ErrNotExist)

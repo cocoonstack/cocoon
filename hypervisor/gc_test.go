@@ -18,9 +18,9 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	const id = "vm-gc-lock"
 	runDir, logDir := t.TempDir(), t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, false)
+	// A fresh creating record: the free ops lock alone is the reclaim proof, no age gate.
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].State = types.VMStateCreating
-		idx.VMs[id].UpdatedAt = time.Now().Add(-25 * time.Hour)
 		idx.VMs[id].RunDir = runDir
 		idx.VMs[id].LogDir = logDir
 		return nil

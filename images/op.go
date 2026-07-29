@@ -39,7 +39,7 @@ func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
 	return result, err
 }
 
-// Delete deletes entries from an index by ids and returns removed refs.
+// Delete deletes entries from an index by ids and returns actually-removed refs; not-found ids are logged and skipped.
 func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, err error) {
 	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error

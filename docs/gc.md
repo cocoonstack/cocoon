@@ -35,8 +35,8 @@ journalctl -u cocoon-gc.service --since today | awk '/gc.Run completed/'
 ```
 
 Reasons:
-- **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (Create crashed >24h ago), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
-- **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating`
+- **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (a dead save's pending record — its build lease is free), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
+- **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating` (a dead create/clone's placeholder — its ops lock is free, no age wait)
 - **images (oci, cloudimg)**: `unreferenced`
 - **cni**: `orphan` (netns without active VM)
 - **bridge**: `orphan-tap`
@@ -44,7 +44,7 @@ Reasons:
 
 ### Snapshot LRU Eviction
 
-Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record) and **stale pending** records (crashed mid-Create, older than 24h). To also evict healthy snapshots by access recency, pass `--snapshot`:
+Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record) and **stale pending** records (a save died mid-flight; every save holds its snapshot's build lease from placeholder to finalize, so a pending record whose lease GC can acquire is provably ownerless — no age wait). To also evict healthy snapshots by access recency, pass `--snapshot`:
 
 | Flag                 | Effect                                                                                          |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
