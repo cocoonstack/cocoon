@@ -301,9 +301,6 @@ func waitRelayLeaseReady(ready *os.File) error {
 }
 
 func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
-	if response == nil {
-		return fmt.Errorf("source-lease relay %s response pipe is nil", phase)
-	}
 	result := make(chan error, 1)
 	go func() {
 		var command [1]byte

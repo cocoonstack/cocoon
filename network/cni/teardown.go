@@ -27,7 +27,7 @@ type netCleanupRecord struct {
 }
 
 func (c *CNI) tombstones() *tombstone.Table {
-	return tombstone.NewTable(c.meta, NamespaceName)
+	return tombstone.NewTable(NamespaceName)
 }
 
 // teardownProtocol runs the delete protocol for one VM's networking under its held VM lock; nil subset means aggregate (all records + the netns).

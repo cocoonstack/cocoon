@@ -32,7 +32,7 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 			ctx := t.Context()
 			dir := t.TempDir()
 			s := newStore(t, dir, "alpha")
-			c := meta.NewCollection[map[string]int](s, "alpha", "records")
+			c := meta.NewCollection[map[string]int]("alpha", "records")
 
 			seed := map[string]int{"v": 1}
 			if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
@@ -59,7 +59,7 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 
 			// Reopen as a fresh process would and require wholly-old or wholly-new.
 			s2 := newStore(t, dir, "alpha")
-			c2 := meta.NewCollection[map[string]int](s2, "alpha", "records")
+			c2 := meta.NewCollection[map[string]int]("alpha", "records")
 			var a, b *map[string]int
 			if err := s2.View(ctx, []string{"alpha"}, func(r meta.Reader) error {
 				var err error
@@ -89,7 +89,7 @@ func TestPrevRecovery(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	path := filepath.Join(dir, "alpha.json")
 
 	for gen := 1; gen <= 2; gen++ {
@@ -108,7 +108,7 @@ func TestPrevRecovery(t *testing.T) {
 	}
 
 	s2 := newStore(t, dir, "alpha")
-	c2 := meta.NewCollection[map[string]int](s2, "alpha", "records")
+	c2 := meta.NewCollection[map[string]int]("alpha", "records")
 	got, err := mustGet(t, s2, "alpha", "a")
 	if err != nil || (*got)["gen"] != 1 {
 		t.Fatalf("recovered generation: %v, %v", got, err)
@@ -162,7 +162,7 @@ func TestExternalProcessEvents(t *testing.T) {
 
 	// A second store over the same files stands in for an external process.
 	s2 := newStore(t, dir, "alpha")
-	c2 := meta.NewCollection[map[string]int](s2, "alpha", "records")
+	c2 := meta.NewCollection[map[string]int]("alpha", "records")
 	v := map[string]int{"v": 1}
 	if err := s2.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 		return c2.Insert(ctx, w, "a", &v)
@@ -233,7 +233,7 @@ func TestEventsForcedOverflow(t *testing.T) {
 	if err := s.events.watcher.Remove(dir); err != nil {
 		t.Fatalf("remove watch: %v", err)
 	}
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	v := map[string]int{"v": 1}
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 		return c.Insert(ctx, w, "a", &v)
@@ -264,7 +264,7 @@ func TestDurableSyncOrder(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 
 	steps = nil
 	v := map[string]int{"n": 1}
@@ -302,7 +302,7 @@ func TestCleanUpdateSkipsCommit(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	v := map[string]int{"n": 1}
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 		return c.Insert(ctx, w, "a", &v)
@@ -337,7 +337,7 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	path := filepath.Join(dir, "alpha.json")
 
 	for gen := 1; gen <= 2; gen++ {
@@ -381,7 +381,7 @@ func (c *crashPoint) hook(step string) error {
 
 func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {
 	t.Helper()
-	c := meta.NewCollection[map[string]int](s, ns, "records")
+	c := meta.NewCollection[map[string]int](ns, "records")
 	var rec *map[string]int
 	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
 		var err error

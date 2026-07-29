@@ -173,7 +173,7 @@ func (d *Daemon) settle(ctx context.Context) bool {
 
 // gcTick returns the periodic-GC channel and its stop; with GC off (the default) the nil channel keeps the select arm inert.
 func (d *Daemon) gcTick() (<-chan time.Time, func()) {
-	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
+	if d.conf.GCInterval <= 0 {
 		return nil, func() {}
 	}
 	t := time.NewTicker(d.conf.GCInterval)

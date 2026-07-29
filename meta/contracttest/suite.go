@@ -67,7 +67,7 @@ func ForcedRetry(s meta.Store) meta.Store { return &retryStore{Store: s} }
 func testCRUD(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		return c.Insert(ctx, w, "a", &record{Name: "one", N: 1})
@@ -105,7 +105,7 @@ func testCRUD(t *testing.T, factory Factory) {
 func testDetached(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	in := &record{Name: nameOrig, N: 1}
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Insert(ctx, w, "a", in) })
@@ -159,8 +159,8 @@ func testDetached(t *testing.T, factory Factory) {
 func testScope(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha, nsBeta})
-	alpha := meta.NewCollection[record](s, nsAlpha, "records")
-	beta := meta.NewCollection[record](s, nsBeta, "records")
+	alpha := meta.NewCollection[record](nsAlpha, "records")
+	beta := meta.NewCollection[record](nsBeta, "records")
 
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
 		_, err := beta.Get(ctx, w, "x")
@@ -195,7 +195,7 @@ func testScope(t *testing.T, factory Factory) {
 func testDurability(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return c.Insert(ctx, w, "a", &record{})
@@ -215,7 +215,7 @@ func testDurability(t *testing.T, factory Factory) {
 func testForcedRetry(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := ForcedRetry(factory(t, []string{nsAlpha}))
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	// The correct pattern: accumulate inside, publish only after nil return.
 	var out []string
@@ -258,7 +258,7 @@ func testForcedRetry(t *testing.T, factory Factory) {
 func testCtxVsHeldWriter(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	held := make(chan struct{})
 	release := make(chan struct{})
@@ -294,7 +294,7 @@ func testCtxVsHeldWriter(t *testing.T, factory Factory) {
 func testViewIsolation(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Insert(ctx, w, "a", &record{N: 1}) })
 
 	attempted := make(chan struct{})
@@ -333,8 +333,8 @@ func testViewIsolation(t *testing.T, factory Factory) {
 func testDeadlockFreedom(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha, nsBeta})
-	alpha := meta.NewCollection[record](s, nsAlpha, "records")
-	beta := meta.NewCollection[record](s, nsBeta, "records")
+	alpha := meta.NewCollection[record](nsAlpha, "records")
+	beta := meta.NewCollection[record](nsBeta, "records")
 	update(t, s, nsAlpha, func(w meta.Writer) error { return alpha.Insert(ctx, w, "x", &record{}) })
 	update(t, s, nsBeta, func(w meta.Writer) error { return beta.Insert(ctx, w, "x", &record{}) })
 
@@ -369,7 +369,7 @@ func testDeadlockFreedom(t *testing.T, factory Factory) {
 func testEvents(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
-	c := meta.NewCollection[record](s, nsAlpha, "records")
+	c := meta.NewCollection[record](nsAlpha, "records")
 
 	ch, release, err := s.Events(ctx)
 	if err != nil {

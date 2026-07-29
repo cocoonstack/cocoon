@@ -129,7 +129,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		rollbackReserve()
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	h.reseedAfterResume(ctx, hyper, vm, true)
+	h.reseedAfterResume(ctx, conf, hyper, vm, true)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
 		return jsonErr
@@ -182,7 +182,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	}
 
 	// Pin the inspected IDs: re-resolving mutable names here would let a delete+reuse bypass the ownership check above.
-	done, directErr := h.restoreDirect(ctx, cmd, snapInfo.ID, vm.ID, vmCfg, snapBackend, hyper, logger)
+	done, directErr := h.restoreDirect(ctx, cmd, conf, snapInfo.ID, vm.ID, vmCfg, snapBackend, hyper, logger)
 	if done {
 		return directErr
 	}
@@ -200,7 +200,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	h.reseedAfterResume(ctx, hyper, result, false)
+	h.reseedAfterResume(ctx, conf, hyper, result, false)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
 		return jsonErr
@@ -245,7 +245,7 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 		return err
 	}
 	defer releasePins()
-	return h.runDirectRestore(ctx, cmd, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
+	return h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
@@ -264,9 +264,6 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
-	}
-	if conf == nil {
-		return fmt.Errorf("nil config")
 	}
 	// Local copy keeps backend flip from leaking to the caller's shared *config.Config.
 	localConf := *conf
@@ -303,7 +300,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		rollbackReserve()
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
-	h.reseedAfterResume(ctx, hyper, vm, true)
+	h.reseedAfterResume(ctx, conf, hyper, vm, true)
 
 	if wantJSON {
 		return cliutil.OutputJSON(vm)
@@ -369,7 +366,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	return vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, nil
 }
 
-func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
+func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
 	da, ok := snapBackend.(snapshot.Direct)
 	if !ok {
 		return false, nil
@@ -383,11 +380,11 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, snapRef,
 		return true, fmt.Errorf("open snapshot: %w", err)
 	}
 	defer release()
-	return true, h.runDirectRestore(ctx, cmd, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
+	return true, h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
-func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
+func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
@@ -396,7 +393,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, hyper
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	h.reseedAfterResume(ctx, hyper, result, false)
+	h.reseedAfterResume(ctx, conf, hyper, result, false)
 	if wantJSON {
 		return cliutil.OutputJSON(result)
 	}
@@ -596,9 +593,6 @@ func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int
 }
 
 func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID string) {
-	if netProvider == nil {
-		return
-	}
 	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 	defer cancel()

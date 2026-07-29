@@ -63,9 +63,9 @@ type Table struct {
 	recs *meta.Collection[Record]
 }
 
-// NewTable binds the tombstones table in ns on s.
-func NewTable(s meta.Store, ns string) *Table {
-	return &Table{ns: ns, recs: meta.NewCollection[Record](s, ns, TableName)}
+// NewTable binds the tombstones table in ns.
+func NewTable(ns string) *Table {
+	return &Table{ns: ns, recs: meta.NewCollection[Record](ns, TableName)}
 }
 
 // Get returns id's tombstone, nil when none.

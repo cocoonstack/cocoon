@@ -76,7 +76,7 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 }
 
 // PreflightRestore runs the shared restore preflight against this backend's managed roots.
-func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) error {
+func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) (*SnapshotMeta, error) {
 	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
 }
 

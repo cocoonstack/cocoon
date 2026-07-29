@@ -13,17 +13,15 @@ const resolvePrefixMin = 3
 // RecordTx is the id→record map view of one table inside a transaction:
 // Get mirrors map lookup (nil when absent), Put is an upsert.
 type RecordTx[R any] struct {
-	ctx   context.Context
-	ns    string
-	table string
-	r     Reader
-	w     Writer
-	recs  *Collection[R]
+	ctx  context.Context
+	r    Reader
+	w    Writer
+	recs *Collection[R]
 }
 
 // NewRecordTx binds the view to (ns, table); w is nil in read-only transactions.
-func NewRecordTx[R any](ctx context.Context, s Store, ns, table string, r Reader, w Writer) *RecordTx[R] {
-	return &RecordTx[R]{ctx: ctx, ns: ns, table: table, r: r, w: w, recs: NewCollection[R](s, ns, table)}
+func NewRecordTx[R any](ctx context.Context, ns, table string, r Reader, w Writer) *RecordTx[R] {
+	return &RecordTx[R]{ctx: ctx, r: r, w: w, recs: NewCollection[R](ns, table)}
 }
 
 // Get mirrors items[id]: nil when absent.
@@ -69,10 +67,10 @@ type NamedTx[R any] struct {
 
 // NewNamedTx binds the pattern to (ns, recordsTable, namesTable); w is nil in
 // read-only transactions.
-func NewNamedTx[R any](ctx context.Context, s Store, ns, recordsTable, namesTable string, r Reader, w Writer) *NamedTx[R] {
+func NewNamedTx[R any](ctx context.Context, ns, recordsTable, namesTable string, r Reader, w Writer) *NamedTx[R] {
 	return &NamedTx[R]{
-		RecordTx: NewRecordTx[R](ctx, s, ns, recordsTable, r, w),
-		names:    NewCollection[string](s, ns, namesTable),
+		RecordTx: NewRecordTx[R](ctx, ns, recordsTable, r, w),
+		names:    NewCollection[string](ns, namesTable),
 	}
 }
 
@@ -130,7 +128,7 @@ func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
 	if len(ref) >= resolvePrefixMin {
 		match := ""
 		ambiguous := false
-		if err := x.r.ScanRaw(x.ctx, x.ns, x.table, func(id string, _ json.RawMessage) error {
+		if err := x.r.ScanRaw(x.ctx, x.recs.ns, x.recs.table, func(id string, _ json.RawMessage) error {
 			if strings.HasPrefix(id, ref) {
 				if match != "" {
 					ambiguous = true

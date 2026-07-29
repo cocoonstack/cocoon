@@ -40,11 +40,7 @@ func (p *bindRedirectPlan) files() []*os.File {
 	return files
 }
 
-func (p *bindRedirectPlan) close() {
-	for _, lease := range slices.Backward(p.leases) {
-		_ = lease.Close()
-	}
-}
+func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
 	return fc.CloneFromStream(ctx, vmID, vmCfg, net, snapshotConfig, snapshot, fc.cloneAfterExtract)
@@ -415,11 +411,7 @@ func managedSourceVMIDs(runRoot string, srcConfigs, dstConfigs []*types.StorageC
 
 func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) ([]*vmlock.SharedLease, error) {
 	var leases []*vmlock.SharedLease
-	release := func() {
-		for _, lease := range slices.Backward(leases) {
-			_ = lease.Close()
-		}
-	}
+	release := func() { closeLeases(leases) }
 	for _, id := range managedSourceVMIDs(runRoot, srcConfigs, dstConfigs) {
 		lease, err := vmlock.NewSharedLease(ctx, rootDir, id)
 		if err != nil {
@@ -429,6 +421,12 @@ func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, src
 		leases = append(leases, lease)
 	}
 	return leases, nil
+}
+
+func closeLeases(leases []*vmlock.SharedLease) {
+	for _, lease := range slices.Backward(leases) {
+		_ = lease.Close()
+	}
 }
 
 func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOverride {

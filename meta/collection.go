@@ -8,14 +8,13 @@ import (
 
 // Collection is a typed record set inside one namespace table; reads hand back detached values, persisting a change requires Replace.
 type Collection[R any] struct {
-	store Store
 	ns    string
 	table string
 }
 
-// NewCollection binds a Collection to a (namespace, table) pair on s.
-func NewCollection[R any](s Store, ns, table string) *Collection[R] {
-	return &Collection[R]{store: s, ns: ns, table: table}
+// NewCollection binds a Collection to a (namespace, table) pair.
+func NewCollection[R any](ns, table string) *Collection[R] {
+	return &Collection[R]{ns: ns, table: table}
 }
 
 // Get returns a detached copy of id, or ErrNotFound.

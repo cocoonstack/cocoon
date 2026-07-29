@@ -29,5 +29,5 @@ func (lf *LocalFile) update(ctx context.Context, fn func(*snapTx) error) error {
 }
 
 func (lf *LocalFile) tx(ctx context.Context, r meta.Reader, w meta.Writer) *snapTx {
-	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, lf.meta, NamespaceName, TableRecords, TableNames, r, w)
+	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, NamespaceName, TableRecords, TableNames, r, w)
 }

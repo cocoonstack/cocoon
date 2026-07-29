@@ -22,7 +22,7 @@ type snapCleanup struct {
 }
 
 func (lf *LocalFile) tombstones() *tombstone.Table {
-	return tombstone.NewTable(lf.meta, NamespaceName)
+	return tombstone.NewTable(NamespaceName)
 }
 
 // deleteSnapshotProtocol runs the phase protocol for one snapshot under its held EXCLUSIVE lease; revalidate (optional) re-checks candidacy inside the lease transaction, and returning false skips without error.

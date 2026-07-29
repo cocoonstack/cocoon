@@ -117,24 +117,11 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 
 // Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
 func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stream io.Reader) (_ string, err error) {
-	if cfg.ID == "" {
-		return "", fmt.Errorf("snapshot ID is required (must be set by caller)")
-	}
-	release, err := lf.acquireBuildLease(cfg.ID)
+	dataDir, done, err := lf.beginBuild(ctx, cfg)
 	if err != nil {
 		return "", err
 	}
-	defer release()
-	dataDir, err := lf.beginCreate(ctx, cfg)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(dataDir) //nolint:errcheck,gosec
-			lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
-		}
-	}()
+	defer done(&err)
 
 	if err = utils.EnsureDirs(dataDir); err != nil {
 		return "", err
@@ -161,24 +148,11 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 		return "", false, nil
 	}
 
-	if cfg.ID == "" {
-		return "", false, fmt.Errorf("snapshot ID is required (must be set by caller)")
-	}
-	release, err := lf.acquireBuildLease(cfg.ID)
+	dataDir, done, err := lf.beginBuild(ctx, cfg)
 	if err != nil {
 		return "", false, err
 	}
-	defer release()
-	dataDir, err := lf.beginCreate(ctx, cfg)
-	if err != nil {
-		return "", false, err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(dataDir) //nolint:errcheck,gosec
-			lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
-		}
-	}()
+	defer done(&err)
 
 	// A st_dev match can't rule out EXDEV (bind mounts): roll back and report ok=false so the caller streams via tar.
 	if err = osRename(srcDir, dataDir); err != nil {
@@ -324,6 +298,30 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	emitSnapStop(ctx, lf.metering, id, hypType)
 	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
 	return nil
+}
+
+// beginBuild is the shared Create/CreateFromDir preamble: build lease + pending record; done (deferred with the caller's named error) removes the half-built dir and rolls the record back on failure, then releases the lease.
+func (lf *LocalFile) beginBuild(ctx context.Context, cfg *types.SnapshotConfig) (dataDir string, done func(*error), err error) {
+	if cfg.ID == "" {
+		return "", nil, fmt.Errorf("snapshot ID is required (must be set by caller)")
+	}
+	release, err := lf.acquireBuildLease(cfg.ID)
+	if err != nil {
+		return "", nil, err
+	}
+	dataDir, err = lf.beginCreate(ctx, cfg)
+	if err != nil {
+		release()
+		return "", nil, err
+	}
+	done = func(errp *error) {
+		if *errp != nil {
+			os.RemoveAll(dataDir) //nolint:errcheck,gosec
+			lf.rollbackCreate(ctx, cfg.ID, cfg.Name)
+		}
+		release()
+	}
+	return dataDir, done, nil
 }
 
 func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig) (string, error) {

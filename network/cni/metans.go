@@ -75,5 +75,5 @@ func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 }
 
 func (c *CNI) tx(ctx context.Context, r meta.Reader, w meta.Writer) *netTx {
-	return &netTx{RecordTx: meta.NewRecordTx[networkRecord](ctx, c.meta, NamespaceName, TableRecords, r, w)}
+	return &netTx{RecordTx: meta.NewRecordTx[networkRecord](ctx, NamespaceName, TableRecords, r, w)}
 }
