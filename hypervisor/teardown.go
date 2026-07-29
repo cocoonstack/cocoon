@@ -11,10 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// ErrTombstoned reports an entrypoint that met a deleting-phase entity:
-// resources are partially gone and the operation must not touch the record.
-var ErrTombstoned = errors.New("vm is being deleted")
-
 // vmCleanup is the vms-namespace tombstone payload: everything teardown
 // needs once the record is gone.
 type vmCleanup struct {
@@ -23,10 +19,7 @@ type vmCleanup struct {
 	LogDir string `json:"log_dir,omitempty"`
 }
 
-// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock —
-// roll a leased tombstone back, drive a deleting one to completion and refuse —
-// returning the record from the guard's own transaction, sparing lock-held
-// entry paths a second whole-namespace read.
+// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock: a leased tombstone rolls back, a deleting one is driven to completion and refused; the record returns from the guard's own transaction so entry paths skip a second namespace read.
 func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
 	rec, err := b.entryGuard(ctx, id)
 	if err != nil {
@@ -42,10 +35,7 @@ func (b *Backend) tombstones() *tombstone.Table {
 	return tombstone.NewTable(b.NS)
 }
 
-// deleteVMProtocol runs the §5 phase protocol for one VM under its held ops
-// lock: lease with full payload → deleting → slow teardown → fenced finalize.
-// A crash at any point leaves a phase-directed tombstone a later worker
-// resumes.
+// deleteVMProtocol runs the §5 phase protocol (lease → deleting → teardown → fenced finalize) under the held ops lock; a crash at any point leaves a phase-directed tombstone a later worker resumes.
 func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord) error {
 	ts := b.tombstones()
 	cl := vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
@@ -137,39 +127,44 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool,
 	return true, nil
 }
 
+// entryGuard peeks tombstone and record in a read transaction — the caller's ops lock freezes both — escalating to a write only to roll a leased tombstone back, keeping the common no-tombstone path off the single sqlite writer connection.
 func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) {
-	var rec *VMRecord
-	err := b.update(ctx, func(t *vmTx) error {
-		if err := b.guardVMTombstone(ctx, t, id); err != nil {
+	ts := b.tombstones()
+	var (
+		rec   *VMRecord
+		tsRec *tombstone.Record
+	)
+	if err := b.view(ctx, func(t *vmTx) error {
+		var err error
+		if tsRec, err = ts.Get(ctx, t.r, id); err != nil || tsRec != nil {
 			return err
 		}
-		var getErr error
-		rec, getErr = t.Get(id)
-		return getErr
-	})
-	if !errors.Is(err, ErrTombstoned) {
-		return rec, err
-	}
-	if _, rerr := b.recoverVMTombstone(ctx, id); rerr != nil {
-		return nil, fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
-	}
-	return nil, fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
-}
-
-// guardVMTombstone refuses tombstoned VMs inside the entrypoint's own
-// transaction: leased rolls back in place, deleting reports ErrTombstoned.
-func (b *Backend) guardVMTombstone(ctx context.Context, t *vmTx, id string) error {
-	ts := b.tombstones()
-	rec, err := ts.Get(ctx, t.w, id)
-	if err != nil || rec == nil {
+		rec, err = t.Get(id)
 		return err
+	}); err != nil {
+		return nil, err
 	}
-	if rec.Phase == tombstone.PhaseLeased {
+	if tsRec == nil {
+		return rec, nil
+	}
+	if tsRec.Phase != tombstone.PhaseLeased {
+		if _, rerr := b.recoverVMTombstone(ctx, id); rerr != nil {
+			return nil, fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
+		}
+		return nil, fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)
+	}
+	if err := b.update(ctx, func(t *vmTx) error {
 		taken, err := ts.TakeOver(ctx, t.w, id)
 		if err != nil {
 			return err
 		}
-		return ts.Rollback(ctx, t.w, id, taken.LeaseID)
+		if rbErr := ts.Rollback(ctx, t.w, id, taken.LeaseID); rbErr != nil {
+			return rbErr
+		}
+		rec, err = t.Get(id)
+		return err
+	}); err != nil {
+		return nil, err
 	}
-	return fmt.Errorf("vm %s: %w", id, ErrTombstoned)
+	return rec, nil
 }
