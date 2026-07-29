@@ -1,7 +1,9 @@
 package localfile
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -481,6 +483,68 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("got %d entries; orphan/stale-pending must not emit stop", len(got))
+	}
+}
+
+// TestGCCollectsFreshPendingWithFreeLease pins the lease-free ownerless proof:
+// a dead save's pending record is reclaimed on the next pass, however young —
+// the free build lease is the proof, not an age gate.
+func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "fresh-pending"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+	if err := os.MkdirAll(lf.conf.SnapshotDataDir(id), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := mod.Resolve(ctx, snap, map[string]any{})
+	if !slices.Contains(ids, id) {
+		t.Fatalf("candidates = %v, want the fresh pending record picked", ids)
+	}
+	if err := mod.Collect(ctx, ids, snap); err != nil {
+		t.Fatal(err)
+	}
+	if _, held, err := lf.NameOwner(ctx, "fresh-pending"); err != nil || held {
+		t.Fatalf("NameOwner = (%v, %v), want the dead save's name freed", err, held)
+	}
+	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("data dir survives: %v", err)
+	}
+}
+
+// TestGCSkipsPendingHeldByLiveBuild pins the other half of the proof: a save
+// still holding its build lease must not lose its pending record to GC.
+func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	release, err := lf.acquireBuildLease(id)
+	if err != nil {
+		t.Fatalf("acquireBuildLease: %v", err)
+	}
+	defer release()
+	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "live-build"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
+		t.Fatal(err)
+	}
+	if owner, held, err := lf.NameOwner(ctx, "live-build"); err != nil || !held || owner != id {
+		t.Fatalf("NameOwner = (%q, %v, %v), want the live build's record untouched", owner, held, err)
 	}
 }
 
