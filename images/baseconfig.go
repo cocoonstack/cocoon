@@ -54,7 +54,7 @@ func (c *BaseConfig) OwnsBlob(hex string) bool {
 	return err == nil
 }
 
-func (c *BaseConfig) EnsureBaseDirs() error {
+func (c *BaseConfig) EnsureDirs() error {
 	if c.RootDir == "" {
 		return fmt.Errorf("root dir must not be empty")
 	}

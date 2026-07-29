@@ -112,13 +112,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 	})
 }
 
-func withDownload(
-	ctx context.Context,
-	conf *Config,
-	url string,
-	tracker progress.Tracker,
-	fn func(f *os.File, tmpPath, digestHex string) error,
-) error {
+func withDownload(ctx context.Context, conf *Config, url string, tracker progress.Tracker, fn func(f *os.File, tmpPath, digestHex string) error) error {
 	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "pull-*.img")
 	if err != nil {
 		return err

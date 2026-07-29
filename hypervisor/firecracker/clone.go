@@ -42,8 +42,19 @@ func (p *bindRedirectPlan) files() []*os.File {
 
 func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
+// launchCloneFn starts the FC process over the plan's redirected drive FDs.
+type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
+
+// cloneLaunch carries one clone launch's anchoring inputs down the startCloneVM chain; src/dst are the snapshot's recorded drives and the clone's rebuilt ones, index-aligned.
+type cloneLaunch struct {
+	launch           launchCloneFn
+	sockPath, runDir string
+	networkConfigs   []*types.NetworkConfig
+	src, dst         []*types.StorageConfig
+}
+
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
-	return fc.CloneFromStream(ctx, vmID, vmCfg, net, snapshotConfig, snapshot, fc.cloneAfterExtract)
+	return fc.CloneFromStream(ctx, vmID, hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: fc.cloneAfterExtract}, snapshot)
 }
 
 func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
@@ -92,7 +103,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 			LogDir: logDir,
 		}, sockPath, net.NetnsPath, leaseFiles)
 	}
-	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, launch, sockPath, runDir, networkConfigs, meta.StorageConfigs, storageConfigs)
+	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{
+		launch: launch, sockPath: sockPath, runDir: runDir,
+		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs,
+	})
 	if cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
@@ -121,18 +135,12 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 }
 
 // startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors. Clone disks are bind-mounted over source-absolute paths in a private mount namespace, so siblings load in parallel without replacing host paths with symlinks.
-func (fc *Firecracker) startCloneVM(
-	ctx context.Context,
-	launch func([]*os.File) (int, *cloneLeaseControl, error),
-	sockPath, runDir string,
-	networkConfigs []*types.NetworkConfig,
-	srcConfigs, dstConfigs []*types.StorageConfig,
-) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
-	pid, leaseControl, plan, err := fc.loadCloneSnapshot(ctx, launch, sockPath, runDir, networkConfigs, srcConfigs, dstConfigs)
+func (fc *Firecracker) startCloneVM(ctx context.Context, cl cloneLaunch) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
+	pid, leaseControl, plan, err := fc.loadCloneSnapshot(ctx, cl)
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	if err := fc.resumeAndReanchorClone(ctx, pid, sockPath, runDir, srcConfigs, dstConfigs); err != nil {
+	if err := fc.resumeAndReanchorClone(ctx, pid, cl); err != nil {
 		leaseControl.close()
 		plan.close()
 		return 0, nil, nil, err
@@ -140,17 +148,11 @@ func (fc *Firecracker) startCloneVM(
 	return pid, leaseControl, plan, nil
 }
 
-func (fc *Firecracker) loadCloneSnapshot(
-	ctx context.Context,
-	launch func([]*os.File) (int, *cloneLeaseControl, error),
-	sockPath, runDir string,
-	networkConfigs []*types.NetworkConfig,
-	srcConfigs, dstConfigs []*types.StorageConfig,
-) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
-	netOverrides := buildNetworkOverrides(networkConfigs)
-	vsockPath := hypervisor.VsockSockPath(runDir)
+func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
+	netOverrides := buildNetworkOverrides(cl.networkConfigs)
+	vsockPath := hypervisor.VsockSockPath(cl.runDir)
 
-	plan, err := holdBindableRedirects(ctx, fc.Conf.RootDirPath(), fc.Conf.RunDir(), srcConfigs, dstConfigs, func(id string) (bool, error) {
+	plan, err := holdBindableRedirects(ctx, fc.Conf.RootDirPath(), fc.Conf.RunDir(), cl.src, cl.dst, func(id string) (bool, error) {
 		rec, peekErr := fc.PeekRecord(ctx, id)
 		return rec != nil, peekErr
 	})
@@ -163,11 +165,11 @@ func (fc *Firecracker) loadCloneSnapshot(
 		leaseControl *cloneLeaseControl
 	)
 	if len(plan.binds) == 0 {
-		pid, leaseControl, err = launch(nil)
+		pid, leaseControl, err = cl.launch(nil)
 	} else {
 		pid, err = launchWithBinds(plan.binds, func() (int, error) {
 			var launchErr error
-			pid, leaseControl, launchErr = launch(plan.files())
+			pid, leaseControl, launchErr = cl.launch(plan.files())
 			return pid, launchErr
 		})
 	}
@@ -176,40 +178,35 @@ func (fc *Firecracker) loadCloneSnapshot(
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("launch FC: %w", err)
 	}
-	if err := loadSnapshotFC(ctx, sockPath, runDir, netOverrides, vsockPath); err != nil {
+	if err := loadSnapshotFC(ctx, cl.sockPath, cl.runDir, netOverrides, vsockPath); err != nil {
 		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("snapshot/load: %w", err)
 	}
 	if err := verifyDriveFDs(pid, plan.binds); err != nil {
 		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("bind redirect lost during load (source mutated concurrently): %w", err)
 	}
 	return pid, leaseControl, plan, nil
 }
 
-func (fc *Firecracker) resumeAndReanchorClone(
-	ctx context.Context,
-	pid int,
-	sockPath, runDir string,
-	srcConfigs, dstConfigs []*types.StorageConfig,
-) (err error) {
+func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl cloneLaunch) (err error) {
 	defer func() {
 		if err != nil {
-			fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+			fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
 		}
 	}()
 
-	hc := utils.NewSocketHTTPClient(sockPath)
+	hc := utils.NewSocketHTTPClient(cl.sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)
 	}
 	// Re-anchor redirected drives at the clone's own paths: the loaded vmstate still names the source's, and a future snapshot would embed those dangling paths, breaking its restore.
-	for _, i := range redirectedDriveIndices(srcConfigs, dstConfigs) {
-		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), dstConfigs[i].Path); err != nil {
+	for _, i := range redirectedDriveIndices(cl.src, cl.dst) {
+		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), cl.dst[i].Path); err != nil {
 			return fmt.Errorf("re-anchor drive %d: %w", i, err)
 		}
 	}

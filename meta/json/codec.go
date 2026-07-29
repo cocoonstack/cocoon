@@ -18,6 +18,10 @@ type Codec interface {
 
 var _ Codec = GenericCodec{}
 
+type genericFile struct {
+	Tables map[string]map[string]json.RawMessage `json:"tables"`
+}
+
 // GenericCodec persists a Model as {"tables":{...}} for
 // namespaces with no legacy format (contract tests, future additions).
 // Insertion order is not preserved across reload: tables refill sorted by id.
@@ -58,8 +62,4 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 		return nil, fmt.Errorf("encode generic namespace: %w", err)
 	}
 	return append(data, '\n'), nil
-}
-
-type genericFile struct {
-	Tables map[string]map[string]json.RawMessage `json:"tables"`
 }

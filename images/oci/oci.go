@@ -25,10 +25,11 @@ var _ images.Images = (*OCI)(nil)
 
 // OCI converts OCI container layers to EROFS for Cloud Hypervisor.
 type OCI struct {
+	images.Ops[imageEntry]
+
 	conf            *Config
 	store           *images.Store[imageEntry]
 	pullGroup       singleflight.Group
-	ops             images.Ops[imageEntry]
 	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
 }
 
@@ -47,7 +48,7 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 	o := &OCI{
 		conf:  cfg,
 		store: store,
-		ops: images.Ops[imageEntry]{
+		Ops: images.Ops[imageEntry]{
 			Store:      store,
 			Type:       typ,
 			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id, normalizeRef) },
@@ -73,20 +74,6 @@ func (o *OCI) Import(ctx context.Context, name string, tracker progress.Tracker,
 
 func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
 	return importTarFromReader(ctx, o.conf, o.store, name, tracker, r)
-}
-
-// Inspect returns (nil, nil) if not found.
-func (o *OCI) Inspect(ctx context.Context, id string) (*types.Image, error) {
-	return o.ops.Inspect(ctx, id)
-}
-
-func (o *OCI) List(ctx context.Context) ([]*types.Image, error) {
-	return o.ops.List(ctx)
-}
-
-// Delete returns actually-deleted refs; not-found ids are logged and skipped.
-func (o *OCI) Delete(ctx context.Context, ids []string) ([]string, error) {
-	return o.ops.Delete(ctx, ids)
 }
 
 // Config builds StorageConfig + BootConfig from layer digests; errors if any blob is missing.

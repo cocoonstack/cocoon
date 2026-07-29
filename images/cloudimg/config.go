@@ -26,10 +26,6 @@ func NewConfig(rootDir string, pullConns int) *Config {
 	}
 }
 
-func (c *Config) EnsureDirs() error {
-	return c.EnsureBaseDirs()
-}
-
 // tmpBlobPath uses a hidden prefix so a partial write is safe under last-writer-wins.
 func (c *Config) tmpBlobPath(digestHex string) string {
 	return filepath.Join(c.TempDir(), ".tmp-"+digestHex+".qcow2")

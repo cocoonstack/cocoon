@@ -12,6 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TableFunc renders the table body; the writer is flushed by the caller.
+type TableFunc func(w *tabwriter.Writer)
+
 func CommandContext(cmd *cobra.Command) context.Context {
 	if cmd != nil && cmd.Context() != nil {
 		return cmd.Context()
@@ -52,13 +55,13 @@ func MaybeOutputJSON(cmd *cobra.Command, v any) (bool, error) {
 	return true, OutputJSON(v)
 }
 
-func OutputFormatted(cmd *cobra.Command, data any, tableFn func(w *tabwriter.Writer)) error {
+func OutputFormatted(cmd *cobra.Command, data any, tableFn TableFunc) error {
 	format, _ := cmd.Flags().GetString("format")
 	return OutputFormattedStr(format, data, tableFn)
 }
 
 // OutputFormattedStr renders data as JSON when format=="json", else as a table via tableFn.
-func OutputFormattedStr(format string, data any, tableFn func(w *tabwriter.Writer)) error {
+func OutputFormattedStr(format string, data any, tableFn TableFunc) error {
 	if format == "json" {
 		return OutputJSON(data)
 	}

@@ -180,7 +180,7 @@ func TestGCCollectRespectsExternalPins(t *testing.T) {
 // taker while held, releases cleanly, and a missing blob fails the pin.
 func TestPinBlobs(t *testing.T) {
 	cfg := &BaseConfig{RootDir: t.TempDir(), Subdir: "oci", BlobExt: ".erofs"}
-	if err := cfg.EnsureBaseDirs(); err != nil {
+	if err := cfg.EnsureDirs(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(cfg.BlobPath("deadbeef"), []byte("x"), 0o644); err != nil {

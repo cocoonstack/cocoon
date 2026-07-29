@@ -14,14 +14,17 @@ import (
 // AfterExtractFn finalizes a cloned VM after snapshot files are in place; sourceSnapshotID flows through for metering lineage.
 type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error)
 
+// CloneSpec carries one clone's inputs through the shared placeholder→populate→finalize skeleton.
+type CloneSpec struct {
+	VMCfg          *types.VMConfig
+	Net            types.NetSetup
+	SnapshotConfig *types.SnapshotConfig
+	AfterExtract   AfterExtractFn
+}
+
 // DirectCloneBase clones from a local snapshot directory. Used when the snapshot lives on the same host (no tar streaming needed).
-func (b *Backend) DirectCloneBase(
-	ctx context.Context, vmID string, vmCfg *types.VMConfig,
-	net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string,
-	cloneFiles func(dstDir, srcDir string) error,
-	afterExtract AfterExtractFn,
-) (*types.VM, error) {
-	return b.cloneBase(ctx, vmID, vmCfg, net, snapshotConfig, afterExtract, func(runDir string) error {
+func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSpec, srcDir string, cloneFiles func(dstDir, srcDir string) error) (*types.VM, error) {
+	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
 		if err := cloneFiles(runDir, srcDir); err != nil {
 			return fmt.Errorf("clone snapshot files: %w", err)
 		}
@@ -30,12 +33,8 @@ func (b *Backend) DirectCloneBase(
 }
 
 // CloneFromStream clones from a tar stream into a fresh runDir. Used when the snapshot arrives over the network (cross-node clone).
-func (b *Backend) CloneFromStream(
-	ctx context.Context, vmID string, vmCfg *types.VMConfig,
-	net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader,
-	afterExtract AfterExtractFn,
-) (*types.VM, error) {
-	return b.cloneBase(ctx, vmID, vmCfg, net, snapshotConfig, afterExtract, func(runDir string) error {
+func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSpec, snapshot io.Reader) (*types.VM, error) {
+	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
 		if err := utils.ExtractTar(runDir, snapshot, isLockFile); err != nil {
 			return fmt.Errorf("extract snapshot: %w", err)
 		}
@@ -62,12 +61,8 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 	return nil
 }
 
-func (b *Backend) cloneBase(
-	ctx context.Context, vmID string, vmCfg *types.VMConfig,
-	net types.NetSetup, snapshotConfig *types.SnapshotConfig,
-	afterExtract AfterExtractFn, populate func(runDir string) error,
-) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := b.reservePlaceholder(ctx, vmID, vmCfg, snapshotConfig.ImageBlobIDs)
+func (b *Backend) cloneBase(ctx context.Context, vmID string, spec CloneSpec, populate func(runDir string) error) (_ *types.VM, err error) {
+	runDir, logDir, now, cleanup, err := b.reservePlaceholder(ctx, vmID, spec.VMCfg, spec.SnapshotConfig.ImageBlobIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -79,5 +74,5 @@ func (b *Backend) cloneBase(
 	if err = populate(runDir); err != nil {
 		return nil, err
 	}
-	return afterExtract(ctx, vmID, vmCfg, net, runDir, logDir, now, snapshotConfig.ID)
+	return spec.AfterExtract(ctx, vmID, spec.VMCfg, spec.Net, runDir, logDir, now, spec.SnapshotConfig.ID)
 }

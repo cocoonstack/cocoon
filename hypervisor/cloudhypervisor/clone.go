@@ -31,7 +31,7 @@ type cloneResumeOpts struct {
 }
 
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
-	return ch.CloneFromStream(ctx, vmID, vmCfg, net, snapshotConfig, snapshot, ch.cloneAfterExtract)
+	return ch.CloneFromStream(ctx, vmID, hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: ch.cloneAfterExtract}, snapshot)
 }
 
 func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
@@ -45,7 +45,7 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, v
 // cloneAfterExtractParsed is cloneAfterExtract minus the config.json parse; DirectClone passes the copy step's parse of the verbatim-copied source.
 func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
 	networkConfigs := net.NetworkConfigs
-	logger := log.WithFunc("cloudhypervisor.cloneAfterExtract")
+	logger := log.WithFunc("cloudhypervisor.cloneAfterExtractParsed")
 
 	chConfigPath := filepath.Join(runDir, configJSONName)
 	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
@@ -158,12 +158,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	return info, nil
 }
 
-func (ch *CloudHypervisor) restoreAndResumeClone(
-	ctx context.Context,
-	pid int,
-	sockPath, runDir string,
-	opts *cloneResumeOpts,
-) (err error) {
+func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, sockPath, runDir string, opts *cloneResumeOpts) (err error) {
 	defer func() {
 		if err != nil {
 			ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)

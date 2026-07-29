@@ -15,15 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func commit(
-	ctx context.Context,
-	conf *Config,
-	store *images.Store[imageEntry],
-	ref string,
-	tracker progress.Tracker,
-	sourcePath string,
-	digestHex string,
-) error {
+func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], ref string, tracker progress.Tracker, sourcePath, digestHex string) error {
 	logger := log.WithFunc("cloudimg.commit")
 
 	blobPath := conf.BlobPath(digestHex)
@@ -70,13 +62,7 @@ func commit(
 	return nil
 }
 
-func prepareTmpBlob(
-	ctx context.Context,
-	conf *Config,
-	tracker progress.Tracker,
-	sourcePath string,
-	digestHex string,
-) (string, error) {
+func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker, sourcePath, digestHex string) (string, error) {
 	logger := log.WithFunc("cloudimg.prepareTmpBlob")
 
 	info, err := inspectImage(ctx, sourcePath)
