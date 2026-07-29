@@ -39,7 +39,7 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 }
 
 func (b *Backend) tombstones() *tombstone.Table {
-	return tombstone.NewTable(b.Meta, b.NS)
+	return tombstone.NewTable(b.NS)
 }
 
 // deleteVMProtocol runs the §5 phase protocol for one VM under its held ops

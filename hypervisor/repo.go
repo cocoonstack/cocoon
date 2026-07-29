@@ -72,7 +72,7 @@ func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error
 
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
-		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.Meta, b.NS, TableRecords, TableNames, r, w),
+		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
 		ctx:     ctx,
 		ns:      b.NS,
 		r:       r,

@@ -36,7 +36,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	contracttest.WaitWorkers(t, cmds, "failed")
 
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	if recs, err := mustGet(t, s, "alpha", "w0-op0"); err != nil || recs == nil {
 		t.Fatalf("spot check: %v %v", recs, err)
 	}
@@ -67,7 +67,7 @@ func TestMultiProcessWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	ctx := t.Context()
 	for i := range ops {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
@@ -96,7 +96,7 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	s := newStore(t, dir, "alpha", "beta")
 	for _, ns := range []string{"alpha", "beta"} {
 		total := 0
-		c := meta.NewCollection[map[string]int](s, ns, "records")
+		c := meta.NewCollection[map[string]int](ns, "records")
 		if err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
 			return c.Scan(t.Context(), r, func(string, *map[string]int) error {
 				total++
@@ -121,8 +121,8 @@ func TestInverseScopeWorker(t *testing.T) {
 	write, read, _ := strings.Cut(os.Getenv("META_MP_SCOPE"), ":")
 	s := newStore(t, dir, "alpha", "beta")
 	ctx := t.Context()
-	c := meta.NewCollection[map[string]int](s, write, "records")
-	peer := meta.NewCollection[map[string]int](s, read, "records")
+	c := meta.NewCollection[map[string]int](write, "records")
+	peer := meta.NewCollection[map[string]int](read, "records")
 	for i := range inverseOps {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
 		if err := s.Update(ctx, meta.Scope{Write: write, Read: []string{read}}, meta.CommitDurable, func(w meta.Writer) error {
@@ -192,7 +192,7 @@ func TestAckWorker(t *testing.T) {
 	}
 	s := newStore(t, dir, "alpha")
 	ctx := t.Context()
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	for i := range 1000 {
 		id := fmt.Sprintf("op%d", i)
 		v := map[string]int{"n": i}
@@ -239,7 +239,7 @@ func TestEventsWriterWorker(t *testing.T) {
 	}
 	s := newStore(t, dir, "alpha")
 	ctx := t.Context()
-	c := meta.NewCollection[map[string]int](s, "alpha", "records")
+	c := meta.NewCollection[map[string]int]("alpha", "records")
 	v := map[string]int{"ext": 1}
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 		return c.Insert(ctx, w, "ext", &v)

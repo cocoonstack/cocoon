@@ -74,8 +74,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 
 func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig, fcBin string) {
 	cowPath := fmt.Sprintf("cow-%s.raw", vmCfg.Name)
-	memMiB := int(vmCfg.Memory >> 20)     //nolint:mnd
-	cowSizeGB := int(vmCfg.Storage >> 30) //nolint:mnd
+	memMiB := int(vmCfg.Memory >> 20) //nolint:mnd
 
 	nLayers := 0
 	for _, s := range configs {
@@ -92,10 +91,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	cmdline := hypervisor.BuildBaseCmdline("console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1",
 		strings.Join(layerDevs, ","), cowDev, nil, vmCfg.Name, nil)
 
-	fmt.Println("# Prepare COW disk")
-	fmt.Printf("truncate -s %dG %s\n", cowSizeGB, cowPath)
-	fmt.Printf("mkfs.ext4 -F -m 0 -q -E lazy_itable_init=1,lazy_journal_init=1,discard %s\n", cowPath)
-	fmt.Println()
+	printPrepareCOWDisk(vmCfg.Storage>>30, cowPath) //nolint:mnd
 
 	fmt.Printf("# Launch Firecracker: %s (image: %s)\n", vmCfg.Name, vmCfg.Image)
 	fmt.Printf("%s --api-sock /tmp/fc-%s.sock --id %s\n", fcBin, vmCfg.Name, vmCfg.Name)
@@ -179,10 +175,7 @@ func printCHDebug(s chDebugSpec) {
 		cmdline := hypervisor.BuildBaseCmdline("console=hvc0 loglevel=3",
 			cocoonLayers, hypervisor.CowSerial, nil, s.VMCfg.Name, nil)
 
-		fmt.Println("# Prepare COW disk")
-		fmt.Printf("truncate -s %dG %s\n", s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
-		fmt.Printf("mkfs.ext4 -F -m 0 -q -E lazy_itable_init=1,lazy_journal_init=1,discard %s\n", s.CowPath)
-		fmt.Println()
+		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
 		fmt.Printf("# Launch VM: %s (image: %s, boot: direct kernel)\n", s.VMCfg.Name, s.VMCfg.Image)
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --kernel %s \\\n", s.Boot.KernelPath)
@@ -212,6 +205,13 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
 	printCommonCHArgs(s)
+}
+
+func printPrepareCOWDisk(sizeGB int64, path string) {
+	fmt.Println("# Prepare COW disk")
+	fmt.Printf("truncate -s %dG %s\n", sizeGB, path)
+	fmt.Printf("mkfs.ext4 -F -m 0 -q -E lazy_itable_init=1,lazy_journal_init=1,discard %s\n", path)
+	fmt.Println()
 }
 
 func printCommonCHArgs(s chDebugSpec) {
