@@ -232,6 +232,25 @@ func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, gcModule(lf, lf.gcPolicy))
 }
 
+// NameOwner reports the record holding name in the index, pending or not — this is the reservation insertRecord enforces, so the save preflight sees the same thing the insert will.
+func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, error) {
+	if name == "" {
+		return "", false, nil
+	}
+	var (
+		id   string
+		held bool
+	)
+	if err := lf.view(ctx, func(t *snapTx) error {
+		var err error
+		id, held, err = t.NameGet(name)
+		return err
+	}); err != nil {
+		return "", false, err
+	}
+	return id, held, nil
+}
+
 // tryExclusiveLease TryLocks id's lease file; ok=false means an active holder. The caller owns fl.Close() when ok.
 func (lf *LocalFile) tryExclusiveLease(id string) (fl *gofrsflock.Flock, ok bool, err error) {
 	fl = gofrsflock.New(lf.conf.LeasePath(id))
@@ -401,25 +420,6 @@ func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 	}); err != nil {
 		log.WithFunc("localfile.rollbackCreate").Warnf(ctx, "rollback snapshot %s (name=%s): %v", id, name, err)
 	}
-}
-
-// NameOwner reports the record holding name in the index, pending or not — this is the reservation insertRecord enforces, so the save preflight sees the same thing the insert will.
-func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, error) {
-	if name == "" {
-		return "", false, nil
-	}
-	var (
-		id   string
-		held bool
-	)
-	if err := lf.view(ctx, func(t *snapTx) error {
-		var err error
-		id, held, err = t.NameGet(name)
-		return err
-	}); err != nil {
-		return "", false, err
-	}
-	return id, held, nil
 }
 
 // lookupRecord resolves ref to a non-pending record; touch=true also bumps LastAccessedAt under the same write lock.
