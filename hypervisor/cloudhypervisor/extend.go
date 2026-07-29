@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -238,7 +240,7 @@ func (ch *CloudHypervisor) attachWith(
 		return "", err
 	}
 	defer unlock()
-	if err = ensureNotPaused(info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
 		return "", err
 	}
 	if checkErr := preCheck(info); checkErr != nil {
@@ -271,12 +273,12 @@ func (ch *CloudHypervisor) detachWith(
 	ctx context.Context, vmRef string,
 	findID func(*chVMInfoResponse) (string, error),
 ) error {
-	hc, _, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err = ensureNotPaused(info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
 		return err
 	}
 	deviceID, err := findID(info)
@@ -313,12 +315,18 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// ensureNotPaused refuses device-set mutations while a capture window is open — mutating mid-capture would desync config and memory.
-func ensureNotPaused(info *chVMInfoResponse) error {
-	if info.State == chStatePaused {
-		return fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
+// convergeOrphanedPause resumes a VM left paused by a capture whose process died, returning a refreshed vm.info for device classification.
+// The pause is provably ownerless: callers hold the VM ops lock every capture window holds end to end, and the Running-record gate in runningVMClientWithRecord keeps restore/clone pause windows (record Stopped/creating) out of reach.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
+	if info.State != chStatePaused {
+		return info, nil
 	}
-	return nil
+	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
+		Warnf(ctx, "vm %s is paused with no capture in flight (interrupted snapshot or hibernate), resuming", vmID)
+	if err := resumeVM(ctx, hc); err != nil {
+		return nil, fmt.Errorf("resume orphaned pause: %w", err)
+	}
+	return getVMInfo(ctx, hc)
 }
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
