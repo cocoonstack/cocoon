@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon-agent/agent"
-
 	"github.com/cocoonstack/cocoon/types"
 )
 

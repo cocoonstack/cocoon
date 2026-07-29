@@ -115,10 +115,12 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	defer stream.Close() //nolint:errcheck
 	defer cmdcore.CloseOnCancel(ctx, stream)()
 
-	vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
+	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
+	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, cs.unlock
+	netProvider, netSetup := cs.netProvider, cs.netSetup
 	defer unlock()
 
 	logger.Infof(ctx, "cloning VM from snapshot %s ...", snapID)
@@ -283,10 +285,12 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 }
 
 func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
-	vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
+	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
+	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, cs.unlock
+	netProvider, netSetup := cs.netProvider, cs.netSetup
 	defer unlock()
 
 	wantJSON := cliutil.WantJSON(cmd)
@@ -310,32 +314,42 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	return nil
 }
 
-func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (*types.VMConfig, string, func(), func(), network.Network, types.NetSetup, error) {
+// cloneSetup is prepareClone's result: the reserved clone's identity and network plus the rollback/unlock pair the caller owes until finalize.
+type cloneSetup struct {
+	vmCfg       *types.VMConfig
+	vmID        string
+	rollback    func()
+	unlock      func()
+	netProvider network.Network
+	netSetup    types.NetSetup
+}
+
+func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (cloneSetup, error) {
 	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
 	if err != nil {
-		return nil, "", nil, nil, nil, types.NetSetup{}, err
+		return cloneSetup{}, err
 	}
 	vmID := utils.GenerateID()
 	if vmCfg.Name == "" {
 		vmCfg.Name = "cocoon-clone-" + network.VMIDPrefix(vmID)
 	}
 	if err = vmCfg.Validate(); err != nil {
-		return nil, "", nil, nil, nil, types.NetSetup{}, err
+		return cloneSetup{}, err
 	}
 	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
-		return nil, "", nil, nil, nil, types.NetSetup{}, err
+		return cloneSetup{}, err
 	}
 	rollbackReserve, unlock, err := prereserveVM(ctx, hyper, vmID, vmCfg, cfg.ImageBlobIDs)
 	releasePins()
 	if err != nil {
-		return nil, "", nil, nil, nil, types.NetSetup{}, err
+		return cloneSetup{}, err
 	}
-	fail := func(err error) (*types.VMConfig, string, func(), func(), network.Network, types.NetSetup, error) {
+	fail := func(err error) (cloneSetup, error) {
 		rollbackReserve()
 		unlock()
-		return nil, "", nil, nil, nil, types.NetSetup{}, err
+		return cloneSetup{}, err
 	}
 
 	if pull, _ := cmd.Flags().GetBool("pull"); pull && vmCfg.Image != "" && vmCfg.ImageType != "" {
@@ -363,7 +377,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		return fail(err)
 	}
 
-	return vmCfg, vmID, rollbackReserve, unlock, netProvider, netSetup, nil
+	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup}, nil
 }
 
 func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {

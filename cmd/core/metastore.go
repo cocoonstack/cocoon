@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -111,12 +112,9 @@ func ResolveMetaBackend(conf *config.Config) string {
 // LegacyJSONPresent reports whether any json-engine namespace file exists
 // under the root — data a fresh sqlite store must never shadow.
 func LegacyJSONPresent(conf *config.Config) bool {
-	for _, ns := range MetaJSONNamespaces(conf) {
-		if utils.FileExists(ns.FilePath) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(MetaJSONNamespaces(conf), func(ns metajson.Namespace) bool {
+		return utils.FileExists(ns.FilePath)
+	})
 }
 
 // MetaStore builds the process-wide meta store once — one store, every
