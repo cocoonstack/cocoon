@@ -212,6 +212,66 @@ func newTestCH(t *testing.T) *CloudHypervisor {
 // newCHStubClient serves vm.info and vm.remove-device over an httptest server;
 // removed() snapshots the eject calls. stickyIDs stay in the device tree after
 // removal, simulating a guest that never acks B0EJ.
+// TestConvergeOrphanedPause pins the interrupted-capture wedge: a snapshot save
+// killed inside its pause window leaves CH Paused with nobody left to resume it,
+// and every later device op then fails on that stale pause. Callers hold the ops
+// lock, which proves no capture is in flight, so the pause is converged.
+func TestConvergeOrphanedPause(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		resumes int
+		state   = chStatePaused
+	)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vm.resume", func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		resumes++
+		state = "Running"
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewEncoder(w).Encode(chVMInfoResponse{State: state})
+	})
+	hc := newStubHTTPClient(t, mux)
+
+	info, err := getVMInfo(t.Context(), hc)
+	if err != nil {
+		t.Fatalf("vm.info: %v", err)
+	}
+	fresh, err := convergeOrphanedPause(t.Context(), hc, info)
+	if err != nil {
+		t.Fatalf("convergeOrphanedPause: %v", err)
+	}
+	if resumes != 1 {
+		t.Fatalf("resumes = %d, want the orphaned pause resumed once", resumes)
+	}
+	// The returned info must be re-read: callers classify devices off it.
+	if fresh.State != "Running" {
+		t.Errorf("returned state = %q, want the refreshed Running", fresh.State)
+	}
+	if _, err = convergeOrphanedPause(t.Context(), hc, fresh); err != nil {
+		t.Fatalf("convergeOrphanedPause on a running VM: %v", err)
+	}
+	if resumes != 1 {
+		t.Errorf("resumes = %d, want a running VM left untouched", resumes)
+	}
+}
+
+func newStubHTTPClient(t *testing.T, mux *http.ServeMux) *http.Client {
+	t.Helper()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	return &http.Client{Transport: &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("tcp", addr)
+		},
+	}}
+}
+
 func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Client, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
@@ -247,14 +307,7 @@ func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Cli
 		}
 		_ = json.NewEncoder(w).Encode(chVMInfoResponse{Config: chVMInfoConfig{Nets: live}, DeviceTree: tree})
 	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	addr := strings.TrimPrefix(srv.URL, "http://")
-	hc := &http.Client{Transport: &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("tcp", addr)
-		},
-	}}
+	hc := newStubHTTPClient(t, mux)
 	return hc, func() []string {
 		mu.Lock()
 		defer mu.Unlock()

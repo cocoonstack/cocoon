@@ -43,7 +43,7 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if err != nil {
 		return netresize.Result{}, err
 	}
-	if err = ensureNotPaused(info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, info); err != nil {
 		return netresize.Result{}, err
 	}
 	current := len(rec.NetworkConfigs)

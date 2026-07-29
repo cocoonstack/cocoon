@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -238,7 +240,7 @@ func (ch *CloudHypervisor) attachWith(
 		return "", err
 	}
 	defer unlock()
-	if err = ensureNotPaused(info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, info); err != nil {
 		return "", err
 	}
 	if checkErr := preCheck(info); checkErr != nil {
@@ -276,7 +278,7 @@ func (ch *CloudHypervisor) detachWith(
 		return err
 	}
 	defer unlock()
-	if err = ensureNotPaused(info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, info); err != nil {
 		return err
 	}
 	deviceID, err := findID(info)
@@ -313,12 +315,23 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// ensureNotPaused refuses device-set mutations while a capture window is open — mutating mid-capture would desync config and memory.
-func ensureNotPaused(info *chVMInfoResponse) error {
-	if info.State == chStatePaused {
-		return fmt.Errorf("vm is paused (snapshot or hibernate in flight); retry after it completes")
+// convergeOrphanedPause resumes a VM left paused by a capture whose process died,
+// and returns a refreshed vm.info. Every caller holds the VM ops lock, and every
+// pause window in cocoon runs under that same lock end to end (prepareSnapshot,
+// prepareRestore; clone resumes a record still in creating, which
+// runningVMClientWithRecord rejects) — so Paused observed here has no owner and
+// nothing can be mid-capture. Without this a killed `snapshot save` wedges the VM:
+// the guest stays frozen and every later device op fails on the stale pause.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, info *chVMInfoResponse) (*chVMInfoResponse, error) {
+	if info.State != chStatePaused {
+		return info, nil
 	}
-	return nil
+	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
+		Warnf(ctx, "vm is paused with no capture in flight (interrupted snapshot or hibernate), resuming")
+	if err := resumeVM(ctx, hc); err != nil {
+		return nil, fmt.Errorf("resume orphaned pause: %w", err)
+	}
+	return getVMInfo(ctx, hc)
 }
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
