@@ -240,7 +240,7 @@ func (ch *CloudHypervisor) attachWith(
 		return "", err
 	}
 	defer unlock()
-	if info, err = convergeOrphanedPause(ctx, hc, info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
 		return "", err
 	}
 	if checkErr := preCheck(info); checkErr != nil {
@@ -273,12 +273,12 @@ func (ch *CloudHypervisor) detachWith(
 	ctx context.Context, vmRef string,
 	findID func(*chVMInfoResponse) (string, error),
 ) error {
-	hc, _, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if info, err = convergeOrphanedPause(ctx, hc, info); err != nil {
+	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
 		return err
 	}
 	deviceID, err := findID(info)
@@ -315,19 +315,14 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a capture whose process died,
-// and returns a refreshed vm.info. Every caller holds the VM ops lock, and every
-// pause window in cocoon runs under that same lock end to end (prepareSnapshot,
-// prepareRestore; clone resumes a record still in creating, which
-// runningVMClientWithRecord rejects) — so Paused observed here has no owner and
-// nothing can be mid-capture. Without this a killed `snapshot save` wedges the VM:
-// the guest stays frozen and every later device op fails on the stale pause.
-func convergeOrphanedPause(ctx context.Context, hc *http.Client, info *chVMInfoResponse) (*chVMInfoResponse, error) {
+// convergeOrphanedPause resumes a VM left paused by a capture whose process died, returning a refreshed vm.info for device classification.
+// The pause is provably ownerless: callers hold the VM ops lock every capture window holds end to end, and the Running-record gate in runningVMClientWithRecord keeps restore/clone pause windows (record Stopped/creating) out of reach.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil
 	}
 	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
-		Warnf(ctx, "vm is paused with no capture in flight (interrupted snapshot or hibernate), resuming")
+		Warnf(ctx, "vm %s is paused with no capture in flight (interrupted snapshot or hibernate), resuming", vmID)
 	if err := resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("resume orphaned pause: %w", err)
 	}
