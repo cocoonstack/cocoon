@@ -167,6 +167,19 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 	if name == "" {
 		return nil
 	}
+	// The name index, not Inspect: a save killed mid-flight leaves a pending record
+	// still holding the name, which Inspect reports as not-found. Passing that
+	// preflight means the whole capture is written before the insert rejects it.
+	if nh, ok := snapBackend.(snapshot.NameHolder); ok {
+		id, held, err := nh.NameOwner(ctx, name)
+		if err != nil {
+			return fmt.Errorf("check snapshot name: %w", err)
+		}
+		if held {
+			return fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
+		}
+		return nil
+	}
 	if _, err := snapBackend.Inspect(ctx, name); err == nil {
 		return fmt.Errorf("snapshot name %q already exists", name)
 	} else if !errors.Is(err, snapshot.ErrNotFound) {

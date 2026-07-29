@@ -403,6 +403,25 @@ func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 	}
 }
 
+// NameOwner reports the record holding name in the index, pending or not — this is the reservation insertRecord enforces, so the save preflight sees the same thing the insert will.
+func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, error) {
+	if name == "" {
+		return "", false, nil
+	}
+	var (
+		id   string
+		held bool
+	)
+	if err := lf.view(ctx, func(t *snapTx) error {
+		var err error
+		id, held, err = t.NameGet(name)
+		return err
+	}); err != nil {
+		return "", false, err
+	}
+	return id, held, nil
+}
+
 // lookupRecord resolves ref to a non-pending record; touch=true also bumps LastAccessedAt under the same write lock.
 func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (snapshot.SnapshotRecord, error) {
 	var rec snapshot.SnapshotRecord
