@@ -265,9 +265,6 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
-	if conf == nil {
-		return fmt.Errorf("nil config")
-	}
 	// Local copy keeps backend flip from leaking to the caller's shared *config.Config.
 	localConf := *conf
 	if cfg.Hypervisor != "" {
@@ -596,9 +593,6 @@ func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int
 }
 
 func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID string) {
-	if netProvider == nil {
-		return
-	}
 	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 	defer cancel()

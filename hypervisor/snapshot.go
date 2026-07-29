@@ -21,9 +21,6 @@ const SnapshotMetaFile = "cocoon.json"
 type SnapshotMeta struct {
 	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
 	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
-	// CPU/Memory populated by FC only; CH reads them from config.json on restore.
-	CPU    int   `json:"cpu,omitempty"`
-	Memory int64 `json:"memory,omitempty"`
 }
 
 // RecordSnapshot generates a snapshot ID and records it on the VM's record.

@@ -31,8 +31,6 @@ const (
 	SnapshotFileCOW
 	// SnapshotFileMeta is small metadata that is plain-copied.
 	SnapshotFileMeta
-	// SnapshotFileSkip means the file should not be cloned.
-	SnapshotFileSkip
 
 	// OpsLockName is the legacy in-runDir lock file name, still guarded in snapshot payloads so old exports can't overwrite a held lock.
 	OpsLockName = "ops.lock"
@@ -380,7 +378,6 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 			if err := CopyFile(dst, src); err != nil {
 				return fmt.Errorf("copy %s: %w", name, err)
 			}
-		case SnapshotFileSkip:
 		}
 	}
 	return copyPairs(ctx, cowPairs, utils.NoSync)
