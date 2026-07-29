@@ -68,7 +68,6 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 		Recover: b.gcRecover,
 		ReadDB: func(ctx context.Context) (VMGCSnapshot, error) {
 			snap := VMGCSnapshot{reasons: make(map[string]string)}
-			cutoff := timeNow().Add(-CreatingStateGCGrace)
 			if err := b.view(ctx, func(t *vmTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
@@ -82,7 +81,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
 					}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
-					if rec.State == types.VMStateCreating && rec.UpdatedAt.Before(cutoff) {
+					if rec.State == types.VMStateCreating {
 						snap.staleCreate = append(snap.staleCreate, id)
 					}
 					return nil
@@ -156,7 +155,6 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
-	cutoff := timeNow().Add(-CreatingStateGCGrace)
 	for _, id := range ids {
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, id, func() {
@@ -184,8 +182,8 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 				logger.Infof(ctx, "collected id=%s reason=%s", id, snap.reasons[id])
 				return
 			}
-			// Revalidate under the lock: only a still-stale creating record qualifies.
-			if rec.State != types.VMStateCreating || !rec.UpdatedAt.Before(cutoff) {
+			// Revalidate under the lock: the held ops lock is the ownerless proof — create and clone hold it from prereserve through the final record commit.
+			if rec.State != types.VMStateCreating {
 				return
 			}
 			if err := b.collectStaleCreate(ctx, id, rec); err != nil {
