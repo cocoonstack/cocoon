@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -35,11 +36,14 @@ func CreateTAP(name string, numQueues int) (int, error) {
 	if err := netlink.LinkAdd(tap); err != nil {
 		return 0, fmt.Errorf("add tap %s: %w", name, err)
 	}
+	// netlink's post-TUNSETIFF index lookup drops its error; on a zero index drop persistence so the device dies with the fds instead of outliving the failure.
+	index := tap.Attrs().Index
+	if index == 0 {
+		_ = unix.IoctlSetInt(int(tap.Fds[0].Fd()), unix.TUNSETPERSIST, 0)
+	}
 	for _, fd := range tap.Fds {
 		_ = fd.Close()
 	}
-	// netlink's post-TUNSETIFF index lookup drops its error, so 0 can land here.
-	index := tap.Attrs().Index
 	if index == 0 {
 		return 0, fmt.Errorf("resolve index of tap %s", name)
 	}
