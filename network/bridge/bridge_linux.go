@@ -112,36 +112,14 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			}
 		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-		if cErr := network.CreateTAP(name, queues); cErr != nil {
+		tapIndex, cErr := network.CreateTAP(name, queues)
+		if cErr != nil {
 			return nil, cErr
 		}
 		added = append(added, spec.Index)
 
-		tap, lErr := netlink.LinkByName(name)
-		if lErr != nil {
-			return nil, fmt.Errorf("find tap %s: %w", name, lErr)
-		}
-
-		if mErr := netlink.LinkSetMaster(tap, br); mErr != nil {
-			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, mErr)
-		}
-
-		// Best-effort tuning, but leave a trace: a silently failed MTU sync
-		// surfaces later as a connectivity symptom with no trail back here.
-		if lErr := netlink.LinkSetLearning(tap, false); lErr != nil {
-			logger.Debugf(ctx, "disable learning on %s: %v", name, lErr)
-		}
-		if mtu := br.Attrs().MTU; mtu > 0 {
-			if mErr := netlink.LinkSetMTU(tap, mtu); mErr != nil {
-				logger.Debugf(ctx, "sync mtu %d to %s: %v", mtu, name, mErr)
-			}
-		}
-		if tErr := network.TuneTAP(tap); tErr != nil {
-			logger.Debugf(ctx, "tune tap %s: %v", name, tErr)
-		}
-
-		if uErr := netlink.LinkSetUp(tap); uErr != nil {
-			return nil, fmt.Errorf("set %s up: %w", name, uErr)
+		if aErr := network.AttachBridgeUp(tapIndex, b.bridgeIdx, br.Attrs().MTU); aErr != nil {
+			return nil, aErr
 		}
 
 		configs = append(configs, &types.NetworkConfig{

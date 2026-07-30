@@ -148,7 +148,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	if tapErr := network.CreateTAP(tapName, queues); tapErr != nil {
+	if _, tapErr := network.CreateTAP(tapName, queues); tapErr != nil {
 		return "", tapErr
 	}
 	tapLink, err := netlink.LinkByName(tapName)
