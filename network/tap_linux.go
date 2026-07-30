@@ -6,18 +6,19 @@ import (
 	"fmt"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 const (
-	// tapTxQueueLen absorbs traffic bursts (especially UDP) without dropping; the kernel default of 1000 is too small for VM workloads.
-	tapTxQueueLen = 10000
+	// TAPTxQueueLen absorbs traffic bursts (especially UDP) without dropping; the kernel default of 1000 is too small for VM workloads.
+	TAPTxQueueLen = 10000
 
-	// groMaxSize matches the maximum virtio-net segment size so the kernel aggregates inbound packets before CH reads them.
-	groMaxSize = 65536
+	// GROMaxSize matches the maximum virtio-net segment size so the kernel aggregates inbound packets before CH reads them.
+	GROMaxSize = 65536
 )
 
-// CreateTAP adds a multi-queue TAP sized for numQueues virtio-net queues, then closes the kernel fds (CH/QEMU reopen it by name).
-func CreateTAP(name string, numQueues int) error {
+// CreateTAP adds a multi-queue TAP sized for numQueues virtio-net queues and returns its index, then closes the kernel fds (CH/QEMU reopen it by name).
+func CreateTAP(name string, numQueues int) (int, error) {
 	// queue_pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
 	queuePairs := max(1, numQueues/2) //nolint:mnd
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
@@ -33,18 +34,26 @@ func CreateTAP(name string, numQueues int) error {
 		Flags:     flags,
 	}
 	if err := netlink.LinkAdd(tap); err != nil {
-		return fmt.Errorf("add tap %s: %w", name, err)
+		return 0, fmt.Errorf("add tap %s: %w", name, err)
+	}
+	// netlink's post-TUNSETIFF index lookup drops its error; on a zero index drop persistence so the device dies with the fds instead of outliving the failure.
+	index := tap.Attrs().Index
+	if index == 0 {
+		_ = unix.IoctlSetInt(int(tap.Fds[0].Fd()), unix.TUNSETPERSIST, 0)
 	}
 	for _, fd := range tap.Fds {
 		_ = fd.Close()
 	}
-	return nil
+	if index == 0 {
+		return 0, fmt.Errorf("resolve index of tap %s", name)
+	}
+	return index, nil
 }
 
 // TuneTAP applies best-effort performance tuning to a TAP device.
 func TuneTAP(link netlink.Link) error {
-	if err := netlink.LinkSetTxQLen(link, tapTxQueueLen); err != nil {
+	if err := netlink.LinkSetTxQLen(link, TAPTxQueueLen); err != nil {
 		return err
 	}
-	return netlink.LinkSetGROMaxSize(link, groMaxSize)
+	return netlink.LinkSetGROMaxSize(link, GROMaxSize)
 }

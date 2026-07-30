@@ -10,6 +10,8 @@ import (
 
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
@@ -112,36 +114,14 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			}
 		}
 		queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-		if cErr := network.CreateTAP(name, queues); cErr != nil {
+		tapIndex, cErr := network.CreateTAP(name, queues)
+		if cErr != nil {
 			return nil, cErr
 		}
 		added = append(added, spec.Index)
 
-		tap, lErr := netlink.LinkByName(name)
-		if lErr != nil {
-			return nil, fmt.Errorf("find tap %s: %w", name, lErr)
-		}
-
-		if mErr := netlink.LinkSetMaster(tap, br); mErr != nil {
-			return nil, fmt.Errorf("add %s to %s: %w", name, b.bridgeDev, mErr)
-		}
-
-		// Best-effort tuning, but leave a trace: a silently failed MTU sync
-		// surfaces later as a connectivity symptom with no trail back here.
-		if lErr := netlink.LinkSetLearning(tap, false); lErr != nil {
-			logger.Debugf(ctx, "disable learning on %s: %v", name, lErr)
-		}
-		if mtu := br.Attrs().MTU; mtu > 0 {
-			if mErr := netlink.LinkSetMTU(tap, mtu); mErr != nil {
-				logger.Debugf(ctx, "sync mtu %d to %s: %v", mtu, name, mErr)
-			}
-		}
-		if tErr := network.TuneTAP(tap); tErr != nil {
-			logger.Debugf(ctx, "tune tap %s: %v", name, tErr)
-		}
-
-		if uErr := netlink.LinkSetUp(tap); uErr != nil {
-			return nil, fmt.Errorf("set %s up: %w", name, uErr)
+		if aErr := attachBridgeUp(tapIndex, b.bridgeIdx, br.Attrs().MTU); aErr != nil {
+			return nil, aErr
 		}
 
 		configs = append(configs, &types.NetworkConfig{
@@ -199,6 +179,26 @@ func CleanupTAPs(vmIDs []string) []string {
 		cleaned = append(cleaned, vmID)
 	}
 	return cleaned
+}
+
+// attachBridgeUp enslaves a TAP to the bridge, applies MTU/txqlen/GRO tuning and brings it up in one RTM_SETLINK, paying the node-wide rtnl lock once.
+func attachBridgeUp(tapIndex, bridgeIndex, mtu int) error {
+	req := nl.NewNetlinkRequest(unix.RTM_SETLINK, unix.NLM_F_ACK)
+	msg := nl.NewIfInfomsg(unix.AF_UNSPEC)
+	msg.Index = int32(tapIndex) //nolint:gosec // kernel-issued ifindex fits int32
+	msg.Flags = unix.IFF_UP
+	msg.Change = unix.IFF_UP
+	req.AddData(msg)
+	req.AddData(nl.NewRtAttr(unix.IFLA_MASTER, nl.Uint32Attr(uint32(bridgeIndex)))) //nolint:gosec // kernel-issued ifindex fits uint32
+	req.AddData(nl.NewRtAttr(unix.IFLA_TXQLEN, nl.Uint32Attr(network.TAPTxQueueLen)))
+	req.AddData(nl.NewRtAttr(unix.IFLA_GRO_MAX_SIZE, nl.Uint32Attr(network.GROMaxSize)))
+	if mtu > 0 {
+		req.AddData(nl.NewRtAttr(unix.IFLA_MTU, nl.Uint32Attr(uint32(mtu)))) //nolint:gosec // guarded > 0; kernel MTU fits uint32
+	}
+	if _, err := req.Execute(unix.NETLINK_ROUTE, 0); err != nil {
+		return fmt.Errorf("attach tap %d to bridge %d: %w", tapIndex, bridgeIndex, err)
+	}
+	return nil
 }
 
 func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
