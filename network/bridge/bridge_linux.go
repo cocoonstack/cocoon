@@ -10,6 +10,8 @@ import (
 
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
@@ -118,7 +120,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		}
 		added = append(added, spec.Index)
 
-		if aErr := network.AttachBridgeUp(tapIndex, b.bridgeIdx, br.Attrs().MTU); aErr != nil {
+		if aErr := attachBridgeUp(tapIndex, b.bridgeIdx, br.Attrs().MTU); aErr != nil {
 			return nil, aErr
 		}
 
@@ -177,6 +179,26 @@ func CleanupTAPs(vmIDs []string) []string {
 		cleaned = append(cleaned, vmID)
 	}
 	return cleaned
+}
+
+// attachBridgeUp enslaves a TAP to the bridge, applies MTU/txqlen/GRO tuning and brings it up in one RTM_SETLINK, paying the node-wide rtnl lock once.
+func attachBridgeUp(tapIndex, bridgeIndex, mtu int) error {
+	req := nl.NewNetlinkRequest(unix.RTM_SETLINK, unix.NLM_F_ACK)
+	msg := nl.NewIfInfomsg(unix.AF_UNSPEC)
+	msg.Index = int32(tapIndex) //nolint:gosec // kernel-issued ifindex fits int32
+	msg.Flags = unix.IFF_UP
+	msg.Change = unix.IFF_UP
+	req.AddData(msg)
+	req.AddData(nl.NewRtAttr(unix.IFLA_MASTER, nl.Uint32Attr(uint32(bridgeIndex)))) //nolint:gosec // kernel-issued ifindex fits uint32
+	req.AddData(nl.NewRtAttr(unix.IFLA_TXQLEN, nl.Uint32Attr(network.TAPTxQueueLen)))
+	req.AddData(nl.NewRtAttr(unix.IFLA_GRO_MAX_SIZE, nl.Uint32Attr(network.GROMaxSize)))
+	if mtu > 0 {
+		req.AddData(nl.NewRtAttr(unix.IFLA_MTU, nl.Uint32Attr(uint32(mtu)))) //nolint:gosec // guarded > 0; kernel MTU fits uint32
+	}
+	if _, err := req.Execute(unix.NETLINK_ROUTE, 0); err != nil {
+		return fmt.Errorf("attach tap %d to bridge %d: %w", tapIndex, bridgeIndex, err)
+	}
+	return nil
 }
 
 func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
