@@ -17,10 +17,7 @@ type Handler struct {
 }
 
 func (h Handler) GC(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	policy, err := parseSnapshotPolicy(cmd)
 	if err != nil {
 		return err

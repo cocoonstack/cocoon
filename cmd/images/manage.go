@@ -15,10 +15,7 @@ import (
 )
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	backends, err := cmdcore.InitImageBackends(ctx, conf)
 	if err != nil {
 		return err
@@ -53,10 +50,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.images.RM")
 	backends, err := cmdcore.InitImageBackends(ctx, conf)
 	if err != nil {
@@ -91,10 +85,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	backends, err := cmdcore.InitImageBackends(ctx, conf)
 	if err != nil {
 		return err

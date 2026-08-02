@@ -24,10 +24,7 @@ type Handler struct {
 }
 
 func (h Handler) Save(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.snapshot.Save")
 
 	vmRef := args[0]
@@ -57,10 +54,7 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -115,10 +109,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
@@ -132,10 +123,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.snapshot.Export")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
@@ -218,10 +206,7 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 }
 
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.snapshot.Import")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
@@ -259,10 +244,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.snapshot.RM")
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {

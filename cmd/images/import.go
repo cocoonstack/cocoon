@@ -19,10 +19,7 @@ import (
 )
 
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.images.Import")
 
 	name := args[0]

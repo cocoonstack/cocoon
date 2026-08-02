@@ -68,10 +68,7 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Clone(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.vm.clone")
 
 	fromDir, snapRef, err := snapshotSource(cmd, args, 0)
@@ -142,10 +139,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Restore(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.vm.restore")
 
 	vmRef := args[0]
@@ -416,10 +410,7 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf 
 }
 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	ctx, conf := h.Init(cmd)
 
 	if fc, _ := cmd.Flags().GetBool("fc"); fc {
 		conf.UseFirecracker = true

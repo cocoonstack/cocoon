@@ -16,10 +16,7 @@ import (
 )
 
 func (h Handler) Pull(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	ociStore, cloudimgStore, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
 		return err

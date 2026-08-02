@@ -26,10 +26,7 @@ type ExecExitError struct{ Code int }
 func (e *ExecExitError) Error() string { return fmt.Sprintf("exit code %d", e.Code) }
 
 func (h Handler) Exec(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	ref, argv := args[0], args[1:]
 	if len(argv) > 0 && argv[0] == "--" {
 		argv = argv[1:]

@@ -26,10 +26,7 @@ const (
 )
 
 func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	ref := args[0]
 	regenMachineID, _ := cmd.Flags().GetBool("machine-id")
 

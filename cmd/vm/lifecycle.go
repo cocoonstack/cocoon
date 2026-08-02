@@ -3,7 +3,6 @@ package vm
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -41,10 +40,7 @@ type inspectOutput struct {
 }
 
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
@@ -61,10 +57,7 @@ func (h Handler) Start(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	applyStopFlags(conf, cmd)
 
@@ -82,10 +75,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
 	if err != nil {
@@ -106,10 +96,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
 	if err != nil {
@@ -146,28 +133,20 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	escapeDisplay := console.FormatEscapeChar(escapeChar)
 	fmt.Fprintf(os.Stderr, "Connected to %s (escape sequence: %s.)\r\n", ref, escapeDisplay)
 
-	rw, ok := conn.(io.ReadWriter)
-	if !ok {
-		return fmt.Errorf("console connection does not support writing")
-	}
-
 	if f, ok := conn.(*os.File); ok {
 		cleanup := console.HandleResize(inFd, f.Fd())
 		defer cleanup()
 	}
 
 	escapeKeys := []byte{escapeChar, '.'}
-	if err := console.Relay(rw, escapeKeys); err != nil {
+	if err := console.Relay(conn, escapeKeys); err != nil {
 		return fmt.Errorf("relay: %w", err)
 	}
 	return nil
 }
 
 func (h Handler) Logs(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
 	if err != nil {
 		return fmt.Errorf("logs: %w", err)
@@ -182,10 +161,7 @@ func (h Handler) Logs(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	force, _ := cmd.Flags().GetBool("force")
 	applyStopFlags(conf, cmd)
 

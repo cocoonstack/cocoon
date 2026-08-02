@@ -14,10 +14,7 @@ import (
 
 // Hibernate atomically snapshots a running VM and stops it; the snapshot point and the stop coincide, so `vm restore` resumes with nothing lost.
 func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.vm.hibernate")
 	vmRef := args[0]
 

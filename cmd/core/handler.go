@@ -13,6 +13,6 @@ type BaseHandler struct {
 	ConfProvider func() *config.Config
 }
 
-func (h BaseHandler) Init(cmd *cobra.Command) (context.Context, *config.Config, error) {
-	return cliutil.CommandContext(cmd), h.ConfProvider(), nil
+func (h BaseHandler) Init(cmd *cobra.Command) (context.Context, *config.Config) {
+	return cliutil.CommandContext(cmd), h.ConfProvider()
 }

@@ -22,10 +22,7 @@ type Handler struct {
 }
 
 func (h Handler) Run(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	store, err := cmdcore.MetaStore(conf)
 	if err != nil {
 		return err

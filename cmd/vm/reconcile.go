@@ -19,10 +19,7 @@ type staleCreateResult struct {
 }
 
 func (h Handler) ReconcileStaleCreate(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	hyper, vm, err := cmdcore.FindVM(ctx, conf, args[0])
 	if errors.Is(err, hypervisor.ErrNotFound) {
 		return outputStaleCreate(ctx, cmd, args[0], staleCreateResult{Outcome: hypervisor.StaleCreateNotFound})

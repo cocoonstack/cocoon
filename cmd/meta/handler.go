@@ -19,10 +19,7 @@ type Handler struct {
 }
 
 func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	if b := cmdcore.ResolveMetaBackend(conf); b != config.MetaBackendSQLite {
 		return fmt.Errorf("meta init applies to the sqlite backend; effective meta_backend is %q", b)
 	}
@@ -38,10 +35,7 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	// The configured backend is the sole target authority (§6): convert
 	// always moves the OTHER engine's data into the effective backend.
 	target := cmp.Or(conf.MetaBackend, config.MetaBackendSQLite)
@@ -60,10 +54,7 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Backup(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 	if b := cmdcore.ResolveMetaBackend(conf); b != config.MetaBackendSQLite {
 		return fmt.Errorf("meta backup applies to the sqlite backend; effective meta_backend is %q", b)
 	}

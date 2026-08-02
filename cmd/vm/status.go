@@ -39,10 +39,7 @@ type eventEmitter struct {
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
@@ -53,10 +50,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 }
 
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	interval, _ := cmd.Flags().GetInt("interval")
 	if interval <= 0 {

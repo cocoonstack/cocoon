@@ -26,10 +26,7 @@ type chDebugSpec struct {
 }
 
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
-	ctx, conf, err := h.Init(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, conf := h.Init(cmd)
 
 	if fc, _ := cmd.Flags().GetBool("fc"); fc {
 		conf.UseFirecracker = true
