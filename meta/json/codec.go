@@ -16,11 +16,11 @@ type Codec interface {
 	Encode(m *Model) ([]byte, error)
 }
 
-var _ Codec = GenericCodec{}
-
 type genericFile struct {
 	Tables map[string]map[string]json.RawMessage `json:"tables"`
 }
+
+var _ Codec = GenericCodec{}
 
 // GenericCodec persists a Model as {"tables":{...}} for
 // namespaces with no legacy format (contract tests, future additions).
