@@ -9,7 +9,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const minHexLen = 12
@@ -145,7 +144,15 @@ func entryToImage[E Entry](entry *E, typ string, sizer func(*E) int64) *types.Im
 }
 
 func listImages[E Entry](images map[string]*E, typ string, sizer func(*E) int64) []*types.Image {
-	return utils.MapValues(images, func(ep *E) *types.Image {
-		return entryToImage(ep, typ, sizer)
-	})
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]*types.Image, 0, len(images))
+	for _, ep := range images {
+		if ep == nil {
+			continue
+		}
+		out = append(out, entryToImage(ep, typ, sizer))
+	}
+	return out
 }

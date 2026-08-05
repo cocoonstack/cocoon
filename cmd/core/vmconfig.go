@@ -36,9 +36,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	hugePages, _ := cmd.Flags().GetBool("hugepages")
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 
-	if vmName == "" {
-		vmName = sanitizeVMName(image)
-	}
+	vmName = cmp.Or(vmName, sanitizeVMName(image))
 
 	memBytes, err := units.RAMInBytes(memStr)
 	if err != nil {

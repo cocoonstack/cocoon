@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -74,10 +75,7 @@ func (d *Daemon) listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	mode := fs.FileMode(d.conf.APISockMode)
-	if mode == 0 {
-		mode = DefaultAPISockMode
-	}
+	mode := cmp.Or(fs.FileMode(d.conf.APISockMode), DefaultAPISockMode)
 	if err := os.Chmod(d.conf.APIAddr, mode); err != nil {
 		_ = ln.Close()
 		return nil, err

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 
 	"github.com/projecteru2/core/log"
 
@@ -169,11 +170,5 @@ func filterRecords(records []networkRecord, ids []string) []networkRecord {
 	for _, id := range ids {
 		want[id] = true
 	}
-	out := make([]networkRecord, 0, len(ids))
-	for _, r := range records {
-		if want[r.ID] {
-			out = append(out, r)
-		}
-	}
-	return out
+	return slices.DeleteFunc(records, func(r networkRecord) bool { return !want[r.ID] })
 }

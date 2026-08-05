@@ -76,10 +76,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 }
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
-	diskQueueSize := opts.diskQueueSize
-	if diskQueueSize <= 0 {
-		diskQueueSize = defaultDiskQueueSize
-	}
+	diskQueueSize := utils.OrDefault(opts.diskQueueSize, defaultDiskQueueSize)
 	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
 		sc := opts.storageConfigs[i]
 		if e := setField(elem, "path", sc.Path); e != nil {
