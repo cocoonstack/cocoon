@@ -142,7 +142,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	return cfg, nil
 }
 
-// RestoreVMConfigFromFlags builds VMConfig for restore: resources from the snapshot, Name/Network from the VM (CNI namespace survives restore).
+// RestoreVMConfigFromFlags builds VMConfig for restore: guest resources from the snapshot; Name, Network, and cgroup knobs from the VM (host-side state survives restore).
 func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
 	if snapCfg.NICs != len(vm.NetworkConfigs) {
 		return nil, fmt.Errorf("nic count mismatch: vm has %d, snapshot has %d",

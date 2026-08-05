@@ -116,6 +116,8 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	started := false
 	pidWritten := false
 	binaryName := b.Conf.BinaryName()
+	pidPath := b.PIDFilePath(spec.Rec.RunDir)
+	sockPath := SocketPath(spec.Rec.RunDir)
 	defer func() {
 		if err == nil {
 			return
@@ -125,7 +127,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 			_ = spec.Cmd.Wait()
 		}
 		if pidWritten {
-			_ = os.Remove(spec.PIDPath)
+			_ = os.Remove(pidPath)
 		}
 		if spec.OnFail != nil {
 			spec.OnFail()
@@ -154,12 +156,12 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	started = true
 	pid = spec.Cmd.Process.Pid
 
-	if err = utils.WritePIDFile(spec.PIDPath, pid); err != nil {
+	if err = utils.WritePIDFile(pidPath, pid); err != nil {
 		return 0, fmt.Errorf("write PID file: %w", err)
 	}
 	pidWritten = true
 
-	if err = WaitForSocket(ctx, spec.SockPath, pid, b.Conf.SocketWaitTimeout(), binaryName); err != nil {
+	if err = WaitForSocket(ctx, sockPath, pid, b.Conf.SocketWaitTimeout(), binaryName); err != nil {
 		return 0, err
 	}
 	return pid, nil

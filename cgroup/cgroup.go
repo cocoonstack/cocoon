@@ -100,15 +100,18 @@ func Prepare(parentDir, vmID string, k Knobs) (*os.File, error) {
 		return nil, err
 	}
 	dir := ScopeDir(parentDir, vmID)
-	if err := os.Mkdir(dir, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
-		return nil, fmt.Errorf("create scope: %w", err)
+	mkErr := os.Mkdir(dir, 0o750)
+	if mkErr != nil && !errors.Is(mkErr, fs.ErrExist) {
+		return nil, fmt.Errorf("create scope: %w", mkErr)
 	}
 	if err := writeControl(dir, weightName, strconv.Itoa(k.Weight)); err != nil {
 		return nil, err
 	}
-	// Reconfigure order: a leftover burst > target quota blocks the cpu.max write (kernel requires burst <= quota), so zero it first. ENOENT tolerated — pre-5.14 kernels lack the file.
-	if err := writeControl(dir, burstName, "0"); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	// A reused scope may hold a leftover burst > target quota, which blocks the cpu.max write (kernel requires burst <= quota): zero it first. ENOENT tolerated — pre-5.14 kernels lack the file.
+	if errors.Is(mkErr, fs.ErrExist) {
+		if err := writeControl(dir, burstName, "0"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
 	}
 	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
 		return nil, err
@@ -196,14 +199,14 @@ func parseStat(data string) map[string]int64 {
 	return stat
 }
 
-// ensureParent creates parentDir and enables the cpu controller at every level from Root down; each write failure names the exact file, which is the platform preflight.
+// ensureParent enables cpu at every ancestor, not just the leaf — cgroup v2 subtree delegation is hierarchical.
 func ensureParent(parentDir string) error {
 	rel, err := filepath.Rel(Root, parentDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("cgroup parent %q must be under %s", parentDir, Root)
 	}
-	if err := os.MkdirAll(parentDir, 0o750); err != nil {
-		return fmt.Errorf("create cgroup parent: %w", err)
+	if err := utils.EnsureDirs(parentDir); err != nil {
+		return err
 	}
 	if err := enableCPU(Root); err != nil {
 		return err

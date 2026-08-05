@@ -184,8 +184,6 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.Stdout = slave
 	pid, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:       fcCmd,
-		PIDPath:   fc.PIDFilePath(rec.RunDir),
-		SockPath:  sockPath,
 		NetnsPath: netnsPath,
 		OnFail:    func() { _ = master.Close() },
 		Rec:       rec,

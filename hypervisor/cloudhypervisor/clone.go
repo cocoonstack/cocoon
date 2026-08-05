@@ -125,7 +125,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		VM:     types.VM{ID: vmID, Config: *vmCfg},
 		RunDir: runDir,
 		LogDir: logDir,
-	}, sockPath, args, net.NetnsPath)
+	}, args, net.NetnsPath)
 	if err != nil {
 		ch.MarkError(ctx, vmID)
 		return nil, fmt.Errorf("launch CH: %w", err)

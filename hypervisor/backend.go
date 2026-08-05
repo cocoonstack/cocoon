@@ -97,11 +97,9 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store met
 
 func (b *Backend) Type() string { return b.Typ }
 
-// LaunchSpec is the per-call input to Backend.LaunchVMProcess.
+// LaunchSpec is the per-call input to Backend.LaunchVMProcess; PID-file and socket paths derive from Rec.RunDir.
 type LaunchSpec struct {
 	Cmd       *exec.Cmd
-	PIDPath   string
-	SockPath  string
 	NetnsPath string
 	OnFail    func()
 
