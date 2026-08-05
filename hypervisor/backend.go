@@ -60,6 +60,7 @@ type BackendConfig interface {
 	LogDir() string
 	VMRunDir(id string) string
 	VMLogDir(id string) string
+	CgroupParentDir() string
 }
 
 var _ Supervisable = (*Backend)(nil)
@@ -103,6 +104,9 @@ type LaunchSpec struct {
 	SockPath  string
 	NetnsPath string
 	OnFail    func()
+
+	// Rec names the VM whose CPU scope the process enters at spawn (ID + cgroup knobs); every VM enters a scope.
+	Rec *VMRecord
 }
 
 // PreflightHook validates rec against the snapshot source dir before anything is applied.

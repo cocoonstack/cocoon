@@ -111,6 +111,7 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 		return shutdownErr
 	}
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+	b.removeCgroupScope(ctx, id)
 	return nil
 }
 

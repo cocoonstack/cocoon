@@ -1,12 +1,15 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 
 	coretypes "github.com/projecteru2/core/types"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -58,8 +61,10 @@ type Config struct {
 	// SocketWaitTimeoutSeconds: wait for the CH API socket after start. Default: 5; increase for slow storage.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
-	TerminateGracePeriodSeconds int                        `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
-	Log                         *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
+	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
+	// CgroupParent: cgroup v2 slice under /sys/fs/cgroup holding per-VM CPU scopes. Default: cocoon.slice.
+	CgroupParent string                     `json:"cgroup_parent" mapstructure:"cgroup_parent"`
+	Log          *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
 	// Metering selects the lifecycle-event recorder backend.
 	Metering MeteringConfig `json:"metering,omitzero" mapstructure:"metering"`
 }
@@ -80,6 +85,11 @@ func (c *Config) EffectivePoolSize() int {
 // EffectivePullConns returns PullConns (defaultPullConns when unset) clamped to maxPullConns.
 func (c *Config) EffectivePullConns() int {
 	return min(utils.OrDefault(c.PullConns, defaultPullConns), maxPullConns)
+}
+
+// CgroupParentDir returns the absolute cgroup v2 directory holding per-VM CPU scopes.
+func (c *Config) CgroupParentDir() string {
+	return filepath.Join(cgroup.Root, cmp.Or(c.CgroupParent, cgroup.DefaultParent))
 }
 
 // Validate checks that all config fields are within acceptable ranges.

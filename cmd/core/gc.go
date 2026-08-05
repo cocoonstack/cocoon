@@ -5,6 +5,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
@@ -36,6 +37,7 @@ func NewGCOrchestrator(ctx context.Context, conf *config.Config, snapOpts ...loc
 	for _, hyper := range hypers {
 		hyper.RegisterGC(o)
 	}
+	gc.Register(o, hypervisor.CgroupGCModule(conf.CgroupParentDir()))
 	netProvider.RegisterGC(o)
 	gc.Register(o, bridge.GCModule())
 	gc.Register(o, vmlock.GCModule(conf.RootDir))

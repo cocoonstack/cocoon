@@ -188,6 +188,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		SockPath:  sockPath,
 		NetnsPath: netnsPath,
 		OnFail:    func() { _ = master.Close() },
+		Rec:       rec,
 	})
 	if err != nil {
 		return 0, nil, err

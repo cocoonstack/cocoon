@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/images"
@@ -22,6 +23,10 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	storStr, _ := cmd.Flags().GetString("storage")
 	queueSize, _ := cmd.Flags().GetInt("queue-size")
 	diskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
+	cpuWeight, _ := cmd.Flags().GetInt("cpu-weight")
+	cpuQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
+	cpuPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
+	cpuBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
 	network, _ := cmd.Flags().GetString("network")
 	user, _ := cmd.Flags().GetString("user")
 	password, _ := cmd.Flags().GetString("password")
@@ -63,12 +68,19 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			Windows:       windows,
 			SharedMemory:  sharedMemory,
 			HugePages:     hugePages,
+			CPUWeight:     cpuWeight,
+			CPUQuotaUs:    cpuQuotaUs,
+			CPUPeriodUs:   cpuPeriodUs,
+			CPUBurstUs:    cpuBurstUs,
 		},
 		User:      user,
 		Password:  password,
 		DataDisks: dataDisks,
 	}
 	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -113,6 +125,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 			HugePages:     snapCfg.HugePages,
+			CPUWeight:     snapCfg.CPUWeight,
+			CPUQuotaUs:    snapCfg.CPUQuotaUs,
+			CPUPeriodUs:   snapCfg.CPUPeriodUs,
+			CPUBurstUs:    snapCfg.CPUBurstUs,
 		},
 		DataDisks:   dataDisks,
 		RestoreMode: restoreMode,

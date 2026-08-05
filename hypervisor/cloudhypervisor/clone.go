@@ -122,6 +122,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	ch.saveCmdline(ctx, &hypervisor.VMRecord{RunDir: runDir}, args)
 
 	pid, err := ch.launchProcess(ctx, &hypervisor.VMRecord{
+		VM:     types.VM{ID: vmID, Config: *vmCfg},
 		RunDir: runDir,
 		LogDir: logDir,
 	}, sockPath, args, net.NetnsPath)

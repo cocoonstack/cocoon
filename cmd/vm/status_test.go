@@ -114,7 +114,7 @@ func TestRenderVMList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			out := captureStdout(t, func() {
-				if err := renderVMList(tt.vms, tt.format); err != nil {
+				if err := renderVMList(tt.vms, tt.format, t.TempDir()); err != nil {
 					t.Fatalf("renderVMList: %v", err)
 				}
 			})

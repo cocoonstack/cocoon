@@ -36,6 +36,7 @@ func (c benchConfig) RunDir() string                      { return c.dir }
 func (c benchConfig) LogDir() string                      { return c.dir }
 func (c benchConfig) VMRunDir(id string) string           { return filepath.Join(c.dir, id) }
 func (c benchConfig) VMLogDir(id string) string           { return filepath.Join(c.dir, id) }
+func (c benchConfig) CgroupParentDir() string             { return filepath.Join(c.dir, "cgroup") }
 
 func main() {
 	if len(os.Args) < 3 {

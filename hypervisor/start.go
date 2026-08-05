@@ -11,6 +11,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sys/unix"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -130,6 +131,13 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 			spec.OnFail()
 		}
 	}()
+
+	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config))
+	if err != nil {
+		return 0, fmt.Errorf("prepare cgroup scope: %w", err)
+	}
+	defer scope.Close() //nolint:errcheck
+	setCmdCgroupFD(spec.Cmd, scope)
 
 	if spec.NetnsPath != "" {
 		restore, nsErr := EnterNetns(spec.NetnsPath)

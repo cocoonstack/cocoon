@@ -104,6 +104,7 @@ func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, obser
 	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
 	}
+	b.removeCgroupScope(ctx, id)
 	return b.QuiesceIfPending(ctx, id)
 }
 

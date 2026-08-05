@@ -50,6 +50,7 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 		PIDPath:   ch.PIDFilePath(rec.RunDir),
 		SockPath:  socketPath,
 		NetnsPath: netnsPath,
+		Rec:       rec,
 	})
 	if err != nil {
 		return 0, err

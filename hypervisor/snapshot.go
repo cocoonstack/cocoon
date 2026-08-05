@@ -143,6 +143,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	}
 
 	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
+	b.removeCgroupScope(ctx, vmID)
 	// Warn-and-continue like StopAll: the VMM is dead and the flip self-heals; the snapshot is already durable.
 	uErr := b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped)
 	if uErr != nil {
