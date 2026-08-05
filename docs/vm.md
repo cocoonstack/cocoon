@@ -41,6 +41,18 @@ cgroup knobs are host-side policy, like networking: snapshots record the source 
 
 Requirements: cgroup v2 unified hierarchy with the `cpu` controller (kernel ≥ 5.14 for burst), running cocoon as root (production shape). Non-root works inside a systemd user slice with delegated controllers (`systemd-run --user --scope`), where user slices typically delegate `cpu` but not `cpuset` — fence/placement then fail preflight with the exact missing file named.
 
+### Reserving CPU for the control plane
+
+The fence bounds the VMs; the caller's own work (clone, restore, the API consumer) is deliberately not cocoon's to manage — set it on the invoking service's systemd unit, which writes the same cgroup v2 files:
+
+```ini
+# /etc/systemd/system/<your-service>.service.d/cpu.conf
+[Service]
+CPUWeight=1000     # management plane wins contention on the VM cores
+```
+
+With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as the control plane's fast lane without pinning; prefer that over `AllowedCPUs=15`, which would confine clone's multi-core memory restore to one core. One-off commands: `systemd-run --scope -p CPUWeight=1000 cocoon vm clone ...`.
+
 ## Performance Tuning
 
 - **Hugepages** (Cloud Hypervisor only): opt-in via `vm create --hugepages`; VM memory is backed by 2 MiB hugepages for reduced TLB pressure, and in exchange snapshots of that VM restore via eager copy only (the mmap fast path needs plain private-anon memory). Firecracker rejects `--hugepages`: FC cannot restore a hugetlbfs-backed snapshot, which would break hibernate/clone
