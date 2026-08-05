@@ -15,9 +15,7 @@ import (
 // TableRecords is the image-namespace records table.
 const TableRecords = "records"
 
-// Store is one image namespace on the shared meta engine, presenting the
-// legacy whole-index closure shape over record primitives: image lookups are
-// whole-map by nature (ref normalization, digest-prefix matching).
+// Store is one image namespace on the shared meta engine, presenting the legacy whole-index closure shape over record primitives: image lookups are whole-map by nature (ref normalization, digest-prefix matching).
 type Store[E any] struct {
 	meta meta.Store
 	ns   string
@@ -39,8 +37,7 @@ func (s *Store[E]) View(ctx context.Context, fn func(*Index[E]) error) error {
 	})
 }
 
-// Update runs a pure fn against the materialized index and writes the
-// difference back as record operations.
+// Update runs a pure fn against the materialized index and writes the difference back as record operations.
 func (s *Store[E]) Update(ctx context.Context, fn func(*Index[E]) error) error {
 	return s.meta.Update(ctx, meta.Scope{Write: s.ns}, meta.CommitDurable, func(w meta.Writer) error {
 		return s.applyDiff(ctx, w, fn)
@@ -99,9 +96,7 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 	return idx, before, nil
 }
 
-// BlobLocks holds per-digest blob locks for a publish critical section:
-// sorted acquisition so concurrent multi-digest publishes cannot deadlock;
-// Release never removes the lock files (flock synchronizes on the inode).
+// BlobLocks holds per-digest blob locks for a publish critical section: sorted acquisition so concurrent multi-digest publishes cannot deadlock; Release never removes the lock files (flock synchronizes on the inode).
 type BlobLocks struct {
 	held []*gofrsflock.Flock
 }

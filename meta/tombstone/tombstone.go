@@ -1,5 +1,4 @@
-// Package tombstone is the §5 phase protocol: leased rolls back, deleting
-// rolls forward, every mutation fenced by the holder's lease id.
+// Package tombstone is the §5 phase protocol: leased rolls back, deleting rolls forward, every mutation fenced by the holder's lease id.
 package tombstone
 
 import (
@@ -37,12 +36,10 @@ type Phase string
 // Kind distinguishes a record-backed candidate from a recordless orphan.
 type Kind string
 
-// Mode distinguishes a full teardown from an explicit subset; recovering a
-// subset as an aggregate would destroy healthy resources.
+// Mode distinguishes a full teardown from an explicit subset; recovering a subset as an aggregate would destroy healthy resources.
 type Mode string
 
-// Payload is written whole at lease time and immutable after: recovery
-// reads it and nothing else.
+// Payload is written whole at lease time and immutable after: recovery reads it and nothing else.
 type Payload struct {
 	Kind    Kind            `json:"kind"`
 	Mode    Mode            `json:"mode"`
@@ -82,8 +79,7 @@ func (t *Table) Scan(ctx context.Context, r meta.Reader, fn func(id string, rec 
 	return t.recs.Scan(ctx, r, fn)
 }
 
-// Lease inserts id's tombstone with a fresh lease and its complete payload;
-// an existing tombstone is ErrConflict — another worker owns the candidate.
+// Lease inserts id's tombstone with a fresh lease and its complete payload; an existing tombstone is ErrConflict — another worker owns the candidate.
 func (t *Table) Lease(ctx context.Context, w meta.Writer, id string, p Payload) (string, error) {
 	leaseID := utils.GenerateID()
 	if err := t.recs.Insert(ctx, w, id, &Record{LeaseID: leaseID, Phase: PhaseLeased, LeasedAt: time.Now(), Payload: p}); err != nil {
@@ -92,8 +88,7 @@ func (t *Table) Lease(ctx context.Context, w meta.Writer, id string, p Payload) 
 	return leaseID, nil
 }
 
-// TakeOver replaces a dead owner's lease with a fresh one, preserving phase
-// and payload; the caller must hold the entity lock.
+// TakeOver replaces a dead owner's lease with a fresh one, preserving phase and payload; the caller must hold the entity lock.
 func (t *Table) TakeOver(ctx context.Context, w meta.Writer, id string) (*Record, error) {
 	rec, err := t.Get(ctx, w, id)
 	if err != nil || rec == nil {
@@ -151,8 +146,7 @@ func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error)
 	return ids, nil
 }
 
-// Acquire starts protocol work on id under the held entity lock: takes over
-// an existing tombstone (resumed reports it), or leases fresh from build.
+// Acquire starts protocol work on id under the held entity lock: takes over an existing tombstone (resumed reports it), or leases fresh from build.
 func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build func() (Payload, error)) (leaseID string, resumed *Record, err error) {
 	existing, err := t.Get(ctx, w, id)
 	if err != nil {
@@ -173,9 +167,7 @@ func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build fun
 	return leaseID, nil, err
 }
 
-// Resume takes over id's tombstone for recovery under the held entity lock:
-// a leased entry rolls back in place; a deleting one gets a fresh lease for
-// the caller to roll forward.
+// Resume takes over id's tombstone for recovery under the held entity lock: a leased entry rolls back in place; a deleting one gets a fresh lease for the caller to roll forward.
 func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Record, leaseID string, err error) {
 	rec, err = t.Get(ctx, w, id)
 	if err != nil || rec == nil {

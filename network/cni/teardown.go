@@ -13,9 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// netCleanup is the networks-namespace tombstone payload: aggregate removes
-// every listed record plus the netns; subset removes only the named record
-// IDs (never NIC indices — they cannot disambiguate duplicate rows).
+// netCleanup is the networks-namespace tombstone payload: aggregate removes every listed record plus the netns; subset removes only the named record IDs (never NIC indices — they cannot disambiguate duplicate rows).
 type netCleanup struct {
 	Netns   string             `json:"netns,omitempty"`
 	Records []netCleanupRecord `json:"records"`
@@ -85,23 +83,19 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 	return c.finishTeardown(ctx, vmID, leaseID, mode, cl, deleteTAP)
 }
 
-// finishTeardown runs the slow CNI DEL / netns work outside any transaction,
-// driven by the payload, then the fenced finalize.
+// finishTeardown runs the slow CNI DEL / netns work outside any transaction, driven by the payload, then the fenced finalize.
 func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tombstone.Mode, cl netCleanup, deleteTAP bool) error {
 	ts := c.tombstones()
 	records := make([]networkRecord, 0, len(cl.Records))
 	for _, r := range cl.Records {
 		records = append(records, networkRecord{ID: r.ID, Type: r.Type, VMID: vmID, IfName: r.IfName})
 	}
-	// A retry after the netns already went (crash between netns removal and
-	// the sweep) skips TAP deletion — the TAPs died with the ns; CNI DEL still
-	// runs, releasing IPAM by container ID without entering the ns.
+	// A retry after the netns already went (crash between netns removal and the sweep) skips TAP deletion — the TAPs died with the ns; CNI DEL still runs, releasing IPAM by container ID without entering the ns.
 	if _, err := statNetnsFn(netnsPath(vmID)); errors.Is(err, fs.ErrNotExist) {
 		deleteTAP = false
 	}
 	downIDs, tdErr := c.tearDownNICs(ctx, vmID, netnsPath(vmID), records, deleteTAP)
-	// Slow cleanup stays outside the transaction (clause 1): the netns goes
-	// before the commit so a pure retryable closure never carries side effects.
+	// Slow cleanup stays outside the transaction (clause 1): the netns goes before the commit so a pure retryable closure never carries side effects.
 	if tdErr == nil && mode == tombstone.ModeAggregate && cl.Netns != "" {
 		if err := deleteNetnsFn(ctx, netnsName(vmID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove netns %s (tombstone kept, retry resumes): %w", cl.Netns, err)
@@ -131,9 +125,7 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 	return nil
 }
 
-// recoverTombstone drives vmID's tombstone under the held VM lock;
-// rolledForward reports a completed deleting recovery so entrypoints refuse
-// the current operation (design §5 binding rule).
+// recoverTombstone drives vmID's tombstone under the held VM lock; rolledForward reports a completed deleting recovery so entrypoints refuse the current operation (design §5 binding rule).
 func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward bool, err error) {
 	ts := c.tombstones()
 	var (
@@ -154,9 +146,7 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
 		return false, fmt.Errorf("tombstone %s payload: %w", vmID, err)
 	}
-	// Subset teardown (vm net remove) creates its TAPs independently of the
-	// netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's
-	// TAPs die with the netns.
+	// Subset teardown (vm net remove) creates its TAPs independently of the netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's TAPs die with the netns.
 	deleteTAP := rec.Payload.Mode == tombstone.ModeSubset
 	if err := c.finishTeardown(ctx, vmID, leaseID, rec.Payload.Mode, cl, deleteTAP); err != nil {
 		return false, err

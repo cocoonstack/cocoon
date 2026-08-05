@@ -12,9 +12,7 @@ const (
 	eventsSafetyPoll = 5 * time.Second
 )
 
-// Broadcaster is the engine-shared half of an Events notifier: it owns the
-// subscriber set and the debounce/poll loop, funneling every trigger into
-// the engine's check func — which calls Broadcast only when state moved.
+// Broadcaster is the engine-shared half of an Events notifier: it owns the subscriber set and the debounce/poll loop, funneling every trigger into the engine's check func — which calls Broadcast only when state moved.
 type Broadcaster struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}

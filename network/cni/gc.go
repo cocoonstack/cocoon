@@ -58,8 +58,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 			logger := log.WithFunc("gc.cni")
 			var errs []error
 			for _, vmID := range ids {
-				// The owning VM's lock covers network teardown (design §5);
-				// a held lock means an in-flight lifecycle operation — skip.
+				// The owning VM's lock covers network teardown (design §5); a held lock means an in-flight lifecycle operation — skip.
 				lk, lockErr := vmlock.New(c.conf.RootDir, vmID)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
@@ -89,8 +88,7 @@ func (c *CNI) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, c.GCModule())
 }
 
-// gcRecover resumes existing network tombstones by phase before discovery,
-// each under its owning VM's lock (design §5 recovery-precedes-discovery).
+// gcRecover resumes existing network tombstones by phase before discovery, each under its owning VM's lock (design §5 recovery-precedes-discovery).
 func (c *CNI) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := c.view(ctx, func(t *netTx) error {

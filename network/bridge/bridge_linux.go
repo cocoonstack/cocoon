@@ -55,8 +55,7 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 func (b *Bridge) Type() string { return typ }
 
 func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
-	// Legacy records persisted no NetworkConfigs, so empty means "assume tap0"
-	// — callers that legitimately resized to zero NICs must not call Verify.
+	// Legacy records persisted no NetworkConfigs, so empty means "assume tap0" — callers that legitimately resized to zero NICs must not call Verify.
 	if len(expected) == 0 {
 		if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
 			return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)

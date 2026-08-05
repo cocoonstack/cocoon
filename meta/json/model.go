@@ -1,5 +1,4 @@
-// Package json is the meta engine over today's per-namespace JSON files:
-// same formats, same .prev crash story, same flocks (design §8).
+// Package json is the meta engine over today's per-namespace JSON files: same formats, same .prev crash story, same flocks (design §8).
 package json
 
 import (
@@ -13,9 +12,7 @@ type table struct {
 	recs map[string]json.RawMessage
 }
 
-// Model is one namespace's decoded state: named tables preserving insertion
-// order — loaded file order first, new ids appended — which legacy codecs
-// rely on for order-sensitive fields.
+// Model is one namespace's decoded state: named tables preserving insertion order — loaded file order first, new ids appended — which legacy codecs rely on for order-sensitive fields.
 type Model struct {
 	tables map[string]*table
 	dirty  bool

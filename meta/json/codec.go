@@ -7,9 +7,7 @@ import (
 	"slices"
 )
 
-// Codec maps between a namespace file's bytes and its Model. Legacy
-// namespaces provide codecs reproducing today's exact formats; Encode output
-// is the complete file content including the trailing newline.
+// Codec maps between a namespace file's bytes and its Model. Legacy namespaces provide codecs reproducing today's exact formats; Encode output is the complete file content including the trailing newline.
 type Codec interface {
 	// Decode parses file bytes; data == nil means the file does not exist.
 	Decode(data []byte) (*Model, error)
@@ -22,9 +20,7 @@ type genericFile struct {
 
 var _ Codec = GenericCodec{}
 
-// GenericCodec persists a Model as {"tables":{...}} for
-// namespaces with no legacy format (contract tests, future additions).
-// Insertion order is not preserved across reload: tables refill sorted by id.
+// GenericCodec persists a Model as {"tables":{...}} for namespaces with no legacy format (contract tests, future additions). Insertion order is not preserved across reload: tables refill sorted by id.
 type GenericCodec struct{}
 
 func (GenericCodec) Decode(data []byte) (*Model, error) {

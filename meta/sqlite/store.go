@@ -1,5 +1,4 @@
-// Package sqlite is the meta scale engine: one WAL database, namespace =
-// table group, generic (id, data) rows per root-declared table (§2-§4, v2.28).
+// Package sqlite is the meta scale engine: one WAL database, namespace = table group, generic (id, data) rows per root-declared table (§2-§4, v2.28).
 package sqlite
 
 import (
@@ -25,42 +24,35 @@ import (
 )
 
 const (
-	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema
-	// generation — verified on every open, written only at init (§6).
+	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6).
 	ApplicationID = 0x434F434E
 	UserVersion   = 1
 
-	// DBFileName is the single database under the meta root; ManifestName
-	// beside it marks an in-flight conversion, which ordinary opens refuse (§6).
+	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse (§6).
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
-	// busyRetryPause caps the jittered pause between BEGIN IMMEDIATE retries;
-	// the in-driver busy_timeout already did the real waiting (§4).
+	// busyRetryPause caps the jittered pause between BEGIN IMMEDIATE retries; the in-driver busy_timeout already did the real waiting (§4).
 	busyRetryCeiling   = 5 * time.Second
 	busyRetryPause     = 2 * time.Millisecond
 	slowTxnWarn        = 500 * time.Millisecond
 	checkpointInterval = time.Second
 )
 
-// Namespace declares one namespace's table set; Tables lists the record
-// tables (satellites included) the SPI may address.
+// Namespace declares one namespace's table set; Tables lists the record tables (satellites included) the SPI may address.
 type Namespace struct {
 	Name   string
 	Tables []string
 }
 
-// tableStmts holds one table's prepared statements; scan/put/del are nil on
-// read-only handles.
+// tableStmts holds one table's prepared statements; scan/put/del are nil on read-only handles.
 type tableStmts struct {
 	get, scan, put, del *sql.Stmt
 }
 
 var _ meta.Store = (*Store)(nil)
 
-// Store is the sqlite engine: writerDurable/writerRelaxed single-conn
-// handles, a bounded reader pool, and a pinned notifier connection (§4).
-// Statements are prepared per handle at Open — the table set is static.
+// Store is the sqlite engine: writerDurable/writerRelaxed single-conn handles, a bounded reader pool, and a pinned notifier connection (§4). Statements are prepared per handle at Open — the table set is static.
 type Store struct {
 	path          string
 	nss           map[string]Namespace
@@ -76,8 +68,7 @@ type Store struct {
 	notifier *notifier
 }
 
-// Open verifies identity, version and per-namespace meta_state, then builds
-// the connection set. It never creates or migrates — that is Init's job.
+// Open verifies identity, version and per-namespace meta_state, then builds the connection set. It never creates or migrates — that is Init's job.
 func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
 	if err := RefuseManifest(dbPath); err != nil {
 		return nil, err
@@ -85,8 +76,7 @@ func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
 	return openStore(dbPath, namespaces)
 }
 
-// OpenForRecovery is Open without the manifest guard, for the conversion
-// tool itself (§6) — never for ordinary callers.
+// OpenForRecovery is Open without the manifest guard, for the conversion tool itself (§6) — never for ordinary callers.
 func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 	return openStore(dbPath, namespaces)
 }
@@ -101,8 +91,7 @@ func RefuseManifest(dbPath string) error {
 }
 
 func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
-	// The driver creates a file on first touch; Open never creates — that is
-	// Init's job (§6) — and §4 refuses network filesystems before WAL work.
+	// The driver creates a file on first touch; Open never creates — that is Init's job (§6) — and §4 refuses network filesystems before WAL work.
 	if !utils.FileExists(dbPath) {
 		return nil, fmt.Errorf("no sqlite store at %s: run `cocoon meta init` or `cocoon meta convert`", dbPath)
 	}
@@ -142,8 +131,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if s.stmtsReaders, err = prepareStmts(s.readers, s.nss, false); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
-	// A background PASSIVE checkpoint keeps the WAL short so committing
-	// writers rarely pay the autocheckpoint stall themselves.
+	// A background PASSIVE checkpoint keeps the WAL short so committing writers rarely pay the autocheckpoint stall themselves.
 	s.cpDone = make(chan struct{})
 	go checkpointLoop(s.readers, dbPath, s.cpDone)
 	return s, nil
@@ -231,10 +219,7 @@ func (s *Store) Close() error {
 	return errors.Join(errs...)
 }
 
-// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop: the short
-// in-driver busy_timeout does the real waiting (and bounds ctx latency,
-// clause 6), so between attempts only a tiny jittered pause bounds spin —
-// an exponential backoff here would idle past a freed lock.
+// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop: the short in-driver busy_timeout does the real waiting (and bounds ctx latency, clause 6), so between attempts only a tiny jittered pause bounds spin — an exponential backoff here would idle past a freed lock.
 func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 	deadline := time.Now().Add(busyRetryCeiling)
 	for {
@@ -269,9 +254,7 @@ func (s *Store) checkScope(nss []string) error {
 	return nil
 }
 
-// verifyIdentity reads application_id, user_version and meta_state — never
-// writes them (§6): wrong id or a newer version fails closed; a namespace
-// with no meta_state row is uninitialized, never empty.
+// verifyIdentity reads application_id, user_version and meta_state — never writes them (§6): wrong id or a newer version fails closed; a namespace with no meta_state row is uninitialized, never empty.
 func (s *Store) verifyIdentity() error {
 	var appID, version int64
 	if err := s.readers.QueryRow("PRAGMA application_id").Scan(&appID); err != nil {
@@ -304,8 +287,7 @@ var (
 	_ meta.Writer = (*txHandle)(nil)
 )
 
-// txHandle implements Reader/Writer over one transaction; values are
-// detached by construction (every read allocates from row scans).
+// txHandle implements Reader/Writer over one transaction; values are detached by construction (every read allocates from row scans).
 type txHandle struct {
 	ctx   context.Context
 	tx    *sql.Tx
@@ -416,8 +398,7 @@ func scopeSet(nss []string) map[string]struct{} {
 	return set
 }
 
-// open applies the per-connection runtime contract (§4); cache_size is KB
-// (negative form) and mmap_size covers the whole file at meta scale.
+// open applies the per-connection runtime contract (§4); cache_size is KB (negative form) and mmap_size covers the whole file at meta scale.
 func open(dbPath, sync string, writer bool) (*sql.DB, error) {
 	dsn := "file:" + dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_pragma=trusted_schema(0)" +
 		"&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=synchronous(" + sync + ")"

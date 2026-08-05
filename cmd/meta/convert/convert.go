@@ -1,6 +1,4 @@
-// Package convert is the explicit offline engine cutover (design §6): a
-// standalone fsync-first manifest is the only recovery authority, targets
-// are fresh, sources retire aside, and every step is crash-rerunnable.
+// Package convert is the explicit offline engine cutover (design §6): a standalone fsync-first manifest is the only recovery authority, targets are fresh, sources retire aside, and every step is crash-rerunnable.
 package convert
 
 import (
@@ -141,13 +139,10 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 	return m, nil
 }
 
-// checkQuiesced is §6's advisory activity check: an in-flight source write
-// means live cocoon processes, and converting under them could lose writes
-// landing on a namespace already marked done.
+// checkQuiesced is §6's advisory activity check: an in-flight source write means live cocoon processes, and converting under them could lose writes landing on a namespace already marked done.
 func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
 	if target == config.MetaBackendJSON {
-		// sqlite source: an empty durable transaction fails ErrBusy while a
-		// writer is mid-flight.
+		// sqlite source: an empty durable transaction fails ErrBusy while a writer is mid-flight.
 		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		err := src.Update(probeCtx, meta.Scope{Write: spec.Decls[0].Name}, meta.CommitDurable, func(meta.Writer) error { return nil })
@@ -157,8 +152,7 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 		return nil
 	}
 	for _, jns := range spec.JSON {
-		// Persistent form: the engine's own locks are persistent, and a
-		// transient probe would delete the shared lock file on release.
+		// Persistent form: the engine's own locks are persistent, and a transient probe would delete the shared lock file on release.
 		l := flock.New(jns.LockPath)
 		ok, err := l.TryLock(ctx)
 		if err != nil {
@@ -174,8 +168,7 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 	return nil
 }
 
-// ensureJSONDirs creates namespace dirs for subsystems that never ran —
-// their absence means empty, and the engine's flock needs the dir to exist.
+// ensureJSONDirs creates namespace dirs for subsystems that never ran — their absence means empty, and the engine's flock needs the dir to exist.
 func ensureJSONDirs(spec Spec) error {
 	dirs := make([]string, 0, len(spec.JSON))
 	for _, jns := range spec.JSON {
@@ -189,8 +182,7 @@ func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == config.MetaBackendSQLite {
 		return metajson.Open(spec.JSON...)
 	}
-	// The driver would create an empty file on first touch; a missing source
-	// must fail before that.
+	// The driver would create an empty file on first touch; a missing source must fail before that.
 	if !utils.FileExists(spec.DBPath) {
 		return nil, fmt.Errorf("no sqlite store at %s to convert from", spec.DBPath)
 	}
@@ -208,8 +200,7 @@ func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, erro
 }
 
 func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, m *Manifest, spec Spec) error {
-	// A committed-but-unmarked target (crash window) is re-verified and
-	// claimed, never redone (§6).
+	// A committed-but-unmarked target (crash window) is re-verified and claimed, never redone (§6).
 	dstDigest, dstCount, err := canonicalDigest(ctx, dst, ns)
 	if err != nil {
 		return err
@@ -239,9 +230,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 	return crashStep("ns-done")
 }
 
-// duplicateGeneration copies a freshly written json target to its .prev so
-// the imported data survives a later torn main (§9: never less resilient
-// than steady state).
+// duplicateGeneration copies a freshly written json target to its .prev so the imported data survives a later torn main (§9: never less resilient than steady state).
 func duplicateGeneration(spec Spec, nsName string) error {
 	jns, ok := findJSON(spec, nsName)
 	if !ok {
@@ -319,9 +308,7 @@ func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 	})
 }
 
-// verifyNames is §6's referential name check: every name entry must point at
-// an existing record. Table names are the record-SPI convention shared by
-// every namespace declaration.
+// verifyNames is §6's referential name check: every name entry must point at an existing record. Table names are the record-SPI convention shared by every namespace declaration.
 func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) error {
 	if !slices.Contains(ns.Tables, "names") {
 		return nil
@@ -342,8 +329,7 @@ func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) err
 	})
 }
 
-// canonicalDigest is the engine-neutral namespace fingerprint (§6): rows
-// sorted by id per table, tables in declaration order; count is records only.
+// canonicalDigest is the engine-neutral namespace fingerprint (§6): rows sorted by id per table, tables in declaration order; count is records only.
 func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace) (string, int, error) {
 	h := sha256.New()
 	count := 0
@@ -371,9 +357,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 	return hex.EncodeToString(h.Sum(nil)), count, nil
 }
 
-// retireSources aside-renames every source file after full verification; a
-// sqlite source checkpoints to a single file first (§6). Runs with both
-// engines closed; already-renamed files are skipped, so a crash here reruns.
+// retireSources aside-renames every source file after full verification; a sqlite source checkpoints to a single file first (§6). Runs with both engines closed; already-renamed files are skipped, so a crash here reruns.
 func retireSources(ctx context.Context, spec Spec, target string) error {
 	if target == config.MetaBackendJSON && utils.FileExists(spec.DBPath) {
 		if err := metasqlite.Checkpoint(ctx, spec.DBPath); err != nil {

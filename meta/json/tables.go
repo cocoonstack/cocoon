@@ -13,9 +13,7 @@ import (
 // stringListMarker backs StringList presence rows; the value never surfaces.
 var stringListMarker = json.RawMessage("{}")
 
-// TableSpec maps one legacy top-level object field to a model table;
-// Optional omits the field from encoded output while the table is empty;
-// StringList marks an ordered []string field stored as presence markers.
+// TableSpec maps one legacy top-level object field to a model table; Optional omits the field from encoded output while the table is empty; StringList marks an ordered []string field stored as presence markers.
 type TableSpec struct {
 	Key        string
 	Table      string
@@ -25,8 +23,7 @@ type TableSpec struct {
 
 var _ Codec = TableCodec{}
 
-// TableCodec is the declaration-only codec for pure table-shaped namespaces:
-// a subsystem states its legacy field layout and owns no codec code.
+// TableCodec is the declaration-only codec for pure table-shaped namespaces: a subsystem states its legacy field layout and owns no codec code.
 type TableCodec struct {
 	Specs []TableSpec
 }
@@ -39,9 +36,7 @@ func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	return EncodeTables(m, c.Specs)
 }
 
-// DecodeTables loads specs' map fields into a fresh Model (sorted insertion,
-// matching what encoding/json always wrote). Single streaming pass — a whole-file
-// unmarshal into raw messages tokenizes the payload twice.
+// DecodeTables loads specs' map fields into a fresh Model (sorted insertion, matching what encoding/json always wrote). Single streaming pass — a whole-file unmarshal into raw messages tokenizes the payload twice.
 func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	m := NewModel()
 	if data == nil {
@@ -91,8 +86,7 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	if _, err := dec.Token(); err != nil {
 		return nil, err
 	}
-	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended
-	// main must fall back to .prev, not decode (§9 format fidelity).
+	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended main must fall back to .prev, not decode (§9 format fidelity).
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("namespace file: trailing data after document")
 	}

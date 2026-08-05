@@ -103,8 +103,7 @@ func (lf *LocalFile) finishSnapTeardown(ctx context.Context, id, leaseID string,
 	return err
 }
 
-// recoverSnapTombstone drives id's tombstone under a freshly acquired
-// exclusive lease: leased rolls back, deleting rolls forward.
+// recoverSnapTombstone drives id's tombstone under a freshly acquired exclusive lease: leased rolls back, deleting rolls forward.
 func (lf *LocalFile) recoverSnapTombstone(ctx context.Context, id string) error {
 	fl, ok, err := lf.tryExclusiveLease(id)
 	if err != nil {
@@ -152,8 +151,7 @@ func (lf *LocalFile) guardSnapTombstone(ctx context.Context, id string, releaseS
 		present = rec != nil
 		return err
 	}); err != nil {
-		// The guard consumes the lease on every path: leaking a shared flock
-		// here would block exclusive delete/GC for the process lifetime.
+		// The guard consumes the lease on every path: leaking a shared flock here would block exclusive delete/GC for the process lifetime.
 		releaseShared()
 		return err
 	}

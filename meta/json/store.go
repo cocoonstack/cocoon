@@ -21,8 +21,7 @@ import (
 
 const prevSuffix = ".prev"
 
-// testCrashStep aborts a commit right after the named write step when set;
-// testWatchErrs injects a forced fsnotify overflow/watch error (§7 gate).
+// testCrashStep aborts a commit right after the named write step when set; testWatchErrs injects a forced fsnotify overflow/watch error (§7 gate).
 var (
 	testCrashStep func(step string) error
 	testWatchErrs chan struct{}
@@ -43,15 +42,13 @@ type nsState struct {
 
 type loaded struct {
 	model *Model
-	// recovered means main was undecodable and .prev was served; commit must
-	// not rotate, or it would destroy the only good generation.
+	// recovered means main was undecodable and .prev was served; commit must not rotate, or it would destroy the only good generation.
 	recovered bool
 }
 
 var _ meta.Store = (*Store)(nil)
 
-// Store is the json engine: one flocked file per namespace, legacy write
-// order (rotate .prev under lock, atomic rename, post-release fsyncs).
+// Store is the json engine: one flocked file per namespace, legacy write order (rotate .prev under lock, atomic rename, post-release fsyncs).
 type Store struct {
 	nss map[string]*nsState
 
@@ -113,9 +110,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		if err := fn(w); err != nil {
 			return err
 		}
-		// A clean transaction commits nothing — the encode/rotate/fsync tail
-		// would rewrite identical bytes on every read-only guard. A recovered
-		// generation still commits: that is the read-repair of a torn main.
+		// A clean transaction commits nothing — the encode/rotate/fsync tail would rewrite identical bytes on every read-only guard. A recovered generation still commits: that is the read-repair of a torn main.
 		if !models[sc.Write].model.Dirty() && !models[sc.Write].recovered {
 			return nil
 		}
@@ -157,9 +152,7 @@ func (s *Store) resolve(nss []string) ([]*nsState, error) {
 	return states, nil
 }
 
-// withLocked holds every namespace flock (sorted names = fixed global order).
-// Unlock errors log only: joining them would make callers roll back an
-// already-durable commit; a leaked flock fails the next Lock loudly instead.
+// withLocked holds every namespace flock (sorted names = fixed global order). Unlock errors log only: joining them would make callers roll back an already-durable commit; a leaked flock fails the next Lock loudly instead.
 func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() error) error {
 	logger := log.WithFunc("meta.json.withLocked")
 	for i, st := range states {
@@ -206,8 +199,7 @@ func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (json.RawMess
 		return nil, false, fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
 	raw, ok := l.model.Get(table, id)
-	// Detached values (contract clause 4): aliasing model bytes would let a
-	// caller mutate committed state without PutRaw's scope/durability checks.
+	// Detached values (contract clause 4): aliasing model bytes would let a caller mutate committed state without PutRaw's scope/durability checks.
 	return slices.Clone(raw), ok, nil
 }
 
@@ -255,8 +247,7 @@ type coded struct {
 func (c *coded) Error() string   { return c.err.Error() }
 func (c *coded) Unwrap() []error { return []error{c.err, c.mark} }
 
-// loadNamespace ports the legacy load: a missing file is empty, an
-// undecodable main falls back to the .prev generation, read errors fail closed.
+// loadNamespace ports the legacy load: a missing file is empty, an undecodable main falls back to the .prev generation, read errors fail closed.
 func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	raw, err := os.ReadFile(def.FilePath) //nolint:gosec
 	switch {
@@ -289,8 +280,7 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	return &loaded{model: prev, recovered: true}, nil
 }
 
-// commitLocked rotates .prev via link+rename (one exists at every instant),
-// then renames the fresh bytes in; syncCommitted makes them durable.
+// commitLocked rotates .prev via link+rename (one exists at every instant), then renames the fresh bytes in; syncCommitted makes them durable.
 func commitLocked(st *nsState, l *loaded) error {
 	data, err := st.def.Codec.Encode(l.model)
 	if err != nil {
@@ -324,9 +314,7 @@ func commitLocked(st *nsState, l *loaded) error {
 	return crash("main-renamed")
 }
 
-// syncCommitted runs after the flock is released: main first so a .prev sync
-// failure still leaves the caller's own generation durable; the parent-dir
-// sync is what CommitRelaxed relinquishes.
+// syncCommitted runs after the flock is released: main first so a .prev sync failure still leaves the caller's own generation durable; the parent-dir sync is what CommitRelaxed relinquishes.
 func syncCommitted(st *nsState, mode meta.CommitMode) error {
 	path := st.def.FilePath
 	if err := utils.SyncFile(path); err != nil {

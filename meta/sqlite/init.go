@@ -16,10 +16,7 @@ import (
 
 const initLockName = "init.lock"
 
-// Init creates a fresh store: schema DDL, identity pragmas and one
-// initialized meta_state row per namespace, all in ONE transaction — a crash
-// mid-init leaves nothing or a complete store (§6). An empty database is a
-// failed init and is restarted; anything else is left for the operator.
+// Init creates a fresh store: schema DDL, identity pragmas and one initialized meta_state row per namespace, all in ONE transaction — a crash mid-init leaves nothing or a complete store (§6). An empty database is a failed init and is restarted; anything else is left for the operator.
 func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
@@ -27,8 +24,7 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
 }
 
-// InitForRecovery is Init without the manifest guard — the conversion tool
-// creates its target while the manifest is necessarily present (§6).
+// InitForRecovery is Init without the manifest guard — the conversion tool creates its target while the manifest is necessarily present (§6).
 func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
 }
@@ -92,9 +88,7 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 	if err := createSchema(ctx, tx, namespaces); err != nil {
 		return err
 	}
-	// Identity pragmas ride the same transaction as the schema: a crash
-	// leaves nothing (or an empty file) or a complete store, never a
-	// half-identified one (§6).
+	// Identity pragmas ride the same transaction as the schema: a crash leaves nothing (or an empty file) or a complete store, never a half-identified one (§6).
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA application_id = %d", ApplicationID)); err != nil {
 		return mapErr(err)
 	}
@@ -130,9 +124,7 @@ func initNeeded(dbPath string) (bool, error) {
 	return failedInit(dbPath)
 }
 
-// failedInit reports whether dbPath is a crashed init. Init is atomic, so
-// the only restartable state is an empty database (driver lazy-touch or a
-// crash before the commit); anything populated is refused, never deleted.
+// failedInit reports whether dbPath is a crashed init. Init is atomic, so the only restartable state is an empty database (driver lazy-touch or a crash before the commit); anything populated is refused, never deleted.
 func failedInit(dbPath string) (bool, error) {
 	db, err := open(dbPath, "FULL", false)
 	if err != nil {

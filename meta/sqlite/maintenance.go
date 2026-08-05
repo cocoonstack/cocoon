@@ -23,8 +23,7 @@ func MarkConverted(ctx context.Context, dbPath, ns, source, sha256 string, recor
 	})
 }
 
-// Checkpoint folds the WAL back into the main file (TRUNCATE) so the
-// database is a single self-contained file (§6 aside rule).
+// Checkpoint folds the WAL back into the main file (TRUNCATE) so the database is a single self-contained file (§6 aside rule).
 func Checkpoint(ctx context.Context, dbPath string) error {
 	return withDB(dbPath, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
@@ -32,9 +31,7 @@ func Checkpoint(ctx context.Context, dbPath string) error {
 	})
 }
 
-// Backup replaces destPath with a consistent single-file copy: VACUUM INTO
-// a temp file, integrity-check, fsync, atomic rename, parent-dir sync (§4).
-// A previously published backup stays intact until the rename commits (§9).
+// Backup replaces destPath with a consistent single-file copy: VACUUM INTO a temp file, integrity-check, fsync, atomic rename, parent-dir sync (§4). A previously published backup stays intact until the rename commits (§9).
 func Backup(ctx context.Context, dbPath, destPath string) error {
 	if !utils.FileExists(dbPath) {
 		return fmt.Errorf("no sqlite store at %s to back up", dbPath)
@@ -50,8 +47,7 @@ func Backup(ctx context.Context, dbPath, destPath string) error {
 	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
 		return merr
 	}
-	// Concurrent backups to one destination share the tmp path; without
-	// mutual exclusion one run's cleanup yanks the other's tmp mid-verify.
+	// Concurrent backups to one destination share the tmp path; without mutual exclusion one run's cleanup yanks the other's tmp mid-verify.
 	return withFlock(ctx, flock.New(destPath+".lock"), func() error {
 		return backupLocked(ctx, dbPath, destPath)
 	})
@@ -59,8 +55,7 @@ func Backup(ctx context.Context, dbPath, destPath string) error {
 
 func backupLocked(ctx context.Context, dbPath, destPath string) (err error) {
 	tmp := destPath + ".tmp"
-	// A stale temp from a crashed run would block VACUUM INTO; the published
-	// backup is untouched, so clearing it is safe.
+	// A stale temp from a crashed run would block VACUUM INTO; the published backup is untouched, so clearing it is safe.
 	if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 		return rerr
 	}
