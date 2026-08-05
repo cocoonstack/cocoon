@@ -14,6 +14,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
@@ -46,7 +47,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	format, _ := cmd.Flags().GetString("format")
-	return statusOnce(ctx, hypers, nil, format)
+	return statusOnce(ctx, hypers, nil, format, conf.CgroupParentDir())
 }
 
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
@@ -69,7 +70,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	}
 
 	if !eventMode && !watchMode {
-		return statusOnce(ctx, hypers, args, format)
+		return statusOnce(ctx, hypers, args, format, conf.CgroupParentDir())
 	}
 
 	watchCh := metaEvents(ctx, conf)
@@ -84,23 +85,23 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		isTTY := term.IsTerminal(os.Stdout.Fd())
-		statusRefreshLoop(ctx, hypers, args, watchCh, ticker.C, isTTY)
+		statusRefreshLoop(ctx, hypers, args, watchCh, ticker.C, isTTY, conf.CgroupParentDir())
 	}
 	return nil
 }
 
 // statusOnce prints one snapshot; propagates ListAllVMs error (loop callers swallow).
-func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format string) error {
+func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format, scopeDir string) error {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {
 		return err
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
-	return renderVMList(vms, format)
+	return renderVMList(vms, format, scopeDir)
 }
 
-func renderVMList(vms []*types.VM, format string) error {
+func renderVMList(vms []*types.VM, format, scopeDir string) error {
 	if format == "json" {
 		if vms == nil {
 			vms = []*types.VM{}
@@ -112,7 +113,7 @@ func renderVMList(vms []*types.VM, format string) error {
 		return nil
 	}
 	return cliutil.OutputFormattedStr(format, vms, func(w *tabwriter.Writer) {
-		printVMTable(w, vms)
+		printVMTable(w, vms, scopeDir)
 	})
 }
 
@@ -147,7 +148,7 @@ func runLoop(ctx context.Context, watchCh <-chan struct{}, tick <-chan time.Time
 	}
 }
 
-func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, isTTY bool) {
+func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, isTTY bool, scopeDir string) {
 	var prev []vmSnapshot
 	runLoop(ctx, watchCh, tick, func() {
 		vms := listAndFilter(ctx, hypers, filters)
@@ -167,7 +168,7 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 			return
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		printVMTable(w, vms)
+		printVMTable(w, vms, scopeDir)
 		_ = w.Flush()
 	})
 }
@@ -296,16 +297,29 @@ func sortVMs(vms []*types.VM) {
 	slices.SortFunc(vms, func(a, b *types.VM) int { return a.CreatedAt.Compare(b.CreatedAt) })
 }
 
-func printVMTable(w *tabwriter.Writer, vms []*types.VM) {
-	fmt.Fprintln(w, "ID\tNAME\tSTATE\tCPU\tMEMORY\tSTORAGE\tIP\tIMAGE\tCREATED") //nolint:errcheck
+func printVMTable(w *tabwriter.Writer, vms []*types.VM, scopeDir string) {
+	fmt.Fprintln(w, "ID\tNAME\tSTATE\tCPU\tMEMORY\tSTORAGE\tTHROTTLED\tIP\tIMAGE\tCREATED") //nolint:errcheck
 	for _, vm := range vms {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 			vm.ID, vm.Config.Name, cmdcore.ReconcileState(vm),
 			vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory),
 			cliutil.FormatSize(vm.Config.Storage),
+			vmThrottled(scopeDir, vm),
 			vmIPs(vm), vm.Config.Image,
 			vm.CreatedAt.Local().Format(time.DateTime))
 	}
+}
+
+// vmThrottled renders cpu.stat throttling as "count/duration"; "-" when the VM is down or the scope is absent (non-Linux).
+func vmThrottled(scopeDir string, vm *types.VM) string {
+	if vm.State != types.VMStateRunning {
+		return "-"
+	}
+	stat, err := cgroup.ReadStat(scopeDir, vm.ID)
+	if err != nil || stat["nr_throttled"] == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d/%s", stat["nr_throttled"], time.Duration(stat["throttled_usec"])*time.Microsecond)
 }
 
 func vmIPs(vm *types.VM) string {

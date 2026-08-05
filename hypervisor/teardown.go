@@ -80,6 +80,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 	if err := RemoveVMDirs(cl.RunDir, cl.LogDir); err != nil {
 		return fmt.Errorf("cleanup VM dirs (tombstone kept, retry or gc resumes): %w", err)
 	}
+	b.removeCgroupScope(ctx, id)
 	ts := b.tombstones()
 	err := b.update(ctx, func(t *vmTx) error {
 		if err := t.Del(id); err != nil {

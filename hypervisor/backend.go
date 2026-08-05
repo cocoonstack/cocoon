@@ -60,6 +60,7 @@ type BackendConfig interface {
 	LogDir() string
 	VMRunDir(id string) string
 	VMLogDir(id string) string
+	CgroupParentDir() string
 }
 
 var _ Supervisable = (*Backend)(nil)
@@ -96,13 +97,14 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store met
 
 func (b *Backend) Type() string { return b.Typ }
 
-// LaunchSpec is the per-call input to Backend.LaunchVMProcess.
+// LaunchSpec is the per-call input to Backend.LaunchVMProcess; PID-file and socket paths derive from Rec.RunDir.
 type LaunchSpec struct {
 	Cmd       *exec.Cmd
-	PIDPath   string
-	SockPath  string
 	NetnsPath string
 	OnFail    func()
+
+	// Rec names the VM whose CPU scope the process enters at spawn (ID + cgroup knobs); every VM enters a scope.
+	Rec *VMRecord
 }
 
 // PreflightHook validates rec against the snapshot source dir before anything is applied.

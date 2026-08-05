@@ -326,6 +326,10 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("nics", 1, "number of network interfaces (0 = no network); multiple NICs with auto IP config only works for cloudimg; OCI images auto-configure only the last NIC, others require manual setup inside the guest")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; tradeoff: larger improves download throughput, smaller improves RPC latency)") //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")                                                //nolint:mnd
+	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count)")
+	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = vCPU count x period)")
+	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = 100000)")
+	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = none)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = default); mutually exclusive with --bridge")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0); VM gets IP via DHCP from the bridge")
 	cmd.Flags().String("user", "root", "guest username for cloud-init (cloudimg only)")
@@ -342,6 +346,10 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")       //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
+	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
+	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = vCPU count x period)")
+	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = 100000)")
+	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = none)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")

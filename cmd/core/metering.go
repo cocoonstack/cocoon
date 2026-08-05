@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"os"
 	"path/filepath"
@@ -62,10 +63,7 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 
 func buildFileRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	logger := log.WithFunc("core.buildFileRecorder")
-	path := conf.Metering.File.Path
-	if path == "" {
-		path = filepath.Join(conf.RootDir, meteringSubdir, meteringFile)
-	}
+	path := cmp.Or(conf.Metering.File.Path, filepath.Join(conf.RootDir, meteringSubdir, meteringFile))
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		logger.Warnf(ctx, "mkdir %s: %v; metering disabled", filepath.Dir(path), err)
 		return metering.NopRecorder{}

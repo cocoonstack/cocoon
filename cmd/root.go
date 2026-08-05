@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	cmddaemon "github.com/cocoonstack/cocoon/cmd/daemon"
@@ -79,6 +80,7 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("pull_conns", 8)
 	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
 	viper.SetDefault("meta_backend", "")
+	viper.SetDefault("cgroup_parent", cgroup.DefaultParent)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.max_size", 500)
 	viper.SetDefault("log.max_age", 28)

@@ -72,8 +72,7 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 		},
 		Resolve: func(_ context.Context, snap ImageGCSnapshot, others map[string]any) []string {
 			used := gc.Collect(others, gc.BlobIDs)
-			allRefs := utils.MergeSets(snap.refs, used)
-			candidates := utils.FilterUnreferenced(snap.diskIDs, allRefs)
+			candidates := utils.FilterUnreferenced(snap.diskIDs, snap.refs, used)
 			slices.Sort(candidates)
 			return slices.Compact(candidates)
 		},

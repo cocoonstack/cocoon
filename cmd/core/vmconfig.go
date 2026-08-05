@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/images"
@@ -22,6 +23,10 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	storStr, _ := cmd.Flags().GetString("storage")
 	queueSize, _ := cmd.Flags().GetInt("queue-size")
 	diskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
+	cpuWeight, _ := cmd.Flags().GetInt("cpu-weight")
+	cpuQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
+	cpuPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
+	cpuBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
 	network, _ := cmd.Flags().GetString("network")
 	user, _ := cmd.Flags().GetString("user")
 	password, _ := cmd.Flags().GetString("password")
@@ -31,9 +36,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	hugePages, _ := cmd.Flags().GetBool("hugepages")
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 
-	if vmName == "" {
-		vmName = sanitizeVMName(image)
-	}
+	vmName = cmp.Or(vmName, sanitizeVMName(image))
 
 	memBytes, err := units.RAMInBytes(memStr)
 	if err != nil {
@@ -63,6 +66,10 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			Windows:       windows,
 			SharedMemory:  sharedMemory,
 			HugePages:     hugePages,
+			CPUWeight:     cpuWeight,
+			CPUQuotaUs:    cpuQuotaUs,
+			CPUPeriodUs:   cpuPeriodUs,
+			CPUBurstUs:    cpuBurstUs,
 		},
 		User:      user,
 		Password:  password,
@@ -71,9 +78,13 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
+// CloneVMConfigFromFlags builds VMConfig for a clone. The snapshot's cgroup knobs record its source VM's policy and are never applied; the clone's policy comes from flags alone.
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
 	vmName, _ := cmd.Flags().GetString("name")
 	flagNetwork, _ := cmd.Flags().GetString("network")
@@ -82,6 +93,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	queueSize := cmp.Or(flagQueueSize, snapCfg.QueueSize)
 	flagDiskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
 	diskQueueSize := cmp.Or(flagDiskQueueSize, snapCfg.DiskQueueSize)
+	flagCPUWeight, _ := cmd.Flags().GetInt("cpu-weight")
+	flagCPUQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
+	flagCPUPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
+	flagCPUBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
 	noDirectIO := snapCfg.NoDirectIO
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
@@ -97,7 +112,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		return nil, err
 	}
 
-	return &types.VMConfig{
+	cfg := &types.VMConfig{
 		Name: vmName,
 		Config: types.Config{
 			CPU:           snapCfg.CPU,
@@ -113,13 +128,21 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 			HugePages:     snapCfg.HugePages,
+			CPUWeight:     flagCPUWeight,
+			CPUQuotaUs:    flagCPUQuotaUs,
+			CPUPeriodUs:   flagCPUPeriodUs,
+			CPUBurstUs:    flagCPUBurstUs,
 		},
 		DataDisks:   dataDisks,
 		RestoreMode: restoreMode,
-	}, nil
+	}
+	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
-// RestoreVMConfigFromFlags builds VMConfig for restore: resources from the snapshot, Name/Network from the VM (CNI namespace survives restore).
+// RestoreVMConfigFromFlags builds VMConfig for restore: guest resources from the snapshot; Name, Network, and cgroup knobs from the VM (host-side state survives restore).
 func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
 	if snapCfg.NICs != len(vm.NetworkConfigs) {
 		return nil, fmt.Errorf("nic count mismatch: vm has %d, snapshot has %d",
@@ -127,6 +150,11 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	cfg := snapCfg.Config
 	cfg.Network = vm.Config.Network
+	// Host-side policy stays with the VM, like Network; the snapshot's knobs describe its source VM.
+	cfg.CPUWeight = vm.Config.CPUWeight
+	cfg.CPUQuotaUs = vm.Config.CPUQuotaUs
+	cfg.CPUPeriodUs = vm.Config.CPUPeriodUs
+	cfg.CPUBurstUs = vm.Config.CPUBurstUs
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
 		return nil, err
@@ -138,6 +166,10 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	if err := result.Validate(); err != nil {
 		return nil, fmt.Errorf("snapshot config: %w", err)
+	}
+	// The kept knobs must fit the snapshot's vCPU count before the destructive phase — a bad combination retries into the same failure.
+	if err := cgroup.ResolveKnobs(&result.Config).Validate(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
