@@ -92,6 +92,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	queueSize := cmp.Or(flagQueueSize, snapCfg.QueueSize)
 	flagDiskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
 	diskQueueSize := cmp.Or(flagDiskQueueSize, snapCfg.DiskQueueSize)
+	flagCPUWeight, _ := cmd.Flags().GetInt("cpu-weight")
+	flagCPUQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
+	flagCPUPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
+	flagCPUBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
 	noDirectIO := snapCfg.NoDirectIO
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
@@ -107,7 +111,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		return nil, err
 	}
 
-	return &types.VMConfig{
+	cfg := &types.VMConfig{
 		Name: vmName,
 		Config: types.Config{
 			CPU:           snapCfg.CPU,
@@ -123,14 +127,18 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 			HugePages:     snapCfg.HugePages,
-			CPUWeight:     snapCfg.CPUWeight,
-			CPUQuotaUs:    snapCfg.CPUQuotaUs,
-			CPUPeriodUs:   snapCfg.CPUPeriodUs,
-			CPUBurstUs:    snapCfg.CPUBurstUs,
+			CPUWeight:     cmp.Or(flagCPUWeight, snapCfg.CPUWeight),
+			CPUQuotaUs:    cmp.Or(flagCPUQuotaUs, snapCfg.CPUQuotaUs),
+			CPUPeriodUs:   cmp.Or(flagCPUPeriodUs, snapCfg.CPUPeriodUs),
+			CPUBurstUs:    cmp.Or(flagCPUBurstUs, snapCfg.CPUBurstUs),
 		},
 		DataDisks:   dataDisks,
 		RestoreMode: restoreMode,
-	}, nil
+	}
+	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // RestoreVMConfigFromFlags builds VMConfig for restore: resources from the snapshot, Name/Network from the VM (CNI namespace survives restore).
@@ -141,6 +149,11 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	cfg := snapCfg.Config
 	cfg.Network = vm.Config.Network
+	// Host-side policy stays with the VM, like Network; the snapshot's knobs describe its source VM.
+	cfg.CPUWeight = vm.Config.CPUWeight
+	cfg.CPUQuotaUs = vm.Config.CPUQuotaUs
+	cfg.CPUPeriodUs = vm.Config.CPUPeriodUs
+	cfg.CPUBurstUs = vm.Config.CPUBurstUs
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
 		return nil, err

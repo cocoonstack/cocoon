@@ -91,6 +91,8 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	args := []string{apiSocketFlag, sockPath}
 	ch.saveCmdline(ctx, rec, args)
 
+	// Launch under the target config: a --force cross-config restore changes the vCPU count the scope derives from.
+	rec.Config = *vmCfg
 	pid, launchErr := ch.launchProcess(ctx, rec, sockPath, args, rec.ResolvedNetnsPath())
 	if launchErr != nil {
 		return nil, fmt.Errorf("launch CH: %w", launchErr)

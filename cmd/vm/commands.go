@@ -346,6 +346,10 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")       //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
+	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = inherit from snapshot)")
+	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = inherit from snapshot)")
+	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = inherit from snapshot)")
+	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = inherit from snapshot)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")

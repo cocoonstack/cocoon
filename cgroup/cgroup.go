@@ -106,6 +106,10 @@ func Prepare(parentDir, vmID string, k Knobs) (*os.File, error) {
 	if err := writeControl(dir, weightName, strconv.Itoa(k.Weight)); err != nil {
 		return nil, err
 	}
+	// Reconfigure order: a leftover burst > target quota blocks the cpu.max write (kernel requires burst <= quota), so zero it first. ENOENT tolerated — pre-5.14 kernels lack the file.
+	if err := writeControl(dir, burstName, "0"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
 	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
 		return nil, err
 	}
