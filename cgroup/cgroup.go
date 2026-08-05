@@ -177,18 +177,6 @@ func Arm(parentDir, vmID string, k Knobs) error {
 	return armQuota(ScopeDir(parentDir, vmID), k)
 }
 
-func armQuota(dir string, k Knobs) error {
-	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
-		return err
-	}
-	if k.BurstUs > 0 {
-		if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Remove kills everything left in an owned scope and removes it; the VMM must already be confirmed dead. ENOENT counts as success.
 func Remove(ctx context.Context, parentDir, vmID string) error {
 	dir := ScopeDir(parentDir, vmID)
@@ -395,6 +383,18 @@ func enableControllers(dir string, ctrls []string) error {
 		return nil
 	}
 	return writeControl(dir, subtreeControlName, strings.Join(missing, " "))
+}
+
+func armQuota(dir string, k Knobs) error {
+	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
+		return err
+	}
+	if k.BurstUs > 0 {
+		if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readControl(dir, name string) (string, error) {
