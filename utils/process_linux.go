@@ -59,8 +59,6 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 		}
 		data, readErr := readFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 		if readErr != nil {
-			// A vanished (dead) process is expected churn; a read failure on a
-			// live one poisons the scan.
 			if alive(pid) {
 				return nil, readErr
 			}

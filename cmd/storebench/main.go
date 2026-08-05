@@ -37,6 +37,7 @@ func (c benchConfig) LogDir() string                      { return c.dir }
 func (c benchConfig) VMRunDir(id string) string           { return filepath.Join(c.dir, id) }
 func (c benchConfig) VMLogDir(id string) string           { return filepath.Join(c.dir, id) }
 func (c benchConfig) CgroupParentDir() string             { return filepath.Join(c.dir, "cgroup") }
+func (c benchConfig) CgroupCPUFence() string              { return "" }
 
 func main() {
 	if len(os.Args) < 3 {
@@ -142,8 +143,7 @@ func runCreate(ctx context.Context, engine string, workers, per, resident int, d
 	return nil
 }
 
-// runWorker performs `per` creates (reserve placeholder + finalize to
-// running) — the meta half of one VM creation each.
+// runWorker performs `per` creates (reserve placeholder + finalize to running) — the meta half of one VM creation each.
 func runWorker(ctx context.Context, engine, prefix string, per int, dir string) error {
 	b, err := openBackend(ctx, engine, dir)
 	if err != nil {
@@ -164,8 +164,7 @@ func runWorker(ctx context.Context, engine, prefix string, per int, dir string) 
 	return nil
 }
 
-// runMicro times one engine primitive per durable (or relaxed) transaction:
-// the §9 microbench matrix. Seeding batches 1000 rows per transaction.
+// runMicro times one engine primitive per durable (or relaxed) transaction: the §9 microbench matrix. Seeding batches 1000 rows per transaction.
 func runMicro(ctx context.Context, engine, op string, n, ops int, dir string) error {
 	store, err := openStore(ctx, engine, dir)
 	if err != nil {
@@ -284,8 +283,7 @@ func argDir(i int) string {
 	return dir
 }
 
-// uniquePayload defeats any identical-bytes write elision so replace ops
-// measure a REAL durable commit.
+// uniquePayload defeats any identical-bytes write elision so replace ops measure a REAL durable commit.
 func uniquePayload(i int) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
 }

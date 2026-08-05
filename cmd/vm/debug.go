@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
@@ -23,6 +25,7 @@ type chDebugSpec struct {
 	CHBin   string
 	MaxCPU  int
 	Balloon int
+	Allowed []int
 }
 
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
@@ -65,7 +68,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	printCHDebug(buildCHDebugSpec(cmd, storageConfigs, boot, vmCfg))
+	printCHDebug(buildCHDebugSpec(cmd, conf, storageConfigs, boot, vmCfg))
 	return nil
 }
 
@@ -131,7 +134,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	fmt.Println("  -d '{\"action_type\": \"InstanceStart\"}'")
 }
 
-func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig) chDebugSpec {
+func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig) chDebugSpec {
 	maxCPU, _ := cmd.Flags().GetInt("max-cpu")
 	balloon, _ := cmd.Flags().GetInt("balloon")
 	cowPath, _ := cmd.Flags().GetString("cow")
@@ -144,10 +147,12 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 	case balloon == 0:
 		balloon = int(size >> 20) //nolint:mnd
 	}
+	allowed := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, conf.CgroupCPUs)
 	return chDebugSpec{
 		Configs: storageConfigs,
 		Boot:    boot,
 		VMCfg:   vmCfg,
+		Allowed: allowed,
 		CowPath: cowPath,
 		CHBin:   chBin,
 		MaxCPU:  maxCPU,
@@ -167,7 +172,7 @@ func printCHDebug(s chDebugSpec) {
 		debugConfigs := slices.Concat(s.Configs, []*types.StorageConfig{
 			{Path: s.CowPath, RO: false, Serial: hypervisor.CowSerial},
 		})
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO, s.Allowed)
 		cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(s.Configs), ",")
 		cmdline := hypervisor.BuildBaseCmdline("console=hvc0 loglevel=3",
 			cocoonLayers, hypervisor.CowSerial, nil, s.VMCfg.Name, nil)
@@ -198,7 +203,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --firmware %s \\\n", s.Boot.FirmwarePath)
 		fmt.Print("  --disk \\\n")
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO, s.Allowed)
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
 	printCommonCHArgs(s)

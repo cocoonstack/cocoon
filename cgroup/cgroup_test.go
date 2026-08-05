@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"
@@ -107,5 +108,130 @@ func TestParseStat(t *testing.T) {
 	stat := parseStat("usage_usec 1000\nnr_throttled 3\nthrottled_usec 250\nbad line here\n")
 	if stat["nr_throttled"] != 3 || stat["throttled_usec"] != 250 {
 		t.Errorf("got %v", stat)
+	}
+}
+
+func TestParseCPUList(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    []int
+		wantErr bool
+	}{
+		{in: "", want: nil},
+		{in: "3", want: []int{3}},
+		{in: "0-3", want: []int{0, 1, 2, 3}},
+		{in: "0,2-4,7", want: []int{0, 2, 3, 4, 7}},
+		{in: "4-2", wantErr: true},
+		{in: "a-b", wantErr: true},
+		{in: "-1", wantErr: true},
+		{in: "1,,2", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseCPUList(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKnobsValidateRejectsBadCPUSet(t *testing.T) {
+	k := Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, CPUSet: "9-1"}
+	if err := k.Validate(); err == nil {
+		t.Error("want error for invalid cpu list")
+	}
+}
+
+func TestCheckSubset(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus.effective"), []byte("0-14\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := checkSubset("2-4", dir, "fence"); err != nil {
+		t.Errorf("subset rejected: %v", err)
+	}
+	if err := checkSubset("14-15", dir, "fence"); err == nil {
+		t.Error("want error: cpu 15 outside effective 0-14")
+	}
+}
+
+func TestCheckScopePlacements(t *testing.T) {
+	parent := t.TempDir()
+	mk := func(id, placement string) {
+		dir := ScopeDir(parent, id)
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus"), []byte(placement+"\n"), 0o600); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+	mk("A", "")
+	mk("B", "2-3")
+
+	if err := checkScopePlacements(parent, "0-7"); err != nil {
+		t.Errorf("fence covering placements rejected: %v", err)
+	}
+	if err := checkScopePlacements(parent, "0-2"); err == nil {
+		t.Error("want error: fence 0-2 excludes cpu 3 used by B")
+	}
+}
+
+func TestReconcileFenceClearsStaleValue(t *testing.T) {
+	parent := t.TempDir()
+	path := filepath.Join(parent, "cpuset.cpus")
+	if err := os.WriteFile(path, []byte("0-14\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := reconcileFence(parent, ""); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || strings.TrimSpace(string(data)) != "" {
+		t.Errorf("stale fence not cleared: %q err=%v", data, err)
+	}
+	if err := reconcileFence(parent, ""); err != nil {
+		t.Errorf("steady-state empty reconcile: %v", err)
+	}
+}
+
+func TestReconcileFenceCanonicalEquality(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.WriteFile(filepath.Join(parent, "cpuset.cpus"), []byte("0-7\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// No cpuset.cpus.effective fixture exists: reaching checkSubset would fail, so success proves the parsed-set gate short-circuited.
+	if err := reconcileFence(parent, "0-3,4-7"); err != nil {
+		t.Errorf("canonically-equal fence rewrote: %v", err)
+	}
+}
+
+func TestPlaceScopeReadGate(t *testing.T) {
+	parent := t.TempDir()
+	dir := ScopeDir(parent, "X")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus"), []byte("2-3\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := placeScope(parent, dir, "2,3"); err != nil {
+		t.Errorf("equal placement rewrote: %v", err)
+	}
+}
+
+func TestEffectiveCPUs(t *testing.T) {
+	if got := EffectiveCPUs("2-3", "0-14"); !slices.Equal(got, []int{2, 3}) {
+		t.Errorf("placement wins: got %v", got)
+	}
+	if got := EffectiveCPUs("", "0-1"); !slices.Equal(got, []int{0, 1}) {
+		t.Errorf("fence fallback: got %v", got)
+	}
+	if EffectiveCPUs("", "") != nil {
+		t.Error("no constraint: want nil")
 	}
 }

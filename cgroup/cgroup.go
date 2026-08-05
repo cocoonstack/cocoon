@@ -45,6 +45,8 @@ const (
 	maxName            = "cpu.max"
 	burstName          = "cpu.max.burst"
 	statName           = "cpu.stat"
+	cpusetName         = "cpuset.cpus"
+	cpusetEffName      = "cpuset.cpus.effective"
 
 	removeWait         = time.Second
 	removePollInterval = 10 * time.Millisecond
@@ -56,9 +58,10 @@ type Knobs struct {
 	QuotaUs  int64
 	PeriodUs int64
 	BurstUs  int64
+	CPUSet   string
 }
 
-// ResolveKnobs applies the Guaranteed-at-N defaults: weight = vCPU count, quota = vCPU count x period, burst = 0.
+// ResolveKnobs applies the Guaranteed-at-N defaults: weight = vCPU count, quota = vCPU count x period, burst = 0, no placement.
 func ResolveKnobs(cfg *types.Config) Knobs {
 	period := cmp.Or(cfg.CPUPeriodUs, int64(DefaultPeriodUs))
 	return Knobs{
@@ -66,6 +69,7 @@ func ResolveKnobs(cfg *types.Config) Knobs {
 		QuotaUs:  cmp.Or(cfg.CPUQuotaUs, int64(cfg.CPU)*period),
 		PeriodUs: period,
 		BurstUs:  cfg.CPUBurstUs,
+		CPUSet:   cfg.CPUSetCPUs,
 	}
 }
 
@@ -83,7 +87,45 @@ func (k Knobs) Validate() error {
 	if k.BurstUs < 0 || k.BurstUs > k.QuotaUs {
 		return fmt.Errorf("--cpu-burst-us must be 0..quota (%d), got %d", k.QuotaUs, k.BurstUs)
 	}
+	if _, err := ParseCPUList(k.CPUSet); err != nil {
+		return fmt.Errorf("--cpuset-cpus: %w", err)
+	}
 	return nil
+}
+
+// EffectiveCPUs resolves the cpu set a VM may run on — explicit placement wins over the machine fence; nil means all cores.
+func EffectiveCPUs(placement, fence string) []int {
+	cpus, err := ParseCPUList(cmp.Or(placement, fence))
+	if err != nil {
+		return nil
+	}
+	return cpus
+}
+
+// ParseCPUList parses a kernel cpu-list ("0-14", "0,2-4"); empty input is nil (no placement).
+func ParseCPUList(s string) ([]int, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var cpus []int
+	for part := range strings.SplitSeq(s, ",") {
+		lo, hi, ok := strings.Cut(strings.TrimSpace(part), "-")
+		start, err := strconv.Atoi(lo)
+		if err != nil || start < 0 {
+			return nil, fmt.Errorf("invalid cpu list %q", s)
+		}
+		end := start
+		if ok {
+			if end, err = strconv.Atoi(hi); err != nil || end < start {
+				return nil, fmt.Errorf("invalid cpu list %q", s)
+			}
+		}
+		for c := start; c <= end; c++ {
+			cpus = append(cpus, c)
+		}
+	}
+	slices.Sort(cpus)
+	return slices.Compact(cpus), nil
 }
 
 // ScopeDir returns vmID's scope directory under parentDir.
@@ -92,17 +134,20 @@ func ScopeDir(parentDir, vmID string) string {
 }
 
 // Prepare creates or reconfigures vmID's scope and returns its opened directory for CLONE_INTO_CGROUP; idempotent, so a relaunch reuses a scope its dying predecessor still occupies.
-func Prepare(parentDir, vmID string, k Knobs) (*os.File, error) {
+func Prepare(parentDir, fence, vmID string, k Knobs) (*os.File, error) {
 	if vmID == "" {
 		return nil, errors.New("cgroup scope: empty vm id")
 	}
-	if err := ensureParent(parentDir); err != nil {
+	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
 	}
 	dir := ScopeDir(parentDir, vmID)
 	mkErr := os.Mkdir(dir, 0o750)
 	if mkErr != nil && !errors.Is(mkErr, fs.ErrExist) {
 		return nil, fmt.Errorf("create scope: %w", mkErr)
+	}
+	if err := placeScope(parentDir, dir, k.CPUSet); err != nil {
+		return nil, err
 	}
 	if err := writeControl(dir, weightName, strconv.Itoa(k.Weight)); err != nil {
 		return nil, err
@@ -199,8 +244,8 @@ func parseStat(data string) map[string]int64 {
 	return stat
 }
 
-// ensureParent enables cpu at every ancestor, not just the leaf — cgroup v2 subtree delegation is hierarchical.
-func ensureParent(parentDir string) error {
+// ensureParent enables the needed controllers at every ancestor, not just the leaf — cgroup v2 subtree delegation is hierarchical.
+func ensureParent(parentDir, fence string, placed bool) error {
 	rel, err := filepath.Rel(Root, parentDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("cgroup parent %q must be under %s", parentDir, Root)
@@ -208,26 +253,137 @@ func ensureParent(parentDir string) error {
 	if err := utils.EnsureDirs(parentDir); err != nil {
 		return err
 	}
-	if err := enableCPU(Root); err != nil {
+	ctrls := []string{"cpu"}
+	if fence != "" || placed {
+		ctrls = append(ctrls, "cpuset")
+	}
+	if err := forEachLevel(rel, func(dir string) error { return enableControllers(dir, ctrls) }); err != nil {
+		return err
+	}
+	return reconcileFence(parentDir, fence)
+}
+
+// reconcileFence converges the parent's cpuset.cpus to the configured fence; a cleared config resets a stale fence once, and the cpuset controller is never disabled.
+func reconcileFence(parentDir, fence string) error {
+	current, err := readControl(parentDir, cpusetName)
+	if fence == "" {
+		if err == nil && current != "" {
+			return writeControl(parentDir, cpusetName, "\n")
+		}
+		return nil
+	}
+	// The kernel echoes cpu lists canonicalized ("0-3,4-7" reads back "0-7"): compare parsed sets, or a non-canonical config string re-runs the scan and the serialized cpuset write on every launch.
+	if cur, curErr := ParseCPUList(current); curErr == nil {
+		if want, wantErr := ParseCPUList(fence); wantErr == nil && slices.Equal(cur, want) {
+			return nil
+		}
+	}
+	if err := checkSubset(fence, filepath.Dir(parentDir), "cgroup_cpus fence"); err != nil {
+		return err
+	}
+	if err := checkScopePlacements(parentDir, fence); err != nil {
+		return err
+	}
+	return writeControl(parentDir, cpusetName, fence)
+}
+
+// placeScope applies a per-VM placement; the kernel silently degrades ungrantable requests to the parent set, so the subset check is cocoon's.
+func placeScope(parentDir, dir, cpuset string) error {
+	if cpuset == "" {
+		return nil
+	}
+	if current, err := readControl(dir, cpusetName); err == nil {
+		if cur, curErr := ParseCPUList(current); curErr == nil {
+			if want, wantErr := ParseCPUList(cpuset); wantErr == nil && slices.Equal(cur, want) {
+				return nil
+			}
+		}
+	}
+	if err := checkSubset(cpuset, parentDir, "--cpuset-cpus"); err != nil {
+		return err
+	}
+	return writeControl(dir, cpusetName, cpuset)
+}
+
+func checkSubset(cpuset, dir, what string) error {
+	want, err := ParseCPUList(cpuset)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	effRaw, err := readControl(dir, cpusetEffName)
+	if err != nil {
+		return fmt.Errorf("read effective cpuset: %w", err)
+	}
+	eff, err := ParseCPUList(effRaw)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", filepath.Join(dir, cpusetEffName), err)
+	}
+	for _, c := range want {
+		if !slices.Contains(eff, c) {
+			return fmt.Errorf("%s %q: cpu %d not in %s effective set %q", what, cpuset, c, dir, effRaw)
+		}
+	}
+	return nil
+}
+
+// checkScopePlacements refuses a fence shrink that would invalidate a live VM's explicit placement.
+func checkScopePlacements(parentDir, fence string) error {
+	ids, err := ListScopeVMIDs(parentDir)
+	if err != nil {
+		return err
+	}
+	fenceCPUs, _ := ParseCPUList(fence)
+	for _, id := range ids {
+		placement, err := readControl(ScopeDir(parentDir, id), cpusetName)
+		if err != nil || placement == "" {
+			continue
+		}
+		cpus, err := ParseCPUList(placement)
+		if err != nil {
+			continue
+		}
+		for _, c := range cpus {
+			if !slices.Contains(fenceCPUs, c) {
+				return fmt.Errorf("fence %q excludes cpu %d used by vm %s placement %q; stop that VM or widen the fence", fence, c, id, placement)
+			}
+		}
+	}
+	return nil
+}
+
+func forEachLevel(rel string, fn func(dir string) error) error {
+	if err := fn(Root); err != nil {
 		return err
 	}
 	dir := Root
 	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
 		dir = filepath.Join(dir, part)
-		if err := enableCPU(dir); err != nil {
+		if err := fn(dir); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// enableCPU reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write.
-func enableCPU(dir string) error {
-	path := filepath.Join(dir, subtreeControlName)
-	if data, err := os.ReadFile(path); err == nil && slices.Contains(strings.Fields(string(data)), "cpu") { //nolint:gosec // fixed name under the config-derived parent
+// enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write. Missing controllers go in one combined write.
+func enableControllers(dir string, ctrls []string) error {
+	have, _ := readControl(dir, subtreeControlName)
+	enabled := strings.Fields(have)
+	var missing []string
+	for _, ctrl := range ctrls {
+		if !slices.Contains(enabled, ctrl) {
+			missing = append(missing, "+"+ctrl)
+		}
+	}
+	if len(missing) == 0 {
 		return nil
 	}
-	return writeControl(dir, subtreeControlName, "+cpu")
+	return writeControl(dir, subtreeControlName, strings.Join(missing, " "))
+}
+
+func readControl(dir, name string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // fixed name under the config-derived parent
+	return strings.TrimSpace(string(data)), err
 }
 
 func writeControl(dir, name, value string) error {

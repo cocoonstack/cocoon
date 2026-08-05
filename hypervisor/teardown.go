@@ -11,8 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// vmCleanup is the vms-namespace tombstone payload: everything teardown
-// needs once the record is gone.
+// vmCleanup is the vms-namespace tombstone payload: everything teardown needs once the record is gone.
 type vmCleanup struct {
 	Name   string `json:"name,omitempty"`
 	RunDir string `json:"run_dir,omitempty"`
@@ -71,8 +70,7 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 	return b.finishVMTeardown(ctx, id, leaseID, cl)
 }
 
-// finishVMTeardown runs the slow cleanup outside any transaction, then the
-// fenced finalize that deletes record, name and tombstone together.
+// finishVMTeardown runs the slow cleanup outside any transaction, then the fenced finalize that deletes record, name and tombstone together.
 func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl vmCleanup) error {
 	if err := b.cleanupNetwork(ctx, id); err != nil {
 		return fmt.Errorf("vm %s network teardown (tombstone kept, retry or gc resumes): %w", id, err)
@@ -98,9 +96,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 	return err
 }
 
-// recoverVMTombstone drives id's tombstone to completion under the held ops
-// lock: leased rolls back (record stays live), deleting rolls forward from
-// the payload. done reports the entity was finalized (record gone).
+// recoverVMTombstone drives id's tombstone to completion under the held ops lock: leased rolls back (record stays live), deleting rolls forward from the payload. done reports the entity was finalized (record gone).
 func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
 	ts := b.tombstones()
 	var (

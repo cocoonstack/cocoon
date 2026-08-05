@@ -57,8 +57,7 @@ func (c *CloudImg) Type() string { return typ }
 func (c *CloudImg) Pull(ctx context.Context, url string, force bool, tracker progress.Tracker) error {
 	key := url
 	if force {
-		// A forced refresh must not dedup onto an in-flight non-force pull —
-		// it would return success without ever refreshing the cached blob.
+		// A forced refresh must not dedup onto an in-flight non-force pull — it would return success without ever refreshing the cached blob.
 		key += "\x00force"
 	}
 	return images.SingleflightDo(ctx, &c.pullGroup, key, func() error {

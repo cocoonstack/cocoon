@@ -134,7 +134,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		}
 	}()
 
-	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config))
+	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config))
 	if err != nil {
 		return 0, fmt.Errorf("prepare cgroup scope: %w", err)
 	}

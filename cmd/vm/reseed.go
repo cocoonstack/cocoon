@@ -37,8 +37,7 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	return reseedVM(ctx, vm, regenMachineID)
 }
 
-// reseedAfterResume fires the best-effort reseed, re-inspecting only when the in-process record lacks VsockSocket — a zero value would silently no-op.
-// It hands the reseed to a detached child by default: the vsock dial waits out the guest's post-resume wakeup (tens of ms, growing with snapshot age), which would otherwise sit on every clone/restore critical path.
+// reseedAfterResume fires the best-effort reseed, re-inspecting only when the in-process record lacks VsockSocket — a zero value would silently no-op. It hands the reseed to a detached child by default: the vsock dial waits out the guest's post-resume wakeup (tens of ms, growing with snapshot age), which would otherwise sit on every clone/restore critical path.
 func (h Handler) reseedAfterResume(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
 	if vm.VsockSocket == "" {
 		vm = refreshVM(ctx, hyper, vm)

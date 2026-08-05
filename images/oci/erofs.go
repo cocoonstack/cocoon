@@ -76,8 +76,7 @@ func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix,
 	}
 	_ = stdin.Close()
 
-	// Join scanErr: a scan abort truncates mkfs.erofs' stdin, so waitErr alone
-	// would mask the real cause (e.g. an oversized kernel).
+	// Join scanErr: a scan abort truncates mkfs.erofs' stdin, so waitErr alone would mask the real cause (e.g. an oversized kernel).
 	if waitErr := cmd.Wait(); waitErr != nil {
 		return "", "", errors.Join(fmt.Errorf("mkfs.erofs failed: %w (output: %s)", waitErr, output.String()), scanErr)
 	}

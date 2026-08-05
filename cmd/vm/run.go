@@ -234,8 +234,7 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
-	// The envelope's pins land on the VM record inside restore; the digest
-	// locks keep image GC away until they are committed.
+	// The envelope's pins land on the VM record inside restore; the digest locks keep image GC away until they are committed.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return err
@@ -505,8 +504,7 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 	return nil
 }
 
-// pinResolvedBlobs holds the resolved image's digest locks until the reserve
-// commits; the empty set (bridge/dataless) pins nothing.
+// pinResolvedBlobs holds the resolved image's digest locks until the reserve commits; the empty set (bridge/dataless) pins nothing.
 func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref string, blobIDs map[string]struct{}) (func(), error) {
 	if len(blobIDs) == 0 {
 		return func() {}, nil

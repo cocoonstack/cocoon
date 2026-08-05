@@ -105,7 +105,6 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 	hasher := sha256.New()
 	teeForHash := io.TeeReader(r, hasher)
 
-	// Write EROFS to a temp path until the digest is known.
 	tmpErofsPath := filepath.Join(layerDir, fmt.Sprintf("layer-%d.erofs", j.idx))
 	tmpUUID := utils.UUIDv5(fmt.Sprintf("import-%s-%d", j.label, j.idx))
 

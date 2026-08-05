@@ -26,8 +26,7 @@ func (c *Config) JSONNamespace() metajson.Namespace {
 	}
 }
 
-// netTx is the CNI view of one meta transaction: a records-only namespace
-// with the vm_id secondary lookup served by scan.
+// netTx is the CNI view of one meta transaction: a records-only namespace with the vm_id secondary lookup served by scan.
 type netTx struct {
 	*meta.RecordTx[networkRecord]
 }
@@ -58,8 +57,7 @@ func (c *CNI) update(ctx context.Context, fn func(*netTx) error) error {
 	})
 }
 
-// deleteRecords removes the given record rows in one transaction; used by
-// the Add-path stale-NIC reclaim, which runs under the VM lock.
+// deleteRecords removes the given record rows in one transaction; used by the Add-path stale-NIC reclaim, which runs under the VM lock.
 func (c *CNI) deleteRecords(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil

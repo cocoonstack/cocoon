@@ -33,9 +33,7 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 		return netresize.Result{}, err
 	}
 	defer unlock()
-	// Entrypoint discipline (design §5): a resize must not plumb NICs onto a
-	// VM whose delete was interrupted. Reload under the lock: a resize that
-	// won the lock first may have changed the NIC set after this one loaded.
+	// Entrypoint discipline (design §5): a resize must not plumb NICs onto a VM whose delete was interrupted. Reload under the lock: a resize that won the lock first may have changed the NIC set after this one loaded.
 	if rec, err = ch.EntryGuardLoad(ctx, vmID); err != nil {
 		return netresize.Result{}, err
 	}

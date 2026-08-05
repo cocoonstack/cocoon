@@ -24,9 +24,10 @@ type Config struct {
 	// HugePages backs CH guest memory with hugetlbfs (costs snapshots the mmap fast path); fixed at create, persists through clone/restore.
 	HugePages bool `json:"hugepages,omitempty"`
 
-	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU.
-	CPUWeight   int   `json:"cpu_weight,omitempty"`
-	CPUQuotaUs  int64 `json:"cpu_quota_us,omitempty"`
-	CPUPeriodUs int64 `json:"cpu_period_us,omitempty"`
-	CPUBurstUs  int64 `json:"cpu_burst_us,omitempty"`
+	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU (CPUSetCPUs empty = no placement).
+	CPUWeight   int    `json:"cpu_weight,omitempty"`
+	CPUQuotaUs  int64  `json:"cpu_quota_us,omitempty"`
+	CPUPeriodUs int64  `json:"cpu_period_us,omitempty"`
+	CPUBurstUs  int64  `json:"cpu_burst_us,omitempty"`
+	CPUSetCPUs  string `json:"cpuset_cpus,omitempty"`
 }

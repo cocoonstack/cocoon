@@ -65,8 +65,7 @@ type NamedTx[R any] struct {
 	names *Collection[string]
 }
 
-// NewNamedTx binds the pattern to (ns, recordsTable, namesTable); w is nil in
-// read-only transactions.
+// NewNamedTx binds the pattern to (ns, recordsTable, namesTable); w is nil in read-only transactions.
 func NewNamedTx[R any](ctx context.Context, ns, recordsTable, namesTable string, r Reader, w Writer) *NamedTx[R] {
 	return &NamedTx[R]{
 		RecordTx: NewRecordTx[R](ctx, ns, recordsTable, r, w),

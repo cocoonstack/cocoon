@@ -12,12 +12,10 @@ import (
 // seqCursorID is the reserved in-table row holding the last assigned Seq.
 const seqCursorID = "cursor"
 
-// Seq numbers committed log entries: unique and strictly increasing.
-// Rolled-back numbers may be reused, and engines may leave gaps.
+// Seq numbers committed log entries: unique and strictly increasing. Rolled-back numbers may be reused, and engines may leave gaps.
 type Seq uint64
 
-// Log is an append-only typed sequence over one namespace table; the cursor
-// shares the table under a reserved id, so a rollback releases its number.
+// Log is an append-only typed sequence over one namespace table; the cursor shares the table under a reserved id, so a rollback releases its number.
 type Log[R any] struct {
 	ns    string
 	table string

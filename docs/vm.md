@@ -29,6 +29,58 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 | `--force`   | `false`                | Skip graceful ACPI shutdown, immediate kill        |
 | `--timeout` | `0` (use config default) | ACPI shutdown timeout in seconds                 |
 
+## CPU Isolation (cgroup v2)
+
+Every VM's hypervisor process is spawned directly into its own cgroup v2 scope (`<cgroup_parent>/vm-<id>.scope`, default parent `cocoon.slice`) via `CLONE_INTO_CGROUP` — vCPU threads, virtio queue workers, and io_uring kernel workers all land inside. The vCPU count alone does not bound host consumption (a 1-vCPU VM under I/O measures 111–113% of a core); the scope does.
+
+Defaults are Kubernetes-style Guaranteed at N for `--cpu N`: quota = N cores (`--cpu` is a hard cap, not just a topology hint), weight = N (proportional share under contention), no burst. Override any raw knob: lower `--cpu-weight` for burstable overcommit, raise `--cpu-quota-us` to give the VMM's I/O service headroom beyond the guest's budget, add `--cpu-burst-us` for bounded spikes. Two caveats at defaults: a saturated VM doing I/O pays its virtio service out of the N-core budget (~13% floor case), and `cpu.weight` only arbitrates real runqueue contention — a parent bandwidth limit is consumed first-come-first-served, not by weight.
+
+`cgroup_cpus` fences the whole VM population onto a host cpu subset (e.g. `0-14` on a 16-core host keeps core 15 for the OS, the API consumer, and clone/wake execution). `--cpuset-cpus` pins one VM to specific cores inside the fence. Both are validated by cocoon against the effective sets — the kernel silently degrades ungrantable cpuset requests rather than failing — and shrinking the fence is refused while a running VM's placement conflicts. Clearing `cgroup_cpus` converges: the stale fence is reset on the next launch.
+
+cgroup knobs are host-side policy, like networking: snapshots record the source VM's values but never apply them — a clone takes its policy from flags (defaults otherwise), restore keeps the target VM's. Scopes are removed when the VMM dies (stop, hibernate, delete, crash convergence) and orphans are swept by `cocoon gc`. `cocoon vm list` shows per-VM throttling as `THROTTLED` (`nr_throttled/throttled_usec` from `cpu.stat`).
+
+Requirements: cgroup v2 unified hierarchy with the `cpu` controller (kernel ≥ 5.14 for burst), running cocoon as root (production shape). Non-root works inside a systemd user slice with delegated controllers (`systemd-run --user --scope`), where user slices typically delegate `cpu` but not `cpuset` — fence/placement then fail preflight with the exact missing file named.
+
+### Recipes
+
+```bash
+# Guaranteed at N (default): hard cap 2 cores, share 2, no burst
+cocoon vm run --cpu 2 --memory 2G --name vm1 ghcr.io/cocoonstack/cocoon/ubuntu:24.04
+
+# Burstable overcommit: reach 2 cores when idle, shrink by weight under pressure
+cocoon vm run --cpu 2 --cpu-weight 25 --name burst1 ...
+
+# Headroom for virtio I/O service: guest keeps its full 2 cores under load
+cocoon vm run --cpu 2 --cpu-quota-us 230000 --name io-heavy ...
+
+# Metered: 0.5-core long-run average, bounded 1-core spikes
+cocoon vm run --cpu 1 --cpu-quota-us 50000 --cpu-burst-us 50000 --name metered ...
+
+# Pinning (NUMA / isolation-sensitive only — wastes idle cores)
+cocoon vm run --cpu 2 --cpuset-cpus 2-3 --name pinned ...
+
+# Machine fence (config, not a flag): the fleet never touches core 15
+COCOON_CGROUP_CPUS=0-14 cocoon vm run ...
+
+# Clones never inherit snapshot policy — give it explicitly or get defaults
+cocoon vm clone golden --name c1                  # Guaranteed at N
+cocoon vm clone golden --name c2 --cpu-weight 10  # explicit share
+```
+
+Rules of thumb: density → weight overcommit; single-VM performance → raised quota; billing semantics → quota + burst; pinning only when NUMA or isolation demands it. `cocoon vm list`'s `THROTTLED` column (count/total time from `cpu.stat`) shows who is hitting their cap.
+
+### Reserving CPU for the control plane
+
+The fence bounds the VMs; the caller's own work (clone, restore, the API consumer) is deliberately not cocoon's to manage — set it on the invoking service's systemd unit, which writes the same cgroup v2 files:
+
+```ini
+# /etc/systemd/system/<your-service>.service.d/cpu.conf
+[Service]
+CPUWeight=1000     # management plane wins contention on the VM cores
+```
+
+With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as the control plane's fast lane without pinning; prefer that over `AllowedCPUs=15`, which would confine clone's multi-core memory restore to one core. One-off commands: `systemd-run --scope -p CPUWeight=1000 cocoon vm clone ...`.
+
 ## Performance Tuning
 
 - **Hugepages** (Cloud Hypervisor only): opt-in via `vm create --hugepages`; VM memory is backed by 2 MiB hugepages for reduced TLB pressure, and in exchange snapshots of that VM restore via eager copy only (the mmap fast path needs plain private-anon memory). Firecracker rejects `--hugepages`: FC cannot restore a hugetlbfs-backed snapshot, which would break hibernate/clone

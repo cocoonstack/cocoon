@@ -12,6 +12,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -28,6 +29,7 @@ type cloneResumeOpts struct {
 	dataDisks           []*types.StorageConfig
 	networkConfigs      []*types.NetworkConfig
 	snapshotCfg         *chVMConfig
+	allowedCPUs         []int
 }
 
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -97,6 +99,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	}
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
+	allowedCPUs := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, ch.conf.CgroupCPUs)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: patchStorageConfigs,
 		netTAPs:        netTAPs,
@@ -105,6 +108,8 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		directBoot:     directBoot,
 		diskQueueSize:  vmCfg.DiskQueueSize,
 		noDirectIO:     vmCfg.NoDirectIO,
+		cpu:            vmCfg.CPU,
+		allowedCPUs:    allowedCPUs,
 	}); err != nil {
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
@@ -139,6 +144,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		dataDisks:           newDataDisks,
 		networkConfigs:      networkConfigs,
 		snapshotCfg:         chCfg,
+		allowedCPUs:         allowedCPUs,
 	}); err != nil {
 		return nil, err
 	}
@@ -182,13 +188,13 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 		if i < 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
 		}
-		cidataDisk := storageConfigToDisk(opts.storageConfigs[i], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO)
+		cidataDisk := storageConfigToDisk(opts.storageConfigs[i], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.allowedCPUs)
 		if err = addDiskVM(ctx, hc, cidataDisk); err != nil {
 			return fmt.Errorf("vm.add-disk (cidata): %w", err)
 		}
 	}
 	for _, sc := range opts.dataDisks {
-		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO)); err != nil {
+		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.allowedCPUs)); err != nil {
 			return fmt.Errorf("vm.add-disk (data %s): %w", sc.Serial, err)
 		}
 	}

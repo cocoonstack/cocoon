@@ -25,7 +25,6 @@ type Images interface {
 
 	Config(context.Context, []*types.VMConfig) ([][]*types.StorageConfig, []*types.BootConfig, error)
 
-	// PinBlobs holds the digest locks while the caller commits a pin on the
-	// resolved blobs (design §5: every re-pinning flow takes the digest lock).
+	// PinBlobs holds the digest locks while the caller commits a pin on the resolved blobs (design §5: every re-pinning flow takes the digest lock).
 	PinBlobs(ctx context.Context, blobIDs map[string]struct{}) (release func(), err error)
 }

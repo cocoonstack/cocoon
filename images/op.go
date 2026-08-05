@@ -16,8 +16,7 @@ type Ops[E Entry] struct {
 	Sizer      func(*E) int64
 }
 
-// Inspect returns (nil, nil) when no entry matches id or the id is an
-// ambiguous prefix spanning distinct digests (LookupOne semantics).
+// Inspect returns (nil, nil) when no entry matches id or the id is an ambiguous prefix spanning distinct digests (LookupOne semantics).
 func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {
 	err = ops.Store.View(ctx, func(idx *Index[E]) error {
 		refs := ops.LookupRefs(idx.Images, id)
@@ -51,9 +50,7 @@ func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, e
 	return deleted, err
 }
 
-// SingleflightDo collapses concurrent same-key operations (e.g. pulls) into
-// one execution. A waiter's ctx cancellation detaches that waiter only; the
-// shared work keeps running under the winner's ctx.
+// SingleflightDo collapses concurrent same-key operations (e.g. pulls) into one execution. A waiter's ctx cancellation detaches that waiter only; the shared work keeps running under the winner's ctx.
 func SingleflightDo(ctx context.Context, g *singleflight.Group, key string, fn func() error) error {
 	ch := g.DoChan(key, func() (any, error) { return nil, fn() })
 	select {

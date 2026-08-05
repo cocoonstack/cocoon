@@ -1,5 +1,4 @@
-// Package meta is the unified metadata layer: record-granularity
-// transactions over per-deployment engines (sqlite default, json legacy).
+// Package meta is the unified metadata layer: record-granularity transactions over per-deployment engines (sqlite default, json legacy).
 package meta
 
 import (
@@ -39,18 +38,13 @@ type CommitMode uint8
 // WriteOpt modifies a single write; see RelaxedOK.
 type WriteOpt uint8
 
-// Scope declares, before the closure runs, every namespace a transaction
-// touches: Write is the single namespace it may modify, Read the others it
-// may read. Engines acquire all of them in one fixed global order before
-// invoking the closure.
+// Scope declares, before the closure runs, every namespace a transaction touches: Write is the single namespace it may modify, Read the others it may read. Engines acquire all of them in one fixed global order before invoking the closure.
 type Scope struct {
 	Write string
 	Read  []string
 }
 
-// Store is the engine-neutral transaction boundary. Closures must be pure
-// and retryable: they may run more than once, all effects go through the
-// handle, and results are published only after the transaction returns nil.
+// Store is the engine-neutral transaction boundary. Closures must be pure and retryable: they may run more than once, all effects go through the handle, and results are published only after the transaction returns nil.
 type Store interface {
 	// View runs fn over a consistent snapshot of the given namespaces.
 	View(ctx context.Context, nss []string, fn func(Reader) error) error
@@ -61,8 +55,7 @@ type Store interface {
 	Close() error
 }
 
-// Reader is the raw read SPI transactions hand to Collection; values
-// returned are detached from engine state.
+// Reader is the raw read SPI transactions hand to Collection; values returned are detached from engine state.
 type Reader interface {
 	GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error)
 	// ScanRaw yields records in the engine's stable order (json: insertion).

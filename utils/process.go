@@ -13,8 +13,7 @@ import (
 
 const killWaitTimeout = 5 * time.Second
 
-// WritePIDFile writes pid to path atomically, so a concurrent ReadPIDFile
-// never observes a truncated or empty file mid-write.
+// WritePIDFile writes pid to path atomically, so a concurrent ReadPIDFile never observes a truncated or empty file mid-write.
 func WritePIDFile(path string, pid int) error {
 	return AtomicWriteFileNoSync(path, []byte(strconv.Itoa(pid)+"\n"), 0o600)
 }

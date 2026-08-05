@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// SnapshotConfig carries the parameters for creating a snapshot.
-// The hypervisor fills ID, Image, ImageBlobIDs, Hypervisor, and resource fields; the CLI adds Name and Description.
+// SnapshotConfig carries the parameters for creating a snapshot. The hypervisor fills ID, Image, ImageBlobIDs, Hypervisor, and resource fields; the CLI adds Name and Description.
 type SnapshotConfig struct {
 	Config
 

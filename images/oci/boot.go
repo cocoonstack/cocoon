@@ -149,8 +149,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 		if createErr != nil {
 			return "", "", fmt.Errorf("create %s: %w", filepath.Base(dstPath), createErr)
 		}
-		// CH on arm64 direct-boots only a raw kernel Image, but Ubuntu ships the
-		// arm64 vmlinuz gzip-compressed; decompress it (x86 bzImage is not gzip).
+		// CH on arm64 direct-boots only a raw kernel Image, but Ubuntu ships the arm64 vmlinuz gzip-compressed; decompress it (x86 bzImage is not gzip).
 		src := io.Reader(tr)
 		var gz *gzip.Reader
 		if isKernel && runtime.GOARCH == "arm64" {

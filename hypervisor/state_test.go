@@ -646,6 +646,8 @@ func (stubBackendConfig) VMLogDir(string) string { panic("VMLogDir: not implemen
 
 func (c stubBackendConfig) CgroupParentDir() string { return filepath.Join(c.rootDir, "cgroup") }
 
+func (stubBackendConfig) CgroupCPUFence() string { return "" }
+
 // meteringStubConfig gives the metering stub a real VMRunDir so sequences
 // can take the per-VM ops lock and MkdirTemp under it.
 type meteringStubConfig struct {

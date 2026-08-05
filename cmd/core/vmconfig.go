@@ -27,6 +27,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	cpuQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
 	cpuPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
 	cpuBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
+	cpusetCPUs, _ := cmd.Flags().GetString("cpuset-cpus")
 	network, _ := cmd.Flags().GetString("network")
 	user, _ := cmd.Flags().GetString("user")
 	password, _ := cmd.Flags().GetString("password")
@@ -70,6 +71,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			CPUQuotaUs:    cpuQuotaUs,
 			CPUPeriodUs:   cpuPeriodUs,
 			CPUBurstUs:    cpuBurstUs,
+			CPUSetCPUs:    cpusetCPUs,
 		},
 		User:      user,
 		Password:  password,
@@ -97,6 +99,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	flagCPUQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
 	flagCPUPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
 	flagCPUBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
+	flagCPUSetCPUs, _ := cmd.Flags().GetString("cpuset-cpus")
 	noDirectIO := snapCfg.NoDirectIO
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
@@ -132,6 +135,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			CPUQuotaUs:    flagCPUQuotaUs,
 			CPUPeriodUs:   flagCPUPeriodUs,
 			CPUBurstUs:    flagCPUBurstUs,
+			CPUSetCPUs:    flagCPUSetCPUs,
 		},
 		DataDisks:   dataDisks,
 		RestoreMode: restoreMode,
@@ -150,11 +154,11 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	cfg := snapCfg.Config
 	cfg.Network = vm.Config.Network
-	// Host-side policy stays with the VM, like Network; the snapshot's knobs describe its source VM.
 	cfg.CPUWeight = vm.Config.CPUWeight
 	cfg.CPUQuotaUs = vm.Config.CPUQuotaUs
 	cfg.CPUPeriodUs = vm.Config.CPUPeriodUs
 	cfg.CPUBurstUs = vm.Config.CPUBurstUs
+	cfg.CPUSetCPUs = vm.Config.CPUSetCPUs
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
 		return nil, err
@@ -210,7 +214,7 @@ func sanitizeVMName(image string) string {
 	repo := strings.TrimPrefix(ref.Context().RepositoryStr(), "library/")
 	n := "cocoon-" + strings.ReplaceAll(repo, "/", "-")
 
-	// Skip digest (too long); use tag if not latest.
+	// Skip digest — too long for a VM name.
 	if tag, ok := ref.(name.Tag); ok && tag.TagStr() != "latest" {
 		n += "-" + tag.TagStr()
 	}

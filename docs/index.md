@@ -48,6 +48,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected)
 - **COW overlays** — copy-on-write disks backed by shared base images (raw for OCI, qcow2 for cloud images)
 - **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation
+- **CPU isolation** — every VM runs in its own cgroup v2 scope with Guaranteed-at-N defaults (`--cpu` is a hard cap); raw weight/quota/burst knobs, an optional host-core fence (`cgroup_cpus`), and per-VM pinning (`--cpuset-cpus`); see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)
 - **Multi-queue virtio-net** — TAP devices created with per-vCPU queue pairs; configurable ring depth (`--queue-size`, default 512); TSO/UFO/csum offload enabled by default
 - **TC redirect I/O path** — veth ↔ TAP wired via ingress qdisc + mirred redirect (no bridge in the data path)
 - **DNS configuration** — custom DNS servers injected into VMs via kernel cmdline (OCI) or cloud-init network-config (cloudimg)
@@ -58,7 +59,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation
-- **Snapshot & clone** — `cocoon snapshot save` captures a running VM's full state (memory, disks, config); `cocoon vm clone` restores it as a new VM with fresh network and identity; all resources (CPU, memory, storage, NIC count) inherit verbatim from the snapshot
+- **Snapshot & clone** — `cocoon snapshot save` captures a running VM's full state (memory, disks, config); `cocoon vm clone` restores it as a new VM with fresh network and identity; guest resources (CPU, memory, storage, NIC count) inherit verbatim from the snapshot, while host-side cgroup CPU policy comes from clone flags (see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2))
 - **Snapshot export & import** — `cocoon snapshot export` packages a snapshot into a portable `.tar` archive (`.tar.gz` with `--gzip`, sparse-aware pax headers); `cocoon snapshot import` restores it on another host or cluster; supports piping via stdout/stdin for direct host-to-host transfer; `--to-dir` writes a directory form (with `snapshot.json` envelope) for NFS / rsync-friendly handoff
 - **Clone / restore from a directory** — `cocoon vm clone --from-dir DIR` and `cocoon vm restore --from-dir DIR` consume any directory containing a `snapshot.json` envelope without first registering the snapshot in the local DB; the dir is treated as read-only so multi-VM golden-image use cases work without copying
 - **Live status monitoring** — `cocoon vm status` watches VM state changes in real time via fsnotify, with refresh mode (top-like) and event-stream mode (append-only, for scripting and vk-cocoon integration)

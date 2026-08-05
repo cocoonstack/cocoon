@@ -105,9 +105,7 @@ func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
 	return true
 }
 
-// deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps
-// all refs pointing at it. A prefix spanning distinct digests is rejected —
-// guessing on a destructive op would delete unrelated images.
+// deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps all refs pointing at it. A prefix spanning distinct digests is rejected — guessing on a destructive op would delete unrelated images.
 func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[string]*E, lookup func(string) []string, ids []string) ([]string, error) {
 	logger := log.WithFunc(logPrefix)
 	var deleted []string

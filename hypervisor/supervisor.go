@@ -98,8 +98,7 @@ func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(),
 	return func() { _ = l.Unlock(ctx) }, true, nil
 }
 
-// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop, then runs the quiesce it schedules; the caller holds the ops lock and observed no live VMM.
-// gen fences the write so a stale observation cannot date or re-label a newer transition.
+// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop, then runs the quiesce it schedules; the caller holds the ops lock and observed no live VMM. gen fences the write so a stale observation cannot date or re-label a newer transition.
 func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
 	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
