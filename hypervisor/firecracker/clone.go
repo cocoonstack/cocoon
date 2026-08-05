@@ -49,6 +49,8 @@ type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
 type cloneLaunch struct {
 	launch           launchCloneFn
 	sockPath, runDir string
+	vmID             string
+	vmCfg            *types.VMConfig
 	networkConfigs   []*types.NetworkConfig
 	src, dst         []*types.StorageConfig
 }
@@ -101,10 +103,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 			VM:     types.VM{ID: vmID, Config: *vmCfg},
 			RunDir: runDir,
 			LogDir: logDir,
-		}, sockPath, net.NetnsPath, leaseFiles)
+		}, sockPath, net.NetnsPath, leaseFiles, true)
 	}
 	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{
-		launch: launch, sockPath: sockPath, runDir: runDir,
+		launch: launch, sockPath: sockPath, runDir: runDir, vmID: vmID, vmCfg: vmCfg,
 		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs,
 	})
 	if cloneErr != nil {
@@ -200,6 +202,9 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 		}
 	}()
 
+	if err = fc.ArmCPUQuota(cl.vmID, &cl.vmCfg.Config); err != nil {
+		return err
+	}
 	hc := utils.NewSocketHTTPClient(cl.sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)

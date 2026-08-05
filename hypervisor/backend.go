@@ -106,6 +106,9 @@ type LaunchSpec struct {
 
 	// Rec names the VM whose CPU scope the process enters at spawn (ID + cgroup knobs); every VM enters a scope.
 	Rec *VMRecord
+
+	// DeferCPUQuota leaves the scope's ceiling at max through the paused provisioning window (#186); the backend arms the finite quota before resume.
+	DeferCPUQuota bool
 }
 
 // PreflightHook validates rec against the snapshot source dir before anything is applied.

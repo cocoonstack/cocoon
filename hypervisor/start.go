@@ -134,7 +134,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		}
 	}()
 
-	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config))
+	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config), spec.DeferCPUQuota)
 	if err != nil {
 		return 0, fmt.Errorf("prepare cgroup scope: %w", err)
 	}
@@ -165,6 +165,14 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		return 0, err
 	}
 	return pid, nil
+}
+
+// ArmCPUQuota sets the finite quota on a scope launched with DeferCPUQuota; call after memory load, before resume.
+func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
+	if err := cgroup.Arm(b.Conf.CgroupParentDir(), id, cgroup.ResolveKnobs(cfg)); err != nil {
+		return fmt.Errorf("arm cpu quota: %w", err)
+	}
+	return nil
 }
 
 // AbortLaunch terminates a failed launch and clears runtime files.

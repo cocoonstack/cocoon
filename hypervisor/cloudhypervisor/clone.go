@@ -22,6 +22,7 @@ import (
 const restoreTAPPrefix = "rm"
 
 type cloneResumeOpts struct {
+	vmID                string
 	vmCfg               *types.VMConfig
 	directBoot          bool
 	hadCidataInSnapshot bool
@@ -130,13 +131,14 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		VM:     types.VM{ID: vmID, Config: *vmCfg},
 		RunDir: runDir,
 		LogDir: logDir,
-	}, args, net.NetnsPath)
+	}, args, net.NetnsPath, true)
 	if err != nil {
 		ch.MarkError(ctx, vmID)
 		return nil, fmt.Errorf("launch CH: %w", err)
 	}
 
 	if err := ch.restoreAndResumeClone(ctx, pid, sockPath, runDir, &cloneResumeOpts{
+		vmID:                vmID,
 		vmCfg:               vmCfg,
 		directBoot:          directBoot,
 		hadCidataInSnapshot: hadCidataInSnapshot,
@@ -197,6 +199,9 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.allowedCPUs)); err != nil {
 			return fmt.Errorf("vm.add-disk (data %s): %w", sc.Serial, err)
 		}
+	}
+	if err = ch.ArmCPUQuota(opts.vmID, &opts.vmCfg.Config); err != nil {
+		return err
 	}
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("vm.resume: %w", err)

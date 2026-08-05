@@ -23,12 +23,12 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), cgroup.EffectiveCPUs(rec.Config.CPUSetCPUs, ch.conf.CgroupCPUs))
 			args := buildCLIArgs(vmCfg, sockPath)
 			ch.saveCmdline(ctx, rec, args)
-			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath())
+			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)
 		},
 	})
 }
 
-func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, args []string, netnsPath string) (int, error) {
+func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, args []string, netnsPath string, deferQuota bool) (int, error) {
 	processLog := ch.LogFilePath(rec.LogDir)
 	logFile, err := os.Create(processLog) //nolint:gosec
 	if err != nil {
@@ -47,9 +47,10 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 	}
 
 	pid, err := ch.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
-		Cmd:       cmd,
-		NetnsPath: netnsPath,
-		Rec:       rec,
+		Cmd:           cmd,
+		NetnsPath:     netnsPath,
+		Rec:           rec,
+		DeferCPUQuota: deferQuota,
 	})
 	if err != nil {
 		return 0, err

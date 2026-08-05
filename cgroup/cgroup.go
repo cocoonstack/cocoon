@@ -133,8 +133,8 @@ func ScopeDir(parentDir, vmID string) string {
 	return filepath.Join(parentDir, scopePrefix+vmID+scopeSuffix)
 }
 
-// Prepare creates or reconfigures vmID's scope and returns its opened directory for CLONE_INTO_CGROUP; idempotent, so a relaunch reuses a scope its dying predecessor still occupies.
-func Prepare(parentDir, fence, vmID string, k Knobs) (*os.File, error) {
+// Prepare creates or reconfigures vmID's scope and returns its opened directory for CLONE_INTO_CGROUP; idempotent, so a relaunch reuses a scope its dying predecessor still occupies. deferQuota leaves the ceiling at max for the provisioning window — weight, fence, and placement still apply — until Arm sets the finite quota.
+func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
 	if vmID == "" {
 		return nil, errors.New("cgroup scope: empty vm id")
 	}
@@ -158,19 +158,35 @@ func Prepare(parentDir, fence, vmID string, k Knobs) (*os.File, error) {
 			return nil, err
 		}
 	}
-	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
-		return nil, err
-	}
-	if k.BurstUs > 0 {
-		if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil {
+	if deferQuota {
+		if err := writeControl(dir, maxName, fmt.Sprintf("max %d", k.PeriodUs)); err != nil {
 			return nil, err
 		}
+	} else if err := armQuota(dir, k); err != nil {
+		return nil, err
 	}
 	scope, err := os.Open(dir) //nolint:gosec // path derives from config parent + generated VM ID
 	if err != nil {
 		return nil, fmt.Errorf("open scope: %w", err)
 	}
 	return scope, nil
+}
+
+// Arm sets the finite quota on a scope prepared with deferQuota; called after memory load, before resume, so the guest never runs uncapped. Idempotent — a retry after a partial failure converges.
+func Arm(parentDir, vmID string, k Knobs) error {
+	return armQuota(ScopeDir(parentDir, vmID), k)
+}
+
+func armQuota(dir string, k Knobs) error {
+	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
+		return err
+	}
+	if k.BurstUs > 0 {
+		if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Remove kills everything left in an owned scope and removes it; the VMM must already be confirmed dead. ENOENT counts as success.
