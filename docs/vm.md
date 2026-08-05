@@ -41,6 +41,34 @@ cgroup knobs are host-side policy, like networking: snapshots record the source 
 
 Requirements: cgroup v2 unified hierarchy with the `cpu` controller (kernel ≥ 5.14 for burst), running cocoon as root (production shape). Non-root works inside a systemd user slice with delegated controllers (`systemd-run --user --scope`), where user slices typically delegate `cpu` but not `cpuset` — fence/placement then fail preflight with the exact missing file named.
 
+### Recipes
+
+```bash
+# Guaranteed at N (default): hard cap 2 cores, share 2, no burst
+cocoon vm run --cpu 2 --memory 2G --name vm1 ghcr.io/cocoonstack/cocoon/ubuntu:24.04
+
+# Burstable overcommit: reach 2 cores when idle, shrink by weight under pressure
+cocoon vm run --cpu 2 --cpu-weight 25 --name burst1 ...
+
+# Headroom for virtio I/O service: guest keeps its full 2 cores under load
+cocoon vm run --cpu 2 --cpu-quota-us 230000 --name io-heavy ...
+
+# Metered: 0.5-core long-run average, bounded 1-core spikes
+cocoon vm run --cpu 1 --cpu-quota-us 50000 --cpu-burst-us 50000 --name metered ...
+
+# Pinning (NUMA / isolation-sensitive only — wastes idle cores)
+cocoon vm run --cpu 2 --cpuset-cpus 2-3 --name pinned ...
+
+# Machine fence (config, not a flag): the fleet never touches core 15
+COCOON_CGROUP_CPUS=0-14 cocoon vm run ...
+
+# Clones never inherit snapshot policy — give it explicitly or get defaults
+cocoon vm clone golden --name c1                  # Guaranteed at N
+cocoon vm clone golden --name c2 --cpu-weight 10  # explicit share
+```
+
+Rules of thumb: density → weight overcommit; single-VM performance → raised quota; billing semantics → quota + burst; pinning only when NUMA or isolation demands it. `cocoon vm list`'s `THROTTLED` column (count/total time from `cpu.stat`) shows who is hitting their cap.
+
 ### Reserving CPU for the control plane
 
 The fence bounds the VMs; the caller's own work (clone, restore, the API consumer) is deliberately not cocoon's to manage — set it on the invoking service's systemd unit, which writes the same cgroup v2 files:
