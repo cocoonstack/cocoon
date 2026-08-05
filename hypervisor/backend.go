@@ -61,6 +61,7 @@ type BackendConfig interface {
 	VMRunDir(id string) string
 	VMLogDir(id string) string
 	CgroupParentDir() string
+	CgroupCPUFence() string
 }
 
 var _ Supervisable = (*Backend)(nil)

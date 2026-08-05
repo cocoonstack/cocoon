@@ -25,8 +25,9 @@ type Config struct {
 	HugePages bool `json:"hugepages,omitempty"`
 
 	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU.
-	CPUWeight   int   `json:"cpu_weight,omitempty"`
-	CPUQuotaUs  int64 `json:"cpu_quota_us,omitempty"`
-	CPUPeriodUs int64 `json:"cpu_period_us,omitempty"`
-	CPUBurstUs  int64 `json:"cpu_burst_us,omitempty"`
+	CPUWeight   int    `json:"cpu_weight,omitempty"`
+	CPUQuotaUs  int64  `json:"cpu_quota_us,omitempty"`
+	CPUPeriodUs int64  `json:"cpu_period_us,omitempty"`
+	CPUBurstUs  int64  `json:"cpu_burst_us,omitempty"`
+	CPUSetCPUs  string `json:"cpuset_cpus,omitempty"`
 }

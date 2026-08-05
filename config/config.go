@@ -63,8 +63,10 @@ type Config struct {
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
 	// CgroupParent: cgroup v2 slice under /sys/fs/cgroup holding per-VM CPU scopes. Default: cocoon.slice.
-	CgroupParent string                     `json:"cgroup_parent" mapstructure:"cgroup_parent"`
-	Log          *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
+	CgroupParent string `json:"cgroup_parent" mapstructure:"cgroup_parent"`
+	// CgroupCPUs: host cpu list fencing the whole VM population (e.g. "0-14" reserves core 15); empty = all cores.
+	CgroupCPUs string                     `json:"cgroup_cpus,omitempty" mapstructure:"cgroup_cpus"`
+	Log        *coretypes.ServerLogConfig `json:"log" mapstructure:"log"`
 	// Metering selects the lifecycle-event recorder backend.
 	Metering MeteringConfig `json:"metering,omitzero" mapstructure:"metering"`
 }
@@ -92,6 +94,8 @@ func (c *Config) CgroupParentDir() string {
 	return filepath.Join(cgroup.Root, cmp.Or(c.CgroupParent, cgroup.DefaultParent))
 }
 
+func (c *Config) CgroupCPUFence() string { return c.CgroupCPUs }
+
 // Validate checks that all config fields are within acceptable ranges.
 // Should be called once at startup after unmarshalling.
 func (c *Config) Validate() error {
@@ -115,6 +119,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MetaBackend != "" && c.MetaBackend != MetaBackendJSON && c.MetaBackend != MetaBackendSQLite {
 		return fmt.Errorf("meta_backend %q is not one of json|sqlite", c.MetaBackend)
+	}
+	if _, err := cgroup.ParseCPUList(c.CgroupCPUs); err != nil {
+		return fmt.Errorf("cgroup_cpus: %w", err)
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -362,7 +363,7 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
 		{Path: "/run/extra.raw", Role: types.StorageRoleData, Serial: "extra"},
 	}
-	ch := &CloudHypervisor{}
+	ch := &CloudHypervisor{conf: NewConfig(&config.Config{})}
 	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
 		vmCfg:          &types.VMConfig{Config: types.Config{CPU: 2}},
 		storageConfigs: storageConfigs,

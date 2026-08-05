@@ -1,12 +1,14 @@
 package cloudhypervisor
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -31,15 +33,15 @@ func (b *kvBuilder) addIf(cond bool, kv string) {
 }
 
 // DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
-func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool) []string {
+func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, allowed []int) []string {
 	args := make([]string, 0, len(storageConfigs))
 	for _, storageConfig := range storageConfigs {
-		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO)))
+		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO, allowed)))
 	}
 	return args
 }
 
-func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig {
+func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []int) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
@@ -64,7 +66,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string) *chVMConfig
 	}
 
 	for _, storageConfig := range activeDisks(rec) {
-		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO))
+		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, allowed))
 	}
 
 	for _, nc := range rec.NetworkConfigs {
@@ -190,7 +192,7 @@ func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
 	return !sc.RO && !noDirectIO
 }
 
-func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool) chDisk {
+func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, allowed []int) chDisk {
 	if diskQueueSize <= 0 {
 		diskQueueSize = defaultDiskQueueSize
 	}
@@ -215,12 +217,31 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 	}
 
 	if cpuCount > 1 && !storageConfig.RO {
-		d.QueueAffinity = make([]chQueueAffinity, cpuCount)
-		for i := range d.QueueAffinity {
-			d.QueueAffinity[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{i}}
-		}
+		d.QueueAffinity = queueAffinity(cpuCount, allowed)
 	}
 	return d
+}
+
+// queueAffinity spreads queue i over host CPUs, clamped to the allowed set (fence/placement) so no target lands on a core the scope cannot run on; nil allowed keeps the identity mapping.
+func queueAffinity(cpuCount int, allowed []int) []chQueueAffinity {
+	qa := make([]chQueueAffinity, cpuCount)
+	for i := range qa {
+		host := i
+		if len(allowed) > 0 {
+			host = allowed[i%len(allowed)]
+		}
+		qa[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{host}}
+	}
+	return qa
+}
+
+// hostCPUAllowance resolves the affinity clamp: per-VM placement wins over the machine fence; nil means all cores.
+func hostCPUAllowance(cfg *types.Config, fence string) []int {
+	cpus, err := cgroup.ParseCPUList(cmp.Or(cfg.CPUSetCPUs, fence))
+	if err != nil {
+		return nil
+	}
+	return cpus
 }
 
 func diskToCLIArg(d chDisk) string {

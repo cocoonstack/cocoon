@@ -17,6 +17,8 @@ type patchOptions struct {
 	directBoot     bool
 	diskQueueSize  int
 	noDirectIO     bool
+	cpu            int
+	allowedCPUs    []int
 }
 
 // patchCHConfig patches specific fields in config.json while preserving all unknown fields that CH adds internally (platform, cpus.topology, etc.).
@@ -84,6 +86,12 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 		}
 		if e := setField(elem, "queue_size", diskQueueSize); e != nil {
 			return e
+		}
+		// A snapshot's affinity targets are the source host's; re-derive so restore under a different fence/placement cannot aim at cores the scope no longer owns.
+		if opts.cpu > 1 && !sc.RO {
+			if e := setField(elem, "queue_affinity", queueAffinity(opts.cpu, opts.allowedCPUs)); e != nil {
+				return e
+			}
 		}
 		return setField(elem, "direct", effectiveDirectIO(sc, opts.noDirectIO))
 	})
