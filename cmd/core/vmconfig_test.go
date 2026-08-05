@@ -72,6 +72,20 @@ func TestRestoreVMConfigKeepsHostCPUPolicy(t *testing.T) {
 	}
 }
 
+func TestRestoreVMConfigRejectsKnobsUnfitForSnapshotCPU(t *testing.T) {
+	vm := &types.VM{Config: types.VMConfig{
+		Name:   "v",
+		Config: types.Config{CPU: 2, CPUBurstUs: 150000},
+	}}
+	snapCfg := types.SnapshotConfig{Config: types.Config{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}}
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("restore-mode", "", "")
+	if _, err := RestoreVMConfigFromFlags(cmd, vm, snapCfg); err == nil {
+		t.Fatal("want error: kept burst 150000 exceeds the 1-CPU derived quota 100000")
+	}
+}
+
 func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 	snapCfg := types.SnapshotConfig{Config: types.Config{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
@@ -86,9 +100,9 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 		wantBurst  int64
 		wantErr    bool
 	}{
-		{name: "inherit all", wantWeight: 40, wantQuota: 200000, wantBurst: 50000},
-		{name: "override weight and burst", set: map[string]string{"cpu-weight": "10", "cpu-burst-us": "100000"}, wantWeight: 10, wantQuota: 200000, wantBurst: 100000},
-		{name: "invalid override rejected", set: map[string]string{"cpu-weight": "20000"}, wantErr: true},
+		{name: "no flags ignore snapshot knobs", wantWeight: 0, wantQuota: 0, wantBurst: 0},
+		{name: "flags set the clone's policy", set: map[string]string{"cpu-weight": "10", "cpu-burst-us": "100000", "cpu-quota-us": "150000"}, wantWeight: 10, wantQuota: 150000, wantBurst: 100000},
+		{name: "invalid flag rejected", set: map[string]string{"cpu-weight": "20000"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

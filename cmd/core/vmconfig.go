@@ -84,6 +84,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	return cfg, nil
 }
 
+// CloneVMConfigFromFlags builds VMConfig for a clone. The snapshot's cgroup knobs record its source VM's policy and are never applied; the clone's policy comes from flags alone.
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
 	vmName, _ := cmd.Flags().GetString("name")
 	flagNetwork, _ := cmd.Flags().GetString("network")
@@ -127,10 +128,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 			HugePages:     snapCfg.HugePages,
-			CPUWeight:     cmp.Or(flagCPUWeight, snapCfg.CPUWeight),
-			CPUQuotaUs:    cmp.Or(flagCPUQuotaUs, snapCfg.CPUQuotaUs),
-			CPUPeriodUs:   cmp.Or(flagCPUPeriodUs, snapCfg.CPUPeriodUs),
-			CPUBurstUs:    cmp.Or(flagCPUBurstUs, snapCfg.CPUBurstUs),
+			CPUWeight:     flagCPUWeight,
+			CPUQuotaUs:    flagCPUQuotaUs,
+			CPUPeriodUs:   flagCPUPeriodUs,
+			CPUBurstUs:    flagCPUBurstUs,
 		},
 		DataDisks:   dataDisks,
 		RestoreMode: restoreMode,
@@ -165,6 +166,10 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	if err := result.Validate(); err != nil {
 		return nil, fmt.Errorf("snapshot config: %w", err)
+	}
+	// The kept knobs must fit the snapshot's vCPU count before the destructive phase — a bad combination retries into the same failure.
+	if err := cgroup.ResolveKnobs(&result.Config).Validate(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
