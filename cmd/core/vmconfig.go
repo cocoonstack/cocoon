@@ -154,7 +154,6 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	}
 	cfg := snapCfg.Config
 	cfg.Network = vm.Config.Network
-	// Host-side policy stays with the VM, like Network; the snapshot's knobs describe its source VM.
 	cfg.CPUWeight = vm.Config.CPUWeight
 	cfg.CPUQuotaUs = vm.Config.CPUQuotaUs
 	cfg.CPUPeriodUs = vm.Config.CPUPeriodUs
@@ -215,7 +214,7 @@ func sanitizeVMName(image string) string {
 	repo := strings.TrimPrefix(ref.Context().RepositoryStr(), "library/")
 	n := "cocoon-" + strings.ReplaceAll(repo, "/", "-")
 
-	// Skip digest (too long); use tag if not latest.
+	// Skip digest — too long for a VM name.
 	if tag, ok := ref.(name.Tag); ok && tag.TagStr() != "latest" {
 		n += "-" + tag.TagStr()
 	}

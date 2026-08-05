@@ -81,7 +81,6 @@ func newRootCmd() *cobra.Command {
 	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
 	viper.SetDefault("meta_backend", "")
 	viper.SetDefault("cgroup_parent", cgroup.DefaultParent)
-	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
 	viper.SetDefault("cgroup_cpus", "")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.max_size", 500)

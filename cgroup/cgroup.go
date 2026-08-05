@@ -253,13 +253,12 @@ func ensureParent(parentDir, fence string, placed bool) error {
 	if err := utils.EnsureDirs(parentDir); err != nil {
 		return err
 	}
-	if err := forEachLevel(rel, func(dir string) error { return enableController(dir, "cpu") }); err != nil {
-		return err
-	}
+	ctrls := []string{"cpu"}
 	if fence != "" || placed {
-		if err := forEachLevel(rel, func(dir string) error { return enableController(dir, "cpuset") }); err != nil {
-			return err
-		}
+		ctrls = append(ctrls, "cpuset")
+	}
+	if err := forEachLevel(rel, func(dir string) error { return enableControllers(dir, ctrls) }); err != nil {
+		return err
 	}
 	return reconcileFence(parentDir, fence)
 }
@@ -366,16 +365,22 @@ func forEachLevel(rel string, fn func(dir string) error) error {
 	return nil
 }
 
-// enableController reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write.
-func enableController(dir, ctrl string) error {
-	path := filepath.Join(dir, subtreeControlName)
-	if data, err := os.ReadFile(path); err == nil && slices.Contains(strings.Fields(string(data)), ctrl) { //nolint:gosec // fixed name under the config-derived parent
+// enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write. Missing controllers go in one combined write.
+func enableControllers(dir string, ctrls []string) error {
+	have, _ := readControl(dir, subtreeControlName)
+	enabled := strings.Fields(have)
+	var missing []string
+	for _, ctrl := range ctrls {
+		if !slices.Contains(enabled, ctrl) {
+			missing = append(missing, "+"+ctrl)
+		}
+	}
+	if len(missing) == 0 {
 		return nil
 	}
-	return writeControl(dir, subtreeControlName, "+"+ctrl)
+	return writeControl(dir, subtreeControlName, strings.Join(missing, " "))
 }
 
-// readControl reads and trims name in dir.
 func readControl(dir, name string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // fixed name under the config-derived parent
 	return strings.TrimSpace(string(data)), err

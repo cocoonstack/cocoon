@@ -79,6 +79,10 @@ func patchCHConfig(path string, opts *patchOptions) error {
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
 	diskQueueSize := utils.OrDefault(opts.diskQueueSize, defaultDiskQueueSize)
+	var affinity []chQueueAffinity
+	if opts.cpu > 1 {
+		affinity = queueAffinity(opts.cpu, opts.allowedCPUs)
+	}
 	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
 		sc := opts.storageConfigs[i]
 		if e := setField(elem, "path", sc.Path); e != nil {
@@ -88,8 +92,8 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 			return e
 		}
 		// A snapshot's affinity targets are the source host's; re-derive so restore under a different fence/placement cannot aim at cores the scope no longer owns.
-		if opts.cpu > 1 && !sc.RO {
-			if e := setField(elem, "queue_affinity", queueAffinity(opts.cpu, opts.allowedCPUs)); e != nil {
+		if affinity != nil && !sc.RO {
+			if e := setField(elem, "queue_affinity", affinity); e != nil {
 				return e
 			}
 		}
