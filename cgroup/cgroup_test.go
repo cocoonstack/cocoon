@@ -235,3 +235,24 @@ func TestEffectiveCPUs(t *testing.T) {
 		t.Error("no constraint: want nil")
 	}
 }
+
+func TestArmSetsQuotaThenBurst(t *testing.T) {
+	parent := t.TempDir()
+	dir := ScopeDir(parent, "A")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	for _, f := range []string{"cpu.max", "cpu.max.burst"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+	if err := Arm(parent, "A", Knobs{QuotaUs: 150000, PeriodUs: 100000, BurstUs: 50000}); err != nil {
+		t.Fatalf("Arm: %v", err)
+	}
+	max, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
+	burst, _ := os.ReadFile(filepath.Join(dir, "cpu.max.burst"))
+	if string(max) != "150000 100000" || string(burst) != "50000" {
+		t.Errorf("max=%q burst=%q", max, burst)
+	}
+}

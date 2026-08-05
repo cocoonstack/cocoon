@@ -63,7 +63,7 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 
 	// Launch under the target config: a --force cross-config restore changes the vCPU count the scope derives from.
 	rec.Config = *vmCfg
-	pid, launchErr := fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath())
+	pid, launchErr := fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), true)
 	if launchErr != nil {
 		return nil, fmt.Errorf("launch FC: %w", launchErr)
 	}
@@ -79,6 +79,9 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 		return nil, fmt.Errorf("snapshot/load: %w", err)
 	}
 
+	if err = fc.ArmCPUQuota(vmID, &vmCfg.Config); err != nil {
+		return nil, err
+	}
 	hc := utils.NewSocketHTTPClient(sockPath)
 	if err = resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("resume: %w", err)

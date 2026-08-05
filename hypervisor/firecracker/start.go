@@ -32,7 +32,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 	return fc.StartSequence(ctx, id, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
-			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath())
+			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)
 		},
 		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
 			return fc.configureVM(ctx, utils.NewSocketHTTPClient(sockPath), rec)
@@ -149,13 +149,13 @@ func (c *cloneLeaseControl) commit() error {
 	return waitRelayLeaseResponse(c.responses, relayLeaseCommitAck, "commit")
 }
 
-func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string) (int, error) {
-	pid, _, err := fc.launchProcessWithLeases(ctx, rec, sockPath, netnsPath, nil)
+func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, deferQuota bool) (int, error) {
+	pid, _, err := fc.launchProcessWithLeases(ctx, rec, sockPath, netnsPath, nil, deferQuota)
 	return pid, err
 }
 
 // launchProcessWithLeases keeps inherited source-VM leases in the console relay until the caller confirms clone setup.
-func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
+func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, leaseFiles []*os.File, deferQuota bool) (int, *cloneLeaseControl, error) {
 	logger := log.WithFunc("firecracker.launchProcessWithLeases")
 
 	fcLog := fc.LogFilePath(rec.LogDir)
@@ -183,10 +183,11 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
 	pid, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
-		Cmd:       fcCmd,
-		NetnsPath: netnsPath,
-		OnFail:    func() { _ = master.Close() },
-		Rec:       rec,
+		Cmd:           fcCmd,
+		NetnsPath:     netnsPath,
+		OnFail:        func() { _ = master.Close() },
+		Rec:           rec,
+		DeferCPUQuota: deferQuota,
 	})
 	if err != nil {
 		return 0, nil, err

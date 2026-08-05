@@ -363,8 +363,16 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
 		{Path: "/run/extra.raw", Role: types.StorageRoleData, Serial: "extra"},
 	}
-	ch := &CloudHypervisor{conf: NewConfig(&config.Config{})}
+	scopeParent := t.TempDir()
+	if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	ch := &CloudHypervisor{
+		Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
+		conf:    NewConfig(&config.Config{}),
+	}
 	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+		vmID:           "T",
 		vmCfg:          &types.VMConfig{Config: types.Config{CPU: 2}},
 		storageConfigs: storageConfigs,
 		dataDisks:      storageConfigs[2:],
@@ -495,3 +503,11 @@ func basePatchOpts() *patchOptions {
 		directBoot:  true,
 	}
 }
+
+// tmpScopeConf redirects the cgroup parent to a temp dir so Arm writes plain files.
+type tmpScopeConf struct {
+	*Config
+	parent string
+}
+
+func (c tmpScopeConf) CgroupParentDir() string { return c.parent }
