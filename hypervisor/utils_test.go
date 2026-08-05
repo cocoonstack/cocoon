@@ -3,12 +3,22 @@ package hypervisor
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"
 )
+
+// Under a pinned test process (taskset) NumCPU shrinks to the affinity mask while HostCPUCount must keep reporting the machine.
+func TestHostCPUCount(t *testing.T) {
+	got := HostCPUCount()
+	t.Logf("HostCPUCount=%d runtime.NumCPU=%d", got, runtime.NumCPU())
+	if got < runtime.NumCPU() {
+		t.Fatalf("HostCPUCount() = %d, below runtime.NumCPU() = %d", got, runtime.NumCPU())
+	}
+}
 
 func TestValidateSnapshotIntegrity(t *testing.T) {
 	dir := t.TempDir()
