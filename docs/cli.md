@@ -79,6 +79,8 @@ Config-file / env-only keys (no CLI flag):
 | Key          | Env Variable        | Default | Description                                                            |
 | ------------ | ------------------- | ------- | ---------------------------------------------------------------------- |
 | `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry |
+| `cgroup_parent` | `COCOON_CGROUP_PARENT` | `cocoon.slice` | cgroup v2 slice under `/sys/fs/cgroup` holding the per-VM CPU scopes; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
+| `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); kernel cpu-list syntax |
 
 ## VM Flags
 
@@ -88,7 +90,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | ----------- | ---------------- | --------------------------------------------- |
 | `--fc`      | `false`          | Use Firecracker backend (OCI images only)      |
 | `--name`    | `cocoon-<image>` | VM name                                       |
-| `--cpu`     | `2`              | Boot CPUs (must not exceed host core count)   |
+| `--cpu`     | `2`              | Boot CPUs — also the VM's hard CPU cap (quota = N cores unless overridden; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)) |
 | `--memory`  | `1G`             | Memory size (e.g., 512M, 2G)                  |
 | `--storage` | `10G`            | COW disk size (e.g., 10G, 20G)                |
 | `--nics`    | `1`              | Number of network interfaces (0 = no network) |
@@ -103,6 +105,11 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |
 | `--hugepages` | `false`         | Back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap |
+| `--cpu-weight` | `0` (= vCPU count) | cgroup `cpu.weight` 1..10000 — work-conserving share under host contention |
+| `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — the hard CPU ceiling |
+| `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
+| `--cpu-burst-us` | `0` (none) | cgroup `cpu.max.burst` credit in µs; kernel requires burst ≤ quota |
+| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`); non-work-conserving, explicit opt-in |
 
 ### Clone Flags
 
@@ -117,6 +124,7 @@ Applies to `cocoon vm clone`:
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
+| `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
