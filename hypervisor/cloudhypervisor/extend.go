@@ -13,6 +13,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -45,7 +46,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	makeBody := func(rec *hypervisor.VMRecord) any {
 		d := storageConfigToDisk(&types.StorageConfig{
 			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
-		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, hostCPUAllowance(&rec.Config.Config, ch.conf.CgroupCPUs))
+		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, cgroup.EffectiveCPUs(rec.Config.CPUSetCPUs, ch.conf.CgroupCPUs))
 		d.ID = id
 		return d
 	}

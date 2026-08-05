@@ -187,14 +187,51 @@ func TestReconcileFenceClearsStaleValue(t *testing.T) {
 	if err := os.WriteFile(path, []byte("0-14\n"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	if err := reconcileFence(parent, "irrelevant", ""); err != nil {
+	if err := reconcileFence(parent, ""); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil || strings.TrimSpace(string(data)) != "" {
 		t.Errorf("stale fence not cleared: %q err=%v", data, err)
 	}
-	if err := reconcileFence(parent, "irrelevant", ""); err != nil {
+	if err := reconcileFence(parent, ""); err != nil {
 		t.Errorf("steady-state empty reconcile: %v", err)
+	}
+}
+
+func TestReconcileFenceCanonicalEquality(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.WriteFile(filepath.Join(parent, "cpuset.cpus"), []byte("0-7\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// No cpuset.cpus.effective fixture exists: reaching checkSubset would fail, so success proves the parsed-set gate short-circuited.
+	if err := reconcileFence(parent, "0-3,4-7"); err != nil {
+		t.Errorf("canonically-equal fence rewrote: %v", err)
+	}
+}
+
+func TestPlaceScopeReadGate(t *testing.T) {
+	parent := t.TempDir()
+	dir := ScopeDir(parent, "X")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus"), []byte("2-3\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := placeScope(parent, dir, "2,3"); err != nil {
+		t.Errorf("equal placement rewrote: %v", err)
+	}
+}
+
+func TestEffectiveCPUs(t *testing.T) {
+	if got := EffectiveCPUs("2-3", "0-14"); !slices.Equal(got, []int{2, 3}) {
+		t.Errorf("placement wins: got %v", got)
+	}
+	if got := EffectiveCPUs("", "0-1"); !slices.Equal(got, []int{0, 1}) {
+		t.Errorf("fence fallback: got %v", got)
+	}
+	if EffectiveCPUs("", "") != nil {
+		t.Error("no constraint: want nil")
 	}
 }

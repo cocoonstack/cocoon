@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"cmp"
 	"fmt"
 	"os"
 	"slices"
@@ -148,7 +147,7 @@ func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []
 	case balloon == 0:
 		balloon = int(size >> 20) //nolint:mnd
 	}
-	allowed, _ := cgroup.ParseCPUList(cmp.Or(vmCfg.CPUSetCPUs, conf.CgroupCPUs))
+	allowed := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, conf.CgroupCPUs)
 	return chDebugSpec{
 		Configs: storageConfigs,
 		Boot:    boot,

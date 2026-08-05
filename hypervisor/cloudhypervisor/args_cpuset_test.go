@@ -3,8 +3,6 @@ package cloudhypervisor
 import (
 	"slices"
 	"testing"
-
-	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestQueueAffinityClamp(t *testing.T) {
@@ -26,18 +24,5 @@ func TestQueueAffinityClamp(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestHostCPUAllowancePlacementWinsOverFence(t *testing.T) {
-	cfg := &types.Config{CPUSetCPUs: "2-3"}
-	if got := hostCPUAllowance(cfg, "0-14"); !slices.Equal(got, []int{2, 3}) {
-		t.Errorf("placement: got %v", got)
-	}
-	if got := hostCPUAllowance(&types.Config{}, "0-1"); !slices.Equal(got, []int{0, 1}) {
-		t.Errorf("fence fallback: got %v", got)
-	}
-	if got := hostCPUAllowance(&types.Config{}, ""); got != nil {
-		t.Errorf("no fence: got %v, want nil", got)
 	}
 }

@@ -1,14 +1,12 @@
 package cloudhypervisor
 
 import (
-	"cmp"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -233,15 +231,6 @@ func queueAffinity(cpuCount int, allowed []int) []chQueueAffinity {
 		qa[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{host}}
 	}
 	return qa
-}
-
-// hostCPUAllowance resolves the affinity clamp: per-VM placement wins over the machine fence; nil means all cores.
-func hostCPUAllowance(cfg *types.Config, fence string) []int {
-	cpus, err := cgroup.ParseCPUList(cmp.Or(cfg.CPUSetCPUs, fence))
-	if err != nil {
-		return nil
-	}
-	return cpus
 }
 
 func diskToCLIArg(d chDisk) string {

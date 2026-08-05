@@ -93,6 +93,15 @@ func (k Knobs) Validate() error {
 	return nil
 }
 
+// EffectiveCPUs resolves the cpu set a VM may run on — explicit placement wins over the machine fence; nil means all cores.
+func EffectiveCPUs(placement, fence string) []int {
+	cpus, err := ParseCPUList(cmp.Or(placement, fence))
+	if err != nil {
+		return nil
+	}
+	return cpus
+}
+
 // ParseCPUList parses a kernel cpu-list ("0-14", "0,2-4"); empty input is nil (no placement).
 func ParseCPUList(s string) ([]int, error) {
 	if s == "" {
@@ -129,7 +138,7 @@ func Prepare(parentDir, fence, vmID string, k Knobs) (*os.File, error) {
 	if vmID == "" {
 		return nil, errors.New("cgroup scope: empty vm id")
 	}
-	if err := ensureParent(parentDir, fence); err != nil {
+	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
 	}
 	dir := ScopeDir(parentDir, vmID)
@@ -235,8 +244,8 @@ func parseStat(data string) map[string]int64 {
 	return stat
 }
 
-// ensureParent enables cpu at every ancestor, not just the leaf — cgroup v2 subtree delegation is hierarchical.
-func ensureParent(parentDir, fence string) error {
+// ensureParent enables the needed controllers at every ancestor, not just the leaf — cgroup v2 subtree delegation is hierarchical.
+func ensureParent(parentDir, fence string, placed bool) error {
 	rel, err := filepath.Rel(Root, parentDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("cgroup parent %q must be under %s", parentDir, Root)
@@ -247,26 +256,31 @@ func ensureParent(parentDir, fence string) error {
 	if err := forEachLevel(rel, func(dir string) error { return enableController(dir, "cpu") }); err != nil {
 		return err
 	}
-	return reconcileFence(parentDir, rel, fence)
+	if fence != "" || placed {
+		if err := forEachLevel(rel, func(dir string) error { return enableController(dir, "cpuset") }); err != nil {
+			return err
+		}
+	}
+	return reconcileFence(parentDir, fence)
 }
 
 // reconcileFence converges the parent's cpuset.cpus to the configured fence; a cleared config resets a stale fence once, and the cpuset controller is never disabled.
-func reconcileFence(parentDir, rel, fence string) error {
-	current, err := os.ReadFile(filepath.Join(parentDir, cpusetName)) //nolint:gosec // fixed name under the config-derived parent
+func reconcileFence(parentDir, fence string) error {
+	current, err := readControl(parentDir, cpusetName)
 	if fence == "" {
-		if err == nil && strings.TrimSpace(string(current)) != "" {
+		if err == nil && current != "" {
 			return writeControl(parentDir, cpusetName, "\n")
 		}
 		return nil
 	}
-	if err := forEachLevel(rel, func(dir string) error { return enableController(dir, "cpuset") }); err != nil {
-		return err
+	// The kernel echoes cpu lists canonicalized ("0-3,4-7" reads back "0-7"): compare parsed sets, or a non-canonical config string re-runs the scan and the serialized cpuset write on every launch.
+	if cur, curErr := ParseCPUList(current); curErr == nil {
+		if want, wantErr := ParseCPUList(fence); wantErr == nil && slices.Equal(cur, want) {
+			return nil
+		}
 	}
 	if err := checkSubset(fence, filepath.Dir(parentDir), "cgroup_cpus fence"); err != nil {
 		return err
-	}
-	if strings.TrimSpace(string(current)) == fence {
-		return nil
 	}
 	if err := checkScopePlacements(parentDir, fence); err != nil {
 		return err
@@ -279,8 +293,12 @@ func placeScope(parentDir, dir, cpuset string) error {
 	if cpuset == "" {
 		return nil
 	}
-	if err := enableController(parentDir, "cpuset"); err != nil {
-		return err
+	if current, err := readControl(dir, cpusetName); err == nil {
+		if cur, curErr := ParseCPUList(current); curErr == nil {
+			if want, wantErr := ParseCPUList(cpuset); wantErr == nil && slices.Equal(cur, want) {
+				return nil
+			}
+		}
 	}
 	if err := checkSubset(cpuset, parentDir, "--cpuset-cpus"); err != nil {
 		return err
@@ -288,23 +306,22 @@ func placeScope(parentDir, dir, cpuset string) error {
 	return writeControl(dir, cpusetName, cpuset)
 }
 
-// checkSubset validates a requested cpu list against dir's effective set.
 func checkSubset(cpuset, dir, what string) error {
 	want, err := ParseCPUList(cpuset)
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
-	effRaw, err := os.ReadFile(filepath.Join(dir, cpusetEffName)) //nolint:gosec // fixed name under the config-derived parent
+	effRaw, err := readControl(dir, cpusetEffName)
 	if err != nil {
 		return fmt.Errorf("read effective cpuset: %w", err)
 	}
-	eff, err := ParseCPUList(strings.TrimSpace(string(effRaw)))
+	eff, err := ParseCPUList(effRaw)
 	if err != nil {
 		return fmt.Errorf("parse %s: %w", filepath.Join(dir, cpusetEffName), err)
 	}
 	for _, c := range want {
 		if !slices.Contains(eff, c) {
-			return fmt.Errorf("%s %q: cpu %d not in %s effective set %q", what, cpuset, c, dir, strings.TrimSpace(string(effRaw)))
+			return fmt.Errorf("%s %q: cpu %d not in %s effective set %q", what, cpuset, c, dir, effRaw)
 		}
 	}
 	return nil
@@ -318,12 +335,8 @@ func checkScopePlacements(parentDir, fence string) error {
 	}
 	fenceCPUs, _ := ParseCPUList(fence)
 	for _, id := range ids {
-		raw, err := os.ReadFile(filepath.Join(ScopeDir(parentDir, id), cpusetName)) //nolint:gosec // fixed name under the config-derived parent
-		if err != nil {
-			continue
-		}
-		placement := strings.TrimSpace(string(raw))
-		if placement == "" {
+		placement, err := readControl(ScopeDir(parentDir, id), cpusetName)
+		if err != nil || placement == "" {
 			continue
 		}
 		cpus, err := ParseCPUList(placement)
@@ -360,6 +373,12 @@ func enableController(dir, ctrl string) error {
 		return nil
 	}
 	return writeControl(dir, subtreeControlName, "+"+ctrl)
+}
+
+// readControl reads and trims name in dir.
+func readControl(dir, name string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // fixed name under the config-derived parent
+	return strings.TrimSpace(string(data)), err
 }
 
 func writeControl(dir, name, value string) error {

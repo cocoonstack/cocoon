@@ -94,6 +94,7 @@ func (c *Config) CgroupParentDir() string {
 	return filepath.Join(cgroup.Root, cmp.Or(c.CgroupParent, cgroup.DefaultParent))
 }
 
+// CgroupCPUFence returns the configured fence cpu list (empty = all cores).
 func (c *Config) CgroupCPUFence() string { return c.CgroupCPUs }
 
 // Validate checks that all config fields are within acceptable ranges.
