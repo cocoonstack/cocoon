@@ -18,6 +18,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netns"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
@@ -48,6 +49,8 @@ const (
 
 	// socketReadyPollInterval is the WaitForSocket poll cadence — VMM socket usually appears within a few ms after process start.
 	socketReadyPollInterval = 1 * time.Millisecond
+
+	onlineCPUsPath = "/sys/devices/system/cpu/online"
 )
 
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
@@ -269,8 +272,22 @@ func MergeDirInto(src, dst string) error {
 	return nil
 }
 
+// HostCPUCount returns the host's online CPU count; runtime.NumCPU reports the process affinity mask, which undersizes guests when the control plane is core-pinned.
+func HostCPUCount() int {
+	data, err := os.ReadFile(onlineCPUsPath)
+	if err != nil {
+		return runtime.NumCPU()
+	}
+	cpus, err := cgroup.ParseCPUList(strings.TrimSpace(string(data)))
+	if err != nil || len(cpus) == 0 {
+		return runtime.NumCPU()
+	}
+	return len(cpus)
+}
+
+// ValidateHostCPU rejects vCPU counts beyond the host's online cores.
 func ValidateHostCPU(cpu int) error {
-	maxCPU := runtime.NumCPU()
+	maxCPU := HostCPUCount()
 	if cpu > maxCPU {
 		return fmt.Errorf("requested %d vCPUs exceeds host cores (%d)", cpu, maxCPU)
 	}

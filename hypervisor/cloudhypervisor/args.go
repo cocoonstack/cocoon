@@ -3,7 +3,6 @@ package cloudhypervisor
 import (
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -43,10 +42,8 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
-	maxVCPUs := runtime.NumCPU()
-
 	cfg := &chVMConfig{
-		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: maxVCPUs, KVMHyperV: rec.Config.Windows},
+		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: hypervisor.HostCPUCount(), KVMHyperV: rec.Config.Windows},
 		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory},
 		RNG:      chRNG{Src: "/dev/urandom"},
 		Watchdog: true,
