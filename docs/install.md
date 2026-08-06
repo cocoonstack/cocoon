@@ -23,10 +23,10 @@ Download pre-built binaries from [GitHub Releases](https://github.com/cocoonstac
 
 ```bash
 # Linux amd64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.8/cocoon_0.5.8_Linux_x86_64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.9/cocoon_0.5.9_Linux_x86_64.tar.gz
 
 # Linux arm64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.8/cocoon_0.5.8_Linux_arm64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.9/cocoon_0.5.9_Linux_arm64.tar.gz
 
 tar -xzf cocoon.tar.gz
 install -m 0755 cocoon /usr/local/bin/
