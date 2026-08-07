@@ -30,6 +30,9 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 	if vmCfg.HugePages {
 		return nil, fmt.Errorf("firecracker does not support hugepages (restore cannot map hugetlbfs-backed snapshots)")
 	}
+	if vmCfg.Mergeable {
+		return nil, fmt.Errorf("firecracker does not support mergeable memory (no KSM madvise knob)")
+	}
 	if !hypervisor.IsDirectBoot(bootCfg) {
 		return nil, fmt.Errorf("firecracker requires direct kernel boot (OCI image)")
 	}

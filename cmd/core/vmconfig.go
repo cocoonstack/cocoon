@@ -35,7 +35,12 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	windows, _ := cmd.Flags().GetBool("windows")
 	sharedMemory, _ := cmd.Flags().GetBool("shared-memory")
 	hugePages, _ := cmd.Flags().GetBool("hugepages")
+	mergeable, _ := cmd.Flags().GetBool("mergeable")
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
+
+	if mergeable && (hugePages || sharedMemory) {
+		return nil, fmt.Errorf("--mergeable needs plain private memory; drop --hugepages/--shared-memory")
+	}
 
 	vmName = cmp.Or(vmName, sanitizeVMName(image))
 
@@ -67,6 +72,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 			Windows:       windows,
 			SharedMemory:  sharedMemory,
 			HugePages:     hugePages,
+			Mergeable:     mergeable,
 			CPUWeight:     cpuWeight,
 			CPUQuotaUs:    cpuQuotaUs,
 			CPUPeriodUs:   cpuPeriodUs,
@@ -131,6 +137,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 			Windows:       snapCfg.Windows,
 			SharedMemory:  snapCfg.SharedMemory,
 			HugePages:     snapCfg.HugePages,
+			Mergeable:     snapCfg.Mergeable,
 			CPUWeight:     flagCPUWeight,
 			CPUQuotaUs:    flagCPUQuotaUs,
 			CPUPeriodUs:   flagCPUPeriodUs,

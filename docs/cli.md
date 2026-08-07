@@ -105,6 +105,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |
 | `--hugepages` | `false`         | Back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap |
+| `--mergeable` | `false`         | Mark guest memory `MADV_MERGEABLE` for host KSM dedup (CH only, fixed for VM lifetime; persists through clone/restore); needs KSM enabled on the host, excludes `--hugepages`/`--shared-memory` |
 | `--cpu-weight` | `0` (= vCPU count) | cgroup `cpu.weight` 1..10000 — work-conserving share under host contention |
 | `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — the hard CPU ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |

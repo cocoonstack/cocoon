@@ -221,15 +221,8 @@ func printCommonCHArgs(s chDebugSpec) {
 	if s.VMCfg.Windows {
 		cpuExtra = ",kvm_hyperv=on"
 	}
-	memExtra := ""
-	if s.VMCfg.HugePages {
-		memExtra += ",hugepages=on"
-	}
-	if s.VMCfg.SharedMemory {
-		memExtra += ",shared=on"
-	}
 	fmt.Printf("  --cpus boot=%d,max=%d%s \\\n", s.VMCfg.CPU, s.MaxCPU, cpuExtra)
-	fmt.Printf("  --memory size=%dM%s \\\n", s.VMCfg.Memory>>20, memExtra) //nolint:mnd
+	fmt.Printf("  --memory %s \\\n", cloudhypervisor.DebugMemoryCLIArg(&s.VMCfg.Config))
 	fmt.Print("  --rng src=/dev/urandom \\\n")
 	if s.Balloon > 0 {
 		fmt.Printf("  --balloon size=%dM,deflate_on_oom=on,free_page_reporting=on \\\n", s.Balloon)
