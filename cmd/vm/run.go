@@ -489,6 +489,8 @@ func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 		return fmt.Errorf("--fc and --shared-memory are mutually exclusive: Firecracker does not support vhost-user-fs hot-plug")
 	case vmCfg.HugePages:
 		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
+	case vmCfg.Mergeable:
+		return fmt.Errorf("--fc and --mergeable are mutually exclusive: Firecracker has no KSM madvise knob")
 	}
 	return nil
 }

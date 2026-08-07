@@ -38,13 +38,18 @@ func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueue
 	return args
 }
 
+// DebugMemoryCLIArg uses the same memory mapping as launch.
+func DebugMemoryCLIArg(cfg *types.Config) string {
+	return memoryCLIArg(chMemory{Size: cfg.Memory, HugePages: cfg.HugePages, Shared: cfg.SharedMemory, Mergeable: cfg.Mergeable})
+}
+
 func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []int) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
 	cfg := &chVMConfig{
 		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: hypervisor.HostCPUCount(), KVMHyperV: rec.Config.Windows},
-		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory},
+		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory, Mergeable: rec.Config.Mergeable},
 		RNG:      chRNG{Src: "/dev/urandom"},
 		Watchdog: true,
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},
@@ -93,14 +98,7 @@ func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	cpuKV.addIf(cfg.CPUs.KVMHyperV, "kvm_hyperv=on")
 	args = append(args, "--cpus", cpuKV.String())
 
-	mem := fmt.Sprintf("size=%d", cfg.Memory.Size)
-	if cfg.Memory.HugePages {
-		mem += ",hugepages=on"
-	}
-	if cfg.Memory.Shared {
-		mem += ",shared=on"
-	}
-	args = append(args, "--memory", mem)
+	args = append(args, "--memory", memoryCLIArg(cfg.Memory))
 
 	if len(cfg.Disks) > 0 {
 		args = append(args, "--disk")
@@ -228,6 +226,15 @@ func queueAffinity(cpuCount int, allowed []int) []chQueueAffinity {
 		qa[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{host}}
 	}
 	return qa
+}
+
+func memoryCLIArg(m chMemory) string {
+	var kv kvBuilder
+	kv.add(fmt.Sprintf("size=%d", m.Size))
+	kv.addIf(m.HugePages, "hugepages=on")
+	kv.addIf(m.Shared, "shared=on")
+	kv.addIf(m.Mergeable, "mergeable=on")
+	return kv.String()
 }
 
 func diskToCLIArg(d chDisk) string {
