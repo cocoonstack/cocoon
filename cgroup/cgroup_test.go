@@ -1,6 +1,7 @@
 package cgroup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -207,6 +208,29 @@ func TestReconcileFenceCanonicalEquality(t *testing.T) {
 	// No cpuset.cpus.effective fixture exists: reaching checkSubset would fail, so success proves the parsed-set gate short-circuited.
 	if err := reconcileFence(parent, "0-3,4-7"); err != nil {
 		t.Errorf("canonically-equal fence rewrote: %v", err)
+	}
+}
+
+func TestExplainFenceWriteNamesLiveVMs(t *testing.T) {
+	parent := t.TempDir()
+	enospc := errors.New("no space left on device")
+
+	if got := explainFenceWrite(parent, "0-14", "", enospc); got != enospc {
+		t.Errorf("no live scope: got %v, want the error unchanged", got)
+	}
+	if got := explainFenceWrite(parent, "0-14", "", nil); got != nil {
+		t.Errorf("successful write: got %v, want nil", got)
+	}
+
+	if err := os.Mkdir(ScopeDir(parent, "X"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	got := explainFenceWrite(parent, "0-14", "", enospc)
+	if !errors.Is(got, enospc) {
+		t.Fatalf("wrapped error dropped the cause: %v", got)
+	}
+	if !strings.Contains(got.Error(), "1 VM(s) running") {
+		t.Errorf("message does not name the live VMs: %v", got)
 	}
 }
 

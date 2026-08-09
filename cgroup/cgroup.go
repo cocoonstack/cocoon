@@ -272,7 +272,7 @@ func reconcileFence(parentDir, fence string) error {
 	current, err := readControl(parentDir, cpusetName)
 	if fence == "" {
 		if err == nil && current != "" {
-			return writeControl(parentDir, cpusetName, "\n")
+			return explainFenceWrite(parentDir, current, fence, writeControl(parentDir, cpusetName, "\n"))
 		}
 		return nil
 	}
@@ -288,7 +288,7 @@ func reconcileFence(parentDir, fence string) error {
 	if err := checkScopePlacements(parentDir, fence); err != nil {
 		return err
 	}
-	return writeControl(parentDir, cpusetName, fence)
+	return explainFenceWrite(parentDir, current, fence, writeControl(parentDir, cpusetName, fence))
 }
 
 // placeScope applies a per-VM placement; the kernel silently degrades ungrantable requests to the parent set, so the subset check is cocoon's.
@@ -353,6 +353,18 @@ func checkScopePlacements(parentDir, fence string) error {
 		}
 	}
 	return nil
+}
+
+// explainFenceWrite names the live VMs behind a rejected fence write: the kernel refuses to re-home populated cgroups and reports only ENOSPC, which reads as an unrelated disk-full error.
+func explainFenceWrite(parentDir, current, fence string, err error) error {
+	if err == nil {
+		return nil
+	}
+	ids, listErr := ListScopeVMIDs(parentDir)
+	if listErr != nil || len(ids) == 0 {
+		return err
+	}
+	return fmt.Errorf("cgroup_cpus %q -> %q rejected with %d VM(s) running; the fence is machine-wide, drain them first: %w", current, fence, len(ids), err)
 }
 
 func forEachLevel(rel string, fn func(dir string) error) error {
