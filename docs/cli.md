@@ -81,6 +81,22 @@ Config-file / env-only keys (no CLI flag):
 | `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry |
 | `cgroup_parent` | `COCOON_CGROUP_PARENT` | `cocoon.slice` | cgroup v2 slice under `/sys/fs/cgroup` holding the per-VM CPU scopes; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 | `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); kernel cpu-list syntax |
+| `ch_binary` | `COCOON_CH_BINARY` | `cloud-hypervisor` | cloud-hypervisor executable, path or `$PATH` name |
+| `fc_binary` | `COCOON_FC_BINARY` | `firecracker` | firecracker executable, path or `$PATH` name |
+| `meta_backend` | `COCOON_META_BACKEND` | auto-resolved | Metadata engine, `json` or `sqlite`; see the note above `Global Flags` |
+| `pool_size` | `COCOON_POOL_SIZE` | host CPU count | Goroutine pool size for concurrent operations |
+| `stop_timeout_seconds` | `COCOON_STOP_TIMEOUT_SECONDS` | `30` | Guest ACPI shutdown grace before SIGTERM/SIGKILL escalation |
+
+Config-file-only keys — these are not registered with the env loader, so a
+`COCOON_*` variable does **not** reach them:
+
+| Key          | Default | Description                                                            |
+| ------------ | ------- | ---------------------------------------------------------------------- |
+| `use_firecracker` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
+| `socket_wait_timeout_seconds` | `5` | How long to wait for the CH API socket after launch; raise on slow storage |
+| `terminate_grace_period_seconds` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
+| `metering.backend` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |
+| `metering.file.path` | `<root-dir>/metering/ledger.jsonl` | Ledger path for the `file` backend; see the rotation note in [Daemon](daemon.md) |
 
 ## VM Flags
 
@@ -282,7 +298,7 @@ $ cocoon vm exec -e FOO=bar myvm -- sh -c 'echo $FOO'
 bar
 ```
 
-Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*` and `ghcr.io/cocoonstack/cocoon/android:*` images now bake the binary and enable it on boot (systemd unit on Ubuntu, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.1.9 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
+Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*` and `ghcr.io/cocoonstack/cocoon/android:*` images now bake the binary and enable it on boot (systemd unit on Ubuntu, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.0 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
 
 ### Logs Flags
 

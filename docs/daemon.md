@@ -23,6 +23,7 @@ cocoon daemon                          # adopt everything, reconcile every 5s
 cocoon daemon --reconcile-interval 2s  # tighter full-pass floor
 cocoon daemon --gc-interval 1h         # also sweep periodically (off by default)
 cocoon daemon --no-api                 # supervision only, no socket
+cocoon daemon --api-socket /run/cocoond.sock --api-socket-mode 0600
 ```
 
 One instance per root directory: a second one fails fast on
@@ -108,6 +109,8 @@ the daemon does not claim an exit time it cannot know.
 
 The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a `0750`
 directory — filesystem permissions are the authorization boundary).
+`--api-socket` moves the socket, `--api-socket-mode` sets its permission bits;
+tighten the mode rather than widen it, since nothing else authenticates.
 
 ```bash
 curl --unix-socket /var/lib/cocoon/run/cocoond.sock http://localhost/v1/vms
