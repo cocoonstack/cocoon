@@ -30,3 +30,39 @@ func TestMemoryCLIArg(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveDirectIO(t *testing.T) {
+	tests := []struct {
+		name       string
+		sc         types.StorageConfig
+		noDirectIO bool
+		want       bool
+	}{
+		{name: "raw cow", sc: types.StorageConfig{Path: "/v/cow.raw", Role: types.StorageRoleCOW}, want: true},
+		{name: "raw cow with no-direct-io", sc: types.StorageConfig{Path: "/v/cow.raw", Role: types.StorageRoleCOW}, noDirectIO: true},
+		{name: "readonly layer", sc: types.StorageConfig{Path: "/v/base.raw", RO: true, Role: types.StorageRoleLayer}},
+		{name: "qcow2 overlay stays buffered", sc: types.StorageConfig{Path: "/v/overlay.qcow2", Role: types.StorageRoleCOW}},
+		{name: "readonly qcow2 has no backing chain", sc: types.StorageConfig{Path: "/v/base.qcow2", RO: true, Role: types.StorageRoleLayer}},
+		{name: "explicit override wins", sc: types.StorageConfig{Path: "/v/data.raw", Role: types.StorageRoleData, DirectIO: ptr(false)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveDirectIO(&tt.sc, tt.noDirectIO); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQcow2OverlayDiskArgs(t *testing.T) {
+	sc := &types.StorageConfig{Path: "/v/overlay.qcow2", Role: types.StorageRoleCOW}
+	got := diskToCLIArg(storageConfigToDisk(sc, 1, 0, false, nil))
+	if strings.Contains(got, "direct=on") {
+		t.Errorf("qcow2 overlay must stay buffered so the shared base keeps one page-cache copy: %s", got)
+	}
+	if !strings.Contains(got, "backing_files=on") {
+		t.Errorf("qcow2 overlay must keep backing_files=on: %s", got)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

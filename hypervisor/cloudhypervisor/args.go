@@ -178,9 +178,17 @@ func serialConsoleFor(directBoot bool, consoleSock string) (serial, console *chR
 	return &chRuntimeFile{Mode: "Socket", Socket: consoleSock}, &chRuntimeFile{Mode: "Off"}
 }
 
+func qcow2Overlay(sc *types.StorageConfig) bool {
+	return !sc.RO && filepath.Ext(sc.Path) == ".qcow2"
+}
+
 func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
 	if sc.DirectIO != nil {
 		return *sc.DirectIO
+	}
+	// CH applies this flag to the backing file too, so O_DIRECT would stop one page-cache copy of the shared base serving every VM.
+	if qcow2Overlay(sc) {
+		return false
 	}
 	return !sc.RO && !noDirectIO
 }
@@ -199,7 +207,7 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 	switch {
 	case filepath.Ext(storageConfig.Path) == ".qcow2":
 		d.ImageType = "Qcow2"
-		d.BackingFiles = !storageConfig.RO
+		d.BackingFiles = qcow2Overlay(storageConfig)
 	case storageConfig.RO:
 		d.ImageType = "Raw"
 	default:
