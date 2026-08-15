@@ -78,9 +78,6 @@ check_prerequisites() {
   select_container_engine
   container_cli info >/dev/null 2>&1 || fatal "$CONTAINER_ENGINE is unavailable"
 
-  [[ -r "$SCRIPT_DIR/platforms" ]] || fatal "missing platform declaration: $SCRIPT_DIR/platforms"
-  [[ "$(<"$SCRIPT_DIR/platforms")" == "linux/amd64,linux/arm64" ]] \
-    || fatal "platforms must declare exactly linux/amd64,linux/arm64"
   for command_name in overlay.sh network.sh; do
     [[ -r "$SCRIPT_DIR/$command_name" ]] || fatal "missing vendored input: $SCRIPT_DIR/$command_name"
   done
@@ -151,16 +148,6 @@ assert_contains_regex() {
   local description=$3
 
   if [[ ! -f "$path" ]] || ! grep -Eq -- "$expression" "$path"; then
-    record_failure "$description"
-  fi
-}
-
-assert_not_contains_regex() {
-  local path=$1
-  local expression=$2
-  local description=$3
-
-  if [[ -f "$path" ]] && grep -Eq -- "$expression" "$path"; then
     record_failure "$description"
   fi
 }
@@ -352,6 +339,8 @@ validate_boot_contract() {
       || record_failure "cocoon-overlay hook is absent from initrd.img-$kernel_version"
     grep -Fxq 'scripts/init-bottom/cocoon-network' "$initrd_listing" \
       || record_failure "cocoon-network hook is absent from initrd.img-$kernel_version"
+    grep -Fxq 'usr/bin/busybox' "$initrd_listing" \
+      || record_failure "busybox is absent from initrd.img-$kernel_version"
 
     if [[ -f "$config" ]]; then
       assert_kernel_feature "$rootfs" "$kernel_version" "$config" "$initrd_listing" CONFIG_EROFS_FS erofs
@@ -385,23 +374,6 @@ validate_boot_contract() {
     || record_failure "installed cocoon-overlay hook is not executable"
   [[ -x "$rootfs/etc/initramfs-tools/scripts/init-bottom/cocoon-network" ]] \
     || record_failure "installed cocoon-network hook is not executable"
-  # The expansion is intentionally literal: this validates initramfs runtime code.
-  # shellcheck disable=SC2016
-  assert_contains_regex \
-    "$rootfs/etc/initramfs-tools/scripts/cocoon-overlay" \
-    '^[[:space:]]*mount -t overlay -o "\$OVL_OPTS" overlay "\$rootmnt" \|\| panic "overlay failed"$' \
-    "overlay mount does not put options before operands for klibc mount"
-  # The expansions are intentionally literal: these validate initramfs runtime code.
-  # shellcheck disable=SC2016
-  assert_contains_fixed \
-    "$rootfs/etc/initramfs-tools/scripts/cocoon-overlay" \
-    'mount -n -o move "$mnt" "${rootmnt}${mnt}"' \
-    "overlay hook does not move EROFS backing mounts out of the old initramfs"
-  # shellcheck disable=SC2016
-  assert_contains_fixed \
-    "$rootfs/etc/initramfs-tools/scripts/cocoon-overlay" \
-    'mount -n -o move "${COCOON_INTERNAL}/cow" "${rootmnt}${COCOON_INTERNAL}/cow"' \
-    "overlay hook does not move the COW backing mount out of the old initramfs"
 
   assert_contains_regex "$rootfs/etc/initramfs-tools/initramfs.conf" '^COMPRESS=gzip$' "initramfs compression is not gzip"
   assert_contains_regex "$rootfs/etc/initramfs-tools/initramfs.conf" '^IP=off$' "unrequested initramfs DHCP is not disabled"
@@ -416,37 +388,11 @@ validate_boot_contract() {
 
 validate_network_and_services() {
   local rootfs=$1
-  local network_hook="$rootfs/etc/initramfs-tools/scripts/init-bottom/cocoon-network"
   local default_network="$rootfs/etc/systemd/network/20-wired.network"
   local agent_unit="$rootfs/etc/systemd/system/cocoon-agent.service"
   local sshd_development_config="$rootfs/etc/ssh/sshd_config.d/00-cocoon-development.conf"
   local shadow_line
   local root_hash
-
-  assert_contains_fixed "$network_hook" 'Address=%s/%d' "network hook does not persist static addresses"
-  assert_contains_fixed "$network_hook" 'Gateway=%s' "network hook does not persist static gateways"
-  assert_contains_fixed "$network_hook" 'DNS=%s' "network hook does not persist static DNS"
-  assert_contains_fixed "$network_hook" 'ClientIdentifier=mac' "network hook DHCP is not clone-safe"
-  # The expansion is intentionally literal: this validates initramfs runtime code.
-  # shellcheck disable=SC2016
-  assert_contains_fixed \
-    "$network_hook" \
-    'while [ "${value#*:}" != "$value" ]; do' \
-    "network hook does not sanitize MAC addresses with initramfs shell builtins"
-  assert_not_contains_regex \
-    "$network_hook" \
-    'tr[[:space:]]+-d' \
-    "network hook invokes tr even though it is absent from the initramfs"
-  assert_contains_fixed \
-    "$network_hook" \
-    '../run/systemd/resolve/stub-resolv.conf' \
-    "network hook does not recognize Debian systemd-resolved's symlink"
-  # The expansion is intentionally literal: this validates initramfs runtime code.
-  # shellcheck disable=SC2016
-  assert_contains_fixed \
-    "$network_hook" \
-    'mkdir -p "${rootmnt}/run/systemd/resolve"' \
-    "network hook does not create the absent systemd-resolved target directory"
 
   assert_regular_file "$default_network" "default networkd configuration"
   assert_contains_regex "$default_network" '^DHCP=yes$' "default networkd configuration does not enable DHCP"

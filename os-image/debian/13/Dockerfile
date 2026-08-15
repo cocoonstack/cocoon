@@ -12,6 +12,10 @@ RUN --mount=type=secret,id=cocoon_overlay \
     apt-get update && apt-get install -y --no-install-recommends \
     linux-image-cloud-${TARGETARCH} \
     initramfs-tools \
+    # initramfs-tools only recommends busybox and --no-install-recommends skips
+    # recommends; without it the initramfs has only klibc-utils (no tr, and
+    # klibc mount rejects options after operands).
+    busybox \
     systemd \
     systemd-sysv \
     systemd-timesyncd \

@@ -1,25 +1,20 @@
 #!/bin/sh
 # Vendored from cocoon/os-image/ubuntu/overlay.sh at Cocoon v0.5.9
-# (144927060c3e90dbe2f3e1a15143572c402958de).
+# (144927060c3e90dbe2f3e1a15143572c402958de), with the overlay mount
+# operands reordered.
 # Target path: /etc/initramfs-tools/scripts/cocoon-overlay
 
-# Supplied by initramfs-tools at boot.
-# shellcheck source=/dev/null
 . /scripts/functions
 
 resolve_disk() {
-    serial="$1"
-    timeout="${COCOON_TIMEOUT:-10}"
-    i=0
-    case "$timeout" in
-        ''|*[!0-9]*) timeout=10 ;;
-    esac
+    local serial="$1" timeout="${COCOON_TIMEOUT:-10}" i=0
+    case "$timeout" in ''|*[!0-9]*) timeout=10 ;; esac
 
-    # Firecracker exposes direct /dev/vdX paths and no virtio serial.
+    # Direct device path (Firecracker uses /dev/vdX, no virtio serial support)
     case "$serial" in
         /dev/*)
-            while [ "$i" -lt "$timeout" ]; do
-                [ -b "$serial" ] && printf '%s\n' "$serial" && return 0
+            while [ $i -lt $timeout ]; do
+                [ -b "$serial" ] && echo "$serial" && return 0
                 sleep 1
                 i=$((i + 1))
             done
@@ -27,24 +22,19 @@ resolve_disk() {
             ;;
     esac
 
-    # Cloud Hypervisor exposes virtio-blk serials.
-    while [ "$i" -lt "$timeout" ]; do
+    # Serial name lookup (Cloud Hypervisor virtio-blk serial)
+    while [ $i -lt $timeout ]; do
         for sysdev in /sys/block/vd*; do
             [ -d "$sysdev" ] || continue
-            disk_serial=""
-            [ -f "$sysdev/serial" ] && disk_serial=$(cat "$sysdev/serial")
-            [ -f "$sysdev/device/serial" ] && disk_serial=$(cat "$sysdev/device/serial")
+            local s=""
+            [ -f "$sysdev/serial" ] && s=$(cat "$sysdev/serial")
+            [ -f "$sysdev/device/serial" ] && s=$(cat "$sysdev/device/serial")
 
-            # Trim trailing whitespace.
-            while :; do
-                case "$disk_serial" in
-                    *[[:space:]]) disk_serial="${disk_serial%[[:space:]]}" ;;
-                    *) break ;;
-                esac
-            done
+            # Trim trailing whitespace
+            while :; do case "$s" in *[[:space:]]) s="${s%[[:space:]]}" ;; *) break ;; esac; done
 
-            if [ "$disk_serial" = "$serial" ]; then
-                printf '/dev/%s\n' "${sysdev##*/}"
+            if [ "$s" = "$serial" ]; then
+                echo "/dev/${sysdev##*/}"
                 return 0
             fi
         done
@@ -57,49 +47,41 @@ resolve_disk() {
 mountroot() {
     log_begin_msg "Cocoon: mounting stealth overlay rootfs"
 
-    # Only ask initramfs-tools to configure networking when an ip= argument is
-    # present. Probing without one delays no-NIC guests substantially.
-    cmdline=$(cat /proc/cmdline)
-    case " $cmdline " in
-        *' ip='*)
-            if ! ls /run/net-*.conf >/dev/null 2>&1; then
-                configure_networking
-            fi
-            ;;
-    esac
+    # Process kernel ip= parameters if present (creates /run/net-*.conf).
+    # Only call configure_networking when ip= is on the cmdline — without it,
+    # the function still probes for devices and waits for udev, adding ~180s
+    # delay on VMs with no NICs (--nics 0).
+    if ! ls /run/net-*.conf >/dev/null 2>&1; then
+        for _x in $(cat /proc/cmdline); do
+            case $_x in ip=*) configure_networking; break ;; esac
+        done
+    fi
 
-    # modprobe resolves the dependency closure for modular features. Built-in
-    # features legitimately make modprobe fail and need no initramfs object.
+    # Native environment: modprobe automatically resolves all underlying dependencies.
     modprobe erofs 2>/dev/null || true
     modprobe overlay 2>/dev/null || true
     modprobe ext4 2>/dev/null || true
 
-    LAYERS=""
-    COW=""
-    # Kernel command lines are space-delimited by definition.
-    # shellcheck disable=SC2086
-    set -- $cmdline
-    for arg do
-        case "$arg" in
-            cocoon.layers=*) LAYERS="${arg#cocoon.layers=}" ;;
-            cocoon.cow=*) COW="${arg#cocoon.cow=}" ;;
-            cocoon.timeout=*) COCOON_TIMEOUT="${arg#cocoon.timeout=}" ;;
+    for x in $(cat /proc/cmdline); do
+        case $x in
+            cocoon.layers=*) LAYERS="${x#cocoon.layers=}" ;;
+            cocoon.cow=*)    COW="${x#cocoon.cow=}" ;;
+            cocoon.timeout=*) COCOON_TIMEOUT="${x#cocoon.timeout=}" ;;
         esac
     done
 
-    [ -n "$LAYERS" ] || panic "cocoon.layers= not set"
-    [ -n "$COW" ] || panic "cocoon.cow= not set"
+    [ -z "$LAYERS" ] && panic "cocoon.layers= not set"
+    [ -z "$COW" ]    && panic "cocoon.cow= not set"
 
+    # Wait for udev to finish processing all pending events once, before any disk lookups.
     udevadm settle 2>/dev/null || true
 
     COCOON_INTERNAL="/.cocoon"
     mkdir -p "$COCOON_INTERNAL"
 
-    # Mount immutable EROFS layers in the order supplied by Cocoon.
+    # Mount read-only EROFS layers
     LOWER=""
     LAYER_DEVS=""
-    LAYER_MOUNTS=""
-    old_ifs=$IFS
     IFS=,
     for serial in $LAYERS; do
         dev=$(resolve_disk "$serial") || panic "device ${serial} not found"
@@ -109,50 +91,44 @@ mountroot() {
         [ -n "$LOWER" ] && LOWER="${LOWER}:"
         LOWER="${LOWER}${mnt}"
         LAYER_DEVS="${LAYER_DEVS} ${dev}"
-        LAYER_MOUNTS="${LAYER_MOUNTS} ${mnt}"
     done
-    IFS=$old_ifs
+    unset IFS
 
-    # Mount the per-VM ext4 COW disk.
+    # Mount COW disk
     cow_dev=$(resolve_disk "$COW") || panic "COW device ${COW} not found"
     mkdir -p "${COCOON_INTERNAL}/cow"
+    # [Performance] Added noatime to reduce unnecessary write operations on the COW disk.
     mount -t ext4 -o noatime "$cow_dev" "${COCOON_INTERNAL}/cow" || panic "mount COW failed"
     mkdir -p "${COCOON_INTERNAL}/cow/upper" "${COCOON_INTERNAL}/cow/work"
 
+    # Assemble Overlayfs
+    # [Optimized OverlayFS Options]
+    # index=on: Prevents broken file handles and ensures inode consistency during copy-up.
+    # redirect_dir=on: Enables renaming of directories that exist in the lower (read-only) layers.
+    # metacopy=on: Optimizes metadata-only changes (like chmod/chown) to avoid full file copy-up.
     OVL_OPTS="lowerdir=${LOWER},upperdir=${COCOON_INTERNAL}/cow/upper,workdir=${COCOON_INTERNAL}/cow/work,index=on,redirect_dir=on,metacopy=on,xino=on"
-    # Debian's initramfs uses klibc mount, which requires all options before
-    # the device and directory operands. rootmnt is supplied by initramfs-tools.
-    # shellcheck disable=SC2154
+
+    # Options before operands is accepted by util-linux, busybox, and klibc
+    # mount alike, so keep the portable form for all initramfs variants.
     mount -t overlay -o "$OVL_OPTS" overlay "$rootmnt" || panic "overlay failed"
 
     mkdir -p "${rootmnt}/dev" "${rootmnt}/proc" "${rootmnt}/sys" "${rootmnt}/run"
 
-    # run-init deletes the old initramfs before moving rootmnt onto /. It
-    # deliberately skips mounted filesystems, then fails with ENOTEMPTY if any
-    # backing mount remains below the initramfs root. Keep the backing mounts
-    # alive by moving them below the new overlay root before switch-root.
-    for mnt in $LAYER_MOUNTS; do
-        mkdir -p "${rootmnt}${mnt}"
-        mount -n -o move "$mnt" "${rootmnt}${mnt}" || panic "move ${mnt} into rootfs failed"
-    done
-    mkdir -p "${rootmnt}${COCOON_INTERNAL}/cow"
-    mount -n -o move "${COCOON_INTERNAL}/cow" "${rootmnt}${COCOON_INTERNAL}/cow" \
-        || panic "move COW mount into rootfs failed"
-
-    # Avoid guest scheduler overhead for immutable layers; favor bounded COW
-    # write latency under mixed workloads.
+    # [IO Performance Optimization]
+    # EROFS layers are read-only and shared; "none" removes guest-side scheduling
+    # overhead on the guest block device for pure-read lower layers.
+    # COW disk gets mq-deadline to prevent write starvation under mixed read/write load.
     for dev in $LAYER_DEVS; do
-        block_name="${dev##*/}"
-        if [ -e "/sys/block/${block_name}/queue/scheduler" ]; then
-            printf 'none\n' > "/sys/block/${block_name}/queue/scheduler" 2>/dev/null || true
-        fi
+        blk="${dev##*/}"
+        [ -e "/sys/block/${blk}/queue/scheduler" ] && echo "none" > "/sys/block/${blk}/queue/scheduler" 2>/dev/null || true
     done
-    cow_block_name="${cow_dev##*/}"
-    if [ -e "/sys/block/${cow_block_name}/queue/scheduler" ]; then
-        printf 'mq-deadline\n' > "/sys/block/${cow_block_name}/queue/scheduler" 2>/dev/null || true
-    fi
+    cow_blk="${cow_dev##*/}"
+    [ -e "/sys/block/${cow_blk}/queue/scheduler" ] && echo "mq-deadline" > "/sys/block/${cow_blk}/queue/scheduler" 2>/dev/null || true
 
-    # Every clone must get its own machine identity on first systemd boot.
+    # Note: The systemd compatibility hacks (clearing fstab, masking fsck) 
+    # are handled natively in the Dockerfile. The rootfs is clean here.
+
+    # The only remaining requirement is Machine-ID isolation for cloned VMs.
     rm -f "${rootmnt}/etc/machine-id" 2>/dev/null || true
     : > "${rootmnt}/etc/machine-id"
 
