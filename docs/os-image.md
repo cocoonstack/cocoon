@@ -1,6 +1,6 @@
 # OS Images
 
-Official pre-built OCI VM images (Ubuntu, Android), the Windows artifact, and the `os-image/` build harness.
+Official pre-built OCI VM images (Ubuntu, Debian, Android), the Windows artifact, and the `os-image/` build harness.
 
 Pre-built OS images are hosted on [GitHub Container Registry](https://github.com/orgs/cocoonstack/packages?repo_name=cocoon).
 
@@ -17,6 +17,16 @@ Multi-arch (`linux/amd64`, `linux/arm64`).
 | Ubuntu 24.04 + Chrome | `24.04-chrome` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-chrome` |
 | Ubuntu 24.04 + Xfce | `24.04-xface` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-xface` |
 | Ubuntu 24.04 + PicoClaw | `24.04-picoclaw` | `ghcr.io/cocoonstack/cocoon/ubuntu:24.04-picoclaw` |
+
+### Debian
+
+Multi-arch (`linux/amd64`, `linux/arm64`). Built from `os-image/debian/13/` with
+the Debian 13 cloud kernel, Cocoon boot and networking hooks, and the
+checksum-verified agent.
+
+| Image | Tag | IMAGE_NAME |
+|-------|-----|------------|
+| Debian 13 (Trixie) | `13` | `ghcr.io/cocoonstack/cocoon/debian:13` |
 
 ### Android (Redroid)
 
