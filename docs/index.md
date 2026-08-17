@@ -4,8 +4,9 @@ Lightweight MicroVM engine with dual hypervisor backends:
 [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor)
 (default) and
 [Firecracker](https://github.com/firecracker-microvm/firecracker).
-One hypervisor process per VM, no daemon; Docker-like CLI; snapshots that
-clone into new identities in tens of milliseconds.
+One hypervisor process per VM, every command standalone (a resident daemon
+is optional); Docker-like CLI; snapshots that clone into new identities in
+tens of milliseconds.
 
 ```
 cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, UEFI)
@@ -47,7 +48,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **Image import** — import local qcow2 or tar files (also from stdin or gzip-wrapped streams), auto-detected by magic bytes
 - **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected)
 - **COW overlays** — copy-on-write disks backed by shared base images (raw for OCI, qcow2 for cloud images)
-- **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation
+- **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation; bridge mode and NIC hot-resize; `net_scope` keys host device names per installation so co-hosted cocoon roots never GC each other's guests
 - **CPU isolation** — every VM runs in its own cgroup v2 scope with Guaranteed-at-N defaults (`--cpu` is a hard cap); raw weight/quota/burst knobs, an optional host-core fence (`cgroup_cpus`), and per-VM pinning (`--cpuset-cpus`); see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)
 - **Multi-queue virtio-net** — TAP devices created with per-vCPU queue pairs; configurable ring depth (`--queue-size`, default 512); TSO/UFO/csum offload enabled by default
 - **TC redirect I/O path** — veth ↔ TAP wired via ingress qdisc + mirred redirect (no bridge in the data path)
@@ -56,6 +57,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **User data disks** — `--data-disk` attaches additional virtio-blk disks per VM, with optional ext4 mkfs at create time, cloud-init `mounts:` auto-mount on cloudimg+CH (via `/dev/disk/by-id/virtio-<name>`), per-disk DirectIO override, and 1:1 inheritance through snapshot/clone/restore; `vm clone --data-disk` adds fresh disks to a clone and `vm disk attach/detach` hot-plugs existing raw files on a running VM (both CH only)
 - **Copy-on-write clone restore** — Cloud Hypervisor clones of plain private-anon snapshots default to `mmap` memory restore: no eager copy, page cache shared across sibling clones; hugepages/shared snapshots fall back to eager copy with a warning
 - **Hugepages** — opt-in via `vm create --hugepages` (Cloud Hypervisor only); backs VM memory with hugetlbfs at the cost of the mmap restore fast path for that VM's snapshots (never supported on Firecracker, whose snapshots cannot restore from hugetlbfs)
+- **Mergeable memory** — opt-in `--mergeable` (Cloud Hypervisor only) madvises guest memory `MADV_MERGEABLE` so host KSM can dedup identical pages across VMs; excludes `--hugepages`/`--shared-memory`
 - **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation
@@ -67,7 +69,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **Structured logging** — configurable log level (`--log-level`), log rotation (max size / age / backups)
 - **Debug command** — `cocoon vm debug` generates a copy-pasteable `cloud-hypervisor` command for manual debugging
 - **Firecracker backend** — `--fc` flag selects Firecracker for OCI images: ~125ms boot, <5 MiB overhead, minimal attack surface (no UEFI, no qcow2, no Windows)
-- **Zero-daemon architecture** — one hypervisor process per VM, no long-running daemon
+- **Daemon-optional architecture** — one hypervisor process per VM, every command standalone; `cocoon daemon` optionally adopts running VMs to converge crashes as they happen
 - **Garbage collection** — modular lock-safe GC with cross-module snapshot resolution; protects blobs referenced by running VMs and snapshots
 - **Doctor script** — pre-flight environment check and one-command dependency installation
 
