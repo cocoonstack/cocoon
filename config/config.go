@@ -50,8 +50,7 @@ type Config struct {
 	PoolSize int `json:"pool_size" mapstructure:"pool_size"`
 	// PullConns: concurrent HTTP Range connections per cloud-image download; <=0 = 8.
 	PullConns int `json:"pull_conns" mapstructure:"pull_conns"`
-	// MetaBackend selects the metadata engine: "json" or "sqlite"; empty
-	// auto-resolves (an existing store binds its engine, fresh roots get sqlite).
+	// MetaBackend selects the metadata engine: "json" or "sqlite"; empty auto-resolves (an existing store binds its engine, fresh roots get sqlite).
 	MetaBackend string `json:"meta_backend,omitempty" mapstructure:"meta_backend"`
 	// CNIConfDir: CNI plugin configuration dir. Default: /etc/cni/net.d.
 	CNIConfDir string `json:"cni_conf_dir" mapstructure:"cni_conf_dir"`
@@ -92,6 +91,12 @@ func (c *Config) EffectivePullConns() int {
 	return min(utils.OrDefault(c.PullConns, defaultPullConns), maxPullConns)
 }
 
+// BridgeTAPPrefix returns this installation's host-side bridge TAP name prefix.
+func (c *Config) BridgeTAPPrefix() string { return network.BridgeTAPPrefix(c.NetScope) }
+
+// NetnsPrefix returns this installation's per-VM CNI netns name prefix.
+func (c *Config) NetnsPrefix() string { return network.NetnsPrefix(c.NetScope) }
+
 // CgroupParentDir returns the absolute cgroup v2 directory holding per-VM CPU scopes.
 func (c *Config) CgroupParentDir() string {
 	return filepath.Join(cgroup.Root, cmp.Or(c.CgroupParent, cgroup.DefaultParent))
@@ -100,8 +105,7 @@ func (c *Config) CgroupParentDir() string {
 // CgroupCPUFence returns the configured fence cpu list (empty = all cores).
 func (c *Config) CgroupCPUFence() string { return c.CgroupCPUs }
 
-// Validate checks that all config fields are within acceptable ranges.
-// Should be called once at startup after unmarshalling.
+// Validate checks that all config fields are within acceptable ranges; call once at startup after unmarshalling.
 func (c *Config) Validate() error {
 	if c.RootDir == "" {
 		return fmt.Errorf("root_dir must not be empty")

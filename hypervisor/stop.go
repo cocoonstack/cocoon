@@ -72,7 +72,7 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 }
 
 // StopAll mirrors StartAll: stopOne per ref, each flipping its own state under its VM's ops lock.
-func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(context.Context, string) error) ([]string, error) {
+func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne VMOp) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne func(conte
 }
 
 // DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.
-func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked func(context.Context, string) error) ([]string, error) {
+func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stopLocked VMOp) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -115,8 +115,7 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 	return nil
 }
 
-// deleteOneLocked is DeleteAll's per-VM body, run under the ops lock.
-func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked func(context.Context, string) error, rec *VMRecord, procScan utils.ProcScan) error {
+func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked VMOp, rec *VMRecord, procScan utils.ProcScan) error {
 	sockPath := SocketPath(rec.RunDir)
 	stoppedByUs := false
 	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {

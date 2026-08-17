@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -35,5 +34,5 @@ func (c *Config) netnsPath(vmID string) string {
 }
 
 func (c *Config) netnsName(vmID string) string {
-	return network.NetnsPrefix(c.NetScope) + vmID
+	return c.NetnsPrefix() + vmID
 }

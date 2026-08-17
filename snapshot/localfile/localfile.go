@@ -36,13 +36,16 @@ var osRename = os.Rename // seam for EXDEV fallback tests
 // Option configures a LocalFile constructed via New.
 type Option func(*LocalFile)
 
+// BlobPinner holds the digest locks of an envelope's image pins while a commit lands.
+type BlobPinner func(context.Context, map[string]struct{}) (func(), error)
+
 // WithGCPolicy attaches an LRU eviction policy used by RegisterGC.
 func WithGCPolicy(p EvictionPolicy) Option {
 	return func(lf *LocalFile) { lf.gcPolicy = p }
 }
 
 // WithBlobPinner injects the digest-lock hook Import holds while committing an envelope's image pins.
-func WithBlobPinner(fn func(context.Context, map[string]struct{}) (func(), error)) Option {
+func WithBlobPinner(fn BlobPinner) Option {
 	return func(lf *LocalFile) { lf.pinBlobs = fn }
 }
 
@@ -60,7 +63,7 @@ type LocalFile struct {
 	meta     meta.Store
 	metering metering.Recorder
 	gcPolicy EvictionPolicy
-	pinBlobs func(context.Context, map[string]struct{}) (func(), error)
+	pinBlobs BlobPinner
 }
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.

@@ -147,8 +147,8 @@ func resumeVM(ctx context.Context, hc *http.Client) error {
 
 // isAlreadyInStateError matches CH's exact `Invalid transition: InvalidStateTransition(<state>, <state>)` in a 500 body.
 func isAlreadyInStateError(err error, state string) bool {
-	var ae *utils.APIError
-	if !errors.As(err, &ae) || ae.Code != http.StatusInternalServerError {
+	ae, ok := errors.AsType[*utils.APIError](err)
+	if !ok || ae.Code != http.StatusInternalServerError {
 		return false
 	}
 	return strings.Contains(ae.Message, fmt.Sprintf("Invalid transition: InvalidStateTransition(%s, %s)", state, state))

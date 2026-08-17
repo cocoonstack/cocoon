@@ -12,7 +12,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -98,7 +97,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	}
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
-	allowedCPUs := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, ch.conf.CgroupCPUs)
+	allowedCPUs := ch.EffectiveCPUs(&vmCfg.Config)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: patchStorageConfigs,
 		netTAPs:        netTAPs,
@@ -213,10 +212,8 @@ func (ch *CloudHypervisor) prepareCloneDataDisks(ctx context.Context, vmID strin
 		return nil, nil
 	}
 	for _, spec := range vmCfg.DataDisks {
-		for _, sc := range existing {
-			if sc.Serial == spec.Name {
-				return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
-			}
+		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
+			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
 		}
 	}
 	return hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
@@ -288,13 +285,7 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 	if directBoot || windows || hadCidataInSnapshot {
 		return storageConfigs
 	}
-	out := make([]*types.StorageConfig, 0, len(storageConfigs))
-	for _, sc := range storageConfigs {
-		if sc.Role != types.StorageRoleCidata {
-			out = append(out, sc)
-		}
-	}
-	return out
+	return slices.DeleteFunc(slices.Clone(storageConfigs), hasCidataRole)
 }
 
 // updateDataDiskPaths rewrites Role==Data paths to clone runDir; sidecar carries source paths.

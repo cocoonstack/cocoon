@@ -151,8 +151,8 @@ func TestDoAPI_StatusMismatch_ReturnsAPIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var ae *APIError
-	if !errors.As(err, &ae) {
+	ae, ok := errors.AsType[*APIError](err)
+	if !ok {
 		t.Fatalf("expected APIError, got %T: %v", err, err)
 	}
 	if ae.Code != http.StatusInternalServerError {
@@ -169,8 +169,7 @@ func TestDoAPI_ConnectionError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected connection error")
 	}
-	var ae *APIError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*APIError](err); ok {
 		t.Errorf("expected non-APIError, got APIError{%d}", ae.Code)
 	}
 }
@@ -294,8 +293,7 @@ func TestDoWithRetry_NonRetryableError_StopsImmediately(t *testing.T) {
 	if calls != 1 {
 		t.Errorf("expected 1 call (non-retryable), got %d", calls)
 	}
-	var ae *APIError
-	if !errors.As(err, &ae) || ae.Code != 404 {
+	if ae, ok := errors.AsType[*APIError](err); !ok || ae.Code != 404 {
 		t.Errorf("expected APIError{404}, got %v", err)
 	}
 }

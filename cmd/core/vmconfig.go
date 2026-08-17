@@ -38,10 +38,6 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	mergeable, _ := cmd.Flags().GetBool("mergeable")
 	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
 
-	if mergeable && (hugePages || sharedMemory) {
-		return nil, fmt.Errorf("--mergeable needs plain private memory; drop --hugepages/--shared-memory")
-	}
-
 	vmName = cmp.Or(vmName, sanitizeVMName(image))
 
 	memBytes, err := units.RAMInBytes(memStr)
@@ -212,10 +208,7 @@ func sanitizeVMName(image string) string {
 		n := strings.ReplaceAll(image, "/", "-")
 		n = strings.ReplaceAll(n, ":", "-")
 		n = "cocoon-" + n
-		if len(n) > 63 {
-			n = n[:63]
-		}
-		return n
+		return n[:min(len(n), 63)]
 	}
 
 	repo := strings.TrimPrefix(ref.Context().RepositoryStr(), "library/")
@@ -226,10 +219,7 @@ func sanitizeVMName(image string) string {
 		n += "-" + tag.TagStr()
 	}
 
-	if len(n) > 63 {
-		n = n[:63]
-	}
-	return n
+	return n[:min(len(n), 63)]
 }
 
 // parseDataDiskFlags parses --data-disk values, normalizes defaults, and returns the spec list ready for hypervisor.PrepareDataDisks.

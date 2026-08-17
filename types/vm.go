@@ -71,6 +71,9 @@ func (cfg *VMConfig) Validate() error {
 	if cfg.DiskQueueSize < 0 {
 		return fmt.Errorf("--disk-queue-size must be non-negative, got %d", cfg.DiskQueueSize)
 	}
+	if cfg.Mergeable && (cfg.HugePages || cfg.SharedMemory) {
+		return fmt.Errorf("--mergeable needs plain private memory; drop --hugepages/--shared-memory")
+	}
 	if cfg.User != "" && !validUsername.MatchString(cfg.User) {
 		return fmt.Errorf("--user %q is invalid: must be a lowercase Linux username (letters, digits, underscores, hyphens)", cfg.User)
 	}

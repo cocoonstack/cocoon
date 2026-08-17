@@ -28,7 +28,7 @@ func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
 }
 
 // SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
-func (o *OCI) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, error)) {
+func (o *OCI) SetPinnedElsewhere(fn images.PinRecheck) {
 	o.pinnedElsewhere = fn
 }
 

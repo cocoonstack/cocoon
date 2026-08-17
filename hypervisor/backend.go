@@ -78,8 +78,7 @@ type Backend struct {
 	Net VMNetwork
 }
 
-// NewBackend wires shared init: EnsureDirs, the backend's namespace on the
-// injected meta store, nil-recorder fallback.
+// NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.
 func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -110,6 +109,9 @@ type LaunchSpec struct {
 	// DeferCPUQuota leaves the scope's ceiling at max through the paused provisioning window (#186); the backend arms the finite quota before resume.
 	DeferCPUQuota bool
 }
+
+// VMOp is one backend's per-VM lifecycle step, run by ForEachVM under the batch fan-out.
+type VMOp func(context.Context, string) error
 
 // PreflightHook validates rec against the snapshot source dir before anything is applied.
 type PreflightHook func(dir string, rec *VMRecord) error

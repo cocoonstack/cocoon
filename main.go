@@ -18,8 +18,7 @@ func main() {
 		return
 	}
 	if err := cmd.Execute(ctx); err != nil {
-		var exitErr *cmdvm.ExecExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*cmdvm.ExecExitError](err); ok {
 			os.Exit(exitErr.Code)
 		}
 		os.Exit(1)

@@ -26,7 +26,7 @@ type CloudImg struct {
 	conf            *Config
 	store           *images.Store[imageEntry]
 	pullGroup       singleflight.Group
-	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
+	pinnedElsewhere images.PinRecheck
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.

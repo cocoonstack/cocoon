@@ -22,13 +22,9 @@ import (
 )
 
 const (
-	urlDownloadTimeout = 30 * time.Minute
-
-	// maxDownloadBytes is the maximum allowed download size (20 GiB).
-	maxDownloadBytes int64 = 20 << 30
-
-	// progressInterval is how often download progress is reported (1 MiB).
-	progressInterval = 1 << 20
+	urlDownloadTimeout       = 30 * time.Minute
+	maxDownloadBytes   int64 = 20 << 30
+	progressInterval         = 1 << 20
 )
 
 // progressCounter emits PhaseDownload events every ~1 MiB; mutex-guarded so it serves both the serial writer and parallel range workers.

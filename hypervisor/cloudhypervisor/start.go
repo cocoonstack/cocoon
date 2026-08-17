@@ -8,7 +8,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
@@ -20,7 +19,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 	return ch.StartSequence(ctx, id, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
-			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), cgroup.EffectiveCPUs(rec.Config.CPUSetCPUs, ch.conf.CgroupCPUs))
+			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), ch.EffectiveCPUs(&rec.Config.Config))
 			args := buildCLIArgs(vmCfg, sockPath)
 			ch.saveCmdline(ctx, rec, args)
 			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)

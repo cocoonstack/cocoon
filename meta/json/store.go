@@ -157,9 +157,9 @@ func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() err
 	logger := log.WithFunc("meta.json.withLocked")
 	for i, st := range states {
 		if err := st.locker.Lock(ctx); err != nil {
-			for j := i - 1; j >= 0; j-- {
-				if uerr := states[j].locker.Unlock(ctx); uerr != nil {
-					logger.Errorf(ctx, uerr, "unlock %s", states[j].def.Name)
+			for _, held := range slices.Backward(states[:i]) {
+				if uerr := held.locker.Unlock(ctx); uerr != nil {
+					logger.Errorf(ctx, uerr, "unlock %s", held.def.Name)
 				}
 			}
 			return fmt.Errorf("lock %s: %w", st.def.Name, err)

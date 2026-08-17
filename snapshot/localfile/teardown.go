@@ -1,6 +1,7 @@
 package localfile
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,10 +50,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 				return nil
 			}
 			hyp = rec.Hypervisor
-			cl = snapCleanup{Name: rec.Name, DataDir: rec.DataDir}
-			if cl.DataDir == "" {
-				cl.DataDir = lf.conf.SnapshotDataDir(id)
-			}
+			cl = snapCleanup{Name: rec.Name, DataDir: cmp.Or(rec.DataDir, lf.conf.SnapshotDataDir(id))}
 		}
 		var resumed *tombstone.Record
 		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), id, func() (tombstone.Payload, error) {

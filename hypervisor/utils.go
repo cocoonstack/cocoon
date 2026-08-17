@@ -118,7 +118,7 @@ func (b *Backend) LogPath(ctx context.Context, ref string) (string, error) {
 }
 
 // ForEachVM runs fn over ids in parallel up to EffectivePoolSize, logging per-id failures.
-func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn func(context.Context, string) error) ([]string, error) {
+func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn VMOp) ([]string, error) {
 	logger := log.WithFunc(b.Typ + "." + op)
 	result := utils.ForEach(ctx, ids, fn, b.Conf.EffectivePoolSize())
 	for _, err := range result.Errors {

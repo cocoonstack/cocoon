@@ -52,7 +52,7 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 
 	snapshotCOW := filepath.Join(rec.RunDir, hypervisor.COWRawFileName)
 	if snapshotCOW != cowPath {
-		if _, statErr := os.Stat(snapshotCOW); statErr == nil {
+		if utils.FileExists(snapshotCOW) {
 			if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {
 				return nil, fmt.Errorf("move COW: %w", renameErr)
 			}

@@ -103,10 +103,7 @@ type BlobLocks struct {
 
 // Lock acquires every path in sorted order, blocking.
 func (b *BlobLocks) Lock(paths ...string) error {
-	sorted := slices.Clone(paths)
-	slices.Sort(sorted)
-	sorted = slices.Compact(sorted)
-	for _, p := range sorted {
+	for _, p := range slices.Compact(slices.Sorted(slices.Values(paths))) {
 		fl := gofrsflock.New(p)
 		if err := fl.Lock(); err != nil {
 			_ = fl.Close()

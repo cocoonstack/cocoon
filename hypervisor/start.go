@@ -17,7 +17,7 @@ import (
 )
 
 // StartAll runs startOne per ref; each start flips its own state under its VM's ops lock.
-func (b *Backend) StartAll(ctx context.Context, refs []string, startOne func(context.Context, string) error) ([]string, error) {
+func (b *Backend) StartAll(ctx context.Context, refs []string, startOne VMOp) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
@@ -173,6 +173,11 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 		return fmt.Errorf("arm cpu quota: %w", err)
 	}
 	return nil
+}
+
+// EffectiveCPUs resolves the host cpu set a VM under this backend may run on: explicit placement over the machine fence.
+func (b *Backend) EffectiveCPUs(cfg *types.Config) []int {
+	return cgroup.EffectiveCPUs(cfg.CPUSetCPUs, b.Conf.CgroupCPUFence())
 }
 
 // AbortLaunch terminates a failed launch and clears runtime files.

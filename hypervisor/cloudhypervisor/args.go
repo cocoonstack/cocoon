@@ -8,10 +8,10 @@ import (
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
-	// defaultDiskQueueSize is the virtio-blk queue depth per device.
 	defaultDiskQueueSize = 512
 	cidataFile           = "cidata.img"
 
@@ -186,9 +186,7 @@ func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
 }
 
 func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, allowed []int) chDisk {
-	if diskQueueSize <= 0 {
-		diskQueueSize = defaultDiskQueueSize
-	}
+	diskQueueSize = utils.OrDefault(diskQueueSize, defaultDiskQueueSize)
 	d := chDisk{
 		Path:      storageConfig.Path,
 		ReadOnly:  storageConfig.RO,

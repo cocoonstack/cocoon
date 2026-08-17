@@ -2,6 +2,8 @@ package vmlock
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -23,7 +25,7 @@ func GCModule(rootDir string) gc.Module[lockSnapshot] {
 		ReadDB: func(context.Context) (lockSnapshot, error) {
 			entries, err := os.ReadDir(lockDir(rootDir))
 			if err != nil {
-				if os.IsNotExist(err) {
+				if errors.Is(err, fs.ErrNotExist) {
 					return lockSnapshot{}, nil
 				}
 				return lockSnapshot{}, err

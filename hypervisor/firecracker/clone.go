@@ -218,7 +218,6 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	return nil
 }
 
-// rebuildCloneStorage rewrites paths per role (Layer→source, COW→cowPath, Data→runDir); cidata rejected.
 func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
 	runDir := filepath.Dir(cowPath)
 	configs := hypervisor.CloneStorageConfigs(meta.StorageConfigs)
@@ -413,11 +412,10 @@ func managedSourceVMIDs(runRoot string, srcConfigs, dstConfigs []*types.StorageC
 
 func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) ([]*vmlock.SharedLease, error) {
 	var leases []*vmlock.SharedLease
-	release := func() { closeLeases(leases) }
 	for _, id := range managedSourceVMIDs(runRoot, srcConfigs, dstConfigs) {
 		lease, err := vmlock.NewSharedLease(ctx, rootDir, id)
 		if err != nil {
-			release()
+			closeLeases(leases)
 			return nil, fmt.Errorf("lease source VM %s: %w", id, err)
 		}
 		leases = append(leases, lease)

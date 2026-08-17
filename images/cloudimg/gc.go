@@ -30,11 +30,10 @@ func (c *CloudImg) RegisterGC(orch *gc.Orchestrator) {
 }
 
 // SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
-func (c *CloudImg) SetPinnedElsewhere(fn func(context.Context) (map[string]struct{}, error)) {
+func (c *CloudImg) SetPinnedElsewhere(fn images.PinRecheck) {
 	c.pinnedElsewhere = fn
 }
 
-// PinBlobs implements images.Images: digest locks held while the caller commits a pin.
 func (c *CloudImg) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
 	return images.PinBlobs(&c.conf.BaseConfig, blobIDs)
 }

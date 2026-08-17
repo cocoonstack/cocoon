@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -22,17 +23,8 @@ import (
 const maxKernelBytes = 512 << 20
 
 func bootFilesPresent(results []pullLayerResult) (hasKernel, hasInitrd bool) {
-	for i := range results {
-		if results[i].kernelPath != "" {
-			hasKernel = true
-		}
-		if results[i].initrdPath != "" {
-			hasInitrd = true
-		}
-		if hasKernel && hasInitrd {
-			return hasKernel, hasInitrd
-		}
-	}
+	hasKernel = slices.ContainsFunc(results, func(r pullLayerResult) bool { return r.kernelPath != "" })
+	hasInitrd = slices.ContainsFunc(results, func(r pullLayerResult) bool { return r.initrdPath != "" })
 	return hasKernel, hasInitrd
 }
 

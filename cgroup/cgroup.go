@@ -303,7 +303,7 @@ func placeScope(parentDir, dir, cpuset string) error {
 			}
 		}
 	}
-	if err := checkSubset(cpuset, parentDir, "--cpuset-cpus"); err != nil {
+	if err := checkSubset(cpuset, parentDir, "cpuset_cpus placement"); err != nil {
 		return err
 	}
 	return writeControl(dir, cpusetName, cpuset)
