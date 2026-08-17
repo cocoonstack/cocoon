@@ -81,15 +81,6 @@ func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 	return openStore(dbPath, namespaces)
 }
 
-// RefuseManifest fails when a conversion manifest sits beside dbPath, meaning an offline conversion is unfinished.
-func RefuseManifest(dbPath string) error {
-	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
-	if utils.FileExists(manifest) {
-		return fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
-	}
-	return nil
-}
-
 func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	// The driver creates a file on first touch; Open never creates — that is Init's job (§6) — and §4 refuses network filesystems before WAL work.
 	if !utils.FileExists(dbPath) {
@@ -377,6 +368,15 @@ func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
 func (h *txHandle) checkRead(ns string) error {
 	if _, ok := h.scope[ns]; !ok {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
+	}
+	return nil
+}
+
+// RefuseManifest fails when a conversion manifest sits beside dbPath, meaning an offline conversion is unfinished.
+func RefuseManifest(dbPath string) error {
+	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
+	if utils.FileExists(manifest) {
+		return fmt.Errorf("%s exists: a conversion is in flight, run `cocoon meta convert` to finish it", manifest)
 	}
 	return nil
 }
