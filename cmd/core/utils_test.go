@@ -200,9 +200,7 @@ func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 	}
 }
 
-// directErrSnap is a DirectCreator whose CreateFromDir always fails; the
-// embedded interface panics on any other call, so the test proves the failure
-// path alone.
+// directErrSnap is a DirectCreator whose CreateFromDir always fails; the embedded interface panics on any other call, so the test proves the failure path alone.
 type directErrSnap struct {
 	snapshot.Snapshot
 }

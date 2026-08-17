@@ -34,8 +34,8 @@ const (
 // fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
 type fat12Builder struct {
 	label       string
-	fat         []byte   // single FAT copy (written twice)
-	rootDir     []byte   // root directory area
+	fat         []byte // single FAT copy (written twice)
+	rootDir     []byte
 	data        [][]byte // file data in cluster-allocation order
 	nextCluster uint16   // next free cluster (starts at 2)
 	rootUsed    int      // root directory entries consumed

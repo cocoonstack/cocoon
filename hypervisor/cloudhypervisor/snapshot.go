@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/extend/disk"
@@ -52,7 +51,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if cidataSrc == "" { // pre-first-boot: file exists but is not yet a recorded disk
 				cidataSrc = filepath.Join(rec.RunDir, cidataFile)
 			}
-			if _, statErr := os.Stat(cidataSrc); statErr != nil {
+			if !utils.FileExists(cidataSrc) {
 				return nil
 			}
 			if cpErr := utils.SparseCopy(filepath.Join(tmpDir, cidataFile), cidataSrc, utils.NoSync); cpErr != nil {

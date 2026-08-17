@@ -92,13 +92,7 @@ func ValidateStorageConfigs(configs []*StorageConfig) error {
 
 // ValidDataDiskName reports whether s is a legal data disk name; shared with untrusted sidecar loading.
 func ValidDataDiskName(s string) bool {
-	if !dataDiskNameRe.MatchString(s) {
-		return false
-	}
-	if strings.HasPrefix(s, "cocoon-") {
-		return false
-	}
-	return true
+	return dataDiskNameRe.MatchString(s) && !strings.HasPrefix(s, "cocoon-")
 }
 
 func validDataDiskFSType(t string) bool {

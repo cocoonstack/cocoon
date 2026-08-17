@@ -15,10 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/network"
 )
 
-// TestSubsetTeardownRecovery is the design §9 subset gate: crash mid-deleting
-// on a one-NIC `vm net remove`, then recover — the untouched NIC row must
-// survive and the netns must not be removed. An aggregate-shaped test passes
-// while this fails, which is why it exists separately.
+// TestSubsetTeardownRecovery is the design §9 subset gate: crash mid-deleting on a one-NIC `vm net remove`, then recover — the untouched NIC row survives and the netns stays (an aggregate-shaped test would pass while this fails).
 func TestSubsetTeardownRecovery(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -64,15 +61,13 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	if netnsRemoved != 0 {
 		t.Fatalf("subset recovery removed the netns (%d removals)", netnsRemoved)
 	}
-	// Remove ran with deleteTAP=true; recovery restores it for exactly the
-	// subset's TAP and no other.
+	// Remove ran with deleteTAP=true; recovery restores it for exactly the subset's TAP and no other.
 	if want := []string{tapNameForVM("vm1", 1)}; !slices.Equal(tapsDeleted, want) {
 		t.Fatalf("subset recovery TAP deletions = %v, want %v", tapsDeleted, want)
 	}
 }
 
-// TestAggregateTeardownRecovery rolls a deleting aggregate forward: all rows
-// and the netns go.
+// TestAggregateTeardownRecovery rolls a deleting aggregate forward: all rows and the netns go.
 func TestAggregateTeardownRecovery(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -96,9 +91,7 @@ func TestAggregateTeardownRecovery(t *testing.T) {
 	}
 }
 
-// TestAggregateRecoveryAfterNetnsGone converges the crash window between
-// netns removal and the record sweep: TAP deletion is skipped (the TAPs died
-// with the ns), DELs still run, rows sweep, the tombstone finalizes.
+// TestAggregateRecoveryAfterNetnsGone converges the crash window between netns removal and the record sweep: TAP deletion is skipped (the TAPs died with the ns), DELs still run, rows sweep, the tombstone finalizes.
 func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -148,8 +141,7 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	}
 }
 
-// TestSubsetFailureKeepsTombstone pins the retry story: a failing DEL keeps
-// the row and the subset tombstone, and the error names the retry path.
+// TestSubsetFailureKeepsTombstone pins the retry story: a failing DEL keeps the row and the subset tombstone, and the error names the retry path.
 func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	exec.failIf = "eth1"
@@ -181,8 +173,7 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	assertRecordIDs(t, c, []string{"n-eth0"})
 }
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
-// and requires byte-identical output to the legacy storage layer's writes.
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires byte-identical output to the legacy storage layer's writes.
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -240,9 +231,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 }
 
-// TestAddRefusesAfterAggregateRollForward pins the entry rule: recovery of a
-// whole-VM deleting tombstone completes the teardown AND refuses the Add; a
-// retry then proceeds on the clean slate.
+// TestAddRefusesAfterAggregateRollForward pins the entry rule: recovery of a whole-VM deleting tombstone completes the teardown and refuses the Add; a retry then proceeds on the clean slate.
 func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -277,9 +266,7 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	}
 }
 
-// TestAddRefusesAfterSubsetRollForward pins the §5 binding rule without a
-// mode exception: even a subset deleting recovery fails the current Add; the
-// retry proceeds from the recovered state.
+// TestAddRefusesAfterSubsetRollForward pins the §5 binding rule without a mode exception: even a subset deleting recovery fails the current Add; the retry proceeds from the recovered state.
 func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

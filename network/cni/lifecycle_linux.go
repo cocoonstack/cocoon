@@ -1,6 +1,7 @@
 package cni
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -133,10 +134,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		}
 	}
 
-	mac := link.Attrs().HardwareAddr.String()
-	if overrideMAC != "" {
-		mac = overrideMAC
-	}
+	mac := cmp.Or(overrideMAC, link.Attrs().HardwareAddr.String())
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
 	if err != nil {

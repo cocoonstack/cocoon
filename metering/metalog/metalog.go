@@ -1,6 +1,4 @@
-// Package metalog records metering entries in the meta store's log (§1 P3):
-// one Relaxed append per entry — the file backend's no-fsync durability —
-// with a Seq cursor committed atomically alongside each entry.
+// Package metalog records metering entries in the meta store's log (§1 P3): one Relaxed append per entry (the file backend's no-fsync durability) with the Seq cursor committed alongside.
 package metalog
 
 import (
@@ -20,8 +18,7 @@ const (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder appends entries through the meta store; Emit swallows errors so
-// callers never block (metering contract).
+// Recorder appends entries through the meta store; Emit swallows errors so callers never block.
 type Recorder struct {
 	store meta.Store
 	log   *meta.Log[metering.Entry]

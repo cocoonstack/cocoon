@@ -13,7 +13,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
-	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -25,7 +24,7 @@ type cniSnapshot struct {
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.
 func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 	// The prefix scopes GC to this installation's netns, so docker/containerd and peer-installation entries survive.
-	netnsPrefix := network.NetnsPrefix(c.conf.NetScope)
+	netnsPrefix := c.conf.NetnsPrefix()
 	return gc.Module[cniSnapshot]{
 		Name:    typ,
 		Recover: c.gcRecover,

@@ -164,7 +164,6 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = f.Close()
 	}
 
-	// Create PTY pair: slave → FC stdin/stdout, master → console relay.
 	master, slave, err := pty.Open()
 	if err != nil {
 		return 0, nil, fmt.Errorf("open pty: %w", err)

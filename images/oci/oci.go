@@ -30,7 +30,7 @@ type OCI struct {
 	conf            *Config
 	store           *images.Store[imageEntry]
 	pullGroup       singleflight.Group
-	pinnedElsewhere func(context.Context) (map[string]struct{}, error)
+	pinnedElsewhere images.PinRecheck
 }
 
 // New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.

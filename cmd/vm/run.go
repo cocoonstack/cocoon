@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"time"
@@ -323,9 +324,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		return cloneSetup{}, err
 	}
 	vmID := utils.GenerateID()
-	if vmCfg.Name == "" {
-		vmCfg.Name = "cocoon-clone-" + network.VMIDPrefix(vmID)
-	}
+	vmCfg.Name = cmp.Or(vmCfg.Name, "cocoon-clone-"+network.VMIDPrefix(vmID))
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}

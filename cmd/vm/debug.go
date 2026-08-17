@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"slices"
@@ -147,7 +148,7 @@ func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []
 	case balloon == 0:
 		balloon = int(size >> 20) //nolint:mnd
 	}
-	allowed := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, conf.CgroupCPUs)
+	allowed := cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, conf.CgroupCPUFence())
 	return chDebugSpec{
 		Configs: storageConfigs,
 		Boot:    boot,
@@ -166,9 +167,7 @@ func printCHDebug(s chDebugSpec) {
 	noDirectIO := s.VMCfg.NoDirectIO
 
 	if hypervisor.IsDirectBoot(s.Boot) {
-		if s.CowPath == "" {
-			s.CowPath = fmt.Sprintf("cow-%s.raw", s.VMCfg.Name)
-		}
+		s.CowPath = cmp.Or(s.CowPath, fmt.Sprintf("cow-%s.raw", s.VMCfg.Name))
 		debugConfigs := slices.Concat(s.Configs, []*types.StorageConfig{
 			{Path: s.CowPath, RO: false, Serial: hypervisor.CowSerial},
 		})
@@ -189,9 +188,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Print(" \\\n")
 		fmt.Printf("  --cmdline \"%s\" \\\n", cmdline)
 	} else {
-		if s.CowPath == "" {
-			s.CowPath = fmt.Sprintf("cow-%s.qcow2", s.VMCfg.Name)
-		}
+		s.CowPath = cmp.Or(s.CowPath, fmt.Sprintf("cow-%s.qcow2", s.VMCfg.Name))
 		basePath := s.Configs[0].Path
 		fmt.Println("# Prepare COW overlay")
 		fmt.Printf("qemu-img create -f qcow2 -F qcow2 -b %s %s\n", basePath, s.CowPath)

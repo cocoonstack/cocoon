@@ -46,7 +46,7 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 		return nil, fmt.Errorf("%s is not a bridge (type: %s)", bridgeDev, br.Type())
 	}
 	return &Bridge{
-		tapPrefix: network.BridgeTAPPrefix(conf.NetScope),
+		tapPrefix: conf.BridgeTAPPrefix(),
 		bridgeDev: bridgeDev,
 		bridgeIdx: br.Attrs().Index,
 	}, nil

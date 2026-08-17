@@ -18,7 +18,6 @@ func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
 	return fc.StopOneSequence(ctx, id, fc.stopSpec())
 }
 
-// stopOneLocked is stopOne for callers already holding the VM's ops lock (DeleteAll).
 func (fc *Firecracker) stopOneLocked(ctx context.Context, id string) error {
 	return fc.StopOneLocked(ctx, id, fc.stopSpec())
 }
@@ -43,7 +42,6 @@ func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, 
 	)
 }
 
-// forceTerminate skips graceful shutdown, going straight to SIGTERM → SIGKILL.
 func (fc *Firecracker) forceTerminate(ctx context.Context, sockPath string, pid int) error {
 	return utils.TerminateProcess(ctx, pid, fc.conf.BinaryName(), sockPath, fc.conf.TerminateGracePeriod())
 }

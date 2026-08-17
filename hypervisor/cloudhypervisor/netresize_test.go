@@ -71,8 +71,7 @@ func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
 	}
 }
 
-// TestResolveFailedPersist covers the persist commit-ambiguity window: a
-// committed write keeps the device; only a conclusive miss tears down.
+// TestResolveFailedPersist covers the persist commit-ambiguity window: a committed write keeps the device; only a conclusive miss tears down.
 func TestResolveFailedPersist(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
@@ -107,9 +106,7 @@ func TestResolveFailedPersist(t *testing.T) {
 	}
 }
 
-// TestNetResizeRemoveResumesWithoutLiveDevice covers issue #104: a NIC the
-// record still carries but CH has already ejected (an interrupted prior
-// remove) must be truncated from the record, not wedge the retry forever.
+// TestNetResizeRemoveResumesWithoutLiveDevice covers #104: a NIC the record still carries but CH already ejected (interrupted prior remove) must be truncated from the record, not wedge the retry.
 func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
@@ -149,8 +146,7 @@ func TestNICPersisted(t *testing.T) {
 	}
 }
 
-// TestConvergeOrphanedPause pins the interrupted-capture wedge: a save killed
-// inside its pause window leaves CH Paused with nobody left to resume it.
+// TestConvergeOrphanedPause pins the interrupted-capture wedge: a save killed inside its pause window leaves CH Paused with nobody left to resume it.
 func TestConvergeOrphanedPause(t *testing.T) {
 	var (
 		mu      sync.Mutex
@@ -261,9 +257,7 @@ func newStubHTTPClient(t *testing.T, mux *http.ServeMux) *http.Client {
 	}}
 }
 
-// newCHStubClient serves vm.info and vm.remove-device over an httptest server;
-// removed() snapshots the eject calls. stickyIDs stay in the device tree after
-// removal, simulating a guest that never acks B0EJ.
+// newCHStubClient serves vm.info and vm.remove-device over httptest; removed() snapshots the eject calls, and stickyIDs stay in the device tree after removal like a guest that never acks B0EJ.
 func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Client, func() []string) {
 	t.Helper()
 	var mu sync.Mutex

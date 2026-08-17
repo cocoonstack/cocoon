@@ -13,7 +13,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -46,7 +45,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	makeBody := func(rec *hypervisor.VMRecord) any {
 		d := storageConfigToDisk(&types.StorageConfig{
 			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
-		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, cgroup.EffectiveCPUs(rec.Config.CPUSetCPUs, ch.conf.CgroupCPUs))
+		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, ch.EffectiveCPUs(&rec.Config.Config))
 		d.ID = id
 		return d
 	}
@@ -318,8 +317,7 @@ func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef 
 	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a capture whose process died, returning a refreshed vm.info for device classification.
-// The pause is provably ownerless: callers hold the VM ops lock every capture window holds end to end, and the Running-record gate in runningVMClientWithRecord keeps restore/clone pause windows (record Stopped/creating) out of reach.
+// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and runningVMClientWithRecord's Running gate excludes restore/clone windows.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil
@@ -333,10 +331,7 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, in
 }
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
-func listWith[A any](
-	ctx context.Context, ch *CloudHypervisor, vmRef string,
-	extract func(*chVMInfoResponse) []A,
-) ([]A, error) {
+func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
 	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {

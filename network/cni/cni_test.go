@@ -176,8 +176,7 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can
-	// still release the IPAM lease; eth0's record must be swept.
+	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can still release the IPAM lease; eth0's record must be swept.
 	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("Remove err = %v, want eth1 failure", err)
 	}
@@ -196,8 +195,7 @@ func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	ctx := t.Context()
-	// A failed reclaim can leave two records for one ifname; Remove must tear down
-	// and sweep both (DEL is idempotent), not strand one as a phantom.
+	// A failed reclaim can leave two records for one ifname; Remove must tear down and sweep both (DEL is idempotent), not strand one as a phantom.
 	seedRecords(t, c, "vm1", "eth1")
 	if err := c.update(ctx, func(t *netTx) error {
 		return t.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
@@ -271,8 +269,7 @@ func TestReclaimStaleNIC(t *testing.T) {
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
-	// TAP-delete failure also keeps the record: sweeping would leave a live TAP
-	// that collides with the re-add's CreateTAP, with nothing left to retry it.
+	// TAP-delete failure also keeps the record: sweeping would leave a live TAP that collides with the re-add's CreateTAP, with nothing left to retry it.
 	exec.failIf = ""
 	deleteTAPFn = func(string, string) error { return fmt.Errorf("device busy") }
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
@@ -295,8 +292,7 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0")
 
-	// The stale record's DEL fails: Add must fail instead of double-allocating (lenient
-	// IPAM) or burying the root cause under the ADD failure (strict IPAM).
+	// The stale record's DEL fails: Add must fail instead of double-allocating (lenient IPAM) or burying the root cause under the ADD failure (strict IPAM).
 	exec.failIf = "eth0"
 	if _, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 0}); err == nil || !strings.Contains(err.Error(), "reclaim stale NIC") {
 		t.Fatalf("Add err = %v, want reclaim failure", err)
@@ -336,8 +332,7 @@ func TestQuiesceSkipsMissingNetns(t *testing.T) {
 
 	seedRecords(t, c, "vm1", "eth0")
 
-	// A host reboot wipes every netns while the records survive; with no plumbing
-	// left, a stop's pending quiesce must settle instead of retrying forever.
+	// A host reboot wipes every netns while the records survive; with no plumbing left, a stop's pending quiesce must settle instead of retrying forever.
 	if err := c.Quiesce(t.Context(), "vm1"); err != nil {
 		t.Fatalf("Quiesce with a missing netns: %v", err)
 	}

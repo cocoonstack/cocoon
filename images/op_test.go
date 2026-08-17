@@ -21,8 +21,7 @@ func TestSingleflightDoDetachesCanceledWaiter(t *testing.T) {
 		})
 		close(done)
 	}()
-	// The blocking flight must register first, or the canceled call could win
-	// the key and select its own instant result over the canceled ctx.
+	// The blocking flight must register first, or the canceled call could win the key and select its own instant result over the canceled ctx.
 	<-started
 
 	ctx, cancel := context.WithCancel(t.Context())

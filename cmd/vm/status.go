@@ -20,6 +20,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 type vmEvent struct {
@@ -54,9 +55,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
 	interval, _ := cmd.Flags().GetInt("interval")
-	if interval <= 0 {
-		interval = 5 //nolint:mnd
-	}
+	interval = utils.OrDefault(interval, 5) //nolint:mnd
 	eventMode, _ := cmd.Flags().GetBool("event")
 	watchMode, _ := cmd.Flags().GetBool("watch")
 	if eventMode && watchMode {

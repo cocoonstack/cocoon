@@ -101,7 +101,6 @@ func resolveAttacher[A any](h Handler, cmd *cobra.Command, args []string, op str
 	return ctx, conf, hyper, a, nil
 }
 
-// classifyAttachErr surfaces ErrNotRunning more clearly than the generic wrap.
 func classifyAttachErr(err error) error {
 	if errors.Is(err, hypervisor.ErrNotRunning) {
 		return fmt.Errorf("vm is not running: %w", err)

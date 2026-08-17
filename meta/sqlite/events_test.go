@@ -11,8 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// TestEventsExternalProcess is §9's cross-process signal gate: a commit by
-// ANOTHER process must reach this process's subscribers.
+// TestEventsExternalProcess is §9's cross-process signal gate: a commit by ANOTHER process must reach this process's subscribers.
 func TestEventsExternalProcess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -48,8 +47,7 @@ func TestEventsWriterWorker(t *testing.T) {
 	}
 }
 
-// TestEventsPoolChurn: reader-pool connections cycling under load must not
-// blind the notifier — its pinned connection is untouched by the pool (§7).
+// TestEventsPoolChurn: reader-pool connections cycling under load must not blind the notifier — its pinned connection is untouched by the pool (§7).
 func TestEventsPoolChurn(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
@@ -77,8 +75,7 @@ func TestEventsPoolChurn(t *testing.T) {
 	}
 }
 
-// TestEventsSeveredWatchPollFallback: a lost fsnotify watch must degrade to
-// the change-token-confirmed safety poll, not a permanently missed change.
+// TestEventsSeveredWatchPollFallback: a lost fsnotify watch must degrade to the change-token-confirmed safety poll, not a permanently missed change.
 func TestEventsSeveredWatchPollFallback(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")

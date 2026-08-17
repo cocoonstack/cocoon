@@ -172,7 +172,7 @@ func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.R
 }
 
 // pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
-func pinnedElsewhere(conf *config.Config) func(context.Context) (map[string]struct{}, error) {
+func pinnedElsewhere(conf *config.Config) imagebackend.PinRecheck {
 	type pinner interface {
 		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
 	}

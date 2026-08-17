@@ -1,6 +1,4 @@
-// Package disk is the runtime attach interface for extra virtio-blk disks
-// backed by existing raw files. Attach is runtime-only — snapshot/hibernate
-// is refused while one is attached; detach never deletes the backing file.
+// Package disk is the runtime attach interface for extra virtio-blk disks backed by existing raw files; attach is runtime-only (snapshot/hibernate refuse while one is attached) and detach never deletes the backing file.
 package disk
 
 import (
@@ -18,9 +16,7 @@ const diskIDPrefix = "cocoon-disk-"
 // ErrUnsupportedBackend signals the backend cannot hot-plug virtio-blk disks (e.g. Firecracker).
 var ErrUnsupportedBackend = errors.New("backend does not support disk attach")
 
-// Spec is one attach request: an existing raw disk file. DirectIO nil means
-// the create-path default (O_DIRECT unless writable disks have it disabled);
-// tmpfs-backed files need an explicit off.
+// Spec is one attach request for an existing raw disk file; DirectIO nil means the create-path default (O_DIRECT unless writable disks have it disabled), tmpfs-backed files need an explicit off.
 type Spec struct {
 	Path     string
 	Name     string
@@ -69,8 +65,7 @@ func DeriveID(name string) string {
 	return diskIDPrefix + name
 }
 
-// NameFromID reverses DeriveID; empty when id is not a hot-added disk
-// (foreign same-prefix ids with an illegal name suffix are not ours).
+// NameFromID reverses DeriveID; empty when id is not a hot-added disk (foreign same-prefix ids with an illegal name suffix are not ours).
 func NameFromID(id string) string {
 	name, ok := strings.CutPrefix(id, diskIDPrefix)
 	if ok && types.ValidDataDiskName(name) {

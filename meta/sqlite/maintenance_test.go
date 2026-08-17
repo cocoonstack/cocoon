@@ -26,8 +26,7 @@ func TestBackupFidelity(t *testing.T) {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	// Pre-snapshot marker: acked before backup, MUST be captured even while
-	// a writer keeps the WAL non-empty (§9 backup fidelity).
+	// Pre-snapshot marker: acked before backup, MUST be captured even while a writer keeps the WAL non-empty (§9 backup fidelity).
 	put("marker", `{"v":1}`)
 	stop := make(chan struct{})
 	go func() {
@@ -49,7 +48,6 @@ func TestBackupFidelity(t *testing.T) {
 		t.Fatalf("marker missing from backup: %q ok=%v", raw, ok)
 	}
 
-	// Replacement: a second backup overwrites and carries new state.
 	put("marker", `{"v":2}`)
 	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
 		t.Fatalf("replace backup: %v", err)
@@ -158,9 +156,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 	}
 }
 
-// TestBackupConcurrentSameDest pins the flock serialization: without it, a
-// concurrent run's stale-tmp cleanup yanks the first run's tmp mid-verify
-// and publishes an empty backup with a nil error.
+// TestBackupConcurrentSameDest pins the flock serialization: without it, a concurrent run's stale-tmp cleanup yanks the first run's tmp mid-verify and publishes an empty backup with a nil error.
 func TestBackupConcurrentSameDest(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

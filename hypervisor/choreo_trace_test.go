@@ -36,8 +36,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	// The injected deterministic clock (design §10) makes results and final
-	// bytes byte-exact against the legacy-recorded golden.
+	// The injected deterministic clock (design §10) makes results and final bytes exact against the legacy-recorded golden.
 	clock := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	origNow := timeNow
 	timeNow = func() time.Time { return clock }
@@ -104,8 +103,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "beta")
 	record("rollback-then-resolve", "", err)
 
-	// delete: the P1 phase protocol replaces legacy's inline record removal;
-	// the differential holds at values, errors and final state.
+	// delete: the P1 phase protocol replaces legacy's inline record removal; the differential holds at values, errors and final state.
 	vm1, err := b.LoadRecord(ctx, "VM1")
 	if err != nil {
 		t.Fatalf("load VM1 pre-delete: %v", err)
@@ -114,9 +112,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 
-	// gc pass: the REAL orchestration on both sides — discovery, age cutoff
-	// through the seamed clock, ops-lock, under-lock revalidation.
-	// Real dirs mirror tracegen: lockable run dir, paths never in compared output.
+	// gc pass: the real orchestration on both sides (discovery, seamed-clock age cutoff, ops lock, under-lock revalidation); real dirs mirror tracegen and never appear in compared output.
 	cfgDelta := &types.VMConfig{Name: "delta", Config: types.Config{CPU: 1}}
 	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, t.TempDir(), t.TempDir()))
 	clock = clock.Add(25 * time.Hour)

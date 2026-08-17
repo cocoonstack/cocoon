@@ -385,9 +385,7 @@ func testEvents(t *testing.T, factory Factory) {
 	}
 }
 
-// testLogCursor asserts §9's log contract: committed Seq unique and strictly
-// increasing, a rolled-back append never surfaces in Scan (its number may be
-// reused or left as a gap), Scan(after) exclusive and in order.
+// testLogCursor asserts §9's log contract: committed Seq unique and strictly increasing, a rolled-back append never surfaces in Scan (its number may be reused or left as a gap), Scan(after) exclusive and in order.
 func testLogCursor(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})

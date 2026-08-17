@@ -26,8 +26,7 @@ const (
 	ModeSubset    Mode = "subset"
 )
 
-// ErrLost reports a fenced write that matched zero rows: another worker
-// recovered and finalized this lease after its owner died.
+// ErrLost reports a fenced write that matched zero rows: another worker recovered and finalized this lease after its owner died.
 var ErrLost = errors.New("tombstone lease lost")
 
 // Phase is the tombstone's protocol position.
@@ -102,8 +101,7 @@ func (t *Table) TakeOver(ctx context.Context, w meta.Writer, id string) (*Record
 	return rec, nil
 }
 
-// MarkDeleting flips the tombstone to the deleting phase, fenced by leaseID;
-// it is committed BEFORE any filesystem work.
+// MarkDeleting flips the tombstone to the deleting phase, fenced by leaseID; it is committed before any filesystem work.
 func (t *Table) MarkDeleting(ctx context.Context, w meta.Writer, id, leaseID string) error {
 	rec, err := t.fenced(ctx, w, id, leaseID)
 	if err != nil {
@@ -113,8 +111,7 @@ func (t *Table) MarkDeleting(ctx context.Context, w meta.Writer, id, leaseID str
 	return t.recs.Replace(ctx, w, id, rec)
 }
 
-// Rollback removes a still-leased tombstone (no filesystem work happened),
-// fenced by leaseID.
+// Rollback removes a still-leased tombstone (no filesystem work happened), fenced by leaseID.
 func (t *Table) Rollback(ctx context.Context, w meta.Writer, id, leaseID string) error {
 	rec, err := t.fenced(ctx, w, id, leaseID)
 	if err != nil {

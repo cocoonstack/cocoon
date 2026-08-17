@@ -75,17 +75,8 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 // cleanSnapshotFiles enumerates by name so stale data-*.raw and cocoon.json from a previous incarnation don't linger; COW files are overwritten anyway.
 func cleanSnapshotFiles(runDir string) error {
 	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
-		switch {
-		case strings.HasPrefix(name, memoryRangeFile):
-			return true
-		case name == configJSONName || name == stateJSONName:
-			return true
-		case name == hypervisor.SnapshotMetaFile:
-			return true
-		case hypervisor.IsDataDiskFile(name):
-			return true
-		}
-		return false
+		return strings.HasPrefix(name, memoryRangeFile) || name == configJSONName || name == stateJSONName ||
+			name == hypervisor.SnapshotMetaFile || hypervisor.IsDataDiskFile(name)
 	})
 }
 

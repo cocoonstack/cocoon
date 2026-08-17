@@ -11,7 +11,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -85,7 +84,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 		diskQueueSize:  vmCfg.DiskQueueSize,
 		noDirectIO:     vmCfg.NoDirectIO,
 		cpu:            vmCfg.CPU,
-		allowedCPUs:    cgroup.EffectiveCPUs(vmCfg.CPUSetCPUs, ch.conf.CgroupCPUs),
+		allowedCPUs:    ch.EffectiveCPUs(&vmCfg.Config),
 	}); err != nil {
 		return nil, fmt.Errorf("patch config: %w", err)
 	}

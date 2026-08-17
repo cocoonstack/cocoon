@@ -10,8 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// A failed engine open must leave the interface nil so CloseMetaStore's nil
-// check holds — a typed-nil store would panic at command teardown.
+// A failed engine open must leave the interface nil so CloseMetaStore's nil check holds — a typed-nil store would panic at command teardown.
 func TestMetaStoreOpenErrorThenCloseNoPanic(t *testing.T) {
 	resetMetaStore()
 	conf := testConf(t)

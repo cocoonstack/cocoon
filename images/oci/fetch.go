@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"slices"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -67,12 +68,7 @@ func isUpToDate(conf *Config, idx *imageIndex, ref, digestHex string) bool {
 		!utils.ValidFile(conf.InitrdPath(entry.InitrdLayer.Hex())) {
 		return false
 	}
-	for _, layer := range entry.Layers {
-		if !utils.ValidFile(conf.BlobPath(layer.Digest.Hex())) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(entry.Layers, func(l layerEntry) bool { return !utils.ValidFile(conf.BlobPath(l.Digest.Hex())) })
 }
 
 func collectBootHexes(idx *imageIndex) map[string]struct{} {

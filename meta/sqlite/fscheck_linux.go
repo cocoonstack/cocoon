@@ -5,8 +5,7 @@ import (
 	"syscall"
 )
 
-// WAL needs coherent shared memory; these magics mark filesystems that
-// cannot provide it (§4). FUSE is refused as unknowable.
+// WAL needs coherent shared memory; these magics mark filesystems that cannot provide it (§4), FUSE refused as unknowable.
 var unsupportedFS = map[uint32]string{
 	0x6969:     "nfs",
 	0xFF534D42: "cifs",

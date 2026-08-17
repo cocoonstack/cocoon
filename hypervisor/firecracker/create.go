@@ -118,7 +118,7 @@ func EnsureVmlinux(kernelPath string) (string, error) {
 	}
 
 	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
-	if _, statErr := os.Stat(vmlinuxPath); statErr == nil {
+	if utils.FileExists(vmlinuxPath) {
 		return vmlinuxPath, nil
 	}
 

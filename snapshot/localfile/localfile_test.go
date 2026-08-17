@@ -89,8 +89,7 @@ func TestCreateAndDeleteEmitMetering(t *testing.T) {
 }
 
 func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
-	// Racing rm: the loser's closure sees a nil rec and must report success
-	// without emitting a phantom stop. deleteOne twice on one id simulates it.
+	// Racing rm: the loser's closure sees a nil rec and must report success without emitting a phantom stop; deleteOne twice on one id simulates it.
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
@@ -135,8 +134,7 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 		"cocoon.json":    []byte(`{"storage_configs":[]}`),
 	}
 
-	// A capture dir under the store root shares its filesystem, so the direct
-	// (rename) path is taken rather than the cross-fs streaming fallback.
+	// A capture dir under the store root shares its filesystem, so the direct (rename) path is taken rather than the cross-fs streaming fallback.
 	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-src"), files)
 	id, ok, err := lf.CreateFromDir(ctx, &types.SnapshotConfig{
 		ID: testID(t), Name: "direct-snap", Hypervisor: "cloud-hypervisor",
@@ -197,9 +195,7 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	if _, statErr := os.Stat(srcDir); statErr != nil {
 		t.Errorf("srcDir removed on EXDEV fallback: %v", statErr)
 	}
-	// Check the index directly: Inspect hides pending records, so it cannot
-	// distinguish "rolled back" from "stale pending left behind" — and a stale
-	// name reservation would fail the tar-fallback Create with "already in use".
+	// Check the index directly: Inspect hides pending records, so it cannot tell "rolled back" from "stale pending left behind", and a stale name reservation would fail the tar-fallback Create.
 	if err := lf.dbRead(ctx, func(idx *snapshotIndex) error {
 		if _, stale := idx.Snapshots[id]; stale {
 			return fmt.Errorf("pending record %s still in index", id)
@@ -270,10 +266,7 @@ func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
 	}
 }
 
-// TestNameOwnerSeesPendingReservation pins what a killed save leaves behind: the
-// pending record still holds the name in the index, so Inspect reports not-found
-// while insertRecord rejects the reuse. The save preflight resolves through the
-// index for exactly this reason — otherwise the capture runs to completion first.
+// TestNameOwnerSeesPendingReservation pins what a killed save leaves behind: the pending record still holds the name, so Inspect reports not-found while insertRecord rejects the reuse; the save preflight resolves through the index for exactly this reason.
 func TestNameOwnerSeesPendingReservation(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -871,8 +864,7 @@ func TestRestore_CloseWaitsForGoroutine(t *testing.T) {
 	}
 
 	if err := rc.Close(); err != nil {
-		// A broken pipe or similar error is acceptable here since we didn't
-		// consume the stream — but it must not hang or panic.
+		// A broken pipe is acceptable since the stream was not consumed, but it must not hang or panic.
 		t.Logf("Close returned (expected) error: %v", err)
 	}
 }
@@ -1116,8 +1108,7 @@ func TestImport_CorruptGzipTrailerRejected(t *testing.T) {
 	tw.Close()
 	gw.Close()
 
-	// Flip a bit in the gzip ISIZE trailer: tar extraction still succeeds, so
-	// only the drain-to-EOF integrity check can catch it.
+	// Flip a bit in the gzip ISIZE trailer: tar extraction still succeeds, so only the drain-to-EOF integrity check can catch it.
 	raw := buf.Bytes()
 	raw[len(raw)-1] ^= 0xff
 

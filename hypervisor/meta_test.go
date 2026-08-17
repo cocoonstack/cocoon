@@ -23,9 +23,7 @@ var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
-// and requires byte-identical output to what the LEGACY storage layer wrote
-// for the same operations (fixtures generated at master by cmd/fixturegen).
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires bytes identical to what the legacy storage layer wrote (fixtures generated at master by cmd/fixturegen).
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -96,9 +94,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 }
 
-// TestCrossComponentVMLockPath asserts CH/FC (via LockVMOps) and CNI (via
-// lock/vmlock directly) resolve one vmID to the SAME lock file — a stale
-// backend-specific resolver would let CNI GC and VM lifecycle interleave.
+// TestCrossComponentVMLockPath asserts CH/FC (LockVMOps) and CNI (lock/vmlock) resolve one vmID to the same lock file; a stale backend-specific resolver would let CNI GC and VM lifecycle interleave.
 func TestCrossComponentVMLockPath(t *testing.T) {
 	ctx := t.Context()
 	b, _ := newMeteringTestBackend(t)
@@ -143,8 +139,7 @@ func (idx *VMIndex) Init() {
 	}
 }
 
-// dbUpdate is the test-only whole-index shim: materialize, run fn, write the
-// difference back. Production code never uses it.
+// dbUpdate is the test-only whole-index shim: materialize, run fn, write the difference back.
 func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
 	return b.update(ctx, func(t *vmTx) error {
 		before, idx, err := materialize(t)
@@ -169,8 +164,7 @@ func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
 	})
 }
 
-// addOrphanDir survives only for fixtures/shims: production writes cleanup
-// intent through tombstone payloads now.
+// addOrphanDir survives only for fixtures/shims; production writes cleanup intent through tombstone payloads.
 func (t *vmTx) addOrphanDir(dir string) error {
 	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
 		return err

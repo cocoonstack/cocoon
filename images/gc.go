@@ -17,6 +17,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// PinRecheck reports blobs pinned by VM/snapshot records, consulted under the digest lock since the candidate list predates those pins.
+type PinRecheck func(ctx context.Context) (map[string]struct{}, error)
+
 // ImageGCSnapshot is the unified GC snapshot for image backends.
 type ImageGCSnapshot struct {
 	refs    map[string]struct{} // digest hexes referenced by the index
@@ -25,24 +28,19 @@ type ImageGCSnapshot struct {
 
 // GCModuleConfig configures a generic image GC module.
 type GCModuleConfig[E any] struct {
-	Name  string
-	Store *Store[E]
-	// LockPath returns the per-digest blob lock path.
+	Name     string
+	Store    *Store[E]
 	LockPath func(hex string) string
-	// ReadRefs extracts referenced digest hexes from the index.
 	ReadRefs func(map[string]*E) map[string]struct{}
-	// ScanDisk returns digest hexes found on disk (blobs).
 	ScanDisk func() ([]string, error)
 	// ExtraDisk returns additional hex IDs on disk (e.g., OCI boot dirs). Optional.
 	ExtraDisk func() ([]string, error)
-	// Removers are called per hex ID during collect.
-	Removers []func(string) error
-	// TempDir for stale temp cleanup.
-	TempDir string
+	Removers  []func(string) error
+	TempDir   string
 	// DirOnly: true for OCI (temp dirs), false for cloudimg (temp files).
 	DirOnly bool
-	// PinnedElsewhere reports blobs pinned by VM/snapshot records, consulted under the digest lock since the candidate list predates those pins. Optional.
-	PinnedElsewhere func(ctx context.Context) (map[string]struct{}, error)
+	// PinnedElsewhere is optional.
+	PinnedElsewhere PinRecheck
 }
 
 // BuildGCModule constructs a gc.Module from the config.

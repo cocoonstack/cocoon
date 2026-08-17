@@ -3,8 +3,10 @@ package vm
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -13,7 +15,7 @@ import (
 func streamLog(ctx context.Context, path string, follow bool, tail int) error {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("open log %s: VM may not have been started yet", path)
 		}
 		return fmt.Errorf("open log: %w", err)

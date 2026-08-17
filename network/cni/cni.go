@@ -247,9 +247,7 @@ func loadConfLists(dir string) (map[string]*libcni.NetworkConfigList, string, er
 			return nil, "", fmt.Errorf("parse %s: %w", f, parseErr)
 		}
 		lists[cl.Name] = cl
-		if defaultName == "" {
-			defaultName = cl.Name
-		}
+		defaultName = cmp.Or(defaultName, cl.Name)
 	}
 	return lists, defaultName, nil
 }

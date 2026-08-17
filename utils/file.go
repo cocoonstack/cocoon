@@ -60,8 +60,7 @@ func FileHead(f *os.File, n int) ([]byte, error) {
 	return buf[:m], nil
 }
 
-// FileExists reports bare existence; ValidFile additionally demands a
-// non-empty regular file.
+// FileExists reports bare existence; ValidFile additionally demands a non-empty regular file.
 func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
