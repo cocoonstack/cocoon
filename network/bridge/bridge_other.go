@@ -50,4 +50,4 @@ func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
 
 func (b *Bridge) List(_ context.Context) ([]*types.Network, error) { return nil, errUnsupported }
 
-func CleanupTAPs(_ []string) []string { return nil }
+func CleanupTAPs(_ string, _ []string) []string { return nil }

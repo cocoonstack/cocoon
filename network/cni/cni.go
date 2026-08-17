@@ -82,7 +82,7 @@ func (c *CNI) Type() string { return typ }
 
 // Verify checks the netns and every expected TAP inside it.
 func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
-	nsPath := netnsPath(vmID)
+	nsPath := c.conf.netnsPath(vmID)
 	if _, err := statNetnsFn(nsPath); err != nil {
 		return fmt.Errorf("netns %s: %w", nsPath, err)
 	}
@@ -202,7 +202,7 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	for _, rec := range records {
 		ifNames = append(ifNames, rec.IfName)
 	}
-	nsPath := netnsPath(vmID)
+	nsPath := c.conf.netnsPath(vmID)
 	// A host reboot wipes netns but not records; with no netns there is nothing left to quiesce, and failing would retry forever.
 	if _, err := statNetnsFn(nsPath); errors.Is(err, fs.ErrNotExist) {
 		return nil

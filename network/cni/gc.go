@@ -13,16 +13,19 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 type cniSnapshot struct {
 	dbVMIDs    map[string]struct{}
-	netnsNames []string // VM IDs extracted from /var/run/netns/cocoon-*
+	netnsNames []string // VM IDs extracted from /var/run/netns/<netns prefix>*
 }
 
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.
 func (c *CNI) GCModule() gc.Module[cniSnapshot] {
+	// The prefix scopes GC to this installation's netns, so docker/containerd and peer-installation entries survive.
+	netnsPrefix := network.NetnsPrefix(c.conf.NetScope)
 	return gc.Module[cniSnapshot]{
 		Name:    typ,
 		Recover: c.gcRecover,
@@ -76,7 +79,7 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 					errs = append(errs, fmt.Errorf("nic release incomplete for %s, netns kept: %w", vmID, tdErr))
 					continue
 				}
-				logger.Infof(ctx, "collected id=%s netns=%s reason=orphan", vmID, netnsName(vmID))
+				logger.Infof(ctx, "collected id=%s netns=%s reason=orphan", vmID, c.conf.netnsName(vmID))
 			}
 			return errors.Join(errs...)
 		},

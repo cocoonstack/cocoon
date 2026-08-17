@@ -81,6 +81,7 @@ Config-file / env-only keys (no CLI flag):
 | `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry |
 | `cgroup_parent` | `COCOON_CGROUP_PARENT` | `cocoon.slice` | cgroup v2 slice under `/sys/fs/cgroup` holding the per-VM CPU scopes; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 | `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); kernel cpu-list syntax |
+| `net_scope` | `COCOON_NET_SCOPE` | empty (legacy names) | Two alphanumerics keying this installation's host network families — bridge TAPs `<scope><vmid8>-<nic>`, CNI netns `<scope>-<vmid>` — so co-hosted installations never GC each other's; see [Host device namespaces](networking.md#host-device-namespaces) |
 | `ch_binary` | `COCOON_CH_BINARY` | `cloud-hypervisor` | cloud-hypervisor executable, path or `$PATH` name |
 | `fc_binary` | `COCOON_FC_BINARY` | `firecracker` | firecracker executable, path or `$PATH` name |
 | `meta_backend` | `COCOON_META_BACKEND` | auto-resolved | Metadata engine, `json` or `sqlite`; see the note above `Global Flags` |

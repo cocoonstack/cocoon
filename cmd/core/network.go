@@ -96,7 +96,7 @@ func (n *NetProviders) Quiesce(ctx context.Context, vm *types.VM) error {
 
 // A partial CNI failure leaves the tombstone for retry or GC to resume.
 func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
-	bridgenet.CleanupTAPs([]string{vmID})
+	bridgenet.CleanupTAPs(network.BridgeTAPPrefix(n.conf.NetScope), []string{vmID})
 	p, err := n.cniOnly()
 	if err != nil {
 		// Lazy CNI; OK to skip for bridge-only setups.

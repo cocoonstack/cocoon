@@ -4,15 +4,13 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
 	netnsBasePath = "/var/run/netns"
-	// netnsPrefix scopes GC to cocoon-owned netns (so docker/containerd entries survive).
-	netnsPrefix = "cocoon-"
-
-	tapPrefix = "tap"
+	tapPrefix     = "tap"
 )
 
 type Config struct {
@@ -32,10 +30,10 @@ func (c *Config) CacheDir() string  { return filepath.Join(c.dir(), "cache") }
 func (c *Config) dir() string       { return filepath.Join(c.RootDir, "cni") }
 func (c *Config) dbDir() string     { return filepath.Join(c.dir(), "db") }
 
-func netnsPath(vmID string) string {
-	return filepath.Join(netnsBasePath, netnsName(vmID))
+func (c *Config) netnsPath(vmID string) string {
+	return filepath.Join(netnsBasePath, c.netnsName(vmID))
 }
 
-func netnsName(vmID string) string {
-	return netnsPrefix + vmID
+func (c *Config) netnsName(vmID string) string {
+	return network.NetnsPrefix(c.NetScope) + vmID
 }
