@@ -19,8 +19,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const restoreTAPPrefix = "rm"
-
 type cloneResumeOpts struct {
 	vmID                string
 	vmCfg               *types.VMConfig
@@ -96,7 +94,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	// vm.restore attaches the taps named in the snapshot, so concurrent clones of one golden race to attach the source's tap (EBUSY); it cannot attach the clone's real taps either — vm.remove-device releases a tap only after the guest ACKs the eject, so hotSwapNets' add-net would EBUSY on its own tap. Give every restored NIC a clone-unique throwaway tap (auto-created by CH, auto-destroyed once the removed device drops it).
 	netTAPs := make([]string, len(chCfg.Nets))
 	for i := range netTAPs {
-		netTAPs[i] = network.TAPName(restoreTAPPrefix, vmID, i)
+		netTAPs[i] = network.TAPName(network.RestoreTAPPrefix, vmID, i)
 	}
 
 	consoleSock := hypervisor.ConsoleSockPath(runDir)

@@ -26,8 +26,8 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 	if c.cniConf == nil {
 		return "", nil
 	}
-	nsName := netnsName(vmID)
-	nsPath := netnsPath(vmID)
+	nsName := c.conf.netnsName(vmID)
+	nsPath := c.conf.netnsPath(vmID)
 	if _, err := ensureNetns(nsName, nsPath); err != nil {
 		return "", fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
@@ -49,8 +49,8 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	vmCfg.Network = confList.Name
 	logger := log.WithFunc("cni.Add")
 
-	nsName := netnsName(vmID)
-	nsPath := netnsPath(vmID)
+	nsName := c.conf.netnsName(vmID)
+	nsPath := c.conf.netnsPath(vmID)
 
 	if err = c.guardAdd(ctx, vmID); err != nil {
 		return nil, err

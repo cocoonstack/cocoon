@@ -25,7 +25,7 @@ var _ network.Network = (*Bridge)(nil)
 
 // Bridge is TAP-on-bridge; requires a pre-existing bridge with DHCP + routing.
 type Bridge struct {
-	conf      *config.Config
+	tapPrefix string
 	bridgeDev string
 	bridgeIdx int
 }
@@ -46,7 +46,7 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 		return nil, fmt.Errorf("%s is not a bridge (type: %s)", bridgeDev, br.Type())
 	}
 	return &Bridge{
-		conf:      conf,
+		tapPrefix: network.BridgeTAPPrefix(conf.NetScope),
 		bridgeDev: bridgeDev,
 		bridgeIdx: br.Attrs().Index,
 	}, nil
@@ -57,8 +57,9 @@ func (b *Bridge) Type() string { return typ }
 func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
 	// Legacy records persisted no NetworkConfigs, so empty means "assume tap0" — callers that legitimately resized to zero NICs must not call Verify.
 	if len(expected) == 0 {
-		if _, err := netlink.LinkByName(tapName(vmID, 0)); err != nil {
-			return fmt.Errorf("tap %s: %w", tapName(vmID, 0), err)
+		name := network.TAPName(b.tapPrefix, vmID, 0)
+		if _, err := netlink.LinkByName(name); err != nil {
+			return fmt.Errorf("tap %s: %w", name, err)
 		}
 		return nil
 	}
@@ -94,12 +95,12 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if retErr == nil || len(added) == 0 {
 			return
 		}
-		_ = tearDownTAPs(vmID, added, true)
+		_ = tearDownTAPs(b.tapPrefix, vmID, added, true)
 	}()
 
 	configs = make([]*types.NetworkConfig, 0, len(specs))
 	for _, spec := range specs {
-		name := tapName(vmID, spec.Index)
+		name := network.TAPName(b.tapPrefix, vmID, spec.Index)
 		mac := generateMAC()
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
@@ -137,7 +138,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 }
 
 func (b *Bridge) Remove(_ context.Context, vmID string, indices ...int) error {
-	return tearDownTAPs(vmID, indices, false)
+	return tearDownTAPs(b.tapPrefix, vmID, indices, false)
 }
 
 // Quiesce and Unquiesce are no-ops: bridge TAPs sit directly on the host bridge, with no TC redirect to storm when the VM stops.
@@ -145,7 +146,7 @@ func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
 func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
 
 func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
-	return CleanupTAPs(vmIDs), nil
+	return CleanupTAPs(b.tapPrefix, vmIDs), nil
 }
 
 // Inspect: bridge has no persistent records.
@@ -158,23 +159,23 @@ func (b *Bridge) List(_ context.Context) ([]*types.Network, error) {
 	return nil, nil
 }
 
-// RegisterGC reclaims orphan bt* TAP devices.
+// RegisterGC reclaims orphan bridge TAP devices.
 func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, GCModule())
+	gc.Register(orch, GCModule(b.tapPrefix))
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.
-func CleanupTAPs(vmIDs []string) []string {
+func CleanupTAPs(tapPrefix string, vmIDs []string) []string {
 	cleaned := make([]string, 0, len(vmIDs))
 	for _, vmID := range vmIDs {
 		var indices []int
 		for i := 0; ; i++ {
-			if _, err := netlink.LinkByName(tapName(vmID, i)); err != nil {
+			if _, err := netlink.LinkByName(network.TAPName(tapPrefix, vmID, i)); err != nil {
 				break
 			}
 			indices = append(indices, i)
 		}
-		_ = tearDownTAPs(vmID, indices, true)
+		_ = tearDownTAPs(tapPrefix, vmID, indices, true)
 		cleaned = append(cleaned, vmID)
 	}
 	return cleaned
@@ -200,9 +201,9 @@ func attachBridgeUp(tapIndex, bridgeIndex, mtu int) error {
 	return nil
 }
 
-func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
+func tearDownTAPs(tapPrefix, vmID string, indices []int, bestEffort bool) error {
 	for _, i := range indices {
-		name := tapName(vmID, i)
+		name := network.TAPName(tapPrefix, vmID, i)
 		link, err := netlink.LinkByName(name)
 		if err != nil {
 			if bestEffort {
@@ -218,10 +219,6 @@ func tearDownTAPs(vmID string, indices []int, bestEffort bool) error {
 		}
 	}
 	return nil
-}
-
-func tapName(vmID string, nic int) string {
-	return network.TAPName(tapPrefix, vmID, nic)
 }
 
 func generateMAC() string {

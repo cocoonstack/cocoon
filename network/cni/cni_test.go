@@ -13,6 +13,7 @@ import (
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/version"
 
+	"github.com/cocoonstack/cocoon/config"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
@@ -47,6 +48,24 @@ var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "networks", Table: TableRecords},
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
+
+func TestNetnsNameHonorsScope(t *testing.T) {
+	for _, tt := range []struct {
+		scope string
+		want  string
+	}{
+		{"", "cocoon-vm1"},
+		{"mt", "mt-vm1"},
+	} {
+		c := NewConfig(&config.Config{NetScope: tt.scope})
+		if got := c.netnsName("vm1"); got != tt.want {
+			t.Errorf("scope %q: netnsName = %q, want %q", tt.scope, got, tt.want)
+		}
+		if got, want := c.netnsPath("vm1"), filepath.Join(netnsBasePath, tt.want); got != want {
+			t.Errorf("scope %q: netnsPath = %q, want %q", tt.scope, got, want)
+		}
+	}
+}
 
 func TestLoadConfLists(t *testing.T) {
 	t.Run("empty dir errors", func(t *testing.T) {
@@ -349,8 +368,8 @@ func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	if err := c.Quiesce(ctx, "vm1"); err != nil {
 		t.Fatalf("Quiesce: %v", err)
 	}
-	if gotNS != netnsPath("vm1") {
-		t.Fatalf("nsPath = %q, want %q", gotNS, netnsPath("vm1"))
+	if gotNS != c.conf.netnsPath("vm1") {
+		t.Fatalf("nsPath = %q, want %q", gotNS, c.conf.netnsPath("vm1"))
 	}
 	slices.Sort(gotIfs)
 	if !slices.Equal(gotIfs, []string{"eth0", "eth1"}) {
@@ -400,6 +419,7 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return &CNI{
+		conf:        NewConfig(&config.Config{RootDir: dir}),
 		meta:        store,
 		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
 		defaultName: "cni-bridge",

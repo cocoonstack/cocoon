@@ -10,6 +10,7 @@ import (
 	coretypes "github.com/projecteru2/core/types"
 
 	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -58,6 +59,8 @@ type Config struct {
 	CNIBinDir string `json:"cni_bin_dir" mapstructure:"cni_bin_dir"`
 	// DNS: comma/semicolon-separated DNS servers injected into VM net config. Env: COCOON_DNS. Default: "8.8.8.8,1.1.1.1".
 	DNS string `json:"dns" mapstructure:"dns"`
+	// NetScope keys this installation's host network families (bridge TAPs <scope><vmid8>-<nic>, CNI netns <scope>-<vmid>) so co-hosted installations never GC each other's; two alphanumerics, empty keeps the legacy bt / cocoon- names.
+	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
 	// SocketWaitTimeoutSeconds: wait for the CH API socket after start. Default: 5; increase for slow storage.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
@@ -123,6 +126,9 @@ func (c *Config) Validate() error {
 	}
 	if _, err := cgroup.ParseCPUList(c.CgroupCPUs); err != nil {
 		return fmt.Errorf("cgroup_cpus: %w", err)
+	}
+	if err := network.ValidateScope(c.NetScope); err != nil {
+		return fmt.Errorf("net_scope: %w", err)
 	}
 	return nil
 }

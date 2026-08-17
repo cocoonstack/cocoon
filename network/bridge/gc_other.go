@@ -12,7 +12,7 @@ import (
 type bridgeSnapshot struct{}
 
 // GCModule returns a no-op GC module on non-Linux — bridge TAPs don't exist.
-func GCModule() gc.Module[bridgeSnapshot] {
+func GCModule(_ string) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: "bridge",
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {

@@ -6,6 +6,39 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+func TestScopeFamilies(t *testing.T) {
+	for _, tt := range []struct {
+		scope   string
+		wantTAP string
+		wantNS  string
+	}{
+		{"", "bt", "cocoon-"},
+		{"mt", "mt", "mt-"},
+	} {
+		if got := BridgeTAPPrefix(tt.scope); got != tt.wantTAP {
+			t.Errorf("BridgeTAPPrefix(%q) = %q, want %q", tt.scope, got, tt.wantTAP)
+		}
+		if got := NetnsPrefix(tt.scope); got != tt.wantNS {
+			t.Errorf("NetnsPrefix(%q) = %q, want %q", tt.scope, got, tt.wantNS)
+		}
+	}
+}
+
+func TestValidateScope(t *testing.T) {
+	for _, tt := range []struct {
+		scope string
+		ok    bool
+	}{
+		{"", true}, {"mt", true}, {"A9", true},
+		{"m", false}, {"mtap", false}, {"m-", false}, {"m/", false},
+		{"bt", false}, {"rm", false},
+	} {
+		if err := ValidateScope(tt.scope); (err == nil) != tt.ok {
+			t.Errorf("ValidateScope(%q) = %v, want ok=%v", tt.scope, err, tt.ok)
+		}
+	}
+}
+
 func TestAddRecover(t *testing.T) {
 	existing := []*types.NetworkConfig{
 		{TAP: "tap0", NumQueues: 2},

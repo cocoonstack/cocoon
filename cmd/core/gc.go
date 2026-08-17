@@ -7,6 +7,7 @@ import (
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
@@ -39,7 +40,7 @@ func NewGCOrchestrator(ctx context.Context, conf *config.Config, snapOpts ...loc
 	}
 	gc.Register(o, hypervisor.CgroupGCModule(conf.CgroupParentDir()))
 	netProvider.RegisterGC(o)
-	gc.Register(o, bridge.GCModule())
+	gc.Register(o, bridge.GCModule(network.BridgeTAPPrefix(conf.NetScope)))
 	gc.Register(o, vmlock.GCModule(conf.RootDir))
 	snapBackend.RegisterGC(o)
 	return o, nil

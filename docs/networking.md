@@ -27,6 +27,10 @@ Guest virtio-net  ←→  TAP (multi-queue)  ←TC redirect→  veth  ←→  CN
 - **Bridge mode**: `--bridge <device>` creates TAP devices directly on an existing Linux bridge (e.g., `--bridge cni0`), bypassing CNI and TC redirect. VMs get IP via DHCP from the bridge. Mutually exclusive with `--network`
 - **DNS**: Use `--dns` to set custom DNS servers (comma separated)
 
+### Host Device Namespaces
+
+Cocoon owns two host-wide name families that [GC](gc.md) sweeps by name: bridge-mode TAPs `bt<vmid8>-<nic>` in the host netns and per-VM CNI netns `cocoon-<vmid>` under `/var/run/netns` (the `rm<vmid8>-<nic>` TAPs a clone restore hands to CH are transient — CH destroys them itself and no sweep touches them). GC reclaims every entry in its families whose VM it does not know, so two installations sharing a host — a second `root_dir`, or a cocoon-derived runner such as cocoon-macos that provisions through cocoon's bridge/CNI backends — must live in different families, or each sweep tears down the other's live guests. `net_scope` re-keys an installation: two alphanumerics (`mt` gives `mt<vmid8>-<nic>` and `mt-<vmid>`); the fixed length keeps distinct scopes from being prefixes of each other, and `bt` / `rm` are rejected because they alias the legacy and restore families. Set it before the first VM is created — existing devices keep their old names.
+
 ### CNI Configuration
 
 All `.conflist` files in `--cni-conf-dir` (default `/etc/cni/net.d`) are loaded at startup. Use `--network <name>` to select one by its `name` field; omitting defaults to the first file alphabetically. A typical bridge config:

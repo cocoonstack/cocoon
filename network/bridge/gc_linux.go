@@ -16,14 +16,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const tapPrefix = "bt"
-
 type bridgeSnapshot struct {
 	prefixes map[string]struct{}
 }
 
-// GCModule returns a GC module reclaiming orphan bt* TAP devices; it needs no Bridge instance.
-func GCModule() gc.Module[bridgeSnapshot] {
+// GCModule returns a GC module reclaiming orphan TAP devices under tapPrefix; it needs no Bridge instance.
+func GCModule(tapPrefix string) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: typ,
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
@@ -34,7 +32,7 @@ func GCModule() gc.Module[bridgeSnapshot] {
 				return snap, err
 			}
 			for _, l := range links {
-				if prefix, ok := parseTAPName(l.Attrs().Name); ok {
+				if prefix, ok := parseTAPName(tapPrefix, l.Attrs().Name); ok {
 					snap.prefixes[prefix] = struct{}{}
 				}
 			}
@@ -64,7 +62,7 @@ func GCModule() gc.Module[bridgeSnapshot] {
 			}
 			for _, l := range links {
 				name := l.Attrs().Name
-				prefix, ok := parseTAPName(name)
+				prefix, ok := parseTAPName(tapPrefix, name)
 				if !ok {
 					continue
 				}
@@ -82,8 +80,8 @@ func GCModule() gc.Module[bridgeSnapshot] {
 	}
 }
 
-// parseTAPName extracts the vmID prefix from a bridge TAP name like "bt<prefix>-<nic>".
-func parseTAPName(name string) (string, bool) {
+// parseTAPName extracts the vmID prefix from a bridge TAP name "<tapPrefix><vmid8>-<nic>".
+func parseTAPName(tapPrefix, name string) (string, bool) {
 	rest, ok := strings.CutPrefix(name, tapPrefix)
 	if !ok {
 		return "", false

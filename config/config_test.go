@@ -99,6 +99,27 @@ func TestDNSServers(t *testing.T) {
 	}
 }
 
+func TestValidate_NetScope(t *testing.T) {
+	for _, tt := range []struct {
+		scope string
+		ok    bool
+	}{
+		{"", true}, {"mt", true}, {"m", false}, {"mtap", false}, {"m-", false}, {"bt", false}, {"rm", false},
+	} {
+		c := &Config{
+			RootDir: "/r", RunDir: "/r/run", LogDir: "/l",
+			StopTimeoutSeconds: 30, NetScope: tt.scope,
+		}
+		err := c.Validate()
+		if tt.ok && err != nil {
+			t.Fatalf("scope %q: unexpected error %v", tt.scope, err)
+		}
+		if !tt.ok && err == nil {
+			t.Fatalf("scope %q: want rejection", tt.scope)
+		}
+	}
+}
+
 func TestValidate_MetaBackend(t *testing.T) {
 	for _, tt := range []struct {
 		backend string
