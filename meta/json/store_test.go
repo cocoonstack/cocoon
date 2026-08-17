@@ -211,14 +211,11 @@ func TestOpenValidation(t *testing.T) {
 	}
 }
 
-// TestEventsForcedOverflow is the §7 forced-overflow gate: with fsnotify
-// severed (lost events), an injected overflow error must make the notifier
-// re-read its token and signal the missed change.
+// TestEventsForcedOverflow is the §7 forced-overflow gate: with fsnotify severed (lost events), an injected overflow error must make the notifier re-read its token and signal the missed change.
 func TestEventsForcedOverflow(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	// Seam set before the notifier loop starts; reset runs after the store's
-	// Cleanup closes that loop (LIFO), so neither races the loop's reads.
+	// Seam set before the notifier loop starts; reset runs after the store's Cleanup closes that loop (LIFO), so neither races the loop's reads.
 	testWatchErrs = make(chan struct{})
 	t.Cleanup(func() { testWatchErrs = nil })
 	s := newStore(t, dir, "alpha")
@@ -254,9 +251,7 @@ func TestEventsForcedOverflow(t *testing.T) {
 	}
 }
 
-// TestDurableSyncOrder is the §9 durability gate at the engine level: a
-// CommitDurable ack happens only after rename → main fsync → prev fsync →
-// parent-dir fsync all ran, while CommitRelaxed relinquishes the post-main syncs.
+// TestDurableSyncOrder is the §9 durability gate at the engine level: a CommitDurable ack happens only after rename → main fsync → prev fsync → parent-dir fsync all ran, while CommitRelaxed relinquishes the post-main syncs.
 func TestDurableSyncOrder(t *testing.T) {
 	var steps []string
 	testCrashStep = func(step string) error { steps = append(steps, step); return nil }
@@ -293,8 +288,7 @@ func TestDurableSyncOrder(t *testing.T) {
 	}
 }
 
-// TestCleanUpdateSkipsCommit pins the dirty-skip: a read-only Update must not
-// re-encode, rotate or fsync — the entry guards run on every VM operation.
+// TestCleanUpdateSkipsCommit pins the dirty-skip: a read-only Update must not re-encode, rotate or fsync — the entry guards run on every VM operation.
 func TestCleanUpdateSkipsCommit(t *testing.T) {
 	var steps []string
 	testCrashStep = func(step string) error { steps = append(steps, step); return nil }
@@ -351,8 +345,7 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Legacy json.Unmarshal rejected trailing bytes; the streaming decoder
-	// must too, so this main is corrupt and .prev is served.
+	// Legacy json.Unmarshal rejected trailing bytes; the streaming decoder must too, so this main is corrupt and .prev is served.
 	main, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

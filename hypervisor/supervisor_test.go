@@ -322,8 +322,7 @@ func TestTryLockVMOpsReportsBusyWithoutError(t *testing.T) {
 	}
 }
 
-// StoppedAt is when the VM was observed stopped, so a record predating the
-// interval bookkeeping still gets one.
+// StoppedAt is the observation time, so a record predating the interval bookkeeping still gets one.
 func TestConvergeDeadDatesARecordWithNoOpenInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()

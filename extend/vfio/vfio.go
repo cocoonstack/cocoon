@@ -1,5 +1,4 @@
-// Package vfio is the runtime attach interface for VFIO PCI passthrough (GPU, NIC, NVMe).
-// Attach is runtime-only — devices don't persist past VM stop; host IOMMU + vfio-pci binding are the user's job.
+// Package vfio is the runtime attach interface for VFIO PCI passthrough (GPU, NIC, NVMe); attach is runtime-only, and host IOMMU + vfio-pci binding are the user's job.
 package vfio
 
 import (
@@ -18,13 +17,11 @@ var (
 	// ErrUnsupportedBackend signals the backend cannot hot-plug VFIO devices (e.g. Firecracker).
 	ErrUnsupportedBackend = errors.New("backend does not support device attach")
 
-	// Match BDF in either short (01:00.0) or full (0000:01:00.0) form so the
-	// CLI accepts what `lspci` prints by default.
+	// Match BDF in either short (01:00.0) or full (0000:01:00.0) form so the CLI accepts what `lspci` prints by default.
 	bdfShortRe = regexp.MustCompile(`^[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$`)
 	bdfFullRe  = regexp.MustCompile(`^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$`)
 
-	// User-facing id charset matches CH device-id constraints; the prefix
-	// "cocoon-" is reserved so cocoon-derived ids never collide.
+	// User-facing id charset matches CH device-id constraints; the prefix "cocoon-" is reserved so cocoon-derived ids never collide.
 	validIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 )
 

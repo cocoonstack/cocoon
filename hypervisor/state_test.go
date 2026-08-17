@@ -301,8 +301,7 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 }
 
 func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T) {
-	// Storage must stay open when restore fails after kill — the on-disk files
-	// are still the old shape and vm rm will close it later with reason vm-rm.
+	// Storage stays open when restore fails after kill: the on-disk files are still the old shape and vm rm closes it later.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -583,9 +582,7 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	}
 }
 
-// TestForcedRetryStateOps is the design §10 gate: the migrated
-// UpdateStates/BatchMarkStarted run on a forced-retry engine (every closure
-// executes twice) and must emit each metering entry exactly once.
+// TestForcedRetryStateOps is the design §10 gate: on a forced-retry engine (every closure runs twice) each metering entry must emit exactly once.
 func TestForcedRetryStateOps(t *testing.T) {
 	const typ = "test-hv"
 	dir := t.TempDir()
@@ -620,8 +617,7 @@ func TestForcedRetryStateOps(t *testing.T) {
 	}
 }
 
-// stubBackendConfig satisfies BackendConfig for tests that only exercise the
-// metering wiring; unused methods panic so accidental dependence shows up loud.
+// stubBackendConfig satisfies BackendConfig for metering-wiring tests; unused methods panic so accidental dependence shows up loud.
 type stubBackendConfig struct {
 	rootDir   string
 	indexFile string
@@ -648,8 +644,7 @@ func (c stubBackendConfig) CgroupParentDir() string { return filepath.Join(c.roo
 
 func (stubBackendConfig) CgroupCPUFence() string { return "" }
 
-// meteringStubConfig gives the metering stub a real VMRunDir so sequences
-// can take the per-VM ops lock and MkdirTemp under it.
+// meteringStubConfig gives the metering stub a real VMRunDir so sequences can take the per-VM ops lock and MkdirTemp under it.
 type meteringStubConfig struct {
 	stubBackendConfig
 	vmRunRoot string

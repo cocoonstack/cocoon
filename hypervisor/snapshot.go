@@ -234,8 +234,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 	return nil
 }
 
-// PreflightRestore: load+validate sidecar, run backend-specific integrity, assert snapshot role sequence is a prefix of rec.
-// The validated meta is returned so later restore phases reuse it instead of re-reading the copied-verbatim sidecar.
+// PreflightRestore loads and validates the sidecar, runs the backend integrity check and asserts the snapshot role sequence prefixes rec; the validated meta is returned so later phases skip re-reading it.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) (*SnapshotMeta, error) {
 	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
 	if err != nil {

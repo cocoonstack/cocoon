@@ -20,7 +20,6 @@ func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
 	return ch.StopOneSequence(ctx, id, ch.stopSpec())
 }
 
-// stopOneLocked is stopOne for callers already holding the VM's ops lock (DeleteAll).
 func (ch *CloudHypervisor) stopOneLocked(ctx context.Context, id string) error {
 	return ch.StopOneLocked(ctx, id, ch.stopSpec())
 }

@@ -20,8 +20,7 @@ func TestLookupOne(t *testing.T) {
 	if _, e, ok := LookupOne(images, "sha256:aabb000011112222333344445555666a"); !ok || (*e).EntryID() != "sha256:aabb000011112222333344445555666a" {
 		t.Errorf("multi-tag single-digest must resolve: ok=%v", ok)
 	}
-	// 16-hex prefix spanning two distinct digests: past the minHexLen guard,
-	// must be refused by the cross-digest check.
+	// 16-hex prefix spanning two distinct digests: past the minHexLen guard, must be refused by the cross-digest check.
 	if _, _, ok := LookupOne(images, "aabb000011112222"); ok {
 		t.Error("ambiguous cross-digest prefix must not resolve")
 	}
@@ -54,8 +53,7 @@ func TestDeleteByIDRejectsAmbiguousPrefix(t *testing.T) {
 	}
 }
 
-// testIndex has two distinct digests sharing a 16-hex prefix, so an ambiguous
-// query can pass LookupRefs' minHexLen guard and reach the cross-digest check.
+// testIndex has two distinct digests sharing a 16-hex prefix, so an ambiguous query can pass LookupRefs' minHexLen guard and reach the cross-digest check.
 func testIndex() map[string]*testEntry {
 	return map[string]*testEntry{
 		"img:v1":   {id: "sha256:aabb000011112222333344445555666a", ref: "img:v1"},

@@ -282,7 +282,6 @@ func (b *Backend) markFailedOperation(ctx context.Context, id string, markError 
 	}
 }
 
-// detachedWrite returns a context for bookkeeping writes that must survive caller cancellation, bounded by persistTimeout.
 func detachedWrite(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
 }

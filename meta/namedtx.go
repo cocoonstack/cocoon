@@ -10,8 +10,7 @@ import (
 
 const resolvePrefixMin = 3
 
-// RecordTx is the id→record map view of one table inside a transaction:
-// Get mirrors map lookup (nil when absent), Put is an upsert.
+// RecordTx is the id→record map view of one table inside a transaction: Get mirrors map lookup (nil when absent), Put is an upsert.
 type RecordTx[R any] struct {
 	ctx  context.Context
 	r    Reader
@@ -107,8 +106,7 @@ func (x *NamedTx[R]) NameDelIfOwned(name, id string) error {
 	return x.NameDel(name)
 }
 
-// Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at
-// least three characters; notFound is the subsystem's sentinel.
+// Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at least three characters; notFound is the subsystem's sentinel.
 func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
 	if rec, err := x.Get(ref); err != nil {
 		return "", err

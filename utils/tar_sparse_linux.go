@@ -51,7 +51,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("marshal sparse map for %s: %w", path, err)
 	}
 
-	// Segment-map JSON exceeds tar's 1MB PAX cap. Fall back to non-sparse.
 	if len(mapJSON) > maxSparseMapJSONSize {
 		return rewindAndTarFull(tw, f, fi, path, nameInTar)
 	}

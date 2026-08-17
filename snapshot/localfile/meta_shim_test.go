@@ -12,8 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/snapshot"
 )
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json
-// and requires byte-identical output to the legacy storage layer's writes.
+// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires byte-identical output to the legacy storage layer's writes.
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

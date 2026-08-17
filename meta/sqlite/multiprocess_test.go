@@ -25,9 +25,7 @@ const (
 	inverseOps     = 10
 )
 
-// TestMultiProcessCorrectness is §9's real-process storm for the sqlite
-// engine: acknowledged inserts and their name rows all present, names
-// referentially consistent, zero corruption on reopen.
+// TestMultiProcessCorrectness is §9's real-process storm for the sqlite engine: acknowledged inserts and their name rows all present, names referentially consistent, zero corruption on reopen.
 func TestMultiProcessCorrectness(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -151,10 +149,7 @@ func TestInverseScopeWorker(t *testing.T) {
 	}
 }
 
-// TestKillStormAtomicity is §9's commit-atomicity-under-crash gate for the
-// sqlite engine: SIGKILL sampled across WAL-append and commit-frame windows;
-// every multi-record transaction must reopen wholly applied or wholly absent,
-// every acked transaction wholly applied.
+// TestKillStormAtomicity is §9's commit-atomicity-under-crash gate for the sqlite engine: SIGKILL sampled across WAL-append and commit-frame windows; every multi-record transaction must reopen wholly applied or wholly absent, every acked transaction wholly applied.
 func TestKillStormAtomicity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -178,8 +173,7 @@ func TestKillStormAtomicity(t *testing.T) {
 			if id, ok := strings.CutPrefix(sc.Text(), "ACK "); ok {
 				acked[id] = struct{}{}
 				got++
-				// Kill at a round-varied depth so the SIGKILL lands in
-				// different WAL-append/commit windows.
+				// Kill at a round-varied depth so the SIGKILL lands in different WAL-append/commit windows.
 				if got >= 3+round*2 {
 					break
 				}
@@ -243,8 +237,7 @@ func TestKillStormWorker(t *testing.T) {
 	}
 }
 
-// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome
-// under extreme oversubscription (§4); reconciliation still demands exact counts.
+// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome under extreme oversubscription (§4); reconciliation still demands exact counts.
 func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
 	t.Helper()
 	for {

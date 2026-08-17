@@ -1,5 +1,4 @@
-// Package fs is the runtime attach interface for vhost-user-fs devices (typically virtiofsd).
-// Attach is runtime-only — devices don't persist past VM stop; re-attach after restart.
+// Package fs is the runtime attach interface for vhost-user-fs devices (typically virtiofsd); attach is runtime-only, devices don't persist past VM stop.
 package fs
 
 import (
@@ -20,8 +19,7 @@ var (
 	// ErrUnsupportedBackend signals the backend cannot hot-plug vhost-user-fs (e.g. Firecracker).
 	ErrUnsupportedBackend = errors.New("backend does not support fs attach")
 
-	// Tag charset is intentionally portable: usable as a CH device id suffix
-	// (cocoon-fs-<tag>) and safe for shell quoting and guest mount commands.
+	// Tag charset is intentionally portable: usable as a CH device id suffix (cocoon-fs-<tag>) and safe for shell quoting and guest mount commands.
 	validTagRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}$`)
 )
 

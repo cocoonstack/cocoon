@@ -115,7 +115,6 @@ func putMachineConfig(ctx context.Context, hc *http.Client, cfg fcMachineConfig)
 	return putJSON(ctx, hc, "/machine-config", cfg, "machine-config")
 }
 
-// patchDrivePath repoints a block device's backing file on a booted VM.
 func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost string) error {
 	return sendJSONOnce(ctx, hc, http.MethodPatch, "/drives/"+driveID, struct {
 		DriveID    string `json:"drive_id"`

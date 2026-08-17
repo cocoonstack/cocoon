@@ -180,9 +180,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}
 }
 
-// TestLiveHolderKeepsLease is §9's negative fencing case: while A is alive
-// and slow (ops lock held, tombstone deleting), B's recovery sweep can
-// neither take the lock nor steal the lease.
+// TestLiveHolderKeepsLease is §9's negative fencing case: while A is alive and slow (ops lock held, tombstone deleting), B's sweep can neither take the lock nor steal the lease.
 func TestLiveHolderKeepsLease(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -231,9 +229,7 @@ func TestLiveHolderKeepsLease(t *testing.T) {
 	}
 }
 
-// TestPrepareStartRefusesMidDeleting is the §9 entry gate through the real
-// start entrypoint: a dead worker's deleting tombstone must drive recovery
-// and refuse the boot.
+// TestPrepareStartRefusesMidDeleting is the §9 entry gate through the real start entrypoint: a dead worker's deleting tombstone drives recovery and refuses the boot.
 func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	var netTorn []string

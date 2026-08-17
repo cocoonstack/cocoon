@@ -139,8 +139,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start stub vmm: %v", err)
 	}
-	// Background reaper: a test-killed stub must not linger as a zombie, or
-	// TerminateProcess's IsProcessAlive polling never sees it exit.
+	// Background reaper: a test-killed stub must not linger as a zombie, or TerminateProcess's IsProcessAlive polling never sees it exit.
 	waitDone := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()

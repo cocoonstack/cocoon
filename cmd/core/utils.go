@@ -167,7 +167,7 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 	if name == "" {
 		return nil
 	}
-	// The name index, not Inspect: a save killed mid-flight leaves a pending record still holding the name, which Inspect reports as not-found. Passing that preflight means the whole capture is written before the insert rejects it.
+	// The name index, not Inspect: a killed save leaves a pending record still holding the name that Inspect reports as not-found, and passing that preflight wastes the whole capture before the insert rejects it.
 	if nh, ok := snapBackend.(snapshot.NameHolder); ok {
 		id, held, err := nh.NameOwner(ctx, name)
 		if err != nil {
@@ -311,7 +311,6 @@ func digestPullRef(image, digest, imageType string) string {
 	if digest == "" || imageType != types.ImageTypeOCI {
 		return image
 	}
-	// OCI: convert "registry/repo:tag" → "registry/repo@sha256:..."
 	ref, err := name.ParseReference(image)
 	if err != nil {
 		return image

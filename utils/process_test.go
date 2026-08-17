@@ -155,8 +155,7 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 	pid := cmd.Process.Pid
 	waitForExec(t, pid, "sleep", "60")
 
-	// Reap the child in background so it doesn't become a zombie after SIGTERM.
-	// Without this, kill(pid, 0) keeps returning nil for zombies and WaitFor times out.
+	// Reap the child in background: kill(pid, 0) keeps returning nil for a zombie and WaitFor would time out.
 	waitDone := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
@@ -208,8 +207,7 @@ func TestTerminateProcess_InvalidPID(t *testing.T) {
 }
 
 func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
-	// Traps SIGTERM so only SIGKILL can end it. The trailing "; :" stops bash from
-	// tail-exec'ing into sleep, which would rename argv0 and fail the "bash" cmdline check.
+	// Traps SIGTERM so only SIGKILL can end it; the trailing "; :" stops bash from tail-exec'ing into sleep, which would rename argv0 and fail the "bash" cmdline check.
 	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
@@ -296,8 +294,7 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
 }
 
-// waitForExec parks until the child's execve lands: cmd.Start returns
-// pre-exec, and TerminateProcess declines a mismatched cmdline (#87 race).
+// waitForExec parks until the child's execve lands: cmd.Start returns pre-exec, and TerminateProcess declines a mismatched cmdline (#87 race).
 func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
 	t.Helper()
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {

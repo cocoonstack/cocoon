@@ -51,8 +51,7 @@ func TestReconcileSkipsInconclusiveLiveness(t *testing.T) {
 	}
 }
 
-// A tombstoned record is not supervised as a live VM, but the daemon starts
-// deletes of its own, so it must finish one a crash left mid-protocol.
+// A tombstoned record is not supervised as a live VM, but the daemon starts deletes of its own, so it must finish one a crash left mid-protocol.
 func TestReconcileResumesInterruptedDelete(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.tombstoned["vm1"] = struct{}{}

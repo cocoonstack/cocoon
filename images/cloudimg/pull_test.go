@@ -156,8 +156,7 @@ func TestDownloadToFileShortRangeBodyFails(t *testing.T) {
 			_, _ = w.Write(data[start : end+1]) // probe and tiny ranges served fully
 			return
 		}
-		// Serve half the promised bytes, then flush to force chunked encoding so
-		// the client sees a clean EOF instead of a Content-Length mismatch.
+		// Serve half the promised bytes, then flush to force chunked encoding so the client sees a clean EOF instead of a Content-Length mismatch.
 		_, _ = w.Write(data[start : start+(end-start)/2])
 		w.(http.Flusher).Flush()
 	}))
@@ -193,8 +192,7 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 	}
 }
 
-// rangeHandler serves data with full HTTP Range support; fail, if non-nil, lets a test force a
-// specific requested range to error out (simulating a mid-download server failure).
+// rangeHandler serves data with full HTTP Range support; fail, if non-nil, lets a test force a specific requested range to error out (simulating a mid-download server failure).
 func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")

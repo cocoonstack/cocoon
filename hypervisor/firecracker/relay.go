@@ -215,7 +215,6 @@ func relayInheritedLeaseCount() (int, bool) {
 	return count, true
 }
 
-// relaySession handles one console connection: subscribes to the PTY broadcast, copies conn→master for input, and unsubscribes on disconnect.
 func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broadcaster) {
 	defer conn.Close() //nolint:errcheck
 
