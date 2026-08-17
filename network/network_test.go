@@ -29,9 +29,15 @@ func TestValidateScope(t *testing.T) {
 		scope string
 		ok    bool
 	}{
-		{"", true}, {"mt", true}, {"A9", true},
-		{"m", false}, {"mtap", false}, {"m-", false}, {"m/", false},
-		{"bt", false}, {"rm", false},
+		{"", true},
+		{"mt", true},
+		{"A9", true},
+		{"m", false},
+		{"mtap", false},
+		{"m-", false},
+		{"m/", false},
+		{"bt", false},
+		{"rm", false},
 	} {
 		if err := ValidateScope(tt.scope); (err == nil) != tt.ok {
 			t.Errorf("ValidateScope(%q) = %v, want ok=%v", tt.scope, err, tt.ok)
