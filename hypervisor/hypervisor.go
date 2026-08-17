@@ -51,3 +51,8 @@ type Direct interface {
 type Hibernator interface {
 	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error
 }
+
+// CloudImageExporter flattens a cloudimg-backed VM's root disk while fencing stop/conversion/restart; the caller owns and removes dest.
+type CloudImageExporter interface {
+	ExportCloudImage(ctx context.Context, ref, dest string) (*types.VM, error)
+}

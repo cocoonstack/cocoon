@@ -108,6 +108,17 @@ cocoon vm clone imported-snap
 cocoon snapshot export my-snap -o - | ssh host2 cocoon snapshot import --name my-snap
 ```
 
+They can also be pushed directly to any OCI Distribution registry using the
+credentials in the Docker config:
+
+```bash
+cocoon snapshot push my-snap registry.example.com/team/my-snap:v1
+```
+
+This publishes the full memory/device snapshot for `vm clone`; it is distinct
+from `cocoon vm export`, which flattens a cloudimg-backed VM into a standalone
+system disk without captured CPU or memory state for `vm run`.
+
 The archive contains the snapshot config, VM config, COW disk (with sparse-aware pax headers for efficient compression), memory ranges, and device state — everything needed to reconstruct the snapshot on a different machine.
 
 #### Cross-Node Clone

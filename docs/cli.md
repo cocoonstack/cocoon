@@ -28,6 +28,7 @@ cocoon
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
 │   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
+│   ├── export VM REF              Flatten a cloudimg VM and push it as an OCI artifact
 │   ├── status [VM...]             Watch VM status in real time
 │   ├── fs
 │   │   ├── attach [flags] VM     Attach a vhost-user-fs share (CH only)
@@ -46,7 +47,8 @@ cocoon
 │   ├── inspect SNAPSHOT           Show detailed snapshot info (JSON)
 │   ├── rm SNAPSHOT [SNAPSHOT...]  Delete snapshot(s)
 │   ├── export [flags] SNAPSHOT    Export snapshot to portable archive (or stdout)
-│   └── import [flags] [FILE]      Import snapshot from archive (or stdin)
+│   ├── import [flags] [FILE]      Import snapshot from archive (or stdin)
+│   └── push [flags] SNAPSHOT REF  Push snapshot memory/device/disk state to OCI
 ├── gc [flags]                     Remove unreferenced blobs, VM dirs; --snapshot for LRU snapshot eviction
 ├── meta
 │   ├── init                       Initialize a fresh sqlite meta store (normally automatic on fresh roots)
@@ -189,6 +191,36 @@ Applies to `cocoon snapshot save`:
 | --------------- | ------- | -------------------- |
 | `--name`        |         | Snapshot name        |
 | `--description` |         | Snapshot description |
+
+### Snapshot Push Flags
+
+`cocoon snapshot push SNAPSHOT REGISTRY/REPOSITORY[:TAG]` publishes the existing
+snapshot as `application/vnd.cocoonstack.snapshot.v1+json` (or v2 when compression
+or chunking is enabled). Docker-compatible credentials are read from the standard
+Docker config.
+
+| Flag                  | Default | Description                                      |
+| --------------------- | ------- | ------------------------------------------------ |
+| `--zstd-level`        | `0`     | Compress large snapshot layers; 0 disables       |
+| `--chunk-size-mib`    | `0`     | Split files into independently uploaded chunks   |
+| `--concurrency`       | `8`     | Parallel chunk upload/encoder workers             |
+| `--memory-budget-mib` | `9216`  | Pipeline buffer cap                               |
+
+The pushed artifact remains a memory snapshot: clone/restore must use a compatible
+guest CPU ABI and inherits the captured guest topology.
+
+### VM Cloud Image Export
+
+```bash
+cocoon vm export my-vm registry.example.com/team/custom-os:v1
+```
+
+`vm export` accepts Cloud Hypervisor VMs created from a cloud image (Linux or
+Windows). If running, the VM is stopped, its qcow2 backing chain is flattened and
+compressed, and the VM is restarted before the OCI upload begins. The resulting
+`application/vnd.cocoonstack.os-image.v1+json` artifact is a standalone system disk
+for `vm run`; data disks are not included. Direct-boot OCI/EROFS VMs are rejected
+because their lower layers plus raw upper filesystem are not a qcow2 backing chain.
 
 ### Export Flags
 

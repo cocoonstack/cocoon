@@ -35,6 +35,10 @@ cocoon vm exec my-vm -- uname -a
 cocoon snapshot save --name base my-vm
 cocoon vm clone base --name fresh
 
+# Publish fast-clone state, or export a portable custom OS image
+cocoon snapshot push base registry.example.com/team/base:snapshot
+cocoon vm export my-vm registry.example.com/team/custom-os:v1
+
 # Clean up
 cocoon vm rm --force my-vm fresh
 ```

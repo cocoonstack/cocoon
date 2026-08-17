@@ -179,6 +179,13 @@ func Command(h Handler) *cobra.Command {
 	statusCmd.Flags().Bool("event", false, "event stream mode (append changes instead of refreshing); implies polling")
 	statusCmd.Flags().String("format", "", "output format: json (one-shot + event modes; --watch always renders a table)")
 
+	exportCmd := &cobra.Command{
+		Use:   "export VM REF",
+		Short: "Export a cloudimg-backed VM as a standalone qcow2 OCI artifact",
+		Args:  cobra.ExactArgs(2),
+		RunE:  h.Export,
+	}
+
 	vmCmd.AddCommand(
 		createCmd,
 		runCmd,
@@ -197,6 +204,7 @@ func Command(h Handler) *cobra.Command {
 		hibernateCmd,
 		debugCmd,
 		statusCmd,
+		exportCmd,
 		buildFsCommand(h),
 		buildDeviceCommand(h),
 		buildDiskCommand(h),

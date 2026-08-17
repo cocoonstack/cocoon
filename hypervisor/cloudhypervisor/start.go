@@ -16,7 +16,15 @@ func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, 
 }
 
 func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
-	return ch.StartSequence(ctx, id, hypervisor.StartSpec{
+	return ch.StartSequence(ctx, id, ch.startSpec())
+}
+
+func (ch *CloudHypervisor) startOneLocked(ctx context.Context, id string) error {
+	return ch.StartOneLocked(ctx, id, ch.startSpec())
+}
+
+func (ch *CloudHypervisor) startSpec() hypervisor.StartSpec {
+	return hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), ch.EffectiveCPUs(&rec.Config.Config))
@@ -24,7 +32,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			ch.saveCmdline(ctx, rec, args)
 			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)
 		},
-	})
+	}
 }
 
 func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, args []string, netnsPath string, deferQuota bool) (int, error) {

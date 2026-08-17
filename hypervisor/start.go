@@ -32,6 +32,11 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 		return err
 	}
 	defer unlock()
+	return b.StartOneLocked(ctx, id, spec)
+}
+
+// StartOneLocked is StartSequence minus the lock for composite operations that already hold the VM's ops lock.
+func (b *Backend) StartOneLocked(ctx context.Context, id string, spec StartSpec) error {
 	rec, err := b.PrepareStart(ctx, id, spec.RuntimeFiles)
 	if err != nil {
 		return err

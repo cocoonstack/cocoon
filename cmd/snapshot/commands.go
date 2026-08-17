@@ -64,6 +64,17 @@ func Command(h Handler) *cobra.Command {
 	importCmd.Flags().String("name", "", "override snapshot name")
 	importCmd.Flags().String("description", "", "override snapshot description")
 
-	snapshotCmd.AddCommand(saveCmd, listCmd, inspectCmd, rmCmd, exportCmd, importCmd)
+	pushCmd := &cobra.Command{
+		Use:   "push SNAPSHOT REF",
+		Short: "Push a snapshot to an OCI registry",
+		Args:  cobra.ExactArgs(2),
+		RunE:  h.Push,
+	}
+	pushCmd.Flags().Int("zstd-level", 0, "zstd-compress snapshot layers at this level (0 disables)")
+	pushCmd.Flags().Int("chunk-size-mib", 0, "split snapshot files into chunks of this many MiB (0 disables)")
+	pushCmd.Flags().Int("concurrency", 8, "parallel chunk upload/encoder workers")
+	pushCmd.Flags().Int("memory-budget-mib", 9216, "snapshot push pipeline memory cap in MiB")
+
+	snapshotCmd.AddCommand(saveCmd, listCmd, inspectCmd, rmCmd, exportCmd, importCmd, pushCmd)
 	return snapshotCmd
 }
