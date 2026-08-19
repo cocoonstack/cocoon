@@ -131,20 +131,17 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	var (
 		rec     *tombstone.Record
 		leaseID string
+		cl      netCleanup
 	)
 	if err := c.update(ctx, func(t *netTx) error {
 		var err error
-		rec, leaseID, err = ts.Resume(ctx, t.Writer(), vmID)
+		rec, leaseID, err = ts.Recover(ctx, t.Writer(), vmID, &cl)
 		return err
 	}); err != nil {
 		return false, err
 	}
-	if rec == nil || rec.Phase == tombstone.PhaseLeased {
+	if rec == nil {
 		return false, nil
-	}
-	var cl netCleanup
-	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
-		return false, fmt.Errorf("tombstone %s payload: %w", vmID, err)
 	}
 	// Subset teardown (vm net remove) creates its TAPs independently of the netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's TAPs die with the netns.
 	deleteTAP := rec.Payload.Mode == tombstone.ModeSubset
