@@ -119,20 +119,17 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	var (
 		rec     *tombstone.Record
 		leaseID string
+		cl      snapCleanup
 	)
 	if err := lf.update(ctx, func(t *snapTx) error {
 		var err error
-		rec, leaseID, err = ts.Resume(ctx, t.Writer(), id)
+		rec, leaseID, err = ts.Recover(ctx, t.Writer(), id, &cl)
 		return err
 	}); err != nil {
 		return err
 	}
-	if rec == nil || rec.Phase == tombstone.PhaseLeased {
+	if rec == nil {
 		return nil
-	}
-	var cl snapCleanup
-	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
-		return fmt.Errorf("tombstone %s payload: %w", id, err)
 	}
 	if err := lf.finishSnapTeardown(ctx, id, leaseID, cl); err != nil {
 		return err

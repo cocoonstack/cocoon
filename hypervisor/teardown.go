@@ -102,20 +102,17 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool,
 	var (
 		rec     *tombstone.Record
 		leaseID string
+		cl      vmCleanup
 	)
 	if err := b.update(ctx, func(t *vmTx) error {
 		var err error
-		rec, leaseID, err = ts.Resume(ctx, t.w, id)
+		rec, leaseID, err = ts.Recover(ctx, t.w, id, &cl)
 		return err
 	}); err != nil {
 		return false, err
 	}
-	if rec == nil || rec.Phase == tombstone.PhaseLeased {
+	if rec == nil {
 		return false, nil
-	}
-	var cl vmCleanup
-	if err := json.Unmarshal(rec.Payload.Cleanup, &cl); err != nil {
-		return false, fmt.Errorf("tombstone %s payload: %w", id, err)
 	}
 	if err := b.finishVMTeardown(ctx, id, leaseID, cl); err != nil {
 		return false, err
