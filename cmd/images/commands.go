@@ -35,6 +35,14 @@ Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers.
 		RunE: h.Import,
 	}
 
+	exportCmd := &cobra.Command{
+		Use:   "export IMAGE",
+		Short: "Export a locally stored cloud image as qcow2",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.Export,
+	}
+	exportCmd.Flags().StringP("output", "o", "", "output file path (default: <image>.qcow2; use - for stdout)")
+
 	pullCmd := &cobra.Command{
 		Use:   "pull IMAGE [IMAGE...]",
 		Short: "Pull OCI image(s) or cloud image URL(s)",
@@ -46,6 +54,7 @@ Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers.
 	imageCmd.AddCommand(
 		pullCmd,
 		importCmd,
+		exportCmd,
 		listCmd,
 		&cobra.Command{
 			Use:   "rm ID [ID...]",

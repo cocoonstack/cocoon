@@ -31,6 +31,12 @@ cocoon image import myimg disk.qcow2
 cat layers.tar.gz | cocoon image import mylayers
 ```
 
+`cocoon image export IMAGE -o -` streams a locally stored cloud image as qcow2. This is useful for direct node-to-node prewarming:
+
+```bash
+cocoon image export custom-linux-7a:tag -o - | ssh node2 cocoon image import custom-linux-7a:tag
+```
+
 ## Managing
 
 ```bash

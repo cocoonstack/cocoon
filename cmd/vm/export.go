@@ -11,6 +11,7 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
+	"github.com/cocoonstack/cocoon/progress"
 )
 
 func (h Handler) Export(cmd *cobra.Command, args []string) error {
@@ -65,5 +66,16 @@ func (h Handler) Export(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("push cloud image: %w", err)
 	}
 	fmt.Println(result.ManifestDigest)
+	localName, _ := cmd.Flags().GetString("local-name")
+	if localName != "" {
+		_, store, initErr := cmdcore.InitImageBackendsForPull(ctx, conf)
+		if initErr != nil {
+			return fmt.Errorf("init local cloud-image store: %w", initErr)
+		}
+		logger.Infof(ctx, "retaining exported VM as local image %s ...", localName)
+		if importErr := store.Import(ctx, localName, progress.Nop, tmpPath); importErr != nil {
+			return fmt.Errorf("retain local cloud image %s: %w", localName, importErr)
+		}
+	}
 	return nil
 }

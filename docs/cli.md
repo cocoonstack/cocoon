@@ -222,6 +222,10 @@ compressed, and the VM is restarted before the OCI upload begins. The resulting
 for `vm run`; data disks are not included. Direct-boot OCI/EROFS VMs are rejected
 because their lower layers plus raw upper filesystem are not a qcow2 backing chain.
 
+Use `--local-name NAME` to register the flattened qcow2 in the local cloud-image
+store after a successful push. Later runs on the source node can then reuse it
+without downloading it from the registry.
+
 ### Export Flags
 
 Applies to `cocoon snapshot export`:

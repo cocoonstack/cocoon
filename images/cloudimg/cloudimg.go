@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sync/singleflight"
@@ -74,6 +75,34 @@ func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tra
 
 func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
 	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
+}
+
+// Export opens the immutable qcow2 blob referenced by name. The returned file
+// descriptor remains readable even if a concurrent GC unlinks the blob after
+// it has been opened.
+func (c *CloudImg) Export(ctx context.Context, name string) (io.ReadCloser, error) {
+	var digestHex string
+	if err := c.store.View(ctx, func(idx *imageIndex) error {
+		_, entry, ok := images.LookupOne(idx.Images, name)
+		if !ok || entry == nil {
+			return fmt.Errorf("cloud image %q not found or ambiguous", name)
+		}
+		digestHex = entry.ContentSum.Hex()
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	var locks images.BlobLocks
+	if err := locks.Lock(c.conf.BlobLockPath(digestHex)); err != nil {
+		return nil, err
+	}
+	defer locks.Release()
+	blobPath := c.conf.BlobPath(digestHex)
+	f, err := os.Open(blobPath) //nolint:gosec // blobPath is derived from the content digest
+	if err != nil {
+		return nil, fmt.Errorf("open cloud image %q: %w", name, err)
+	}
+	return f, nil
 }
 
 // Config resolves cloud images to qcow2 storage plus firmware boot config.

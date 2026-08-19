@@ -185,6 +185,7 @@ func Command(h Handler) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE:  h.Export,
 	}
+	exportCmd.Flags().String("local-name", "", "also retain the exported qcow2 in the local cloud-image store under this name")
 
 	vmCmd.AddCommand(
 		createCmd,
