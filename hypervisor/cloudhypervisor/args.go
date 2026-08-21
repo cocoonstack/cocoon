@@ -48,10 +48,14 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 	mem := rec.Config.Memory
 
 	cfg := &chVMConfig{
-		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: hypervisor.HostCPUCount(), KVMHyperV: rec.Config.Windows},
-		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory, Mergeable: rec.Config.Mergeable},
-		RNG:      chRNG{Src: "/dev/urandom"},
-		Watchdog: true,
+		CPUs:   chCPUs{BootVCPUs: cpu, MaxVCPUs: hypervisor.HostCPUCount(), KVMHyperV: rec.Config.Windows},
+		Memory: chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory, Mergeable: rec.Config.Mergeable},
+		RNG:    chRNG{Src: "/dev/urandom"},
+		// Windows stops servicing virtio-watchdog while rebooting. Keeping the
+		// device armed can reset the VM during driver teardown and leave the guest
+		// in a SYSTEM_THREAD_EXCEPTION_NOT_HANDLED boot loop. Linux guests keep
+		// the watchdog for hang recovery.
+		Watchdog: !rec.Config.Windows,
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},
 	}
 

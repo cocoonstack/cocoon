@@ -54,6 +54,24 @@ func TestEffectiveDirectIO(t *testing.T) {
 	}
 }
 
+func TestWatchdogDisabledForWindows(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		windows bool
+		want    bool
+	}{
+		{name: "linux", want: true},
+		{name: "windows", windows: true, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Windows: tt.windows}}}}
+			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
+				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQcow2OverlayDiskArgs(t *testing.T) {
 	sc := &types.StorageConfig{Path: "/v/overlay.qcow2", Role: types.StorageRoleCOW}
 	got := diskToCLIArg(storageConfigToDisk(sc, 1, 0, false, nil))
