@@ -54,17 +54,17 @@ func TestEffectiveDirectIO(t *testing.T) {
 	}
 }
 
-func TestWatchdogDisabledForWindows(t *testing.T) {
+func TestWatchdogPolicy(t *testing.T) {
 	for _, tt := range []struct {
-		name    string
-		windows bool
-		want    bool
+		name       string
+		noWatchdog bool
+		want       bool
 	}{
-		{name: "linux", want: true},
-		{name: "windows", windows: true, want: false},
+		{name: "default enabled", want: true},
+		{name: "explicitly disabled", noWatchdog: true, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Windows: tt.windows}}}}
+			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}}
 			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
 				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
 			}

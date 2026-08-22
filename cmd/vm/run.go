@@ -490,6 +490,8 @@ func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
 	case vmCfg.Mergeable:
 		return fmt.Errorf("--fc and --mergeable are mutually exclusive: Firecracker has no KSM madvise knob")
+	case vmCfg.NoWatchdog:
+		return fmt.Errorf("--fc and --no-watchdog are mutually exclusive: Firecracker does not expose a virtio watchdog")
 	}
 	return nil
 }

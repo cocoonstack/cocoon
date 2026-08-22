@@ -118,6 +118,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--user`    | `root`           | Guest username for cloud-init (cloudimg only)  |
 | `--password` | `cocoon`        | Guest password for cloud-init (cloudimg only)  |
 | `--no-direct-io` | `false`     | Disable O_DIRECT on writable disks (use page cache; CH only, useful for dev/test with few VMs) |
+| `--no-watchdog` | `false`     | Omit the virtio watchdog device (CH only; use for guests whose watchdog driver cannot safely handle reboot) |
 | `--data-disk` | empty (repeatable) | Attach an extra data disk: `size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]`. See [Data Disks](vm.md#data-disks) |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |
@@ -142,6 +143,7 @@ Applies to `cocoon vm clone`:
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
+| `--no-watchdog` | `false` (inherit)  | Omit the virtio watchdog device (inherit from snapshot if not set; pass `--no-watchdog=false` to re-enable) |
 | `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |

@@ -169,7 +169,7 @@ Cocoon does not attach a virtio-balloon device to Windows VMs (`--windows`). The
 
 virtio-win 0.1.240 did not have this problem because its balloon driver gave up on the first host timeout, allowing Windows to proceed to `ResetSystem` quickly (~14 seconds total shutdown).
 
-**Workaround if balloon is needed**: increase `stop_timeout_seconds` to 180+ and apply the watchdog-pause patch to Cloud Hypervisor (pause the watchdog timer when `vm.power-button` is received).
+**Workaround if balloon is needed**: increase `stop_timeout_seconds` to 180+ and apply the watchdog-pause patch to Cloud Hypervisor (pause the watchdog timer when `vm.power-button` is received). For guest-initiated reboot paths whose driver leaves the watchdog armed, create the VM with `--no-watchdog`; this trades device-level hang reset for reboot safety and should be paired with an external liveness policy where automatic recovery is required.
 
 ## Installing patched binaries for Windows
 
