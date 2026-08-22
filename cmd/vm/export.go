@@ -65,17 +65,17 @@ func (h Handler) Export(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("push cloud image: %w", err)
 	}
-	fmt.Println(result.ManifestDigest)
 	localName, _ := cmd.Flags().GetString("local-name")
 	if localName != "" {
 		_, store, initErr := cmdcore.InitImageBackendsForPull(ctx, conf)
 		if initErr != nil {
-			return fmt.Errorf("init local cloud-image store: %w", initErr)
+			return fmt.Errorf("pushed %s as %s, but initializing the local cloud-image store failed: %w", destination, result.ManifestDigest, initErr)
 		}
 		logger.Infof(ctx, "retaining exported VM as local image %s ...", localName)
 		if importErr := store.Import(ctx, localName, progress.Nop, tmpPath); importErr != nil {
-			return fmt.Errorf("retain local cloud image %s: %w", localName, importErr)
+			return fmt.Errorf("pushed %s as %s, but retaining local cloud image %s failed: %w", destination, result.ManifestDigest, localName, importErr)
 		}
 	}
+	fmt.Println(result.ManifestDigest)
 	return nil
 }
