@@ -34,9 +34,9 @@ func (h Handler) Export(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create export temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
+	if closeErr := tmp.Close(); closeErr != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close export temp file: %w", err)
+		return fmt.Errorf("close export temp file: %w", closeErr)
 	}
 	defer os.Remove(tmpPath) //nolint:errcheck
 

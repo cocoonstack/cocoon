@@ -14,6 +14,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const qcow2Format = "qcow2"
+
 // nonImageSignatures catches common payloads qemu-img would misclassify as raw.
 var nonImageSignatures = []struct {
 	prefix []byte
@@ -106,7 +108,7 @@ func inspectQcow2Header(path string) (*sourceImageInfo, bool, error) {
 		return nil, true, fmt.Errorf("unsupported qcow2 version %d", hdr.Version)
 	}
 	return &sourceImageInfo{
-		Format:         "qcow2",
+		Format:         qcow2Format,
 		Compat:         compat,
 		HasBackingFile: hdr.HasBackingFile,
 	}, true, nil

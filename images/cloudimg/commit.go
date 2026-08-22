@@ -72,7 +72,7 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	logger.Debugf(ctx, "detected source format: %s (compat=%q, backing=%t)",
 		info.Format, info.Compat, info.HasBackingFile)
 
-	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
+	if info.Format == qcow2Format && info.Compat == "1.1" && !info.HasBackingFile {
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
 		if err := os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)
@@ -103,7 +103,7 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 }
 
 func convertToQcow2(ctx context.Context, srcFormat, src, dst string) error {
-	if err := utils.RunQemuImg(ctx, "convert", "-f", srcFormat, "-O", "qcow2", "-o", "compat=1.1", src, dst); err != nil {
+	if err := utils.RunQemuImg(ctx, "convert", "-f", srcFormat, "-O", qcow2Format, "-o", "compat=1.1", src, dst); err != nil {
 		os.Remove(dst) //nolint:errcheck,gosec
 		return err
 	}

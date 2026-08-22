@@ -68,25 +68,25 @@ func (p *Pusher) Push(ctx context.Context, opts PushOptions) (*PushResult, error
 		return nil, fmt.Errorf("stat cloud image: %w", err)
 	}
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return nil, fmt.Errorf("hash cloud image: %w", err)
+	if _, hashErr := io.Copy(h, f); hashErr != nil {
+		return nil, fmt.Errorf("hash cloud image: %w", hashErr)
 	}
 	digest := "sha256:" + hex.EncodeToString(h.Sum(nil))
-	if err := putBlobIfMissing(ctx, p.Uploader, opts.Name, digest, f, info.Size()); err != nil {
-		return nil, fmt.Errorf("upload cloud image: %w", err)
+	if uploadErr := putBlobIfMissing(ctx, p.Uploader, opts.Name, digest, f, info.Size()); uploadErr != nil {
+		return nil, fmt.Errorf("upload cloud image: %w", uploadErr)
 	}
 
 	config := []byte("{}")
 	configDigest := "sha256:" + ociutil.SHA256Hex(config)
-	if err := putBlobIfMissing(ctx, p.Uploader, opts.Name, configDigest, bytes.NewReader(config), int64(len(config))); err != nil {
-		return nil, fmt.Errorf("upload config: %w", err)
+	if configErr := putBlobIfMissing(ctx, p.Uploader, opts.Name, configDigest, bytes.NewReader(config), int64(len(config))); configErr != nil {
+		return nil, fmt.Errorf("upload config: %w", configErr)
 	}
 	annotations := maps.Clone(opts.Annotations)
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
 	annotations[manifest.AnnotationCreated] = time.Now().UTC().Format(time.RFC3339)
-	annotations["cocoonstack.disk.format"] = "qcow2"
+	annotations["cocoonstack.disk.format"] = qcow2Format
 	m := manifest.OCIManifest{
 		SchemaVersion: 2,
 		MediaType:     manifest.MediaTypeOCIManifest,
