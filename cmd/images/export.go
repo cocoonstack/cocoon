@@ -41,20 +41,39 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 		output = base + ".qcow2"
 	}
 
-	f, err := os.Create(output) //nolint:gosec
+	log.WithFunc("cmd.images.Export").Infof(ctx, "exporting %s to %s ...", ref, output)
+	return writeExportFile(output, stream)
+}
+
+// writeExportFile replaces output only after a complete, durable copy, so a
+// failed export cannot truncate a previously valid image at the same path.
+func writeExportFile(output string, src io.Reader) (retErr error) {
+	dir := filepath.Dir(output)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(output)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create %s: %w", output, err)
+		return fmt.Errorf("create export temp file for %s: %w", output, err)
 	}
+	tmpPath := tmp.Name()
 	defer func() {
-		_ = f.Close()
-		if err != nil {
-			_ = os.Remove(output)
+		_ = tmp.Close()
+		if retErr != nil {
+			_ = os.Remove(tmpPath)
 		}
 	}()
-
-	log.WithFunc("cmd.images.Export").Infof(ctx, "exporting %s to %s ...", ref, output)
-	if _, err = io.Copy(f, stream); err != nil {
+	if _, err := io.Copy(tmp, src); err != nil {
 		return fmt.Errorf("write %s: %w", output, err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return fmt.Errorf("chmod %s: %w", output, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", output, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", output, err)
+	}
+	if err := os.Rename(tmpPath, output); err != nil {
+		return fmt.Errorf("replace %s: %w", output, err)
 	}
 	return nil
 }

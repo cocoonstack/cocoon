@@ -40,12 +40,22 @@ func (ch *CloudHypervisor) ExportCloudImage(ctx context.Context, ref, dest strin
 	}
 	vm = ch.ToVM(&rec)
 
-	wasRunning := rec.State == types.VMStateRunning
+	wasRunning := false
 	probeErr := ch.WithRunningVM(ctx, &rec, func(int) error {
 		wasRunning = true
 		return nil
 	})
-	if probeErr != nil && !errors.Is(probeErr, hypervisor.ErrNotRunning) {
+	switch {
+	case probeErr == nil:
+	case errors.Is(probeErr, hypervisor.ErrNotRunning):
+		// A crashed VMM may leave a Running record behind. Reconcile that stale
+		// state, but do not resurrect a VM that was already down before export.
+		if hypervisor.NeedsDeadConvergence(&rec) {
+			if err := ch.ConvergeDead(ctx, id, rec.TransitionGeneration, time.Now()); err != nil {
+				return nil, fmt.Errorf("reconcile stopped VM before export: %w", err)
+			}
+		}
+	default:
 		return nil, fmt.Errorf("inspect running state: %w", probeErr)
 	}
 	if wasRunning {
