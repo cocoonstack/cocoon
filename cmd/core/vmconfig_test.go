@@ -90,18 +90,20 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 	snapCfg := types.SnapshotConfig{Config: types.Config{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
 		CPUWeight: 40, CPUQuotaUs: 200000, CPUBurstUs: 50000,
+		NoWatchdog: true,
 	}}
 
 	tests := []struct {
-		name       string
-		set        map[string]string
-		wantWeight int
-		wantQuota  int64
-		wantBurst  int64
-		wantErr    bool
+		name           string
+		set            map[string]string
+		wantWeight     int
+		wantQuota      int64
+		wantBurst      int64
+		wantNoWatchdog bool
+		wantErr        bool
 	}{
-		{name: "no flags ignore snapshot knobs", wantWeight: 0, wantQuota: 0, wantBurst: 0},
-		{name: "flags set the clone's policy", set: map[string]string{"cpu-weight": "10", "cpu-burst-us": "100000", "cpu-quota-us": "150000"}, wantWeight: 10, wantQuota: 150000, wantBurst: 100000},
+		{name: "no flags ignore snapshot knobs", wantWeight: 0, wantQuota: 0, wantBurst: 0, wantNoWatchdog: true},
+		{name: "flags set the clone's policy", set: map[string]string{"cpu-weight": "10", "cpu-burst-us": "100000", "cpu-quota-us": "150000"}, wantWeight: 10, wantQuota: 150000, wantBurst: 100000, wantNoWatchdog: true},
 		{name: "invalid flag rejected", set: map[string]string{"cpu-weight": "20000"}, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -117,7 +119,6 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 			cmd.Flags().Int64("cpu-burst-us", 0, "")
 			cmd.Flags().String("network", "", "")
 			cmd.Flags().Bool("no-direct-io", false, "")
-			cmd.Flags().Bool("no-watchdog", false, "")
 			cmd.Flags().String("restore-mode", "", "")
 			cmd.Flags().StringArray("data-disk", nil, "")
 			for k, v := range tt.set {
@@ -136,49 +137,9 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 				t.Errorf("knobs = %d/%d/%d, want %d/%d/%d",
 					got.CPUWeight, got.CPUQuotaUs, got.CPUBurstUs, tt.wantWeight, tt.wantQuota, tt.wantBurst)
 			}
+			if got.NoWatchdog != tt.wantNoWatchdog {
+				t.Errorf("NoWatchdog = %v, want %v", got.NoWatchdog, tt.wantNoWatchdog)
+			}
 		})
-	}
-}
-
-func TestCloneVMConfigWatchdogOverride(t *testing.T) {
-	snapCfg := types.SnapshotConfig{Config: types.Config{
-		CPU: 2, Memory: 1 << 30, Storage: 10 << 30, NoWatchdog: true,
-	}}
-	newCommand := func() *cobra.Command {
-		cmd := &cobra.Command{}
-		cmd.Flags().String("name", "c", "")
-		cmd.Flags().Int("nics", 0, "")
-		cmd.Flags().Int("queue-size", 0, "")
-		cmd.Flags().Int("disk-queue-size", 0, "")
-		cmd.Flags().Int("cpu-weight", 0, "")
-		cmd.Flags().Int64("cpu-quota-us", 0, "")
-		cmd.Flags().Int64("cpu-period-us", 0, "")
-		cmd.Flags().Int64("cpu-burst-us", 0, "")
-		cmd.Flags().String("network", "", "")
-		cmd.Flags().Bool("no-direct-io", false, "")
-		cmd.Flags().Bool("no-watchdog", false, "")
-		cmd.Flags().String("restore-mode", "", "")
-		cmd.Flags().StringArray("data-disk", nil, "")
-		return cmd
-	}
-
-	got, err := CloneVMConfigFromFlags(newCommand(), snapCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.NoWatchdog {
-		t.Fatal("clone must inherit the snapshot watchdog policy")
-	}
-
-	cmd := newCommand()
-	if err := cmd.Flags().Set("no-watchdog", "false"); err != nil {
-		t.Fatal(err)
-	}
-	got, err = CloneVMConfigFromFlags(cmd, snapCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.NoWatchdog {
-		t.Fatal("an explicit --no-watchdog=false must re-enable the device")
 	}
 }

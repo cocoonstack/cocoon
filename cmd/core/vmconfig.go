@@ -109,9 +109,6 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
 	}
 	noWatchdog := snapCfg.NoWatchdog
-	if cmd.Flags().Changed("no-watchdog") {
-		noWatchdog, _ = cmd.Flags().GetBool("no-watchdog")
-	}
 
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {

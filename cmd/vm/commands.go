@@ -357,7 +357,6 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
-	cmd.Flags().Bool("no-watchdog", false, "omit the virtio watchdog device (inherit from snapshot if not set; CH only)")
 	cmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
 	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH only)")
