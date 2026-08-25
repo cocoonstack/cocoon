@@ -127,33 +127,6 @@ func (fc *Firecracker) launchProcess(ctx context.Context, rec *hypervisor.VMReco
 	return pid, err
 }
 
-// cloneLeaseControl is the parent's half of the relay lease protocol; a nil control (no leases held) no-ops.
-type cloneLeaseControl struct {
-	commands  *os.File
-	responses *os.File
-}
-
-func (c *cloneLeaseControl) close() {
-	if c == nil {
-		return
-	}
-	closeFile(c.commands)
-	closeFile(c.responses)
-	c.commands = nil
-	c.responses = nil
-}
-
-func (c *cloneLeaseControl) commit() error {
-	if c == nil {
-		return nil
-	}
-	defer c.close()
-	if _, err := c.commands.Write([]byte{relayCommitLeasesCommand}); err != nil {
-		return err
-	}
-	return waitRelayLeaseResponse(c.responses, relayLeaseCommitAck, "commit")
-}
-
 // launchProcessWithLeases keeps inherited source-VM leases in the console relay until the caller confirms clone setup.
 func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervisor.VMRecord, sockPath, netnsPath string, leaseFiles []*os.File, deferQuota bool) (int, *cloneLeaseControl, error) {
 	logger := log.WithFunc("firecracker.launchProcessWithLeases")

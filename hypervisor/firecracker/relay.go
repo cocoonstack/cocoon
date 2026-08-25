@@ -68,6 +68,33 @@ func (b *broadcaster) readLoop() {
 	}
 }
 
+// cloneLeaseControl is the parent's half of the relay lease protocol; a nil control (no leases held) no-ops.
+type cloneLeaseControl struct {
+	commands  *os.File
+	responses *os.File
+}
+
+func (c *cloneLeaseControl) close() {
+	if c == nil {
+		return
+	}
+	closeFile(c.commands)
+	closeFile(c.responses)
+	c.commands = nil
+	c.responses = nil
+}
+
+func (c *cloneLeaseControl) commit() error {
+	if c == nil {
+		return nil
+	}
+	defer c.close()
+	if _, err := c.commands.Write([]byte{relayCommitLeasesCommand}); err != nil {
+		return err
+	}
+	return waitRelayLeaseResponse(c.responses, relayLeaseCommitAck, "commit")
+}
+
 // IsRelayMode returns true when the process was started as a console relay.
 func IsRelayMode() bool {
 	return os.Getenv(relayEnvKey) == "1"
