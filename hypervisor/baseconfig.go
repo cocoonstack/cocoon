@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -76,7 +75,7 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 }
 
 // PreflightRestore runs the shared restore preflight against this backend's managed roots.
-func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) (*SnapshotMeta, error) {
+func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
 	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
 }
 
