@@ -23,6 +23,9 @@ type SnapshotMeta struct {
 	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
 }
 
+// IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
+type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
+
 // RecordSnapshot generates a snapshot ID and records it on the VM's record.
 func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
 	snapID := utils.GenerateID()
@@ -235,7 +238,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 }
 
 // PreflightRestore loads and validates the sidecar, runs the backend integrity check and asserts the snapshot role sequence prefixes rec; the validated meta is returned so later phases skip re-reading it.
-func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity func(srcDir string, sidecar []*types.StorageConfig) error) (*SnapshotMeta, error) {
+func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
 	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
 	if err != nil {
 		return nil, err
