@@ -171,6 +171,8 @@ virtio-win 0.1.240 did not have this problem because its balloon driver gave up 
 
 **Workaround if balloon is needed**: increase `stop_timeout_seconds` to 180+ and apply the watchdog-pause patch to Cloud Hypervisor (pause the watchdog timer when `vm.power-button` is received).
 
+**Workaround for guest-initiated reboot**: if the guest driver leaves the watchdog armed, create the VM with `--no-watchdog`. This trades device-level hang reset for reboot safety and should be paired with an external liveness policy where automatic recovery is required.
+
 ## Installing patched binaries for Windows
 
 See [cocoonstack/windows](https://github.com/cocoonstack/windows) for download and installation instructions.

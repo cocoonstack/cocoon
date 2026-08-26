@@ -118,6 +118,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--user`    | `root`           | Guest username for cloud-init (cloudimg only)  |
 | `--password` | `cocoon`        | Guest password for cloud-init (cloudimg only)  |
 | `--no-direct-io` | `false`     | Disable O_DIRECT on writable disks (use page cache; CH only, useful for dev/test with few VMs) |
+| `--no-watchdog` | `false`     | Omit the virtio watchdog device (CH only; use for guests whose watchdog driver cannot safely handle reboot) |
 | `--data-disk` | empty (repeatable) | Attach an extra data disk: `size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]`. See [Data Disks](vm.md#data-disks) |
 | `--windows` | `false`          | Windows guest (UEFI boot, kvm_hyperv=on, no cidata) |
 | `--shared-memory` | `false`     | Enable CH `memory shared=on`; required for later `vm fs attach` (CH only, fixed for VM lifetime) |

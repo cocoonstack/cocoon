@@ -51,7 +51,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 		CPUs:     chCPUs{BootVCPUs: cpu, MaxVCPUs: hypervisor.HostCPUCount(), KVMHyperV: rec.Config.Windows},
 		Memory:   chMemory{Size: mem, HugePages: rec.Config.HugePages, Shared: rec.Config.SharedMemory, Mergeable: rec.Config.Mergeable},
 		RNG:      chRNG{Src: "/dev/urandom"},
-		Watchdog: true,
+		Watchdog: !rec.Config.NoWatchdog,
 		Vsock:    &chVsock{CID: hypervisor.VsockGuestCID, Socket: hypervisor.VsockSockPath(rec.RunDir)},
 	}
 

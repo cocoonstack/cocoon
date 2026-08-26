@@ -328,6 +328,9 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}
+	if err = validateBackendFlags(conf, vmCfg); err != nil {
+		return cloneSetup{}, err
+	}
 	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
@@ -476,7 +479,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	return ctx, info, hyper, nil
 }
 
-// validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create and debug so the capability gate list cannot drift.
+// validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create, clone, and debug so the capability gate list cannot drift.
 func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 	if !conf.UseFirecracker {
 		return nil
@@ -490,6 +493,8 @@ func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 		return fmt.Errorf("--fc and --hugepages are mutually exclusive: Firecracker cannot restore hugetlbfs-backed snapshots")
 	case vmCfg.Mergeable:
 		return fmt.Errorf("--fc and --mergeable are mutually exclusive: Firecracker has no KSM madvise knob")
+	case vmCfg.NoWatchdog:
+		return fmt.Errorf("--fc and --no-watchdog are mutually exclusive: Firecracker does not expose a virtio watchdog")
 	}
 	return nil
 }

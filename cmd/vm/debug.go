@@ -224,6 +224,8 @@ func printCommonCHArgs(s chDebugSpec) {
 	if s.Balloon > 0 {
 		fmt.Printf("  --balloon size=%dM,deflate_on_oom=on,free_page_reporting=on \\\n", s.Balloon)
 	}
-	fmt.Print("  --watchdog \\\n")
+	if !s.VMCfg.NoWatchdog {
+		fmt.Print("  --watchdog \\\n")
+	}
 	fmt.Println("  --serial tty --console off")
 }
