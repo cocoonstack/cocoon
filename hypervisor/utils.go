@@ -131,6 +131,8 @@ func SocketPath(runDir string) string { return filepath.Join(runDir, APISocketNa
 
 func ConsoleSockPath(runDir string) string { return filepath.Join(runDir, ConsoleSockName) }
 
+func ConsolePTYPath(runDir string) string { return filepath.Join(runDir, ConsolePTYName) }
+
 func VsockSockPath(runDir string) string { return filepath.Join(runDir, VsockSockName) }
 
 // BalloonSize returns (bytes, enabled); disabled on Windows (virtio-win driver loops on deflation) and below MinBalloonMemory.

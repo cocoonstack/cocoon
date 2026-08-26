@@ -117,6 +117,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	if err = resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("vm.resume: %w", err)
 	}
+	saveConsolePTY(ctx, vmID, rec.RunDir, sockPath, directBoot)
 
 	logger.Infof(ctx, "VM %s restored from snapshot", vmID)
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)

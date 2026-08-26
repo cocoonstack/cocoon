@@ -200,6 +200,31 @@ func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 	}
 }
 
+func TestReconcileStateClearsRuntimePathsOnStaleRunning(t *testing.T) {
+	vm := &types.VM{
+		State:       types.VMStateRunning,
+		PID:         0,
+		SocketPath:  "/run/api.sock",
+		VsockSocket: "/run/vsock.uds",
+		ConsolePath: "/dev/pts/3",
+	}
+	if got := ReconcileState(vm); got != "stopped (stale)" {
+		t.Fatalf("ReconcileState = %q, want %q", got, "stopped (stale)")
+	}
+	if vm.SocketPath != "" || vm.VsockSocket != "" || vm.ConsolePath != "" {
+		t.Errorf("stale-running VM keeps runtime paths: socket=%q vsock=%q console=%q",
+			vm.SocketPath, vm.VsockSocket, vm.ConsolePath)
+	}
+
+	alive := &types.VM{State: types.VMStateRunning, PID: os.Getpid(), ConsolePath: "/dev/pts/3"}
+	if got := ReconcileState(alive); got != string(types.VMStateRunning) {
+		t.Fatalf("ReconcileState = %q, want running", got)
+	}
+	if alive.ConsolePath == "" {
+		t.Error("live VM lost its console path")
+	}
+}
+
 // directErrSnap is a DirectCreator whose CreateFromDir always fails; the embedded interface panics on any other call, so the test proves the failure path alone.
 type directErrSnap struct {
 	snapshot.Snapshot

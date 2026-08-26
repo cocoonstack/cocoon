@@ -40,7 +40,7 @@ const (
 	chMemoryRestoreMmap chMemoryRestoreMode = "CopyOnWrite"
 )
 
-var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, cmdlineFileName, hypervisor.VsockSockName}
+var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.ConsolePTYName, cmdlineFileName, hypervisor.VsockSockName}
 
 type chMemoryRestoreMode string
 
@@ -286,6 +286,20 @@ func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, dir
 		return consolePath
 	}
 	return consoleSock
+}
+
+// saveConsolePTY records the per-boot PTY path for vm inspect; best-effort — the guest is up either way.
+func saveConsolePTY(ctx context.Context, vmID, runDir, sockPath string, directBoot bool) {
+	if !directBoot {
+		return
+	}
+	pty := resolveConsole(ctx, vmID, sockPath, "", true)
+	if pty == "" {
+		return
+	}
+	if err := utils.AtomicWriteFileNoSync(hypervisor.ConsolePTYPath(runDir), []byte(pty), 0o600); err != nil {
+		log.WithFunc("cloudhypervisor.saveConsolePTY").Warnf(ctx, "save console PTY for %s: %v", vmID, err)
+	}
 }
 
 // qemuExpandImage grows a qcow2 disk to targetSize iff its virtual size is smaller.
