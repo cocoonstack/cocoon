@@ -97,6 +97,10 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
+	// JSON serializes vms as-is, so stale-running records must reconcile here, not per output row.
+	for _, vm := range vms {
+		vm.State = types.VMState(cmdcore.ReconcileState(vm))
+	}
 	return renderVMList(vms, format, scopeDir)
 }
 
