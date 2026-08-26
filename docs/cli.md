@@ -282,7 +282,7 @@ Applies to `cocoon vm debug`:
 | ---------------- | -------- | ------------------------------------------------- |
 | `--escape-char`  | `^]`     | Escape character (single char or `^X` caret notation) |
 
-For a running VM, `cocoon vm inspect` reports the resolved console as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI, refreshed on every boot). External supervisors can read the console from there without opening the owner-only API socket.
+For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start.
 
 ### Exec Flags
 

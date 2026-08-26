@@ -62,8 +62,10 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
+// ReconcileState returns the effective display state; a stale-running VM also loses its runtime paths — they died with the process, and a reused PTY number must not be advertised.
 func ReconcileState(vm *types.VM) string {
 	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
+		vm.SocketPath, vm.VsockSocket, vm.ConsolePath = "", "", ""
 		return "stopped (stale)"
 	}
 	return string(vm.State)
