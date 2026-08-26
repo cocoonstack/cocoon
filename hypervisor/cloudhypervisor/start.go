@@ -24,6 +24,10 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			ch.saveCmdline(ctx, rec, args)
 			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)
 		},
+		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
+			saveConsolePTY(ctx, rec.ID, rec.RunDir, sockPath, hypervisor.IsDirectBoot(rec.BootConfig))
+			return nil
+		},
 	})
 }
 

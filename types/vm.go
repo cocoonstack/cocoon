@@ -102,6 +102,7 @@ type VM struct {
 	PID         int    `json:"pid"`
 	SocketPath  string `json:"socket_path,omitempty"`  // CH API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
+	ConsolePath string `json:"console_path,omitempty"` // guest console: console.sock UDS or CH-allocated PTY (direct boot)
 
 	NetSetup
 

@@ -16,6 +16,7 @@ import (
 const (
 	APISocketName   = "api.sock"
 	ConsoleSockName = "console.sock"
+	ConsolePTYName  = "console.pty"
 	VsockSockName   = "vsock.uds"
 
 	// VsockGuestCID is constant — per-VM isolation comes from distinct UDS paths.

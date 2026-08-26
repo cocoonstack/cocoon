@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -48,6 +49,8 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	info := rec.VM
 	info.Hypervisor = b.Typ
+	// Clear first: clone/restore persist boot-time sockets into the record, which would leak as stale paths once the VM stops.
+	info.SocketPath, info.VsockSocket, info.ConsolePath = "", "", ""
 	if info.State == types.VMStateRunning {
 		SetRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
@@ -128,15 +131,23 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VM
 	})
 }
 
-// SetRunningSockets fills a running VM's live sockets (API socket, bound vsock UDS) from runDir — for clone/restore records that skip ToVM.
+// SetRunningSockets fills a running VM's live sockets (API socket, bound vsock UDS, guest console) from runDir — for clone/restore records that skip ToVM.
 func SetRunningSockets(info *types.VM, runDir string) {
 	info.SocketPath = SocketPath(runDir)
-	if p := VsockSockPath(runDir); isVsockBound(p) {
+	if p := VsockSockPath(runDir); utils.FileExists(p) {
 		info.VsockSocket = p
 	}
+	info.ConsolePath = consolePathFromRunDir(runDir)
 }
 
-func isVsockBound(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// consolePathFromRunDir prefers the console UDS (UEFI serial, FC relay); direct-boot CH VMs instead leave the PTY path saved at boot.
+func consolePathFromRunDir(runDir string) string {
+	if p := ConsoleSockPath(runDir); utils.FileExists(p) {
+		return p
+	}
+	pty, err := os.ReadFile(ConsolePTYPath(runDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(pty))
 }

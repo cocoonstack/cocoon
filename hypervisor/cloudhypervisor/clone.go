@@ -147,6 +147,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	}); err != nil {
 		return nil, err
 	}
+	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
 	info := &types.VM{
 		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
