@@ -125,7 +125,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--hugepages` | `false`         | Back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap |
 | `--mergeable` | `false`         | Mark guest memory `MADV_MERGEABLE` for host KSM dedup (CH only, fixed for VM lifetime; persists through clone/restore); needs KSM enabled on the host, excludes `--hugepages`/`--shared-memory` |
 | `--cpu-weight` | `0` (= vCPU count) | cgroup `cpu.weight` 1..10000 — work-conserving share under host contention |
-| `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — the hard CPU ceiling |
+| `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — caps the long-run average; add `--cpu-burst-us -1` for a strict per-period ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
 | `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
 | `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`); non-work-conserving, explicit opt-in |
