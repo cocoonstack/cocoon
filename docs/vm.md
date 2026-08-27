@@ -33,7 +33,7 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 
 Every VM's hypervisor process is spawned directly into its own cgroup v2 scope (`<cgroup_parent>/vm-<id>.scope`, default parent `cocoon.slice`) via `CLONE_INTO_CGROUP` — vCPU threads, virtio queue workers, and io_uring kernel workers all land inside. The vCPU count alone does not bound host consumption (a 1-vCPU VM under I/O measures 111–113% of a core); the scope does.
 
-Defaults are Kubernetes-style Guaranteed at N for `--cpu N`: quota = N cores (`--cpu` is a hard cap, not just a topology hint), weight = N (proportional share under contention), no burst. Override any raw knob: lower `--cpu-weight` for burstable overcommit, raise `--cpu-quota-us` to give the VMM's I/O service headroom beyond the guest's budget, add `--cpu-burst-us` for bounded spikes. Two caveats at defaults: a saturated VM doing I/O pays its virtio service out of the N-core budget (~13% floor case), and `cpu.weight` only arbitrates real runqueue contention — a parent bandwidth limit is consumed first-come-first-served, not by weight.
+Defaults are Kubernetes-style Guaranteed at N for `--cpu N`: quota = N cores (`--cpu` caps the long-run average, not just a topology hint), weight = N (proportional share under contention), burst = one period of quota. The burst credit refills from idle periods and never raises the long-run cap; it is there because the VMM's virtio and io_uring workers bill to the same budget as the vCPUs, and without it a guest saturating its N vCPUs under I/O drains the budget mid-period and every vCPU freezes together until the period ends. Override any raw knob: lower `--cpu-weight` for burstable overcommit, raise `--cpu-quota-us` when sustained demand exceeds N (burst only absorbs demand fluctuating around the cap), `--cpu-burst-us -1` for a strict no-burst cap. Two caveats at defaults: a saturated VM doing I/O pays its virtio service out of the N-core budget (~13% floor case), and `cpu.weight` only arbitrates real runqueue contention — a parent bandwidth limit is consumed first-come-first-served, not by weight.
 
 `cgroup_cpus` fences the whole VM population onto a host cpu subset (e.g. `0-14` on a 16-core host keeps core 15 for the OS, the API consumer, and clone/wake execution). `--cpuset-cpus` pins one VM to specific cores inside the fence. Both are validated by cocoon against the effective sets — the kernel silently degrades ungrantable cpuset requests rather than failing — and shrinking the fence is refused while a running VM's placement conflicts. Clearing `cgroup_cpus` converges: the stale fence is reset on the next launch.
 
@@ -41,13 +41,16 @@ Provisioning is exempt from the ceiling: clone/restore launch with the quota at 
 
 cgroup knobs are host-side policy, like networking: snapshots record the source VM's values but never apply them — a clone takes its policy from flags (defaults otherwise), restore keeps the target VM's. Scopes are removed when the VMM dies (stop, hibernate, delete, crash convergence) and orphans are swept by `cocoon gc`. `cocoon vm list` shows per-VM throttling as `THROTTLED` (`nr_throttled/throttled_usec` from `cpu.stat`).
 
-Requirements: cgroup v2 unified hierarchy with the `cpu` controller (kernel ≥ 5.14 for burst), running cocoon as root (production shape). Non-root works inside a systemd user slice with delegated controllers (`systemd-run --user --scope`), where user slices typically delegate `cpu` but not `cpuset` — fence/placement then fail preflight with the exact missing file named.
+Requirements: cgroup v2 unified hierarchy with the `cpu` controller (kernel ≥ 5.14 for burst; on older kernels the defaulted burst degrades to none while an explicit `--cpu-burst-us` fails), running cocoon as root (production shape). Non-root works inside a systemd user slice with delegated controllers (`systemd-run --user --scope`), where user slices typically delegate `cpu` but not `cpuset` — fence/placement then fail preflight with the exact missing file named.
 
 ### Recipes
 
 ```bash
-# Guaranteed at N (default): hard cap 2 cores, share 2, no burst
+# Guaranteed at N (default): 2-core long-run cap, share 2, one period of burst credit
 cocoon vm run --cpu 2 --memory 2G --name vm1 ghcr.io/cocoonstack/cocoon/ubuntu:24.04
+
+# Strict cap, no burst: every period is hard-limited to 2 cores
+cocoon vm run --cpu 2 --cpu-burst-us -1 --name strict1 ...
 
 # Burstable overcommit: reach 2 cores when idle, shrink by weight under pressure
 cocoon vm run --cpu 2 --cpu-weight 25 --name burst1 ...

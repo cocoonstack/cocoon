@@ -13,9 +13,23 @@ import (
 
 func TestResolveKnobsDefaults(t *testing.T) {
 	k := ResolveKnobs(&types.Config{CPU: 2})
-	want := Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000, BurstUs: 0}
+	want := Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true}
 	if k != want {
 		t.Errorf("got %+v, want %+v", k, want)
+	}
+}
+
+func TestResolveKnobsDefaultBurstFollowsExplicitQuota(t *testing.T) {
+	k := ResolveKnobs(&types.Config{CPU: 4, CPUQuotaUs: 50000})
+	if k.BurstUs != 50000 || !k.BurstDefaulted {
+		t.Errorf("got burst %d defaulted %v, want 50000 true", k.BurstUs, k.BurstDefaulted)
+	}
+}
+
+func TestResolveKnobsBurstNone(t *testing.T) {
+	k := ResolveKnobs(&types.Config{CPU: 2, CPUBurstUs: -1})
+	if k.BurstUs != 0 || k.BurstDefaulted {
+		t.Errorf("got burst %d defaulted %v, want 0 false", k.BurstUs, k.BurstDefaulted)
 	}
 }
 
@@ -278,5 +292,39 @@ func TestArmSetsQuotaThenBurst(t *testing.T) {
 	burst, _ := os.ReadFile(filepath.Join(dir, "cpu.max.burst"))
 	if string(max) != "150000 100000" || string(burst) != "50000" {
 		t.Errorf("max=%q burst=%q", max, burst)
+	}
+}
+
+func TestArmDefaultedBurstDegradesWhenKernelLacksBurst(t *testing.T) {
+	parent := t.TempDir()
+	dir := ScopeDir(parent, "A")
+	danglingBurstFile(t, dir)
+	if err := Arm(parent, "A", Knobs{QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true}); err != nil {
+		t.Fatalf("Arm: %v", err)
+	}
+	max, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
+	if string(max) != "200000 100000" {
+		t.Errorf("max=%q, want quota still armed", max)
+	}
+}
+
+func TestArmExplicitBurstFailsWhenKernelLacksBurst(t *testing.T) {
+	parent := t.TempDir()
+	danglingBurstFile(t, ScopeDir(parent, "A"))
+	if err := Arm(parent, "A", Knobs{QuotaUs: 200000, PeriodUs: 100000, BurstUs: 100000}); err == nil {
+		t.Error("want error for explicit burst without kernel support")
+	}
+}
+
+func danglingBurstFile(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cpu.max"), nil, 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "gone", "cpu.max.burst"), filepath.Join(dir, "cpu.max.burst")); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
 }
