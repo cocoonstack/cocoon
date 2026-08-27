@@ -31,6 +31,6 @@ type Config struct {
 	CPUWeight   int    `json:"cpu_weight,omitempty"`
 	CPUQuotaUs  int64  `json:"cpu_quota_us,omitempty"`
 	CPUPeriodUs int64  `json:"cpu_period_us,omitempty"`
-	CPUBurstUs  int64  `json:"cpu_burst_us,omitempty"`
+	CPUBurstUs  int64  `json:"cpu_burst_us,omitempty"` // -1 = no burst; zero derives quota
 	CPUSetCPUs  string `json:"cpuset_cpus,omitempty"`
 }

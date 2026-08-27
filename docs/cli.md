@@ -127,7 +127,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu-weight` | `0` (= vCPU count) | cgroup `cpu.weight` 1..10000 — work-conserving share under host contention |
 | `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — the hard CPU ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
-| `--cpu-burst-us` | `0` (none) | cgroup `cpu.max.burst` credit in µs; kernel requires burst ≤ quota |
+| `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
 | `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`); non-work-conserving, explicit opt-in |
 
 ### Clone Flags

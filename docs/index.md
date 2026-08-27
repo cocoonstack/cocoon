@@ -49,7 +49,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected)
 - **COW overlays** — copy-on-write disks backed by shared base images (raw for OCI, qcow2 for cloud images)
 - **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation; bridge mode and NIC hot-resize; `net_scope` keys host device names per installation so co-hosted cocoon roots never GC each other's guests
-- **CPU isolation** — every VM runs in its own cgroup v2 scope with Guaranteed-at-N defaults (`--cpu` is a hard cap); raw weight/quota/burst knobs, an optional host-core fence (`cgroup_cpus`), and per-VM pinning (`--cpuset-cpus`); see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)
+- **CPU isolation** — every VM runs in its own cgroup v2 scope with Guaranteed-at-N defaults (`--cpu` caps the long-run average); raw weight/quota/burst knobs, an optional host-core fence (`cgroup_cpus`), and per-VM pinning (`--cpuset-cpus`); see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)
 - **Multi-queue virtio-net** — TAP devices created with per-vCPU queue pairs; configurable ring depth (`--queue-size`, default 512); TSO/UFO/csum offload enabled by default
 - **TC redirect I/O path** — veth ↔ TAP wired via ingress qdisc + mirred redirect (no bridge in the data path)
 - **DNS configuration** — custom DNS servers injected into VMs via kernel cmdline (OCI) or cloud-init network-config (cloudimg)

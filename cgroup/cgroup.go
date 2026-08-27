@@ -54,23 +54,32 @@ const (
 
 // Knobs is the resolved cgroup CPU configuration for one VM scope.
 type Knobs struct {
-	Weight   int
-	QuotaUs  int64
-	PeriodUs int64
-	BurstUs  int64
-	CPUSet   string
+	Weight         int
+	QuotaUs        int64
+	PeriodUs       int64
+	BurstUs        int64
+	BurstDefaulted bool // BurstUs is derived; launch degrades it to none on kernels without cpu.max.burst
+	CPUSet         string
 }
 
-// ResolveKnobs applies the Guaranteed-at-N defaults: weight = vCPU count, quota = vCPU count x period, burst = 0, no placement.
+// ResolveKnobs applies the Guaranteed-at-N defaults: weight = vCPU count, quota = vCPU count x period, burst = quota, no placement. CPUBurstUs -1 means no burst.
 func ResolveKnobs(cfg *types.Config) Knobs {
 	period := cmp.Or(cfg.CPUPeriodUs, int64(DefaultPeriodUs))
-	return Knobs{
+	quota := cmp.Or(cfg.CPUQuotaUs, int64(cfg.CPU)*period)
+	k := Knobs{
 		Weight:   cmp.Or(cfg.CPUWeight, cfg.CPU),
-		QuotaUs:  cmp.Or(cfg.CPUQuotaUs, int64(cfg.CPU)*period),
+		QuotaUs:  quota,
 		PeriodUs: period,
 		BurstUs:  cfg.CPUBurstUs,
 		CPUSet:   cfg.CPUSetCPUs,
 	}
+	switch k.BurstUs {
+	case 0:
+		k.BurstUs, k.BurstDefaulted = quota, true
+	case -1:
+		k.BurstUs = 0
+	}
+	return k
 }
 
 // Validate checks resolved knob values against the kernel's accepted ranges.
@@ -85,7 +94,7 @@ func (k Knobs) Validate() error {
 		return fmt.Errorf("--cpu-quota-us must be at least %d, got %d", MinQuotaUs, k.QuotaUs)
 	}
 	if k.BurstUs < 0 || k.BurstUs > k.QuotaUs {
-		return fmt.Errorf("--cpu-burst-us must be 0..quota (%d), got %d", k.QuotaUs, k.BurstUs)
+		return fmt.Errorf("--cpu-burst-us must be -1 (no burst) or 0..quota (%d), got %d", k.QuotaUs, k.BurstUs)
 	}
 	if _, err := ParseCPUList(k.CPUSet); err != nil {
 		return fmt.Errorf("--cpuset-cpus: %w", err)
@@ -152,9 +161,9 @@ func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File,
 	if err := writeControl(dir, weightName, strconv.Itoa(k.Weight)); err != nil {
 		return nil, err
 	}
-	// A reused scope may hold a leftover burst > target quota, which blocks the cpu.max write (kernel requires burst <= quota): zero it first. ENOENT tolerated — pre-5.14 kernels lack the file.
+	// A reused scope may hold a leftover burst > target quota, which blocks the cpu.max write (kernel requires burst <= quota): zero it first; pre-5.14 kernels lack the file.
 	if errors.Is(mkErr, fs.ErrExist) {
-		if err := writeControl(dir, burstName, "0"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := writeControl(dir, burstName, "0"); err != nil && !burstFileMissing(dir) {
 			return nil, err
 		}
 	}
@@ -401,12 +410,19 @@ func armQuota(dir string, k Knobs) error {
 	if err := writeControl(dir, maxName, fmt.Sprintf("%d %d", k.QuotaUs, k.PeriodUs)); err != nil {
 		return err
 	}
-	if k.BurstUs > 0 {
-		if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil {
-			return err
-		}
+	if k.BurstUs <= 0 {
+		return nil
+	}
+	if err := writeControl(dir, burstName, strconv.FormatInt(k.BurstUs, 10)); err != nil && (!k.BurstDefaulted || !burstFileMissing(dir)) {
+		return err
 	}
 	return nil
+}
+
+// burstFileMissing detects a kernel without cpu.max.burst (pre-5.14): the failed write opens with O_CREAT and reports EACCES on cgroupfs, so absence takes a stat.
+func burstFileMissing(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, burstName))
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 func readControl(dir, name string) (string, error) {
