@@ -18,8 +18,8 @@ type Config struct {
 
 func NewConfig(rootDir string, poolSize int) *Config {
 	return &Config{
-		BaseConfig: images.BaseConfig{RootDir: rootDir, Subdir: "oci", BlobExt: ".erofs", Name: NamespaceName},
-		PoolSize:   utils.PoolSizeOrDefault(poolSize),
+		RootDir: rootDir, Subdir: "oci", BlobExt: ".erofs", Name: NamespaceName,
+		PoolSize: utils.PoolSizeOrDefault(poolSize),
 	}
 }
 

@@ -38,10 +38,8 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 			return fmt.Errorf("vm name %q already exists (id: %s)", vmCfg.Name, dup)
 		}
 		if err := t.Put(id, &VMRecord{
-			VM: types.VM{
-				ID: id, Hypervisor: b.Typ, State: types.VMStateCreating,
-				Config: *vmCfg, CreatedAt: now, UpdatedAt: now,
-			},
+			ID: id, Hypervisor: b.Typ, State: types.VMStateCreating,
+			Config: *vmCfg, CreatedAt: now, UpdatedAt: now,
 			ImageBlobIDs: blobIDs,
 			RunDir:       runDir,
 			LogDir:       logDir,

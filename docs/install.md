@@ -13,7 +13,7 @@ Requirements, install paths, the doctor script, and a first VM.
   silently corrupts layers — cocoon refuses to convert with older versions)
 - UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`)
 - CNI plugins (`bridge`, `host-local`, `loopback`)
-- Go 1.26+ (build only)
+- Go 1.27+ (build only)
 
 ## Installation
 

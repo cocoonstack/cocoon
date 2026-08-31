@@ -76,7 +76,7 @@ func runLoop(ctx context.Context, mode, engine string, n, ops int, dir string) e
 		seed = append(seed, fmt.Sprintf("VM%024d", i))
 	}
 	for _, id := range seed {
-		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); err != nil {
+		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, CPU: 2, Memory: 1 << 30}, nil, dir, dir); err != nil {
 			return err
 		}
 	}
@@ -112,7 +112,7 @@ func runCreate(ctx context.Context, engine string, workers, per, resident int, d
 	}
 	for i := range resident {
 		id := fmt.Sprintf("SEED%022d", i)
-		if rerr := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); rerr != nil {
+		if rerr := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, CPU: 2, Memory: 1 << 30}, nil, dir, dir); rerr != nil {
 			return rerr
 		}
 	}
@@ -151,7 +151,7 @@ func runWorker(ctx context.Context, engine, prefix string, per int, dir string) 
 	}
 	for i := range per {
 		id := fmt.Sprintf("%s%0*d", prefix, 26-len(prefix), i)
-		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, Config: types.Config{CPU: 2, Memory: 1 << 30}}, nil, dir, dir); err != nil {
+		if err := b.ReserveVM(ctx, id, &types.VMConfig{Name: id, CPU: 2, Memory: 1 << 30}, nil, dir, dir); err != nil {
 			return err
 		}
 		if err := b.UpdateRecord(ctx, id, func(r *hypervisor.VMRecord) error {

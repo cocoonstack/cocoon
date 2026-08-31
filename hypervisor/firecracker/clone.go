@@ -100,7 +100,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	sockPath := hypervisor.SocketPath(runDir)
 	launch := func(leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
 		return fc.launchProcessWithLeases(ctx, &hypervisor.VMRecord{
-			VM:     types.VM{ID: vmID, Config: *vmCfg},
+			ID: vmID, Config: *vmCfg,
 			RunDir: runDir,
 			LogDir: logDir,
 		}, sockPath, net.NetnsPath, leaseFiles, true)

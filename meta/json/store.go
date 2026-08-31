@@ -102,10 +102,10 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 			return err
 		}
 		w := &txWriter{
-			txReader: txReader{models: models},
-			write:    sc.Write,
-			model:    models[sc.Write].model,
-			mode:     mode,
+			models: models,
+			write:  sc.Write,
+			model:  models[sc.Write].model,
+			mode:   mode,
 		}
 		if err := fn(w); err != nil {
 			return err

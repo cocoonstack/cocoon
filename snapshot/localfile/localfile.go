@@ -352,9 +352,9 @@ func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig)
 	}
 	dataDir := lf.conf.SnapshotDataDir(cfg.ID)
 	if err := lf.insertRecord(ctx, cfg.ID, cfg.Name, &snapshot.SnapshotRecord{
-		Snapshot: types.Snapshot{SnapshotConfig: *cfg, CreatedAt: time.Now()},
-		Pending:  true,
-		DataDir:  dataDir,
+		SnapshotConfig: *cfg, CreatedAt: time.Now(),
+		Pending: true,
+		DataDir: dataDir,
 	}); err != nil {
 		return "", err
 	}

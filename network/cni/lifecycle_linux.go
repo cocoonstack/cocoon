@@ -170,10 +170,8 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 
 	for _, l := range []netlink.Link{link, tapLink} {
 		qdisc := &netlink.Ingress{
-			QdiscAttrs: netlink.QdiscAttrs{
-				LinkIndex: l.Attrs().Index,
-				Parent:    netlink.HANDLE_INGRESS,
-			},
+			LinkIndex: l.Attrs().Index,
+			Parent:    netlink.HANDLE_INGRESS,
 		}
 		if qdiscErr := netlink.QdiscAdd(qdisc); qdiscErr != nil {
 			return "", fmt.Errorf("add ingress qdisc on %s: %w", l.Attrs().Name, qdiscErr)
@@ -192,12 +190,10 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 // addTCRedirect redirects all ingress packets from one link to another.
 func addTCRedirect(from, to netlink.Link) error {
 	filter := &netlink.U32{
-		FilterAttrs: netlink.FilterAttrs{
-			LinkIndex: from.Attrs().Index,
-			Parent:    netlink.HANDLE_INGRESS,
-			Priority:  1,
-			Protocol:  syscall.ETH_P_ALL,
-		},
+		LinkIndex: from.Attrs().Index,
+		Parent:    netlink.HANDLE_INGRESS,
+		Priority:  1,
+		Protocol:  syscall.ETH_P_ALL,
 		Sel: &netlink.TcU32Sel{
 			Flags: netlink.TC_U32_TERMINAL,
 			Keys: []netlink.TcU32Key{
@@ -206,7 +202,7 @@ func addTCRedirect(from, to netlink.Link) error {
 		},
 		Actions: []netlink.Action{
 			&netlink.MirredAction{
-				ActionAttrs:  netlink.ActionAttrs{Action: netlink.TC_ACT_STOLEN},
+				Action:       netlink.TC_ACT_STOLEN,
 				MirredAction: netlink.TCA_EGRESS_REDIR,
 				Ifindex:      to.Attrs().Index,
 			},

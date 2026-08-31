@@ -28,10 +28,10 @@ func CreateTAP(name string, numQueues int) (int, error) {
 		flags |= netlink.TUNTAP_MULTI_QUEUE_DEFAULTS
 	}
 	tap := &netlink.Tuntap{
-		LinkAttrs: netlink.LinkAttrs{Name: name},
-		Mode:      netlink.TUNTAP_MODE_TAP,
-		Queues:    queuePairs,
-		Flags:     flags,
+		Name:   name,
+		Mode:   netlink.TUNTAP_MODE_TAP,
+		Queues: queuePairs,
+		Flags:  flags,
 	}
 	if err := netlink.LinkAdd(tap); err != nil {
 		return 0, fmt.Errorf("add tap %s: %w", name, err)
