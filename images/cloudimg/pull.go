@@ -70,6 +70,7 @@ func (cw countingWriter) Write(p []byte) (int, error) {
 type rangeProbe struct {
 	finalURL string
 	size     int64
+	head     []byte
 }
 
 // pull commits url as a blob; the URL→blob mapping is idempotent (no-op when the blob already exists).
@@ -138,6 +139,9 @@ func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progr
 	if probe.size > maxDownloadBytes {
 		return "", fmt.Errorf("download %s: exceeded max size (%d bytes)", url, maxDownloadBytes)
 	}
+	if err := sniffHead(probe.head); err != nil {
+		return "", fmt.Errorf("download %s: %w", url, err)
+	}
 
 	logger.Debugf(ctx, "downloading %s in %d parallel range(s)", url, pullConns)
 	if err := downloadRangesParallel(ctx, client, probe.finalURL, dst, probe.size, pullConns, tracker); err != nil {
@@ -189,13 +193,13 @@ func downloadSerial(ctx context.Context, client *http.Client, url string, dst *o
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// probeRangeSupport GETs Range: bytes=0-0 (nil = no usable Range support); the returned URL is post-redirect so range requests skip the redirect chain.
+// probeRangeSupport GETs the first sniffHead bytes (nil = no usable Range support); the returned URL is post-redirect so range requests skip the redirect chain.
 func probeRangeSupport(ctx context.Context, client *http.Client, url string) (*rangeProbe, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create range probe request: %w", err)
 	}
-	req.Header.Set("Range", "bytes=0-0")
+	req.Header.Set("Range", "bytes=0-7")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -210,7 +214,11 @@ func probeRangeSupport(ctx context.Context, client *http.Client, url string) (*r
 	if !ok {
 		return nil, nil
 	}
-	return &rangeProbe{finalURL: resp.Request.URL.String(), size: size}, nil
+	head, err := io.ReadAll(io.LimitReader(resp.Body, 8)) //nolint:mnd
+	if err != nil {
+		return nil, fmt.Errorf("read range probe body for %s: %w", url, err)
+	}
+	return &rangeProbe{finalURL: resp.Request.URL.String(), size: size, head: head}, nil
 }
 
 // downloadRangesParallel splits [0,size) into pullConns contiguous ranges downloaded concurrently into disjoint offsets of dst.
