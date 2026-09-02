@@ -41,7 +41,7 @@ Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers.
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.Pull,
 	}
-	pullCmd.Flags().Bool("force", false, "bypass cache and always re-download (useful when a mutable tag was replaced upstream)")
+	pullCmd.Flags().Bool("force", false, "re-download a cloud-image URL whose content was replaced upstream (OCI tags are re-resolved on every pull)")
 
 	imageCmd.AddCommand(
 		pullCmd,

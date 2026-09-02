@@ -312,7 +312,7 @@ func TestRemoveMatching_RemoveAllError(t *testing.T) {
 	errs := RemoveMatching(t.Context(), dir, func(e os.DirEntry) bool {
 		return e.Name() == "protected"
 	})
-	// On some systems RemoveAll may succeed even without write, so just verify no panic.
+
 	_ = errs
 }
 

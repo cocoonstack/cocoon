@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// Segment-map JSON over the cap → tarFileMaybeSparse falls back to non-sparse.
 func TestTarFileMaybeSparse_FallsBackOnLargeMap(t *testing.T) {
 	orig := maxSparseMapJSONSize
 	maxSparseMapJSONSize = 4 * 1024
@@ -45,7 +44,6 @@ func TestTarFileMaybeSparse_FallsBackOnLargeMap(t *testing.T) {
 	}
 }
 
-// Fallback round-trip: extracted file matches the original byte-for-byte (holes serialised as zeros).
 func TestTarFileMaybeSparse_FallbackRoundTrip(t *testing.T) {
 	orig := maxSparseMapJSONSize
 	maxSparseMapJSONSize = 4 * 1024
@@ -82,7 +80,6 @@ func TestTarFileMaybeSparse_FallbackRoundTrip(t *testing.T) {
 	}
 }
 
-// Small fragmentation still takes the sparse path; fallback only on PAX overflow.
 func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "small-sparse")
@@ -119,7 +116,6 @@ func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 	}
 }
 
-// writeSparseFile alternates numSegments data regions of blockSize with equal-sized holes.
 func writeSparseFile(t *testing.T, path string, numSegments, blockSize int) int64 {
 	t.Helper()
 	f, err := os.Create(path)

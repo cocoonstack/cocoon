@@ -144,7 +144,7 @@ func TestVerifyProcessCmdline_InvalidPID(t *testing.T) {
 func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
 	pid := os.Getpid()
 	result := VerifyProcessCmdline(pid, "definitely-not-the-binary", "definitely-not-the-arg")
-	_ = result // Just verify no panic.
+	_ = result
 }
 
 func TestTerminateProcess_SleepProcess(t *testing.T) {
@@ -155,7 +155,6 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 	pid := cmd.Process.Pid
 	waitForExec(t, pid, "sleep", "60")
 
-	// Reap the child in background: kill(pid, 0) keeps returning nil for a zombie and WaitFor would time out.
 	waitDone := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
@@ -188,7 +187,7 @@ func TestTerminateProcess_AlreadyDead(t *testing.T) {
 	_ = cmd.Wait()
 
 	ctx := t.Context()
-	// Should return nil — process doesn't exist, VerifyProcessCmdline returns false.
+
 	err := TerminateProcess(ctx, pid, "true", "true", 1*time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess on dead process: %v", err)
@@ -197,7 +196,7 @@ func TestTerminateProcess_AlreadyDead(t *testing.T) {
 
 func TestTerminateProcess_InvalidPID(t *testing.T) {
 	ctx := t.Context()
-	// PID 0 → VerifyProcessCmdline returns false → return nil immediately.
+
 	if err := TerminateProcess(ctx, 0, "x", "x", time.Second); err != nil {
 		t.Errorf("expected nil for PID 0, got %v", err)
 	}
@@ -207,7 +206,6 @@ func TestTerminateProcess_InvalidPID(t *testing.T) {
 }
 
 func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
-	// Traps SIGTERM so only SIGKILL can end it; the trailing "; :" stops bash from tail-exec'ing into sleep, which would rename argv0 and fail the "bash" cmdline check.
 	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
@@ -225,7 +223,6 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 		<-waitDone
 	}()
 
-	// Very short grace period — SIGTERM won't kill it, fallback to SIGKILL.
 	ctx := t.Context()
 	err := TerminateProcess(ctx, pid, "bash", "sleep", 200*time.Millisecond)
 	if err != nil {
@@ -240,7 +237,7 @@ func TestFindVMMByCmdline(t *testing.T) {
 		t.Skip("FindVMMByCmdline scans /proc — linux only")
 	}
 	marker := "cocoon-find-marker-" + strconv.Itoa(os.Getpid())
-	// "sleep 60 && :" is a compound command so sh can't tail-exec into sleep and lose the marker arg.
+
 	cmd := exec.Command("sh", "-c", "sleep 60 && :", marker)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
@@ -290,7 +287,6 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	// Cancelled ctx: may return WaitFor's ctx error but must still attempt the kill.
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
 }
 

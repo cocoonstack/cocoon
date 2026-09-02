@@ -84,7 +84,6 @@ func TestSharedLeaseInheritanceSurvivesChildExit(t *testing.T) {
 	}
 }
 
-// The split regression: an exclusive transient release unlinks the inode a waiting lease acquired; the lease must rebind so a later exclusive still sees it.
 func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
 	rootDir := t.TempDir()
 	ctx := t.Context()
@@ -107,7 +106,7 @@ func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
 	select {
 	case err := <-errCh:
 		t.Fatalf("lease acquired despite the held exclusive: %v", err)
-	case <-time.After(20 * time.Millisecond): // the lease is blocked on the held exclusive
+	case <-time.After(20 * time.Millisecond):
 	}
 	if err := ex.Unlock(ctx); err != nil {
 		t.Fatal(err)

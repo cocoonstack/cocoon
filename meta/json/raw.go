@@ -22,7 +22,7 @@ func AppendStringSlice(dst []byte, s []string) ([]byte, error) {
 	return append(dst, ']'), nil
 }
 
-// AppendTable appends tbl as a compact JSON object with sorted keys, values verbatim — no intermediate value-map copy on the commit path.
+// AppendTable appends tbl as a compact JSON object with sorted keys, values verbatim.
 func AppendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
 	t := m.tables[tbl]
 	dst = append(dst, '{')

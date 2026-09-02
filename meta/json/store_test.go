@@ -19,7 +19,6 @@ func TestContract(t *testing.T) {
 }
 
 func TestContractForcedRetryEngine(t *testing.T) {
-	// The suite must also hold when EVERY closure is double-run.
 	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
 		return contracttest.ForcedRetry(newStore(t, t.TempDir(), nss...))
 	})
@@ -57,7 +56,6 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 			}
 			testCrashStep = nil
 
-			// Reopen as a fresh process would and require wholly-old or wholly-new.
 			s2 := newStore(t, dir, "alpha")
 			c2 := meta.NewCollection[map[string]int]("alpha", "records")
 			var a, b *map[string]int
@@ -114,7 +112,6 @@ func TestPrevRecovery(t *testing.T) {
 		t.Fatalf("recovered generation: %v, %v", got, err)
 	}
 
-	// A commit over a recovered main must not rotate the only good generation away.
 	v3 := map[string]int{"gen": 3}
 	if err := s2.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 		return c2.Replace(ctx, w, "a", &v3)
@@ -160,7 +157,6 @@ func TestExternalProcessEvents(t *testing.T) {
 	}
 	defer release()
 
-	// A second store over the same files stands in for an external process.
 	s2 := newStore(t, dir, "alpha")
 	c2 := meta.NewCollection[map[string]int]("alpha", "records")
 	v := map[string]int{"v": 1}
@@ -215,7 +211,7 @@ func TestOpenValidation(t *testing.T) {
 func TestEventsForcedOverflow(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	// Seam set before the notifier loop starts; reset runs after the store's Cleanup closes that loop (LIFO), so neither races the loop's reads.
+
 	testWatchErrs = make(chan struct{})
 	t.Cleanup(func() { testWatchErrs = nil })
 	s := newStore(t, dir, "alpha")
@@ -226,7 +222,6 @@ func TestEventsForcedOverflow(t *testing.T) {
 	}
 	defer release()
 
-	// Sever the dir watch: the commit below produces no fsnotify event.
 	if err := s.events.watcher.Remove(dir); err != nil {
 		t.Fatalf("remove watch: %v", err)
 	}
@@ -237,7 +232,7 @@ func TestEventsForcedOverflow(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Drain anything debounced from before the sever.
+
 	select {
 	case <-ch:
 	case <-time.After(200 * time.Millisecond):
@@ -345,7 +340,7 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Legacy json.Unmarshal rejected trailing bytes; the streaming decoder must too, so this main is corrupt and .prev is served.
+
 	main, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

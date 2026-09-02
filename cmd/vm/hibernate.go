@@ -18,18 +18,13 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	logger := log.WithFunc("cmd.vm.hibernate")
 	vmRef := args[0]
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
+	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
 	hib, ok := hyper.(hypervisor.Hibernator)
 	if !ok {
 		return fmt.Errorf("backend %s does not support hibernate", hyper.Type())
-	}
-	// Pin the inspected ID: a same-name delete+recreate between resolve and pause would hibernate the impostor.
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM %s: %w", vmRef, err)
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {

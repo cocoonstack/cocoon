@@ -203,7 +203,7 @@ func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (json.RawMess
 	return slices.Clone(raw), ok, nil
 }
 
-func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error {
+func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn meta.RawScanFunc) error {
 	l, ok := r.models[ns]
 	if !ok {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)

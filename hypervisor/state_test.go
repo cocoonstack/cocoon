@@ -102,7 +102,6 @@ func TestUpdateStatesRunningIsRejected(t *testing.T) {
 }
 
 func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
-	// Running→Error must leave the interval open (UpdateStates(Error) doesn't write StoppedAt). The next PrepareStart confirms the process is dead and closes the interval.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -138,7 +137,6 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 }
 
 func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
-	// Running→Error→Stopped: MarkError leaves the interval open; the recovery stop confirms the process is dead and must close it.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -159,7 +157,6 @@ func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
 }
 
 func TestDeleteForceClosesIntervalAfterMarkError(t *testing.T) {
-	// rm --force on an Error VM with a still-open interval must emit compute.stop, not just storage.stop.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -268,7 +265,7 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 	}
 
 	entries := rec.Entries()
-	// compute.stop on kill; storage.stop + storage.start + compute.start on success.
+
 	if len(entries) != 4 {
 		t.Fatalf("got %d entries, want 4", len(entries))
 	}
@@ -287,7 +284,7 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 			t.Errorf("entries[%d].SourceSnapshotID = %q, want snap-src", i, entries[i].SourceSnapshotID)
 		}
 	}
-	// compute.stop and storage.stop carry the old shape; the open pair carries the new shape.
+
 	for i := range 2 {
 		if entries[i].Shape.CPU != 2 {
 			t.Errorf("close entry %d cpu=%d, want 2 (old shape)", i, entries[i].Shape.CPU)
@@ -301,7 +298,6 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 }
 
 func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T) {
-	// Storage stays open when restore fails after kill: the on-disk files are still the old shape and vm rm closes it later.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -331,14 +327,12 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 }
 
 func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
-	// BatchMarkStarted skipping every r.State==Running silently drops vm-stale (DB Running, process dead, relaunched).
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm-stopped", 1, 1<<30, 10<<30, false)
 	seedRunningVM(t, b, "vm-running", 1, 1<<30, 10<<30)
 	seedRunningVM(t, b, "vm-stale", 2, 2<<30, 20<<30)
 
-	// Mimics StartSequence's per-VM contract: only an actual launch flips state.
 	startOne := func(ctx context.Context, id string) error {
 		switch id {
 		case "vm-stopped", "vm-stale":
@@ -386,7 +380,7 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 func TestFinalizeCreateEmitsStorageStart(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
-	// FinalizeCreate requires an existing placeholder.
+
 	seedVMRecord(t, b, "vm1", 2, 2<<30, 20<<30, false)
 
 	info := &types.VM{
@@ -460,7 +454,6 @@ func TestReconcileToRunningFromError(t *testing.T) {
 }
 
 func TestReconcileToRunningOrphanLaunchEmitsStart(t *testing.T) {
-	// BatchMarkStarted's DB write failed after a successful launch: process is alive but record is still Created (StartedAt=nil, no ledger compute.start). reconcile must emit a fresh start so a later stop has a matching open interval.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 2<<30, 20<<30, false)
@@ -484,7 +477,6 @@ func TestReconcileToRunningOrphanLaunchEmitsStart(t *testing.T) {
 }
 
 func TestReconcileToRunningOrphanLaunchAfterFirstBoot(t *testing.T) {
-	// Same orphan, but the VM was booted before: reconcile uses reason=restart.
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
@@ -540,7 +532,6 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 		t.Fatal("PrepareStart must refuse a quarantined VM")
 	}
 
-	// Stop's state flip must not lift the quarantine.
 	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
 		t.Fatalf("UpdateStates: %v", err)
 	}
@@ -692,7 +683,7 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
 				FirstBooted: firstBooted,
 			},
-			// Real dirs by default: sequences write markers into RunDir, and an empty path would land them in the package dir.
+
 			RunDir: t.TempDir(),
 			LogDir: t.TempDir(),
 		}

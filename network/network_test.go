@@ -48,7 +48,7 @@ func TestValidateScope(t *testing.T) {
 func TestAddRecover(t *testing.T) {
 	existing := []*types.NetworkConfig{
 		{TAP: "tap0", NumQueues: 2},
-		nil, // persisted network_configs may carry null entries
+		nil,
 		{TAP: "tap2", NumQueues: 4},
 	}
 	specs := AddRecover(existing)

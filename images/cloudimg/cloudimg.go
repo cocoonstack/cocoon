@@ -76,7 +76,6 @@ func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker pr
 	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
 }
 
-// Config resolves cloud images to qcow2 storage plus firmware boot config.
 func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
 	err = c.store.View(ctx, func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))

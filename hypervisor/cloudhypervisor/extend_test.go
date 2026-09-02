@@ -34,7 +34,6 @@ func TestResolveExternalVolume(t *testing.T) {
 
 	ch := &CloudHypervisor{conf: NewConfig(&config.Config{RootDir: rootDir, RunDir: runDir, LogDir: logDir})}
 
-	// t.TempDir may itself sit behind symlinks (macOS /var); expected values resolve too.
 	wantOK, err := filepath.EvalSymlinks(okVol)
 	if err != nil {
 		t.Fatalf("eval: %v", err)

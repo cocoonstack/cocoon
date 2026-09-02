@@ -62,11 +62,11 @@ func (w *procWatcher) start(ctx context.Context) error {
 func (w *procWatcher) close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for key, entry := range w.byKey {
-		delete(w.byKey, key)
-		delete(w.byFD, entry.fd)
+	for _, entry := range w.byKey {
 		utils.CloseFD(entry.fd)
 	}
+	clear(w.byKey)
+	clear(w.byFD)
 	_ = w.poll.close()
 }
 

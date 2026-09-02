@@ -70,7 +70,7 @@ func TestSaveConsolePTYSkipsUEFI(t *testing.T) {
 
 func serveVMInfo(t *testing.T, ptyPath string) string {
 	t.Helper()
-	// os.MkdirTemp, not t.TempDir: unix socket paths cap at ~104 bytes.
+
 	sockDir, err := os.MkdirTemp("", "ch")
 	if err != nil {
 		t.Fatal(err)

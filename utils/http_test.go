@@ -23,7 +23,6 @@ func TestAPIError_Error(t *testing.T) {
 }
 
 func TestNewSocketHTTPClient_DialsSocket(t *testing.T) {
-	// Use /tmp directly — t.TempDir() path may exceed Unix socket limit (104 chars).
 	sockPath := filepath.Join("/tmp", fmt.Sprintf("cocoon-test-%d.sock", os.Getpid()))
 	t.Cleanup(func() { os.Remove(sockPath) })
 
@@ -252,7 +251,7 @@ func TestDoWithRetry_SuccessAfterRetries(t *testing.T) {
 	result, err := DoWithRetry(t.Context(), func() (int, error) {
 		calls++
 		if calls < 3 {
-			return 0, fmt.Errorf("transient error") // non-APIError → retryable
+			return 0, fmt.Errorf("transient error")
 		}
 		return 42, nil
 	})

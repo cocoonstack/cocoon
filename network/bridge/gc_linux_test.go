@@ -19,10 +19,10 @@ func TestParseTAPName(t *testing.T) {
 
 		{tapPrefix: "bt", name: "wrong-prefix-0"},
 		{tapPrefix: "bt", name: "bt"},
-		{tapPrefix: "bt", name: "bt-0"}, // empty prefix
+		{tapPrefix: "bt", name: "bt-0"},
 		{tapPrefix: "bt", name: "bt12345678"},
 		{tapPrefix: "bt", name: ""},
-		{tapPrefix: "mt", name: "bt12345678-0"}, // another installation's TAP
+		{tapPrefix: "mt", name: "bt12345678-0"},
 	}
 	for _, tt := range tests {
 		label := tt.tapPrefix + "/" + tt.name

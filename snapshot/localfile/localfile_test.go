@@ -89,7 +89,6 @@ func TestCreateAndDeleteEmitMetering(t *testing.T) {
 }
 
 func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
-	// Racing rm: the loser's closure sees a nil rec and must report success without emitting a phantom stop; deleteOne twice on one id simulates it.
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
@@ -134,7 +133,6 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 		"cocoon.json":    []byte(`{"storage_configs":[]}`),
 	}
 
-	// A capture dir under the store root shares its filesystem, so the direct (rename) path is taken rather than the cross-fs streaming fallback.
 	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-src"), files)
 	id, ok, err := lf.CreateFromDir(ctx, &types.SnapshotConfig{
 		ID: testID(t), Name: "direct-snap", Hypervisor: "cloud-hypervisor",
@@ -155,7 +153,6 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 		t.Fatalf("metering = %v, want one snap.storage.start", kinds(rec.Entries()))
 	}
 
-	// The on-disk layout is byte-for-byte what the tar path (Create) produces.
 	id2, err := lf.Create(ctx, &types.SnapshotConfig{
 		ID: testID(t), Name: "streamed-snap", Hypervisor: "cloud-hypervisor",
 	}, makeTar(t, files))
@@ -174,7 +171,6 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
 
-	// st_dev matches but rename EXDEVs (as on a bind mount): must roll back the pending record, leave srcDir intact, and report ok=false.
 	orig := osRename
 	osRename = func(string, string) error { return syscall.EXDEV }
 	t.Cleanup(func() { osRename = orig })
@@ -195,7 +191,7 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	if _, statErr := os.Stat(srcDir); statErr != nil {
 		t.Errorf("srcDir removed on EXDEV fallback: %v", statErr)
 	}
-	// Check the index directly: Inspect hides pending records, so it cannot tell "rolled back" from "stale pending left behind", and a stale name reservation would fail the tar-fallback Create.
+
 	if err := lf.dbRead(ctx, func(idx *snapshotIndex) error {
 		if _, stale := idx.Snapshots[id]; stale {
 			return fmt.Errorf("pending record %s still in index", id)
@@ -472,7 +468,6 @@ func TestInspect_ByPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use first 5 chars as prefix (IDs are 26-char base32).
 	prefix := id[:5]
 	s, err := lf.Inspect(ctx, prefix)
 	if err != nil {
@@ -764,7 +759,7 @@ func TestRestore_ConfigRoundtrip(t *testing.T) {
 		Config: types.Config{
 			Image:   "ubuntu:22.04",
 			CPU:     4,
-			Memory:  1 << 30, // 1 GiB
+			Memory:  1 << 30,
 			Storage: 10 << 30,
 		},
 	}
@@ -864,7 +859,6 @@ func TestRestore_CloseWaitsForGoroutine(t *testing.T) {
 	}
 
 	if err := rc.Close(); err != nil {
-		// A broken pipe is acceptable since the stream was not consumed, but it must not hang or panic.
 		t.Logf("Close returned (expected) error: %v", err)
 	}
 }
@@ -885,7 +879,7 @@ func TestRestore_DoubleCloseNoPanic(t *testing.T) {
 	}
 
 	rc.Close()
-	// Second close — must not deadlock or panic (idempotent via sync.Once).
+
 	rc.Close()
 }
 
@@ -1108,7 +1102,6 @@ func TestImport_CorruptGzipTrailerRejected(t *testing.T) {
 	tw.Close()
 	gw.Close()
 
-	// Flip a bit in the gzip ISIZE trailer: tar extraction still succeeds, so only the drain-to-EOF integrity check can catch it.
 	raw := buf.Bytes()
 	raw[len(raw)-1] ^= 0xff
 

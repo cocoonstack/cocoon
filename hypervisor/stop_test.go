@@ -125,7 +125,6 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	}
 }
 
-// TestDeleteAllForceStopsUnderLock drives the force path against a live stub VMM: the delete body holds the ops lock while stopLocked runs, so a re-locking stop variant deadlocks here.
 func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
@@ -215,7 +214,6 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	}
 }
 
-// A forced delete's stop already closes the compute interval; emitting again from the pre-stop record would bill two stops against one start.
 func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
@@ -246,7 +244,6 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	}
 }
 
-// shortTempDir is a /tmp-based TempDir: unix socket paths under t.TempDir() can exceed the ~104-byte sockaddr cap (EINVAL on dial).
 func shortTempDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "cocoon-test-")

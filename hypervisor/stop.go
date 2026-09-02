@@ -86,7 +86,7 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 	if err != nil {
 		return nil, err
 	}
-	// One /proc scan up-front; per-VM orphan check filters this cache instead of re-walking /proc N times.
+	// one /proc scan serves every VM's orphan check
 	procScan, scanErr := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if scanErr != nil {
 		return nil, fmt.Errorf("refuse delete: /proc scan errored: %w (resolve the host issue and retry)", scanErr)

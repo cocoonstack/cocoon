@@ -21,7 +21,6 @@ const (
 	inverseOps     = 10
 )
 
-// TestMultiProcessCorrectness is the design §9 gate with real processes, not goroutines: every worker's acknowledged insert must be present afterwards, every failure a mapped taxonomy error, and the reopened store uncorrupted.
 func TestMultiProcessCorrectness(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -52,7 +51,6 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	}
 }
 
-// TestMultiProcessWorker is the helper-process body; it only runs when re-invoked by TestMultiProcessCorrectness with the env set.
 func TestMultiProcessWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -77,7 +75,6 @@ func TestMultiProcessWorker(t *testing.T) {
 	}
 }
 
-// TestInverseScopeNoDeadlock is the §9 cross-process gate: mutually-inverse scopes (write alpha read beta vs write beta read alpha) storm concurrently and must never deadlock — the engine's fixed global lock order is the proof.
 func TestInverseScopeNoDeadlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -106,7 +103,6 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	}
 }
 
-// TestInverseScopeWorker is the helper-process body for the inverse-scope gate.
 func TestInverseScopeWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -136,7 +132,6 @@ func TestInverseScopeWorker(t *testing.T) {
 	}
 }
 
-// TestAckedDurableSurvivesKill is the §9 durability gate: every insert the worker ACKed after a CommitDurable return must be present after SIGKILL.
 func TestAckedDurableSurvivesKill(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -178,7 +173,6 @@ func TestAckedDurableSurvivesKill(t *testing.T) {
 	}
 }
 
-// TestAckWorker is the helper-process body for the durability gate.
 func TestAckWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -199,7 +193,6 @@ func TestAckWorker(t *testing.T) {
 	}
 }
 
-// TestEventsExternalProcess is §9's cross-process signal gate for the json engine: another process's committed rename must reach subscribers here.
 func TestEventsExternalProcess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -224,7 +217,6 @@ func TestEventsExternalProcess(t *testing.T) {
 	}
 }
 
-// TestEventsWriterWorker is the helper-process body.
 func TestEventsWriterWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -241,7 +233,6 @@ func TestEventsWriterWorker(t *testing.T) {
 	}
 }
 
-// stormWorkers is the design's 256-process gate by default; constrained CI runners dial it down via COCOON_STORM_WORKERS (full scale runs offline).
 func stormWorkers() int {
 	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
 		return v

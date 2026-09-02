@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/containernetworking/cni/libcni"
@@ -139,9 +140,9 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 			}
 		}
 		if deleteTAP {
-			var idx int
-			if _, scanErr := fmt.Sscanf(rec.IfName, "eth%d", &idx); scanErr != nil {
-				logger.Warnf(ctx, "parse ifname %q for %s: %v (skip tap delete)", rec.IfName, vmID, scanErr)
+			idx, ok := ifIndex(rec.IfName)
+			if !ok {
+				logger.Warnf(ctx, "parse ifname %q for %s (skip tap delete)", rec.IfName, vmID)
 			} else if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, idx)); delErr != nil {
 				if recErr == nil {
 					recErr = fmt.Errorf("delete tap %s: %w", tapNameForVM(vmID, idx), delErr)
@@ -182,7 +183,7 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	return setLinkStateFn(nsPath, ifNames, up)
 }
 
-// confListByName resolves a conflist by name; empty name returns the default (first alphabetically).
+// confListByName resolves a conflist by name; empty name returns the default (the alphabetically-first file).
 func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 	if len(c.confLists) == 0 {
 		return nil, c.errNoConflist()
@@ -201,7 +202,7 @@ func (c *CNI) errNoConflist() error {
 	return fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
 }
 
-// loadConfLists loads all .conflist files from dir, returning name→conflist and the default (alphabetically first) name.
+// loadConfLists loads all .conflist files from dir, returning name→conflist and the name of the alphabetically-first file as the default.
 func loadConfLists(dir string) (map[string]*libcni.NetworkConfigList, string, error) {
 	files, err := libcni.ConfFiles(dir, []string{".conflist"})
 	if err != nil {
@@ -222,4 +223,14 @@ func loadConfLists(dir string) (map[string]*libcni.NetworkConfigList, string, er
 		defaultName = cmp.Or(defaultName, cl.Name)
 	}
 	return lists, defaultName, nil
+}
+
+func ifName(index int) string {
+	return "eth" + strconv.Itoa(index)
+}
+
+// ifIndex parses the NIC index back out of an ifName-scheme guest interface name.
+func ifIndex(name string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimPrefix(name, "eth"))
+	return n, err == nil && n >= 0 && strings.HasPrefix(name, "eth")
 }

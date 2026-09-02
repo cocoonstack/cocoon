@@ -36,7 +36,7 @@ func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	return EncodeTables(m, c.Specs)
 }
 
-// DecodeTables loads specs' map fields into a fresh Model (sorted insertion, matching what encoding/json always wrote). Single streaming pass — a whole-file unmarshal into raw messages tokenizes the payload twice.
+// DecodeTables loads specs' map fields into a fresh Model (sorted insertion, matching what encoding/json always wrote).
 func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	m := NewModel()
 	if data == nil {

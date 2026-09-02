@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -106,15 +107,11 @@ func (b *Backend) LogFilePath(logDir string) string {
 
 // LogPath resolves ref → log path via the persisted LogDir (survives --log-dir change); falls back to current Conf for legacy records.
 func (b *Backend) LogPath(ctx context.Context, ref string) (string, error) {
-	id, err := b.ResolveRef(ctx, ref)
+	id, rec, err := b.ResolveAndLoad(ctx, ref)
 	if err != nil {
 		return "", err
 	}
-	logDir := b.Conf.VMLogDir(id)
-	if rec, err := b.LoadRecord(ctx, id); err == nil && rec.LogDir != "" {
-		logDir = rec.LogDir
-	}
-	return b.LogFilePath(logDir), nil
+	return b.LogFilePath(cmp.Or(rec.LogDir, b.Conf.VMLogDir(id))), nil
 }
 
 // ForEachVM runs fn over ids in parallel up to EffectivePoolSize, logging per-id failures.
@@ -365,7 +362,7 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 	return nil
 }
 
-// CloneSnapshotFiles copies snapshot files using per-file strategies to minimize I/O; COW-class copies (the bulk of the bytes) fan out concurrently, links and small meta stay serial.
+// CloneSnapshotFiles copies snapshot files by kind: COW-class copies fan out concurrently, links and small meta stay serial.
 func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {

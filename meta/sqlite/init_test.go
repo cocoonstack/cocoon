@@ -35,7 +35,7 @@ func TestFailedInitRestarts(t *testing.T) {
 
 func TestInitIdentityAtomicWithSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	// The retired pragmas-after-commit window: schema present, identity absent. It must refuse loudly, never strand or silently delete.
+
 	db, err := open(path, "FULL", true)
 	if err != nil {
 		t.Fatal(err)

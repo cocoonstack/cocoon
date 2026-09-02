@@ -24,12 +24,11 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	origNetns, origTAP, origStat := deleteNetnsFn, deleteTAPFn, statNetnsFn
 	deleteNetnsFn = func(context.Context, string) error { netnsRemoved++; return nil }
 	deleteTAPFn = func(_, tap string) error { tapsDeleted = append(tapsDeleted, tap); return nil }
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil } // netns present
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
 	t.Cleanup(func() { deleteNetnsFn, deleteTAPFn, statNetnsFn = origNetns, origTAP, origStat })
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// Lease + deleting for the eth1 subset, then "crash" before any DEL ran.
 	ts := c.tombstones()
 	var leaseID string
 	if err := c.update(ctx, func(tx *netTx) error {
@@ -51,7 +50,7 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	if _, err := c.recoverTombstone(ctx, "vm1"); err != nil {
 		t.Fatalf("recover: %v", err)
 	}
-	// eth1's row is gone; eth0's row survives; no netns removal was attempted.
+
 	assertRecordIDs(t, c, []string{"n-eth0"})
 	for _, name := range exec.attempted {
 		if name == "eth0" {
@@ -61,7 +60,7 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	if netnsRemoved != 0 {
 		t.Fatalf("subset recovery removed the netns (%d removals)", netnsRemoved)
 	}
-	// Remove ran with deleteTAP=true; recovery restores it for exactly the subset's TAP and no other.
+
 	if want := []string{tapNameForVM("vm1", 1)}; !slices.Equal(tapsDeleted, want) {
 		t.Fatalf("subset recovery TAP deletions = %v, want %v", tapsDeleted, want)
 	}
@@ -165,7 +164,7 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	if left == nil || left.Phase != tombstone.PhaseDeleting {
 		t.Fatalf("tombstone must stay in deleting: %+v", left)
 	}
-	// Fault clears; the retry converges.
+
 	exec.failIf = ""
 	if err := c.teardownProtocol(ctx, "vm3", []string{"n-eth1"}, false); err != nil {
 		t.Fatalf("retry: %v", err)

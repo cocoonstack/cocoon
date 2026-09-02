@@ -152,18 +152,13 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 		return h.restoreFromDir(ctx, cmd, conf, vmRef, fromDir, logger)
 	}
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
+	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
 		return err
-	}
-
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM: %w", err)
 	}
 	snapInfo, err := snapBackend.Inspect(ctx, snapRef)
 	if err != nil {
@@ -212,17 +207,13 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
+	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
 	dcr, ok := hyper.(hypervisor.Direct)
 	if !ok {
 		return fmt.Errorf("backend %s does not support direct restore", hyper.Type())
-	}
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM: %w", err)
 	}
 	if _, owned := vm.SnapshotIDs[cfg.ID]; !owned {
 		force, _ := cmd.Flags().GetBool("force")

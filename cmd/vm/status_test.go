@@ -158,7 +158,6 @@ func TestApplyFilters(t *testing.T) {
 	}
 }
 
-// captureStdout redirects os.Stdout to a pipe, runs fn, returns the bytes; panic-safe via deferred cleanup.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()

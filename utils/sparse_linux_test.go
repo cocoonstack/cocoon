@@ -19,7 +19,7 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const size = 1 << 20 // 1MB
+	const size = 1 << 20
 	if err := f.Truncate(size); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestSparseCopy_AllSparse(t *testing.T) {
 	}
 
 	blocks := fileBlocks(t, dst)
-	if blocks > 16 { // 16 * 512 = 8KB — generous threshold for metadata
+	if blocks > 16 {
 		t.Errorf("expected sparse dst, got %d blocks", blocks)
 	}
 }
@@ -53,7 +53,7 @@ func TestSparseCopy_PartialData(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	const size = 1 << 20 // 1MB
+	const size = 1 << 20
 	f, err := os.Create(src)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestSparseCopy_NonSparse(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	data := bytes.Repeat([]byte("X"), 64*1024) // 64KB
+	data := bytes.Repeat([]byte("X"), 64*1024)
 	if err := os.WriteFile(src, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,6 @@ func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
 	}
 }
 
-// fileBlocks returns the 512-byte block count allocated on disk.
 func fileBlocks(t *testing.T, path string) int64 {
 	t.Helper()
 	fi, err := os.Stat(path)

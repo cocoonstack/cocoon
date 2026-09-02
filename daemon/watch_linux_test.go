@@ -51,7 +51,6 @@ func TestWatcherReplacesOnNewGeneration(t *testing.T) {
 		t.Fatalf("got watched pid %d, want the newer generation %d", got, second.PID)
 	}
 
-	// Only the adopted generation may report: the replaced one is no longer watched.
 	_ = cmd2.Process.Kill()
 	select {
 	case ev := <-w.exits:
@@ -89,7 +88,6 @@ func TestWatcherKeepsOtherBackendsOnDropAbsent(t *testing.T) {
 	}
 }
 
-// startVictim launches a process the test can kill, returning its generation.
 func startVictim(t *testing.T) (*exec.Cmd, utils.ProcRef) {
 	t.Helper()
 	cmd := exec.Command("sleep", "30")

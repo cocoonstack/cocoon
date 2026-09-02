@@ -262,8 +262,8 @@ func validConfig() VMConfig {
 		Name: "test-vm",
 		Config: Config{
 			CPU:     2,
-			Memory:  1 << 30,  // 1 GiB
-			Storage: 20 << 30, // 20 GiB
+			Memory:  1 << 30,
+			Storage: 20 << 30,
 		},
 	}
 }

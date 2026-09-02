@@ -43,7 +43,6 @@ func TestWatchFileDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Rapid successive writes should coalesce into one signal.
 	for i := range 5 {
 		if err := AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644); err != nil {
 			t.Fatal(err)
@@ -81,7 +80,6 @@ func TestWatchFileCancel(t *testing.T) {
 	select {
 	case _, ok := <-ch:
 		if ok {
-			// Received a lingering signal before close — drain and wait for close.
 			select {
 			case _, ok := <-ch:
 				if ok {

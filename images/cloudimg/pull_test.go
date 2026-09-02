@@ -36,7 +36,6 @@ func TestDownloadToFileParallelRange(t *testing.T) {
 func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
 	data := testPayload(64 * 1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Ignores any Range header and always serves the full body — not Range-capable.
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
 	}))
@@ -99,7 +98,7 @@ func TestDownloadToFileEmitsFinalProgressEvent(t *testing.T) {
 }
 
 func TestDownloadToFileUnevenLastRange(t *testing.T) {
-	data := testPayload(257*1024 + 7) // not divisible by 4: exercises the short final range
+	data := testPayload(257*1024 + 7)
 	server := httptest.NewServer(rangeHandler(data, nil))
 	defer server.Close()
 
@@ -135,7 +134,7 @@ func TestDownloadToFileFollowsRedirectForRanges(t *testing.T) {
 		t.Errorf("digest = %s, want %s", digest, want)
 	}
 	assertFileContent(t, dst, data)
-	// Only the probe may hit the front server; range requests go straight to the resolved URL.
+
 	if n := frontRequests.Load(); n != 1 {
 		t.Errorf("front server saw %d requests, want 1 (probe only)", n)
 	}
@@ -153,10 +152,10 @@ func TestDownloadToFileShortRangeBodyFails(t *testing.T) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
 		w.WriteHeader(http.StatusPartialContent)
 		if start == 0 || end-start < 2 {
-			_, _ = w.Write(data[start : end+1]) // probe and tiny ranges served fully
+			_, _ = w.Write(data[start : end+1])
 			return
 		}
-		// Serve half the promised bytes, then flush to force chunked encoding so the client sees a clean EOF instead of a Content-Length mismatch.
+
 		_, _ = w.Write(data[start : start+(end-start)/2])
 		w.(http.Flusher).Flush()
 	}))
@@ -178,7 +177,7 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 			return
 		}
 		if start > 0 {
-			start-- // lie about the span actually served
+			start--
 		}
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
 		w.WriteHeader(http.StatusPartialContent)

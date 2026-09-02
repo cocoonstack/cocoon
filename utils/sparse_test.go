@@ -57,7 +57,6 @@ func TestSparseCopy_LargeFile(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	// 256KB of repeated data.
 	want := bytes.Repeat([]byte("ABCDEFGHIJKLMNOP"), 16384)
 	if err := os.WriteFile(src, want, 0o644); err != nil {
 		t.Fatal(err)

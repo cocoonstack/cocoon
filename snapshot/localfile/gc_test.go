@@ -198,7 +198,7 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	if len(ids) != 2 {
 		t.Fatalf("want 2 candidates, got %v", ids)
 	}
-	// A clone/export lands in the window and touches old1.
+
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		idx.Snapshots[idx.Names["old1"]].LastAccessedAt = time.Now()
 		return nil
@@ -401,7 +401,6 @@ func TestGCModule_OrphanDirCleaned(t *testing.T) {
 }
 
 func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
-	// LRU-evicting a real record must close its ledger interval (snap.storage.stop).
 	lf := newTestLF(t)
 	ctx := t.Context()
 
@@ -445,7 +444,6 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 }
 
 func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
-	// Orphan and stale-pending records never opened a ledger interval, so GC must not emit a phantom stop.
 	lf := newTestLF(t)
 	ctx := t.Context()
 

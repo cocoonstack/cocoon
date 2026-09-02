@@ -59,8 +59,11 @@ type Store interface {
 type Reader interface {
 	GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error)
 	// ScanRaw yields records in the engine's stable order (json: insertion).
-	ScanRaw(ctx context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error
+	ScanRaw(ctx context.Context, ns, table string, fn RawScanFunc) error
 }
+
+// RawScanFunc receives one raw record per ScanRaw visit.
+type RawScanFunc func(id string, raw json.RawMessage) error
 
 // Writer is the raw write SPI; relaxedOK mirrors the per-op RelaxedOK opt-in.
 type Writer interface {
