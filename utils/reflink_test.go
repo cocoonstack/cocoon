@@ -17,7 +17,7 @@ func TestReflinkCopy_BasicContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ReflinkCopy(dst, src, Sync); err != nil {
+	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
 		t.Fatalf("ReflinkCopy: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestReflinkCopy_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ReflinkCopy(dst, src, Sync); err != nil {
+	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
 		t.Fatalf("ReflinkCopy: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestReflinkCopy_LargeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ReflinkCopy(dst, src, Sync); err != nil {
+	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
 		t.Fatalf("ReflinkCopy: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestReflinkCopy_OverwritesExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ReflinkCopy(dst, src, NoSync); err != nil {
+	if err := ReflinkCopy(t.Context(), dst, src, NoSync); err != nil {
 		t.Fatalf("ReflinkCopy: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestReflinkCopy_OverwritesExisting(t *testing.T) {
 
 func TestReflinkCopy_SrcNotExist(t *testing.T) {
 	dir := t.TempDir()
-	err := ReflinkCopy(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync)
+	err := ReflinkCopy(t.Context(), filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent src")
 	}
@@ -117,7 +117,7 @@ func TestReflinkCopy_DstDirNotExist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ReflinkCopy(filepath.Join(dir, "nodir", "dst"), src, Sync)
+	err := ReflinkCopy(t.Context(), filepath.Join(dir, "nodir", "dst"), src, Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent dst directory")
 	}
@@ -133,7 +133,7 @@ func TestReflinkCopy_PreservesSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ReflinkCopy(dst, src, Sync); err != nil {
+	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
 		t.Fatal(err)
 	}
 
