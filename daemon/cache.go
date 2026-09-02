@@ -128,6 +128,18 @@ func (c *cache) publish(all []VMStatus, healthy bool, degraded int, at time.Time
 	}
 }
 
+func (c *cache) byBackend(backend string) []VMStatus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var out []VMStatus
+	for _, st := range c.order {
+		if st.Backend == backend {
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
 func (c *cache) snapshot() ([]VMStatus, health) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

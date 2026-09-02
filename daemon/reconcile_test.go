@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -18,6 +19,23 @@ func TestReconcileConvergesDeadRunningRecord(t *testing.T) {
 
 	if len(f.converged) != 1 || f.converged[0] != (convergeCall{vmID: "vm1", gen: 7}) {
 		t.Fatalf("got %+v, want one convergence fenced on generation 7", f.converged)
+	}
+}
+
+func TestReconcileScanFailureKeepsPublishedStatuses(t *testing.T) {
+	f := newFake().put(runningRec("vm1", 1))
+	d := newTestDaemon(t, f)
+	d.reconcile(t.Context())
+
+	f.scanErr = errors.New("store unreadable")
+	d.reconcile(t.Context())
+
+	statuses, h := d.state.snapshot()
+	if h.ok {
+		t.Error("health ok after a scan failure")
+	}
+	if len(statuses) != 1 || statuses[0].ID != "vm1" {
+		t.Fatalf("got %+v, want the previous pass's vm1 carried forward", statuses)
 	}
 }
 
