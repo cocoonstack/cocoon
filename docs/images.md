@@ -11,8 +11,8 @@ cocoon image pull ghcr.io/cocoonstack/cocoon/ubuntu:24.04
 # Cloud image from an HTTP(S) URL (auto-converted to qcow2 v3)
 cocoon image pull https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 
-# --force bypasses the cache when a mutable tag/URL was replaced upstream
-cocoon image pull --force ghcr.io/cocoonstack/cocoon/ubuntu:24.04
+# --force re-downloads a URL whose content was replaced upstream (OCI tags are re-resolved on every pull)
+cocoon image pull --force https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 ```
 
 Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3.

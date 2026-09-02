@@ -167,4 +167,4 @@ cocoon vm status --event
 cocoon vm status --event -n 2 my-vm other-vm
 ```
 
-State changes are detected via **fsnotify** on the VM index file (sub-second latency), with a configurable poll interval as fallback. Event mode emits `ADDED`, `MODIFIED`, and `REMOVED` lines suitable for machine consumption.
+State changes are detected via **fsnotify** on the meta store (the sqlite database's directory, or the json index file; sub-second latency), with a configurable poll interval as fallback. Event mode emits `ADDED`, `MODIFIED`, and `DELETED` lines suitable for machine consumption.

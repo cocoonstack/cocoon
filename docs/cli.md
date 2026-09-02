@@ -15,7 +15,7 @@ cocoon
 ├── vm
 │   ├── create [flags] IMAGE       Create a VM from an image
 │   ├── run [flags] IMAGE          Create and start a VM
-│   ├── clone [flags] SNAPSHOT     Clone a new VM from a snapshot
+│   ├── clone [flags] [SNAPSHOT]   Clone a new VM from a snapshot (or --from-dir)
 │   ├── start VM [VM...]           Start created/stopped VM(s)
 │   ├── stop VM [VM...]            Stop running VM(s)
 │   ├── list (alias: ls)           List VMs with status
@@ -26,7 +26,7 @@ cocoon
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
-│   ├── restore [flags] VM SNAP   Restore a VM (running or stopped) to a snapshot
+│   ├── restore [flags] VM [SNAP] Restore a VM (running or stopped) to a snapshot (or --from-dir)
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
 │   ├── status [VM...]             Watch VM status in real time
 │   ├── fs
