@@ -117,7 +117,7 @@ func TestReflinkCopy_DstDirNotExist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ReflinkCopy(filepath.Join(dir, "nodir", "dst"), src, Sync)
+	err := ReflinkCopy(t.Context(), filepath.Join(dir, "nodir", "dst"), src, Sync)
 	if err == nil {
 		t.Fatal("expected error for nonexistent dst directory")
 	}
