@@ -28,6 +28,13 @@ func (lf *LocalFile) update(ctx context.Context, fn func(*snapTx) error) error {
 	})
 }
 
+// touch commits relaxed: LastAccessedAt only steers GC's LRU, so a lost update costs one extra retention round, not correctness.
+func (lf *LocalFile) touch(ctx context.Context, fn func(*snapTx) error) error {
+	return lf.meta.Update(ctx, meta.Scope{Write: NamespaceName}, meta.CommitRelaxed, func(w meta.Writer) error {
+		return fn(lf.tx(ctx, w, w))
+	})
+}
+
 func (lf *LocalFile) tx(ctx context.Context, r meta.Reader, w meta.Writer) *snapTx {
 	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, NamespaceName, TableRecords, TableNames, r, w)
 }

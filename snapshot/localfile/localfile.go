@@ -442,7 +442,7 @@ func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (
 		}
 		if touch {
 			r.LastAccessedAt = time.Now()
-			if err := t.Put(id, r); err != nil {
+			if err := t.Put(id, r, meta.RelaxedOK); err != nil {
 				return err
 			}
 		}
@@ -450,7 +450,7 @@ func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (
 		return nil
 	}
 	if touch {
-		return rec, lf.update(ctx, apply)
+		return rec, lf.touch(ctx, apply)
 	}
 	return rec, lf.view(ctx, apply)
 }
