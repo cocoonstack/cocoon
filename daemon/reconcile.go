@@ -21,6 +21,7 @@ func (d *Daemon) reconcile(ctx context.Context) {
 		// Only a scan failure is unhealthy: a restart fixes an unreadable store, not a VM nobody can converge.
 		if err != nil {
 			healthy = false
+			st = d.state.byBackend(b.Type())
 		}
 		degraded += failed
 		all = append(all, st...)
