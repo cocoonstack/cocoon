@@ -123,7 +123,7 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 
 func copyPairs(ctx context.Context, pairs [][2]string, sync utils.SyncMode) error {
 	_, err := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
-		if err := utils.ReflinkCopy(p[0], p[1], sync); err != nil {
+		if err := utils.ReflinkCopy(ctx, p[0], p[1], sync); err != nil {
 			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
 		}
 		return struct{}{}, nil
