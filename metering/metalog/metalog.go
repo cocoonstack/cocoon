@@ -38,10 +38,3 @@ func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 		log.WithFunc("metering.metalog.Recorder.Emit").Warnf(ctx, "append entry: %v", err)
 	}
 }
-
-// Scan streams committed entries with Seq strictly after cursor.
-func (r *Recorder) Scan(ctx context.Context, after meta.Seq, fn func(meta.Seq, *metering.Entry) error) error {
-	return r.store.View(ctx, []string{NamespaceName}, func(rd meta.Reader) error {
-		return r.log.Scan(ctx, rd, after, fn)
-	})
-}
