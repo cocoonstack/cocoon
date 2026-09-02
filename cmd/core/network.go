@@ -102,8 +102,7 @@ func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
 		// Lazy CNI; OK to skip for bridge-only setups.
 		return nil
 	}
-	_, err = p.Delete(ctx, []string{vmID})
-	return err
+	return p.Delete(ctx, vmID)
 }
 
 // cniOnly resolves the CNI provider without a VM record, for the ID-only teardown path.

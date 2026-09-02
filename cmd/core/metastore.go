@@ -73,8 +73,8 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
 		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
-		oci.NewConfig(conf.RootDir, 0).JSONNamespace(),
-		cloudimg.NewConfig(conf.RootDir, 0).JSONNamespace(),
+		imageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
+		imageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
 		cni.NewConfig(conf).JSONNamespace(),
 		{
 			Name:     metalog.NamespaceName,
@@ -166,4 +166,16 @@ func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (m
 		return nil, err
 	}
 	return s, nil
+}
+
+func imageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
+	return metajson.Namespace{
+		Name:     c.Name,
+		FilePath: c.IndexFile(),
+		LockPath: c.IndexLock(),
+		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
+			{Key: "images", Table: images.TableRecords},
+			{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
+		}},
+	}
 }

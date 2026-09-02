@@ -523,7 +523,7 @@ func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref s
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {
-		return func() {}, func() {}, nil
+		return nil, nil, fmt.Errorf("hypervisor %s cannot reserve VM ids", hyper.Type())
 	}
 	unlock, err = r.LockVMOps(ctx, vmID)
 	if err != nil {
@@ -602,7 +602,7 @@ func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID stri
 	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 	defer cancel()
-	if _, delErr := netProvider.Delete(ctx, []string{vmID}); delErr != nil {
+	if delErr := netProvider.Delete(ctx, vmID); delErr != nil {
 		log.WithFunc("cmd.vm.rollbackNetwork").Warnf(ctx, "rollback network for %s: %v", vmID, delErr)
 	}
 }

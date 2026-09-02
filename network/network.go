@@ -26,9 +26,7 @@ type Network interface {
 	Remove(ctx context.Context, vmID string, indices ...int) error
 	Quiesce(ctx context.Context, vmID string) error
 	Unquiesce(ctx context.Context, vmID string) error
-	Delete(context.Context, []string) ([]string, error)
-	Inspect(context.Context, string) (*types.Network, error)
-	List(context.Context) ([]*types.Network, error)
+	Delete(ctx context.Context, vmID string) error
 	RegisterGC(*gc.Orchestrator)
 }
 
