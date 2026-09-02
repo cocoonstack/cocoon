@@ -42,12 +42,6 @@ func (b *Bridge) Add(_ context.Context, _ string, _ *types.VMConfig, _ ...networ
 	return nil, errUnsupported
 }
 
-func (b *Bridge) Delete(_ context.Context, _ []string) ([]string, error) { return nil, errUnsupported }
-
-func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
-	return nil, errUnsupported
-}
-
-func (b *Bridge) List(_ context.Context) ([]*types.Network, error) { return nil, errUnsupported }
+func (b *Bridge) Delete(_ context.Context, _ string) error { return errUnsupported }
 
 func CleanupTAPs(_ string, _ []string) []string { return nil }

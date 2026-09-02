@@ -18,7 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const typ = "cni"
@@ -97,30 +96,6 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 	return nil
 }
 
-// Inspect returns the network record for id, or (nil, nil) if not found.
-func (c *CNI) Inspect(ctx context.Context, id string) (*types.Network, error) {
-	var result *types.Network
-	return result, c.view(ctx, func(t *netTx) error {
-		rec, err := t.Get(id)
-		if err != nil || rec == nil {
-			return err
-		}
-		result = &rec.Network
-		return nil
-	})
-}
-
-// List returns all known network records.
-func (c *CNI) List(ctx context.Context) ([]*types.Network, error) {
-	var result []*types.Network
-	return result, c.view(ctx, func(t *netTx) error {
-		return t.Scan(func(_ string, rec *networkRecord) error {
-			result = append(result, &rec.Network)
-			return nil
-		})
-	})
-}
-
 // Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its now-carrier-less TAP (mirred-to-down-device). The netns and TAP are kept for a fast restart, which Unquiesce re-enables.
 func (c *CNI) Quiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, false)
@@ -131,12 +106,9 @@ func (c *CNI) Unquiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, true)
 }
 
-// Delete tears down each VM's networking; the caller already holds the VM lock, so this never re-locks the non-reentrant flock.
-func (c *CNI) Delete(ctx context.Context, vmIDs []string) ([]string, error) {
-	result := utils.ForEach(ctx, vmIDs, func(ctx context.Context, vmID string) error {
-		return c.teardownProtocol(ctx, vmID, nil, false)
-	})
-	return result.Succeeded, result.Err()
+// Delete tears down the VM's networking; the caller already holds the VM lock, so this never re-locks the non-reentrant flock.
+func (c *CNI) Delete(ctx context.Context, vmID string) error {
+	return c.teardownProtocol(ctx, vmID, nil, false)
 }
 
 // tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.

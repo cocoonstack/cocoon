@@ -145,18 +145,9 @@ func (b *Bridge) Remove(_ context.Context, vmID string, indices ...int) error {
 func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
 func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
 
-func (b *Bridge) Delete(_ context.Context, vmIDs []string) ([]string, error) {
-	return CleanupTAPs(b.tapPrefix, vmIDs), nil
-}
-
-// Inspect: bridge has no persistent records.
-func (b *Bridge) Inspect(_ context.Context, _ string) (*types.Network, error) {
-	return nil, nil
-}
-
-// List: bridge has no persistent records.
-func (b *Bridge) List(_ context.Context) ([]*types.Network, error) {
-	return nil, nil
+func (b *Bridge) Delete(_ context.Context, vmID string) error {
+	CleanupTAPs(b.tapPrefix, []string{vmID})
+	return nil
 }
 
 // RegisterGC reclaims orphan bridge TAP devices.
