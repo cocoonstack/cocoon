@@ -25,7 +25,7 @@ var (
 	validIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 )
 
-// Spec is one attach request. PCI may be a short BDF, full BDF, or a sysfs path; normalizePath canonicalizes it.
+// Spec is one attach request. PCI may be a short BDF, full BDF, or a sysfs path; NormalizePath canonicalizes it.
 type Spec struct {
 	PCI string
 	ID  string
@@ -39,7 +39,7 @@ func (s *Spec) NormalizedPath() (string, error) {
 	if s.ID != "" && (strings.HasPrefix(s.ID, "cocoon-") || !validIDRe.MatchString(s.ID)) {
 		return "", fmt.Errorf("id %q invalid: must match [A-Za-z0-9][A-Za-z0-9_.-]{0,63} and not start with cocoon-", s.ID)
 	}
-	return normalizePath(s.PCI)
+	return NormalizePath(s.PCI)
 }
 
 // Attached is the inspect-time view of one VFIO device from running VM state.
@@ -59,8 +59,8 @@ type Lister interface {
 	DeviceList(ctx context.Context, vmRef string) ([]Attached, error)
 }
 
-// normalizePath maps {short BDF, full BDF, sysfs path} → canonical /sys/bus/pci/devices/<bdf>; rejects paths outside that root.
-func normalizePath(input string) (string, error) {
+// NormalizePath maps {short BDF, full BDF, sysfs path} → canonical /sys/bus/pci/devices/<bdf>; rejects paths outside that root.
+func NormalizePath(input string) (string, error) {
 	in := strings.TrimSpace(input)
 	if in == "" {
 		return "", fmt.Errorf("empty pci path")

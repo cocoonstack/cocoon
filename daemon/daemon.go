@@ -27,7 +27,7 @@ const (
 	lockFileName = "daemon.lock"
 )
 
-var errAlreadyRunning = errors.New("another cocoon daemon is already running")
+var ErrAlreadyRunning = errors.New("another cocoon daemon is already running")
 
 // Supervisor is the backend surface supervision drives.
 type Supervisor = hypervisor.Supervisable
@@ -153,7 +153,7 @@ func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("acquire daemon lock: %w", err)
 	}
 	if !ok {
-		return nil, errAlreadyRunning
+		return nil, ErrAlreadyRunning
 	}
 	return func() { _ = l.Unlock(ctx) }, nil
 }
