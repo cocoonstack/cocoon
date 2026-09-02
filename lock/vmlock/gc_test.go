@@ -20,7 +20,7 @@ func TestGCModuleSweepsOnlyUnknownUnheldLocks(t *testing.T) {
 			defer l.Unlock(ctx) //nolint:errcheck
 			continue
 		}
-		// Recreate the file after the transient unlock removed it, standing in for a pre-transient install's residue.
+
 		if err := l.Unlock(ctx); err != nil {
 			t.Fatalf("seed unlock %s: %v", id, err)
 		}

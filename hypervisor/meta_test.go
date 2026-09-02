@@ -48,7 +48,6 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 	b := &Backend{Typ: "test", NS: "vms_test", Meta: store}
 
-	// Fidelity: a no-op transaction must reproduce the legacy bytes exactly.
 	if err := b.update(ctx, func(*vmTx) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +59,6 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatalf("round-trip not byte-identical to legacy baseline:\n got: %s\nwant: %s", got, baseline)
 	}
 
-	// Replay the exact op sequence fixturegen ran through the legacy store.
 	t2 := time.Date(2026, 7, 3, 12, 45, 0, 0, time.UTC)
 	if err := b.update(ctx, func(t *vmTx) error {
 		g, err := t.Get("VMCCCCCCCCCCCCCCCCCCCCCCCC")

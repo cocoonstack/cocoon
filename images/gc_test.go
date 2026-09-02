@@ -46,7 +46,6 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 		TempDir:  dir,
 	})
 
-	// The publish lands between the (empty) snapshot and Collect.
 	if err := store.Update(ctx, func(idx *Index[gcTestEntry]) error {
 		idx.Images["ref1"] = &gcTestEntry{Digest: "deadbeef"}
 		return nil
@@ -60,7 +59,6 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 		t.Fatalf("republished blob removed: %v", removed)
 	}
 
-	// Once the ref is gone the same candidate collects.
 	if err := store.Update(ctx, func(idx *Index[gcTestEntry]) error {
 		delete(idx.Images, "ref1")
 		return nil
@@ -161,7 +159,6 @@ func TestGCCollectRespectsExternalPins(t *testing.T) {
 		t.Fatalf("externally pinned blob removed: %v", removed)
 	}
 
-	// The pin released: the same candidate collects.
 	pins = map[string]struct{}{}
 	if err := mod.Collect(ctx, []string{"deadbeef"}, ImageGCSnapshot{}); err != nil {
 		t.Fatal(err)

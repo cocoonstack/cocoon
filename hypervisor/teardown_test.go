@@ -56,7 +56,7 @@ func TestDeleteProtocolTeardownFailureKeepsTombstoneThenConverges(t *testing.T) 
 	if err := b.deleteVMProtocol(ctx, "vmproto2", rec); !errors.Is(err, boom) {
 		t.Fatalf("want teardown failure surfaced, got %v", err)
 	}
-	// Record stays live over a deleting tombstone; the retry rolls forward.
+
 	if _, err := b.LoadRecord(ctx, "vmproto2"); err != nil {
 		t.Fatalf("record must stay live through deleting: %v", err)
 	}
@@ -75,7 +75,6 @@ func TestRecoverLeasedRollsBack(t *testing.T) {
 	ctx := t.Context()
 	rec := seedProtoVM(t, b, "vmproto3")
 
-	// Simulate a crash right after the lease transaction: insert the lease only.
 	cleanup, err := tombstone.MarshalCleanup(vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir})
 	if err != nil {
 		t.Fatal(err)
@@ -123,12 +122,12 @@ func TestTombstoneFencingABA(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Worker B recovers under a NEW lease and finalizes.
+
 	done, err := b.recoverVMTombstone(ctx, "vmproto4")
 	if err != nil || !done {
 		t.Fatalf("recover: done=%v err=%v", done, err)
 	}
-	// Replaying A's fenced finalize affects nothing.
+
 	err = b.update(ctx, func(tx *vmTx) error {
 		return ts.Finalize(ctx, tx.w, "vmproto4", leaseA)
 	})
@@ -147,7 +146,6 @@ func TestEntryGuardDisciplines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// leased: the guard rolls it back in place and the operation proceeds.
 	if err := b.update(ctx, func(tx *vmTx) error {
 		_, err := ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err

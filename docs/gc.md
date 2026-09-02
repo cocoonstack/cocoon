@@ -6,8 +6,8 @@ Cross-module GC, snapshot LRU eviction, and scheduled cleanup.
 
 `cocoon gc` performs cross-module garbage collection:
 
-1. **Lock** all modules (images, VMs, network, snapshots) — if any module is busy, the entire GC cycle is skipped to maintain consistency
-2. **Snapshot** all module indexes under lock
+1. **Recover** every module's interrupted deletions first, so discovery sees no half-removed resources
+2. **Snapshot** each module's index (a loose read; every destructive decision is revalidated later under the module's own entity locks and tombstone leases)
 3. **Resolve** each module identifies unreferenced resources using the full snapshot set (e.g., image GC checks VM and snapshot records for blob references)
 4. **Collect** — delete identified targets
 
@@ -22,7 +22,7 @@ INFO gc.snapshot          collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=
 INFO gc.snapshot          collected id=2GQVEA... name= bytes=0 last_accessed=never reason=orphan
 INFO gc.cloud-hypervisor  collected id=ABC123 runDir=/var/lib/cocoon/run/cloudhypervisor/ABC123 logDir=/var/log/cocoon/cloudhypervisor/ABC123 reason=orphan-runDir
 INFO gc.oci               collected blob=b40150c1c2717d... reason=unreferenced
-INFO gc.cni               collected id=JKLMN netns=cocoon-JKLMN nics=2/2 reason=orphan
+INFO gc.cni               collected id=JKLMN netns=cocoon-JKLMN reason=orphan
 INFO gc.bridge            collected id=MNOPQ iface=btMNOPQ-0 reason=orphan-tap
 INFO gc.Run               completed: cloud-hypervisor=1 cni=1 oci=4 snapshot=3 (failures: 0, duration: 230ms)
 ```

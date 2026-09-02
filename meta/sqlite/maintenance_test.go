@@ -26,7 +26,7 @@ func TestBackupFidelity(t *testing.T) {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	// Pre-snapshot marker: acked before backup, MUST be captured even while a writer keeps the WAL non-empty (§9 backup fidelity).
+
 	put("marker", `{"v":1}`)
 	stop := make(chan struct{})
 	go func() {
@@ -82,7 +82,7 @@ func TestBackupCrashSteps(t *testing.T) {
 		}
 		err := Backup(ctx, filepath.Join(dir, DBFileName), dest)
 		if step != "renamed" {
-			// Crash before rename: the published backup must be intact.
+
 			if !errors.Is(err, errCrash) {
 				t.Fatalf("step %s: want injected crash, got %v", step, err)
 			}
@@ -92,7 +92,7 @@ func TestBackupCrashSteps(t *testing.T) {
 		} else if !errors.Is(err, errCrash) {
 			t.Fatalf("step renamed: want injected crash, got %v", err)
 		}
-		// Rerun after every crash point must succeed (stale tmp cleared).
+
 		testBackupStep = nil
 		if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
 			t.Fatalf("rerun after %s: %v", step, err)
@@ -156,7 +156,6 @@ func TestBusyCtxDeadline(t *testing.T) {
 	}
 }
 
-// TestBackupConcurrentSameDest pins the flock serialization: without it, a concurrent run's stale-tmp cleanup yanks the first run's tmp mid-verify and publishes an empty backup with a nil error.
 func TestBackupConcurrentSameDest(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

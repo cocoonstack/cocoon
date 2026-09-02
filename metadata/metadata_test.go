@@ -139,7 +139,7 @@ func TestNetworkConfig_MultiNIC(t *testing.T) {
 	if !strings.Contains(out, "10.0.1.2/24") {
 		t.Errorf("second IP missing: %s", out)
 	}
-	// Gateway only on first NIC.
+
 	if !strings.Contains(out, "via: 10.0.0.1") {
 		t.Errorf("gateway missing: %s", out)
 	}
@@ -275,7 +275,6 @@ func TestUserData_NoMounts(t *testing.T) {
 }
 
 func TestUserData_MountsYAMLEscape(t *testing.T) {
-	// yamlQuote must double single quotes so a mount field can't break out of the YAML scalar.
 	cfg := &Config{
 		Mounts: []MountSpec{
 			{Device: "/dev/x", MountPoint: "/mnt/it's-here", FSType: "ext4", Options: "defaults"},

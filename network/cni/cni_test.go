@@ -106,7 +106,7 @@ func TestLoadConfLists(t *testing.T) {
 
 	t.Run("default is alphabetically first by filename", func(t *testing.T) {
 		dir := t.TempDir()
-		// libcni.ConfFiles sorts by filename; lex order is 10-, 20-, 30-.
+
 		writeFile(t, filepath.Join(dir, "30-host.conflist"), hostNetConflist)
 		writeFile(t, filepath.Join(dir, "10-bridge.conflist"), bridgeConflist)
 		writeFile(t, filepath.Join(dir, "20-macvlan.conflist"), macvlanConflist)
@@ -176,13 +176,11 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// eth1's CNI DEL fails: its record must survive the sweep so vm rm/GC/retry can still release the IPAM lease; eth0's record must be swept.
 	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("Remove err = %v, want eth1 failure", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
-	// Retry after the fault clears: the kept record lets Remove finish the release.
 	exec.failIf = ""
 	if err := c.Remove(ctx, "vm1", 1); err != nil {
 		t.Fatalf("retry Remove: %v", err)
@@ -195,7 +193,7 @@ func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	ctx := t.Context()
-	// A failed reclaim can leave two records for one ifname; Remove must tear down and sweep both (DEL is idempotent), not strand one as a phantom.
+
 	seedRecords(t, c, "vm1", "eth1")
 	if err := c.update(ctx, func(t *netTx) error {
 		return t.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
@@ -217,7 +215,6 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	// A failed NIC release keeps its record AND the netns, surfaced as an error so rm reports the retryable leftover.
 	err := c.teardownProtocol(ctx, "vm1", nil, false)
 	if err == nil || !strings.Contains(err.Error(), "netns kept") {
 		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
@@ -230,7 +227,6 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	c.cniConf = nil
 	stubLifecycleSeams(t)
 
-	// A VM resized to 0 NICs has no lease needing a plugin DEL; a missing conflist must not wedge its netns removal.
 	if err := c.teardownProtocol(t.Context(), "vm1", nil, false); err != nil {
 		t.Fatalf("deleteVM with zero records: %v", err)
 	}
@@ -243,7 +239,6 @@ func TestVerifyDetectsMissingTAP(t *testing.T) {
 	tapPresentFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
 	t.Cleanup(func() { statNetnsFn, tapPresentFn = origStat, origTap })
 
-	// A half-rolled-back recovery leaves the netns without TAPs; Verify must read that as broken, not healthy.
 	expected := []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
 	if err := c.Verify(t.Context(), "vm1", expected); err == nil {
 		t.Fatal("Verify must fail when an expected TAP is missing")
@@ -262,14 +257,12 @@ func TestReclaimStaleNIC(t *testing.T) {
 	seedRecords(t, c, "vm1", "eth1")
 	rec := networkRecord{ID: "n-eth1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"}
 
-	// DEL failure keeps the record (nothing was released).
 	exec.failIf = "eth1"
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
 		t.Fatal("reclaimStaleNIC: want error on failed DEL")
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
-	// TAP-delete failure also keeps the record: sweeping would leave a live TAP that collides with the re-add's CreateTAP, with nothing left to retry it.
 	exec.failIf = ""
 	deleteTAPFn = func(string, string) error { return fmt.Errorf("device busy") }
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
@@ -277,7 +270,6 @@ func TestReclaimStaleNIC(t *testing.T) {
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
-	// Both succeed: the record is released and swept, freeing the index for re-add.
 	deleteTAPFn = func(string, string) error { return nil }
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err != nil {
 		t.Fatalf("reclaimStaleNIC: %v", err)
@@ -292,14 +284,12 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0")
 
-	// The stale record's DEL fails: Add must fail instead of double-allocating (lenient IPAM) or burying the root cause under the ADD failure (strict IPAM).
 	exec.failIf = "eth0"
 	if _, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 0}); err == nil || !strings.Contains(err.Error(), "reclaim stale NIC") {
 		t.Fatalf("Add err = %v, want reclaim failure", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth0"})
 
-	// Retry after the fault clears: reclaim succeeds, the fresh add replaces the record.
 	exec.failIf = ""
 	configs, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 0})
 	if err != nil {
@@ -332,7 +322,6 @@ func TestQuiesceSkipsMissingNetns(t *testing.T) {
 
 	seedRecords(t, c, "vm1", "eth0")
 
-	// A host reboot wipes every netns while the records survive; with no plumbing left, a stop's pending quiesce must settle instead of retrying forever.
 	if err := c.Quiesce(t.Context(), "vm1"); err != nil {
 		t.Fatalf("Quiesce with a missing netns: %v", err)
 	}
@@ -385,7 +374,6 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 	setLinkStateFn = func(string, []string, bool) error { called = true; return nil }
 	t.Cleanup(func() { setLinkStateFn = origSet })
 
-	// A VM with no NIC records owns no plumbing to storm: never enter its netns.
 	if err := c.Quiesce(t.Context(), "ghost"); err != nil {
 		t.Fatalf("Quiesce: %v", err)
 	}
@@ -426,7 +414,8 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 func stubLifecycleSeams(t *testing.T) {
 	t.Helper()
 	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn
-	origSet := setLinkStateFn
+	origSet, origStat := setLinkStateFn, statNetnsFn
+	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
 	deleteTAPFn = func(string, string) error { return nil }
 	deleteNetnsFn = func(context.Context, string) error { return nil }
 	ensureNetnsFn = func(string, string) (bool, error) { return false, nil }
@@ -434,7 +423,7 @@ func stubLifecycleSeams(t *testing.T) {
 	setLinkStateFn = func(string, []string, bool) error { return nil }
 	t.Cleanup(func() {
 		deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn = origTAP, origNetns, origEnsure, origTC
-		setLinkStateFn = origSet
+		setLinkStateFn, statNetnsFn = origSet, origStat
 	})
 }
 

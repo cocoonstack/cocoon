@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/projecteru2/core/log"
 	"golang.org/x/sync/singleflight"
@@ -52,7 +51,7 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 			Store:      store,
 			Type:       typ,
 			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id, normalizeRef) },
-			Sizer:      imageSizer(cfg),
+			Sizer:      func(e *imageEntry) int64 { return e.Size },
 		},
 	}
 	return o, nil
@@ -60,14 +59,12 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 
 func (o *OCI) Type() string { return typ }
 
-// Pull downloads an OCI image, extracts boot files, and converts each layer to EROFS concurrently.
 func (o *OCI) Pull(ctx context.Context, image string, _ bool, tracker progress.Tracker) error {
 	return images.SingleflightDo(ctx, &o.pullGroup, image, func() error {
 		return pull(ctx, o.conf, o.store, image, tracker)
 	})
 }
 
-// Import: each tar file becomes one EROFS layer in the order of the files slice.
 func (o *OCI) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
 	return importTarLayers(ctx, o.conf, o.store, name, tracker, file...)
 }
@@ -76,7 +73,6 @@ func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progres
 	return importTarFromReader(ctx, o.conf, o.store, name, tracker, r)
 }
 
-// Config builds StorageConfig + BootConfig from layer digests; errors if any blob is missing.
 func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
 	err = o.store.View(ctx, func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))
@@ -120,30 +116,4 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 		return nil
 	})
 	return result, boot, err
-}
-
-func imageSizer(paths *Config) func(*imageEntry) int64 {
-	return func(e *imageEntry) int64 {
-		if e.Size > 0 {
-			return e.Size
-		}
-		// Fallback for index entries created before Size was cached.
-		var total int64
-		for _, layer := range e.Layers {
-			if info, err := os.Stat(paths.BlobPath(layer.Digest.Hex())); err == nil {
-				total += info.Size()
-			}
-		}
-		if e.KernelLayer != "" {
-			if info, err := os.Stat(paths.KernelPath(e.KernelLayer.Hex())); err == nil {
-				total += info.Size()
-			}
-		}
-		if e.InitrdLayer != "" {
-			if info, err := os.Stat(paths.InitrdPath(e.InitrdLayer.Hex())); err == nil {
-				total += info.Size()
-			}
-		}
-		return total
-	}
 }

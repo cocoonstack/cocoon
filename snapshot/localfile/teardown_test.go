@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/metering"
+	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
 )
 
@@ -31,7 +33,8 @@ func TestSharedLeaseEscalationLeasedRollsBack(t *testing.T) {
 }
 
 func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
-	lf := newTestLF(t)
+	rec := meteringcapture.New()
+	lf := newTestLFWithRecorder(t, rec)
 	id := makeExportableSnapshot(t, lf, "esc-deleting", map[string][]byte{"disk.raw": []byte("data")})
 	injectSnapTombstone(t, lf, id, tombstone.PhaseDeleting)
 
@@ -58,6 +61,10 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 	if _, _, _, err := lf.DataDir(t.Context(), "esc-deleting"); !errors.Is(err, snapshot.ErrNotFound) {
 		t.Errorf("name still resolves after roll-forward: %v", err)
 	}
+	entries := rec.Entries()
+	if len(entries) == 0 || entries[len(entries)-1].Kind != metering.KindSnapStorageStop || entries[len(entries)-1].SnapshotID != id || entries[len(entries)-1].Reason != metering.ReasonSnapRemove {
+		t.Errorf("roll-forward did not close the storage interval: %+v", entries)
+	}
 }
 
 func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone.Phase) {
@@ -69,7 +76,7 @@ func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone
 		if err != nil {
 			return err
 		}
-		cl, err := tombstone.MarshalCleanup(snapCleanup{Name: rec.Name, DataDir: rec.DataDir})
+		cl, err := tombstone.MarshalCleanup(snapCleanup{Name: rec.Name, DataDir: rec.DataDir, Hypervisor: rec.Hypervisor})
 		if err != nil {
 			return err
 		}

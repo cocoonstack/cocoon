@@ -4,6 +4,8 @@ package utils
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"syscall"
 	"time"
 
@@ -11,6 +13,9 @@ import (
 )
 
 // OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
+// pidfdPollSlice bounds one poll so ctx cancellation is honored.
+const pidfdPollSlice = 100 * time.Millisecond
+
 func OpenPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
 
 // CloseFD closes a raw descriptor, ignoring a zero or negative one.
@@ -41,10 +46,10 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 			return true, nil
 		}
 		_ = unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0)
-		return true, waitDead(ctx, pid, killWaitTimeout)
+		return true, waitPidfd(ctx, fd, killWaitTimeout)
 	}
 
-	if err := waitDead(ctx, pid, gracePeriod); err == nil {
+	if err := waitPidfd(ctx, fd, gracePeriod); err == nil {
 		return true, nil
 	}
 
@@ -53,5 +58,27 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 			return true, nil
 		}
 	}
-	return true, waitDead(ctx, pid, killWaitTimeout)
+	return true, waitPidfd(ctx, fd, killWaitTimeout)
+}
+
+// waitPidfd blocks until the pidfd reports exit; the kernel wakes the poll instead of a kill(0) loop.
+func waitPidfd(ctx context.Context, fd int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("timeout after %s", timeout)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} //nolint:gosec // a pidfd is a small non-negative descriptor
+		n, err := unix.Poll(fds, int(min(remaining, pidfdPollSlice).Milliseconds()))
+		if err != nil && !errors.Is(err, unix.EINTR) {
+			return fmt.Errorf("poll pidfd: %w", err)
+		}
+		if n > 0 {
+			return nil
+		}
+	}
 }

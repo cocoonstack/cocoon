@@ -21,7 +21,7 @@ func TestSingleflightDoDetachesCanceledWaiter(t *testing.T) {
 		})
 		close(done)
 	}()
-	// The blocking flight must register first, or the canceled call could win the key and select its own instant result over the canceled ctx.
+
 	<-started
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -29,7 +29,7 @@ func TestSingleflightDoDetachesCanceledWaiter(t *testing.T) {
 	if err := SingleflightDo(ctx, &g, "k", func() error { return nil }); !errors.Is(err, context.Canceled) {
 		t.Errorf("canceled waiter err = %v, want context.Canceled", err)
 	}
-	// The shared work must still be running — unblock it so the goroutine exits.
+
 	close(block)
 	<-done
 }

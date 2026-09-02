@@ -1,12 +1,9 @@
 package meta
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
-	"strconv"
 )
 
 // seqCursorID is the reserved in-table row holding the last assigned Seq.
@@ -54,41 +51,6 @@ func (l *Log[R]) Append(ctx context.Context, w Writer, rec *R, opts ...WriteOpt)
 		return 0, perr
 	}
 	return next, nil
-}
-
-// Scan streams committed entries with Seq strictly after the cursor, in order.
-func (l *Log[R]) Scan(ctx context.Context, r Reader, after Seq, fn func(Seq, *R) error) error {
-	type item struct {
-		seq Seq
-		raw json.RawMessage
-	}
-	var items []item
-	if err := r.ScanRaw(ctx, l.ns, l.table, func(id string, raw json.RawMessage) error {
-		if id == seqCursorID {
-			return nil
-		}
-		n, err := strconv.ParseUint(id, 10, 64)
-		if err != nil {
-			return fmt.Errorf("%s/%s id %q: %v: %w", l.ns, l.table, id, err, ErrCorrupt)
-		}
-		if Seq(n) > after {
-			items = append(items, item{Seq(n), raw})
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	slices.SortFunc(items, func(a, b item) int { return cmp.Compare(a.seq, b.seq) })
-	for _, it := range items {
-		rec := new(R)
-		if err := json.Unmarshal(it.raw, rec); err != nil {
-			return fmt.Errorf("decode %s/%s seq %d: %w", l.ns, l.table, it.seq, err)
-		}
-		if err := fn(it.seq, rec); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func seqID(s Seq) string {

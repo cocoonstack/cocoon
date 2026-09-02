@@ -146,7 +146,6 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		// A concurrent stop transitions the record while the quiesce is in flight.
 		return b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped)
 	}})
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {

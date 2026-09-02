@@ -64,7 +64,6 @@ func TestValidateSnapshotIntegrity(t *testing.T) {
 	})
 
 	t.Run("invalid sidecar rejected by ValidateStorageConfigs", func(t *testing.T) {
-		// Layer with RO=false fails the structural check before file stat.
 		bad := []*types.StorageConfig{
 			{Path: "/x", RO: false, Role: types.StorageRoleLayer, Serial: "x"},
 		}
@@ -75,7 +74,6 @@ func TestValidateSnapshotIntegrity(t *testing.T) {
 	})
 
 	t.Run("layers skipped (not in srcDir)", func(t *testing.T) {
-		// Only a Layer entry; its blob path is not under dir, but Layer is skipped.
 		layerOnly := []*types.StorageConfig{
 			{Path: "/some/other/blob.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l"},
 		}

@@ -195,7 +195,7 @@ func TestMap_Empty(t *testing.T) {
 
 func TestMap_PreservesOrder(t *testing.T) {
 	results, err := Map(t.Context(), []int{10, 20, 30, 40, 50}, func(_ context.Context, _, n int) (int, error) {
-		time.Sleep(time.Duration(50-n) * time.Millisecond) // reverse completion order
+		time.Sleep(time.Duration(50-n) * time.Millisecond)
 		return n * 2, nil
 	})
 	if err != nil {

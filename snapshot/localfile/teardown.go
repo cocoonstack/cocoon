@@ -18,8 +18,9 @@ import (
 var ErrTombstoned = errors.New("snapshot is being deleted")
 
 type snapCleanup struct {
-	Name    string `json:"name,omitempty"`
-	DataDir string `json:"data_dir,omitempty"`
+	Name       string `json:"name,omitempty"`
+	DataDir    string `json:"data_dir,omitempty"`
+	Hypervisor string `json:"hypervisor,omitempty"`
 }
 
 func (lf *LocalFile) tombstones() *tombstone.Table {
@@ -49,8 +50,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 				skip = true
 				return nil
 			}
-			hyp = rec.Hypervisor
-			cl = snapCleanup{Name: rec.Name, DataDir: cmp.Or(rec.DataDir, lf.conf.SnapshotDataDir(id))}
+			cl = snapCleanup{Name: rec.Name, DataDir: cmp.Or(rec.DataDir, lf.conf.SnapshotDataDir(id)), Hypervisor: rec.Hypervisor}
 		}
 		var resumed *tombstone.Record
 		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), id, func() (tombstone.Payload, error) {
@@ -70,6 +70,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 	if skip {
 		return false, "", nil
 	}
+	hyp = cl.Hypervisor
 	if err := lf.update(ctx, func(t *snapTx) error {
 		return ts.MarkDeleting(ctx, t.Writer(), id, leaseID)
 	}); err != nil {
@@ -134,6 +135,7 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	if err := lf.finishSnapTeardown(ctx, id, leaseID, cl); err != nil {
 		return err
 	}
+	emitSnapStop(ctx, lf.metering, id, cl.Hypervisor)
 	log.WithFunc("localfile.recoverSnapTombstoneLocked").Warnf(ctx, "rolled forward interrupted delete of snapshot %s", id)
 	return nil
 }

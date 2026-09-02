@@ -215,7 +215,7 @@ func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
 
 // lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, making precheck-then-call atomic against concurrent attach/detach/restore.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
-	hc, vmID, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
+	hc, vmID, err := ch.runningVMClient(ctx, vmRef)
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
@@ -297,27 +297,27 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	return nil
 }
 
-// runningVMClientWithRecord asserts the CH process is alive and returns an http.Client on its API socket plus the resolved record.
-func (ch *CloudHypervisor) runningVMClientWithRecord(ctx context.Context, vmRef string) (*http.Client, string, hypervisor.VMRecord, error) {
+// runningVMClient asserts the CH process is alive and returns an http.Client on its API socket plus the VM id.
+func (ch *CloudHypervisor) runningVMClient(ctx context.Context, vmRef string) (*http.Client, string, error) {
 	vmID, rec, err := ch.ResolveAndLoad(ctx, vmRef)
 	if err != nil {
-		return nil, "", hypervisor.VMRecord{}, err
+		return nil, "", err
 	}
 	if rec.State != types.VMStateRunning {
-		return nil, "", hypervisor.VMRecord{}, fmt.Errorf("vm %s is %s: %w", vmID, rec.State, hypervisor.ErrNotRunning)
+		return nil, "", fmt.Errorf("vm %s is %s: %w", vmID, rec.State, hypervisor.ErrNotRunning)
 	}
 	sockPath := hypervisor.SocketPath(rec.RunDir)
 	pid, pidErr := utils.ReadPIDFile(ch.PIDFilePath(rec.RunDir))
 	if pidErr != nil {
-		return nil, "", hypervisor.VMRecord{}, fmt.Errorf("vm %s read pidfile: %w: %w", vmID, pidErr, hypervisor.ErrNotRunning)
+		return nil, "", fmt.Errorf("vm %s read pidfile: %w: %w", vmID, pidErr, hypervisor.ErrNotRunning)
 	}
 	if !utils.VerifyProcessCmdline(pid, ch.conf.BinaryName(), sockPath) {
-		return nil, "", hypervisor.VMRecord{}, fmt.Errorf("vm %s pid %d not %s: %w", vmID, pid, ch.conf.BinaryName(), hypervisor.ErrNotRunning)
+		return nil, "", fmt.Errorf("vm %s pid %d not %s: %w", vmID, pid, ch.conf.BinaryName(), hypervisor.ErrNotRunning)
 	}
-	return utils.NewSocketHTTPClient(sockPath), vmID, rec, nil
+	return utils.NewSocketHTTPClient(sockPath), vmID, nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and runningVMClientWithRecord's Running gate excludes restore/clone windows.
+// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and runningVMClient's Running gate excludes restore/clone windows.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil
@@ -332,7 +332,7 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, in
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
-	hc, _, _, err := ch.runningVMClientWithRecord(ctx, vmRef)
+	hc, _, err := ch.runningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil

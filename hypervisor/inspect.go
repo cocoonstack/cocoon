@@ -28,7 +28,7 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 	})
 }
 
-// List snapshots all records inside the transaction then runs ToVM (which does per-running-VM file IO) outside it and in parallel, so concurrent writers don't queue behind status polls and poll latency stays bounded by pool size, not fleet size.
+// List reads every record in one transaction and runs ToVM's per-VM file IO outside it, in parallel.
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	var recs []*VMRecord
 	if err := b.view(ctx, func(t *vmTx) error {

@@ -12,7 +12,7 @@ import (
 
 // Relay runs bidirectional I/O with escape-sequence detection. Caller must close rw to unblock the unfinished goroutine.
 func Relay(rw io.ReadWriter, escapeKeys []byte) error {
-	errCh := make(chan error, 2) //nolint:mnd
+	errCh := make(chan error, 2) //nolint:mnd // one slot per pump direction
 
 	go func() {
 		_, err := io.Copy(os.Stdout, rw)
@@ -67,9 +67,9 @@ func validateEscapeByte(b byte) (byte, error) {
 		return 0, fmt.Errorf("nul cannot be used as escape character")
 	case b == '\r' || b == '\n':
 		return 0, fmt.Errorf("cr/lf cannot be used as escape character")
-	case b == 0x7F: //nolint:mnd
+	case b == 0x7F: //nolint:mnd // DEL
 		return 0, fmt.Errorf("del (0x7f) cannot be used as escape character")
-	case b >= 0x80: //nolint:mnd
+	case b >= 0x80: //nolint:mnd // non-ASCII
 		return 0, fmt.Errorf("non-ASCII byte 0x%02X cannot be used as escape character", b)
 	}
 	return b, nil

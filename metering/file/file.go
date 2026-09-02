@@ -21,7 +21,7 @@ type Recorder struct {
 
 // New opens or creates the append-only ledger at path.
 func New(path string) (*Recorder, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // operator-configured metering path
 	if err != nil {
 		return nil, fmt.Errorf("open ledger %s: %w", path, err)
 	}

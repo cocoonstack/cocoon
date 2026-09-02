@@ -51,6 +51,9 @@ func GCModule(tapPrefix string) gc.Module[bridgeSnapshot] {
 		Collect: func(ctx context.Context, prefixes []string, _ bridgeSnapshot) error {
 			logger := log.WithFunc("gc.bridge")
 
+			if len(prefixes) == 0 {
+				return nil
+			}
 			orphanSet := make(map[string]struct{}, len(prefixes))
 			for _, p := range prefixes {
 				orphanSet[p] = struct{}{}

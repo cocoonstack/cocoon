@@ -27,7 +27,6 @@ const (
 	lockFileName = "daemon.lock"
 )
 
-// ErrAlreadyRunning reports another daemon instance holding the single-instance lock.
 var ErrAlreadyRunning = errors.New("another cocoon daemon is already running")
 
 // Supervisor is the backend surface supervision drives.
@@ -75,7 +74,7 @@ func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) 
 	}, nil
 }
 
-// Run supervises until ctx is canceled; it returns ErrAlreadyRunning when another instance holds the lock.
+// Run supervises until ctx is canceled; it fails when another instance holds the single-instance lock.
 func (d *Daemon) Run(ctx context.Context) error {
 	logger := log.WithFunc("daemon.Run")
 	unlock, lockErr := d.lockInstance(ctx)
@@ -173,7 +172,7 @@ func (d *Daemon) settle(ctx context.Context) bool {
 
 // gcTick returns the periodic-GC channel and its stop; with GC off (the default) the nil channel keeps the select arm inert.
 func (d *Daemon) gcTick() (<-chan time.Time, func()) {
-	if d.conf.GCInterval <= 0 {
+	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
 		return nil, func() {}
 	}
 	t := time.NewTicker(d.conf.GCInterval)

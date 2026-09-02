@@ -90,7 +90,6 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")
 
-	// Crash window: target fully committed, manifest not yet marked done.
 	src, err := openSource(spec, "sqlite")
 	if err != nil {
 		t.Fatalf("open source: %v", err)
@@ -221,7 +220,6 @@ func TestCrashRerunMatrix(t *testing.T) {
 				spec := testSpec(t, "vms")
 				seedJSON(t, spec, "vms")
 				if target == "json" {
-					// Reverse direction starts from a sqlite store.
 					if err := Run(t.Context(), spec, "sqlite"); err != nil {
 						t.Fatalf("forward convert: %v", err)
 					}
@@ -264,7 +262,7 @@ func TestCrashRerunMatrix(t *testing.T) {
 func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	spec := testSpec(t, "vms")
-	// Two committed generations: main and .prev are DISTINCT (§9).
+
 	js, err := metajson.Open(spec.JSON...)
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +292,6 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 		t.Fatalf("convert back to json: %v", err)
 	}
 
-	// Corrupt the new main: the served generation must be the imported one, never a stranded pre-conversion .prev (§9).
 	main, err := os.ReadFile(spec.JSON[0].FilePath)
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +309,6 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestUncheckpointedWALReverseConversion: a commit stranded in the WAL by a killed process must survive the checkpoint-then-aside reverse conversion (§9).
 func TestUncheckpointedWALReverseConversion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -362,7 +358,6 @@ func TestUncheckpointedWALReverseConversion(t *testing.T) {
 	}
 }
 
-// TestWALWriterWorker commits one durable record, acks, and hangs until killed so the WAL is never checkpointed by a clean close.
 func TestWALWriterWorker(t *testing.T) {
 	db := os.Getenv("META_MP_DB")
 	if db == "" {
@@ -384,7 +379,6 @@ func TestWALWriterWorker(t *testing.T) {
 	select {} //nolint:staticcheck // hang until SIGKILL keeps the WAL un-checkpointed
 }
 
-// TestConvertSkipsNeverWrittenNamespace: a namespace whose lock dir was never created (subsystem never ran) must not fail the quiesce probe.
 func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")

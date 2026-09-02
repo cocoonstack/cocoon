@@ -165,7 +165,6 @@ func networkConfigToNet(nc *types.NetworkConfig) chNet {
 	}
 }
 
-// cocoonNetID is the deterministic CH device id for a cocoon-managed NIC.
 func cocoonNetID(mac string) string {
 	return cocoonNetIDPrefix + strings.ReplaceAll(mac, ":", "")
 }

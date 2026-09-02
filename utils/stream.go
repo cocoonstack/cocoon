@@ -32,7 +32,6 @@ func NewPipeStreamReader(pr *io.PipeReader, done <-chan error, cleanup func()) *
 	}
 }
 
-// Close drains the producer, runs cleanup, and returns any accumulated error.
 func (r *PipeStreamReader) Close() error {
 	return r.close()
 }

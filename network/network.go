@@ -22,6 +22,7 @@ type Network interface {
 	Type() string
 	Verify(ctx context.Context, vmID string, expected []*types.NetworkConfig) error
 	Prepare(ctx context.Context, vmID string, vmCfg *types.VMConfig) (string, error)
+	// Add attaches NICs; the CNI backend also writes the resolved conflist name into vmCfg.Network.
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...AddSpec) ([]*types.NetworkConfig, error)
 	Remove(ctx context.Context, vmID string, indices ...int) error
 	Quiesce(ctx context.Context, vmID string) error

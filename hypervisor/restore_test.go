@@ -164,7 +164,6 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 
-	// Staged file "b" cannot rename over the run dir's directory "b", so the merge fails halfway through.
 	if err := os.MkdirAll(filepath.Join(runDir, "b"), 0o750); err != nil {
 		t.Fatalf("setup: %v", err)
 	}

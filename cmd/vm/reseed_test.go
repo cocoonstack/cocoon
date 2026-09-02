@@ -17,7 +17,6 @@ import (
 )
 
 func TestSignalReseed_SkipsWindows(t *testing.T) {
-	// VsockSocket is set: a regressed Windows guard would fall through to a dial instead of skipping.
 	vm := &types.VM{ID: "vm1", Config: types.VMConfig{Config: types.Config{Windows: true}}, VsockSocket: "/tmp/whatever.sock"}
 	if signalReseed(t.Context(), vm, true) {
 		t.Error("attempted reseed on a Windows guest, want skip")
@@ -50,7 +49,6 @@ func TestReseedVM_CtxCanceled(t *testing.T) {
 
 // TestReseedVM_AgentRejectionNotRetried pins the dial-vs-rejection distinction: once the agent answers, its reply is final and must not be billed the retry budget.
 func TestReseedVM_AgentRejectionNotRetried(t *testing.T) {
-	// A short dir: unix socket paths are capped at ~104 bytes, which t.TempDir() blows past.
 	dir, err := os.MkdirTemp("/tmp", "rsd")
 	if err != nil {
 		t.Fatalf("temp dir: %v", err)
@@ -74,9 +72,9 @@ func TestReseedVM_AgentRejectionNotRetried(t *testing.T) {
 			}
 			accepts.Add(1)
 			br := bufio.NewReader(conn)
-			_, _ = br.ReadString('\n')            // CONNECT <port>
-			_, _ = io.WriteString(conn, "OK 1\n") // hybrid-vsock handshake ack
-			_, _ = br.ReadString('\n')            // reseed opening frame
+			_, _ = br.ReadString('\n')
+			_, _ = io.WriteString(conn, "OK 1\n")
+			_, _ = br.ReadString('\n')
 			_ = agent.NewEncoder(conn).Encode(agent.Message{Type: agent.MsgError, Message: "version skew"})
 			_ = conn.Close()
 		}

@@ -14,7 +14,6 @@ func TestGenerateID_Length(t *testing.T) {
 func TestGenerateID_Base32Chars(t *testing.T) {
 	id := GenerateID()
 	for _, c := range id {
-		// crypto/rand.Text uses RFC 4648 base32 alphabet (A-Z, 2-7).
 		if !((c >= 'A' && c <= 'Z') || (c >= '2' && c <= '7')) {
 			t.Errorf("non-base32 character: %c", c)
 		}

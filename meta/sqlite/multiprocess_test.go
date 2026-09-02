@@ -25,13 +25,12 @@ const (
 	inverseOps     = 10
 )
 
-// TestMultiProcessCorrectness is §9's real-process storm for the sqlite engine: acknowledged inserts and their name rows all present, names referentially consistent, zero corruption on reopen.
 func TestMultiProcessCorrectness(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
 	}
 	dir := t.TempDir()
-	_ = newStore(t, dir, "alpha") // parent initializes once; workers only open
+	_ = newStore(t, dir, "alpha")
 	workers := stormWorkers()
 	cmds := contracttest.SpawnWorkers(t, workers, "TestMultiProcessWorker", func(w int) []string {
 		return []string{"META_MP_DIR=" + dir, "META_MP_WORKER=" + strconv.Itoa(w), fmt.Sprintf("META_MP_OPS=%d", mpOps)}
@@ -71,7 +70,6 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	integrityCheck(t, dir)
 }
 
-// TestMultiProcessWorker is the helper-process body.
 func TestMultiProcessWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -95,7 +93,6 @@ func TestMultiProcessWorker(t *testing.T) {
 	}
 }
 
-// TestInverseScopeNoDeadlock storms mutually-inverse scopes across processes.
 func TestInverseScopeNoDeadlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -124,7 +121,6 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	}
 }
 
-// TestInverseScopeWorker is the helper-process body.
 func TestInverseScopeWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -149,7 +145,6 @@ func TestInverseScopeWorker(t *testing.T) {
 	}
 }
 
-// TestKillStormAtomicity is §9's commit-atomicity-under-crash gate for the sqlite engine: SIGKILL sampled across WAL-append and commit-frame windows; every multi-record transaction must reopen wholly applied or wholly absent, every acked transaction wholly applied.
 func TestKillStormAtomicity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("multi-process gate skipped in -short")
@@ -173,7 +168,7 @@ func TestKillStormAtomicity(t *testing.T) {
 			if id, ok := strings.CutPrefix(sc.Text(), "ACK "); ok {
 				acked[id] = struct{}{}
 				got++
-				// Kill at a round-varied depth so the SIGKILL lands in different WAL-append/commit windows.
+
 				if got >= 3+round*2 {
 					break
 				}
@@ -213,7 +208,6 @@ func TestKillStormAtomicity(t *testing.T) {
 	integrityCheck(t, dir)
 }
 
-// TestKillStormWorker writes multi-record durable transactions and acks each.
 func TestKillStormWorker(t *testing.T) {
 	dir := os.Getenv("META_MP_DIR")
 	if dir == "" {
@@ -237,7 +231,6 @@ func TestKillStormWorker(t *testing.T) {
 	}
 }
 
-// updateRetry retries on ErrBusy — the mapped, retryable-by-contract outcome under extreme oversubscription (§4); reconciliation still demands exact counts.
 func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
 	t.Helper()
 	for {

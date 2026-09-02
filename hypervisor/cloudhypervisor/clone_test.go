@@ -153,7 +153,7 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 	path := writeCHConfig(t, dir, baseCHConfig())
 
 	opts := basePatchOpts()
-	// 3 storage configs vs 2 disks in config.
+
 	opts.storageConfigs = append(opts.storageConfigs, &types.StorageConfig{Path: "/extra"})
 	err := patchCHConfig(path, opts)
 	if err == nil {
@@ -286,7 +286,6 @@ func TestRebuildBootConfig(t *testing.T) {
 }
 
 func TestRestorePatchStorageConfigs_DropsAppendedCidata(t *testing.T) {
-	// Snapshot lacked cidata; ensureCloneCidata appended one — drop only that, keep data disks.
 	configs := []*types.StorageConfig{
 		{Path: "/o", Role: types.StorageRoleLayer},
 		{Path: "/d1", Role: types.StorageRoleData},
@@ -326,7 +325,6 @@ func TestRestorePatchStorageConfigs_KeepsAllWhenSnapshotHadCidata(t *testing.T) 
 }
 
 func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
-	// Short dir: t.TempDir embeds the test name and busts the unix sockaddr limit.
 	sockDir, err := os.MkdirTemp("", "ch")
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +355,6 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 	go srv.Serve(ln) //nolint:errcheck
 	t.Cleanup(func() { _ = srv.Close() })
 
-	// The clone's --data-disk lands after the appended cidata, so hot-plug must match by Role, not last element.
 	storageConfigs := []*types.StorageConfig{
 		{Path: "/store/cow.raw", Role: types.StorageRoleCOW, Serial: "cocoon-cow"},
 		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
@@ -415,7 +412,6 @@ func readRawJSON(t *testing.T, path string) map[string]any {
 	return result
 }
 
-// baseCHConfig returns a minimal CH config.json with extra fields that CH adds internally.
 func baseCHConfig() map[string]any {
 	return map[string]any{
 		"payload": map[string]any{
@@ -504,7 +500,6 @@ func basePatchOpts() *patchOptions {
 	}
 }
 
-// tmpScopeConf redirects the cgroup parent to a temp dir so Arm writes plain files.
 type tmpScopeConf struct {
 	*Config
 	parent string

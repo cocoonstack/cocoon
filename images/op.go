@@ -29,7 +29,6 @@ func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, 
 	return result, err
 }
 
-// List returns every image in the index.
 func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
 	err = ops.Store.View(ctx, func(idx *Index[E]) error {
 		result = listImages(idx.Images, ops.Type, ops.Sizer)
@@ -38,7 +37,7 @@ func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
 	return result, err
 }
 
-// Delete deletes entries from an index by ids and returns actually-removed refs; not-found ids are logged and skipped.
+// not-found ids are logged and skipped
 func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, err error) {
 	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error

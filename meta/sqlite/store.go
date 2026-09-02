@@ -307,7 +307,7 @@ func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMe
 	return data, true, nil
 }
 
-func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn func(id string, raw json.RawMessage) error) error {
+func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn meta.RawScanFunc) error {
 	if err := h.checkRead(ns); err != nil {
 		return err
 	}

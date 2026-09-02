@@ -291,7 +291,9 @@ func matchesFilter(vm *types.VM, filters []string) bool {
 func snapshotAll(vms []*types.VM) []vmSnapshot {
 	result := make([]vmSnapshot, len(vms))
 	for i, vm := range vms {
-		result[i] = takeSnapshot(vm, cmdcore.ReconcileState(vm))
+		state := cmdcore.ReconcileState(vm)
+		vm.State = types.VMState(state)
+		result[i] = takeSnapshot(vm, state)
 	}
 	return result
 }
@@ -304,7 +306,7 @@ func printVMTable(w *tabwriter.Writer, vms []*types.VM, scopeDir string) {
 	fmt.Fprintln(w, "ID\tNAME\tSTATE\tCPU\tMEMORY\tSTORAGE\tTHROTTLED\tIP\tIMAGE\tCREATED") //nolint:errcheck
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
-			vm.ID, vm.Config.Name, cmdcore.ReconcileState(vm),
+			vm.ID, vm.Config.Name, vm.State,
 			vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory),
 			cliutil.FormatSize(vm.Config.Storage),
 			vmThrottled(scopeDir, vm),

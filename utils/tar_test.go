@@ -102,7 +102,7 @@ func TestTarDir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Subdirectory should be skipped.
+
 	if err := os.Mkdir(filepath.Join(dir, "subdir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestExtractTar_PathTraversal(t *testing.T) {
 func TestExtractTar_SkipsDotNames(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	// Entry whose base name is "." — should be skipped.
+
 	tw.WriteHeader(&tar.Header{Name: ".", Size: 0, Typeflag: tar.TypeReg, Mode: 0o644})      //nolint:errcheck
 	tw.WriteHeader(&tar.Header{Name: "ok.txt", Size: 2, Typeflag: tar.TypeReg, Mode: 0o644}) //nolint:errcheck
 	tw.Write([]byte("ok"))                                                                   //nolint:errcheck
@@ -510,7 +510,6 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 }
 
 func TestExtractFile_AllZeroBlocks(t *testing.T) {
-	// 12KB of zeros — extractFile should create holes via seek.
 	data := make([]byte, 12*1024)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "zeros.bin")
@@ -532,7 +531,6 @@ func TestExtractFile_AllZeroBlocks(t *testing.T) {
 }
 
 func TestExtractFile_NoZeroBlocks(t *testing.T) {
-	// Dense data — no blocks should become holes.
 	data := bytes.Repeat([]byte{0xBB}, 3*sparseBlockSize)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dense.bin")
@@ -572,7 +570,6 @@ func TestExtractFile_MixedZeroAndData(t *testing.T) {
 }
 
 func TestExtractFile_EndsWithHole(t *testing.T) {
-	// 4KB data then 4KB zeros — file must be truncated to 8KB.
 	dataBlock := bytes.Repeat([]byte{0xDD}, sparseBlockSize)
 	zeroBlock := make([]byte, sparseBlockSize)
 	data := slices.Concat(dataBlock, zeroBlock)
@@ -612,7 +609,6 @@ func TestExtractFile_PartialBlock(t *testing.T) {
 }
 
 func TestExtractFile_PartialZeroBlock(t *testing.T) {
-	// Partial trailing block of zeros — still should produce correct size.
 	data := make([]byte, sparseBlockSize+500)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pzero.bin")
@@ -668,7 +664,6 @@ func TestExtractFile_SingleByte(t *testing.T) {
 }
 
 func TestExtractFile_SingleZeroByte(t *testing.T) {
-	// A single zero byte — still a valid (tiny) file.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "onezero.bin")
 
@@ -837,7 +832,6 @@ func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
 	return &buf
 }
 
-// makeTarSparse builds a tar with one COCOON.sparse PAX entry (stored bytes = segments, logical size = realSize).
 func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseSegment, data []byte) *bytes.Buffer {
 	t.Helper()
 	mapJSON, err := json.Marshal(segments)

@@ -15,13 +15,9 @@ type Handler struct {
 }
 
 func (h Handler) resolveRunningVM(ctx context.Context, conf *config.Config, op, ref string) (*types.VM, error) {
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, ref)
+	_, info, err := cmdcore.FindVM(ctx, conf, ref)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	info, err := hyper.Inspect(ctx, ref)
-	if err != nil {
-		return nil, fmt.Errorf("%s: inspect: %w", op, err)
 	}
 	if info.State != types.VMStateRunning {
 		return nil, fmt.Errorf("%s: %w", op, hypervisor.ErrNotRunning)

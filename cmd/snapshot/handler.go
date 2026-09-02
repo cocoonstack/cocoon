@@ -28,14 +28,9 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 	logger := log.WithFunc("cmd.snapshot.Save")
 
 	vmRef := args[0]
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, vmRef)
+	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
-	}
-	// Pin the inspected ID: a same-name delete+recreate between resolve and capture would snapshot the impostor.
-	vm, err := hyper.Inspect(ctx, vmRef)
-	if err != nil {
-		return fmt.Errorf("inspect VM %s: %w", vmRef, err)
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
@@ -63,13 +58,9 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	vmRef, _ := cmd.Flags().GetString("vm")
 	var filterIDs map[string]struct{}
 	if vmRef != "" {
-		hyper, hyperErr := cmdcore.FindHypervisor(ctx, conf, vmRef)
-		if hyperErr != nil {
-			return hyperErr
-		}
-		vm, inspectErr := hyper.Inspect(ctx, vmRef)
-		if inspectErr != nil {
-			return fmt.Errorf("inspect VM %s: %w", vmRef, inspectErr)
+		_, vm, findErr := cmdcore.FindVM(ctx, conf, vmRef)
+		if findErr != nil {
+			return findErr
 		}
 		filterIDs = vm.SnapshotIDs
 		if len(filterIDs) == 0 {

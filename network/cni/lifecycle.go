@@ -28,7 +28,7 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 	}
 	nsName := c.conf.netnsName(vmID)
 	nsPath := c.conf.netnsPath(vmID)
-	if _, err := ensureNetns(nsName, nsPath); err != nil {
+	if _, err := ensureNetnsFn(nsName, nsPath); err != nil {
 		return "", fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
 	return nsPath, nil
@@ -102,7 +102,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 		kept := false
 		for _, a := range added {
-			ifn := fmt.Sprintf("eth%d", a.index)
+			ifn := ifName(a.index)
 			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
 				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept for GC)", vmID, ifn, delErr)
 				kept = true
@@ -110,7 +110,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 			}
 			// setupTCRedirect creates the TAP; it would leak if the netns persists.
 			if !createdNetns {
-				if delErr := deleteTAPInNetns(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
+				if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
 					logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, a.index), delErr)
 					kept = true
 					continue
@@ -125,7 +125,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 		// A kept record needs the netns for GC's retried DEL.
 		if createdNetns && !kept {
-			_ = deleteNetns(rctx, nsName)
+			_ = deleteNetnsFn(rctx, nsName)
 		}
 	}()
 
@@ -163,7 +163,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 				return err
 			}
 			if rec == nil { // intent vanished (concurrent sweep): reinsert
-				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: fmt.Sprintf("eth%d", f.index)}
+				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: ifName(f.index)}
 			}
 			if f.cfg.Network != nil {
 				rec.Network = *f.cfg.Network
@@ -191,7 +191,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	}
 	wanted := make(map[string]bool, len(indices))
 	for _, i := range indices {
-		wanted[fmt.Sprintf("eth%d", i)] = true
+		wanted[ifName(i)] = true
 	}
 	// Pick every matching record, not one per ifname: a failed reclaim can leave duplicates, and DEL is idempotent — skipping one would strand a phantom.
 	picked := make([]networkRecord, 0, len(indices))
@@ -203,7 +203,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		}
 	}
 	for _, i := range indices {
-		if ifName := fmt.Sprintf("eth%d", i); !found[ifName] {
+		if ifName := ifName(i); !found[ifName] {
 			return fmt.Errorf("nic %d (%s): no record", i, ifName)
 		}
 	}
@@ -235,7 +235,7 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 		if spec.Existing != nil {
 			continue
 		}
-		ifName := fmt.Sprintf("eth%d", spec.Index)
+		ifName := ifName(spec.Index)
 		if rec, ok := stale[ifName]; ok {
 			// The index is reusable only after a full reclaim: proceeding would double-allocate on lenient IPAM plugins or bury the root cause on strict ones.
 			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
@@ -263,7 +263,7 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 }
 
 func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) *libcni.RuntimeConf {
-	ifName := fmt.Sprintf("eth%d", spec.Index)
+	ifName := ifName(spec.Index)
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
 	if spec.Existing != nil {
 		if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifName); delErr != nil {
@@ -277,7 +277,7 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 }
 
 func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigList, rt *libcni.RuntimeConf, vmID, nsPath string, vmCfg *types.VMConfig, spec network.AddSpec) (*types.NetworkConfig, error) {
-	ifName := fmt.Sprintf("eth%d", spec.Index)
+	ifName := ifName(spec.Index)
 	tapName := tapNameForVM(vmID, spec.Index)
 
 	cniResult, addErr := c.cniConf.AddNetworkList(ctx, confList, rt)

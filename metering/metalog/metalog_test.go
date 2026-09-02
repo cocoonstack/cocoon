@@ -1,7 +1,9 @@
 package metalog
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta"
@@ -9,7 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 )
 
-func TestEmitScan(t *testing.T) {
+func TestEmitAppendsInOrder(t *testing.T) {
 	dir := t.TempDir()
 	s, err := metajson.Open(metajson.Namespace{
 		Name:     NamespaceName,
@@ -27,27 +29,23 @@ func TestEmitScan(t *testing.T) {
 	r.Emit(t.Context(), metering.Entry{Kind: metering.KindVMComputeStop, VMID: "vm1"})
 
 	var kinds []metering.Kind
-	var last meta.Seq
-	err = r.Scan(t.Context(), 0, func(seq meta.Seq, e *metering.Entry) error {
-		kinds = append(kinds, e.Kind)
-		last = seq
-		return nil
+	err = s.View(t.Context(), []string{NamespaceName}, func(rd meta.Reader) error {
+		return rd.ScanRaw(t.Context(), NamespaceName, TableEntries, func(id string, raw json.RawMessage) error {
+			if _, err := strconv.ParseUint(id, 10, 64); err != nil {
+				return nil
+			}
+			var e metering.Entry
+			if err := json.Unmarshal(raw, &e); err != nil {
+				return err
+			}
+			kinds = append(kinds, e.Kind)
+			return nil
+		})
 	})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
 	if len(kinds) != 2 || kinds[0] != metering.KindVMComputeStart || kinds[1] != metering.KindVMComputeStop {
-		t.Fatalf("scan kinds: %v", kinds)
-	}
-
-	kinds = nil
-	if err := r.Scan(t.Context(), last, func(meta.Seq, *metering.Entry) error {
-		kinds = append(kinds, "dup")
-		return nil
-	}); err != nil {
-		t.Fatalf("scan after last: %v", err)
-	}
-	if len(kinds) != 0 {
-		t.Fatalf("scan after last seq must be empty, got %v", kinds)
+		t.Fatalf("appended kinds: %v", kinds)
 	}
 }

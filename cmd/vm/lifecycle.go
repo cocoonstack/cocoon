@@ -77,12 +77,7 @@ func (h Handler) Stop(cmd *cobra.Command, args []string) error {
 func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
-	if err != nil {
-		return fmt.Errorf("inspect: %w", err)
-	}
-
-	info, err := hyper.Inspect(ctx, args[0])
+	hyper, info, err := cmdcore.FindVM(ctx, conf, args[0])
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}

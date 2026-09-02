@@ -34,7 +34,7 @@ func TestReconcileOrphanNICs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vm.info: %v", err)
 	}
-	recorded := []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}} // case-insensitive match
+	recorded := []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
 	if err := reconcileOrphanNICs(t.Context(), hc, info, "vm1", recorded, plumbing); err != nil {
 		t.Fatalf("reconcileOrphanNICs: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	ctx := t.Context()
 	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
 	seedNetVM(t, ch, "vm7", nc)
-	// vm.info reports no live nets, so macToID can't resolve nc's MAC.
+
 	hc, _ := newCHStubClient(t, nil)
 	plumbing := &stubPlumbing{}
 
@@ -179,7 +179,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	if resumes != 1 {
 		t.Fatalf("resumes = %d, want the orphaned pause resumed once", resumes)
 	}
-	// The returned info must be re-read: callers classify devices off it.
+
 	if fresh.State != "Running" {
 		t.Errorf("returned state = %q, want the refreshed Running", fresh.State)
 	}

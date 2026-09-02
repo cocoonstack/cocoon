@@ -12,19 +12,19 @@ func TestLookupOne(t *testing.T) {
 	if _, e, ok := LookupOne(images, "img:v1"); !ok || e.id != "sha256:aabb000011112222333344445555666a" {
 		t.Errorf("exact ref lookup failed: ok=%v", ok)
 	}
-	// Unique 16-hex digest prefix resolves.
+
 	if ref, _, ok := LookupOne(images, "aabb000011112222bbbb"); !ok || ref != "other:v1" {
 		t.Errorf("unique prefix: ok=%v ref=%q", ok, ref)
 	}
-	// Tag aliases of one digest are not ambiguous.
+
 	if _, e, ok := LookupOne(images, "sha256:aabb000011112222333344445555666a"); !ok || (*e).EntryID() != "sha256:aabb000011112222333344445555666a" {
 		t.Errorf("multi-tag single-digest must resolve: ok=%v", ok)
 	}
-	// 16-hex prefix spanning two distinct digests: past the minHexLen guard, must be refused by the cross-digest check.
+
 	if _, _, ok := LookupOne(images, "aabb000011112222"); ok {
 		t.Error("ambiguous cross-digest prefix must not resolve")
 	}
-	// Sub-minHexLen prefix never reaches prefix matching at all.
+
 	if _, _, ok := LookupOne(images, "aabb"); ok {
 		t.Error("short prefix must not resolve")
 	}
@@ -42,7 +42,6 @@ func TestDeleteByIDRejectsAmbiguousPrefix(t *testing.T) {
 		t.Fatalf("nothing may be deleted on ambiguity: deleted=%v remaining=%d", deleted, len(images))
 	}
 
-	// A digest shared only by tag aliases still sweeps all its refs.
 	deleted, err = deleteByID(t.Context(), "test.Delete", images, lookup, []string{"sha256:aabb000011112222333344445555666a"})
 	if err != nil {
 		t.Fatalf("single-digest delete: %v", err)

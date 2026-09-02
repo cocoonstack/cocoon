@@ -219,7 +219,7 @@ func TestReconcileFenceCanonicalEquality(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(parent, "cpuset.cpus"), []byte("0-7\n"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	// No cpuset.cpus.effective fixture exists: reaching checkSubset would fail, so success proves the parsed-set gate short-circuited.
+
 	if err := reconcileFence(parent, "0-3,4-7"); err != nil {
 		t.Errorf("canonically-equal fence rewrote: %v", err)
 	}

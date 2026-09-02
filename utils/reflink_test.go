@@ -57,7 +57,7 @@ func TestReflinkCopy_LargeFile(t *testing.T) {
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
 
-	want := bytes.Repeat([]byte("REFLINK"), 32768) // 224KB
+	want := bytes.Repeat([]byte("REFLINK"), 32768)
 	if err := os.WriteFile(src, want, 0o644); err != nil {
 		t.Fatal(err)
 	}

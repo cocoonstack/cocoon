@@ -240,8 +240,8 @@ func blankSFN() [11]byte {
 
 // splitName splits an uppercased name into base and extension at the last dot; ext is "" when there is no dot.
 func splitName(upper string) (base, ext string) {
-	if dot := strings.LastIndex(upper, "."); dot >= 0 {
-		return upper[:dot], upper[dot+1:]
+	if base, ext, ok := strings.CutLast(upper, "."); ok {
+		return base, ext
 	}
 	return upper, ""
 }
