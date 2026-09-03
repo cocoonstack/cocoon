@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	coretypes "github.com/projecteru2/core/types"
@@ -67,6 +68,11 @@ func TestLogMaxSizeDecodeIsStable(t *testing.T) {
 	viper.SetConfigFile(path)
 	if err := viper.ReadInConfig(); err != nil {
 		t.Fatalf("read config: %v", err)
+	}
+
+	keys := viper.AllKeys()
+	if !slices.Contains(keys, "log.maxsize") || slices.Contains(keys, "log.max_size") {
+		t.Fatalf("registered log keys: got %v, want log.maxsize present and log.max_size absent", keys)
 	}
 
 	for i := range 64 {
