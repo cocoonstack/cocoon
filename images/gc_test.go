@@ -4,10 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	gofrsflock "github.com/gofrs/flock"
+	"github.com/projecteru2/core/log"
+	coretypes "github.com/projecteru2/core/types"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
@@ -194,6 +197,43 @@ func TestPinBlobs(t *testing.T) {
 
 	if _, err := PinBlobs(cfg, map[string]struct{}{"cafebabe": {}}); err == nil {
 		t.Fatal("pin of a missing blob must fail")
+	}
+}
+
+func TestGCCollectLogsUnreferencedReason(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "gc.log")
+	if err := log.SetupLog(ctx, &coretypes.ServerLogConfig{Level: "info", Filename: logPath}, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.SetupLog(ctx, &coretypes.ServerLogConfig{Level: "info"}, "") })
+
+	engine, err := metajson.Open(metajson.Namespace{Name: "images_reason", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+
+	mod := BuildGCModule(GCModuleConfig[gcTestEntry]{
+		Name:     "oci",
+		Store:    NewMetaStore[gcTestEntry](engine, "images_reason"),
+		LockPath: func(hex string) string { return filepath.Join(dir, hex+".lock") },
+		ReadRefs: func(map[string]*gcTestEntry) map[string]struct{} { return map[string]struct{}{} },
+		ScanDisk: func() ([]string, error) { return []string{"deadbeef"}, nil },
+		Removers: []func(string) error{func(string) error { return nil }},
+		TempDir:  dir,
+	})
+	if err := mod.Collect(ctx, []string{"deadbeef"}, ImageGCSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "collected blob=deadbeef reason=unreferenced") {
+		t.Fatalf("gc.oci log: got %s, want a collected line with reason=unreferenced", out)
 	}
 }
 

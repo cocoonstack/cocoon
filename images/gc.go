@@ -119,7 +119,7 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 					}
 				}
 				_ = fl.Close()
-				logger.Infof(ctx, "collected blob=%s", hex)
+				logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
 			}
 			return errors.Join(errs...)
 		},
