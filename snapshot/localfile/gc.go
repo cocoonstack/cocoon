@@ -172,9 +172,9 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					continue
 				}
 				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
-				pending, sawRecord := false, false
+				var sawRecord bool
 				revalidate := func(rec *snapshot.SnapshotRecord) bool {
-					pending, sawRecord = rec.Pending, true
+					sawRecord = true
 					switch snap.reasons[id] {
 					case "stale-pending":
 						return rec.Pending
@@ -189,7 +189,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					}
 				}
 				// Record-backed candidates go through the phase protocol; a recordless leftover dir converges by plain removal.
-				deleted, hyp, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
+				deleted, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
 					_ = fl.Close()
 					errs = append(errs, fmt.Errorf("collect snapshot %s: %w", id, err))
@@ -208,9 +208,8 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				}
 				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
-				// Skip orphan dirs and stale-pending — they never opened a snap.storage interval.
-				if deleted && !pending {
-					emitSnapStop(ctx, recorder, id, hyp)
+				if deleted && !cleanup.Pending {
+					emitSnapStop(ctx, recorder, id, cleanup.Hypervisor)
 				}
 			}
 			return errors.Join(errs...)

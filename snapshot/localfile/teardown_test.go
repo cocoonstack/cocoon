@@ -9,6 +9,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestSharedLeaseEscalationLeasedRollsBack(t *testing.T) {
@@ -67,6 +68,39 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 	}
 }
 
+func TestDeletingPendingRecoverySkipsSnapStorageStop(t *testing.T) {
+	rec := meteringcapture.New()
+	lf := newTestLFWithRecorder(t, rec)
+	id := testID(t)
+	if _, err := lf.beginCreate(t.Context(), &types.SnapshotConfig{ID: id, Name: "pending", Hypervisor: "cloud-hypervisor"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+	injectSnapTombstone(t, lf, id, tombstone.PhaseDeleting)
+
+	if err := lf.recoverSnapTombstone(t.Context(), id); err != nil {
+		t.Fatalf("recoverSnapTombstone: %v", err)
+	}
+	if entries := rec.Entries(); len(entries) != 0 {
+		t.Errorf("entries = %+v, want no stop for pending snapshot", entries)
+	}
+}
+
+func TestDeletePendingSkipsSnapStorageStop(t *testing.T) {
+	rec := meteringcapture.New()
+	lf := newTestLFWithRecorder(t, rec)
+	id := testID(t)
+	if _, err := lf.beginCreate(t.Context(), &types.SnapshotConfig{ID: id, Name: "pending", Hypervisor: "cloud-hypervisor"}); err != nil {
+		t.Fatalf("beginCreate: %v", err)
+	}
+
+	if _, err := lf.Delete(t.Context(), []string{id}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if entries := rec.Entries(); len(entries) != 0 {
+		t.Errorf("entries = %+v, want no stop for pending snapshot", entries)
+	}
+}
+
 func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone.Phase) {
 	t.Helper()
 	ctx := t.Context()
@@ -76,7 +110,9 @@ func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone
 		if err != nil {
 			return err
 		}
-		cl, err := tombstone.MarshalCleanup(snapCleanup{Name: rec.Name, DataDir: rec.DataDir, Hypervisor: rec.Hypervisor})
+		cl, err := tombstone.MarshalCleanup(snapCleanup{
+			Name: rec.Name, DataDir: rec.DataDir, Hypervisor: rec.Hypervisor, Pending: rec.Pending,
+		})
 		if err != nil {
 			return err
 		}
