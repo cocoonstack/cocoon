@@ -208,7 +208,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				}
 				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
-				if deleted && cleanup.EmitStop {
+				if deleted && !cleanup.Pending {
 					emitSnapStop(ctx, recorder, id, cleanup.Hypervisor)
 				}
 			}

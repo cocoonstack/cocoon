@@ -111,7 +111,7 @@ func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone
 			return err
 		}
 		cl, err := tombstone.MarshalCleanup(snapCleanup{
-			Name: rec.Name, DataDir: rec.DataDir, Hypervisor: rec.Hypervisor, EmitStop: !rec.Pending,
+			Name: rec.Name, DataDir: rec.DataDir, Hypervisor: rec.Hypervisor, Pending: rec.Pending,
 		})
 		if err != nil {
 			return err

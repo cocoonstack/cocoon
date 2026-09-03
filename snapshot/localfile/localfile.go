@@ -317,7 +317,7 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		}
 		return nil
 	}
-	if cleanup.EmitStop {
+	if !cleanup.Pending {
 		emitSnapStop(ctx, lf.metering, id, cleanup.Hypervisor)
 	}
 	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
