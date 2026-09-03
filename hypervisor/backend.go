@@ -123,6 +123,10 @@ type KillHook func(ctx context.Context, vmID string, rec *VMRecord) error
 // AfterExtractHook finalizes the restored record and returns the resulting VM.
 type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 
+type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
+
+type TransitionHook func(rec *VMRecord, hc *http.Client) error
+
 // RestoreSpec carries backend hooks for Backend.RestoreSequence.
 type RestoreSpec struct {
 	VMCfg            *types.VMConfig
@@ -149,13 +153,13 @@ type DirectRestoreSpec struct {
 type StartSpec struct {
 	RuntimeFiles []string
 	Launch       func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
-	PostLaunch   func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
+	PostLaunch   ProcessHook
 }
 
 // StopSpec carries StopOneSequence inputs.
 type StopSpec struct {
 	RuntimeFiles []string
-	Shutdown     func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
+	Shutdown     ProcessHook
 }
 
 // CreateSpec carries CreateSequence inputs.
@@ -169,8 +173,8 @@ type CreateSpec struct {
 
 // SnapshotSpec carries backend hooks for SnapshotSequence; the shared hc keeps HTTP keep-alive across pause/capture/resume.
 type SnapshotSpec struct {
-	Pause        func(rec *VMRecord, hc *http.Client) error
-	Resume       func(rec *VMRecord, hc *http.Client) error
+	Pause        TransitionHook
+	Resume       TransitionHook
 	Capture      func(rec *VMRecord, hc *http.Client, tmpDir string) error
 	AfterCapture func(rec *VMRecord, tmpDir string) error
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*SnapshotMeta, error)
