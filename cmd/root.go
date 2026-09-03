@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/projecteru2/core/log"
@@ -66,6 +67,7 @@ func newRootCmd() *cobra.Command {
 	_ = viper.BindPFlag("log.level", cmd.PersistentFlags().Lookup("log-level"))
 
 	viper.SetEnvPrefix("COCOON")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 	viper.SetDefault("root_dir", "/var/lib/cocoon")
 	viper.SetDefault("run_dir", "/var/lib/cocoon/run")
