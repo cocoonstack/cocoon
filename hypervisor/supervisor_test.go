@@ -39,7 +39,6 @@ func TestConvergeDeadMarksUnexpectedExit(t *testing.T) {
 	}
 }
 
-// A second convergence must not re-close the ledger: the generation it fences on has already advanced.
 func TestConvergeDeadIsIdempotent(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -76,7 +75,6 @@ func TestConvergeDeadFencesStaleGeneration(t *testing.T) {
 	}
 }
 
-// A record left Running by an older cocoon carries no open interval; the state must still converge, without an unmatched stop.
 func TestConvergeDeadStopsLegacyRunningWithoutInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -140,7 +138,6 @@ func TestConvergeDeadKeepsPendingWhenQuiesceFails(t *testing.T) {
 	}
 }
 
-// The clear is fenced: a transition landing during the quiesce owns the pending flag it set.
 func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -255,7 +252,6 @@ func TestReconcileStaleCreateCollectsAndFreesTheName(t *testing.T) {
 	}
 }
 
-// A held ops lock is the create owner still working; the record must survive untouched.
 func TestReconcileStaleCreateRefusesInFlightCreate(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -321,7 +317,6 @@ func TestTryLockVMOpsReportsBusyWithoutError(t *testing.T) {
 	}
 }
 
-// StoppedAt is the observation time, so a record predating the interval bookkeeping still gets one.
 func TestConvergeDeadDatesARecordWithNoOpenInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -365,7 +360,6 @@ func TestUpdateStatesDatesAStoppedRecordThatWasRunning(t *testing.T) {
 	}
 }
 
-// A VM that never started must not be dated as though it had.
 func TestUpdateStatesLeavesACreatedRecordUndated(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -379,7 +373,6 @@ func TestUpdateStatesLeavesACreatedRecordUndated(t *testing.T) {
 	}
 }
 
-// seedPlumbedVM gives a running VM the persisted network state a stop must quiesce.
 func seedPlumbedVM(t *testing.T, b *Backend, id string) {
 	t.Helper()
 	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)

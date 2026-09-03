@@ -115,7 +115,6 @@ type hibernateCalls struct {
 	terminated bool
 }
 
-// newHibernateTestVM seeds a running VM whose RunDir holds a live stub VMM process, so WithRunningVM lets the sequence proceed.
 func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	t.Helper()
 	b, _ := newMeteringTestBackend(t)

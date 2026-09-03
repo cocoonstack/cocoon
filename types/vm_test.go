@@ -9,7 +9,7 @@ func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(*VMConfig)
-		wantErr string // substring; empty = expect nil
+		wantErr string
 	}{
 		{
 			name:   "valid minimal config",

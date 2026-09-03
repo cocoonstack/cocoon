@@ -15,12 +15,10 @@ const (
 	snapshotMemFile     = "mem"
 )
 
-// Snapshot pauses, captures vmstate+mem+COW, resumes, and returns the capture dir.
 func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
 	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
 }
 
-// Hibernate captures like Snapshot but persists and then terminates the VMM inside the pause window instead of resuming.
 func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),

@@ -28,7 +28,6 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 	})
 }
 
-// List reads every record in one transaction and runs ToVM's per-VM file IO outside it, in parallel.
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 	var recs []*VMRecord
 	if err := b.view(ctx, func(t *vmTx) error {

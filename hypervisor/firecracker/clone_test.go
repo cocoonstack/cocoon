@@ -91,7 +91,6 @@ func TestPlaceholderCoalescesConcurrentRecordReads(t *testing.T) {
 	}
 }
 
-// Dead-source clones share the VM lock while GC and VM mutation remain excluded.
 func TestHoldBindableRedirectsCreatesPlaceholderAndSharesVMLock(t *testing.T) {
 	rootDir := t.TempDir()
 	runRoot := filepath.Join(rootDir, "run", "firecracker")
@@ -312,7 +311,6 @@ func TestRedirectBinds(t *testing.T) {
 	}
 }
 
-// A symlink source is unusable outright: the legacy redirect residue it could represent is no longer healed.
 func TestHoldBindableRedirectsRejectsSymlinkSource(t *testing.T) {
 	fc := newTestFC(t)
 	srcDir := fc.Conf.VMRunDir("SRC")

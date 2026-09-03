@@ -21,7 +21,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// TestReconcileOrphanNICs covers the interrupted-resize window: an unrecorded-MAC device must be ejected and its host TAP slot reclaimed (a leftover bridge TAP wedges every retry); recorded and boot-time (_net*) devices survive.
 func TestReconcileOrphanNICs(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
@@ -46,7 +45,6 @@ func TestReconcileOrphanNICs(t *testing.T) {
 	}
 }
 
-// TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout pins the slow-guest path: a timed-out B0EJ wait still reclaims the orphan's TAP slot, since after a late eject no later reconcile could ever see it.
 func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
@@ -71,7 +69,6 @@ func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
 	}
 }
 
-// TestResolveFailedPersist covers the persist commit-ambiguity window: a committed write keeps the device; only a conclusive miss tears down.
 func TestResolveFailedPersist(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
@@ -106,7 +103,6 @@ func TestResolveFailedPersist(t *testing.T) {
 	}
 }
 
-// TestNetResizeRemoveResumesWithoutLiveDevice covers #104: a NIC the record still carries but CH already ejected (interrupted prior remove) must be truncated from the record, not wedge the retry.
 func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	ch := newTestCH(t)
 	ctx := t.Context()
@@ -146,7 +142,6 @@ func TestNICPersisted(t *testing.T) {
 	}
 }
 
-// TestConvergeOrphanedPause pins the interrupted-capture wedge: a save killed inside its pause window leaves CH Paused with nobody left to resume it.
 func TestConvergeOrphanedPause(t *testing.T) {
 	var (
 		mu      sync.Mutex
@@ -204,7 +199,6 @@ func (p *stubPlumbing) Remove(_ context.Context, _ string, indices ...int) error
 	return nil
 }
 
-// seedNetVM plants a record carrying one NIC through the exported surface.
 func seedNetVM(t *testing.T, ch *CloudHypervisor, id string, nc *types.NetworkConfig) {
 	t.Helper()
 	ctx := t.Context()
@@ -257,7 +251,6 @@ func newStubHTTPClient(t *testing.T, mux *http.ServeMux) *http.Client {
 	}}
 }
 
-// newCHStubClient serves vm.info and vm.remove-device over httptest; removed() snapshots the eject calls, and stickyIDs stay in the device tree after removal like a guest that never acks B0EJ.
 func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Client, func() []string) {
 	t.Helper()
 	var mu sync.Mutex

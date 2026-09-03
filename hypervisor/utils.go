@@ -105,7 +105,6 @@ func (b *Backend) LogFilePath(logDir string) string {
 	return filepath.Join(logDir, b.Typ+".log")
 }
 
-// LogPath resolves ref → log path via the persisted LogDir (survives --log-dir change); falls back to current Conf for legacy records.
 func (b *Backend) LogPath(ctx context.Context, ref string) (string, error) {
 	id, rec, err := b.ResolveAndLoad(ctx, ref)
 	if err != nil {

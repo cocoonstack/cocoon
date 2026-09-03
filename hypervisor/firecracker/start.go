@@ -23,7 +23,6 @@ import (
 
 const relayResponseTimeout = 5 * time.Second
 
-// Start launches FC, configures via REST, then InstanceStart.
 func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, error) {
 	return fc.StartAll(ctx, refs, fc.startOne)
 }

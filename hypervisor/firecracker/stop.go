@@ -9,7 +9,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Stop shuts down each FC: SendCtrlAltDel + --timeout wait, or --force for immediate kill.
 func (fc *Firecracker) Stop(ctx context.Context, refs []string) ([]string, error) {
 	return fc.StopAll(ctx, refs, fc.stopOne)
 }

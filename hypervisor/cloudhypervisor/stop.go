@@ -11,7 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Stop shuts down each CH process: UEFI uses ACPI power-button; direct-boot uses vm.shutdown. Both fall back to SIGTERM→SIGKILL.
 func (ch *CloudHypervisor) Stop(ctx context.Context, refs []string) ([]string, error) {
 	return ch.StopAll(ctx, refs, ch.stopOne)
 }
