@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-
-	"github.com/cocoonstack/cocoon/config"
 )
 
 func TestEnvOverridesDottedLogLevel(t *testing.T) {
@@ -21,16 +19,13 @@ func TestEnvOverridesDottedLogLevel(t *testing.T) {
 }
 
 func TestLogRotationKeysDecode(t *testing.T) {
-	v := viper.New()
-	v.SetDefault("log.max_size", 7)
-	v.SetDefault("log.max_age", 3)
-	v.SetDefault("log.max_backups", 2)
-
-	cfg := &config.Config{}
-	if err := v.Unmarshal(cfg, matchSnakeCase); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	t.Setenv("COCOON_LOG_MAXAGE", "7")
+	viper.Reset()
+	newRootCmd()
+	if err := initConfig(t.Context()); err != nil {
+		t.Fatalf("init config: %v", err)
 	}
-	if cfg.Log.MaxSize != 7 || cfg.Log.MaxAge != 3 || cfg.Log.MaxBackups != 2 {
-		t.Fatalf("log rotation: got %+v, want max_size=7 max_age=3 max_backups=2", cfg.Log)
+	if conf.Log.MaxSize != 500 || conf.Log.MaxAge != 7 || conf.Log.MaxBackups != 3 {
+		t.Fatalf("log rotation: got %+v, want maxsize=500 maxage=7 maxbackups=3", conf.Log)
 	}
 }
