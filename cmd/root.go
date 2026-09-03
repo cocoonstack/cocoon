@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/projecteru2/core/log"
@@ -66,6 +67,7 @@ func newRootCmd() *cobra.Command {
 	_ = viper.BindPFlag("log.level", cmd.PersistentFlags().Lookup("log-level"))
 
 	viper.SetEnvPrefix("COCOON")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 	viper.SetDefault("root_dir", "/var/lib/cocoon")
 	viper.SetDefault("run_dir", "/var/lib/cocoon/run")
@@ -84,9 +86,9 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("cgroup_cpus", "")
 	viper.SetDefault("net_scope", "")
 	viper.SetDefault("log.level", "info")
-	viper.SetDefault("log.max_size", 500)
-	viper.SetDefault("log.max_age", 28)
-	viper.SetDefault("log.max_backups", 3)
+	viper.SetDefault("log.maxsize", 500)
+	viper.SetDefault("log.maxage", 28)
+	viper.SetDefault("log.maxbackups", 3)
 
 	base := cmdcore.BaseHandler{ConfProvider: func() *config.Config { return conf }}
 
