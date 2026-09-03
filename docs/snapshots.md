@@ -42,7 +42,7 @@ CPU, memory, and storage are fixed at snapshot time on both backends: the guest 
 Cloud Hypervisor clones restore guest memory via `--restore-mode`:
 
 - **`mmap`** (default for clones of plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires the cocoonstack CH build.
-- **`copy`** (default for `vm restore`, and the fallback whenever the snapshot uses hugepages or shared memory): eager full-memory load; the degradation from an explicit `mmap` request is logged as a warning.
+- **`copy`** (the fallback for clones and restores whenever the snapshot uses hugepages or shared memory): eager full-memory load; the degradation from an explicit `mmap` request is logged as a warning.
 - **`ondemand`**: userfaultfd paging; pages load on first guest access.
 
 Firecracker restore is always memory-mapped by design and takes no mode flag.

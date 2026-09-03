@@ -6,7 +6,7 @@ Requirements, install paths, the doctor script, and a first VM.
 
 - Linux with KVM (x86_64 or aarch64)
 - Root access (sudo)
-- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0+ (for Windows VMs and `--restore-mode mmap`, use our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) for full compatibility — see [known issues](known-issues.md))
+- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v53.0, what `cocoon-check --upgrade` installs (for Windows VMs and `--restore-mode mmap`, use our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) for full compatibility — see [known issues](known-issues.md))
 - [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16.1+ (optional, for `--fc` backend; `vm clone` needs >= v1.16 for the vsock override, and v1.16.0 permanently breaks guest vsock after any restore, so v1.16.1 is the effective floor — what `doctor/check.sh` installs; see [known issues](known-issues.md))
 - `qemu-img` (from qemu-utils, for cloud images)
 - `mkfs.erofs` from erofs-utils **>= 1.8** (for OCI images; 1.7.x tar mode

@@ -17,7 +17,7 @@ The `--windows` flag:
 
 ### Requirements
 
-- Cloud Hypervisor **v51+** with our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) (includes DISCARD fix, virtio-net ctrl_queue fix, and upstream patches — see [known issues](known-issues.md))
+- Cloud Hypervisor **v53.0** (what `cocoon-check --upgrade` installs) with our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) (includes DISCARD fix, virtio-net ctrl_queue fix, and upstream patches — see [known issues](known-issues.md))
 - UEFI firmware from our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) (includes ResetSystem fix for ACPI power-button — see [known issues](known-issues.md))
 - virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works for any version of Cloud Hypervisor; newer versions are supported with our CH fork)
 

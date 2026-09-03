@@ -11,7 +11,7 @@ After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP addre
 
 **Consequence**: if the original VM is still running, both VMs advertise the same IP via ARP with different MACs. The upstream gateway flaps between the two MACs, causing **intermittent connectivity loss for both VMs** until the clone's guest IP is reconfigured.
 
-**Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` as soon as possible (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs this means re-running `cloud-init`; for OCI VMs this means `ip addr flush` + reconfigure with the new IP.
+**Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` as soon as possible (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs this means re-running `cloud-init`; for OCI VMs this means replacing the generated `/etc/systemd/network/10-*.network` files with per-MAC units for the new IP and restarting `systemd-networkd`.
 
 ## Clone and restore resources are fixed at snapshot time
 
@@ -21,7 +21,7 @@ After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP addre
 
 OCI VMs use the kernel `ip=` boot parameter for network configuration. While multiple `ip=` parameters can be specified, the Linux kernel only reliably configures **one interface** via this mechanism — subsequent `ip=` parameters may be silently ignored or produce inconsistent results depending on kernel version.
 
-**Consequence**: on a cold boot (stop + start) of an OCI VM with multiple NICs, only the first NIC receives its IP from the kernel `ip=` parameter. Additional NICs must be configured by the guest init system (e.g., systemd-networkd `.network` files written by the post-clone hints).
+**Consequence**: on a cold boot (stop + start) of an OCI VM with multiple NICs, only the last NIC receives its IP from the kernel `ip=` parameter (each `ip=` overrides the previous one). Additional NICs must be configured by the guest init system (e.g., systemd-networkd `.network` files written by the post-clone hints).
 
 **Workaround**: the post-clone setup hints write persistent MAC-based systemd-networkd configs for **all** NICs. These survive reboots and correctly configure every interface regardless of the kernel `ip=` limitation.
 

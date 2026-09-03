@@ -20,7 +20,7 @@ Every collected item is logged at INFO level with a structured `key=value` paylo
 ```
 INFO gc.snapshot          collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=3221225472 last_accessed=2026-04-12T10:30:00Z reason=lru-age
 INFO gc.snapshot          collected id=2GQVEA... name= bytes=0 last_accessed=never reason=orphan
-INFO gc.cloud-hypervisor  collected id=ABC123 runDir=/var/lib/cocoon/run/cloudhypervisor/ABC123 logDir=/var/log/cocoon/cloudhypervisor/ABC123 reason=orphan-runDir
+INFO gc.cloud-hypervisor  collected id=ABC123 reason=orphan-runDir
 INFO gc.oci               collected blob=b40150c1c2717d... reason=unreferenced
 INFO gc.cni               collected id=JKLMN netns=cocoon-JKLMN reason=orphan
 INFO gc.bridge            collected id=MNOPQ iface=btMNOPQ-0 reason=orphan-tap
