@@ -26,7 +26,6 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 	})
 }
 
-// prepareOCI creates the raw COW disk and final kernel cmdline.
 func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, boot *types.BootConfig) ([]*types.StorageConfig, error) {
 	storageConfigs, err := hypervisor.PrepareOCICOW(ctx, ch.conf.COWRawPath(vmID), vmCfg.Storage, storageConfigs)
 	if err != nil {
@@ -45,7 +44,6 @@ func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *t
 	return storageConfigs, nil
 }
 
-// prepareCloudimg creates the overlay and optional cidata disk.
 func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig) ([]*types.StorageConfig, error) {
 	if len(storageConfigs) == 0 {
 		return nil, fmt.Errorf("cloudimg: no base image StorageConfig")

@@ -8,7 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/gc"
 )
 
-// bridgeSnapshot is a placeholder for non-Linux.
 type bridgeSnapshot struct{}
 
 // GCModule returns a no-op GC module on non-Linux — bridge TAPs don't exist.
