@@ -307,7 +307,7 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	}
 	defer fl.Close() //nolint:errcheck
 	// A recordless leftover dir converges without a tombstone — nothing points at it.
-	deletedRecord, hypType, err := lf.deleteSnapshotProtocol(ctx, id, nil)
+	deletedRecord, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, nil)
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,9 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 		}
 		return nil
 	}
-	emitSnapStop(ctx, lf.metering, id, hypType)
+	if cleanup.EmitStop {
+		emitSnapStop(ctx, lf.metering, id, cleanup.Hypervisor)
+	}
 	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
 	return nil
 }
