@@ -7,7 +7,7 @@ Requirements, install paths, the doctor script, and a first VM.
 - Linux with KVM (x86_64 or aarch64)
 - Root access (sudo)
 - [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0+ (for Windows VMs and `--restore-mode mmap`, use our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) for full compatibility — see [known issues](known-issues.md))
-- [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16+ (optional, for `--fc` backend; `vm clone` requires >= v1.16 for the vsock override)
+- [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16.1+ (optional, for `--fc` backend; `vm clone` needs >= v1.16 for the vsock override, and v1.16.0 permanently breaks guest vsock after any restore, so v1.16.1 is the effective floor — what `doctor/check.sh` installs; see [known issues](known-issues.md))
 - `qemu-img` (from qemu-utils, for cloud images)
 - `mkfs.erofs` from erofs-utils **>= 1.8** (for OCI images; 1.7.x tar mode
   silently corrupts layers — cocoon refuses to convert with older versions)
@@ -23,10 +23,10 @@ Download pre-built binaries from [GitHub Releases](https://github.com/cocoonstac
 
 ```bash
 # Linux amd64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.9/cocoon_0.5.9_Linux_x86_64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/latest/download/cocoon_Linux_x86_64.tar.gz
 
 # Linux arm64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.5.9/cocoon_0.5.9_Linux_arm64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/latest/download/cocoon_Linux_arm64.tar.gz
 
 tar -xzf cocoon.tar.gz
 install -m 0755 cocoon /usr/local/bin/

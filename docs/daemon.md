@@ -48,11 +48,37 @@ WantedBy=multi-user.target
 
 Shutdown is clean: VMs keep running, and the next start re-adopts them.
 
+### Metering ledger
+
+The `file` backend writes one JSON object per line to
+`<root-dir>/metering/ledger.jsonl`. Every record carries `kind`, `shape`, and
+`emitted_at`; `vm_id`, `snapshot_id`, `source_snapshot_id`, `reason`, and
+`hypervisor` are omitted when empty, as are the `shape` members `cpu`,
+`mem_bytes`, and `storage_bytes`.
+
+```json
+{"kind":"vm.compute.start","vm_id":"ABC123","reason":"boot","hypervisor":"ch","shape":{"cpu":4,"mem_bytes":1073741824,"storage_bytes":10737418240},"emitted_at":"2026-05-20T01:02:03Z"}
+```
+
+`kind` is one of `vm.compute.start`, `vm.compute.stop`, `vm.storage.start`,
+`vm.storage.stop`, `snap.storage.start`, `snap.storage.stop` — downstream pairs
+each `*.start` with its `*.stop` by id. `reason` is one of `boot`, `restart`,
+`clone`, `restore`, `stop-user`, `stop-crash`, `vm-rm`, `snap-rm`.
+
 One operational note: the daemon is the first long-lived writer of the metering
 ledger, and the `file` backend holds that file open for its whole lifetime. If
 you rotate `<root-dir>/metering/ledger.jsonl` out from under it, the daemon keeps
 writing to the unlinked inode until it restarts. Either restart the daemon after
 a rotation, or run the `meta` metering backend instead.
+
+The `file` backend only ever appends: cocoon never rotates, truncates, or prunes
+the ledger, so it grows without bound until an external rotation trims it.
+
+`--gc-interval` runs the same sweep as a bare `cocoon gc` — orphans and stale
+records only. It never evicts healthy snapshots by access recency: the LRU policy
+comes from the `gc --snapshot*` flags, which the daemon has no equivalent of, and
+there is no size-based policy anywhere. Drive LRU eviction from a timer running
+`cocoon gc --snapshot ...`; see [Garbage Collection](gc.md#snapshot-lru-eviction).
 
 ## How supervision works
 

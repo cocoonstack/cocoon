@@ -43,13 +43,14 @@ A digest prefix must be unambiguous: `image rm` errors on a short prefix that ma
 
 ## OS Images
 
-Pre-built OCI VM images (Ubuntu 22.04, 24.04) are published to GHCR and auto-built by GitHub Actions when `os-image/` changes:
+Pre-built OCI VM images are published to GHCR and auto-built by GitHub Actions when `os-image/` changes. Three families ship: Ubuntu (22.04, 24.04, plus the `24.04-chrome` / `24.04-xface` / `24.04-picoclaw` variants), Debian (13), and Android (14.0, 15.0, `15.0-gms`, `16.0-gms-h264`). [OS Images](os-image.md) lists every tag.
 
 ```bash
 cocoon image pull ghcr.io/cocoonstack/cocoon/ubuntu:24.04
-cocoon image pull ghcr.io/cocoonstack/cocoon/ubuntu:22.04
+cocoon image pull ghcr.io/cocoonstack/cocoon/debian:13
+cocoon image pull ghcr.io/cocoonstack/cocoon/android:15.0
 ```
 
-These images include kernel, initramfs, and a systemd-based rootfs with an overlayfs boot script. Every official OS image (Ubuntu + Android) bakes `cocoon-agent` (vsock exec) with auto-start; Ubuntu images additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
+These images include kernel, initramfs, and a systemd-based rootfs with an overlayfs boot script. Every official OS image (Ubuntu, Debian, Android) bakes `cocoon-agent` (vsock exec) with auto-start; the Ubuntu and Debian images additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
 
 Build scripts, image contents, and the local `start.sh` harness are documented in [OS Images](os-image.md).

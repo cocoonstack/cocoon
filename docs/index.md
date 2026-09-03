@@ -66,7 +66,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **Clone / restore from a directory** — `cocoon vm clone --from-dir DIR` and `cocoon vm restore --from-dir DIR` consume any directory containing a `snapshot.json` envelope without first registering the snapshot in the local DB; the dir is treated as read-only so multi-VM golden-image use cases work without copying
 - **Live status monitoring** — `cocoon vm status` watches VM state changes in real time via fsnotify, with refresh mode (top-like) and event-stream mode (append-only, for scripting and vk-cocoon integration)
 - **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `rm`, `debug`, `clone`, `status`
-- **Structured logging** — configurable log level (`--log-level`), log rotation (max size / age / backups)
+- **Structured logging** — configurable log level (`--log-level`); logs go to stderr until `log.filename` is set, which is also what enables rotation via `log.maxsize` / `log.maxage` / `log.maxbackups` (500 MB / 28 days / 3 files by default)
 - **Debug command** — `cocoon vm debug` generates a copy-pasteable `cloud-hypervisor` command for manual debugging
 - **Firecracker backend** — `--fc` flag selects Firecracker for OCI images: ~125ms boot, <5 MiB overhead, minimal attack surface (no UEFI, no qcow2, no Windows)
 - **Daemon-optional architecture** — one hypervisor process per VM, every command standalone; `cocoon daemon` optionally adopts running VMs to converge crashes as they happen

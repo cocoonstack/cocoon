@@ -87,13 +87,26 @@ Config-file / env-only keys (no CLI flag):
 | `meta_backend` | `COCOON_META_BACKEND` | auto-resolved | Metadata engine, `json` or `sqlite`; see the note above `Global Flags` |
 | `pool_size` | `COCOON_POOL_SIZE` | host CPU count | Goroutine pool size for concurrent operations |
 | `stop_timeout_seconds` | `COCOON_STOP_TIMEOUT_SECONDS` | `30` | Guest ACPI shutdown grace before SIGTERM/SIGKILL escalation |
+| `log.maxsize` | `COCOON_LOG_MAXSIZE` | `500` | Rotation: max log file size in MB; applies only when `log.filename` is set |
+| `log.maxage` | `COCOON_LOG_MAXAGE` | `28` | Rotation: max age in days of a retained log file; applies only when `log.filename` is set |
+| `log.maxbackups` | `COCOON_LOG_MAXBACKUPS` | `3` | Rotation: max number of retained rotated files; applies only when `log.filename` is set |
 
-Config-file-only keys — these are not registered with the env loader, so a
-`COCOON_*` variable does **not** reach them:
+The `log` section is decoded by field name, so its keys are the compact
+spellings — `level`, `filename`, `usejson`, `maxsize`, `maxage`, `maxbackups`
+(not `use_json` / `max_age` / `max_backups`). A dotted key maps to its env
+variable by replacing `.` with `_`, hence `COCOON_LOG_MAXSIZE` for `log.maxsize`.
+
+Config-file-only keys — the env loader binds only keys that are registered, and
+these are not, so a `COCOON_*` variable does **not** reach them on its own. Once
+a config file defines the key, the matching `COCOON_*` variable **does** override
+it (for example `COCOON_METERING_BACKEND` takes effect only when the config file
+already sets `metering.backend`):
 
 | Key          | Default | Description                                                            |
 | ------------ | ------- | ---------------------------------------------------------------------- |
 | `use_firecracker` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
+| `log.filename` | empty (stderr) | Log file path; setting it is what switches logging from stderr to a file and enables the `log.maxsize` / `log.maxage` / `log.maxbackups` rotation knobs |
+| `log.usejson` | `false` | Emit JSON-structured log records instead of plain text |
 | `socket_wait_timeout_seconds` | `5` | How long to wait for the CH API socket after launch; raise on slow storage |
 | `terminate_grace_period_seconds` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
 | `metering.backend` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |
@@ -175,7 +188,7 @@ Applies to `cocoon vm restore`:
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
-| `--force`     | `false` | Skip the snapshot-belongs-to-VM check (only meaningful with `--from-dir`)                              |
+| `--force`     | `false` | Skip the snapshot-belongs-to-VM check. Valid only with `--from-dir`; used on its own it is rejected with `--force only applies with --from-dir` |
 
 CPU, memory, and storage come from the snapshot (the hypervisor
 reconstructs the guest from snapshot state, so the persisted record is
@@ -264,6 +277,10 @@ Applies to `cocoon vm status`:
 | `--watch`, `-w`    | `false` | Refresh-loop mode (full-screen redraw each tick); omit for a one-shot snapshot |
 | `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
 | `--format`         |         | Output format: `json` (one-shot and event modes; `--watch` always renders a table) |
+
+`--event` and `--watch` are mutually exclusive; passing both fails with
+`--event and --watch are mutually exclusive`. With neither, `status` prints a
+one-shot snapshot and exits.
 
 ### Debug-only Flags
 
