@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -116,7 +117,7 @@ func initConfig(ctx context.Context) error {
 	}
 
 	conf = &config.Config{}
-	if err := viper.Unmarshal(conf); err != nil {
+	if err := viper.Unmarshal(conf, matchSnakeCase); err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
 	if err := conf.Validate(); err != nil {
@@ -129,4 +130,10 @@ func initConfig(ctx context.Context) error {
 	setupErr := log.SetupLog(ctx, conf.Log, "")
 	os.Stdout = origStdout
 	return setupErr
+}
+
+func matchSnakeCase(c *mapstructure.DecoderConfig) {
+	c.MatchName = func(mapKey, fieldName string) bool {
+		return strings.EqualFold(strings.ReplaceAll(mapKey, "_", ""), strings.ReplaceAll(fieldName, "_", ""))
+	}
 }

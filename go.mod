@@ -9,6 +9,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/uuid v1.6.0
@@ -34,7 +35,6 @@ require (
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/getsentry/sentry-go v0.48.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
