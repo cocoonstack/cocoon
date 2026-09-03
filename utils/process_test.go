@@ -66,17 +66,16 @@ func TestWriteReadPIDFile_Roundtrip_LargePID(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "large.pid")
 
-	// Max PID on Linux is typically 4194304 (2^22).
-	const largePID = 4194304
-	if err := WritePIDFile(path, largePID); err != nil {
+	const linuxMaxPID = 4194304
+	if err := WritePIDFile(path, linuxMaxPID); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadPIDFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != largePID {
-		t.Errorf("PID: got %d, want %d", got, largePID)
+	if got != linuxMaxPID {
+		t.Errorf("PID: got %d, want %d", got, linuxMaxPID)
 	}
 }
 
@@ -247,7 +246,6 @@ func TestFindVMMByCmdline(t *testing.T) {
 		_ = cmd.Wait()
 	}()
 
-	// Poll briefly: cmdline is written by execve, so the parent may scan before /proc/<pid>/cmdline reflects argv.
 	var pids []int
 	for range 50 {
 		got, err := FindVMMByCmdline("sh", marker)
@@ -261,7 +259,7 @@ func TestFindVMMByCmdline(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if len(pids) != 1 || pids[0] != cmd.Process.Pid {
-		t.Errorf("FindVMMByCmdline: got %v, want [%d]", pids, cmd.Process.Pid)
+		t.Errorf("FindVMMByCmdline never matched the execed cmdline: got %v, want [%d]", pids, cmd.Process.Pid)
 	}
 
 	if got, _ := FindVMMByCmdline("definitely-no-such-binary", marker); len(got) != 0 {
@@ -290,12 +288,11 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
 }
 
-// waitForExec parks until the child's execve lands: cmd.Start returns pre-exec, and TerminateProcess declines a mismatched cmdline (#87 race).
 func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
 	t.Helper()
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
 		return VerifyProcessCmdline(pid, binaryName, expectArg), nil
 	}); err != nil {
-		t.Fatalf("child never execed into %s: %v", binaryName, err)
+		t.Fatalf("child never execed into %s, so TerminateProcess would decline the mismatched cmdline (#87): %v", binaryName, err)
 	}
 }

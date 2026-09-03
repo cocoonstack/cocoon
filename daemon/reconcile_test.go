@@ -69,7 +69,6 @@ func TestReconcileSkipsInconclusiveLiveness(t *testing.T) {
 	}
 }
 
-// A tombstoned record is not supervised as a live VM, but the daemon starts deletes of its own, so it must finish one a crash left mid-protocol.
 func TestReconcileResumesInterruptedDelete(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.tombstoned["vm1"] = struct{}{}
@@ -128,7 +127,6 @@ func TestReconcileCollectsOwnerlessCreating(t *testing.T) {
 	}
 }
 
-// A held ops lock is the create owner still working; the placeholder is not ownerless.
 func TestReconcileLeavesInFlightCreating(t *testing.T) {
 	f := newFake().put(&hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateCreating}})
 	f.busy["vm1"] = struct{}{}
@@ -174,7 +172,6 @@ func TestHandleExitConvergesWatchedGeneration(t *testing.T) {
 	}
 }
 
-// An exit observed before a restart must not date or re-label the newer transition.
 func TestHandleExitDropsStaleGeneration(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 9))
 	d := newTestDaemon(t, f)
@@ -209,7 +206,6 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 	}
 }
 
-// A VM the pass could not converge is degraded, not unready — a restart cannot fix it, and a busy ops lock is not a failure at all.
 func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -243,7 +239,6 @@ func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	}
 }
 
-// A backend the daemon cannot even scan is the one case where restarting might help.
 func TestPassUnreadyWhenABackendCannotBeScanned(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.scanErr = fmt.Errorf("meta store unavailable")
@@ -260,7 +255,6 @@ type convergeCall struct {
 	gen  uint64
 }
 
-// fakeSupervisor scripts one backend's record set, liveness and lock state.
 type fakeSupervisor struct {
 	mu         sync.Mutex
 	records    map[string]*hypervisor.VMRecord
@@ -391,7 +385,6 @@ func (f *fakeSupervisor) ReconcileStaleCreate(_ context.Context, vmID string) (h
 	return hypervisor.StaleCreateCollected, nil
 }
 
-// lockState reads the scripted lock condition; the caller holds f.mu.
 func (f *fakeSupervisor) lockState(vmID string) (busy bool, err error) {
 	if f.lockErr != nil {
 		return false, f.lockErr

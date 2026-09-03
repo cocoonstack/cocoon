@@ -12,12 +12,10 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Snapshot pauses, captures CH state+COW, resumes, and returns the capture dir.
 func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
 	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
 }
 
-// Hibernate captures like Snapshot but persists and then terminates the VMM inside the pause window instead of resuming.
 func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
 	return ch.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: ch.snapshotSpec(ctx),

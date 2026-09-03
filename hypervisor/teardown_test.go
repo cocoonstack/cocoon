@@ -109,7 +109,6 @@ func TestTombstoneFencingABA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Worker A leases and flips to deleting, then "dies".
 	var leaseA string
 	if err := b.update(ctx, func(tx *vmTx) error {
 		leaseA, err = ts.Lease(ctx, tx.w, "vmproto4", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
@@ -156,7 +155,6 @@ func TestEntryGuardDisciplines(t *testing.T) {
 		t.Fatalf("leased guard must roll back and proceed: %v", err)
 	}
 
-	// deleting: the guard drives recovery to completion and refuses.
 	var lease string
 	if err := b.update(ctx, func(tx *vmTx) error {
 		lease, err = ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
@@ -178,7 +176,6 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}
 }
 
-// TestLiveHolderKeepsLease is §9's negative fencing case: while A is alive and slow (ops lock held, tombstone deleting), B's sweep can neither take the lock nor steal the lease.
 func TestLiveHolderKeepsLease(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
@@ -227,7 +224,6 @@ func TestLiveHolderKeepsLease(t *testing.T) {
 	}
 }
 
-// TestPrepareStartRefusesMidDeleting is the §9 entry gate through the real start entrypoint: a dead worker's deleting tombstone drives recovery and refuses the boot.
 func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	var netTorn []string
@@ -281,7 +277,6 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	}
 }
 
-// stubNetwork stands in for the injected host-networking seam; unset hooks are no-ops.
 type stubNetwork struct {
 	recover func(context.Context, *types.VM) error
 	quiesce func(context.Context, *types.VM) error
@@ -331,7 +326,6 @@ func seedProtoVM(t *testing.T, b *Backend, id string) *VMRecord {
 	return &rec
 }
 
-// entryGuardOnly exercises the entry guard the way an entrypoint does, discarding the record.
 func entryGuardOnly(ctx context.Context, b *Backend, id string) error {
 	_, err := b.entryGuard(ctx, id)
 	return err

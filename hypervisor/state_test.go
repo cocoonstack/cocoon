@@ -573,7 +573,6 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	}
 }
 
-// TestForcedRetryStateOps is the design §10 gate: on a forced-retry engine (every closure runs twice) each metering entry must emit exactly once.
 func TestForcedRetryStateOps(t *testing.T) {
 	const typ = "test-hv"
 	dir := t.TempDir()
@@ -608,7 +607,6 @@ func TestForcedRetryStateOps(t *testing.T) {
 	}
 }
 
-// stubBackendConfig satisfies BackendConfig for metering-wiring tests; unused methods panic so accidental dependence shows up loud.
 type stubBackendConfig struct {
 	rootDir   string
 	indexFile string
@@ -635,7 +633,6 @@ func (c stubBackendConfig) CgroupParentDir() string { return filepath.Join(c.roo
 
 func (stubBackendConfig) CgroupCPUFence() string { return "" }
 
-// meteringStubConfig gives the metering stub a real VMRunDir so sequences can take the per-VM ops lock and MkdirTemp under it.
 type meteringStubConfig struct {
 	stubBackendConfig
 	vmRunRoot string

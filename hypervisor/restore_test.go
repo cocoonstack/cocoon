@@ -272,7 +272,6 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 	}
 }
 
-// A corrupt persisted record (null storage/NIC entry) must fail preflight with a clean invariants error, not panic.
 func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 	tests := []struct {
 		name    string

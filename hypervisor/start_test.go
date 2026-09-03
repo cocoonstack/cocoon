@@ -103,7 +103,6 @@ func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
 	}
 }
 
-// seedStoppedVMWithDirs seeds a stopped record whose run/log dirs exist (PrepareStart requires them).
 func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) {
 	t.Helper()
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)

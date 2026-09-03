@@ -262,7 +262,6 @@ func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
 	}
 }
 
-// TestNameOwnerSeesPendingReservation pins what a killed save leaves behind: the pending record still holds the name, so Inspect reports not-found while insertRecord rejects the reuse; the save preflight resolves through the index for exactly this reason.
 func TestNameOwnerSeesPendingReservation(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -1539,7 +1538,6 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 	return id
 }
 
-// testSnapNamespace mirrors the composition root's snapshots declaration.
 func testSnapNamespace(conf *config.Config) metajson.Namespace {
 	cfg := NewConfig(conf)
 	return metajson.Namespace{Name: NamespaceName, FilePath: cfg.IndexFile(), LockPath: cfg.IndexLock(), Codec: testSnapTables}

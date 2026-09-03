@@ -11,8 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Under a pinned test process (taskset) NumCPU shrinks to the affinity mask while HostCPUCount must keep reporting the machine.
-func TestHostCPUCount(t *testing.T) {
+func TestHostCPUCountIgnoresAffinityMask(t *testing.T) {
 	got := HostCPUCount()
 	t.Logf("HostCPUCount=%d runtime.NumCPU=%d", got, runtime.NumCPU())
 	if got < runtime.NumCPU() {
@@ -200,7 +199,6 @@ func TestIsDataDiskFile(t *testing.T) {
 }
 
 func TestBuildBaseCmdline(t *testing.T) {
-	// Locks the cmdline format so a refactor of the shared builder can't silently shift kernel boot parameters for either backend.
 	const (
 		chPrefix = "console=hvc0 loglevel=3"
 		fcPrefix = "console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1"

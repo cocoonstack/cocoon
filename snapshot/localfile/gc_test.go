@@ -167,7 +167,6 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	}
 }
 
-// TestGCModule_LRURevalidatesAccess pins design §5 step 2: a snapshot touched between ReadDB and Collect must survive the stale candidate list.
 func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -484,7 +483,6 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 }
 
-// TestGCCollectsFreshPendingWithFreeLease pins the ownerless proof: a dead save's pending record is reclaimed on the next pass however young — the free build lease is the proof, not an age gate.
 func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -516,7 +514,6 @@ func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
 	}
 }
 
-// TestGCSkipsPendingHeldByLiveBuild pins the other half of the proof: a save still holding its build lease must not lose its pending record to GC.
 func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()

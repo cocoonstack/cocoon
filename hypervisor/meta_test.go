@@ -23,7 +23,6 @@ var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires bytes identical to what the legacy storage layer wrote (fixtures generated at master by cmd/fixturegen).
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -92,7 +91,6 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 }
 
-// TestCrossComponentVMLockPath asserts CH/FC (LockVMOps) and CNI (lock/vmlock) resolve one vmID to the same lock file; a stale backend-specific resolver would let CNI GC and VM lifecycle interleave.
 func TestCrossComponentVMLockPath(t *testing.T) {
 	ctx := t.Context()
 	b, _ := newMeteringTestBackend(t)
@@ -121,7 +119,6 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 	}
 }
 
-// VMIndex mirrors the legacy whole-index shape for shim-based tests.
 type VMIndex struct {
 	VMs        map[string]*VMRecord `json:"vms"`
 	Names      map[string]string    `json:"names"`
@@ -137,7 +134,6 @@ func (idx *VMIndex) Init() {
 	}
 }
 
-// dbUpdate is the test-only whole-index shim: materialize, run fn, write the difference back.
 func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
 	return b.update(ctx, func(t *vmTx) error {
 		before, idx, err := materialize(t)
@@ -151,7 +147,6 @@ func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
 	})
 }
 
-// dbRead is the test-only whole-index read shim.
 func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
 	return b.view(ctx, func(t *vmTx) error {
 		_, idx, err := materialize(t)
@@ -162,7 +157,6 @@ func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
 	})
 }
 
-// addOrphanDir survives only for fixtures/shims; production writes cleanup intent through tombstone payloads.
 func (t *vmTx) addOrphanDir(dir string) error {
 	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
 		return err
@@ -170,7 +164,6 @@ func (t *vmTx) addOrphanDir(dir string) error {
 	return t.w.PutRaw(t.ctx, t.ns, TableOrphanDirs, dir, json.RawMessage(`{}`), false)
 }
 
-// newTestMetaStore opens a meta store over the given index paths for one backend type.
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: indexFile, LockPath: lockPath, Codec: testVMTables})
@@ -181,7 +174,6 @@ func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.S
 	return store
 }
 
-// testNamespace builds a standalone namespace under dir for shim-level tests.
 func testNamespace(t *testing.T, typ, dir string) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: filepath.Join(dir, "index.json"), LockPath: filepath.Join(dir, "index.lock"), Codec: testVMTables})

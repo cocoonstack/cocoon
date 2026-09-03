@@ -8,7 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// DirectClone clones from a local snapshot dir. Per-type: hardlink mem, reflink/copy COW, plain copy metadata.
 func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
 	spec := hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: fc.cloneAfterExtract}
 	return fc.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
@@ -16,7 +15,6 @@ func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *type
 	})
 }
 
-// DirectRestore restores a VM in place from a local snapshot dir.
 func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
 	return fc.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
 		VMCfg:            vmCfg,

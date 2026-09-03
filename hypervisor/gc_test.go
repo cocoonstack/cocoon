@@ -102,7 +102,6 @@ func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
 	}
 }
 
-// A reserved dir swept as a VM run dir would get an ops.lock planted inside it by withOpsTryLock.
 func TestSweepDirsSkipsReservedNames(t *testing.T) {
 	snap := VMGCSnapshot{runDirs: []string{"db", CloneLocksDirName, "SOMEVM"}}
 	got := snap.sweepDirs("/root")
