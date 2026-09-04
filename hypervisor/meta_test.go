@@ -138,16 +138,6 @@ func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
 	})
 }
 
-func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
-	return b.view(ctx, func(t *vmTx) error {
-		_, idx, err := materialize(t)
-		if err != nil {
-			return err
-		}
-		return fn(idx)
-	})
-}
-
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: indexFile, LockPath: lockPath, Codec: testVMTables})

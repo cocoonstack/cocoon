@@ -183,7 +183,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 }
 
-func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
+func TestDeleteMigratedVMRemovesItsDirs(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-migrated"
