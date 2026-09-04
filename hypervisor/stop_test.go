@@ -201,8 +201,10 @@ func TestDeleteMigratedVMRemovesItsDirs(t *testing.T) {
 	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }); err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
-	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
-		t.Fatal("migrated run dir must be removed")
+	for _, dir := range []string{runDir, logDir} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("migrated dir %s must be removed", dir)
+		}
 	}
 }
 
