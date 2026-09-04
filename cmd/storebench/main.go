@@ -241,7 +241,7 @@ func openBackend(ctx context.Context, engine, dir string) (*hypervisor.Backend, 
 func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 	ns := hypervisor.VMNamespaceName("bench")
 	if engine == "sqlite" {
-		decl := metasqlite.Namespace{Name: ns, Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs}}
+		decl := metasqlite.Namespace{Name: ns, Tables: []string{hypervisor.TableRecords, hypervisor.TableNames}}
 		path := filepath.Join(dir, metasqlite.DBFileName)
 		if _, err := os.Stat(path); err != nil { //nolint:gosec
 			if err := metasqlite.Init(ctx, path, decl); err != nil {
@@ -257,7 +257,6 @@ func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
 			{Key: "vms", Table: hypervisor.TableRecords},
 			{Key: "names", Table: hypervisor.TableNames},
-			{Key: "orphan_dirs", Table: hypervisor.TableOrphanDirs, Optional: true, StringList: true},
 		}},
 	})
 }

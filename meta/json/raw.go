@@ -6,22 +6,6 @@ import (
 	"slices"
 )
 
-// AppendStringSlice appends s as a compact JSON array of strings.
-func AppendStringSlice(dst []byte, s []string) ([]byte, error) {
-	dst = append(dst, '[')
-	for i, v := range s {
-		if i > 0 {
-			dst = append(dst, ',')
-		}
-		vb, err := json.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		dst = append(dst, vb...)
-	}
-	return append(dst, ']'), nil
-}
-
 // AppendTable appends tbl as a compact JSON object with sorted keys, values verbatim.
 func AppendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
 	t := m.tables[tbl]

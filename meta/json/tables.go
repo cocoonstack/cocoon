@@ -10,15 +10,11 @@ import (
 	"slices"
 )
 
-// stringListMarker backs StringList presence rows; the value never surfaces.
-var stringListMarker = json.RawMessage("{}")
-
-// TableSpec maps one legacy top-level object field to a model table; Optional omits the field from encoded output while the table is empty; StringList marks an ordered []string field stored as presence markers.
+// TableSpec maps one legacy top-level object field to a model table; Optional omits the field from encoded output while the table is empty.
 type TableSpec struct {
-	Key        string
-	Table      string
-	Optional   bool
-	StringList bool
+	Key      string
+	Table    string
+	Optional bool
 }
 
 var _ Codec = TableCodec{}
@@ -59,16 +55,6 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 		}
 		key, _ := keyTok.(string)
 		if sp, ok := byKey[key]; ok {
-			if sp.StringList {
-				var ids []string
-				if err := dec.Decode(&ids); err != nil {
-					return nil, err
-				}
-				for _, id := range ids {
-					m.Put(sp.Table, id, stringListMarker)
-				}
-				continue
-			}
 			var tbl map[string]json.RawMessage
 			if err := dec.Decode(&tbl); err != nil {
 				return nil, err
@@ -97,22 +83,6 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
 	buf := []byte{'{'}
 	for _, sp := range specs {
-		if sp.StringList {
-			ids := make([]string, 0, m.Len(sp.Table))
-			_ = m.Scan(sp.Table, func(id string, _ json.RawMessage) error {
-				ids = append(ids, id)
-				return nil
-			})
-			if sp.Optional && len(ids) == 0 {
-				continue
-			}
-			buf = appendKey(buf, sp.Key)
-			var err error
-			if buf, err = AppendStringSlice(buf, ids); err != nil {
-				return nil, err
-			}
-			continue
-		}
 		if sp.Optional && m.Len(sp.Table) == 0 {
 			continue
 		}

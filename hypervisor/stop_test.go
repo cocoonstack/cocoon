@@ -183,7 +183,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 }
 
-func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
+func TestDeleteMigratedVMRemovesItsDirs(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-migrated"
@@ -201,16 +201,10 @@ func TestDeleteMigratedVMClearsCleanupIntent(t *testing.T) {
 	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }); err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
-	if err := b.dbRead(t.Context(), func(idx *VMIndex) error {
-		if len(idx.OrphanDirs) != 0 {
-			t.Fatalf("successful delete must clear its cleanup intent, got %v", idx.OrphanDirs)
+	for _, dir := range []string{runDir, logDir} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("migrated dir %s must be removed", dir)
 		}
-		return nil
-	}); err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
-		t.Fatal("migrated run dir must be removed")
 	}
 }
 

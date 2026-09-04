@@ -41,7 +41,6 @@ var (
 	vmTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "vms", Table: hypervisor.TableRecords},
 		{Key: "names", Table: hypervisor.TableNames},
-		{Key: "orphan_dirs", Table: hypervisor.TableOrphanDirs, Optional: true, StringList: true},
 		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
 	snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
@@ -54,8 +53,8 @@ var (
 // MetaNamespaces lists every namespace with its tables — the engine-neutral declaration both engines consume.
 func MetaNamespaces() []metasqlite.Namespace {
 	return []metasqlite.Namespace{
-		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
-		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TableOrphanDirs, tombstone.TableName}},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, tombstone.TableName}},
+		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, tombstone.TableName}},
 		{Name: localfile.NamespaceName, Tables: []string{localfile.TableRecords, localfile.TableNames, tombstone.TableName}},
 		{Name: oci.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
 		{Name: cloudimg.NamespaceName, Tables: []string{images.TableRecords, tombstone.TableName}},
