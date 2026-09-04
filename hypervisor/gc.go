@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -30,7 +29,6 @@ type VMGCSnapshot struct {
 	runDirs     []string
 	logDirs     []string
 	recRunDirs  []string
-	orphanDirs  []string
 	reasons     map[string]string
 }
 
@@ -71,10 +69,6 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 			if err := b.view(ctx, func(t *vmTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.vmIDs = make(map[string]struct{})
-				var err error
-				if snap.orphanDirs, err = t.orphanDirs(); err != nil {
-					return err
-				}
 				return t.Scan(func(id string, rec *VMRecord) error {
 					snap.vmIDs[id] = struct{}{}
 					if rec.RunDir != "" {
@@ -153,7 +147,6 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
-	errs = append(errs, b.sweepOrphanDirs(ctx, snap.orphanDirs)...)
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
 	for _, id := range ids {
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
@@ -242,38 +235,6 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 			continue
 		}
 		logger.Infof(ctx, "collected clone lock %s reason=stale-clone-lock", e.Name())
-	}
-	return errs
-}
-
-// sweepOrphanDirs retries the migrated-dir cleanups whose delete lost the race with the filesystem: the record is gone, so these paths are the only pointer left.
-func (b *Backend) sweepOrphanDirs(ctx context.Context, dirs []string) []error {
-	logger := log.WithFunc("gc." + b.Typ)
-	clearIntent := func(dir string) {
-		if err := b.update(ctx, func(t *vmTx) error {
-			return t.removeOrphanDir(dir)
-		}); err != nil {
-			logger.Warnf(ctx, "clear cleanup intent %s: %v", dir, err)
-		}
-	}
-	var errs []error
-	for _, dir := range dirs {
-		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			clearIntent(dir)
-			continue
-		}
-		b.withOpsTryLock(ctx, filepath.Base(dir), func() {
-			if err := b.ensureOrphanVMMDead(ctx, dir); err != nil {
-				errs = append(errs, fmt.Errorf("orphan vmm in %s: %w (kept)", dir, err))
-				return
-			}
-			if err := os.RemoveAll(dir); err != nil {
-				errs = append(errs, fmt.Errorf("remove orphan dir %s: %w", dir, err))
-				return
-			}
-			logger.Infof(ctx, "collected dir=%s reason=migrated-delete-retry", dir)
-			clearIntent(dir)
-		})
 	}
 	return errs
 }

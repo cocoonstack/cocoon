@@ -2,7 +2,6 @@ package hypervisor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/meta"
@@ -34,21 +33,6 @@ func (t *vmTx) resolve(ref string) (string, error) {
 
 func (t *vmTx) resolveMany(refs []string) ([]string, error) {
 	return t.ResolveMany(refs, ErrNotFound)
-}
-
-func (t *vmTx) orphanDirs() ([]string, error) {
-	var dirs []string
-	if err := t.r.ScanRaw(t.ctx, t.ns, TableOrphanDirs, func(dir string, _ json.RawMessage) error {
-		dirs = append(dirs, dir)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return dirs, nil
-}
-
-func (t *vmTx) removeOrphanDir(dir string) error {
-	return t.w.DeleteRaw(t.ctx, t.ns, TableOrphanDirs, dir, false)
 }
 
 func (b *Backend) view(ctx context.Context, fn func(*vmTx) error) error {

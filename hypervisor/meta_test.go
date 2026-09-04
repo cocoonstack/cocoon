@@ -6,7 +6,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "vms", Table: TableRecords},
 	{Key: "names", Table: TableNames},
-	{Key: "orphan_dirs", Table: TableOrphanDirs, Optional: true, StringList: true},
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
@@ -72,13 +70,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		if err := t.NameDel("beta"); err != nil {
 			return err
 		}
-		if err := t.Del("VMBBBBBBBBBBBBBBBBBBBBBBBB"); err != nil {
-			return err
-		}
-		if err := t.removeOrphanDir("/mnt/zz-migrated/VMOLD1"); err != nil {
-			return err
-		}
-		return t.addOrphanDir("/mnt/mm-migrated/VMOLD3")
+		return t.Del("VMBBBBBBBBBBBBBBBBBBBBBBBB")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -120,9 +112,8 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 }
 
 type VMIndex struct {
-	VMs        map[string]*VMRecord `json:"vms"`
-	Names      map[string]string    `json:"names"`
-	OrphanDirs []string             `json:"orphan_dirs,omitempty"`
+	VMs   map[string]*VMRecord `json:"vms"`
+	Names map[string]string    `json:"names"`
 }
 
 func (idx *VMIndex) Init() {
@@ -155,13 +146,6 @@ func (b *Backend) dbRead(ctx context.Context, fn func(*VMIndex) error) error {
 		}
 		return fn(idx)
 	})
-}
-
-func (t *vmTx) addOrphanDir(dir string) error {
-	if _, ok, err := t.w.GetRaw(t.ctx, t.ns, TableOrphanDirs, dir); err != nil || ok {
-		return err
-	}
-	return t.w.PutRaw(t.ctx, t.ns, TableOrphanDirs, dir, json.RawMessage(`{}`), false)
 }
 
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
@@ -201,10 +185,7 @@ func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
 	}); err != nil {
 		return nil, nil, err
 	}
-	if idx.OrphanDirs, err = t.orphanDirs(); err != nil {
-		return nil, nil, err
-	}
-	snapshot := &VMIndex{VMs: maps.Clone(idx.VMs), Names: maps.Clone(idx.Names), OrphanDirs: slices.Clone(idx.OrphanDirs)}
+	snapshot := &VMIndex{VMs: maps.Clone(idx.VMs), Names: maps.Clone(idx.Names)}
 	return snapshot, idx, nil
 }
 
@@ -233,16 +214,6 @@ func writeBack(t *vmTx, before, after *VMIndex) error {
 	}
 	for name, id := range after.Names {
 		if err := t.NameSet(name, id); err != nil {
-			return err
-		}
-	}
-	for _, dir := range before.OrphanDirs {
-		if err := t.removeOrphanDir(dir); err != nil {
-			return err
-		}
-	}
-	for _, dir := range after.OrphanDirs {
-		if err := t.addOrphanDir(dir); err != nil {
 			return err
 		}
 	}

@@ -3,10 +3,9 @@ package hypervisor
 import "strings"
 
 const (
-	// TableRecords/TableNames/TableOrphanDirs name the vms-namespace tables; the composition root maps them onto the legacy file fields.
-	TableRecords    = "records"
-	TableNames      = "names"
-	TableOrphanDirs = "orphandirs"
+	// TableRecords/TableNames name the vms-namespace tables; the composition root maps them onto the legacy file fields.
+	TableRecords = "records"
+	TableNames   = "names"
 )
 
 // VMNamespaceName maps a backend type to its meta namespace.
