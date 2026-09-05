@@ -9,6 +9,9 @@ import (
 )
 
 func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
+	if err := validateCloneNetworkMTUs(snapshotConfig.NICMTUs, net.NetworkConfigs); err != nil {
+		return nil, err
+	}
 	spec := hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: fc.cloneAfterExtract}
 	return fc.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
 		return cloneSnapshotFiles(ctx, dstDir, srcDir)

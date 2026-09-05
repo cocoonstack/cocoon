@@ -107,7 +107,6 @@ func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
 	return err
 }
 
-// setupTCRedirect wires ifName <-> tapName inside target netns, returns MAC.
 func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
 	var (
 		mac string

@@ -2,10 +2,23 @@ package hypervisor
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"
 )
+
+func TestBuildSnapshotConfigRecordsNICMTUs(t *testing.T) {
+	b := &Backend{Typ: "firecracker"}
+	rec := &VMRecord{VM: types.VM{NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{
+		{MTU: 9000},
+		{MTU: 1500},
+	}}}}
+	got := b.BuildSnapshotConfig("snap", rec)
+	if want := []int{9000, 1500}; !slices.Equal(got.NICMTUs, want) {
+		t.Errorf("NICMTUs = %v, want %v", got.NICMTUs, want)
+	}
+}
 
 func TestIsUnderDir(t *testing.T) {
 	tests := []struct {

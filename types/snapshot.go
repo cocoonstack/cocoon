@@ -15,6 +15,7 @@ type SnapshotConfig struct {
 	ImageBlobIDs map[string]struct{} `json:"image_blob_ids,omitempty"` // blob hex set for GC pinning
 	Hypervisor   string              `json:"hypervisor,omitempty"`     // originating backend ("cloud-hypervisor" or "firecracker")
 	NICs         int                 `json:"nics,omitempty"`
+	NICMTUs      []int               `json:"nic_mtus,omitempty"`
 }
 
 // Validate checks SnapshotConfig caller-controlled fields. Empty Name is allowed (name is optional).
