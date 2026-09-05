@@ -26,6 +26,12 @@ import (
 
 const rollbackTimeout = 30 * time.Second
 
+// cloneResult is the clone JSON envelope: the VM record plus the guest-side Hints a Firecracker --pci clone still needs.
+type cloneResult struct {
+	*types.VM
+	Hints []string `json:"hints,omitempty"`
+}
+
 func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	ctx, vm, _, err := h.createVM(cmd, args[0])
 	if err != nil {
@@ -308,12 +314,6 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	printGuestHints(hints)
 	printPostCloneHints(vm)
 	return finishErr
-}
-
-// cloneResult is the clone JSON envelope: the VM record plus the guest-side Hints a Firecracker --pci clone still needs.
-type cloneResult struct {
-	*types.VM
-	Hints []string `json:"hints,omitempty"`
 }
 
 // cloneSetup is prepareClone's result: the reserved clone's identity and network plus the rollback/unlock pair the caller owes until finalize.
