@@ -13,118 +13,37 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
-	"github.com/cocoonstack/cocoon/network"
-	"github.com/cocoonstack/cocoon/types"
 )
 
-func TestReconcileOrphanNICs(t *testing.T) {
-	hc, removed := newCHStubClient(t, []chNet{
+func TestCHNICOpsLiveNICsKeepsOnlyCocoonDevices(t *testing.T) {
+	hc, _ := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
-		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
 		{ID: "_net0", MAC: "aa:bb:cc:dd:ee:99", TAP: "tapvm1beef-9"},
 	})
-	plumbing := &stubPlumbing{}
-
-	info, err := getVMInfo(t.Context(), hc)
+	live, err := chNICOps{hc: hc}.LiveNICs(t.Context())
 	if err != nil {
-		t.Fatalf("vm.info: %v", err)
+		t.Fatalf("LiveNICs: %v", err)
 	}
-	recorded := []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
-	if err := reconcileOrphanNICs(t.Context(), hc, info, "vm1", recorded, plumbing); err != nil {
-		t.Fatalf("reconcileOrphanNICs: %v", err)
-	}
-	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee02" {
-		t.Fatalf("removed = %v, want only the unrecorded cocoon NIC", got)
-	}
-	if len(plumbing.removed) != 1 || plumbing.removed[0] != 1 {
-		t.Fatalf("plumbing.removed = %v, want the orphan's host slot 1 reclaimed", plumbing.removed)
+	if len(live) != 1 || live[0].ID != "cocoon-net-aabbccddee01" || live[0].TAP != "tapvm1beef-0" {
+		t.Fatalf("live = %+v, want only the cocoon-owned NIC", live)
 	}
 }
 
-func TestReconcileOrphanNICsReclaimsSlotOnEjectTimeout(t *testing.T) {
+func TestCHNICOpsRemoveNICWaitsForEject(t *testing.T) {
 	hc, removed := newCHStubClient(t, []chNet{
 		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
 	}, "cocoon-net-aabbccddee02")
-	plumbing := &stubPlumbing{}
-
-	info, err := getVMInfo(t.Context(), hc)
-	if err != nil {
-		t.Fatalf("vm.info: %v", err)
-	}
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
-	err = reconcileOrphanNICs(ctx, hc, info, "vm1", nil, plumbing)
+	err := chNICOps{hc: hc}.RemoveNIC(ctx, "cocoon-net-aabbccddee02")
 	if err == nil {
-		t.Fatal("a timed-out eject wait must surface an error")
+		t.Fatal("a device the guest never ejects must surface an error")
 	}
 	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee02" {
-		t.Fatalf("removed = %v, want the orphan ejected", got)
-	}
-	if len(plumbing.removed) != 1 || plumbing.removed[0] != 1 {
-		t.Fatalf("plumbing.removed = %v, want host slot 1 reclaimed despite the timeout", plumbing.removed)
-	}
-}
-
-func TestResolveFailedPersist(t *testing.T) {
-	ch := newTestCH(t)
-	ctx := t.Context()
-	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:01", TAP: "tap-vm1-0"}
-	hc, removed := newCHStubClient(t, []chNet{{ID: "cocoon-net-aabbccddee01", MAC: nc.MAC}})
-	plumbing := &stubPlumbing{}
-
-	seedNetVM(t, ch, "vm1", nc)
-	committed, err := ch.resolveFailedPersist(ctx, hc, plumbing, "vm1", nc, "cocoon-net-aabbccddee01", 0)
-	if err != nil || !committed {
-		t.Fatalf("committed write must keep the device: committed=%v err=%v", committed, err)
-	}
-	if len(removed()) != 0 || len(plumbing.removed) != 0 {
-		t.Fatal("no teardown may run when the record carries the NIC")
-	}
-
-	if err := ch.UpdateRecord(ctx, "vm1", func(r *hypervisor.VMRecord) error {
-		r.NetworkConfigs = nil
-		return nil
-	}); err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
-	committed, err = ch.resolveFailedPersist(ctx, hc, plumbing, "vm1", nc, "cocoon-net-aabbccddee01", 0)
-	if err != nil || committed {
-		t.Fatalf("conclusive miss must report uncommitted: committed=%v err=%v", committed, err)
-	}
-	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee01" {
-		t.Fatalf("removed = %v, want the half-added device ejected", got)
-	}
-	if len(plumbing.removed) != 1 || plumbing.removed[0] != 0 {
-		t.Fatalf("plumbing.removed = %v, want nic 0 torn down", plumbing.removed)
-	}
-}
-
-func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
-	ch := newTestCH(t)
-	ctx := t.Context()
-	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
-	seedNetVM(t, ch, "vm7", nc)
-
-	hc, _ := newCHStubClient(t, nil)
-	plumbing := &stubPlumbing{}
-
-	res, err := ch.netResizeRemove(ctx, hc, &chVMInfoResponse{}, "vm7", []*types.NetworkConfig{nc}, plumbing, 1, 0, netresize.Result{Before: 1, After: 1})
-	if err != nil {
-		t.Fatalf("resume remove must not error on a missing live device: %v", err)
-	}
-	if res.After != 0 || len(res.Removed) != 1 {
-		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
-	}
-	rec, err := ch.PeekRecord(ctx, "vm7")
-	if err != nil {
-		t.Fatalf("read record: %v", err)
-	}
-	if len(rec.NetworkConfigs) != 0 {
-		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(rec.NetworkConfigs))
+		t.Fatalf("removed = %v, want vm.remove-device issued before the wait", got)
 	}
 }
 
@@ -169,34 +88,6 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	}
 	if resumes != 1 {
 		t.Errorf("resumes = %d, want a running VM left untouched", resumes)
-	}
-}
-
-type stubPlumbing struct {
-	removed []int
-}
-
-func (p *stubPlumbing) Add(context.Context, string, *types.VMConfig, ...network.AddSpec) ([]*types.NetworkConfig, error) {
-	return nil, nil
-}
-
-func (p *stubPlumbing) Remove(_ context.Context, _ string, indices ...int) error {
-	p.removed = append(p.removed, indices...)
-	return nil
-}
-
-func seedNetVM(t *testing.T, ch *CloudHypervisor, id string, nc *types.NetworkConfig) {
-	t.Helper()
-	ctx := t.Context()
-	if err := ch.ReserveVM(ctx, id, &types.VMConfig{}, nil, ch.Conf.VMRunDir(id), ch.Conf.VMLogDir(id)); err != nil {
-		t.Fatalf("seed reserve: %v", err)
-	}
-	if err := ch.UpdateRecord(ctx, id, func(r *hypervisor.VMRecord) error {
-		r.State = types.VMStateCreated
-		r.NetworkConfigs = []*types.NetworkConfig{nc}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed record: %v", err)
 	}
 }
 
