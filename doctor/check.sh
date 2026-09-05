@@ -18,17 +18,18 @@ COCOON_CNI_CONF_DIR="${COCOON_CNI_CONF_DIR:-/etc/cni/net.d}"
 COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
 COCOON_META_BACKEND="${COCOON_META_BACKEND:-}"
 
-# Dependency versions. cloud-hypervisor and the x86_64 firmware come from the cocoonstack fork
-# release tags (rolling dev builds verified against their SHA256SUMS); ch-remote, Firecracker,
-# the aarch64 firmware and the CNI plugins come from upstream releases.
+# Dependency versions. cloud-hypervisor, Firecracker and the x86_64 firmware come from the
+# cocoonstack fork release tags (rolling dev builds verified against their SHA256SUMS);
+# ch-remote, the aarch64 firmware and the CNI plugins come from upstream releases.
 CH_REF="${CH_REF:-dev}"
 CH_REMOTE_VERSION="${CH_REMOTE_VERSION:-v53.0}"
 CH_MIN_MAJOR=54
-FC_VERSION="${FC_VERSION:-v1.16.1}"
+FC_REF="${FC_REF:-dev}"
 FW_REF="${FW_REF:-dev}"
 FW_VERSION="${FW_VERSION:-0.5.0}"
 CNI_VERSION="${CNI_VERSION:-v1.9.1}"
 CH_RELEASE_BASE="https://github.com/cocoonstack/cloud-hypervisor/releases/download/${CH_REF}"
+FC_RELEASE_BASE="https://github.com/cocoonstack/firecracker/releases/download/${FC_REF}"
 FW_RELEASE_BASE="https://github.com/cocoonstack/rust-hypervisor-firmware/releases/download/${FW_REF}"
 
 # Architecture detection
@@ -62,7 +63,7 @@ Options:
   --upgrade        Fix issues and install/upgrade dependencies:
                      cloud-hypervisor cocoonstack fork release ${CH_REF}
                      ch-remote        ${CH_REMOTE_VERSION}
-                     firecracker      ${FC_VERSION}
+                     firecracker      cocoonstack fork release ${FC_REF}
                      hypervisor-fw    cocoonstack fork release ${FW_REF} (x86_64), ${FW_VERSION} (aarch64)
                      CNI plugins      ${CNI_VERSION}
   --subnet=CIDR    Subnet for generated CNI bridge config (default: 10.88.0.0/16)
@@ -70,7 +71,7 @@ Options:
 Environment variables:
   CH_REF            cocoonstack/cloud-hypervisor release tag   (default: ${CH_REF})
   CH_REMOTE_VERSION upstream ch-remote version                 (default: ${CH_REMOTE_VERSION})
-  FC_VERSION        Firecracker version                        (default: ${FC_VERSION})
+  FC_REF            cocoonstack/firecracker release tag        (default: ${FC_REF})
   FW_REF            cocoonstack/rust-hypervisor-firmware tag   (default: ${FW_REF})
   FW_VERSION        upstream firmware version, aarch64 only    (default: ${FW_VERSION})
   CNI_VERSION       CNI plugins version                        (default: ${CNI_VERSION})
@@ -560,19 +561,19 @@ if $UPGRADE; then
     fi
 
     # -- firecracker --------------------------------------------------------
-    header "Install firecracker ${FC_VERSION}"
+    header "Install firecracker (cocoonstack fork ${FC_REF})"
 
-    fc_tgz="firecracker-${FC_VERSION}-${ARCH}.tgz"
-    fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/${fc_tgz}"
+    fc_url="${FC_RELEASE_BASE}/firecracker-${ARCH}"
     fc_dest="/usr/local/bin/firecracker"
     info "downloading ${fc_url}"
-    if curl -fsSL -o "${tmpdir}/${fc_tgz}" "$fc_url"; then
-        tar -xzf "${tmpdir}/${fc_tgz}" -C "${tmpdir}"
-        install -m 0755 "${tmpdir}/release-${FC_VERSION}-${ARCH}/firecracker-${FC_VERSION}-${ARCH}" "$fc_dest"
+    if curl -fsSL -o "${tmpdir}/firecracker" "$fc_url" \
+        && curl -fsSL -o "${tmpdir}/fc.sums" "${FC_RELEASE_BASE}/SHA256SUMS" \
+        && verify_sha256 "${tmpdir}/firecracker" "${tmpdir}/fc.sums" "firecracker-${ARCH}"; then
+        install -m 0755 "${tmpdir}/firecracker" "$fc_dest"
         setcap cap_net_admin+ep "$fc_dest" 2>/dev/null || true
-        fixed "firecracker ${FC_VERSION} -> ${fc_dest}"
+        fixed "firecracker ${FC_REF} (commit $(release_commit "$FC_RELEASE_BASE")) -> ${fc_dest}"
     else
-        fail "failed to download firecracker from ${fc_url}"
+        fail "failed to download or verify firecracker from ${fc_url}"
     fi
 
     # -- firmware -----------------------------------------------------------
