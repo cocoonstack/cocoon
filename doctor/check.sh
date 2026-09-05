@@ -18,11 +18,18 @@ COCOON_CNI_CONF_DIR="${COCOON_CNI_CONF_DIR:-/etc/cni/net.d}"
 COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
 COCOON_META_BACKEND="${COCOON_META_BACKEND:-}"
 
-# Dependency versions
-CH_VERSION="${CH_VERSION:-v53.0}"
+# Dependency versions. cloud-hypervisor and the x86_64 firmware come from the cocoonstack fork
+# release tags (rolling dev builds verified against their SHA256SUMS); ch-remote, Firecracker,
+# the aarch64 firmware and the CNI plugins come from upstream releases.
+CH_REF="${CH_REF:-dev}"
+CH_REMOTE_VERSION="${CH_REMOTE_VERSION:-v53.0}"
+CH_MIN_MAJOR=54
 FC_VERSION="${FC_VERSION:-v1.16.1}"
+FW_REF="${FW_REF:-dev}"
 FW_VERSION="${FW_VERSION:-0.5.0}"
 CNI_VERSION="${CNI_VERSION:-v1.9.1}"
+CH_RELEASE_BASE="https://github.com/cocoonstack/cloud-hypervisor/releases/download/${CH_REF}"
+FW_RELEASE_BASE="https://github.com/cocoonstack/rust-hypervisor-firmware/releases/download/${FW_REF}"
 
 # Architecture detection
 ARCH=$(uname -m)
@@ -53,15 +60,20 @@ Usage: $0 [--fix] [--upgrade] [--subnet=CIDR]
 Options:
   --fix            Attempt to fix detected issues (dirs, sysctl, iptables, CNI config)
   --upgrade        Fix issues and install/upgrade dependencies:
-                     cloud-hypervisor ${CH_VERSION}
-                     hypervisor-fw    ${FW_VERSION}
+                     cloud-hypervisor cocoonstack fork release ${CH_REF}
+                     ch-remote        ${CH_REMOTE_VERSION}
+                     firecracker      ${FC_VERSION}
+                     hypervisor-fw    cocoonstack fork release ${FW_REF} (x86_64), ${FW_VERSION} (aarch64)
                      CNI plugins      ${CNI_VERSION}
   --subnet=CIDR    Subnet for generated CNI bridge config (default: 10.88.0.0/16)
 
 Environment variables:
-  CH_VERSION    Cloud Hypervisor version    (default: ${CH_VERSION})
-  FW_VERSION    Firmware version            (default: ${FW_VERSION})
-  CNI_VERSION   CNI plugins version         (default: ${CNI_VERSION})
+  CH_REF            cocoonstack/cloud-hypervisor release tag   (default: ${CH_REF})
+  CH_REMOTE_VERSION upstream ch-remote version                 (default: ${CH_REMOTE_VERSION})
+  FC_VERSION        Firecracker version                        (default: ${FC_VERSION})
+  FW_REF            cocoonstack/rust-hypervisor-firmware tag   (default: ${FW_REF})
+  FW_VERSION        upstream firmware version, aarch64 only    (default: ${FW_VERSION})
+  CNI_VERSION       CNI plugins version                        (default: ${CNI_VERSION})
   COCOON_ROOT_DIR / COCOON_RUN_DIR / COCOON_LOG_DIR
   COCOON_CNI_CONF_DIR / COCOON_CNI_BIN_DIR
   COCOON_META_BACKEND Metadata engine       (default: auto — existing store wins, fresh roots get sqlite)
@@ -160,6 +172,26 @@ erofs_version_ok() {
     [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 8 ]; }
 }
 
+# CopyOnWrite memory restore (cocoon --restore-mode mmap, the clone default) landed after v53.0.
+ch_version_ok() {
+    local major
+    major=$(echo "$1" | grep -oE 'v[0-9]+' | head -1 | tr -d v)
+    [ -n "$major" ] && [ "$major" -ge "$CH_MIN_MAJOR" ]
+}
+
+# verify_sha256 FILE SUMS NAME: NAME is matched as the trailing path component of a sha256sum line.
+verify_sha256() {
+    local file="$1" sums="$2" name="$3" want got
+    want=$(grep -E "(^|[[:space:]]|/)${name}\$" "$sums" | head -1 | awk '{print $1}')
+    got=$(sha256sum "$file" | awk '{print $1}')
+    [ -n "$want" ] && [ "$want" = "$got" ]
+}
+
+# release_commit BASE_URL: short commit of a cocoonstack fork release, from its build-info.json.
+release_commit() {
+    curl -fsSL "$1/build-info.json" 2>/dev/null | grep -oE '"commit": *"[0-9a-f]+"' | grep -oE '[0-9a-f]{40}' | cut -c1-8
+}
+
 check_binary() {
     local name="$1"
     if command -v "$name" &>/dev/null; then
@@ -175,6 +207,10 @@ check_binary() {
         esac
         if [ "$name" = "mkfs.erofs" ] && ! erofs_version_ok "$ver"; then
             fail "$name (${ver:-unknown}) is older than 1.8 — tar mode silently corrupts layers; apt ships 1.7.x, install erofs-utils >= 1.8 from source"
+            return
+        fi
+        if [ "$name" = "cloud-hypervisor" ] && ! ch_version_ok "$ver"; then
+            fail "$name (${ver:-unknown}) predates v${CH_MIN_MAJOR} — no CopyOnWrite memory restore, so the default clone/restore mode (mmap) is rejected; run --upgrade for the cocoonstack fork build"
             return
         fi
         pass "${name}${ver:+ ($ver)}"
@@ -494,29 +530,31 @@ if $UPGRADE; then
     trap 'rm -rf "$tmpdir"' EXIT
 
     # -- cloud-hypervisor --------------------------------------------------
-    header "Install cloud-hypervisor ${CH_VERSION}"
+    header "Install cloud-hypervisor (cocoonstack fork ${CH_REF})"
 
-    ch_url="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}/cloud-hypervisor-static${CH_SUFFIX}"
+    ch_url="${CH_RELEASE_BASE}/cloud-hypervisor-${ARCH}"
     ch_dest="/usr/local/bin/cloud-hypervisor"
     info "downloading ${ch_url}"
-    if curl -fsSL -o "${tmpdir}/cloud-hypervisor" "$ch_url"; then
+    if curl -fsSL -o "${tmpdir}/cloud-hypervisor" "$ch_url" \
+        && curl -fsSL -o "${tmpdir}/ch.sums" "${CH_RELEASE_BASE}/SHA256SUMS" \
+        && verify_sha256 "${tmpdir}/cloud-hypervisor" "${tmpdir}/ch.sums" "cloud-hypervisor-${ARCH}"; then
         install -m 0755 "${tmpdir}/cloud-hypervisor" "$ch_dest"
         # virtio-net requires CAP_NET_ADMIN for tap devices
         setcap cap_net_admin+ep "$ch_dest" 2>/dev/null || true
-        fixed "cloud-hypervisor ${CH_VERSION} -> ${ch_dest}"
+        fixed "cloud-hypervisor ${CH_REF} (commit $(release_commit "$CH_RELEASE_BASE")) -> ${ch_dest}"
     else
-        fail "failed to download cloud-hypervisor from ${ch_url}"
+        fail "failed to download or verify cloud-hypervisor from ${ch_url}"
     fi
 
     # -- ch-remote ----------------------------------------------------------
-    header "Install ch-remote ${CH_VERSION}"
+    header "Install ch-remote ${CH_REMOTE_VERSION}"
 
-    chr_url="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}/ch-remote-static${CH_SUFFIX}"
+    chr_url="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_REMOTE_VERSION}/ch-remote-static${CH_SUFFIX}"
     chr_dest="/usr/local/bin/ch-remote"
     info "downloading ${chr_url}"
     if curl -fsSL -o "${tmpdir}/ch-remote" "$chr_url"; then
         install -m 0755 "${tmpdir}/ch-remote" "$chr_dest"
-        fixed "ch-remote ${CH_VERSION} -> ${chr_dest}"
+        fixed "ch-remote ${CH_REMOTE_VERSION} -> ${chr_dest}"
     else
         fail "failed to download ch-remote from ${chr_url}"
     fi
@@ -538,15 +576,31 @@ if $UPGRADE; then
     fi
 
     # -- firmware -----------------------------------------------------------
-    header "Install hypervisor-fw ${FW_VERSION}"
-
-    fw_url="https://github.com/cloud-hypervisor/rust-hypervisor-firmware/releases/download/${FW_VERSION}/hypervisor-fw${FW_SUFFIX}"
     mkdir -p "$FIRMWARE_DIR"
-    info "downloading ${fw_url}"
-    if curl -fsSL -o "${FIRMWARE_PATH}" "$fw_url"; then
-        fixed "hypervisor-fw ${FW_VERSION} -> ${FIRMWARE_PATH}"
+    if [ "$ARCH" = "x86_64" ]; then
+        header "Install hypervisor-fw (cocoonstack fork ${FW_REF})"
+
+        fw_url="${FW_RELEASE_BASE}/hypervisor-fw"
+        info "downloading ${fw_url}"
+        if curl -fsSL -o "${tmpdir}/hypervisor-fw" "$fw_url" \
+            && curl -fsSL -o "${tmpdir}/fw.sums" "${fw_url}.sha256" \
+            && verify_sha256 "${tmpdir}/hypervisor-fw" "${tmpdir}/fw.sums" "hypervisor-fw"; then
+            install -m 0644 "${tmpdir}/hypervisor-fw" "${FIRMWARE_PATH}"
+            fixed "hypervisor-fw ${FW_REF} (commit $(release_commit "$FW_RELEASE_BASE")) -> ${FIRMWARE_PATH}"
+        else
+            fail "failed to download or verify firmware from ${fw_url}"
+        fi
     else
-        fail "failed to download firmware from ${fw_url}"
+        header "Install hypervisor-fw ${FW_VERSION}"
+
+        fw_url="https://github.com/cloud-hypervisor/rust-hypervisor-firmware/releases/download/${FW_VERSION}/hypervisor-fw${FW_SUFFIX}"
+        info "downloading ${fw_url}"
+        if curl -fsSL -o "${tmpdir}/hypervisor-fw" "$fw_url"; then
+            install -m 0644 "${tmpdir}/hypervisor-fw" "${FIRMWARE_PATH}"
+            fixed "hypervisor-fw ${FW_VERSION} -> ${FIRMWARE_PATH}"
+        else
+            fail "failed to download firmware from ${fw_url}"
+        fi
     fi
 
     # -- zstd (for FC kernel decompression) -----------------------------------
