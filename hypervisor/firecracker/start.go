@@ -89,6 +89,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 			IfaceID:     ifaceID,
 			HostDevName: nc.TAP,
 			GuestMAC:    nc.MAC,
+			MTU:         nc.MTU,
 		}); err != nil {
 			return fmt.Errorf("network-interface %s: %w", ifaceID, err)
 		}

@@ -108,29 +108,32 @@ func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
 }
 
 // setupTCRedirect wires ifName <-> tapName inside target netns, returns MAC.
-func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, error) {
-	var mac string
+func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
+	var (
+		mac string
+		mtu int
+	)
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
 		var nsErr error
-		mac, nsErr = tcRedirectInNS(ifName, tapName, queues, overrideMAC)
+		mac, mtu, nsErr = tcRedirectInNS(ifName, tapName, queues, overrideMAC)
 		return nsErr
 	})
-	return mac, err
+	return mac, mtu, err
 }
 
-func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, error) {
+func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
 	link, err := netlink.LinkByName(ifName)
 	if err != nil {
-		return "", fmt.Errorf("find %s: %w", ifName, err)
+		return "", 0, fmt.Errorf("find %s: %w", ifName, err)
 	}
 
 	if overrideMAC != "" {
 		hwAddr, parseErr := net.ParseMAC(overrideMAC)
 		if parseErr != nil {
-			return "", fmt.Errorf("parse MAC %s: %w", overrideMAC, parseErr)
+			return "", 0, fmt.Errorf("parse MAC %s: %w", overrideMAC, parseErr)
 		}
 		if setErr := netlink.LinkSetHardwareAddr(link, hwAddr); setErr != nil {
-			return "", fmt.Errorf("set MAC on %s: %w", ifName, setErr)
+			return "", 0, fmt.Errorf("set MAC on %s: %w", ifName, setErr)
 		}
 	}
 
@@ -138,33 +141,33 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
 	if err != nil {
-		return "", fmt.Errorf("list addrs on %s: %w", ifName, err)
+		return "", 0, fmt.Errorf("list addrs on %s: %w", ifName, err)
 	}
 	for _, addr := range addrs {
 		if delErr := netlink.AddrDel(link, &addr); delErr != nil {
-			return "", fmt.Errorf("flush addr %s on %s: %w", addr.IPNet, ifName, delErr)
+			return "", 0, fmt.Errorf("flush addr %s on %s: %w", addr.IPNet, ifName, delErr)
 		}
 	}
 
 	if _, tapErr := network.CreateTAP(tapName, queues); tapErr != nil {
-		return "", tapErr
+		return "", 0, tapErr
 	}
 	tapLink, err := netlink.LinkByName(tapName)
 	if err != nil {
-		return "", fmt.Errorf("find tap %s: %w", tapName, err)
+		return "", 0, fmt.Errorf("find tap %s: %w", tapName, err)
 	}
 
 	_ = network.TuneTAP(tapLink)
 
 	if mtu := link.Attrs().MTU; mtu > 0 {
 		if mtuErr := netlink.LinkSetMTU(tapLink, mtu); mtuErr != nil {
-			return "", fmt.Errorf("set tap %s mtu %d: %w", tapName, mtu, mtuErr)
+			return "", 0, fmt.Errorf("set tap %s mtu %d: %w", tapName, mtu, mtuErr)
 		}
 	}
 
 	for _, l := range []netlink.Link{link, tapLink} {
 		if upErr := netlink.LinkSetUp(l); upErr != nil {
-			return "", fmt.Errorf("set %s up: %w", l.Attrs().Name, upErr)
+			return "", 0, fmt.Errorf("set %s up: %w", l.Attrs().Name, upErr)
 		}
 	}
 
@@ -174,17 +177,17 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 			Parent:    netlink.HANDLE_INGRESS,
 		}
 		if qdiscErr := netlink.QdiscAdd(qdisc); qdiscErr != nil {
-			return "", fmt.Errorf("add ingress qdisc on %s: %w", l.Attrs().Name, qdiscErr)
+			return "", 0, fmt.Errorf("add ingress qdisc on %s: %w", l.Attrs().Name, qdiscErr)
 		}
 	}
 
 	if err := addTCRedirect(link, tapLink); err != nil {
-		return "", fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
+		return "", 0, fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
 	}
 	if err := addTCRedirect(tapLink, link); err != nil {
-		return "", fmt.Errorf("redirect %s -> %s: %w", tapName, ifName, err)
+		return "", 0, fmt.Errorf("redirect %s -> %s: %w", tapName, ifName, err)
 	}
-	return mac, nil
+	return mac, link.Attrs().MTU, nil
 }
 
 // addTCRedirect redirects all ingress packets from one link to another.

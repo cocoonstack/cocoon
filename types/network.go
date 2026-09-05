@@ -17,6 +17,7 @@ type NetworkConfig struct {
 	MAC       string `json:"mac"`
 	NumQueues int    `json:"num_queues"` // Virtio queue count (= CPU * 2 for multi-queue).
 	QueueSize int    `json:"queue_size"`
+	MTU       int    `json:"mtu,omitempty"`
 
 	// Backend is the provider type ("cni" or "bridge"); empty means "cni" (pre-bridge records).
 	Backend string `json:"backend,omitempty"`

@@ -311,6 +311,20 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	}
 }
 
+func TestAddCarriesTAPMTU(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, int, error) { return "aa:bb:cc:dd:ee:01", 9000, nil }
+
+	configs, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddSpec{Index: 0})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if len(configs) != 1 || configs[0].MTU != 9000 || configs[0].MAC != "aa:bb:cc:dd:ee:01" {
+		t.Fatalf("configs = %+v, want one config with MTU 9000", configs)
+	}
+}
+
 func TestQuiesceSkipsMissingNetns(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	called := false
@@ -419,7 +433,7 @@ func stubLifecycleSeams(t *testing.T) {
 	deleteTAPFn = func(string, string) error { return nil }
 	deleteNetnsFn = func(context.Context, string) error { return nil }
 	ensureNetnsFn = func(string, string) (bool, error) { return false, nil }
-	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, error) { return "aa:bb:cc:dd:ee:01", nil }
+	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, int, error) { return "aa:bb:cc:dd:ee:01", 0, nil }
 	setLinkStateFn = func(string, []string, bool) error { return nil }
 	t.Cleanup(func() {
 		deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn = origTAP, origNetns, origEnsure, origTC

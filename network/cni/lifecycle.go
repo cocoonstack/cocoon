@@ -294,7 +294,7 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 		overrideMAC = spec.Existing.MAC
 	}
 	queues := network.ResolveQueues(spec.Queues, vmCfg.CPU)
-	mac, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
+	mac, mtu, setupErr := setupTCRedirectFn(nsPath, ifName, tapName, queues, overrideMAC)
 	if setupErr != nil {
 		return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 	}
@@ -312,6 +312,7 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 		MAC:       mac,
 		NumQueues: queues,
 		QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
+		MTU:       mtu,
 		Backend:   types.BackendCNI,
 		NetnsPath: nsPath,
 		Network:   netInfo,
