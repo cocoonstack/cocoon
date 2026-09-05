@@ -89,13 +89,17 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	}
 	cowDev := firecracker.DevPath(nLayers)
 
-	cmdline := hypervisor.BuildBaseCmdline("console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1",
+	cmdline := hypervisor.BuildBaseCmdline("console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
 		strings.Join(layerDevs, ","), cowDev, nil, vmCfg.Name, nil)
 
 	printPrepareCOWDisk(vmCfg.Storage>>30, cowPath) //nolint:mnd
 
 	fmt.Printf("# Launch Firecracker: %s (image: %s)\n", vmCfg.Name, vmCfg.Image)
-	fmt.Printf("%s --api-sock /tmp/fc-%s.sock --id %s\n", fcBin, vmCfg.Name, vmCfg.Name)
+	pciFlag := ""
+	if vmCfg.PCI {
+		pciFlag = " --enable-pci"
+	}
+	fmt.Printf("%s --api-sock /tmp/fc-%s.sock --id %s%s\n", fcBin, vmCfg.Name, vmCfg.Name, pciFlag)
 	fmt.Println()
 
 	fmt.Println("# Configure via REST API (use curl or similar):")

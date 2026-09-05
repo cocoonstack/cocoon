@@ -341,6 +341,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("shared-memory", false, "enable CH memory shared=on; required to attach vhost-user-fs later (CH only, fixed for VM lifetime)")
 	cmd.Flags().Bool("hugepages", false, "back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap")
 	cmd.Flags().Bool("mergeable", false, "mark guest memory MADV_MERGEABLE so host KSM can dedup it (CH only, fixed for VM lifetime); needs KSM enabled on the host, excludes --hugepages/--shared-memory")
+	cmd.Flags().Bool("pci", false, "boot on the virtio-pci transport instead of MMIO (FC only, fixed for VM lifetime); prerequisite for device hot-plug, snapshots keep the transport")
 	cmd.Flags().StringArray("data-disk", nil, "extra data disk: size=20G[,name=...][,fstype=ext4|none][,mount=/mnt/x][,directio=on|off|auto]; repeatable")
 }
 

@@ -26,6 +26,8 @@ type Config struct {
 	HugePages bool `json:"hugepages,omitempty"`
 	// Mergeable marks CH guest memory MADV_MERGEABLE for host KSM dedup (needs plain private memory); fixed at create, persists through clone/restore.
 	Mergeable bool `json:"mergeable,omitempty"`
+	// PCI boots a Firecracker VM on the virtio-pci transport (device hot-plug prerequisite); fixed at create, persists through clone/restore.
+	PCI bool `json:"pci,omitempty"`
 
 	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU (CPUSetCPUs empty = no placement).
 	CPUWeight   int    `json:"cpu_weight,omitempty"`

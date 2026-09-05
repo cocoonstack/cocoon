@@ -3,11 +3,13 @@ package firecracker
 import (
 	"bytes"
 	"compress/gzip"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -108,6 +110,24 @@ func TestCreateRejectsUnsupportedMemoryConfig(t *testing.T) {
 				t.Fatalf("got %v, want a %q rejection", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildCmdlineLeavesPCIToFirecracker(t *testing.T) {
+	cmdline := buildCmdline([]*types.StorageConfig{{Role: types.StorageRoleLayer}}, nil, "vm", nil)
+	if strings.Contains(cmdline, "pci=off") {
+		t.Errorf("cmdline carries pci=off, which Firecracker adds itself on MMIO and must not see on PCI: %q", cmdline)
+	}
+}
+
+func TestLaunchArgsEnablePCI(t *testing.T) {
+	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1"}}
+	if args := launchArgs(rec, "/run/api.sock", "/log/fc.log"); slices.Contains(args, "--enable-pci") {
+		t.Errorf("MMIO launch passes --enable-pci: %v", args)
+	}
+	rec.Config.PCI = true
+	if args := launchArgs(rec, "/run/api.sock", "/log/fc.log"); !slices.Contains(args, "--enable-pci") {
+		t.Errorf("PCI launch lacks --enable-pci: %v", args)
 	}
 }
 
