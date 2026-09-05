@@ -3,6 +3,7 @@ package cloudhypervisor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,23 +13,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
-	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-func TestCHNICOpsLiveNICsKeepsOnlyCocoonDevices(t *testing.T) {
+func TestCHNICOpsLiveNICsPlacesEveryNet(t *testing.T) {
 	hc, _ := newCHStubClient(t, []chNet{
-		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
-		{ID: "_net0", MAC: "aa:bb:cc:dd:ee:99", TAP: "tapvm1beef-9"},
+		{ID: "_net0", MAC: "aa:bb:cc:dd:ee:00", TAP: "tapvm1beef-0"},
+		{ID: "cocoon-net-aabbccddee01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-1"},
+		{ID: "_net9", MAC: "aa:bb:cc:dd:ee:99", TAP: "restore-tap"},
 	})
 	live, err := chNICOps{hc: hc}.LiveNICs(t.Context())
 	if err != nil {
 		t.Fatalf("LiveNICs: %v", err)
 	}
-	if len(live) != 1 || live[0].ID != "cocoon-net-aabbccddee01" || live[0].TAP != "tapvm1beef-0" {
-		t.Fatalf("live = %+v, want only the cocoon-owned NIC", live)
+	want := []hypervisor.LiveNIC{{ID: "_net0", Index: 0}, {ID: "cocoon-net-aabbccddee01", Index: 1}, {ID: "_net9", Index: -1}}
+	if !slices.Equal(live, want) {
+		t.Fatalf("live = %+v, want boot and hot-added NICs placed by TAP slot and the unplaceable one at -1", live)
 	}
 }
 
@@ -39,8 +39,8 @@ func TestCHNICOpsRemoveNICWaitsForEject(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 	err := chNICOps{hc: hc}.RemoveNIC(ctx, "cocoon-net-aabbccddee02")
-	if err == nil {
-		t.Fatal("a device the guest never ejects must surface an error")
+	if !errors.Is(err, hypervisor.ErrEjectPending) {
+		t.Fatalf("err = %v, want ErrEjectPending for a device the guest never ejects", err)
 	}
 	if got := removed(); len(got) != 1 || got[0] != "cocoon-net-aabbccddee02" {
 		t.Fatalf("removed = %v, want vm.remove-device issued before the wait", got)
@@ -89,31 +89,6 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	if resumes != 1 {
 		t.Errorf("resumes = %d, want a running VM left untouched", resumes)
 	}
-}
-
-func newTestCH(t *testing.T) *CloudHypervisor {
-	t.Helper()
-	conf := &config.Config{RootDir: t.TempDir(), RunDir: t.TempDir(), LogDir: t.TempDir()}
-	cfg := NewConfig(conf)
-	store, err := metajson.Open(metajson.Namespace{
-		Name:     hypervisor.VMNamespaceName(typ),
-		FilePath: NewConfig(conf).IndexFile(),
-		LockPath: NewConfig(conf).IndexLock(),
-		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
-			{Key: "vms", Table: hypervisor.TableRecords},
-			{Key: "names", Table: hypervisor.TableNames},
-			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
-		}},
-	})
-	if err != nil {
-		t.Fatalf("meta store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	backend, err := hypervisor.NewBackend(typ, cfg, nil, store)
-	if err != nil {
-		t.Fatalf("backend: %v", err)
-	}
-	return &CloudHypervisor{Backend: backend, conf: cfg}
 }
 
 func newStubHTTPClient(t *testing.T, mux *http.ServeMux) *http.Client {

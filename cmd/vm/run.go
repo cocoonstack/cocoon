@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -13,6 +15,7 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
@@ -117,7 +120,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, cs.unlock
+	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, sync.OnceFunc(cs.unlock)
 	netProvider, netSetup := cs.netProvider, cs.netSetup
 	defer unlock()
 
@@ -130,13 +133,17 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 	h.reseedAfterResume(ctx, conf, hyper, vm, true)
+	// The deferred resize takes the ops lock itself, so the clone's reservation lock must be gone first.
+	unlock()
+	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
-		return jsonErr
+		return cmp.Or(finishErr, jsonErr)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm)
-	return nil
+	printGuestHints(hints)
+	return finishErr
 }
 
 func (h Handler) Restore(cmd *cobra.Command, args []string) error {
@@ -274,7 +281,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	if err != nil {
 		return err
 	}
-	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, cs.unlock
+	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, sync.OnceFunc(cs.unlock)
 	netProvider, netSetup := cs.netProvider, cs.netSetup
 	defer unlock()
 
@@ -290,13 +297,16 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 	h.reseedAfterResume(ctx, conf, hyper, vm, true)
+	unlock()
+	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
 	if wantJSON {
-		return cliutil.OutputJSON(vm)
+		return cmp.Or(finishErr, cliutil.OutputJSON(vm))
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printPostCloneHints(vm)
-	return nil
+	printGuestHints(hints)
+	return finishErr
 }
 
 // cloneSetup is prepareClone's result: the reserved clone's identity and network plus the rollback/unlock pair the caller owes until finalize.
@@ -307,6 +317,7 @@ type cloneSetup struct {
 	unlock      func()
 	netProvider network.Network
 	netSetup    types.NetSetup
+	resizeTo    int // NIC count after the clone; equal to the restored count unless a Firecracker --pci clone overrides --nics
 }
 
 func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (cloneSetup, error) {
@@ -344,23 +355,44 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	}
 
 	bridgeDev, _ := cmd.Flags().GetString("bridge")
-	nics := cfg.NICs
-	if cmd.Flags().Changed("nics") {
-		if conf.UseFirecracker {
-			return fail(fmt.Errorf("--nics override on clone is Cloud Hypervisor only (FC network_overrides retargets existing NICs, not resize)"))
-		}
-		nics, _ = cmd.Flags().GetInt("nics")
+	flagNICs, _ := cmd.Flags().GetInt("nics")
+	nics, resizeTo, err := cloneNICPlan(conf.UseFirecracker, cfg, cmd.Flags().Changed("nics"), flagNICs)
+	if err != nil {
+		return fail(err)
 	}
 	// Pre-extract fast-fail; fc's clone-extract guard stays as the library backstop.
-	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker {
-		return fail(fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend))
+	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
+		return fail(fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend))
 	}
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
 	if err != nil {
 		return fail(err)
 	}
 
-	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup}, nil
+	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup, resizeTo: resizeTo}, nil
+}
+
+// finishClone applies the deferred NIC resize of a Firecracker --pci clone; the hints are the guest-side steps its hot-plugged devices still need.
+func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, cs cloneSetup) (*types.VM, []string, error) {
+	var hints []string
+	if vm.Config.PCI && len(vm.Config.DataDisks) > 0 {
+		hints = append(hints, pciRescanHint)
+	}
+	if cs.resizeTo == len(vm.NetworkConfigs) {
+		return vm, hints, nil
+	}
+	resizer, ok := hyper.(netresize.Resizer)
+	if !ok {
+		return vm, hints, fmt.Errorf("backend %s: %w", hyper.Type(), netresize.ErrUnsupportedBackend)
+	}
+	res, err := resizer.NetResize(ctx, vm.ID, netresize.Spec{Target: cs.resizeTo}, cs.netProvider)
+	if err != nil {
+		return vm, hints, fmt.Errorf("VM %s cloned, NIC resize to %d failed (rerun cocoon vm net): %w", vm.ID, cs.resizeTo, err)
+	}
+	if isFirecracker(hyper.Type()) {
+		hints = slices.Compact(append(hints, fcNetHints(res)...))
+	}
+	return refreshVM(ctx, hyper, vm), hints, nil
 }
 
 func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
@@ -465,6 +497,23 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
 	}
 	return ctx, info, hyper, nil
+}
+
+// cloneNICPlan returns the NIC count to restore with and the count to hold after the clone.
+func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target int) (int, int, error) {
+	if !override {
+		return cfg.NICs, cfg.NICs, nil
+	}
+	if target < 0 {
+		return 0, 0, fmt.Errorf("--nics must be non-negative, got %d", target)
+	}
+	if !useFC {
+		return target, target, nil
+	}
+	if !cfg.PCI {
+		return 0, 0, fmt.Errorf("--nics override on clone needs a --pci snapshot on Firecracker (an MMIO snapshot restores its NIC set as is)")
+	}
+	return cfg.NICs, target, nil
 }
 
 // validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create and debug so the capability gate list cannot drift.

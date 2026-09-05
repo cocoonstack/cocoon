@@ -14,6 +14,24 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+// netResult is the vm net JSON envelope; Hints carry the guest-side steps a Firecracker PCI VM still needs.
+type netResult struct {
+	netresize.Result
+	Hints []string `json:"hints,omitempty"`
+}
+
+// plumbingForVM picks the provider from persisted VM state; 0-NIC works because NetBackend persists.
+func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
+	backend := vm.ResolvedNetBackend()
+	if backend == "" {
+		return nil, fmt.Errorf("no network backend on VM; cannot resize")
+	}
+	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
+		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
+	}
+	return cmdcore.NetworkSeam(conf).ForVM(vm)
+}
+
 func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	ctx, conf, hyper, resizer, err := resolveAttacher[netresize.Resizer](h, cmd, args, "vm net", netresize.ErrUnsupportedBackend)
 	if err != nil {
@@ -32,7 +50,11 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, res); done {
+	out := netResult{Result: res}
+	if isFirecracker(hyper.Type()) {
+		out.Hints = fcNetHints(res)
+	}
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
 		return jsonErr
 	}
 	logger := log.WithFunc("cmd.vm.net")
@@ -41,17 +63,6 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	for _, w := range res.Warnings {
 		logger.Warnf(ctx, "%s: %s", args[0], w)
 	}
+	printGuestHints(out.Hints)
 	return nil
-}
-
-// plumbingForVM picks the provider from persisted VM state; 0-NIC works because NetBackend persists.
-func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
-	backend := vm.ResolvedNetBackend()
-	if backend == "" {
-		return nil, fmt.Errorf("no network backend on VM; cannot resize")
-	}
-	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
-		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
-	}
-	return cmdcore.NetworkSeam(conf).ForVM(vm)
 }

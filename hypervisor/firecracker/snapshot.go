@@ -31,7 +31,14 @@ func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(c
 
 func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec {
 	return hypervisor.SnapshotSpec{
-		Pause:  func(_ *hypervisor.VMRecord, hc *http.Client) error { return pauseVM(ctx, hc) },
+		Pause: func(rec *hypervisor.VMRecord, hc *http.Client) error {
+			if rec.Config.PCI {
+				if err := refuseHotAttachedDisks(ctx, hc); err != nil {
+					return err
+				}
+			}
+			return pauseVM(ctx, hc)
+		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		// createSnapshotFC builds its own client with VMMemTransferTimeout (multi-GiB memory transfer); it cannot share hc.
 		Capture: func(rec *hypervisor.VMRecord, _ *http.Client, tmpDir string) error {
@@ -63,4 +70,16 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.Snapshot
 		meta.BootConfig = &b
 	}
 	return meta, nil
+}
+
+// refuseHotAttachedDisks mirrors the Cloud Hypervisor rule: a runtime-only disk has no sidecar entry, so a snapshot holding it could never restore.
+func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
+	cfg, err := getVMConfig(ctx, hc)
+	if err != nil {
+		return err
+	}
+	if hot := hotAttachedDisks(cfg); len(hot) > 0 {
+		return fmt.Errorf("hot-attached disk %q: detach before snapshot or hibernate", hot[0].Name)
+	}
+	return nil
 }

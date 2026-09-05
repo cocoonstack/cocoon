@@ -22,6 +22,9 @@ const (
 	ifaceIDFmt = "eth%d"
 
 	ioEngineAsync = "Async" // io_uring
+
+	// hotDiskIDPrefix: Firecracker resource ids allow only [A-Za-z0-9_], so hot-attached disks cannot reuse the cocoon-disk- scheme.
+	hotDiskIDPrefix = "cocoon_disk_"
 )
 
 // fcMachineConfig and the request types below follow Firecracker's pre-boot config model: start empty, configure via PUT/PATCH, then InstanceStart.
@@ -87,6 +90,17 @@ type fcNetworkOverride struct {
 // fcVsockOverride retargets the vsock UDS during snapshot/load. Pointer+omitempty keeps the field off the wire for FC < v1.16.
 type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
+}
+
+// fcInstanceInfo is the GET / view; State is "Not started", "Running" or "Paused".
+type fcInstanceInfo struct {
+	State string `json:"state"`
+}
+
+// fcVMConfig is the GET /vm/config view of the device set.
+type fcVMConfig struct {
+	Drives            []fcDrive            `json:"drives"`
+	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
 }
 
 type fcSnapshotMemBE struct {
@@ -201,5 +215,36 @@ func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOver
 	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
 	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
 		"http://localhost/snapshot/load", body, http.StatusNoContent)
+	return err
+}
+
+func getInstanceInfo(ctx context.Context, hc *http.Client) (*fcInstanceInfo, error) {
+	var info fcInstanceInfo
+	return &info, getJSON(ctx, hc, "/", &info)
+}
+
+func getVMConfig(ctx context.Context, hc *http.Client) (*fcVMConfig, error) {
+	var cfg fcVMConfig
+	return &cfg, getJSON(ctx, hc, "/vm/config", &cfg)
+}
+
+func getJSON(ctx context.Context, hc *http.Client, endpoint string, out any) error {
+	body, err := utils.DoAPI(ctx, hc, http.MethodGet, "http://localhost"+endpoint, nil, http.StatusOK)
+	if err != nil {
+		return fmt.Errorf("query %s: %w", endpoint, err)
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode %s: %w", endpoint, err)
+	}
+	return nil
+}
+
+// hotplugDevice PUTs a device onto a running VM without retry — a retried PUT after a lost ACK echoes as "already exists".
+func hotplugDevice[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
+	return sendJSONOnce(ctx, hc, http.MethodPut, endpoint, payload, kind)
+}
+
+func deleteDevice(ctx context.Context, hc *http.Client, endpoint string) error {
+	_, err := utils.DoAPIOnce(ctx, hc, http.MethodDelete, "http://localhost"+endpoint, nil, http.StatusNoContent)
 	return err
 }

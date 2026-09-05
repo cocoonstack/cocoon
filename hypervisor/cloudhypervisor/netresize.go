@@ -2,12 +2,13 @@ package cloudhypervisor
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -26,9 +27,11 @@ func (o chNICOps) LiveNICs(ctx context.Context) ([]hypervisor.LiveNIC, error) {
 	}
 	live := make([]hypervisor.LiveNIC, 0, len(info.Config.Nets))
 	for _, n := range info.Config.Nets {
-		if strings.HasPrefix(n.ID, cocoonNetIDPrefix) {
-			live = append(live, hypervisor.LiveNIC{ID: n.ID, MAC: n.MAC, TAP: n.TAP})
+		idx, ok := network.TAPIndex(n.TAP)
+		if !ok {
+			idx = -1
 		}
+		live = append(live, hypervisor.LiveNIC{ID: n.ID, Index: idx})
 	}
 	return live, nil
 }
@@ -41,33 +44,25 @@ func (o chNICOps) RemoveNIC(ctx context.Context, id string) error {
 	if err := removeDeviceVM(ctx, o.hc, id); err != nil {
 		return err
 	}
-	return waitDeviceEjected(ctx, o.hc, id)
+	if err := waitDeviceEjected(ctx, o.hc, id); err != nil {
+		return fmt.Errorf("%w: %w", hypervisor.ErrEjectPending, err)
+	}
+	return nil
 }
+
+func (chNICOps) TAPQueues(cpu int) int { return network.NetNumQueues(cpu) }
 
 func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec netresize.Spec, plumbing netresize.Plumbing) (netresize.Result, error) {
 	if err := spec.Normalize(); err != nil {
 		return netresize.Result{}, err
 	}
-	hc, vmID, err := ch.RunningVMClient(ctx, vmRef)
-	if err != nil {
-		return netresize.Result{}, err
-	}
-	unlock, err := ch.LockVMOps(ctx, vmID)
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return netresize.Result{}, err
 	}
 	defer unlock()
-	// Entrypoint discipline (design §5): a resize must not plumb NICs onto a VM whose delete was interrupted. Reload under the lock: a resize that won the lock first may have changed the NIC set after this one loaded.
-	rec, err := ch.EntryGuardLoad(ctx, vmID)
-	if err != nil {
+	if _, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
 		return netresize.Result{}, err
 	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil {
-		return netresize.Result{}, err
-	}
-	if _, err = convergeOrphanedPause(ctx, hc, vmID, info); err != nil {
-		return netresize.Result{}, err
-	}
-	return ch.NetResizeWith(ctx, vmID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
+	return ch.NetResizeWith(ctx, rec.ID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
 }

@@ -13,7 +13,7 @@ import (
 
 const diskIDPrefix = "cocoon-disk-"
 
-// ErrUnsupportedBackend signals the backend cannot hot-plug virtio-blk disks (e.g. Firecracker).
+// ErrUnsupportedBackend signals the backend cannot hot-plug virtio-blk disks (Firecracker on the MMIO transport).
 var ErrUnsupportedBackend = errors.New("backend does not support disk attach")
 
 // Spec is one attach request for an existing raw disk file; DirectIO nil means the create-path default (O_DIRECT unless writable disks have it disabled), tmpfs-backed files need an explicit off.
@@ -41,7 +41,7 @@ func (s *Spec) Normalize() error {
 	return nil
 }
 
-// Attached is the inspect-time view of one hot-added disk read from the running VM's CH config.
+// Attached is the inspect-time view of one hot-added disk read from the running VMM's config.
 type Attached struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -60,7 +60,7 @@ type Lister interface {
 	DiskList(ctx context.Context, vmRef string) ([]Attached, error)
 }
 
-// DeriveID returns the deterministic CH device id for a disk name (used by attach + detach so concurrent attaches collide on CH's id check).
+// DeriveID returns the deterministic Cloud Hypervisor device id for a disk name (attach and detach share it so concurrent attaches collide on CH's id check); Firecracker derives its own underscore form.
 func DeriveID(name string) string {
 	return diskIDPrefix + name
 }

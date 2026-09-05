@@ -9,8 +9,16 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 )
 
+// diskResult is the attach/detach JSON envelope; Hints carry the guest-side steps a Firecracker PCI VM still needs.
+type diskResult struct {
+	VM    string   `json:"vm"`
+	Name  string   `json:"name"`
+	ID    string   `json:"id,omitempty"`
+	Hints []string `json:"hints,omitempty"`
+}
+
 func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk attach", disk.ErrUnsupportedBackend)
+	ctx, _, hyper, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk attach", disk.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -26,15 +34,20 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "name": name, "id": id}); done {
+	out := diskResult{VM: args[0], Name: name, ID: id}
+	if isFirecracker(hyper.Type()) {
+		out.Hints = []string{pciRescanHint}
+	}
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.disk.attach").Infof(ctx, "attached disk name=%s id=%s vm=%s", name, id, args[0])
+	printGuestHints(out.Hints)
 	return nil
 }
 
 func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk detach", disk.ErrUnsupportedBackend)
+	ctx, _, hyper, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk detach", disk.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -42,9 +55,14 @@ func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
 	if err := a.DiskDetach(ctx, args[0], name); err != nil {
 		return classifyAttachErr(err)
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string]string{"vm": args[0], "name": name}); done {
+	out := diskResult{VM: args[0], Name: name}
+	if isFirecracker(hyper.Type()) {
+		out.Hints = []string{pciDiskRemoveHint}
+	}
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
 		return jsonErr
 	}
 	log.WithFunc("cmd.vm.disk.detach").Infof(ctx, "detached disk name=%s vm=%s", name, args[0])
+	printGuestHints(out.Hints)
 	return nil
 }

@@ -53,6 +53,7 @@ type cloneLaunch struct {
 	vmCfg            *types.VMConfig
 	networkConfigs   []*types.NetworkConfig
 	src, dst         []*types.StorageConfig
+	dataDisks        []*types.StorageConfig
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -63,8 +64,8 @@ func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMCo
 }
 
 func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
-	if len(vmCfg.DataDisks) > 0 {
-		return nil, fmt.Errorf("--data-disk on clone is Cloud Hypervisor only (Firecracker has no disk hotplug): %w", disk.ErrUnsupportedBackend)
+	if len(vmCfg.DataDisks) > 0 && !vmCfg.PCI {
+		return nil, fmt.Errorf("--data-disk on a Firecracker clone needs a --pci snapshot (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend)
 	}
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("firecracker.cloneAfterExtract")
@@ -82,6 +83,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
 		return nil, fmt.Errorf("validate sidecar: %w", err)
+	}
+	dataDisks, prepErr := fc.PrepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
+	if prepErr != nil {
+		return nil, prepErr
 	}
 	bootCfg := meta.BootConfig
 	if err := EnsureVmlinuxBoot(bootCfg); err != nil {
@@ -106,13 +111,19 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	}
 	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{
 		launch: launch, sockPath: sockPath, runDir: runDir, vmID: vmID, vmCfg: vmCfg,
-		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs,
+		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs, dataDisks: dataDisks,
 	})
 	if cloneErr != nil {
 		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
 	}
 	defer plan.close()
+	storageConfigs = append(storageConfigs, dataDisks...)
+	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
+		leaseControl.close()
+		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		return nil, fmt.Errorf("validate storage configs: %w", err)
+	}
 
 	info := &types.VM{
 		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
@@ -212,6 +223,13 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	for _, i := range redirectedDriveIndices(cl.src, cl.dst) {
 		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), cl.dst[i].Path); err != nil {
 			return fmt.Errorf("re-anchor drive %d: %w", i, err)
+		}
+	}
+	// Clone data disks take the next drive slots so a later snapshot sees them as ordinary sidecar entries.
+	for i, sc := range cl.dataDisks {
+		d := fcDrive{DriveID: fmt.Sprintf(driveIDFmt, len(cl.dst)+i), PathOnHost: sc.Path, IoEngine: ioEngineAsync}
+		if err = hotplugDevice(ctx, hc, "/drives/"+d.DriveID, d, "drive"); err != nil {
+			return fmt.Errorf("hot-plug data disk %s: %w", sc.Serial, err)
 		}
 	}
 	return nil

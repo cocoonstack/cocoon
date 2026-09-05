@@ -51,7 +51,7 @@ All `.conflist` files in `--cni-conf-dir` (default `/etc/cni/net.d`) are loaded 
 }
 ```
 
-## NIC Hot-Resize (Cloud Hypervisor only)
+## NIC Hot-Resize (Cloud Hypervisor, or Firecracker with `--pci`)
 
 `cocoon vm net --nics N VM` brings the running VM's NIC count to `N`. To add NICs, cocoon allocates new host TAP/CNI/bridge plumbing and hot-plugs a fresh NIC into the guest. To remove NICs, it pops from the tail (LIFO) via `vm.remove-device` and tears down the host plumbing.
 
@@ -64,5 +64,7 @@ cocoon vm net my-vm --nics 1
 ```
 
 On NIC removal, cocoon waits for the guest to ACK B0EJ (CH polls `device_tree` until the device disappears) before tearing down the host TAP / veth / CNI lease. If the guest never ACKs within the eject timeout, the command fails and leaves the cocoon record + host plumbing intact so the operator can quiesce the guest (driver unbind, NetworkManager removal, Windows NDIS halt) and retry.
+
+On Firecracker `--pci` VMs the VMM adds and drops devices without telling the guest: after an add the guest runs `echo 1 > /sys/bus/pci/rescan`, after a remove it drops the stale node with `echo 1 > /sys/class/net/ethN/device/../remove`. `cocoon vm net` prints both (and returns them as `hints` with `--format json`); down the NIC inside the guest before reducing the count. MMIO Firecracker VMs are rejected.
 
 Resize from zero is supported: under CNI, `--nics 0` still provisions a per-VM netns at boot (CH lives in it from the start), so a later `cocoon vm net --nics N` hot-plugs into the same namespace. Bridge mode keeps CH in the host netns regardless of NIC count, so 0→N adds TAPs onto the configured bridge.

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
@@ -15,6 +17,9 @@ const typ = "firecracker"
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
 	_ hypervisor.Direct     = (*Firecracker)(nil)
+	_ netresize.Resizer     = (*Firecracker)(nil)
+	_ disk.Attacher         = (*Firecracker)(nil)
+	_ disk.Lister           = (*Firecracker)(nil)
 )
 
 // Firecracker implements hypervisor.Hypervisor using the Firecracker VMM (OCI/direct-kernel only — no UEFI, cloudimg, or Windows).

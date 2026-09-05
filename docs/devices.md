@@ -1,6 +1,6 @@
 # Runtime Device Attach
 
-Hot-plug vhost-user-fs shares, VFIO PCI devices, and external raw disks on a running VM (Cloud Hypervisor only).
+Hot-plug vhost-user-fs shares, VFIO PCI devices, and external raw disks on a running VM (Cloud Hypervisor; raw disks also on Firecracker VMs created with `--pci`).
 
 ## Overview
 
@@ -100,3 +100,16 @@ cocoon vm device detach my-vm --id mygpu
 ```
 
 `cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs.
+
+## Firecracker (`--pci`)
+
+Firecracker VMs created with `--pci` accept `vm disk attach`/`detach` (vhost-user-fs and VFIO stay Cloud Hypervisor only); MMIO VMs are rejected. Firecracker does not notify the guest, so cocoon prints the guest-side step after each call, and `--format json` carries it as `hints`:
+
+```bash
+cocoon vm disk attach my-vm --path /vols/scratch.raw --name scratch
+#   echo 1 > /sys/bus/pci/rescan            # inside the guest: the disk appears as /dev/vdX (no virtio-blk serial on FC)
+cocoon vm disk detach my-vm --name scratch  # unmount inside the guest first
+#   echo 1 > /sys/block/<vdX>/device/../remove
+```
+
+As on Cloud Hypervisor, a hot-attached disk blocks snapshot and hibernate until detached; `cocoon vm inspect` lists it from Firecracker's `/vm/config` under the id `cocoon_disk_<name>` (Firecracker ids allow only letters, digits and underscores, so a name with `-` is rejected there).

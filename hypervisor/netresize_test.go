@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -13,34 +14,36 @@ import (
 )
 
 func TestReconcileOrphanNICs(t *testing.T) {
-	dev := &fakeNICDevices{live: []LiveNIC{
-		{ID: "nic-01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tapvm1beef-0"},
-		{ID: "nic-02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
-	}}
+	dev := &fakeNICDevices{live: []LiveNIC{{ID: "nic-0", Index: 0}, {ID: "nic-1", Index: 1}, {ID: "nic-x", Index: -1}}}
 	plumbing := &stubPlumbing{}
-	recorded := []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
-	if err := reconcileOrphanNICs(t.Context(), dev, "vm1", recorded, plumbing); err != nil {
+	if err := reconcileOrphanNICs(t.Context(), dev, "vm1", dev.live, 1, plumbing); err != nil {
 		t.Fatalf("reconcileOrphanNICs: %v", err)
 	}
-	if !slices.Equal(dev.removed, []string{"nic-02"}) {
-		t.Fatalf("removed = %v, want only the unrecorded NIC", dev.removed)
+	if !slices.Equal(dev.removed, []string{"nic-1", "nic-x"}) {
+		t.Fatalf("removed = %v, want the unrecorded slot and the unplaceable device", dev.removed)
 	}
 	if !slices.Equal(plumbing.removed, []int{1}) {
-		t.Fatalf("plumbing.removed = %v, want the orphan's host slot 1 reclaimed", plumbing.removed)
+		t.Fatalf("plumbing.removed = %v, want only host slot 1 reclaimed", plumbing.removed)
 	}
 }
 
-func TestReconcileOrphanNICsReclaimsSlotWhenRemoveFails(t *testing.T) {
-	dev := &fakeNICDevices{
-		live:      []LiveNIC{{ID: "nic-02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"}},
-		removeErr: errors.New("eject timeout"),
-	}
+func TestReconcileOrphanNICsReclaimsSlotOnlyWhenEjectIsPending(t *testing.T) {
+	dev := &fakeNICDevices{live: []LiveNIC{{ID: "nic-1", Index: 1}}, removeErr: fmt.Errorf("wait eject: %w", ErrEjectPending)}
 	plumbing := &stubPlumbing{}
-	if err := reconcileOrphanNICs(t.Context(), dev, "vm1", nil, plumbing); err == nil {
-		t.Fatal("a failed device removal must surface an error")
+	if err := reconcileOrphanNICs(t.Context(), dev, "vm1", dev.live, 0, plumbing); err == nil {
+		t.Fatal("a pending eject must still surface an error")
 	}
 	if !slices.Equal(plumbing.removed, []int{1}) {
-		t.Fatalf("plumbing.removed = %v, want host slot 1 reclaimed despite the failure", plumbing.removed)
+		t.Fatalf("plumbing.removed = %v, want host slot 1 reclaimed while the eject is pending", plumbing.removed)
+	}
+
+	dev = &fakeNICDevices{live: []LiveNIC{{ID: "nic-1", Index: 1}}, removeErr: errors.New("vmm refused")}
+	plumbing = &stubPlumbing{}
+	if err := reconcileOrphanNICs(t.Context(), dev, "vm1", dev.live, 0, plumbing); err == nil {
+		t.Fatal("a refused removal must surface an error")
+	}
+	if len(plumbing.removed) != 0 {
+		t.Fatalf("plumbing.removed = %v, want the slot kept while the device is still attached", plumbing.removed)
 	}
 }
 
@@ -52,7 +55,7 @@ func TestResolveFailedPersist(t *testing.T) {
 	plumbing := &stubPlumbing{}
 	seedNetVM(t, b, "vm1", nc)
 
-	committed, err := b.resolveFailedPersist(ctx, dev, plumbing, "vm1", nc, "nic-01", 0)
+	committed, err := b.resolveFailedPersist(ctx, dev, plumbing, "vm1", nc, "nic-0", 0)
 	if err != nil || !committed {
 		t.Fatalf("committed write must keep the device: committed=%v err=%v", committed, err)
 	}
@@ -66,11 +69,11 @@ func TestResolveFailedPersist(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	committed, err = b.resolveFailedPersist(ctx, dev, plumbing, "vm1", nc, "nic-01", 0)
+	committed, err = b.resolveFailedPersist(ctx, dev, plumbing, "vm1", nc, "nic-0", 0)
 	if err != nil || committed {
 		t.Fatalf("conclusive miss must report uncommitted: committed=%v err=%v", committed, err)
 	}
-	if !slices.Equal(dev.removed, []string{"nic-01"}) || !slices.Equal(plumbing.removed, []int{0}) {
+	if !slices.Equal(dev.removed, []string{"nic-0"}) || !slices.Equal(plumbing.removed, []int{0}) {
 		t.Fatalf("removed=%v plumbing=%v, want the half-added device and nic 0 torn down", dev.removed, plumbing.removed)
 	}
 }
@@ -78,22 +81,43 @@ func TestResolveFailedPersist(t *testing.T) {
 func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	b := newNetTestBackend(t)
 	ctx := t.Context()
-	nc := &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"}
-	seedNetVM(t, b, "vm7", nc)
-
-	res, err := b.netResizeRemove(ctx, "vm7", []*types.NetworkConfig{nc}, &fakeNICDevices{}, &stubPlumbing{}, 0, netresize.Result{Before: 1, After: 1})
+	seedNetVM(t, b, "vm7", &types.NetworkConfig{MAC: "aa:bb:cc:dd:ee:07", TAP: "tap-vm7-0"})
+	rec, err := b.LoadRecord(ctx, "vm7")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	res, err := b.netResizeRemove(ctx, "vm7", &rec, nil, &fakeNICDevices{}, &stubPlumbing{}, 0, netresize.Result{Before: 1, After: 1})
 	if err != nil {
 		t.Fatalf("resume remove must not error on a missing live device: %v", err)
 	}
 	if res.After != 0 || len(res.Removed) != 1 {
 		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
 	}
-	rec, err := b.PeekRecord(ctx, "vm7")
+	fresh, err := b.PeekRecord(ctx, "vm7")
 	if err != nil {
 		t.Fatalf("read record: %v", err)
 	}
-	if len(rec.NetworkConfigs) != 0 {
-		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(rec.NetworkConfigs))
+	if len(fresh.NetworkConfigs) != 0 {
+		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(fresh.NetworkConfigs))
+	}
+}
+
+func TestNetResizeWithShrinksBootNICs(t *testing.T) {
+	b := newNetTestBackend(t)
+	ctx := t.Context()
+	seedNetVM(t, b, "vm5", &types.NetworkConfig{TAP: "tap-vm5-0"}, &types.NetworkConfig{TAP: "tap-vm5-1"})
+	rec, err := b.LoadRecord(ctx, "vm5")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	dev := &fakeNICDevices{live: []LiveNIC{{ID: "_net0", Index: 0}, {ID: "_net1", Index: 1}}}
+	plumbing := &stubPlumbing{}
+	res, err := b.NetResizeWith(ctx, "vm5", &rec, dev, plumbing, 1)
+	if err != nil {
+		t.Fatalf("NetResizeWith: %v", err)
+	}
+	if res.After != 1 || !slices.Equal(dev.removed, []string{"_net1"}) || !slices.Equal(plumbing.removed, []int{1}) {
+		t.Fatalf("res=%+v removed=%v plumbing=%v, want the boot-time NIC 1 ejected and its slot torn down", res, dev.removed, plumbing.removed)
 	}
 }
 
@@ -105,7 +129,7 @@ func TestNetResizeWithAddsAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	dev := &fakeNICDevices{live: []LiveNIC{{ID: "nic-01", MAC: "aa:bb:cc:dd:ee:01", TAP: "tap-vm2-0"}}}
+	dev := &fakeNICDevices{live: []LiveNIC{{ID: "nic-0", Index: 0}}}
 	plumbing := &stubPlumbing{macs: []string{"aa:bb:cc:dd:ee:02", "aa:bb:cc:dd:ee:03"}}
 
 	res, err := b.NetResizeWith(ctx, "vm2", &rec, dev, plumbing, 3)
@@ -117,6 +141,9 @@ func TestNetResizeWithAddsAndPersists(t *testing.T) {
 	}
 	if !slices.Equal(dev.added, []int{1, 2}) {
 		t.Fatalf("device adds = %v, want indices 1 and 2", dev.added)
+	}
+	if !slices.Equal(plumbing.queues, []int{4, 4}) {
+		t.Fatalf("tap queues = %v, want the device's queue rule applied to every new slot", plumbing.queues)
 	}
 	fresh, err := b.PeekRecord(ctx, "vm2")
 	if err != nil {
@@ -135,7 +162,7 @@ func TestNetResizeAddRollsBackHostSlotOnDeviceFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	dev := &fakeNICDevices{addErr: errors.New("vmm rejected")}
+	dev := &fakeNICDevices{live: []LiveNIC{{ID: "nic-0", Index: 0}}, addErr: errors.New("vmm rejected")}
 	plumbing := &stubPlumbing{macs: []string{"aa:bb:cc:dd:ee:02"}}
 	if _, err := b.NetResizeWith(ctx, "vm3", &rec, dev, plumbing, 2); err == nil {
 		t.Fatal("a device add failure must surface")
@@ -149,6 +176,20 @@ func TestNetResizeAddRollsBackHostSlotOnDeviceFailure(t *testing.T) {
 	}
 	if len(fresh.NetworkConfigs) != 1 {
 		t.Fatalf("record NICs = %d, want the failed NIC never persisted", len(fresh.NetworkConfigs))
+	}
+}
+
+func TestNICPersisted(t *testing.T) {
+	rec := &VMRecord{}
+	rec.NetworkConfigs = []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
+	if !nicPersisted(rec, "tap-vm1-0") {
+		t.Fatal("committed NIC must be detected (keep device, do not tear down)")
+	}
+	if nicPersisted(rec, "tap-vm1-1") {
+		t.Fatal("an unpersisted TAP must roll back")
+	}
+	if nicPersisted(nil, "tap-vm1-0") {
+		t.Fatal("a missing record is not a commit")
 	}
 }
 
@@ -167,8 +208,8 @@ func (f *fakeNICDevices) AddNIC(_ context.Context, index int, nc *types.NetworkC
 		return "", f.addErr
 	}
 	f.added = append(f.added, index)
-	id := "nic-" + nc.MAC
-	f.live = append(f.live, LiveNIC{ID: id, MAC: nc.MAC, TAP: nc.TAP})
+	id := "nic-" + nc.TAP
+	f.live = append(f.live, LiveNIC{ID: id, Index: index})
 	return id, nil
 }
 
@@ -177,14 +218,18 @@ func (f *fakeNICDevices) RemoveNIC(_ context.Context, id string) error {
 	return f.removeErr
 }
 
+func (f *fakeNICDevices) TAPQueues(int) int { return 4 }
+
 type stubPlumbing struct {
 	macs    []string
 	removed []int
+	queues  []int
 }
 
 func (p *stubPlumbing) Add(_ context.Context, vmID string, _ *types.VMConfig, specs ...network.AddSpec) ([]*types.NetworkConfig, error) {
 	out := make([]*types.NetworkConfig, 0, len(specs))
 	for _, spec := range specs {
+		p.queues = append(p.queues, spec.Queues)
 		mac := "de:ad:be:ef:00:00"
 		if len(p.macs) > 0 {
 			mac, p.macs = p.macs[0], p.macs[1:]
@@ -209,7 +254,7 @@ func newNetTestBackend(t *testing.T) *Backend {
 	return b
 }
 
-func seedNetVM(t *testing.T, b *Backend, id string, nc *types.NetworkConfig) {
+func seedNetVM(t *testing.T, b *Backend, id string, ncs ...*types.NetworkConfig) {
 	t.Helper()
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -218,7 +263,7 @@ func seedNetVM(t *testing.T, b *Backend, id string, nc *types.NetworkConfig) {
 	}
 	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
 		r.State = types.VMStateCreated
-		r.NetworkConfigs = []*types.NetworkConfig{nc}
+		r.NetworkConfigs = ncs
 		return nil
 	}); err != nil {
 		t.Fatalf("seed record: %v", err)

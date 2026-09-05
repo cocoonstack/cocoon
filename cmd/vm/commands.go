@@ -208,7 +208,7 @@ func Command(h Handler) *cobra.Command {
 func buildNetCommand(h Handler) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "net VM",
-		Short: "Resize a running VM's NIC count (CH only); quiesce in-guest NIC state before reducing",
+		Short: "Resize a running VM's NIC count (CH, or FC created with --pci); quiesce in-guest NIC state before reducing",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.NetResize,
 	}
@@ -221,7 +221,7 @@ func buildNetCommand(h Handler) *cobra.Command {
 func buildDiskCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "disk",
-		Short: "Attach/detach an extra raw data disk to a running VM (CH only)",
+		Short: "Attach/detach an extra raw data disk to a running VM (CH, or FC created with --pci)",
 	}
 
 	attach := &cobra.Command{
@@ -347,7 +347,7 @@ func addVMFlags(cmd *cobra.Command) {
 
 func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
-	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot)")
+	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot; on Firecracker only for --pci snapshots)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")       //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
@@ -360,6 +360,6 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	cmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
-	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH only)")
+	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }
