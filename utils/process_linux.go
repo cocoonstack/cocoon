@@ -11,6 +11,9 @@ import (
 	"strings"
 )
 
+// aliveFn reports whether a pid is still running.
+type aliveFn func(int) bool
+
 type procEntry struct {
 	pid     int
 	cmdline string
@@ -46,7 +49,7 @@ func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 	return scan.Find(expectArg), nil
 }
 
-func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error), alive func(int) bool) (ProcScan, error) {
+func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error), alive aliveFn) (ProcScan, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, err
@@ -94,7 +97,7 @@ func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, e
 	return verifyForTermination(pid, binaryName, expectArg, verifyProcessCmdline, IsProcessAlive)
 }
 
-func verifyForTermination(pid int, binaryName, expectArg string, verify func(int, string, string) (bool, error), alive func(int) bool) (bool, error) {
+func verifyForTermination(pid int, binaryName, expectArg string, verify func(int, string, string) (bool, error), alive aliveFn) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}

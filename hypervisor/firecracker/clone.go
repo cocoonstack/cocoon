@@ -42,6 +42,9 @@ func (p *bindRedirectPlan) files() []*os.File {
 
 func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
+// recordExistsFn reports whether a VM record exists; clone uses it to tell a managed source from a foreign path.
+type recordExistsFn func(string) (bool, error)
+
 // launchCloneFn starts the FC process over the plan's redirected drive FDs.
 type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
 
@@ -285,7 +288,7 @@ func redirectBinds(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, 
 }
 
 // holdBindableRedirects holds shared VM-operation leases for managed sources and creates regular bind mountpoints for dead sources.
-func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig, sourceRecordExists func(string) (bool, error)) (*bindRedirectPlan, error) {
+func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig, sourceRecordExists recordExistsFn) (*bindRedirectPlan, error) {
 	binds, err := redirectBinds(srcConfigs, dstConfigs)
 	if err != nil {
 		return nil, err
@@ -307,7 +310,7 @@ func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConf
 	return plan, nil
 }
 
-func ensureBindableSource(ctx context.Context, runRoot, path string, sourceRecordExists func(string) (bool, error)) error {
+func ensureBindableSource(ctx context.Context, runRoot, path string, sourceRecordExists recordExistsFn) error {
 	ready, err := classifySource(path)
 	if err != nil {
 		return err
@@ -349,7 +352,7 @@ func ensureBindableSource(ctx context.Context, runRoot, path string, sourceRecor
 	}
 }
 
-func prepareManagedSourceLocked(path, id string, sourceRecordExists func(string) (bool, error)) error {
+func prepareManagedSourceLocked(path, id string, sourceRecordExists recordExistsFn) error {
 	ready, err := classifySource(path)
 	if err != nil {
 		return err

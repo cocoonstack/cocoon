@@ -20,18 +20,6 @@ type netResult struct {
 	Hints []string `json:"hints,omitempty"`
 }
 
-// plumbingForVM picks the provider from persisted VM state; 0-NIC works because NetBackend persists.
-func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
-	backend := vm.ResolvedNetBackend()
-	if backend == "" {
-		return nil, fmt.Errorf("no network backend on VM; cannot resize")
-	}
-	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
-		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
-	}
-	return cmdcore.NetworkSeam(conf).ForVM(vm)
-}
-
 func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	ctx, conf, hyper, resizer, err := resolveAttacher[netresize.Resizer](h, cmd, args, "vm net", netresize.ErrUnsupportedBackend)
 	if err != nil {
@@ -65,4 +53,16 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	}
 	printGuestHints(out.Hints)
 	return nil
+}
+
+// plumbingForVM picks the provider from persisted VM state; 0-NIC works because NetBackend persists.
+func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
+	backend := vm.ResolvedNetBackend()
+	if backend == "" {
+		return nil, fmt.Errorf("no network backend on VM; cannot resize")
+	}
+	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
+		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
+	}
+	return cmdcore.NetworkSeam(conf).ForVM(vm)
 }

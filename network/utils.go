@@ -9,14 +9,13 @@ import (
 )
 
 const (
-	vmIDPrefixLen = 8
-
 	// NetQueueSize: default virtio-net ring depth per queue; 512 balances throughput vs request latency.
 	NetQueueSize = 512
 
 	// RestoreTAPPrefix names CH's throwaway restore TAPs; a scope equal to it would collide with a clone's own bridge TAPs.
 	RestoreTAPPrefix = "rm"
 
+	vmIDPrefixLen         = 8
 	legacyBridgeTAPPrefix = "bt"
 	legacyNetnsPrefix     = "cocoon-"
 )
