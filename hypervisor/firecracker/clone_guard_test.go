@@ -27,7 +27,8 @@ func TestValidateCloneNetworkMTUs(t *testing.T) {
 		wantErr      bool
 	}{
 		{"matching", []int{9000, 1500}, []*types.NetworkConfig{{MTU: 9000}, {MTU: 1500}}, false},
-		{"different MTU", []int{9000}, []*types.NetworkConfig{{MTU: 1500}}, true},
+		{"target MTU smaller", []int{9000}, []*types.NetworkConfig{{MTU: 1500}}, true},
+		{"target MTU larger", []int{1500}, []*types.NetworkConfig{{MTU: 9000}}, true},
 		{"different count", []int{9000}, nil, true},
 		{"no NICs", nil, nil, false},
 		{"legacy snapshot without MTUs", nil, []*types.NetworkConfig{{MTU: 9000}}, false},
