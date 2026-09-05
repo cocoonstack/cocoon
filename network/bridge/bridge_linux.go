@@ -129,6 +129,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 			MAC:       mac,
 			NumQueues: queues,
 			QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
+			MTU:       br.Attrs().MTU,
 			Backend:   types.BackendBridge,
 			BridgeDev: b.bridgeDev,
 		})

@@ -56,6 +56,9 @@ type cloneLaunch struct {
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
+	if err := validateCloneNetworkMTUs(snapshotConfig.NICMTUs, net.NetworkConfigs); err != nil {
+		return nil, err
+	}
 	return fc.CloneFromStream(ctx, vmID, hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: fc.cloneAfterExtract}, snapshot)
 }
 
@@ -434,4 +437,19 @@ func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOve
 		})
 	}
 	return overrides
+}
+
+func validateCloneNetworkMTUs(snapshotMTUs []int, networkConfigs []*types.NetworkConfig) error {
+	if snapshotMTUs == nil {
+		return nil
+	}
+	if len(snapshotMTUs) != len(networkConfigs) {
+		return fmt.Errorf("snapshot records %d NIC MTUs, target network has %d NICs", len(snapshotMTUs), len(networkConfigs))
+	}
+	for i, nc := range networkConfigs {
+		if snapshotMTUs[i] != nc.MTU {
+			return fmt.Errorf("nic %d MTU mismatch: snapshot has %d, target network has %d", i, snapshotMTUs[i], nc.MTU)
+		}
+	}
+	return nil
 }

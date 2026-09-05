@@ -52,10 +52,15 @@ func (b *Backend) UnrecordSnapshot(ctx context.Context, vmID, snapID string) {
 }
 
 func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
+	nicMTUs := make([]int, len(rec.NetworkConfigs))
+	for i, nc := range rec.NetworkConfigs {
+		nicMTUs[i] = nc.MTU
+	}
 	cfg := &types.SnapshotConfig{
 		ID:           snapID,
 		Hypervisor:   b.Typ,
 		NICs:         len(rec.NetworkConfigs),
+		NICMTUs:      nicMTUs,
 		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
 		Config:       rec.Config.Config,
 	}

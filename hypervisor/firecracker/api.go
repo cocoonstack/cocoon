@@ -48,6 +48,7 @@ type fcNetworkInterface struct {
 	IfaceID     string `json:"iface_id"`
 	HostDevName string `json:"host_dev_name"`
 	GuestMAC    string `json:"guest_mac,omitempty"`
+	MTU         int    `json:"mtu,omitempty"`
 }
 
 type fcAction struct {
