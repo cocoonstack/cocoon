@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// Regression for #63: scanBootFiles must not panic on a sub-12-char namePrefix.
 func TestScanBootFilesNamePrefixLengths(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -191,7 +191,6 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 	}
 }
 
-// rangeHandler serves data with full HTTP Range support; fail, if non-nil, lets a test force a specific requested range to error out (simulating a mid-download server failure).
 func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")

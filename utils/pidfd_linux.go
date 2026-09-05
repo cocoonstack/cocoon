@@ -12,10 +12,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
 // pidfdPollSlice bounds one poll so ctx cancellation is honored.
 const pidfdPollSlice = 100 * time.Millisecond
 
+// OpenPidfd returns a pidfd for pid; the fd becomes readable once the process exits.
 func OpenPidfd(pid int) (int, error) { return unix.PidfdOpen(pid, 0) }
 
 // CloseFD closes a raw descriptor, ignoring a zero or negative one.

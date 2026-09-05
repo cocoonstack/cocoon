@@ -207,7 +207,6 @@ func TestOpenValidation(t *testing.T) {
 	}
 }
 
-// TestEventsForcedOverflow is the §7 forced-overflow gate: with fsnotify severed (lost events), an injected overflow error must make the notifier re-read its token and signal the missed change.
 func TestEventsForcedOverflow(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -246,7 +245,6 @@ func TestEventsForcedOverflow(t *testing.T) {
 	}
 }
 
-// TestDurableSyncOrder is the §9 durability gate at the engine level: a CommitDurable ack happens only after rename → main fsync → prev fsync → parent-dir fsync all ran, while CommitRelaxed relinquishes the post-main syncs.
 func TestDurableSyncOrder(t *testing.T) {
 	var steps []string
 	testCrashStep = func(step string) error { steps = append(steps, step); return nil }
@@ -283,7 +281,6 @@ func TestDurableSyncOrder(t *testing.T) {
 	}
 }
 
-// TestCleanUpdateSkipsCommit pins the dirty-skip: a read-only Update must not re-encode, rotate or fsync — the entry guards run on every VM operation.
 func TestCleanUpdateSkipsCommit(t *testing.T) {
 	var steps []string
 	testCrashStep = func(step string) error { steps = append(steps, step); return nil }

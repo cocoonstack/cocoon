@@ -118,7 +118,6 @@ func IsRetryable(err error) bool {
 	if ae, ok := errors.AsType[*APIError](err); ok {
 		return ae.Code >= 500 || ae.Code == http.StatusTooManyRequests
 	}
-	// Non-APIError = connection-level failure, always retry.
 	return true
 }
 

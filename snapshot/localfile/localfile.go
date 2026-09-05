@@ -141,7 +141,7 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	return cfg.ID, nil
 }
 
-// CreateFromDir persists a snapshot by renaming srcDir into the store data dir — one atomic move, no tar read+extract — when they share a filesystem. It reports ok=false (srcDir untouched) across filesystems so the caller streams instead. The placeholder→move→finalize protocol matches Create, so a mid-flight crash leaves a GC-collectable pending record and the layout is byte-for-byte what Create produces.
+// CreateFromDir renames srcDir into the store data dir when they share a filesystem and reports ok=false (srcDir untouched) otherwise so the caller streams instead; the placeholder→move→finalize protocol matches Create, so a mid-flight crash leaves a GC-collectable pending record.
 func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (_ string, _ bool, err error) {
 	sameFS, err := utils.SameFilesystem(srcDir, lf.conf.DataDir())
 	if err != nil {

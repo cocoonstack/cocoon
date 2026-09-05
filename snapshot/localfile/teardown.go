@@ -28,7 +28,7 @@ func (lf *LocalFile) tombstones() *tombstone.Table {
 	return tombstone.NewTable(NamespaceName)
 }
 
-// deleteSnapshotProtocol runs the phase protocol for one snapshot under its held EXCLUSIVE lease; revalidate (optional) re-checks candidacy inside the lease transaction, and returning false skips without error.
+// deleteSnapshotProtocol runs the phase protocol for one snapshot under its held exclusive lease; revalidate, when set, re-checks candidacy inside the lease transaction and a false return skips without error.
 func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshot.SnapshotRecord) bool) (deleted bool, cl snapCleanup, err error) {
 	ts := lf.tombstones()
 	var (

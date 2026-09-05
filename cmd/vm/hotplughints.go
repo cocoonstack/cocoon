@@ -14,7 +14,6 @@ const (
 	pciNICRemoveHint  = "echo 1 > /sys/class/net/eth%d/device/../remove"
 )
 
-// isFirecracker reports whether typ names the Firecracker backend.
 func isFirecracker(typ string) bool {
 	return typ == string(config.HypervisorFirecracker)
 }

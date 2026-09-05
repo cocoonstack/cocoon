@@ -146,7 +146,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	return info, nil
 }
 
-// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors. Clone disks are bind-mounted over source-absolute paths in a private mount namespace, so siblings load in parallel without replacing host paths with symlinks.
+// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors; clone disks are bind-mounted over the source-absolute paths in a private mount namespace so siblings load in parallel without host symlinks.
 func (fc *Firecracker) startCloneVM(ctx context.Context, cl cloneLaunch) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 	pid, leaseControl, plan, err := fc.loadCloneSnapshot(ctx, cl)
 	if err != nil {

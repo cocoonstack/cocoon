@@ -69,7 +69,7 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	return hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
 }
 
-// validateSnapshotIntegrityParsed (CH): common checks + sidecar/config.json shape + state.json + memory-range-* presence; takes the caller's parsed config.json (clone and restore parse it once for the whole sequence).
+// validateSnapshotIntegrityParsed checks the sidecar against the caller's parsed config.json plus state.json and a memory-range-* file; clone and restore parse config.json once for the whole sequence.
 func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err

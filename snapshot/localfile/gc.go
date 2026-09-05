@@ -161,7 +161,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					errs = append(errs, err)
 					break
 				}
-				// Exclusive lease: an active save holds it exclusively (build lease) and readers (clone/restore/export) hold it shared, so acquiring it is the proof a pending record's owner died — no age gate needed.
+				// An active save holds the lease exclusively and readers hold it shared, so acquiring it exclusively proves the pending record's owner died; no age gate needed.
 				fl, ok, lockErr := lf.tryExclusiveLease(id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)

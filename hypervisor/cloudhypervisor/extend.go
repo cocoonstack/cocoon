@@ -278,7 +278,7 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	return nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and RunningVMClient's Running gate excludes restore/clone windows.
+// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; callers hold the ops lock every capture window holds and RunningVMClient's Running gate excludes restore and clone windows, so the pause is ownerless.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil

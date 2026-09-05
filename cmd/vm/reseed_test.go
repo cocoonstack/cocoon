@@ -47,7 +47,6 @@ func TestReseedVM_CtxCanceled(t *testing.T) {
 	}
 }
 
-// TestReseedVM_AgentRejectionNotRetried pins the dial-vs-rejection distinction: once the agent answers, its reply is final and must not be billed the retry budget.
 func TestReseedVM_AgentRejectionNotRetried(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "rsd")
 	if err != nil {

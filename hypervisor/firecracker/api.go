@@ -27,7 +27,7 @@ const (
 	hotDiskIDPrefix = "cocoon_disk_"
 )
 
-// fcMachineConfig and the request types below follow Firecracker's pre-boot config model: start empty, configure via PUT/PATCH, then InstanceStart.
+// fcMachineConfig is the /machine-config payload; Firecracker starts empty and takes every device by PUT before InstanceStart.
 type fcMachineConfig struct {
 	VCPUCount  int `json:"vcpu_count"`
 	MemSizeMiB int `json:"mem_size_mib"`
