@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const chStatePaused = "Paused"
@@ -36,7 +34,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	if err := spec.Normalize(); err != nil {
 		return "", err
 	}
-	path, err := ch.resolveExternalVolume(spec.Path)
+	path, err := ch.conf.ResolveExternalVolume(spec.Path)
 	if err != nil {
 		return "", err
 	}
@@ -196,26 +194,9 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	})
 }
 
-// resolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence) and refuses cocoon-managed roots — vm rm / GC delete those trees, and a symlink must not smuggle one past the check.
-func (ch *CloudHypervisor) resolveExternalVolume(path string) (string, error) {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", fmt.Errorf("disk path: %w", err)
-	}
-	for _, dir := range []string{ch.conf.RootDir, ch.conf.Config.RunDir, ch.conf.Config.LogDir} {
-		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
-			dir = r
-		}
-		if hypervisor.IsUnderDir(resolved, dir) {
-			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
-		}
-	}
-	return resolved, nil
-}
-
 // lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, making precheck-then-call atomic against concurrent attach/detach/restore.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
-	hc, vmID, err := ch.runningVMClient(ctx, vmRef)
+	hc, vmID, err := ch.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
@@ -297,27 +278,7 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	return nil
 }
 
-// runningVMClient asserts the CH process is alive and returns an http.Client on its API socket plus the VM id.
-func (ch *CloudHypervisor) runningVMClient(ctx context.Context, vmRef string) (*http.Client, string, error) {
-	vmID, rec, err := ch.ResolveAndLoad(ctx, vmRef)
-	if err != nil {
-		return nil, "", err
-	}
-	if rec.State != types.VMStateRunning {
-		return nil, "", fmt.Errorf("vm %s is %s: %w", vmID, rec.State, hypervisor.ErrNotRunning)
-	}
-	sockPath := hypervisor.SocketPath(rec.RunDir)
-	pid, pidErr := utils.ReadPIDFile(ch.PIDFilePath(rec.RunDir))
-	if pidErr != nil {
-		return nil, "", fmt.Errorf("vm %s read pidfile: %w: %w", vmID, pidErr, hypervisor.ErrNotRunning)
-	}
-	if !utils.VerifyProcessCmdline(pid, ch.conf.BinaryName(), sockPath) {
-		return nil, "", fmt.Errorf("vm %s pid %d not %s: %w", vmID, pid, ch.conf.BinaryName(), hypervisor.ErrNotRunning)
-	}
-	return utils.NewSocketHTTPClient(sockPath), vmID, nil
-}
-
-// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and runningVMClient's Running gate excludes restore/clone windows.
+// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; the pause is provably ownerless because callers hold the ops lock every capture window holds and RunningVMClient's Running gate excludes restore/clone windows.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil
@@ -332,7 +293,7 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, in
 
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
-	hc, _, err := ch.runningVMClient(ctx, vmRef)
+	hc, _, err := ch.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil

@@ -15,7 +15,7 @@ After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP addre
 
 ## Clone and restore resources are fixed at snapshot time
 
-`cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected on FC, and the target network's MTU must equal the snapshot's because the guest keeps the advertised MTU. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
+`cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). MMIO Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected there (a `--pci` snapshot restores its NICs and hot-plugs the delta) — and the target network's MTU must equal the snapshot's because the guest keeps the advertised MTU. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
 
 ## OCI VM multi-NIC kernel IP limitation
 
@@ -254,7 +254,7 @@ If the host plumbing teardown itself fails after a successful eject, cocoon trun
 
 Quiesce the guest NIC (ip link set down + NetworkManager remove on Linux; Disable-PnpDevice + driver unbind on Windows) before reducing the count.
 
-Firecracker is not supported: FC has no NIC hot-plug / hot-unplug API.
+Firecracker VMs created with `--pci` resize through the same command; the guest receives no eject notification, so cocoon prints the rescan/remove steps instead of waiting (see [networking](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci)). MMIO Firecracker VMs are rejected.
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 

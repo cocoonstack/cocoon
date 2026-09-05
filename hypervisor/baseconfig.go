@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -80,6 +81,23 @@ func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity In
 }
 
 func (c *BaseConfig) RootDirPath() string { return c.RootDir }
+
+// ResolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence) and refuses cocoon-managed roots — vm rm / GC delete those trees, and a symlink must not smuggle one past the check.
+func (c *BaseConfig) ResolveExternalVolume(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("disk path: %w", err)
+	}
+	for _, dir := range []string{c.RootDir, c.Config.RunDir, c.Config.LogDir} {
+		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+			dir = r
+		}
+		if IsUnderDir(resolved, dir) {
+			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
+		}
+	}
+	return resolved, nil
+}
 
 func (c *BaseConfig) dir() string   { return filepath.Join(c.RootDir, c.backendName) }
 func (c *BaseConfig) dbDir() string { return filepath.Join(c.dir(), "db") }

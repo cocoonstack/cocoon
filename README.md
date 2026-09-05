@@ -10,7 +10,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `exec`, `rm`, `clone`, `status`
 - **Snapshot & clone** — capture a running VM (memory, disks, config) and clone it into new VMs with fresh network identity; clones restore memory copy-on-write by default (page cache shared across sibling clones) and hold shared source leases so parallel clone bursts survive concurrent source removal; restore and atomic hibernate in place; portable export/import between hosts
 - **CNI networking** — multi-queue virtio-net TAPs wired via TC redirect (no bridge in the data path), multi-NIC, bridge mode, NIC hot-resize
-- **Data disks & runtime attach** — extra virtio-blk disks at create/clone time; hot-plug vhost-user-fs shares, VFIO PCI devices, and external raw disks (CH)
+- **Data disks & runtime attach** — extra virtio-blk disks at create/clone time; hot-plug vhost-user-fs shares and VFIO PCI devices (CH); external raw disks and NIC resize on CH or Firecracker `--pci` VMs
 - **Windows guests** — UEFI + Hyper-V enlightenments via the cocoonstack CH/firmware forks
 - **Firecracker backend** — `--fc` for ~125ms boots and <5 MiB per-VM overhead (OCI images only)
 - **Daemon-optional architecture** — one hypervisor process per VM, every command standalone; `cocoon daemon` optionally adopts running VMs to converge crashes as they happen; modular lock-safe GC with snapshot LRU eviction

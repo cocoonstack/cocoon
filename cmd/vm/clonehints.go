@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -38,7 +37,7 @@ func printPostCloneHints(vm *types.VM) {
 	fmt.Println("  echo 3 > /proc/sys/vm/drop_caches")
 
 	// FC clone: guest MAC is baked in vmstate; change it before networkd config.
-	if vm.Hypervisor == string(config.HypervisorFirecracker) {
+	if isFirecracker(vm.Hypervisor) {
 		printFCMACHints(vm.NetworkConfigs)
 	}
 

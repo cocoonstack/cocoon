@@ -36,9 +36,9 @@ cocoon
 │   │   ├── attach [flags] VM     Attach a VFIO PCI device (CH only)
 │   │   └── detach [flags] VM     Detach a VFIO PCI device by --id
 │   ├── disk
-│   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH only)
+│   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH, or FC with --pci)
 │   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
-│   ├── net [flags] VM             Resize NIC count on a running VM (CH only)
+│   ├── net [flags] VM             Resize NIC count on a running VM (CH, or FC with --pci)
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
 │   ├── save [flags] VM            Create a snapshot from a running VM
@@ -161,14 +161,15 @@ Applies to `cocoon vm clone`:
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
-| `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH only; names must not collide with disks inherited from the snapshot) |
+| `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH, or FC `--pci` snapshots; names must not collide with disks inherited from the snapshot) |
 
 CPU, memory, and storage all inherit from the snapshot — both hypervisors
 restore the guest from the snapshot's binary device state, so those values
 are fixed at snapshot time. NIC count inherits by default but `--nics N`
-overrides it (CH only) by hot-swapping the snapshot's NICs for a fresh set
-right after restore. Use `cocoon vm run` to create a fresh VM with different
-CPU/memory/storage.
+overrides it: Cloud Hypervisor hot-swaps the snapshot's NICs for a fresh set
+right after restore, a Firecracker `--pci` clone restores the snapshot's NICs
+and hot-plugs the delta afterwards (MMIO snapshots keep their NIC set). Use
+`cocoon vm run` to create a fresh VM with different CPU/memory/storage.
 
 **Network backend** is decided per clone (the snapshot does not persist a
 bridge device). Precedence:

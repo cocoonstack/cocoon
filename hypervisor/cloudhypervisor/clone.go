@@ -81,7 +81,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	}
 	// The patch list predates the new --data-disk configs: they are not in the snapshot's device tree and are hot-added post-restore.
 	patchStorageConfigs := restorePatchStorageConfigs(storageConfigs, directBoot, vmCfg.Windows, hadCidataInSnapshot)
-	newDataDisks, err := ch.prepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
+	newDataDisks, err := ch.PrepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -205,19 +205,6 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 		return fmt.Errorf("vm.resume: %w", err)
 	}
 	return nil
-}
-
-// prepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
-func (ch *CloudHypervisor) prepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
-	if len(vmCfg.DataDisks) == 0 {
-		return nil, nil
-	}
-	for _, spec := range vmCfg.DataDisks {
-		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
-			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
-		}
-	}
-	return hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
 func (ch *CloudHypervisor) ensureCloneCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, storageConfigs []*types.StorageConfig, directBoot bool) ([]*types.StorageConfig, error) {
