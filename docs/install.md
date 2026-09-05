@@ -6,12 +6,12 @@ Requirements, install paths, the doctor script, and a first VM.
 
 - Linux with KVM (x86_64 or aarch64)
 - Root access (sudo)
-- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v53.0, what `cocoon-check --upgrade` installs (for Windows VMs and `--restore-mode mmap`, use our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) and [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) for full compatibility — see [known issues](known-issues.md))
+- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v54 or newer. `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) `dev` release build (upstream main plus diff snapshots and a QCOW cluster-leak fix), verified against the release checksums; v53.0 and older have no CopyOnWrite memory restore, so the default clone/restore mode (`mmap`) is rejected and `cocoon-check` reports it
 - [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16.1+ (optional, for `--fc` backend; `vm clone` needs >= v1.16 for the vsock override, and v1.16.0 permanently breaks guest vsock after any restore, so v1.16.1 is the effective floor — what `doctor/check.sh` installs; see [known issues](known-issues.md))
 - `qemu-img` (from qemu-utils, for cloud images)
 - `mkfs.erofs` from erofs-utils **>= 1.8** (for OCI images; 1.7.x tar mode
   silently corrupts layers — cocoon refuses to convert with older versions)
-- UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`)
+- UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`); on x86_64 `cocoon-check --upgrade` installs the [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) `dev` build (EFI ResetSystem for ACPI power-button shutdown and the IA32_FEATURE_CONTROL/VMXON lock, both needed by Windows guests — see [known issues](known-issues.md))
 - CNI plugins (`bridge`, `host-local`, `loopback`)
 - Go 1.27+ (build only)
 
@@ -65,10 +65,12 @@ cocoon-check --upgrade
 ```
 
 The `--upgrade` flag downloads and installs:
-- Cloud Hypervisor + ch-remote (static binaries)
+- Cloud Hypervisor from the cocoonstack fork `dev` release (checksum-verified) and upstream ch-remote (static binaries)
 - Firecracker (static binary)
-- CLOUDHV.fd firmware (rust-hypervisor-firmware)
+- CLOUDHV.fd firmware: the cocoonstack firmware fork `dev` build on x86_64 (checksum-verified), upstream rust-hypervisor-firmware on aarch64
 - CNI plugins (bridge, host-local, loopback, etc.)
+
+Release tags and versions are overridable through `CH_REF`, `CH_REMOTE_VERSION`, `FC_VERSION`, `FW_REF`, `FW_VERSION` and `CNI_VERSION` (see `cocoon-check --help`).
 
 ## Quick Start
 

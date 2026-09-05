@@ -17,9 +17,9 @@ The `--windows` flag:
 
 ### Requirements
 
-- Cloud Hypervisor **v53.0** (what `cocoon-check --upgrade` installs) with our [CH fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) (includes DISCARD fix, virtio-net ctrl_queue fix, and upstream patches — see [known issues](known-issues.md))
-- UEFI firmware from our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) (includes ResetSystem fix for ACPI power-button — see [known issues](known-issues.md))
-- virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works for any version of Cloud Hypervisor; newer versions are supported with our CH fork)
+- Cloud Hypervisor **v54 or newer**: `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) `dev` release build. The Windows-relevant fixes (virtio-blk DISCARD, virtio-net ctrl_queue tolerance) are upstream since v51/v52; the fork only adds diff snapshots and a QCOW cluster-leak fix on top of upstream main — see [known issues](known-issues.md)
+- UEFI firmware from our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) `dev` build, what `cocoon-check --upgrade` installs on x86_64 (EFI ResetSystem for the ACPI power-button and the IA32_FEATURE_CONTROL/VMXON lock — see [known issues](known-issues.md)); upstream 0.5.0 boots Windows but `cocoon vm stop` falls back to the 30s timeout
+- virtio-win **0.1.285** drivers pre-installed in the image (0.1.240 also works; newer versions need the ctrl_queue tolerance, i.e. Cloud Hypervisor v52 or newer)
 
 ### Image
 
