@@ -137,12 +137,13 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	unlock()
 	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
+	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, cloneResult{VM: vm, Hints: hints}); done {
 		return cmp.Or(finishErr, jsonErr)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
-	printPostCloneHints(vm)
+	// The PCI rescan comes first: the post-clone setup below names interfaces that only exist after it.
 	printGuestHints(hints)
+	printPostCloneHints(vm)
 	return finishErr
 }
 
@@ -301,12 +302,18 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
 	if wantJSON {
-		return cmp.Or(finishErr, cliutil.OutputJSON(vm))
+		return cmp.Or(finishErr, cliutil.OutputJSON(cloneResult{VM: vm, Hints: hints}))
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
-	printPostCloneHints(vm)
 	printGuestHints(hints)
+	printPostCloneHints(vm)
 	return finishErr
+}
+
+// cloneResult is the clone JSON envelope: the VM record plus the guest-side Hints a Firecracker --pci clone still needs.
+type cloneResult struct {
+	*types.VM
+	Hints []string `json:"hints,omitempty"`
 }
 
 // cloneSetup is prepareClone's result: the reserved clone's identity and network plus the rollback/unlock pair the caller owes until finalize.
