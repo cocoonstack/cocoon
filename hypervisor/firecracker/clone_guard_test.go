@@ -30,6 +30,7 @@ func TestValidateCloneNetworkMTUs(t *testing.T) {
 		{"different MTU", []int{9000}, []*types.NetworkConfig{{MTU: 1500}}, true},
 		{"different count", []int{9000}, nil, true},
 		{"no NICs", nil, nil, false},
+		{"legacy snapshot without MTUs", nil, []*types.NetworkConfig{{MTU: 9000}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

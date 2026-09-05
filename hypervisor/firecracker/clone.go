@@ -440,6 +440,9 @@ func buildNetworkOverrides(networkConfigs []*types.NetworkConfig) []fcNetworkOve
 }
 
 func validateCloneNetworkMTUs(snapshotMTUs []int, networkConfigs []*types.NetworkConfig) error {
+	if snapshotMTUs == nil {
+		return nil
+	}
 	if len(snapshotMTUs) != len(networkConfigs) {
 		return fmt.Errorf("snapshot records %d NIC MTUs, target network has %d NICs", len(snapshotMTUs), len(networkConfigs))
 	}
