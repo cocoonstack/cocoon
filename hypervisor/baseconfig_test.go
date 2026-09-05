@@ -1,4 +1,4 @@
-package cloudhypervisor
+package hypervisor
 
 import (
 	"os"
@@ -32,7 +32,7 @@ func TestResolveExternalVolume(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	ch := &CloudHypervisor{conf: NewConfig(&config.Config{RootDir: rootDir, RunDir: runDir, LogDir: logDir})}
+	conf := NewBaseConfig(&config.Config{RootDir: rootDir, RunDir: runDir, LogDir: logDir}, "cloudhypervisor")
 
 	wantOK, err := filepath.EvalSymlinks(okVol)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestResolveExternalVolume(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ch.resolveExternalVolume(tt.path)
+			got, err := conf.ResolveExternalVolume(tt.path)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want containing %q", err, tt.wantErr)

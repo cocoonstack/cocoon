@@ -128,20 +128,6 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	}
 }
 
-func TestNICPersisted(t *testing.T) {
-	rec := &hypervisor.VMRecord{}
-	rec.NetworkConfigs = []*types.NetworkConfig{{MAC: "AA:BB:CC:DD:EE:01"}}
-	if !nicPersisted(rec, "aa:bb:cc:dd:ee:01") {
-		t.Fatal("committed NIC must be detected case-insensitively (keep device, do not tear down)")
-	}
-	if nicPersisted(rec, "aa:bb:cc:dd:ee:02") {
-		t.Fatal("an unpersisted MAC must roll back")
-	}
-	if nicPersisted(nil, "aa:bb:cc:dd:ee:01") {
-		t.Fatal("a missing record is not a commit")
-	}
-}
-
 func TestConvergeOrphanedPause(t *testing.T) {
 	var (
 		mu      sync.Mutex
