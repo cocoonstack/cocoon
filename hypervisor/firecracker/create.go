@@ -190,10 +190,10 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
-	// Top layer first for overlayfs lowerdir; FC quirks (reboot=k, pci=off, i8042.noaux, 8250.nr_uarts=1) skip absent-hardware probes.
+	// Top layer first for overlayfs lowerdir; FC quirks (reboot=k, i8042.noaux, 8250.nr_uarts=1) skip absent-hardware probes, and FC itself adds pci=off on the MMIO transport.
 	layerDevs := hypervisor.ReverseLayers(storageConfigs, func(idx int, _ *types.StorageConfig) string { return DevPath(idx) })
 	return hypervisor.BuildBaseCmdline(
-		"console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1",
+		"console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
 		strings.Join(layerDevs, ","),
 		DevPath(len(layerDevs)),
 		networkConfigs, vmName, dnsServers,

@@ -94,6 +94,10 @@ With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as 
 - **Balloon**: 25% of memory auto-returned via virtio-balloon with deflate-on-OOM and free-page reporting (VMs with < 256 MiB memory skip balloon)
 - **Watchdog**: hardware watchdog enabled by default for automatic guest reset on hang; `--no-watchdog` is an explicit compatibility opt-out for guests whose watchdog driver is unsafe during reboot
 
+## PCI Transport (Firecracker)
+
+Firecracker attaches virtio devices over MMIO by default (and adds `pci=off` to the guest command line itself). `--pci` on `vm run`/`vm create` starts Firecracker with `--enable-pci`, so the guest enumerates virtio-pci devices instead; this is the prerequisite for Firecracker device hot-plug (Developer Preview upstream). The transport is fixed for the VM's lifetime and travels with its snapshots: clones and restores relaunch on the transport the snapshot was taken with, and a snapshot cannot move between transports. The guest kernel needs `CONFIG_PCI`, `CONFIG_VIRTIO_PCI` and `CONFIG_ACPI`; distro kernels have both transports, while the sandbox guest kernel is built without `CONFIG_VIRTIO_MMIO`, so sandbox images can never use the MMIO transport (booting them on Firecracker at all is not validated yet). Cloud Hypervisor is always virtio-pci, so `--pci` is rejected there.
+
 ## Cloud-init & First Boot
 
 Cloudimg VMs receive a NoCloud cidata disk (FAT12 with `CIDATA` volume label) containing:

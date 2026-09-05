@@ -144,13 +144,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	defer slave.Close() //nolint:errcheck
 
 	// shell out: the firecracker binary is the authoritative VMM.
-	fcCmd := exec.Command( //nolint:gosec
-		fc.conf.FCBinary,
-		"--api-sock", sockPath,
-		"--log-path", fcLog,
-		"--level", "Warning",
-		"--id", rec.ID,
-	)
+	fcCmd := exec.Command(fc.conf.FCBinary, launchArgs(rec, sockPath, fcLog)...) //nolint:gosec
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
@@ -298,4 +292,12 @@ func closeFile(file *os.File) {
 	if file != nil {
 		_ = file.Close()
 	}
+}
+
+func launchArgs(rec *hypervisor.VMRecord, sockPath, fcLog string) []string {
+	args := []string{"--api-sock", sockPath, "--log-path", fcLog, "--level", "Warning", "--id", rec.ID}
+	if rec.Config.PCI {
+		args = append(args, "--enable-pci")
+	}
+	return args
 }

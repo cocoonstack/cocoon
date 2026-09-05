@@ -470,6 +470,9 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 // validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create and debug so the capability gate list cannot drift.
 func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 	if !conf.UseFirecracker {
+		if vmCfg.PCI {
+			return fmt.Errorf("--pci is Firecracker only: Cloud Hypervisor always uses virtio-pci")
+		}
 		return nil
 	}
 	switch {
