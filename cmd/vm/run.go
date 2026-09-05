@@ -26,7 +26,6 @@ import (
 
 const rollbackTimeout = 30 * time.Second
 
-// cloneResult is the clone JSON envelope: the VM record plus the guest-side Hints a Firecracker --pci clone still needs.
 type cloneResult struct {
 	*types.VM
 	Hints []string `json:"hints,omitempty"`
@@ -147,7 +146,6 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return cmp.Or(finishErr, jsonErr)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
-	// The PCI rescan comes first: the post-clone setup below names interfaces that only exist after it.
 	printGuestHints(hints)
 	printPostCloneHints(vm)
 	return finishErr
