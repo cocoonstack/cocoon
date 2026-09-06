@@ -396,7 +396,6 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 	}
 }
 
-// newTestCNIWithStore builds a CNI over a real JSON store and a recordingExec-backed libcni.
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
 	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
@@ -445,7 +444,6 @@ func testVMCfg() *types.VMConfig {
 	return &types.VMConfig{Config: types.Config{CPU: 2, Network: "cni-bridge"}}
 }
 
-// seedRecords inserts one record per ifName, with ID "n-<ifName>".
 func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
 	t.Helper()
 	if err := c.update(t.Context(), func(tx *netTx) error {

@@ -10,7 +10,6 @@ import (
 
 const lockSuffix = ".lock"
 
-// Path returns the lock file path for vmID under rootDir.
 func Path(rootDir, vmID string) string {
 	return filepath.Join(lockDir(rootDir), vmID+lockSuffix)
 }

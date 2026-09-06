@@ -77,7 +77,6 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	return c, nil
 }
 
-// Type returns the network provider identifier.
 func (c *CNI) Type() string { return typ }
 
 // Verify checks the netns and every expected TAP inside it.

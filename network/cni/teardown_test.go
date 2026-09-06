@@ -66,7 +66,6 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	}
 }
 
-// TestAggregateTeardownRecovery rolls a deleting aggregate forward: all rows and the netns go.
 func TestAggregateTeardownRecovery(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -90,7 +89,6 @@ func TestAggregateTeardownRecovery(t *testing.T) {
 	}
 }
 
-// TestAggregateRecoveryAfterNetnsGone converges the crash window between netns removal and the record sweep: TAP deletion is skipped (the TAPs died with the ns), DELs still run, rows sweep, the tombstone finalizes.
 func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -140,7 +138,6 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	}
 }
 
-// TestSubsetFailureKeepsTombstone pins the retry story: a failing DEL keeps the row and the subset tombstone, and the error names the retry path.
 func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	exec.failIf = "eth1"
@@ -172,7 +169,6 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 	assertRecordIDs(t, c, []string{"n-eth0"})
 }
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires byte-identical output to the legacy storage layer's writes.
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -230,7 +226,6 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 }
 
-// TestAddRefusesAfterAggregateRollForward pins the entry rule: recovery of a whole-VM deleting tombstone completes the teardown and refuses the Add; a retry then proceeds on the clean slate.
 func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -265,7 +260,6 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	}
 }
 
-// TestAddRefusesAfterSubsetRollForward pins the §5 binding rule without a mode exception: even a subset deleting recovery fails the current Add; the retry proceeds from the recovered state.
 func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

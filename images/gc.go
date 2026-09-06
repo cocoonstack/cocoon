@@ -38,8 +38,7 @@ type GCModuleConfig[E any] struct {
 	Removers  []func(string) error
 	TempDir   string
 	// DirOnly: true for OCI (temp dirs), false for cloudimg (temp files).
-	DirOnly bool
-	// PinnedElsewhere is optional.
+	DirOnly         bool
 	PinnedElsewhere PinRecheck
 }
 

@@ -18,12 +18,10 @@ type Model struct {
 	dirty  bool
 }
 
-// NewModel returns an empty namespace model.
 func NewModel() *Model {
 	return &Model{tables: map[string]*table{}}
 }
 
-// Get returns the raw record under (tbl, id).
 func (m *Model) Get(tbl, id string) (json.RawMessage, bool) {
 	t := m.tables[tbl]
 	if t == nil {
@@ -61,7 +59,6 @@ func (m *Model) Delete(tbl, id string) {
 	m.dirty = true
 }
 
-// Dirty reports whether any write touched the model since decode.
 func (m *Model) Dirty() bool { return m.dirty }
 
 // Scan yields (tbl, id) pairs in insertion order; fn errors abort and propagate.
@@ -78,7 +75,6 @@ func (m *Model) Scan(tbl string, fn func(id string, raw json.RawMessage) error) 
 	return nil
 }
 
-// Len returns tbl's record count.
 func (m *Model) Len(tbl string) int {
 	t := m.tables[tbl]
 	if t == nil {

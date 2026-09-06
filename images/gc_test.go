@@ -21,7 +21,6 @@ var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
-// TestGCCollectSkipsRepublishedBlob pins the loose-GC revalidation: a digest that became referenced after the snapshot (a publish finished and released its lock) must survive Collect.
 func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -76,7 +75,6 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	}
 }
 
-// TestLegacyDifferentialTrace replays the fixture op sequence over meta-json and requires byte-identical output to the legacy storage layer's writes.
 func TestLegacyDifferentialTrace(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -129,7 +127,6 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	}
 }
 
-// TestGCCollectRespectsExternalPins pins the create-window race: a VM pin committed after the GC snapshot must save the blob via the under-lock recheck (design §5 step 2).
 func TestGCCollectRespectsExternalPins(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -171,7 +168,6 @@ func TestGCCollectRespectsExternalPins(t *testing.T) {
 	}
 }
 
-// TestPinBlobs pins the primitive: the digest lock excludes a concurrent taker while held, releases cleanly, and a missing blob fails the pin.
 func TestPinBlobs(t *testing.T) {
 	cfg := &BaseConfig{RootDir: t.TempDir(), Subdir: "oci", BlobExt: ".erofs"}
 	if err := cfg.EnsureDirs(); err != nil {

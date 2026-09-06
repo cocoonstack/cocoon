@@ -28,7 +28,6 @@ func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hyper
 	return owner, err
 }
 
-// FindVM resolves ref to its owning hypervisor and the resolved VM.
 func FindVM(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	hypers, err := InitAllHypervisors(ctx, conf)
 	if err != nil {
