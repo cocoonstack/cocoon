@@ -153,11 +153,9 @@ func DoJSONOnce[T any](ctx context.Context, hc *http.Client, method, url, kind s
 	return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
 }
 
-// DoJSONWithRetry is DoJSONOnce over DoAPIWithRetry, for idempotent endpoints.
+// DoJSONWithRetry is DoJSONOnce under DoWithRetry, for idempotent endpoints.
 func DoJSONWithRetry[T any](ctx context.Context, hc *http.Client, method, url, kind string, payload T, successCodes ...int) ([]byte, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal %s: %w", kind, err)
-	}
-	return DoAPIWithRetry(ctx, hc, method, url, body, successCodes...)
+	return DoWithRetry(ctx, func() ([]byte, error) {
+		return DoJSONOnce(ctx, hc, method, url, kind, payload, successCodes...)
+	})
 }

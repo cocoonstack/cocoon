@@ -74,7 +74,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		}
 	}
 
-	return utils.AtomicWriteJSONNoSync(path, raw)
+	return utils.AtomicWriteJSON(path, raw, utils.NoSync)
 }
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
@@ -152,9 +152,6 @@ func patchRawObject(raw json.RawMessage, fn func(map[string]json.RawMessage) err
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("decode object: %w", err)
-	}
-	if obj == nil {
-		obj = map[string]json.RawMessage{}
 	}
 	if err := fn(obj); err != nil {
 		return nil, err

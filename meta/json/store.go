@@ -308,7 +308,7 @@ func commitLocked(st *nsState, l *loaded) error {
 			return err
 		}
 	}
-	if err := utils.AtomicWriteFileNoSync(path, data, 0o644); err != nil {
+	if err := utils.AtomicWriteFile(path, data, 0o644, utils.NoSync); err != nil {
 		return code(err, meta.ErrIO)
 	}
 	return crash("main-renamed")

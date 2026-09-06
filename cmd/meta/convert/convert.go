@@ -243,7 +243,7 @@ func duplicateGeneration(spec Spec, nsName string) error {
 	if err != nil {
 		return err
 	}
-	return utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644)
+	return utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644, utils.Sync)
 }
 
 func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
@@ -434,7 +434,7 @@ func saveManifest(root string, m *Manifest) error {
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return err
 	}
-	return utils.AtomicWriteFile(manifestPath(root), raw, 0o644)
+	return utils.AtomicWriteFile(manifestPath(root), raw, 0o644, utils.Sync)
 }
 
 func finishManifest(root string) error {

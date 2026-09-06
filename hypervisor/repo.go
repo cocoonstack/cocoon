@@ -16,6 +16,17 @@ type vmTx struct {
 	w   meta.Writer
 }
 
+func (t *vmTx) loadDetached(id string) (VMRecord, error) {
+	r, err := t.Get(id)
+	if err != nil {
+		return VMRecord{}, err
+	}
+	if r == nil {
+		return VMRecord{}, fmt.Errorf("%q not found", id)
+	}
+	return *r, nil
+}
+
 func (t *vmTx) getRecord(id string) (*VMRecord, error) {
 	rec, err := t.Get(id)
 	if err != nil {

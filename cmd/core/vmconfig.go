@@ -307,9 +307,6 @@ func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
 	autoIdx := 1
 	for i := range specs {
 		specs[i].FSType = cmp.Or(specs[i].FSType, types.FSTypeExt4)
-		if specs[i].FSType != types.FSTypeExt4 && specs[i].FSType != types.FSTypeNone {
-			return fmt.Errorf("--data-disk: invalid fstype %q", specs[i].FSType)
-		}
 		if specs[i].Name == "" {
 			for {
 				candidate := fmt.Sprintf("data%d", autoIdx)

@@ -32,12 +32,6 @@ type Bridge struct {
 
 // New: the bridge device must already exist.
 func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	if bridgeDev == "" {
-		return nil, fmt.Errorf("bridge device name is required")
-	}
 	br, err := netlink.LinkByName(bridgeDev)
 	if err != nil {
 		return nil, fmt.Errorf("bridge %s: %w", bridgeDev, err)

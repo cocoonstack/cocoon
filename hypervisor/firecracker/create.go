@@ -132,7 +132,7 @@ func EnsureVmlinux(kernelPath string) (string, error) {
 		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
 	}
 
-	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600); err != nil {
+	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600, utils.Sync); err != nil {
 		return "", fmt.Errorf("write vmlinux: %w", err)
 	}
 	return vmlinuxPath, nil

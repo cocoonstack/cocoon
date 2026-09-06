@@ -18,24 +18,14 @@ const (
 // SyncMode selects whether a write helper fsyncs its output.
 type SyncMode bool
 
-// AtomicWriteFile writes data via temp + fsync + rename so readers never see a partial file.
-func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	return atomicWriteFile(path, data, perm, true)
+// AtomicWriteFile writes data via temp + rename so readers never see a partial file; Sync fsyncs it, NoSync suits run-dir files regenerated on the next launch.
+func AtomicWriteFile(path string, data []byte, perm os.FileMode, mode SyncMode) error {
+	return atomicWriteFile(path, data, perm, bool(mode))
 }
 
-// AtomicWriteFileNoSync is AtomicWriteFile without fsyncs, for transient run-dir files regenerated on the next launch.
-func AtomicWriteFileNoSync(path string, data []byte, perm os.FileMode) error {
-	return atomicWriteFile(path, data, perm, false)
-}
-
-// AtomicWriteJSON marshals v to JSON and writes it atomically.
-func AtomicWriteJSON(path string, v any) error {
-	return atomicWriteJSON(path, v, true)
-}
-
-// AtomicWriteJSONNoSync marshals v and writes it atomically without fsync (see AtomicWriteFileNoSync).
-func AtomicWriteJSONNoSync(path string, v any) error {
-	return atomicWriteJSON(path, v, false)
+// AtomicWriteJSON marshals v to JSON and writes it atomically (see AtomicWriteFile).
+func AtomicWriteJSON(path string, v any, mode SyncMode) error {
+	return atomicWriteJSON(path, v, bool(mode))
 }
 
 // ReadJSONFile loads path and unmarshals it into v.

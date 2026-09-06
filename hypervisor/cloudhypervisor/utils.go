@@ -51,7 +51,7 @@ type chRestoreConfig struct {
 
 func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRecord, args []string) {
 	line := ch.conf.CHBinary + " " + strings.Join(args, " ")
-	if err := utils.AtomicWriteFileNoSync(filepath.Join(rec.RunDir, cmdlineFileName), []byte(line), 0o600); err != nil {
+	if err := utils.AtomicWriteFile(filepath.Join(rec.RunDir, cmdlineFileName), []byte(line), 0o600, utils.NoSync); err != nil {
 		log.WithFunc("cloudhypervisor.saveCmdline").Warnf(ctx, "save cmdline: %v", err)
 	}
 }
@@ -89,25 +89,19 @@ func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConf
 	if _, statErr := os.Stat(filepath.Join(srcDir, stateJSONName)); statErr != nil {
 		return fmt.Errorf("state.json missing: %w", statErr)
 	}
-	hasMemory, memErr := hasMemoryRangeFile(srcDir)
-	if memErr != nil {
-		return fmt.Errorf("read snapshot dir: %w", memErr)
+	return requireMemoryRangeFile(srcDir)
+}
+
+// requireMemoryRangeFile fails when srcDir has no CH memory-range-* file; a missing prefix is enough to fail vm.restore.
+func requireMemoryRangeFile(srcDir string) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read snapshot dir: %w", err)
 	}
-	if !hasMemory {
+	if !slices.ContainsFunc(entries, func(e os.DirEntry) bool { return strings.HasPrefix(e.Name(), memoryRangeFile) }) {
 		return fmt.Errorf("no memory-range-* file in snapshot")
 	}
 	return nil
-}
-
-// hasMemoryRangeFile reports whether srcDir has at least one CH memory-range-* file. A missing prefix is enough to fail vm.restore.
-func hasMemoryRangeFile(srcDir string) (bool, error) {
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return false, err
-	}
-	return slices.ContainsFunc(entries, func(e os.DirEntry) bool {
-		return strings.HasPrefix(e.Name(), memoryRangeFile)
-	}), nil
 }
 
 // vmAPIOnce is a single PUT for non-idempotent endpoints; returns raw body so add-fs/add-device can decode PciDeviceInfo.
@@ -297,7 +291,7 @@ func saveConsolePTY(ctx context.Context, vmID, runDir, sockPath string, directBo
 	if pty == "" {
 		return
 	}
-	if err := utils.AtomicWriteFileNoSync(hypervisor.ConsolePTYPath(runDir), []byte(pty), 0o600); err != nil {
+	if err := utils.AtomicWriteFile(hypervisor.ConsolePTYPath(runDir), []byte(pty), 0o600, utils.NoSync); err != nil {
 		log.WithFunc("cloudhypervisor.saveConsolePTY").Warnf(ctx, "save console PTY for %s: %v", vmID, err)
 	}
 }

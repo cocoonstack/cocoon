@@ -20,7 +20,7 @@ func TestWatchFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := AtomicWriteFile(target, []byte(`{"v":1}`), 0o644); err != nil {
+	if err := AtomicWriteFile(target, []byte(`{"v":1}`), 0o644, Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -44,7 +44,7 @@ func TestWatchFileDebounce(t *testing.T) {
 	}
 
 	for i := range 5 {
-		if err := AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644); err != nil {
+		if err := AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644, Sync); err != nil {
 			t.Fatal(err)
 		}
 	}

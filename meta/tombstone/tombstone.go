@@ -73,11 +73,6 @@ func (t *Table) Get(ctx context.Context, r meta.Reader, id string) (*Record, err
 	return rec, err
 }
 
-// Scan yields every tombstone (the recovery sweep runs before discovery).
-func (t *Table) Scan(ctx context.Context, r meta.Reader, fn func(id string, rec *Record) error) error {
-	return t.recs.Scan(ctx, r, fn)
-}
-
 // Lease inserts id's tombstone with a fresh lease and its complete payload; an existing tombstone is ErrConflict — another worker owns the candidate.
 func (t *Table) Lease(ctx context.Context, w meta.Writer, id string, p Payload) (string, error) {
 	leaseID := utils.GenerateID()
@@ -134,7 +129,7 @@ func (t *Table) Finalize(ctx context.Context, w meta.Writer, id, leaseID string)
 // PendingIDs lists every tombstoned id (the recovery sweep's work list).
 func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error) {
 	var ids []string
-	if err := t.Scan(ctx, r, func(id string, _ *Record) error {
+	if err := t.recs.Scan(ctx, r, func(id string, _ *Record) error {
 		ids = append(ids, id)
 		return nil
 	}); err != nil {

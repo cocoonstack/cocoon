@@ -2,8 +2,6 @@ package firecracker
 
 import (
 	"context"
-	"net/http"
-	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/utils"
@@ -28,17 +26,12 @@ func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
 			if fc.conf.ForceStop() {
 				return fc.forceTerminate(ctx, sockPath, pid)
 			}
-			return fc.gracefulStop(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, sockPath, pid, fc.conf.StopTimeout())
+			hc := utils.NewSocketHTTPClient(sockPath)
+			return fc.GracefulStop(ctx, rec.ID, pid, fc.conf.StopTimeout(),
+				func() error { return sendCtrlAltDel(ctx, hc) },
+				func() error { return fc.forceTerminate(ctx, sockPath, pid) })
 		},
 	}
-}
-
-func (fc *Firecracker) gracefulStop(ctx context.Context, hc *http.Client, vmID, sockPath string, pid int, timeout time.Duration) error {
-	return fc.GracefulStop(
-		ctx, vmID, pid, timeout,
-		func() error { return sendCtrlAltDel(ctx, hc) },
-		func() error { return fc.forceTerminate(ctx, sockPath, pid) },
-	)
 }
 
 func (fc *Firecracker) forceTerminate(ctx context.Context, sockPath string, pid int) error {

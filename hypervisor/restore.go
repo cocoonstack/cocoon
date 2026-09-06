@@ -26,17 +26,6 @@ func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord
 	return nil
 }
 
-func (b *Backend) ResolveForRestore(ctx context.Context, vmRef string) (string, *VMRecord, error) {
-	vmID, rec, err := b.ResolveAndLoad(ctx, vmRef)
-	if err != nil {
-		return "", nil, err
-	}
-	if err := restorableState(vmID, &rec); err != nil {
-		return "", nil, err
-	}
-	return vmID, &rec, nil
-}
-
 func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord, pid int) (*types.VM, error) {
 	now := timeNow()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
@@ -179,7 +168,7 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 }
 
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
-	vmID, _, err := b.ResolveForRestore(ctx, vmRef)
+	vmID, _, err := b.ResolveAndLoad(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err
 	}

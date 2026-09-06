@@ -15,6 +15,9 @@ import (
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/images/cloudimg"
+	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -93,63 +96,53 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 }
 
 func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	logger := log.WithFunc("cmd.images.importCloudimgFiles")
-	_, cloudimgStore, err := cmdcore.InitImageBackendsForPull(ctx, conf)
-	if err != nil {
-		return err
-	}
-	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
+	return importCloudimg(ctx, conf, name, func() string {
 		if len(files) == 1 {
 			return "hashing " + files[0]
 		}
 		return fmt.Sprintf("hashing split qcow2 parts (%d files)", len(files))
+	}, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
+		return store.Import(ctx, name, tracker, files...)
 	})
-	if err := cloudimgStore.Import(ctx, name, tracker, files...); err != nil {
-		return fmt.Errorf("import %s: %w", name, err)
-	}
-	return nil
 }
 
 func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	logger := log.WithFunc("cmd.images.importOCIFiles")
-	ociStore, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
-	if err != nil {
-		return err
-	}
-	tracker := ociTracker(ctx, logger, name, func(total int) string {
+	return importOCI(ctx, conf, name, func(total int) string {
 		return fmt.Sprintf("importing %s (%d layer(s))", name, total)
+	}, func(store *oci.OCI, tracker progress.Tracker) error {
+		return store.Import(ctx, name, tracker, files...)
 	})
-	if err := ociStore.Import(ctx, name, tracker, files...); err != nil {
-		return fmt.Errorf("import %s: %w", name, err)
-	}
-	return nil
 }
 
 func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	logger := log.WithFunc("cmd.images.importCloudimgReader")
-	_, cloudimgStore, err := cmdcore.InitImageBackendsForPull(ctx, conf)
+	return importCloudimg(ctx, conf, name, func() string { return "reading stream for " + name }, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
+		return store.ImportFromReader(ctx, name, tracker, r)
+	})
+}
+
+func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
+	return importOCI(ctx, conf, name, func(int) string { return fmt.Sprintf("importing %s (1 layer from stream)", name) }, func(store *oci.OCI, tracker progress.Tracker) error {
+		return store.ImportFromReader(ctx, name, tracker, r)
+	})
+}
+
+func importCloudimg(ctx context.Context, conf *config.Config, name string, downloadMsg func() string, do func(*cloudimg.CloudImg, progress.Tracker) error) error {
+	_, store, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
 		return err
 	}
-	tracker := cloudimgImportTracker(ctx, logger, name, func() string {
-		return "reading stream for " + name
-	})
-	if err := cloudimgStore.ImportFromReader(ctx, name, tracker, r); err != nil {
+	if err := do(store, cloudimgImportTracker(ctx, log.WithFunc("cmd.images.importCloudimg"), name, downloadMsg)); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil
 }
 
-func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	logger := log.WithFunc("cmd.images.importOCIReader")
-	ociStore, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
+func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg func(int) string, do func(*oci.OCI, progress.Tracker) error) error {
+	store, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
 		return err
 	}
-	tracker := ociTracker(ctx, logger, name, func(int) string {
-		return fmt.Sprintf("importing %s (1 layer from stream)", name)
-	})
-	if err := ociStore.ImportFromReader(ctx, name, tracker, r); err != nil {
+	if err := do(store, ociTracker(ctx, log.WithFunc("cmd.images.importOCI"), name, pullMsg)); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil

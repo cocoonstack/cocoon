@@ -193,17 +193,17 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("launch FC: %w", err)
 	}
-	if err := loadSnapshotFC(ctx, cl.sockPath, cl.runDir, netOverrides, vsockPath); err != nil {
+	fail := func(err error) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
 		plan.close()
-		return 0, nil, nil, fmt.Errorf("snapshot/load: %w", err)
+		return 0, nil, nil, err
+	}
+	if err := loadSnapshotFC(ctx, cl.sockPath, cl.runDir, netOverrides, vsockPath); err != nil {
+		return fail(fmt.Errorf("snapshot/load: %w", err))
 	}
 	if err := verifyDriveFDs(pid, plan.binds); err != nil {
-		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
-		plan.close()
-		return 0, nil, nil, fmt.Errorf("bind redirect lost during load (source mutated concurrently): %w", err)
+		return fail(fmt.Errorf("bind redirect lost during load (source mutated concurrently): %w", err))
 	}
 	return pid, leaseControl, plan, nil
 }

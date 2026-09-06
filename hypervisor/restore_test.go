@@ -192,7 +192,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	}
 }
 
-func TestResolveForRestoreStates(t *testing.T) {
+func TestRestorableStates(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	tests := []struct {
 		name    string
@@ -216,13 +216,14 @@ func TestResolveForRestoreStates(t *testing.T) {
 				t.Fatalf("seed state: %v", err)
 			}
 
-			_, rec, err := b.ResolveForRestore(t.Context(), id)
+			rec, err := b.LoadRecord(t.Context(), id)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			err = restorableState(id, &rec)
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Fatalf("ResolveForRestore: %v", err)
-				}
-				if rec.State != tt.state {
-					t.Errorf("state %s, want %s", rec.State, tt.state)
+					t.Fatalf("restorableState: %v", err)
 				}
 				return
 			}

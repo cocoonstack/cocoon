@@ -24,11 +24,6 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
 }
 
-// InitForRecovery is Init without the manifest guard — the conversion tool creates its target while the manifest is necessarily present (§6).
-func InitForRecovery(ctx context.Context, dbPath string, namespaces ...Namespace) error {
-	return initStore(ctx, dbPath, namespaces)
-}
-
 // InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
 func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	// Fast path: a healthy store skips the lock entirely.
@@ -47,13 +42,13 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 	})
 }
 
-// InitForRecoveryIfNeeded creates or repairs the conversion target, passing a completed one through.
+// InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard — the conversion tool creates its target while the manifest is necessarily present (§6) — and passes a completed one through.
 func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	need, err := initNeeded(dbPath)
 	if err != nil || !need {
 		return err
 	}
-	return InitForRecovery(ctx, dbPath, namespaces...)
+	return initStore(ctx, dbPath, namespaces)
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {

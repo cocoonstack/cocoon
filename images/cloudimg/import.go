@@ -108,62 +108,18 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
 }
 
-func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
-	logger := log.WithFunc("cloudimg.importQcow2Concat")
-
+func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) (err error) {
 	if len(file) == 0 {
 		return errors.New("no qcow2 files provided")
 	}
-
-	if sniffErr := sniffConcatHead(file); sniffErr != nil {
-		return fmt.Errorf("import %s: %w", name, sniffErr)
-	}
-
-	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
-
-	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	h := sha256.New()
-	w := io.MultiWriter(tmpFile, h)
-
+	readers := make([]io.Reader, 0, len(file))
 	for _, filePath := range file {
 		src, openErr := os.Open(filePath) //nolint:gosec
 		if openErr != nil {
 			return fmt.Errorf("open %s: %w", filePath, openErr)
 		}
-		_, copyErr := io.Copy(w, src)
-		src.Close() //nolint:errcheck,gosec
-		if copyErr != nil {
-			return fmt.Errorf("copy %s: %w", filePath, copyErr)
-		}
+		defer func() { err = errors.Join(err, src.Close()) }()
+		readers = append(readers, src)
 	}
-
-	digestHex := hex.EncodeToString(h.Sum(nil))
-	logger.Debugf(ctx, "concatenated %d file(s) -> sha256:%s", len(file), digestHex[:12])
-	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
-}
-
-func sniffConcatHead(file []string) error {
-	var head [8]byte
-	collected := 0
-	for _, fp := range file {
-		if collected >= len(head) {
-			break
-		}
-		f, err := os.Open(fp) //nolint:gosec // path is caller input
-		if err != nil {
-			return fmt.Errorf("open %s: %w", fp, err)
-		}
-		n, readErr := f.ReadAt(head[collected:], 0)
-		f.Close() //nolint:errcheck,gosec
-		if readErr != nil && !errors.Is(readErr, io.EOF) {
-			return fmt.Errorf("peek %s: %w", fp, readErr)
-		}
-		collected += n
-	}
-	return sniffHead(head[:collected])
+	return importQcow2Reader(ctx, conf, store, name, tracker, io.MultiReader(readers...))
 }
