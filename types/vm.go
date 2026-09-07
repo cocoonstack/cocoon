@@ -1,6 +1,7 @@
 package types
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"time"
@@ -148,10 +149,7 @@ func (v *VM) ResolvedNetBackend() string {
 		return v.NetBackend
 	}
 	if nic := v.firstNIC(); nic != nil {
-		if nic.Backend != "" {
-			return nic.Backend
-		}
-		return BackendCNI
+		return cmp.Or(nic.Backend, BackendCNI)
 	}
 	return ""
 }
