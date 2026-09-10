@@ -33,6 +33,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	password, _ := cmd.Flags().GetString("password")
 	noDirectIO, _ := cmd.Flags().GetBool("no-direct-io")
 	noWatchdog, _ := cmd.Flags().GetBool("no-watchdog")
+	noBalloon, _ := cmd.Flags().GetBool("no-balloon")
 	windows, _ := cmd.Flags().GetBool("windows")
 	sharedMemory, _ := cmd.Flags().GetBool("shared-memory")
 	hugePages, _ := cmd.Flags().GetBool("hugepages")
@@ -67,6 +68,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 		Network:       network,
 		NoDirectIO:    noDirectIO,
 		NoWatchdog:    noWatchdog,
+		NoBalloon:     noBalloon,
 		Windows:       windows,
 		SharedMemory:  sharedMemory,
 		HugePages:     hugePages,
@@ -108,6 +110,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
 	}
+	noBalloon := snapCfg.NoBalloon
+	if cmd.Flags().Changed("no-balloon") {
+		noBalloon, _ = cmd.Flags().GetBool("no-balloon")
+	}
 
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
@@ -132,6 +138,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		Network:       network,
 		NoDirectIO:    noDirectIO,
 		NoWatchdog:    snapCfg.NoWatchdog,
+		NoBalloon:     noBalloon,
 		Windows:       snapCfg.Windows,
 		SharedMemory:  snapCfg.SharedMemory,
 		HugePages:     snapCfg.HugePages,

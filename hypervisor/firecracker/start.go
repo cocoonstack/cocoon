@@ -95,7 +95,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		}
 	}
 
-	if size, ok := hypervisor.BalloonSize(rec.Config.Memory, rec.Config.Windows); ok {
+	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
 		if err := putBalloon(ctx, hc, fcBalloon{
 			AmountMiB:         int(size >> 20), //nolint:mnd
 			DeflateOnOOM:      true,

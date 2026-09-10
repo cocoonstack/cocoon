@@ -57,7 +57,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 
 	cfg.Serial, cfg.Console = serialConsoleFor(hypervisor.IsDirectBoot(rec.BootConfig), consoleSockPath)
 
-	if size, ok := hypervisor.BalloonSize(mem, rec.Config.Windows); ok {
+	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
 		cfg.Balloon = &chBalloon{
 			Size:              size,
 			DeflateOnOOM:      true,

@@ -131,12 +131,12 @@ func ConsolePTYPath(runDir string) string { return filepath.Join(runDir, Console
 
 func VsockSockPath(runDir string) string { return filepath.Join(runDir, VsockSockName) }
 
-// BalloonSize returns (bytes, enabled); disabled on Windows (virtio-win driver loops on deflation) and below MinBalloonMemory.
-func BalloonSize(memoryBytes int64, windows bool) (int64, bool) {
-	if windows || memoryBytes < MinBalloonMemory {
+// BalloonSize returns (bytes, enabled); off when opted out, on Windows (virtio-win driver loops on deflation), and below MinBalloonMemory.
+func BalloonSize(cfg types.Config) (int64, bool) {
+	if cfg.NoBalloon || cfg.Windows || cfg.Memory < MinBalloonMemory {
 		return 0, false
 	}
-	return memoryBytes / DefaultBalloonDiv, true
+	return cfg.Memory / DefaultBalloonDiv, true
 }
 
 // IsDirectBoot reports whether boot uses a direct kernel (OCI) rather than UEFI firmware (cloudimg).

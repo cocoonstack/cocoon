@@ -58,7 +58,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **Copy-on-write clone restore** — Cloud Hypervisor clones of plain private-anon snapshots default to `mmap` memory restore: no eager copy, page cache shared across sibling clones; hugepages/shared snapshots fall back to eager copy with a warning
 - **Hugepages** — opt-in via `vm create --hugepages` (Cloud Hypervisor only); backs VM memory with hugetlbfs at the cost of the mmap restore fast path for that VM's snapshots (never supported on Firecracker, whose snapshots cannot restore from hugetlbfs)
 - **Mergeable memory** — opt-in `--mergeable` (Cloud Hypervisor only) madvises guest memory `MADV_MERGEABLE` so host KSM can dedup identical pages across VMs; excludes `--hugepages`/`--shared-memory`
-- **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB
+- **Memory balloon** — 25% of memory returned via virtio-balloon (deflate-on-OOM, free-page reporting) when memory >= 256 MiB; `--no-balloon` opts out
 - **Graceful shutdown** — ACPI power-button for UEFI VMs with configurable timeout, fallback to SIGTERM → SIGKILL
 - **Interactive console** — `cocoon vm console` with bidirectional PTY relay, SSH-style escape sequences (`~.` disconnect, `~?` help), configurable escape character, SIGWINCH propagation
 - **Snapshot & clone** — `cocoon snapshot save` captures a running VM's full state (memory, disks, config); `cocoon vm clone` restores it as a new VM with fresh network and identity; guest resources (CPU, memory, storage, NIC count) inherit verbatim from the snapshot, while host-side cgroup CPU policy comes from clone flags (see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2))

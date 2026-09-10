@@ -83,4 +83,17 @@ func TestQcow2OverlayDiskArgs(t *testing.T) {
 	}
 }
 
+func TestNoBalloonOmitsTheDevice(t *testing.T) {
+	for _, noBalloon := range []bool{false, true} {
+		rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: noBalloon}}}}
+		got := buildVMConfig(rec, "", nil).Balloon
+		if (got == nil) != noBalloon {
+			t.Errorf("NoBalloon=%v: balloon = %+v", noBalloon, got)
+		}
+		if !noBalloon && got.Size != 256<<20 {
+			t.Errorf("balloon size = %d, want %d", got.Size, 256<<20)
+		}
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

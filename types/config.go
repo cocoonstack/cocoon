@@ -19,6 +19,7 @@ type Config struct {
 	Network       string `json:"network,omitempty"`      // CNI conflist name; empty = default
 	NoDirectIO    bool   `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
 	NoWatchdog    bool   `json:"no_watchdog,omitempty"`  // omit the virtio watchdog device (guest/driver compatibility)
+	NoBalloon     bool   `json:"no_balloon,omitempty"`   // omit the virtio-balloon device; the guest keeps all of its memory
 	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
 	// SharedMemory toggles CH memory shared=on (vhost-user-fs prerequisite); fixed at create, persists through clone/restore.
 	SharedMemory bool `json:"shared_memory,omitempty"`

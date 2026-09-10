@@ -146,3 +146,48 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestCloneVMConfigInheritsNoBalloon(t *testing.T) {
+	tests := []struct {
+		name string
+		snap bool
+		flag string
+		want bool
+	}{
+		{"inherits the snapshot", true, "", true},
+		{"flag turns it on", false, "true", true},
+		{"flag turns it off", true, "false", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().String("name", "c", "")
+			cmd.Flags().Int("nics", 0, "")
+			cmd.Flags().Int("queue-size", 0, "")
+			cmd.Flags().Int("disk-queue-size", 0, "")
+			cmd.Flags().Int("cpu-weight", 0, "")
+			cmd.Flags().Int64("cpu-quota-us", 0, "")
+			cmd.Flags().Int64("cpu-period-us", 0, "")
+			cmd.Flags().Int64("cpu-burst-us", 0, "")
+			cmd.Flags().String("cpuset-cpus", "", "")
+			cmd.Flags().String("network", "", "")
+			cmd.Flags().Bool("no-direct-io", false, "")
+			cmd.Flags().Bool("no-balloon", false, "")
+			cmd.Flags().String("restore-mode", "", "")
+			cmd.Flags().StringArray("data-disk", nil, "")
+			if tt.flag != "" {
+				if err := cmd.Flags().Set("no-balloon", tt.flag); err != nil {
+					t.Fatalf("set flag: %v", err)
+				}
+			}
+			snapCfg := types.SnapshotConfig{Config: types.Config{CPU: 1, Memory: 1 << 30, Storage: 10 << 30, NoBalloon: tt.snap}}
+			cfg, err := CloneVMConfigFromFlags(cmd, snapCfg)
+			if err != nil {
+				t.Fatalf("CloneVMConfigFromFlags: %v", err)
+			}
+			if cfg.NoBalloon != tt.want {
+				t.Errorf("NoBalloon = %v, want %v", cfg.NoBalloon, tt.want)
+			}
+		})
+	}
+}
