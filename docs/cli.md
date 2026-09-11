@@ -292,7 +292,7 @@ Applies to `cocoon vm debug`:
 | Flag        | Default              | Description                                        |
 | ----------- | -------------------- | -------------------------------------------------- |
 | `--max-cpu` | `8`                  | Max CPUs for the generated command                  |
-| `--balloon` | `0`                  | Balloon size in MB (0 = auto)                       |
+| `--balloon` | `0`                  | Balloon size in MB (0 = auto); ignored when the VM gets no balloon (`--no-balloon`, `--windows`, or memory < 256 MiB) |
 | `--cow`     |                      | COW disk path (default: auto-generated)             |
 | `--ch`      | `cloud-hypervisor`   | cloud-hypervisor binary path                        |
 
