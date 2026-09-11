@@ -46,6 +46,15 @@ func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) stri
 	return ""
 }
 
+// RecordedCOWPath reads the recorded path, not a conf-derived one: after a --run-dir change the disks stay where the record says.
+func RecordedCOWPath(rec *VMRecord) (string, error) {
+	cowPath := DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+	if cowPath == "" {
+		return "", fmt.Errorf("no COW disk recorded for %s", rec.ID)
+	}
+	return cowPath, nil
+}
+
 // CopyWritableDisks copies concurrently so pause-window wall time is the longest single copy, not the sum; durability is paid at persist.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}

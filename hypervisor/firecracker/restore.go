@@ -29,7 +29,7 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 }
 
 func (fc *Firecracker) restoreAfterExtractCOW(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-	cowPath, err := recordedCOWPath(rec)
+	cowPath, err := hypervisor.RecordedCOWPath(rec)
 	if err != nil {
 		return nil, err
 	}
