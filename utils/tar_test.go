@@ -509,12 +509,45 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 	}
 }
 
+func TestExtractFile_RunsAcrossReadBuffer(t *testing.T) {
+	data := make([]byte, extractReadBuf+3*sparseBlockSize)
+	for i := 0; i < sparseBlockSize; i++ {
+		data[i] = 0xA5
+	}
+	for i := extractReadBuf + sparseBlockSize; i < extractReadBuf+2*sparseBlockSize; i++ {
+		data[i] = 0x5A
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{Name: "memory", Mode: 0o600, Size: int64(len(data)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	if err := ExtractTar(dir, &buf); err != nil {
+		t.Fatalf("ExtractTar: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("extracted %d bytes differ from the %d-byte source (zero run across the read buffer, trailing hole)", len(got), len(data))
+	}
+}
+
 func TestExtractFile_AllZeroBlocks(t *testing.T) {
 	data := make([]byte, 12*1024)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "zeros.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -535,7 +568,7 @@ func TestExtractFile_NoZeroBlocks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dense.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -556,7 +589,7 @@ func TestExtractFile_MixedZeroAndData(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mixed.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -577,7 +610,7 @@ func TestExtractFile_EndsWithHole(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "endhole.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -595,7 +628,7 @@ func TestExtractFile_PartialBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "partial.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -613,7 +646,7 @@ func TestExtractFile_PartialZeroBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pzero.bin")
 
-	if err := extractFile(path, bytes.NewReader(data), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -633,7 +666,7 @@ func TestExtractFile_EmptyInput(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.bin")
 
-	if err := extractFile(path, bytes.NewReader(nil), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader(nil), 0o644, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -650,7 +683,7 @@ func TestExtractFile_SingleByte(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "single.bin")
 
-	if err := extractFile(path, bytes.NewReader([]byte{0x42}), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader([]byte{0x42}), 0o644, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -667,7 +700,7 @@ func TestExtractFile_SingleZeroByte(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "onezero.bin")
 
-	if err := extractFile(path, bytes.NewReader([]byte{0x00}), 0o644); err != nil {
+	if err := extractFile(path, bytes.NewReader([]byte{0x00}), 0o644, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -705,53 +738,6 @@ func TestIsAllZero(t *testing.T) {
 				t.Errorf("isAllZero: got %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestWriteBlockSparse_DataBlock(t *testing.T) {
-	dir := t.TempDir()
-	f, err := os.Create(filepath.Join(dir, "data.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close() //nolint:errcheck
-
-	chunk := []byte{1, 2, 3, 4}
-	hole, err := writeBlockSparse(f, chunk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hole {
-		t.Error("expected hole=false for data block")
-	}
-
-	f.Seek(0, io.SeekStart) //nolint:errcheck
-	got, _ := io.ReadAll(f)
-	if !bytes.Equal(got, chunk) {
-		t.Errorf("got %v, want %v", got, chunk)
-	}
-}
-
-func TestWriteBlockSparse_ZeroBlock(t *testing.T) {
-	dir := t.TempDir()
-	f, err := os.Create(filepath.Join(dir, "hole.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close() //nolint:errcheck
-
-	chunk := make([]byte, 4096)
-	hole, err := writeBlockSparse(f, chunk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hole {
-		t.Error("expected hole=true for zero block")
-	}
-
-	pos, _ := f.Seek(0, io.SeekCurrent)
-	if pos != 4096 {
-		t.Errorf("position: got %d, want 4096", pos)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"sync"
 )
 
 const (
@@ -20,14 +19,9 @@ const (
 
 	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
+	// extractReadBuf bounds one read; runs of data or zero blocks inside it coalesce into one write or one seek.
+	extractReadBuf = 1 << 20
 )
-
-var sparseBlockPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, sparseBlockSize)
-		return &b
-	},
-}
 
 // sparseSegment describes one contiguous data region in a sparse file.
 type sparseSegment struct {
@@ -85,7 +79,7 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 				return fmt.Errorf("extract sparse %s: %w", name, err)
 			}
 		} else {
-			if err := extractFile(outPath, tr, hdr.FileInfo().Mode()); err != nil {
+			if err := extractFile(outPath, tr, hdr.FileInfo().Mode(), hdr.Size); err != nil {
 				return fmt.Errorf("extract %s: %w", name, err)
 			}
 		}
@@ -139,29 +133,38 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 	return nil
 }
 
-func extractFile(path string, r io.Reader, perm os.FileMode) (err error) {
+func extractFile(path string, r io.Reader, perm os.FileMode, size int64) (err error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm) //nolint:gosec
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, f.Close()) }()
 
-	bp := sparseBlockPool.Get().(*[]byte)
-	buf := *bp
-	defer sparseBlockPool.Put(bp)
+	buf := make([]byte, min(int64(extractReadBuf), max(size, sparseBlockSize)))
 	var total int64
 	endsWithHole := false
 
 	for {
 		n, readErr := io.ReadFull(r, buf)
-		if n > 0 {
-			var writeErr error
-			endsWithHole, writeErr = writeBlockSparse(f, buf[:n])
-			if writeErr != nil {
-				return writeErr
+		for chunk := buf[:n]; len(chunk) > 0; {
+			hole := isAllZero(chunk[:min(sparseBlockSize, len(chunk))])
+			run := min(sparseBlockSize, len(chunk))
+			for run < len(chunk) && isAllZero(chunk[run:min(run+sparseBlockSize, len(chunk))]) == hole {
+				run += sparseBlockSize
 			}
-			total += int64(n)
+			run = min(run, len(chunk))
+			if hole {
+				_, err = f.Seek(int64(run), io.SeekCurrent)
+			} else {
+				_, err = f.Write(chunk[:run])
+			}
+			if err != nil {
+				return err
+			}
+			endsWithHole = hole
+			chunk = chunk[run:]
 		}
+		total += int64(n)
 		if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
 			break
 		}
@@ -178,16 +181,6 @@ func extractFile(path string, r io.Reader, perm os.FileMode) (err error) {
 	}
 
 	return nil
-}
-
-// writeBlockSparse seeks over all-zero chunks instead of writing them.
-func writeBlockSparse(f *os.File, chunk []byte) (hole bool, err error) {
-	if isAllZero(chunk) {
-		_, err = f.Seek(int64(len(chunk)), io.SeekCurrent)
-		return true, err
-	}
-	_, err = f.Write(chunk)
-	return false, err
 }
 
 func isAllZero(b []byte) bool {
