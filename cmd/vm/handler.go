@@ -24,3 +24,7 @@ func (h Handler) resolveRunningVM(ctx context.Context, conf *config.Config, op, 
 	}
 	return info, nil
 }
+
+func errBackendUnsupported(hyper hypervisor.Hypervisor, op string) error {
+	return fmt.Errorf("backend %s does not support %s", hyper.Type(), op)
+}

@@ -12,7 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Hibernate atomically snapshots a running VM and stops it; the snapshot point and the stop coincide, so `vm restore` resumes with nothing lost.
+// Hibernate atomically snapshots a running VM and stops it.
 func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.vm.hibernate")
@@ -24,7 +24,7 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	}
 	hib, ok := hyper.(hypervisor.Hibernator)
 	if !ok {
-		return fmt.Errorf("backend %s does not support hibernate", hyper.Type())
+		return errBackendUnsupported(hyper, "hibernate")
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {

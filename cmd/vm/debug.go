@@ -61,7 +61,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	}
 
 	if conf.UseFirecracker {
-		// FC requires uncompressed ELF kernel — resolve vmlinux path for debug output.
+		// FC requires an uncompressed ELF kernel.
 		if err := firecracker.EnsureVmlinuxBoot(boot); err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []
 	balloon, _ := cmd.Flags().GetInt("balloon")
 	cowPath, _ := cmd.Flags().GetString("cow")
 	chBin, _ := cmd.Flags().GetString("ch")
-	// runtime gating wins over --balloon so the printed command matches what cocoon would launch.
+	// Runtime gating wins over --balloon, so the printed command matches what cocoon would launch.
 	size, ok := hypervisor.BalloonSize(vmCfg.Config)
 	switch {
 	case !ok:

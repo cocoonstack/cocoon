@@ -9,7 +9,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 )
 
-// diskResult is the attach/detach JSON envelope; Hints carry the guest-side steps a Firecracker PCI VM still needs.
+// diskResult is the attach/detach JSON envelope.
 type diskResult struct {
 	VM    string   `json:"vm"`
 	Name  string   `json:"name"`

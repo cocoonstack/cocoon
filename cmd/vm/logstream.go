@@ -51,7 +51,7 @@ func streamLog(ctx context.Context, path string, follow bool, tail int) error {
 			if !ok {
 				return nil
 			}
-			// Sig mismatch catches O_TRUNC re-opens (CH/FC stamp a unique boot timestamp on line 1).
+			// Sig mismatch catches O_TRUNC re-opens.
 			newSig, _ := utils.FileHead(f, logHeadSigLen)
 			if !bytes.Equal(newSig, sig) {
 				if _, err := f.Seek(0, io.SeekStart); err != nil {

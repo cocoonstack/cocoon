@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -24,9 +25,11 @@ import (
 const (
 	// logHeadSigLen spans CH/FC's boot timestamp on line 1.
 	logHeadSigLen = 64
-	// logFollowDebounce coalesces fsnotify events before catch-up io.Copy fires.
+
 	logFollowDebounce = 100 * time.Millisecond
 )
+
+type batchOp func(hypervisor.Hypervisor, []string) ([]string, error)
 
 type attachedDevices struct {
 	Fs      []fs.Attached   `json:"fs,omitempty"`
@@ -174,7 +177,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// applyStopFlags maps --force (-1 = immediate kill; #82: FC guests without i8042 never answer CtrlAltDel) and --timeout onto the stop window; rm has no --timeout flag, that read no-ops.
+// applyStopFlags maps --force to an immediate kill: #82 FC guests without i8042 never answer CtrlAltDel.
 func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 	force, _ := cmd.Flags().GetBool("force")
 	timeout, _ := cmd.Flags().GetInt("timeout")
@@ -186,11 +189,11 @@ func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 	}
 }
 
-func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn func(hypervisor.Hypervisor, []string) ([]string, error)) error {
+func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn batchOp) error {
 	logger := log.WithFunc("cmd.vm." + name)
 	wantJSON := cliutil.WantJSON(cmd)
 	var allDone []string
-	var lastErr error
+	var errs []error
 	for hyper, refs := range routed {
 		done, err := fn(hyper, refs)
 		if !wantJSON {
@@ -199,12 +202,10 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 			}
 		}
 		allDone = append(allDone, done...)
-		if err != nil {
-			lastErr = err
-		}
+		errs = append(errs, err)
 	}
-	if lastErr != nil {
-		return fmt.Errorf("%s: %w", name, lastErr)
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
 		return jsonErr
@@ -215,7 +216,7 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 	return nil
 }
 
-// collectAttachedDevices reads fs/vfio devices; errors are logged and dropped so inspect tolerates a flaky vm.info.
+// collectAttachedDevices logs and drops errors so inspect tolerates a flaky vm.info.
 func collectAttachedDevices(ctx context.Context, hyper hypervisor.Hypervisor, ref string) *attachedDevices {
 	logger := log.WithFunc("cmd.vm.inspect")
 	out := &attachedDevices{}
