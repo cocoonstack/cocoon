@@ -51,7 +51,7 @@ Concurrent clones are first-class: sibling clones of one snapshot run fully in p
 
 ### Post-Clone Guest Setup
 
-After cloning, the guest resumes with new NICs (MAC addresses are handled automatically via NIC hot-swap during clone), but the guest OS still has the old IP configuration. You must reconfigure networking inside the guest:
+After cloning, the guest resumes with new NICs (MAC addresses are handled automatically via NIC hot-swap during clone), but the guest OS still has the old IP configuration. You must reconfigure networking inside the guest: `cocoon vm clone` prints the exact steps for that VM — a `--no-balloon` clone has no balloon to release, so it gets no `drop_caches` line.
 
 **Cloudimg VMs** (cloud-init re-initialization):
 
