@@ -149,13 +149,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 	}
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
-	info := &types.VM{
-		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
-		Config: *vmCfg, StorageConfigs: storageConfigs,
-		NetSetup:  net,
-		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
-	}
-	hypervisor.SetRunningSockets(info, runDir)
+	info := ch.RunningCloneRecord(vmID, vmCfg, storageConfigs, net, runDir, now)
 	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)

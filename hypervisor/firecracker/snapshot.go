@@ -46,7 +46,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			cowPath, err := recordedCOWPath(rec)
+			cowPath, err := hypervisor.RecordedCOWPath(rec)
 			if err != nil {
 				return err
 			}

@@ -130,13 +130,10 @@ func (v *VM) ResolvedNetnsPath() string {
 	if v == nil {
 		return ""
 	}
-	if v.NetnsPath != "" {
-		return v.NetnsPath
-	}
 	if nic := v.firstNIC(); nic != nil {
-		return nic.NetnsPath
+		return cmp.Or(v.NetnsPath, nic.NetnsPath)
 	}
-	return ""
+	return v.NetnsPath
 }
 
 // ResolvedNetBackend returns NetBackend, with NIC[0] fallback.
@@ -144,13 +141,10 @@ func (v *VM) ResolvedNetBackend() string {
 	if v == nil {
 		return ""
 	}
-	if v.NetBackend != "" {
-		return v.NetBackend
-	}
 	if nic := v.firstNIC(); nic != nil {
-		return cmp.Or(nic.Backend, BackendCNI)
+		return cmp.Or(v.NetBackend, nic.Backend, BackendCNI)
 	}
-	return ""
+	return v.NetBackend
 }
 
 // ResolvedNetBridgeDev returns NetBridgeDev, with NIC[0] fallback.
@@ -158,13 +152,10 @@ func (v *VM) ResolvedNetBridgeDev() string {
 	if v == nil {
 		return ""
 	}
-	if v.NetBridgeDev != "" {
-		return v.NetBridgeDev
-	}
 	if nic := v.firstNIC(); nic != nil {
-		return nic.BridgeDev
+		return cmp.Or(v.NetBridgeDev, nic.BridgeDev)
 	}
-	return ""
+	return v.NetBridgeDev
 }
 
 func (v *VM) firstNIC() *NetworkConfig {

@@ -45,6 +45,17 @@ func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSp
 	})
 }
 
+func (b *Backend) RunningCloneRecord(vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, runDir string, now time.Time) *types.VM {
+	info := &types.VM{
+		ID: vmID, Hypervisor: b.Typ, State: types.VMStateRunning,
+		Config: *vmCfg, StorageConfigs: storageConfigs,
+		NetSetup:  net,
+		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
+	}
+	SetRunningSockets(info, runDir)
+	return info
+}
+
 // FinalizeClone persists the record and emits the clone open-interval pair.
 func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string) error {
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {

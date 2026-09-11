@@ -34,10 +34,9 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			// Recorded path, not conf-derived: after a --run-dir change the disks stay where the record says.
-			cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
-			if cowPath == "" {
-				return fmt.Errorf("no COW disk recorded for %s", rec.ID)
+			cowPath, err := hypervisor.RecordedCOWPath(rec)
+			if err != nil {
+				return err
 			}
 			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
