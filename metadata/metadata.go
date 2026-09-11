@@ -12,7 +12,6 @@ const cidataLabel = "CIDATA"
 
 var (
 	tmplFuncs = template.FuncMap{
-		// yamlQuote escapes single quotes for YAML single-quoted strings.
 		"yamlQuote": func(s string) string {
 			return strings.ReplaceAll(s, "'", "''")
 		},
@@ -128,7 +127,7 @@ type NetworkInfo struct {
 	IP      string // e.g. "10.0.0.2"
 	Prefix  int    // CIDR prefix length, e.g. 24
 	Gateway string // e.g. "10.0.0.1"
-	MAC     string // MAC address for match:macaddress in network-config
+	MAC     string // matched by macaddress in network-config
 }
 
 // MountSpec is one cloud-init `mounts:` row; fields render verbatim.

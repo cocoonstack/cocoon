@@ -46,9 +46,9 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
-			if cowPath == "" {
-				return fmt.Errorf("no COW disk recorded for %s", rec.ID)
+			cowPath, err := recordedCOWPath(rec)
+			if err != nil {
+				return err
 			}
 			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
 		},
@@ -72,14 +72,14 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.Snapshot
 	return meta, nil
 }
 
-// refuseHotAttachedDisks mirrors the Cloud Hypervisor rule: a runtime-only disk has no sidecar entry, so a snapshot holding it could never restore.
+// a runtime-only disk has no sidecar entry, so the snapshot could never restore.
 func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
 	cfg, err := getVMConfig(ctx, hc)
 	if err != nil {
 		return err
 	}
 	if hot := hotAttachedDisks(cfg); len(hot) > 0 {
-		return fmt.Errorf("hot-attached disk %q: detach before snapshot or hibernate", hot[0].Name)
+		return fmt.Errorf("hot-attached disk %q: %w", hot[0].Name, hypervisor.ErrHotAttachedDisk)
 	}
 	return nil
 }

@@ -3,7 +3,7 @@ package hypervisor
 import "strings"
 
 const (
-	// TableRecords/TableNames name the vms-namespace tables; the composition root maps them onto the legacy file fields.
+	// TableRecords and TableNames map onto the legacy file fields in the composition root.
 	TableRecords = "records"
 	TableNames   = "names"
 )

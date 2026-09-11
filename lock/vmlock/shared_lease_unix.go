@@ -52,7 +52,7 @@ func NewSharedLease(ctx context.Context, rootDir, vmID string) (*SharedLease, er
 // File returns the locked file to pass through exec.Cmd.ExtraFiles.
 func (l *SharedLease) File() *os.File { return l.file }
 
-// Close drops this descriptor. The flock is released when the last descriptor inherited by any child closes.
+// Close drops this descriptor; the flock releases only when every inherited copy closes.
 func (l *SharedLease) Close() error {
 	if l.file == nil {
 		return nil

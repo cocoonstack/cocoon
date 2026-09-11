@@ -39,7 +39,9 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
 	}
-	_ = os.Remove(filepath.Join(rec.RunDir, restoreDirtyName))
+	if rmErr := os.Remove(filepath.Join(rec.RunDir, restoreDirtyName)); rmErr != nil && !os.IsNotExist(rmErr) {
+		log.WithFunc(b.Typ+".FinalizeRestore").Errorf(ctx, rmErr, "clear restore-dirty marker for %s; start will refuse it until the file goes", vmID)
+	}
 
 	info := rec.VM
 	info.Config = *vmCfg
@@ -114,7 +116,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
 }
 
-// failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
+// failRestore spares a stopped origin so hibernate wake stays retryable.
 func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMState) {
 	if origin == types.VMStateStopped {
 		return
@@ -188,11 +190,8 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 	if sErr := restorableState(vmID, &rec); sErr != nil {
 		return fail(sErr)
 	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
-	}
-	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
-		return fail(fmt.Errorf("network invariants violated: %w", vErr))
+	if vErr := validateRecordInvariants(&rec); vErr != nil {
+		return fail(vErr)
 	}
 	return vmID, &rec, unlock, nil
 }

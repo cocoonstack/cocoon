@@ -32,7 +32,7 @@ var nonImageSignatures = []struct {
 }
 
 type sourceImageInfo struct {
-	Format         string // "qcow2" or "raw"
+	Format         string
 	Compat         string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
 	HasBackingFile bool
 }

@@ -66,7 +66,6 @@ func (cw countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// rangeProbe carries the resolved URL and total size of a Range-capable source.
 type rangeProbe struct {
 	finalURL string
 	size     int64

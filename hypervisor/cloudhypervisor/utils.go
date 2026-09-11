@@ -56,7 +56,6 @@ func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRe
 	}
 }
 
-// cowPath returns the writable COW disk: raw for direct-boot (OCI), qcow2 overlay for UEFI (cloudimg).
 func (ch *CloudHypervisor) cowPath(vmID string, directBoot bool) string {
 	if directBoot {
 		return ch.conf.COWRawPath(vmID)
@@ -69,7 +68,7 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	return hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
 }
 
-// validateSnapshotIntegrityParsed checks the sidecar against the caller's parsed config.json plus state.json and a memory-range-* file; clone and restore parse config.json once for the whole sequence.
+// callers pass their parsed config.json so clone and restore decode it once.
 func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err
@@ -92,7 +91,7 @@ func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConf
 	return requireMemoryRangeFile(srcDir)
 }
 
-// requireMemoryRangeFile fails when srcDir has no CH memory-range-* file; a missing prefix is enough to fail vm.restore.
+// a missing memory-range-* prefix alone is enough to fail vm.restore.
 func requireMemoryRangeFile(srcDir string) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
@@ -104,18 +103,16 @@ func requireMemoryRangeFile(srcDir string) error {
 	return nil
 }
 
-// vmAPIOnce is a single PUT for non-idempotent endpoints; returns raw body so add-fs/add-device can decode PciDeviceInfo.
+// vmAPIOnce never retries: the CH endpoints it serves are not idempotent.
 func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string, body []byte, successCodes ...int) ([]byte, error) {
 	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, body, successCodes...)
 }
 
-// vmPutJSON marshals payload and PUTs it to a non-idempotent CH endpoint (no retry).
 func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind string, payload T, successCodes ...int) error {
 	_, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, kind, payload, successCodes...)
 	return err
 }
 
-// shutdownVM/pauseVM/resumeVM are CH state transitions via vmAPIOnce so a retry after a lost ACK can't hit a wrong-state error.
 func shutdownVM(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.shutdown", nil)
 	return err
@@ -148,7 +145,7 @@ func isAlreadyInStateError(err error, state string) bool {
 	return strings.Contains(ae.Message, fmt.Sprintf("Invalid transition: InvalidStateTransition(%s, %s)", state, state))
 }
 
-// snapshotVM and restoreVM temporarily extend the client timeout for long-running memory transfers, then restore it for subsequent calls.
+// the memory transfer needs a longer timeout than the shared client default.
 func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
@@ -188,7 +185,7 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 	return err
 }
 
-// addDiskVM / addNetVM use vmAPIOnce — retry would hit "duplicate id" after a successful attach (clone-time cidata + NIC swap).
+// addDiskVM is non-idempotent — a retry after a successful attach would surface as "duplicate id".
 func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {
 	return vmPutJSON(ctx, hc, "vm.add-disk", "add-disk request", disk, http.StatusOK, http.StatusNoContent)
 }
@@ -216,9 +213,6 @@ func addNetVM(ctx context.Context, hc *http.Client, net chNet) error {
 
 // addCocoonNIC posts vm.add-net with the deterministic cocoon-net-<mac> id; returns id for rollback.
 func addCocoonNIC(ctx context.Context, hc *http.Client, nc *types.NetworkConfig) (string, error) {
-	if nc == nil {
-		return "", fmt.Errorf("addCocoonNIC: nil network config")
-	}
 	chN := networkConfigToNet(nc)
 	chN.ID = cocoonNetID(nc.MAC)
 	if err := addNetVM(ctx, hc, chN); err != nil {
@@ -227,7 +221,6 @@ func addCocoonNIC(ctx context.Context, hc *http.Client, nc *types.NetworkConfig)
 	return chN.ID, nil
 }
 
-// getVMInfo fetches vm.info; cocoon uses it to detect tag/id conflicts before hot-add and to surface attached devices through inspect.
 func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) {
 	body, err := utils.DoAPI(ctx, hc, http.MethodGet, chAPIBase+"vm.info", nil, http.StatusOK)
 	if err != nil {
@@ -296,7 +289,6 @@ func saveConsolePTY(ctx context.Context, vmID, runDir, sockPath string, directBo
 	}
 }
 
-// qemuExpandImage grows a qcow2 disk to targetSize iff its virtual size is smaller.
 func qemuExpandImage(ctx context.Context, path string, targetSize int64) error {
 	hdr, ok, err := utils.ReadQcow2Header(path)
 	if err != nil {

@@ -248,7 +248,7 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 	if pci.ID != "" {
 		return pci.ID, nil
 	}
-	// Body-less success means we accepted the alt 204 code; fall back to the user-supplied id, but reject empty (VFIO without --id has no detach key).
+	// VFIO without --id has no detach key, so an empty fallback must fail.
 	if fallbackID == "" {
 		return "", fmt.Errorf("%s: empty response body and no fallback id (CH returned no PciDeviceInfo)", endpoint)
 	}
@@ -271,14 +271,14 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
 	}
-	// Block until the guest acks the ACPI eject (B0EJ): only then has CH freed the slot, id, and backing file (Windows can take 10-20s).
+	// CH frees the slot, id and backing file only after the guest's eject ack.
 	if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
 		return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 	}
 	return nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a dead capture and returns a refreshed vm.info; callers hold the ops lock every capture window holds and RunningVMClient's Running gate excludes restore and clone windows, so the pause is ownerless.
+// the ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil
@@ -307,7 +307,7 @@ func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, ext
 	return extract(info), nil
 }
 
-// bdfFromSysfsPath returns the BDF suffix when path is under the canonical sysfs PCI prefix; empty otherwise (CH may report a non-PCI host path).
+// CH may report a non-PCI host path, which has no BDF.
 func bdfFromSysfsPath(p string) string {
 	bdf, ok := strings.CutPrefix(p, vfio.SysfsPCIPrefix)
 	if !ok {

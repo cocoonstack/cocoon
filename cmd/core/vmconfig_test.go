@@ -90,7 +90,7 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 	snapCfg := types.SnapshotConfig{Config: types.Config{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
 		CPUWeight: 40, CPUQuotaUs: 200000, CPUBurstUs: 50000,
-		NoWatchdog: true, PCI: true,
+		NoWatchdog: true, NoBalloon: true, PCI: true,
 	}}
 
 	tests := []struct {
@@ -140,8 +140,8 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 			if got.NoWatchdog != tt.wantNoWatchdog {
 				t.Errorf("NoWatchdog = %v, want %v", got.NoWatchdog, tt.wantNoWatchdog)
 			}
-			if !got.PCI {
-				t.Error("PCI not inherited from the snapshot")
+			if !got.PCI || !got.NoBalloon {
+				t.Errorf("PCI/NoBalloon not inherited from the snapshot: %v/%v", got.PCI, got.NoBalloon)
 			}
 		})
 	}

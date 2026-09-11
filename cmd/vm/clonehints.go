@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -32,9 +33,12 @@ func printPostCloneHints(vm *types.VM) {
 
 	fmt.Println()
 	fmt.Println("Run inside the guest to finish setup:")
-	fmt.Println()
-	fmt.Println("  # Release memory for balloon")
-	fmt.Println("  echo 3 > /proc/sys/vm/drop_caches")
+
+	if _, ok := hypervisor.BalloonSize(vm.Config.Config); ok {
+		fmt.Println()
+		fmt.Println("  # Release memory for balloon")
+		fmt.Println("  echo 3 > /proc/sys/vm/drop_caches")
+	}
 
 	// FC clone: guest MAC is baked in vmstate; change it before networkd config.
 	if isFirecracker(vm.Hypervisor) {
@@ -73,7 +77,7 @@ func printCloudimgNetworkHints() {
 
 func printOCINetworkHints(vm *types.VM) {
 	fmt.Println()
-	fmt.Printf("  # Set hostname\n")
+	fmt.Println("  # Set hostname")
 	fmt.Printf("  hostnamectl set-hostname %s\n", vm.Config.Name)
 
 	var staticNICs []nicHint

@@ -249,3 +249,25 @@ func TestDiskPathByRole(t *testing.T) {
 		t.Fatalf("missing role must return empty, got %q", got)
 	}
 }
+
+func TestBalloonSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      types.Config
+		wantSize int64
+		wantOK   bool
+	}{
+		{"quarter of memory", types.Config{Memory: 1 << 30}, 256 << 20, true},
+		{"below the floor", types.Config{Memory: 128 << 20}, 0, false},
+		{"windows", types.Config{Memory: 1 << 30, Windows: true}, 0, false},
+		{"opted out", types.Config{Memory: 1 << 30, NoBalloon: true}, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			size, ok := BalloonSize(tt.cfg)
+			if size != tt.wantSize || ok != tt.wantOK {
+				t.Errorf("BalloonSize = (%d, %v), want (%d, %v)", size, ok, tt.wantSize, tt.wantOK)
+			}
+		})
+	}
+}

@@ -276,7 +276,7 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 	return slices.DeleteFunc(slices.Clone(storageConfigs), hasCidataRole)
 }
 
-// updateDataDiskPaths rewrites Role==Data paths to clone runDir; sidecar carries source paths.
+// the sidecar carries the source's paths, so Role==Data needs retargeting.
 func updateDataDiskPaths(configs []*types.StorageConfig, newRunDir string) {
 	for _, sc := range configs {
 		if sc.Role == types.StorageRoleData {
@@ -308,7 +308,7 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 	)
 }
 
-// hotSwapNets removes NICs with stale MAC (from snapshot binary state) and adds fresh ones. Must run between vm.restore and vm.resume (VM paused).
+// hotSwapNets must run between vm.restore and vm.resume, while the VM is paused.
 func hotSwapNets(ctx context.Context, hc *http.Client, oldNets []chNet, networkConfigs []*types.NetworkConfig) error {
 	logger := log.WithFunc("cloudhypervisor.hotSwapNets")
 	for _, oldNet := range oldNets {

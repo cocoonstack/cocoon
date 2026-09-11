@@ -144,7 +144,7 @@ func Command(h Handler) *cobra.Command {
 		},
 		RunE: h.Restore,
 	}
-	restoreCmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
+	addRestoreModeFlag(restoreCmd)
 	restoreCmd.Flags().String("from-dir", "", "restore from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	restoreCmd.Flags().Bool("force", false, "skip the snapshot-belongs-to-VM check (only meaningful with --from-dir; risk of restoring to an unrelated lineage)")
 	cliutil.AddOutputFlag(restoreCmd)
@@ -327,9 +327,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; tradeoff: larger improves download throughput, smaller improves RPC latency)") //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")                                                //nolint:mnd
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count)")
-	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = vCPU count x period)")
-	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = 100000)")
-	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = quota, -1 = none)")
+	addCPUBandwidthFlags(cmd)
 	cmd.Flags().String("cpuset-cpus", "", "pin the VM to host cpus (kernel cpu-list, e.g. 0-3); non-work-conserving, empty = anywhere inside the cgroup_cpus fence")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = default); mutually exclusive with --bridge")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0); VM gets IP via DHCP from the bridge")
@@ -337,6 +335,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().String("password", "cocoon", "guest password for cloud-init (cloudimg only)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (use page cache instead; CH only)")
 	cmd.Flags().Bool("no-watchdog", false, "omit the virtio watchdog device (CH only; use when the guest driver cannot safely handle reboot)")
+	cmd.Flags().Bool("no-balloon", false, "omit the virtio-balloon device so the guest keeps its whole memory (default balloons 25%)")
 	cmd.Flags().Bool("windows", false, "Windows guest (UEFI boot, kvm_hyperv=on, no cidata)")
 	cmd.Flags().Bool("shared-memory", false, "enable CH memory shared=on; required to attach vhost-user-fs later (CH only, fixed for VM lifetime)")
 	cmd.Flags().Bool("hugepages", false, "back guest memory with hugetlbfs (CH only, fixed for VM lifetime); snapshots of such a VM restore via eager copy, never mmap")
@@ -351,15 +350,23 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")       //nolint:mnd
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
-	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = vCPU count x period)")
-	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = 100000)")
-	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = quota, -1 = none)")
+	addCPUBandwidthFlags(cmd)
 	cmd.Flags().String("cpuset-cpus", "", "pin the clone to host cpus (kernel cpu-list; empty = anywhere inside the cgroup_cpus fence)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
-	cmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
+	addRestoreModeFlag(cmd)
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
 	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
 	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
+}
+
+func addCPUBandwidthFlags(cmd *cobra.Command) {
+	cmd.Flags().Int64("cpu-quota-us", 0, "cgroup cpu.max quota in us per period (0 = vCPU count x period)")
+	cmd.Flags().Int64("cpu-period-us", 0, "cgroup cpu.max period in us (0 = 100000)")
+	cmd.Flags().Int64("cpu-burst-us", 0, "cgroup cpu.max.burst credit in us (0 = quota, -1 = none)")
+}
+
+func addRestoreModeFlag(cmd *cobra.Command) {
+	cmd.Flags().String("restore-mode", "", "memory restore mode: copy|ondemand|mmap (CH only; default mmap for plain private-anon snapshots, else copy; hugepages/shared degrade mmap to copy with a warning)")
 }

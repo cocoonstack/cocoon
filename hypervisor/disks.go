@@ -32,7 +32,6 @@ func DataDiskBaseName(serial string) string {
 	return "data-" + serial + ".raw"
 }
 
-// IsDataDiskFile reports whether name matches the data disk file pattern.
 func IsDataDiskFile(name string) bool {
 	return strings.HasPrefix(name, "data-") && strings.HasSuffix(name, ".raw")
 }
@@ -47,7 +46,7 @@ func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) stri
 	return ""
 }
 
-// CopyWritableDisks reflinks the COW disk and every Role==Data disk into dstDir concurrently: inside the snapshot pause window, wall time is the longest single copy instead of the sum. Durability is paid at persist (SyncTree / store ingestion), not here.
+// CopyWritableDisks copies concurrently so pause-window wall time is the longest single copy, not the sum; durability is paid at persist.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {
@@ -58,7 +57,7 @@ func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*t
 	return copyPairs(ctx, pairs, utils.NoSync)
 }
 
-// PrepareDataDisks creates sparse files for each spec under baseDir, optionally formats (ext4 default), returns StorageConfigs; names must be unique and ValidDataDiskName-passing.
+// PrepareDataDisks requires unique, ValidDataDiskName-passing names.
 func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDiskSpec) ([]*types.StorageConfig, error) {
 	if len(specs) == 0 {
 		return nil, nil
@@ -89,7 +88,7 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			DirectIO:   spec.DirectIO,
 		})
 	}
-	// Fan out sparse-create + mkfs like copyPairs: on the create path, wall time is the slowest disk, not the sum.
+	// Wall time is the slowest disk, not the sum.
 	if _, err := utils.Map(ctx, specs, func(ctx context.Context, i int, spec types.DataDiskSpec) (struct{}, error) {
 		if err := createSparseFile(out[i].Path, spec.Size); err != nil {
 			return struct{}{}, fmt.Errorf("data disk %s: %w", spec.Name, err)
@@ -119,7 +118,7 @@ func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg 
 	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
-// PrepareOCICOW creates an ext4-formatted sparse COW at cowPath and returns storageConfigs with the new CowSerial entry appended (use the returned slice; append may reallocate).
+// PrepareOCICOW creates an ext4-formatted sparse COW at cowPath and returns storageConfigs with the CowSerial entry appended.
 func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageConfigs []*types.StorageConfig) ([]*types.StorageConfig, error) {
 	if err := createSparseFile(cowPath, storage); err != nil {
 		return nil, err

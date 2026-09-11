@@ -13,7 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// ReserveVM inserts a "creating" placeholder under id, failing on id/name collision. Re-reserving the placeholder this same create claimed via PrereserveVM adopts it (refreshing blob pins and dirs).
+// ReserveVM inserts a creating placeholder under id, adopting one this same create claimed via PrereserveVM.
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := timeNow()
 	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
@@ -50,12 +50,11 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 	})
 }
 
-// PrereserveVM claims id before host resources (network) are provisioned, so GC always sees an owner for them; CreateSequence/CloneSetup later adopts the placeholder. blobIDs pins the resolved image blobs so image GC cannot sweep them pre-adoption.
+// PrereserveVM pins blobIDs so image GC cannot sweep the resolved image before adoption.
 func (b *Backend) PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error {
 	return b.ReserveVM(ctx, id, vmCfg, blobIDs, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
 }
 
-// RollbackCreate removes the placeholder record and its name mapping after a failed create.
 func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
@@ -132,7 +131,7 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 	return info, nil
 }
 
-// reservePlaceholder validates host CPU, reserves a "creating" VM record, and ensures its run/log dirs exist; shared by CreateSequence and CloneSetup. On failure it rolls back internally (if needed) and returns a nil cleanup; on success cleanup removes the dirs and rolls back the reservation — the caller decides when to run it.
+// reservePlaceholder returns a nil cleanup on failure (already rolled back); on success the caller decides when to run it.
 func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (runDir, logDir string, now time.Time, cleanup func(), err error) {
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
 		return "", "", time.Time{}, nil, err

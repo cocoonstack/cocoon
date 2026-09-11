@@ -37,7 +37,7 @@ func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
 	return result, err
 }
 
-// not-found ids are logged and skipped
+// Delete removes entries for ids; not-found ids are logged and skipped.
 func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, err error) {
 	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error

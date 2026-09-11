@@ -27,7 +27,7 @@ const (
 	hotDiskIDPrefix = "cocoon_disk_"
 )
 
-// fcMachineConfig is the /machine-config payload; Firecracker starts empty and takes every device by PUT before InstanceStart.
+// fcMachineConfig is the /machine-config payload.
 type fcMachineConfig struct {
 	VCPUCount  int `json:"vcpu_count"`
 	MemSizeMiB int `json:"mem_size_mib"`
@@ -74,6 +74,11 @@ type fcSnapshotCreate struct {
 	MemFilePath  string `json:"mem_file_path"`
 }
 
+type fcSnapshotMemBE struct {
+	BackendPath string `json:"backend_path"`
+	BackendType string `json:"backend_type"`
+}
+
 type fcSnapshotLoad struct {
 	SnapshotPath     string              `json:"snapshot_path"`
 	MemBackend       fcSnapshotMemBE     `json:"mem_backend"`
@@ -87,40 +92,32 @@ type fcNetworkOverride struct {
 	HostDevName string `json:"host_dev_name"`
 }
 
-// fcVsockOverride retargets the vsock UDS during snapshot/load. Pointer+omitempty keeps the field off the wire for FC < v1.16.
+// pointer+omitempty keeps the field off the wire for FC < v1.16.
 type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
 }
 
-// fcInstanceInfo is the GET / view; State is "Not started", "Running" or "Paused".
+// fcInstanceInfo is the GET / view.
 type fcInstanceInfo struct {
 	State string `json:"state"`
 }
 
-// fcVMConfig is the GET /vm/config view of the device set.
 type fcVMConfig struct {
 	Drives            []fcDrive            `json:"drives"`
 	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
 }
 
-type fcSnapshotMemBE struct {
-	BackendPath string `json:"backend_path"`
-	BackendType string `json:"backend_type"`
-}
-
-// fcAPI PUTs body to an idempotent FC REST endpoint with retry; expects 204.
 func fcAPI(ctx context.Context, hc *http.Client, endpoint string, body []byte) error {
 	_, err := utils.DoAPIWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, body)
 	return err
 }
 
-// putJSON marshals payload and PUTs it to an idempotent FC endpoint with retry.
 func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
 	_, err := utils.DoJSONWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, kind, payload)
 	return err
 }
 
-// sendJSONOnce is putJSON's no-retry twin for non-idempotent state transitions (instance-start, pause/resume) — retry would hit wrong-state.
+// sendJSONOnce skips retry: a resent state transition answers wrong-state.
 func sendJSONOnce[T any](ctx context.Context, hc *http.Client, method, endpoint string, payload T, kind string, successCodes ...int) error {
 	_, err := utils.DoJSONOnce(ctx, hc, method, "http://localhost"+endpoint, kind, payload, successCodes...)
 	return err
@@ -170,17 +167,17 @@ func sendCtrlAltDel(ctx context.Context, hc *http.Client) error {
 	return sendJSONOnce(ctx, hc, http.MethodPut, "/actions", fcAction{ActionType: actionSendCtrlAltDel}, "action")
 }
 
-// pauseVM pauses a running FC instance via PATCH /vm. Idempotent: FC's vCPU event loop acks Pause from the paused state without error (vstate/vcpu.rs).
+// pauseVM is idempotent: FC's vcpu loop acks Pause from the paused state (vstate/vcpu.rs).
 func pauseVM(ctx context.Context, hc *http.Client) error {
 	return sendJSONOnce(ctx, hc, http.MethodPatch, "/vm", map[string]string{"state": vmStatePaused}, "pause request")
 }
 
-// resumeVM resumes a paused FC instance via PATCH /vm. Idempotent like pauseVM.
+// resumeVM is idempotent like pauseVM.
 func resumeVM(ctx context.Context, hc *http.Client) error {
 	return sendJSONOnce(ctx, hc, http.MethodPatch, "/vm", map[string]string{"state": vmStateResumed}, "resume request")
 }
 
-// createSnapshotFC writes vmstate + memory to destDir; no retry — resending would re-transfer multi-GiB and clobber a partial state.json.
+// createSnapshotFC does not retry: a resend re-transfers multi-GiB and clobbers a partial state.json.
 func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
 	body, err := json.Marshal(fcSnapshotCreate{
 		SnapshotPath: filepath.Join(destDir, snapshotVMStateFile),
@@ -195,7 +192,7 @@ func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
 	return err
 }
 
-// loadSnapshotFC loads from sourceDir into a fresh FC; vsockUDSOverride="" inherits the snapshot's path (FC < v1.16). No retry (same reason as createSnapshotFC).
+// an empty vsockUDSOverride inherits the snapshot's path (FC < v1.16).
 func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOverrides []fcNetworkOverride, vsockUDSOverride string) error {
 	req := fcSnapshotLoad{
 		SnapshotPath: filepath.Join(sourceDir, snapshotVMStateFile),

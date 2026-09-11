@@ -25,7 +25,7 @@ func (b *Backend) StartAll(ctx context.Context, refs []string, startOne VMOp) ([
 	return b.ForEachVM(ctx, ids, "Start", startOne)
 }
 
-// StartSequence runs the shared start skeleton under the VM's ops lock: a concurrent rm --force must not delete the record/dirs mid-launch, and the Running flip lands before the lock is released so a stop queued behind this start can't be overwritten by a late state write.
+// StartSequence flips Running inside the ops lock, so a stop queued behind this start cannot be overwritten by a late state write.
 func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {
@@ -39,13 +39,9 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	if rec == nil {
 		return nil
 	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
+	if vErr := validateRecordInvariants(rec); vErr != nil {
 		b.MarkError(ctx, id)
-		return fmt.Errorf("storage invariants violated: %w", vErr)
-	}
-	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
-		b.MarkError(ctx, id)
-		return fmt.Errorf("network invariants violated: %w", vErr)
+		return vErr
 	}
 	// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
 	if err = b.RecoverNetwork(ctx, rec); err != nil {
@@ -72,7 +68,6 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	return nil
 }
 
-// PrepareStart loads the record, refuses quarantined VMs, verifies not-running, ensures dirs exist.
 func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
 	rec, err := b.EntryGuardLoad(ctx, id)
 	if err != nil {
@@ -180,7 +175,6 @@ func (b *Backend) EffectiveCPUs(cfg *types.Config) []int {
 	return cgroup.EffectiveCPUs(cfg.CPUSetCPUs, b.Conf.CgroupCPUFence())
 }
 
-// AbortLaunch terminates a failed launch and clears runtime files.
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)

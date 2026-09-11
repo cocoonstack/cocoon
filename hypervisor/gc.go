@@ -18,7 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs: "db" holds vms.json/vms.lock (when RootDir == RunDir), clone-locks/ holds FC clone flocks.
+// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs.
 var gcReservedDirNames = map[string]struct{}{"db": {}, CloneLocksDirName: {}}
 
 // VMGCSnapshot is the ReadDB-phase data for any hypervisor GC module (CH + FC share the shape).
@@ -59,7 +59,6 @@ func (s VMGCSnapshot) sweepDirs(runRoot string) []string {
 	return dirs
 }
 
-// BuildGCModule builds GC module that scans DB and dirs for orphan VMs.
 func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 	return gc.Module[VMGCSnapshot]{
 		Name:    b.Typ,
@@ -122,7 +121,7 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	gc.Register(orch, b.BuildGCModule())
 }
 
-// gcRecover implements Module.Recover: resume tombstones by phase before discovery.
+// gcRecover resumes tombstones by phase before discovery.
 func (b *Backend) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -175,7 +174,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 				logger.Infof(ctx, "collected id=%s reason=%s", id, snap.reasons[id])
 				return
 			}
-			// Revalidate under the lock: the held ops lock is the ownerless proof — create and clone hold it from prereserve through the final record commit.
+			// Revalidate under the lock: the unlocked scan may have read a stale state.
 			if rec.State != types.VMStateCreating {
 				return
 			}
@@ -192,7 +191,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	return errors.Join(errs...)
 }
 
-// sweepStaleCaptureDirs removes crashed snapshot-*/.restore-staging leftovers inside every run dir once past the creating-grace age. It runs per-dir under the VM ops lock: the staging name is fixed, so without it a fresh restore could recreate the dir between the age check and the removal (ABA) and lose its staging mid-flight.
+// sweepStaleCaptureDirs locks per dir: the staging name is fixed, so a fresh restore could otherwise recreate the dir between the age check and the removal.
 func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) []error {
 	cutoff := timeNow().Add(-CreatingStateGCGrace)
 	var errs []error

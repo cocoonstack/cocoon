@@ -88,7 +88,7 @@ func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
 	if err := os.Mkdir(stale, 0o750); err != nil {
 		t.Fatalf("mk staging: %v", err)
 	}
-	past := time.Now().Add(-25 * time.Hour)
+	past := time.Now().Add(-CreatingStateGCGrace - time.Hour)
 	if err := os.Chtimes(stale, past, past); err != nil {
 		t.Fatalf("age staging: %v", err)
 	}

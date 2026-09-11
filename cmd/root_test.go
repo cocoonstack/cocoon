@@ -19,7 +19,7 @@ func TestEnvOverridesDottedLogLevel(t *testing.T) {
 	if err := initConfig(t.Context()); err != nil {
 		t.Fatalf("init config: %v", err)
 	}
-	if conf.Log.Level != "debug" {
+	if logConfig(t).Level != "debug" {
 		t.Fatalf("log level: got %q, want %q", conf.Log.Level, "debug")
 	}
 }
@@ -31,7 +31,7 @@ func TestLogRotationKeysDecode(t *testing.T) {
 	if err := initConfig(t.Context()); err != nil {
 		t.Fatalf("init config: %v", err)
 	}
-	if conf.Log.MaxSize != 500 || conf.Log.MaxAge != 7 || conf.Log.MaxBackups != 3 {
+	if log := logConfig(t); log.MaxSize != 500 || log.MaxAge != 7 || log.MaxBackups != 3 {
 		t.Fatalf("log rotation: got %+v, want maxsize=500 maxage=7 maxbackups=3", conf.Log)
 	}
 }
@@ -53,7 +53,7 @@ func TestConfigFileLogSection(t *testing.T) {
 		t.Fatalf("init config: %v", err)
 	}
 	want := coretypes.ServerLogConfig{Level: "warn", UseJSON: true, Filename: logPath, MaxSize: 7, MaxAge: 5, MaxBackups: 1}
-	if *conf.Log != want {
+	if *logConfig(t) != want {
 		t.Fatalf("log config: got %+v, want %+v", *conf.Log, want)
 	}
 }
@@ -84,4 +84,12 @@ func TestLogMaxSizeDecodeIsStable(t *testing.T) {
 			t.Fatalf("decode %d: maxsize got %d, want 7", i, cfg.Log.MaxSize)
 		}
 	}
+}
+
+func logConfig(t *testing.T) *coretypes.ServerLogConfig {
+	t.Helper()
+	if conf.Log == nil {
+		t.Fatal("log config is nil: a lost viper default would decode as nil")
+	}
+	return conf.Log
 }

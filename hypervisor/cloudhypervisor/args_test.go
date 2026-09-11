@@ -83,4 +83,32 @@ func TestQcow2OverlayDiskArgs(t *testing.T) {
 	}
 }
 
+func TestBalloonPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		noBalloon bool
+		wantSize  int64
+	}{
+		{name: "default quarter of memory", wantSize: 256 << 20},
+		{name: "explicitly disabled", noBalloon: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}}
+			got := buildVMConfig(rec, "", nil).Balloon
+			if tt.wantSize == 0 {
+				if got != nil {
+					t.Fatalf("balloon = %+v, want none", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("balloon device missing")
+			}
+			if got.Size != tt.wantSize {
+				t.Errorf("balloon size = %d, want %d", got.Size, tt.wantSize)
+			}
+		})
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

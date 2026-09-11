@@ -17,7 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// fcNICOps drives Firecracker's virtio-pci NICs for the shared resize driver; removal returns as soon as the VMM drops the device, the guest releases its stale PCI node itself.
+// removal returns when the VMM drops the device; the guest releases the stale PCI node itself.
 type fcNICOps struct {
 	hc *http.Client
 }
@@ -87,7 +87,7 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 		return "", err
 	}
 	if spec.DirectIO != nil {
-		log.WithFunc("firecracker.DiskAttach").Warnf(ctx, "directio on disk %s ignored: FC has no DirectIO knob (IoEngine=Async fixed)", spec.Name)
+		log.WithFunc("firecracker.DiskAttach").Warnf(ctx, directIOIgnoredMsg, spec.Name)
 	}
 	d := fcDrive{DriveID: id, PathOnHost: path, IsReadOnly: spec.ReadOnly}
 	if !spec.ReadOnly {
@@ -141,7 +141,7 @@ func (fc *Firecracker) DiskList(ctx context.Context, vmRef string) ([]disk.Attac
 	return hotAttachedDisks(cfg), nil
 }
 
-// lockedDeviceOp serializes device-set mutations per VM and returns the record reloaded under the lock; MMIO VMs are refused with errUnsupported because only the virtio-pci transport hot-plugs.
+// MMIO VMs are refused: only the virtio-pci transport hot-plugs.
 func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsupported error) (*http.Client, string, hypervisor.VMRecord, func(), error) {
 	hc, vmID, err := fc.RunningVMClient(ctx, vmRef)
 	if err != nil {
@@ -168,7 +168,7 @@ func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsu
 	return hc, vmID, rec, unlock, nil
 }
 
-// convergeOrphanedPause resumes a VM left paused by a dead capture; the pause is provably ownerless because callers hold the ops lock every capture window holds and RunningVMClient's Running gate excludes restore/clone windows.
+// the pause is ownerless: callers hold the ops lock every capture window holds.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) error {
 	info, err := getInstanceInfo(ctx, hc)
 	if err != nil {
@@ -199,7 +199,7 @@ func hotDiskID(name string) (string, error) {
 	return hotDiskIDPrefix + name, nil
 }
 
-// hotDiskName reverses hotDiskID; empty for create-path drives (drive_N) and foreign ids.
+// hotDiskName is empty for create-path drives (drive_N) and foreign ids.
 func hotDiskName(id string) string {
 	name, ok := strings.CutPrefix(id, hotDiskIDPrefix)
 	if ok && types.ValidDataDiskName(name) {

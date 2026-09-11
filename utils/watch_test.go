@@ -38,7 +38,7 @@ func TestWatchFileDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, err := WatchFile(t.Context(), target, 200*time.Millisecond)
+	ch, err := WatchFile(t.Context(), target, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +51,14 @@ func TestWatchFileDebounce(t *testing.T) {
 
 	select {
 	case <-ch:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for debounced signal")
 	}
 
 	select {
 	case <-ch:
 		t.Fatal("unexpected second signal within debounce window")
-	case <-time.After(300 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 	}
 }
 

@@ -13,7 +13,6 @@ const (
 	StorageRoleCidata StorageRole = "cidata"
 	StorageRoleData   StorageRole = "data"
 
-	// fstype values for Role==Data disks.
 	FSTypeExt4 = "ext4"
 	FSTypeNone = "none"
 )

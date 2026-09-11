@@ -181,7 +181,11 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	pastAccess := time.Now().Add(-72 * time.Hour)
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		for _, name := range []string{"old1", "old2"} {
-			idx.Snapshots[idx.Names[name]].LastAccessedAt = pastAccess
+			rec := idx.Snapshots[idx.Names[name]]
+			if rec == nil {
+				return fmt.Errorf("snapshot %q missing", name)
+			}
+			rec.LastAccessedAt = pastAccess
 		}
 		return nil
 	}); err != nil {
@@ -199,7 +203,11 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	}
 
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		idx.Snapshots[idx.Names["old1"]].LastAccessedAt = time.Now()
+		rec := idx.Snapshots[idx.Names["old1"]]
+		if rec == nil {
+			return fmt.Errorf("snapshot \"old1\" missing")
+		}
+		rec.LastAccessedAt = time.Now()
 		return nil
 	}); err != nil {
 		t.Fatal(err)

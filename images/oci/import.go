@@ -21,7 +21,7 @@ import (
 type tarImportJob struct {
 	conf       *Config
 	idx, total int
-	label      string // tarPath or "import-<name>"
+	label      string
 	workDir    string
 	tracker    progress.Tracker
 	result     *pullLayerResult

@@ -48,7 +48,7 @@ func (x *RecordTx[R]) All() (map[string]*R, error) {
 }
 
 // Scan yields detached records.
-func (x *RecordTx[R]) Scan(fn func(id string, rec *R) error) error {
+func (x *RecordTx[R]) Scan(fn ScanFunc[R]) error {
 	return x.recs.Scan(x.ctx, x.r, fn)
 }
 

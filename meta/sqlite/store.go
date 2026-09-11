@@ -168,7 +168,6 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		_ = tx.Rollback()
 		return mapErr(err)
 	}
-	// §4 observability: writer wait, transaction and commit durations.
 	commit, total := time.Since(commitStart), time.Since(start)
 	logger := log.WithFunc("meta.sqlite.Update")
 	if total > slowTxnWarn {
@@ -458,7 +457,6 @@ func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 			if err := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &frames, &moved); err != nil || frames == 0 {
 				continue
 			}
-			// §4 observability: WAL bytes and checkpoint duration.
 			var walBytes int64
 			if st, serr := os.Stat(dbPath + "-wal"); serr == nil {
 				walBytes = st.Size()

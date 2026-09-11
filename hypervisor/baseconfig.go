@@ -14,13 +14,12 @@ const (
 	defaultTerminateGracePeriod = 5 * time.Second
 )
 
-// BaseConfig holds the directory layout + timeout defaults shared by all hypervisor backends; backends embed it and add binary-specific methods.
+// BaseConfig holds the directory layout and timeout defaults shared by all hypervisor backends.
 type BaseConfig struct {
 	*config.Config
 	backendName string
 }
 
-// NewBaseConfig creates a BaseConfig for the named backend.
 func NewBaseConfig(conf *config.Config, name string) BaseConfig {
 	return BaseConfig{Config: conf, backendName: name}
 }
@@ -41,7 +40,6 @@ func (c *BaseConfig) COWRawPath(vmID string) string {
 	return filepath.Join(c.VMRunDir(vmID), COWRawFileName)
 }
 
-// EnsureDirs creates all static directories required by the backend.
 func (c *BaseConfig) EnsureDirs() error {
 	return utils.EnsureDirs(c.dbDir(), c.RunDir(), c.LogDir())
 }
@@ -54,7 +52,6 @@ func (c *BaseConfig) StopTimeout() time.Duration {
 // ForceStop reports whether --force set the negative StopTimeoutSeconds sentinel (skip graceful shutdown).
 func (c *BaseConfig) ForceStop() bool { return c.StopTimeoutSeconds < 0 }
 
-// SocketWaitTimeout returns configured timeout or default (5s).
 func (c *BaseConfig) SocketWaitTimeout() time.Duration {
 	if c.SocketWaitTimeoutSeconds > 0 {
 		return time.Duration(c.SocketWaitTimeoutSeconds) * time.Second
@@ -62,7 +59,6 @@ func (c *BaseConfig) SocketWaitTimeout() time.Duration {
 	return defaultSocketWaitTimeout
 }
 
-// TerminateGracePeriod returns configured grace period or default (5s).
 func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 	if c.TerminateGracePeriodSeconds > 0 {
 		return time.Duration(c.TerminateGracePeriodSeconds) * time.Second
@@ -70,12 +66,10 @@ func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 	return defaultTerminateGracePeriod
 }
 
-// LoadAndValidateMeta loads dir's snapshot sidecar and validates its paths against this backend's managed roots.
 func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 	return LoadAndValidateMeta(dir, c.RootDir, c.Config.RunDir)
 }
 
-// PreflightRestore runs the shared restore preflight against this backend's managed roots.
 func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
 	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
 }

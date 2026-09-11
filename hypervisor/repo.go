@@ -5,26 +5,22 @@ import (
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 type vmTx struct {
 	*meta.NamedTx[VMRecord]
 
-	ctx context.Context
-	ns  string
-	r   meta.Reader
-	w   meta.Writer
+	r meta.Reader
+	w meta.Writer
 }
 
 func (t *vmTx) loadDetached(id string) (VMRecord, error) {
-	r, err := t.Get(id)
+	rec, err := t.getRecord(id)
 	if err != nil {
 		return VMRecord{}, err
 	}
-	if r == nil {
-		return VMRecord{}, fmt.Errorf("%q not found", id)
-	}
-	return *r, nil
+	return *rec, nil
 }
 
 func (t *vmTx) getRecord(id string) (*VMRecord, error) {
@@ -68,9 +64,17 @@ func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
 		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
-		ctx:     ctx,
-		ns:      b.NS,
 		r:       r,
 		w:       w,
 	}
+}
+
+func validateRecordInvariants(rec *VMRecord) error {
+	if err := types.ValidateStorageConfigs(rec.StorageConfigs); err != nil {
+		return fmt.Errorf("storage invariants violated: %w", err)
+	}
+	if err := types.ValidateNetworkConfigs(rec.NetworkConfigs); err != nil {
+		return fmt.Errorf("network invariants violated: %w", err)
+	}
+	return nil
 }

@@ -86,7 +86,7 @@ func TestDecompressKernel(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
-			if !bytes.HasPrefix(got, []byte{0x7f, 'E', 'L', 'F'}) {
+			if !bytes.HasPrefix(got, elfMagic) {
 				t.Errorf("output does not start with ELF magic: %x", got[:min(16, len(got))])
 			}
 		})
@@ -132,7 +132,7 @@ func TestLaunchArgsEnablePCI(t *testing.T) {
 }
 
 func fakeELF() []byte {
-	out := []byte{0x7f, 'E', 'L', 'F'}
+	out := slices.Clone(elfMagic)
 	out = append(out, bytes.Repeat([]byte{0x00}, 60)...)
 	return out
 }

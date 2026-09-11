@@ -12,8 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// launchWithBinds runs launch on a throwaway locked thread inside a private mount namespace with each dst bind-mounted over its src, so FC resolves source-absolute drive paths without symlink swaps. The thread is never unlocked: it dies with the goroutine, taking the namespace along.
-func launchWithBinds(binds [][2]string, launch func() (int, error)) (int, error) {
+// the thread is never unlocked: it dies with the goroutine, taking the private mount namespace along.
+func launchWithBinds(binds [][2]string, launch vmmLaunchFn) (int, error) {
 	type result struct {
 		pid int
 		err error
@@ -43,7 +43,7 @@ func launchWithBinds(binds [][2]string, launch func() (int, error)) (int, error)
 	return r.pid, r.err
 }
 
-// verifyDriveFDs confirms pid holds an open fd for every bind's clone-side inode: unlinking a mountpoint path from another namespace detaches the bind (mount_namespaces(7)), so a concurrent source restore/delete inside the bind→load window would silently hand FC the source's writable disk.
+// unlinking a mountpoint path from another namespace detaches the bind (mount_namespaces(7)).
 func verifyDriveFDs(pid int, binds [][2]string) error {
 	fdDir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
 	entries, err := os.ReadDir(fdDir)

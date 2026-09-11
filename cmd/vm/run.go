@@ -31,6 +31,16 @@ type cloneResult struct {
 	Hints []string `json:"hints,omitempty"`
 }
 
+type cloneSetup struct {
+	vmCfg       *types.VMConfig
+	vmID        string
+	rollback    func()
+	unlock      func()
+	netProvider network.Network
+	netSetup    types.NetSetup
+	resizeTo    int // differs from the restored count only on an FC --pci --nics override
+}
+
 func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	ctx, vm, _, err := h.createVM(cmd, args[0])
 	if err != nil {
@@ -213,7 +223,6 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// restoreFromDir runs DirectRestore over an envelope dir; a foreign snapshot ID requires --force so cross-lineage overwrite is opt-in.
 func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, vmRef, dir string, logger *log.Fields) error {
 	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
@@ -225,7 +234,7 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	}
 	dcr, ok := hyper.(hypervisor.Direct)
 	if !ok {
-		return fmt.Errorf("backend %s does not support direct restore", hyper.Type())
+		return errBackendUnsupported(hyper, "direct restore")
 	}
 	if _, owned := vm.SnapshotIDs[cfg.ID]; !owned {
 		force, _ := cmd.Flags().GetBool("force")
@@ -238,7 +247,7 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return err
 	}
-	// The envelope's pins land on the VM record inside restore; the digest locks keep image GC away until they are committed.
+	// The envelope's pins land on the VM record inside restore.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return err
@@ -258,7 +267,7 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 		fmt.Sprintf("snapshot %s (direct)", snapRef), logger)
 }
 
-// cloneFromDir runs DirectClone over an envelope-bearing dir. The dir stays read-only across the call so concurrent clones of a golden image are safe.
+// cloneFromDir keeps the dir read-only, so concurrent clones of a golden image are safe.
 func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, dir string, logger *log.Fields) error {
 	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
@@ -275,7 +284,7 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	}
 	dcr, ok := hyper.(hypervisor.Direct)
 	if !ok {
-		return fmt.Errorf("backend %s does not support direct clone", hyper.Type())
+		return errBackendUnsupported(hyper, "direct clone")
 	}
 	return h.cloneFromSrcDir(ctx, cmd, &localConf, hyper, dcr, cfg, dir,
 		fmt.Sprintf("dir %s", dir), logger)
@@ -312,17 +321,6 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	printGuestHints(hints)
 	printPostCloneHints(vm)
 	return finishErr
-}
-
-// cloneSetup is prepareClone's result: the reserved clone's identity and network plus the rollback/unlock pair the caller owes until finalize.
-type cloneSetup struct {
-	vmCfg       *types.VMConfig
-	vmID        string
-	rollback    func()
-	unlock      func()
-	netProvider network.Network
-	netSetup    types.NetSetup
-	resizeTo    int // NIC count after the clone; equal to the restored count unless a Firecracker --pci clone overrides --nics
 }
 
 func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (cloneSetup, error) {
@@ -377,7 +375,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup, resizeTo: resizeTo}, nil
 }
 
-// finishClone applies the deferred NIC resize of a Firecracker --pci clone; the hints are the guest-side steps its hot-plugged devices still need.
+// finishClone is deferred because the resize needs the ops lock the clone still holds.
 func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, cs cloneSetup) (*types.VM, []string, error) {
 	var hints []string
 	if vm.Config.PCI && len(vm.Config.DataDisks) > 0 {
@@ -504,8 +502,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	return ctx, info, hyper, nil
 }
 
-// cloneNICPlan returns the NIC count to restore with and the count to hold after the clone.
-func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target int) (int, int, error) {
+func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target int) (restoreNICs, holdNICs int, err error) {
 	if !override {
 		return cfg.NICs, cfg.NICs, nil
 	}
@@ -521,7 +518,7 @@ func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target in
 	return cfg.NICs, target, nil
 }
 
-// validateBackendFlags fast-fails flag combinations the selected backend can never launch; boot-mode-dependent checks live in validateBootCompat. Shared by create and debug so the capability gate list cannot drift.
+// validateBackendFlags is shared by create and debug so the capability gate list cannot drift.
 func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 	if !conf.UseFirecracker {
 		if vmCfg.PCI {
@@ -567,7 +564,7 @@ func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref s
 	return owner.PinBlobs(ctx, blobIDs)
 }
 
-// prereserveVM locks the VM's ops and claims its ID before network provisioning, so GC never sees ownerless TAP/netns and rm/start cannot interleave until adopt or rollback.
+// prereserveVM reserves before network provisioning, so GC never sees ownerless TAP/netns.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	r, ok := hyper.(hypervisor.Reserver)
 	if !ok {
@@ -585,9 +582,8 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 	return func() { r.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
 }
 
-// snapshotSource picks the clone/restore source: --from-dir or args[baseArgs]. Exactly one of (fromDir, snapRef) is non-empty.
-func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (string, string, error) {
-	fromDir, _ := cmd.Flags().GetString("from-dir")
+func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, snapRef string, err error) {
+	fromDir, _ = cmd.Flags().GetString("from-dir")
 	if fromDir != "" {
 		if len(args) > baseArgs {
 			return "", "", fmt.Errorf("--from-dir and positional SNAPSHOT are mutually exclusive")
@@ -600,7 +596,7 @@ func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (string, st
 	return "", args[baseArgs], nil
 }
 
-// tapQueues sizes the TAP queue count: FC opens the TAP single-queue, CH per-vCPU.
+// tapQueues follows the transport: FC opens the TAP single-queue, CH per-vCPU.
 func tapQueues(cpu int, useFC bool) int {
 	if useFC {
 		return network.NetNumQueues(1)
@@ -647,7 +643,7 @@ func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int
 }
 
 func rollbackNetwork(ctx context.Context, netProvider network.Network, vmID string) {
-	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI; an aborted rollback keeps its records for GC retry.
+	// Survive Ctrl-C, bounded so a hung plugin can't wedge the CLI.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 	defer cancel()
 	if delErr := netProvider.Delete(ctx, vmID); delErr != nil {

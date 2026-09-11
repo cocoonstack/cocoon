@@ -12,7 +12,6 @@ import (
 	"unicode/utf16"
 )
 
-// FAT12 disk layout constants for a 1 MiB image.
 const (
 	sectorSize     = 512
 	totalSectors   = 2048 // 1 MiB
@@ -56,7 +55,6 @@ func newFAT12Builder(label string) *fat12Builder {
 	return b
 }
 
-// addVolumeLabel writes the volume-label directory entry (attribute 0x08).
 func (b *fat12Builder) addVolumeLabel() {
 	name := padLabel(b.label)
 	off := b.rootUsed * dirEntrySize
@@ -66,7 +64,6 @@ func (b *fat12Builder) addVolumeLabel() {
 	b.rootUsed++
 }
 
-// addFile registers a file: allocates FAT clusters, writes LFN + SFN directory entries.
 func (b *fat12Builder) addFile(name string, content []byte) error {
 	numClusters := (len(content) + sectorSize - 1) / sectorSize
 

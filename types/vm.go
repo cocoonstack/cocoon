@@ -43,10 +43,10 @@ type VMConfig struct {
 	Config
 	Name string `json:"name"`
 
-	RestoreMode string         `json:"-"` // memory restore mode: copy|ondemand|mmap (CH only); transient, not persisted
+	RestoreMode string         `json:"-"` // memory restore mode: copy|ondemand|mmap (CH only)
 	User        string         `json:"-"`
 	Password    string         `json:"-"`
-	DataDisks   []DataDiskSpec `json:"-"` // populated from --data-disk; consumed by Create
+	DataDisks   []DataDiskSpec `json:"-"` // consumed by Create
 }
 
 // Validate checks that VMConfig fields are within acceptable ranges.
@@ -112,7 +112,6 @@ type VM struct {
 	// FirstBooted is set after the first start; skips cidata attachment on later starts (cloudimg only).
 	FirstBooted bool `json:"first_booted"`
 
-	// SnapshotIDs tracks snapshots created from this VM; populated by toVM() from VMRecord.SnapshotIDs.
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
 
 	// TransitionGeneration increments once per committed transition, letting a consumer spot transitions it missed.

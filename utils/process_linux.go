@@ -14,6 +14,9 @@ import (
 // aliveFn reports whether a pid is still running.
 type aliveFn func(int) bool
 
+// cmdlineVerifier reports whether pid's /proc cmdline still matches the expected binary and arg.
+type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
+
 type procEntry struct {
 	pid     int
 	cmdline string
@@ -97,7 +100,7 @@ func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, e
 	return verifyForTermination(pid, binaryName, expectArg, verifyProcessCmdline, IsProcessAlive)
 }
 
-func verifyForTermination(pid int, binaryName, expectArg string, verify func(int, string, string) (bool, error), alive aliveFn) (bool, error) {
+func verifyForTermination(pid int, binaryName, expectArg string, verify cmdlineVerifier, alive aliveFn) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}

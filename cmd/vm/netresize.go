@@ -14,7 +14,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// netResult is the vm net JSON envelope; Hints carry the guest-side steps a Firecracker PCI VM still needs.
+// netResult is the vm net JSON envelope.
 type netResult struct {
 	netresize.Result
 	Hints []string `json:"hints,omitempty"`
@@ -55,7 +55,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// plumbingForVM picks the provider from persisted VM state; 0-NIC works because NetBackend persists.
+// plumbingForVM works at 0 NICs because NetBackend persists.
 func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
 	backend := vm.ResolvedNetBackend()
 	if backend == "" {

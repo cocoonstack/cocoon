@@ -128,7 +128,7 @@ func DoAPIWithRetry(ctx context.Context, hc *http.Client, method, url string, bo
 	})
 }
 
-// DoAPIOnce sends a single non-retried request with successCodes defaulting to 204 (codes[1:] are tolerated alts, nil body); use for non-idempotent endpoints where retry would surface as duplicate/conflict (e.g. vm.add-fs, snapshot/create).
+// DoAPIOnce sends one non-retried request; successCodes defaults to 204 and codes[1:] are tolerated alternatives.
 func DoAPIOnce(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
 	primary := http.StatusNoContent
 	if len(successCodes) > 0 {

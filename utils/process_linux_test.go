@@ -23,7 +23,7 @@ func TestScanProcsByBinaryReadErrors(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		alive   func(int) bool
+		alive   aliveFn
 		wantErr error
 	}{
 		{"read error on live process fails closed", func(pid int) bool { return pid == self }, injected},
@@ -62,8 +62,8 @@ func TestVerifyForTerminationFailsClosed(t *testing.T) {
 	tests := []struct {
 		name    string
 		pid     int
-		verify  func(int, string, string) (bool, error)
-		alive   func(int) bool
+		verify  cmdlineVerifier
+		alive   aliveFn
 		want    bool
 		wantErr error
 	}{

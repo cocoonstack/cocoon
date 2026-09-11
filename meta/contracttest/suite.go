@@ -98,7 +98,6 @@ func testCRUD(t *testing.T, factory Factory) {
 	if _, err := get1(t, s, c); !errors.Is(err, meta.ErrNotFound) {
 		t.Fatalf("get after delete: %v", err)
 	}
-	// Absent delete is idempotent success, never ErrNotFound.
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Delete(ctx, w, "a") })
 }
 
@@ -119,7 +118,7 @@ func testDetached(t *testing.T, factory Factory) {
 		t.Fatalf("insert captured caller mutation: %q", got.Name)
 	}
 	got.Name = "mutated-after-get"
-	if again, _ := get1(t, s, c); again.Name != nameOrig {
+	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
 		t.Fatalf("get returned attached value: %q", again.Name)
 	}
 
@@ -131,11 +130,10 @@ func testDetached(t *testing.T, factory Factory) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := get1(t, s, c); again.Name != nameOrig {
+	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
 		t.Fatalf("scan exposed engine state: %q", again.Name)
 	}
 
-	// Raw SPI detachment: mutating returned bytes inside a committing Update must not reach engine state (aliasing would bypass PutRaw's checks).
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		raw, ok, err := w.GetRaw(ctx, nsAlpha, "records", "a")
 		if err != nil || !ok {
@@ -179,7 +177,6 @@ func testScope(t *testing.T, factory Factory) {
 	}); !errors.Is(err, meta.ErrScope) {
 		t.Fatalf("view undeclared: got %v, want ErrScope", err)
 	}
-	// Declared read works while writing another namespace.
 	update(t, s, nsBeta, func(w meta.Writer) error { return beta.Insert(ctx, w, "x", &record{N: 7}) })
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha, Read: []string{nsBeta}}, meta.CommitDurable, func(w meta.Writer) error {
 		got, err := beta.Get(ctx, w, "x")
@@ -240,7 +237,6 @@ func testForcedRetry(t *testing.T, factory Factory) {
 	if len(out) != 2 {
 		t.Fatalf("published result: %v", out)
 	}
-	// Effects committed exactly once despite the double run.
 	if err := s.View(ctx, []string{nsAlpha}, func(r meta.Reader) error {
 		recs, err := c.List(ctx, r)
 		if err != nil {
@@ -325,7 +321,7 @@ func testViewIsolation(t *testing.T, factory Factory) {
 		t.Fatal(err)
 	}
 	<-done
-	if got, _ := get1(t, s, c); got.N != 2 {
+	if got, err := get1(t, s, c); err != nil || got.N != 2 {
 		t.Fatalf("post-view state: %+v", got)
 	}
 }

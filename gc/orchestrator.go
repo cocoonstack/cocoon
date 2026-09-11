@@ -20,7 +20,7 @@ type Orchestrator struct {
 // New returns an Orchestrator with no registered modules.
 func New() *Orchestrator { return &Orchestrator{} }
 
-// Run executes one GC cycle: recover tombstones by phase, then snapshot → resolve → collect; modules revalidate every destructive decision under their own entity locks (§5).
+// Run executes one GC cycle.
 func (o *Orchestrator) Run(ctx context.Context) error {
 	start := time.Now()
 	logger := log.WithFunc("gc.Run")
@@ -69,7 +69,6 @@ func Register[S any](o *Orchestrator, m Module[S]) {
 	o.modules = append(o.modules, m)
 }
 
-// formatSummary renders counts as `m1=N m2=M`, sorted.
 func formatSummary(s map[string]int) string {
 	if len(s) == 0 {
 		return "nothing to collect"

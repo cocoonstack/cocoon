@@ -84,7 +84,7 @@ func (b *Backend) netResizeAdd(ctx context.Context, vmID string, rec *VMRecord, 
 		if err := b.appendNetworkConfig(ctx, vmID, nc); err != nil {
 			committed, verifyErr := b.resolveFailedPersist(ctx, dev, plumbing, vmID, nc, devID, i)
 			if verifyErr != nil {
-				return res, fmt.Errorf("persist nic %d: %w; commit state inconclusive: %v (device kept, rerun vm net to reconcile)", i, err, verifyErr)
+				return res, fmt.Errorf("persist nic %d: %w; commit state inconclusive: %w (device kept, rerun vm net to reconcile)", i, err, verifyErr)
 			}
 			if !committed {
 				return res, fmt.Errorf("persist nic %d: %w", i, err)

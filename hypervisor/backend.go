@@ -35,13 +35,11 @@ const (
 	// VMMemTransferTimeout is the single-shot timeout for snapshot/restore API calls.
 	VMMemTransferTimeout = 10 * time.Minute
 
-	// MinBalloonMemory: balloon overhead is not worthwhile below 256 MiB guest memory.
+	// MinBalloonMemory is the floor below which balloon overhead is not worthwhile.
 	MinBalloonMemory = 256 << 20
 
-	// DefaultBalloonDiv sizes the initial balloon as memory/DefaultBalloonDiv (25%).
 	DefaultBalloonDiv = 4
 
-	// GracefulStopPollInterval polls between graceful shutdown signal and timeout escalation.
 	GracefulStopPollInterval = 500 * time.Millisecond
 )
 
@@ -65,40 +63,6 @@ type BackendConfig interface {
 	CgroupCPUFence() string
 }
 
-var _ Supervisable = (*Backend)(nil)
-
-// Backend provides shared store operations for hypervisor backends.
-type Backend struct {
-	Typ      string
-	NS       string
-	Conf     BackendConfig
-	Meta     meta.Store
-	Metering metering.Recorder
-
-	// Net converges host networking inside the VM ops lock; nil disables it.
-	Net VMNetwork
-}
-
-// NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.
-func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
-	if err := conf.EnsureDirs(); err != nil {
-		return nil, fmt.Errorf("ensure dirs: %w", err)
-	}
-	if rec == nil {
-		rec = metering.NopRecorder{}
-	}
-	return &Backend{
-		Typ:      typ,
-		NS:       VMNamespaceName(typ),
-		Conf:     conf,
-		Meta:     store,
-		Metering: rec,
-	}, nil
-}
-
-func (b *Backend) Type() string { return b.Typ }
-
-// LaunchSpec is the per-call input to Backend.LaunchVMProcess; PID-file and socket paths derive from Rec.RunDir.
 type LaunchSpec struct {
 	Cmd       *exec.Cmd
 	NetnsPath string
@@ -119,6 +83,9 @@ type PreflightHook func(dir string, rec *VMRecord) error
 
 // KillHook stops the origin VM process before the destructive phase rewrites the run dir.
 type KillHook func(ctx context.Context, vmID string, rec *VMRecord) error
+
+// PrepareHook lays out a VM's disks before launch and returns the final storage set.
+type PrepareHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error)
 
 // AfterExtractHook finalizes the restored record and returns the resulting VM.
 type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
@@ -168,7 +135,7 @@ type CreateSpec struct {
 	StorageConfigs []*types.StorageConfig
 	Net            types.NetSetup
 	BootConfig     *types.BootConfig
-	Prepare        func(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error)
+	Prepare        PrepareHook
 }
 
 // SnapshotSpec carries backend hooks for SnapshotSequence; the shared hc keeps HTTP keep-alive across pause/capture/resume.
@@ -186,3 +153,38 @@ type HibernateSpec struct {
 	Terminate    func(rec *VMRecord, hc *http.Client, pid int) error
 	RuntimeFiles []string
 }
+
+var _ Supervisable = (*Backend)(nil)
+
+// Backend provides shared store operations for hypervisor backends.
+type Backend struct {
+	Typ      string
+	NS       string
+	Conf     BackendConfig
+	Meta     meta.Store
+	Metering metering.Recorder
+
+	// Net converges host networking inside the VM ops lock; nil disables it.
+	Net VMNetwork
+}
+
+// NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.
+func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
+	if err := conf.EnsureDirs(); err != nil {
+		return nil, fmt.Errorf("ensure dirs: %w", err)
+	}
+	if rec == nil {
+		rec = metering.NopRecorder{}
+	}
+	return &Backend{
+		Typ:      typ,
+		NS:       VMNamespaceName(typ),
+		Conf:     conf,
+		Meta:     store,
+		Metering: rec,
+	}, nil
+}
+
+func (b *Backend) Type() string { return b.Typ }
+
+// LaunchSpec is the per-call input to Backend.LaunchVMProcess; PID-file and socket paths derive from Rec.RunDir.

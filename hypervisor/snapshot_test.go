@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"
@@ -188,5 +189,26 @@ func TestValidateMetaPathsResidentExemption(t *testing.T) {
 	meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{Path: "/elsewhere/layer.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"})
 	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
 		t.Fatal("a layer outside the blob store must stay untrusted")
+	}
+}
+
+func TestPrepareSnapshotRejectsNilNIC(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-snap-nil-nic"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{nil}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed nil NIC: %v", err)
+	}
+
+	_, _, _, unlock, err := b.prepareSnapshot(ctx, id)
+	if unlock != nil {
+		unlock()
+	}
+	if err == nil || !strings.Contains(err.Error(), "network invariants violated") {
+		t.Fatalf("err = %v, want network invariants violation", err)
 	}
 }

@@ -55,7 +55,7 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close() //nolint:errcheck
 
-	// Stdin is opt-in (docker semantics): a nil reader closes the child's stdin immediately so scripted callers don't have the rest of their script swallowed by the pump.
+	// Stdin is opt-in: a nil reader keeps the pump from swallowing a scripted caller's remaining script.
 	var stdin io.Reader
 	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
 		stdin = os.Stdin
@@ -87,7 +87,7 @@ func parseExecEnv(pairs []string) (map[string]string, error) {
 	return out, nil
 }
 
-// dialHybridVsock dials the UDS + runs CONNECT-port handshake (CH/FC); ctx-aware so Ctrl+C unblocks the "OK " read while the in-guest agent is still coming up.
+// dialHybridVsock is ctx-aware so Ctrl+C unblocks the "OK " read while the guest agent is still starting.
 func dialHybridVsock(ctx context.Context, socketPath string, port uint32) (io.ReadWriteCloser, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socketPath)
@@ -115,7 +115,7 @@ func dialHybridVsock(ctx context.Context, socketPath string, port uint32) (io.Re
 	return conn, nil
 }
 
-// readHybridVsockReply reads one '\n'-terminated line byte-by-byte; bufio would over-read into the agent's first frame.
+// readHybridVsockReply reads byte-by-byte: bufio would over-read into the agent's first frame.
 func readHybridVsockReply(r io.Reader) (string, error) {
 	buf := make([]byte, 0, 32)
 	one := make([]byte, 1)

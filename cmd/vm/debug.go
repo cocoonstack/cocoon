@@ -61,7 +61,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	}
 
 	if conf.UseFirecracker {
-		// FC requires uncompressed ELF kernel — resolve vmlinux path for debug output.
+		// FC requires an uncompressed ELF kernel.
 		if err := firecracker.EnsureVmlinuxBoot(boot); err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 		len(configs), cowPath)
 	fmt.Println()
 
-	if size, ok := hypervisor.BalloonSize(vmCfg.Memory, vmCfg.Windows); ok {
+	if size, ok := hypervisor.BalloonSize(vmCfg.Config); ok {
 		fmt.Println("# 4. Balloon")
 		fmt.Printf("curl --unix-socket %s -X PUT http://localhost/balloon \\\n", sock)
 		fmt.Printf("  -d '{\"amount_mib\": %d, \"deflate_on_oom\": true, \"free_page_reporting\": true}'\n", size>>20) //nolint:mnd
@@ -144,8 +144,8 @@ func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []
 	balloon, _ := cmd.Flags().GetInt("balloon")
 	cowPath, _ := cmd.Flags().GetString("cow")
 	chBin, _ := cmd.Flags().GetString("ch")
-	// Mirror runtime gating: Windows / sub-MinBalloon VMs never get balloon even with --balloon, so debug output stays truthful.
-	size, ok := hypervisor.BalloonSize(vmCfg.Memory, vmCfg.Windows)
+	// Runtime gating wins over --balloon, so the printed command matches what cocoon would launch.
+	size, ok := hypervisor.BalloonSize(vmCfg.Config)
 	switch {
 	case !ok:
 		balloon = 0

@@ -13,7 +13,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// GracefulStop signals shutdown, polls until exit, escalates on timeout.
 func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeout time.Duration, signal, escalate func() error) error {
 	logger := log.WithFunc(b.Typ + ".GracefulStop")
 	if err := signal(); err != nil {
@@ -32,7 +31,7 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 	return escalate()
 }
 
-// StopOneSequence runs the shared per-id stop skeleton (LoadRecord → WithRunningVM(Shutdown) → HandleStopResult) under the VM's ops lock so backends only express their force-vs-graceful choice.
+// StopOneSequence is StopOneLocked under the VM's ops lock.
 func (b *Backend) StopOneSequence(ctx context.Context, id string, spec StopSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {
@@ -42,7 +41,7 @@ func (b *Backend) StopOneSequence(ctx context.Context, id string, spec StopSpec)
 	return b.StopOneLocked(ctx, id, spec)
 }
 
-// StopOneLocked is StopOneSequence minus the lock; DeleteAll calls it with the VM's ops lock already held (re-locking would deadlock). The Stopped flip lands inside the caller's lock so a start queued behind this stop can't interleave between the kill and the state write.
+// StopOneLocked skips the lock for DeleteAll, which already holds it; the Stopped flip lands inside that lock.
 func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) error {
 	rec, err := b.LoadRecord(ctx, id)
 	if err != nil {
@@ -120,7 +119,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	stoppedByUs := false
 	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {
 		if !force {
-			return fmt.Errorf("running (force required)")
+			return errors.New("running (force required)")
 		}
 		stoppedByUs = true
 		return stopLocked(ctx, id)

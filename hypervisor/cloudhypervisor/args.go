@@ -57,7 +57,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 
 	cfg.Serial, cfg.Console = serialConsoleFor(hypervisor.IsDirectBoot(rec.BootConfig), consoleSockPath)
 
-	if size, ok := hypervisor.BalloonSize(mem, rec.Config.Windows); ok {
+	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
 		cfg.Balloon = &chBalloon{
 			Size:              size,
 			DeflateOnOOM:      true,
@@ -220,7 +220,7 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 	return d
 }
 
-// queueAffinity spreads queue i over host CPUs, clamped to the allowed set (fence/placement) so no target lands on a core the scope cannot run on; nil allowed keeps the identity mapping.
+// queueAffinity clamps to the allowed set so no queue targets a core the scope cannot run on; nil allowed keeps the identity mapping.
 func queueAffinity(cpuCount int, allowed []int) []chQueueAffinity {
 	qa := make([]chQueueAffinity, cpuCount)
 	for i := range qa {
@@ -286,7 +286,7 @@ func runtimeFileToCLIArg(c *chRuntimeFile) string {
 	case "socket":
 		return "socket=" + c.Socket
 	default:
-		return strings.ToLower(c.Mode) // "off", "null", "tty", "pty"
+		return strings.ToLower(c.Mode)
 	}
 }
 
@@ -302,7 +302,6 @@ func queueAffinityToCLI(qa []chQueueAffinity) string {
 	return "[" + strings.Join(parts, ",") + "]"
 }
 
-// activeDisks filters cidata out of post-first-boot cloudimg VMs.
 func activeDisks(rec *hypervisor.VMRecord) []*types.StorageConfig {
 	skipCidata := rec.FirstBooted && !hypervisor.IsDirectBoot(rec.BootConfig)
 	out := make([]*types.StorageConfig, 0, len(rec.StorageConfigs))
