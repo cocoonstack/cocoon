@@ -114,7 +114,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
 }
 
-// failRestore marks the VM error after a restore failure; a stopped origin (the pre-kill state) is spared so hibernate wake stays retryable — run-dir-mutating steps quarantine at their own site.
+// failRestore spares a stopped origin so hibernate wake stays retryable.
 func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMState) {
 	if origin == types.VMStateStopped {
 		return

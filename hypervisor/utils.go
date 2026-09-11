@@ -40,7 +40,7 @@ const (
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
 	CloneLocksDirName = "clone-locks"
 
-	// restoreStagingName is the restore staging dir inside the VM run dir; snapshot capture dirs use the "snapshot-" prefix. restoreDirtyName is the tombstone marking the destructive restore phase — cleared only by FinalizeRestore, never by GC.
+	// restoreDirtyName is cleared only by FinalizeRestore, never by GC.
 	restoreStagingName = ".restore-staging"
 	restoreDirtyName   = ".restore-dirty"
 	captureDirPrefix   = "snapshot-"
@@ -48,7 +48,7 @@ const (
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
 
-	// socketReadyPollInterval is the WaitForSocket poll cadence — VMM socket usually appears within a few ms after process start.
+	// socketReadyPollInterval matches a VMM socket appearing within a few ms of process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 
 	onlineCPUsPath = "/sys/devices/system/cpu/online"
@@ -173,7 +173,7 @@ func ExtractBlobIDs(storageConfigs []*types.StorageConfig, boot *types.BootConfi
 			ids[filepath.Base(filepath.Dir(boot.InitrdPath))] = struct{}{}
 		}
 	} else if len(storageConfigs) > 0 {
-		// Cloudimg: base qcow2 blob hex (before overlay replaces it).
+		// storageConfigs[0] is the base qcow2 only before the overlay replaces it.
 		ids[BlobHexFromPath(storageConfigs[0].Path)] = struct{}{}
 	}
 	return ids
@@ -292,7 +292,7 @@ func ValidateHostCPU(cpu int) error {
 	return nil
 }
 
-// ValidateSnapshotIntegrity is the backend-agnostic preflight: sidecar is structurally valid and every snapshot-resident disk (COW/Cidata/Data) is on disk. Layers are shared blobs; backends add their own (state.json, vmstate) checks.
+// ValidateSnapshotIntegrity asserts the sidecar is valid and every snapshot-resident disk is present; layers are shared blobs.
 func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
 	if err := types.ValidateStorageConfigs(sidecar); err != nil {
 		return fmt.Errorf("sidecar invalid: %w", err)
@@ -313,7 +313,7 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role+serial prefix of rec (an imported sidecar is untrusted — a swapped serial must not survive preflight); rec may carry trailing cidata (cloudimg post-first-boot) — the only allowed extension.
+// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; trailing cidata is the only allowed extension.
 func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	if len(sidecar) > len(rec) {
 		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
@@ -378,7 +378,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 
 		switch classify(name) {
 		case SnapshotFileMemory:
-			// Hardlink (same-fs); symlink fallback on EXDEV. Hypervisors MAP_PRIVATE the file so neither link is mutated.
+			// Hypervisors MAP_PRIVATE the file, so neither link is mutated.
 			if linkErr := os.Link(src, dst); linkErr != nil {
 				if !errors.Is(linkErr, syscall.EXDEV) {
 					return fmt.Errorf("link %s: %w", name, linkErr)
@@ -460,7 +460,7 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 	}, nil
 }
 
-// opsLock resolves the VMID-keyed operation lock; the transient unlink-on-release keeps lease files from accumulating, and every acquirer rebinds on a stale inode.
+// opsLock unlinks on release, so every acquirer rebinds on a stale inode.
 func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
 	return vmlock.New(conf.RootDirPath(), vmID)
 }

@@ -15,7 +15,7 @@ var (
 	ErrAmbiguous  = errors.New("vm ref resolves to multiple backends")
 )
 
-// Hypervisor manages VM lifecycle. Implemented by each backend.
+// Hypervisor manages VM lifecycle.
 type Hypervisor interface {
 	Type() string
 
@@ -34,7 +34,7 @@ type Hypervisor interface {
 	RegisterGC(*gc.Orchestrator)
 }
 
-// Reserver pre-claims a VM ID before host resources (network) are provisioned, closing the window where GC would see ownerless TAP/netns. Callers hold LockVMOps from the claim through Create/Clone so a concurrent rm/start cannot interleave with the half-built VM.
+// Reserver pre-claims a VM ID before host resources are provisioned, so GC never sees an ownerless TAP/netns.
 type Reserver interface {
 	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error
 	RollbackCreate(ctx context.Context, id, name string)
@@ -47,7 +47,7 @@ type Direct interface {
 	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 }
 
-// Hibernator snapshots and stops atomically: capture, persist, and termination share one pause window, and the VMM dies only after persist succeeds — a failed persist leaves the VM running. persist consumes srcDir (the finalized capture dir) — moving it into a local store or streaming it out — and must return only once the snapshot is durable.
+// Hibernator captures, persists and terminates in one pause window; persist consumes srcDir and returns only once the snapshot is durable.
 type Hibernator interface {
 	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error
 }

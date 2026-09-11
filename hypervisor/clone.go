@@ -22,7 +22,7 @@ type CloneSpec struct {
 	AfterExtract   AfterExtractFn
 }
 
-// DirectCloneBase clones from a local snapshot directory. Used when the snapshot lives on the same host (no tar streaming needed).
+// DirectCloneBase clones from a local snapshot directory.
 func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSpec, srcDir string, cloneFiles func(dstDir, srcDir string) error) (*types.VM, error) {
 	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
 		if err := cloneFiles(runDir, srcDir); err != nil {
@@ -32,7 +32,7 @@ func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSp
 	})
 }
 
-// CloneFromStream clones from a tar stream into a fresh runDir. Used when the snapshot arrives over the network (cross-node clone).
+// CloneFromStream clones from a tar stream into a fresh runDir.
 func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSpec, snapshot io.Reader) (*types.VM, error) {
 	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
 		if err := utils.ExtractTar(runDir, snapshot, isLockFile); err != nil {

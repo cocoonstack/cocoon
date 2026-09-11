@@ -35,13 +35,11 @@ const (
 	// VMMemTransferTimeout is the single-shot timeout for snapshot/restore API calls.
 	VMMemTransferTimeout = 10 * time.Minute
 
-	// MinBalloonMemory: balloon overhead is not worthwhile below 256 MiB guest memory.
+	// MinBalloonMemory is the floor below which balloon overhead is not worthwhile.
 	MinBalloonMemory = 256 << 20
 
-	// DefaultBalloonDiv sizes the initial balloon as memory/DefaultBalloonDiv (25%).
 	DefaultBalloonDiv = 4
 
-	// GracefulStopPollInterval polls between graceful shutdown signal and timeout escalation.
 	GracefulStopPollInterval = 500 * time.Millisecond
 )
 

@@ -18,7 +18,7 @@ type vmCleanup struct {
 	LogDir string `json:"log_dir,omitempty"`
 }
 
-// EntryGuardLoad runs the tombstone entry guard under the caller's ops lock: a leased tombstone rolls back, a deleting one is driven to completion and refused; the record returns from the guard's own transaction so entry paths skip a second namespace read.
+// EntryGuardLoad returns the record from the guard's own transaction, so entry paths skip a second namespace read.
 func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
 	rec, err := b.entryGuard(ctx, id)
 	if err != nil {
@@ -96,7 +96,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 	return err
 }
 
-// recoverVMTombstone drives id's tombstone to completion under the held ops lock: leased rolls back (record stays live), deleting rolls forward from the payload. done reports the entity was finalized (record gone).
+// recoverVMTombstone drives id's tombstone to completion under the held ops lock.
 func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
 	ts := b.tombstones()
 	var (
@@ -121,7 +121,7 @@ func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool,
 	return true, nil
 }
 
-// entryGuard peeks tombstone and record in a read transaction — the caller's ops lock freezes both — escalating to a write only to roll a leased tombstone back, keeping the common no-tombstone path off the single sqlite writer connection.
+// entryGuard keeps the common no-tombstone path off the single sqlite writer connection.
 func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) {
 	ts := b.tombstones()
 	var (

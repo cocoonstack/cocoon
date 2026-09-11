@@ -14,7 +14,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config can't hold (Role/MountPoint/FSType/DirectIO; FC CPU/Memory).
+// SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config cannot hold.
 const SnapshotMetaFile = "cocoon.json"
 
 // SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
@@ -26,7 +26,6 @@ type SnapshotMeta struct {
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
 type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
 
-// RecordSnapshot generates a snapshot ID and records it on the VM's record.
 func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
 	snapID := utils.GenerateID()
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
@@ -67,7 +66,7 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	return cfg
 }
 
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window — AfterCapture (e.g. cidata copy) runs outside. It returns the finalized capture dir, which the caller consumes (PersistSnapshotDir).
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window.
 func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ string, err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
@@ -98,7 +97,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	return cfg, tmpDir, nil
 }
 
-// HibernateSequence is SnapshotSequence with persist inside the pause window and terminate instead of resume: the snapshot point and the stop coincide, any failure before terminate resumes the VM, and a failed terminate marks it error.
+// HibernateSequence persists inside the pause window and terminates instead of resuming.
 func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, srcDir string) error) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
@@ -231,7 +230,6 @@ func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
 	return meta, nil
 }
 
-// PopulateFromSrc cleans runDir of old snapshot files then copies fresh ones from srcDir (used by DirectRestore).
 func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func(string, string) error) error {
 	if err := clean(runDir); err != nil {
 		return fmt.Errorf("clean old snapshot files: %w", err)
@@ -242,7 +240,7 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func
 	return nil
 }
 
-// PreflightRestore loads and validates the sidecar, runs the backend integrity check and asserts the snapshot role sequence prefixes rec; the validated meta is returned so later phases skip re-reading it.
+// PreflightRestore returns the validated meta so later phases skip re-reading it.
 func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
 	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
 	if err != nil {
@@ -266,7 +264,7 @@ func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.Storage
 	return out
 }
 
-// IsUnderDir reports whether path is strictly under dir. An empty dir returns false (disables the check) rather than matching every path.
+// IsUnderDir returns false for an empty dir rather than matching every path.
 func IsUnderDir(path, dir string) bool {
 	if dir == "" {
 		return false
@@ -276,7 +274,7 @@ func IsUnderDir(path, dir string) bool {
 	return strings.HasPrefix(cleaned, root+string(filepath.Separator))
 }
 
-// ValidateMetaPaths rejects dereferenced sidecar/boot paths escaping cocoon-managed roots (an imported cocoon.json is untrusted); snapshot-resident disks are exempt — their recorded path is provenance only, resolved from the record or rewritten.
+// ValidateMetaPaths treats an imported cocoon.json as untrusted; snapshot-resident paths are provenance only.
 func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {

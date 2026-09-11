@@ -75,7 +75,7 @@ func (b *Backend) WithPausedVM(ctx context.Context, rec *VMRecord, pause, resume
 	})
 }
 
-// UpdateStates flips ids to Stopped or Error and emits compute.stop on Running→Stopped (Error paths can't prove the process is dead so the interval stays open until a confirmed-dead helper closes it). To open a fresh interval, use BatchMarkStarted — UpdateStates intentionally rejects Running to avoid silent ledger drift.
+// UpdateStates flips ids to Stopped or Error and emits compute.stop on Running→Stopped; an Error path leaves the interval open for a confirmed-dead helper.
 func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VMState) error {
 	if len(ids) == 0 {
 		return nil
@@ -104,7 +104,6 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 	})
 }
 
-// MarkError flips a single VM's state to VMStateError, logging on persist failure.
 func (b *Backend) MarkError(ctx context.Context, id string) {
 	if err := b.UpdateStates(ctx, []string{id}, types.VMStateError); err != nil {
 		log.WithFunc(b.Typ+".MarkError").Errorf(ctx, err, "mark VM %s error", id)
@@ -152,7 +151,7 @@ func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
 	})
 }
 
-// ReconcileToRunning flips a drifted record with a live process back to Running under the caller's ops lock, returning the committed generation (zero if unchanged); without an open interval it emits a fresh compute.start so a later stop stays matched.
+// ReconcileToRunning returns the committed generation (zero if unchanged) and emits a fresh compute.start when no interval is open.
 func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, error) {
 	now := timeNow()
 	var (
@@ -167,7 +166,6 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 		if err != nil {
 			return err
 		}
-		// A quarantined or still-creating record is nobody's to promote.
 		if r == nil || r.State == types.VMStateRunning || r.State == types.VMStateCreating || r.Quarantine != "" {
 			return nil
 		}
@@ -207,7 +205,7 @@ func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.
 	if utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
 		return fn(pid)
 	}
-	// Covers pidfile/socket cleaned up before VMM exited. Fail-closed if scan errors so callers don't treat inconclusive state as ErrNotRunning.
+	// Fail closed: an inconclusive scan must not read as ErrNotRunning.
 	scanned, scanErr := b.scanFor(scan, sockPath)
 	if scanErr != nil {
 		return fmt.Errorf("vm %s: pidfile-based check failed and /proc scan errored: %w (resolve the host issue and retry)", rec.ID, scanErr)
