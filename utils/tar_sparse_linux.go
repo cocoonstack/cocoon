@@ -60,7 +60,7 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("tar header for %s: %w", path, err)
 	}
 	hdr.Name = nameInTar
-	hdr.Size = dataSize // Only actual data bytes in the tar entry.
+	hdr.Size = dataSize // only actual data bytes in the tar entry
 	hdr.PAXRecords = map[string]string{
 		paxSparseMap:  string(mapJSON),
 		paxSparseSize: strconv.FormatInt(size, 10),

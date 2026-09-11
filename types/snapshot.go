@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// SnapshotConfig carries the parameters for creating a snapshot. The hypervisor fills ID, Image, ImageBlobIDs, Hypervisor, and resource fields; the CLI adds Name and Description.
+// SnapshotConfig carries the parameters for creating a snapshot.
 type SnapshotConfig struct {
 	Config
 
@@ -18,7 +18,7 @@ type SnapshotConfig struct {
 	NICMTUs      []int               `json:"nic_mtus,omitempty"`
 }
 
-// Validate checks SnapshotConfig caller-controlled fields. Empty Name is allowed (name is optional).
+// Validate checks SnapshotConfig caller-controlled fields.
 func (cfg *SnapshotConfig) Validate() error {
 	if cfg.Name != "" && !validSnapshotName.MatchString(cfg.Name) {
 		return fmt.Errorf("snapshot name %q is invalid: must match %s (max 63 chars)", cfg.Name, validSnapshotName.String())

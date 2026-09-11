@@ -9,16 +9,16 @@ import (
 type Module[S any] struct {
 	Name string
 
-	// Recover resumes existing tombstones by phase before discovery, so a deleting entry whose data is already gone never reappears as a candidate. Optional.
+	// Recover optionally resumes tombstones by phase, so a deleting entry whose data is gone never reappears as a candidate.
 	Recover func(ctx context.Context) []error
 
 	// ReadDB reads the module's current state (self-locking snapshot).
 	ReadDB func(ctx context.Context) (S, error)
 
-	// Resolve returns IDs to delete; others holds snapshots from peer modules (cross-module analysis, e.g. VMs pinning images). Loose: collectors revalidate per candidate.
+	// Resolve returns IDs to delete; others holds snapshots from peer modules.
 	Resolve func(ctx context.Context, snap S, others map[string]any) []string
 
-	// Collect removes the given IDs, revalidating each under its entity lock and tombstone lease.
+	// Collect removes the given IDs.
 	Collect func(ctx context.Context, ids []string, snap S) error
 }
 

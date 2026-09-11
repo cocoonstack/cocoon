@@ -119,7 +119,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	stoppedByUs := false
 	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {
 		if !force {
-			return fmt.Errorf("running (force required)")
+			return errors.New("running (force required)")
 		}
 		stoppedByUs = true
 		return stopLocked(ctx, id)

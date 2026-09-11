@@ -137,8 +137,14 @@ func TestReflinkCopy_PreservesSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srcInfo, _ := os.Stat(src)
-	dstInfo, _ := os.Stat(dst)
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		t.Fatalf("stat src: %v", err)
+	}
+	dstInfo, err := os.Stat(dst)
+	if err != nil {
+		t.Fatalf("stat dst: %v", err)
+	}
 	if srcInfo.Size() != dstInfo.Size() {
 		t.Errorf("size mismatch: src=%d dst=%d", srcInfo.Size(), dstInfo.Size())
 	}

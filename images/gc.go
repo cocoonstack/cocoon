@@ -26,18 +26,20 @@ type ImageGCSnapshot struct {
 	diskIDs []string            // digest hexes found on disk (blobs + optional extras)
 }
 
+// DiskScanFunc returns hex IDs present on disk.
+type DiskScanFunc func() ([]string, error)
+
 // GCModuleConfig configures a generic image GC module.
 type GCModuleConfig[E any] struct {
 	Name     string
 	Store    *Store[E]
 	LockPath func(hex string) string
 	ReadRefs func(map[string]*E) map[string]struct{}
-	ScanDisk func() ([]string, error)
+	ScanDisk DiskScanFunc
 	// ExtraDisk returns additional hex IDs on disk (e.g., OCI boot dirs). Optional.
-	ExtraDisk func() ([]string, error)
-	Removers  []func(string) error
-	TempDir   string
-	// DirOnly: true for OCI (temp dirs), false for cloudimg (temp files).
+	ExtraDisk       DiskScanFunc
+	Removers        []func(string) error
+	TempDir         string
 	DirOnly         bool
 	PinnedElsewhere PinRecheck
 }

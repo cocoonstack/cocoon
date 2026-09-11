@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 type vmTx struct {
@@ -73,4 +74,14 @@ func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 		r:       r,
 		w:       w,
 	}
+}
+
+func validateRecordInvariants(rec *VMRecord) error {
+	if err := types.ValidateStorageConfigs(rec.StorageConfigs); err != nil {
+		return fmt.Errorf("storage invariants violated: %w", err)
+	}
+	if err := types.ValidateNetworkConfigs(rec.NetworkConfigs); err != nil {
+		return fmt.Errorf("network invariants violated: %w", err)
+	}
+	return nil
 }

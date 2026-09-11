@@ -81,7 +81,7 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 		return nil
 	}
 	if state == types.VMStateRunning {
-		return fmt.Errorf("UpdateStates(Running) not allowed; use BatchMarkStarted")
+		return errors.New("UpdateStates(Running) not allowed; use BatchMarkStarted")
 	}
 	now := timeNow()
 	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {

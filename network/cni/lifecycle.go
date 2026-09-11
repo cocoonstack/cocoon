@@ -176,7 +176,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	})
 }
 
-// Remove tears down NIC plumbing for the given indices; preserves the netns. A failed NIC keeps its DB record so retry / vm rm / GC can still release its CNI resources.
+// Remove keeps a failed NIC's DB record so retry, vm rm or GC can still release its CNI resources.
 func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	if len(indices) == 0 {
 		return nil

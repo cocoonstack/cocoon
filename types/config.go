@@ -15,7 +15,7 @@ type Config struct {
 	DiskQueueSize int    `json:"disk_queue_size,omitempty"` // virtio-blk ring depth per device; 0 = default
 	Image         string `json:"image,omitempty"`
 	ImageDigest   string `json:"image_digest,omitempty"` // resolved image digest (e.g. "sha256:abc123")
-	ImageType     string `json:"image_type,omitempty"`   // backend type, ImageTypeOCI / ImageTypeCloudImg
+	ImageType     string `json:"image_type,omitempty"`
 	Network       string `json:"network,omitempty"`      // CNI conflist name; empty = default
 	NoDirectIO    bool   `json:"no_direct_io,omitempty"` // disable O_DIRECT on writable disks
 	NoWatchdog    bool   `json:"no_watchdog,omitempty"`  // omit the virtio watchdog device (guest/driver compatibility)

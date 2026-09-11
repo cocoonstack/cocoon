@@ -15,11 +15,11 @@ const (
 type NetworkConfig struct {
 	TAP       string `json:"tap"`
 	MAC       string `json:"mac"`
-	NumQueues int    `json:"num_queues"` // Virtio queue count (= CPU * 2 for multi-queue).
+	NumQueues int    `json:"num_queues"` // virtio queue count (= CPU * 2 for multi-queue)
 	QueueSize int    `json:"queue_size"`
 	MTU       int    `json:"mtu,omitempty"`
 
-	// Backend is the provider type ("cni" or "bridge"); empty means "cni" (pre-bridge records).
+	// Backend is the provider type; empty means CNI (pre-bridge records).
 	Backend string `json:"backend,omitempty"`
 
 	// BridgeDev is the Linux bridge device name; set only when Backend=="bridge".
@@ -28,7 +28,7 @@ type NetworkConfig struct {
 	// NetnsPath is the netns where the TAP lives; empty for backends without netns (e.g. macOS vmnet).
 	NetnsPath string `json:"netns_path,omitempty"`
 
-	// Network is the guest-visible IP config; nil means DHCP.
+	// Network is nil for DHCP NICs.
 	Network *Network `json:"network,omitempty"`
 }
 

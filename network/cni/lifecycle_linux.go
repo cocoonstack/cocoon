@@ -74,13 +74,10 @@ func deleteTAPInNetns(nsPath, tapName string) error {
 		}
 		return netlink.LinkDel(link)
 	})
-	if _, ok := errors.AsType[cns.NSPathNotExistErr](err); ok {
-		return nil
-	}
-	return err
+	return ignoreMissingNetns(err)
 }
 
-// setLinkStateInNetns brings ifNames up or down inside nsPath. A missing netns or link is success: Quiesce/Unquiesce run across stop/restart and partial teardown, where the plumbing may already be gone.
+// setLinkStateInNetns treats a missing netns or link as success: Quiesce and Unquiesce run where the plumbing may already be gone.
 func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
 	transition := netlink.LinkSetDown
 	if up {
@@ -101,10 +98,7 @@ func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
 		}
 		return nil
 	})
-	if _, ok := errors.AsType[cns.NSPathNotExistErr](err); ok {
-		return nil
-	}
-	return err
+	return ignoreMissingNetns(err)
 }
 
 func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
@@ -211,4 +205,11 @@ func addTCRedirect(from, to netlink.Link) error {
 		},
 	}
 	return netlink.FilterAdd(filter)
+}
+
+func ignoreMissingNetns(err error) error {
+	if _, ok := errors.AsType[cns.NSPathNotExistErr](err); ok {
+		return nil
+	}
+	return err
 }

@@ -52,7 +52,10 @@ func TestAtomicWriteFile_Overwrite(t *testing.T) {
 		t.Errorf("got %q, want %q", got, "new")
 	}
 
-	fi, _ := os.Stat(path)
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("permissions: got %o, want 0600", fi.Mode().Perm())
 	}
@@ -186,7 +189,10 @@ func TestAtomicWriteJSON_Permissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fi, _ := os.Stat(path)
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
 	if fi.Mode().Perm() != 0o644 {
 		t.Errorf("permissions: got %o, want 0644", fi.Mode().Perm())
 	}

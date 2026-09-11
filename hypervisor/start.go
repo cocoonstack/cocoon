@@ -39,13 +39,9 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	if rec == nil {
 		return nil
 	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
+	if vErr := validateRecordInvariants(rec); vErr != nil {
 		b.MarkError(ctx, id)
-		return fmt.Errorf("storage invariants violated: %w", vErr)
-	}
-	if vErr := types.ValidateNetworkConfigs(rec.NetworkConfigs); vErr != nil {
-		b.MarkError(ctx, id)
-		return fmt.Errorf("network invariants violated: %w", vErr)
+		return vErr
 	}
 	// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
 	if err = b.RecoverNetwork(ctx, rec); err != nil {

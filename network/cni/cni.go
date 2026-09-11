@@ -96,7 +96,7 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 	return nil
 }
 
-// Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its now-carrier-less TAP (mirred-to-down-device). The netns and TAP are kept for a fast restart, which Unquiesce re-enables.
+// Quiesce brings the VM's host-side veths down so a stopped VM's TC redirect stops storming softirqs against its carrier-less TAP.
 func (c *CNI) Quiesce(ctx context.Context, vmID string) error {
 	return c.setLinkState(ctx, vmID, false)
 }

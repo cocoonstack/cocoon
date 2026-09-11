@@ -177,8 +177,8 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 	if err != nil {
 		return fail(err)
 	}
-	if vErr := types.ValidateStorageConfigs(rec.StorageConfigs); vErr != nil {
-		return fail(fmt.Errorf("storage invariants violated: %w", vErr))
+	if vErr := validateRecordInvariants(&rec); vErr != nil {
+		return fail(vErr)
 	}
 	tmpDir, err := os.MkdirTemp(rec.RunDir, captureDirPrefix)
 	if err != nil {

@@ -6,6 +6,9 @@ import (
 	"fmt"
 )
 
+// ScanFunc receives each scanned record; an error aborts the scan.
+type ScanFunc[R any] func(id string, rec *R) error
+
 // Collection is a typed record set inside one namespace table; reads hand back detached values, persisting a change requires Replace.
 type Collection[R any] struct {
 	ns    string
@@ -60,7 +63,7 @@ func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ..
 }
 
 // Scan yields detached records in the engine's stable order; fn errors abort and propagate.
-func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn func(id string, rec *R) error) error {
+func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn ScanFunc[R]) error {
 	return r.ScanRaw(ctx, c.ns, c.table, func(id string, raw json.RawMessage) error {
 		rec, err := c.decode(id, raw)
 		if err != nil {
