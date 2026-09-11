@@ -130,13 +130,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, fmt.Errorf("validate storage configs: %w", err)
 	}
 
-	info := &types.VM{
-		ID: vmID, Hypervisor: typ, State: types.VMStateRunning,
-		Config: *vmCfg, StorageConfigs: storageConfigs,
-		NetSetup:  net,
-		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
-	}
-	hypervisor.SetRunningSockets(info, runDir)
+	info := fc.RunningCloneRecord(vmID, vmCfg, storageConfigs, net, runDir, now)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
 		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
