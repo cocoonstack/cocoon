@@ -14,12 +14,8 @@ type Config struct {
 
 // NewConfig creates a Config from a global config.
 func NewConfig(conf *config.Config) *Config {
-	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "cloudhypervisor")}
+	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "cloudhypervisor", conf.CHBinary, pidFileName)}
 }
-
-func (c *Config) BinaryName() string { return filepath.Base(c.CHBinary) }
-
-func (c *Config) PIDFileName() string { return pidFileName }
 
 func (c *Config) OverlayPath(vmID string) string {
 	return filepath.Join(c.VMRunDir(vmID), "overlay.qcow2")

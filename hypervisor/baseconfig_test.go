@@ -32,7 +32,7 @@ func TestResolveExternalVolume(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	conf := NewBaseConfig(&config.Config{RootDir: rootDir, RunDir: runDir, LogDir: logDir}, "cloudhypervisor")
+	conf := NewBaseConfig(&config.Config{RootDir: rootDir, RunDir: runDir, LogDir: logDir}, "cloudhypervisor", "cloud-hypervisor", "ch.pid")
 
 	wantOK, err := filepath.EvalSymlinks(okVol)
 	if err != nil {

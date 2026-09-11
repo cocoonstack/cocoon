@@ -158,11 +158,6 @@ func (b *Backend) ReconcileStaleCreate(ctx context.Context, id string) (StaleCre
 	return StaleCreateCollected, nil
 }
 
-// RecoverTombstone drives an unfinished delete to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
-func (b *Backend) RecoverTombstone(ctx context.Context, id string) (bool, error) {
-	return b.recoverVMTombstone(ctx, id)
-}
-
 func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcScan) (utils.ProcRef, error) {
 	var ref utils.ProcRef
 	err := b.withRunningVM(ctx, rec, scan, func(pid int) error {

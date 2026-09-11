@@ -14,15 +14,21 @@ const (
 	defaultTerminateGracePeriod = 5 * time.Second
 )
 
-// BaseConfig holds the directory layout and timeout defaults shared by all hypervisor backends.
+// BaseConfig holds the directory layout, binary and timeout defaults shared by all hypervisor backends.
 type BaseConfig struct {
 	*config.Config
 	backendName string
+	binary      string
+	pidFile     string
 }
 
-func NewBaseConfig(conf *config.Config, name string) BaseConfig {
-	return BaseConfig{Config: conf, backendName: name}
+func NewBaseConfig(conf *config.Config, name, binary, pidFile string) BaseConfig {
+	return BaseConfig{Config: conf, backendName: name, binary: binary, pidFile: pidFile}
 }
+
+func (c *BaseConfig) BinaryName() string { return filepath.Base(c.binary) }
+
+func (c *BaseConfig) PIDFileName() string { return c.pidFile }
 
 func (c *BaseConfig) RunDir() string { return filepath.Join(c.Config.RunDir, c.backendName) }
 

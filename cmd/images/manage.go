@@ -37,10 +37,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	return cliutil.OutputFormatted(cmd, all, func(w *tabwriter.Writer) {
 		fmt.Fprintln(w, "TYPE\tNAME\tDIGEST\tSIZE\tCREATED") //nolint:errcheck
 		for _, img := range all {
-			digest := img.ID
-			if len(digest) > digestDisplayLen {
-				digest = digest[:digestDisplayLen]
-			}
+			digest := img.ID[:min(len(img.ID), digestDisplayLen)]
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 				img.Type, img.Name, digest,
 				cliutil.FormatSize(img.Size),

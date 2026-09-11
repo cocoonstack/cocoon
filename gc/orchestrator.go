@@ -41,18 +41,12 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		snapshots[m.getName()] = snap
 	}
 
-	targets := make(map[string][]string)
-	for _, m := range o.modules {
-		if ids := m.resolveTargets(ctx, snapshots[m.getName()], snapshots); len(ids) > 0 {
-			targets[m.getName()] = ids
-		}
-	}
-
 	summary := make(map[string]int, len(o.modules))
 	for _, m := range o.modules {
-		ids := targets[m.getName()]
+		snap := snapshots[m.getName()]
+		ids := m.resolveTargets(ctx, snap, snapshots)
 		// Collect runs even with no ids: modules sweep stale temp/capture leftovers there.
-		if err := m.collect(ctx, ids, snapshots[m.getName()]); err != nil {
+		if err := m.collect(ctx, ids, snap); err != nil {
 			errs = append(errs, fmt.Errorf("gc %s: %w", m.getName(), err))
 		}
 		if len(ids) > 0 {

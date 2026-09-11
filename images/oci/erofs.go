@@ -29,42 +29,29 @@ var (
 	erofsCheckOK bool
 )
 
-// startErofsConversion pipes a tar stream into mkfs.erofs; caller writes+closes stdin, then cmd.Wait().
-func startErofsConversion(ctx context.Context, uuid, outputPath string) (cmd *exec.Cmd, stdin io.WriteCloser, output *bytes.Buffer, err error) {
+// runErofsConversion streams src into mkfs.erofs while scanning boot files; the scan→drain→close→wait order is load-bearing (full stream before Wait, stdin closed or mkfs.erofs blocks).
+func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix, uuid, outPath string) (kernelPath, initrdPath string, err error) {
 	if err = checkErofsVersion(ctx); err != nil {
-		return nil, nil, nil, err
+		return "", "", err
 	}
 	// shell out because no Go EROFS writer library; mkfs.erofs is authoritative.
-	cmd = exec.CommandContext( //nolint:gosec
+	cmd := exec.CommandContext( //nolint:gosec
 		ctx, "mkfs.erofs",
 		"--tar=f",
 		fmt.Sprintf("-z%s", erofsCompression),
 		fmt.Sprintf("-C%d", erofsBlockSize),
 		"-T0",
 		"-U", uuid,
-		outputPath,
+		outPath,
 	)
-
-	stdin, err = cmd.StdinPipe()
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("create stdin pipe: %w", err)
+		return "", "", fmt.Errorf("create stdin pipe: %w", err)
 	}
-
-	output = &bytes.Buffer{}
-	cmd.Stdout = output
-	cmd.Stderr = output
-
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
 	if err = cmd.Start(); err != nil {
-		return nil, nil, nil, fmt.Errorf("start mkfs.erofs: %w", err)
-	}
-	return cmd, stdin, output, nil
-}
-
-// runErofsConversion streams src into mkfs.erofs while scanning boot files; the scan→drain→close→wait order is load-bearing (full stream before Wait, stdin closed or mkfs.erofs blocks).
-func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix, uuid, outPath string) (kernelPath, initrdPath string, err error) {
-	cmd, stdin, output, err := startErofsConversion(ctx, uuid, outPath)
-	if err != nil {
-		return "", "", fmt.Errorf("start erofs conversion: %w", err)
+		return "", "", fmt.Errorf("start mkfs.erofs: %w", err)
 	}
 
 	tee := io.TeeReader(src, stdin)

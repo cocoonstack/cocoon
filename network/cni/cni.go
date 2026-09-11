@@ -132,9 +132,7 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 		}
 		if cl != nil {
 			if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
-				if recErr == nil {
-					recErr = fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err)
-				}
+				recErr = errors.Join(recErr, fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err))
 				logger.Warnf(ctx, "CNI DEL %s/%s: %v", vmID, rec.IfName, err)
 			}
 		}
@@ -143,9 +141,7 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 			if !ok {
 				logger.Warnf(ctx, "parse ifname %q for %s (skip tap delete)", rec.IfName, vmID)
 			} else if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, idx)); delErr != nil {
-				if recErr == nil {
-					recErr = fmt.Errorf("delete tap %s: %w", tapNameForVM(vmID, idx), delErr)
-				}
+				recErr = errors.Join(recErr, fmt.Errorf("delete tap %s: %w", tapNameForVM(vmID, idx), delErr))
 				logger.Warnf(ctx, "delete tap %s in netns %s: %v", tapNameForVM(vmID, idx), nsPath, delErr)
 			}
 		}

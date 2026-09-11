@@ -40,10 +40,10 @@ const (
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
 	CloneLocksDirName = "clone-locks"
 
-	// restoreDirtyName is cleared only by FinalizeRestore, never by GC.
 	restoreStagingName = ".restore-staging"
-	restoreDirtyName   = ".restore-dirty"
-	captureDirPrefix   = "snapshot-"
+	// restoreDirtyName is cleared only by FinalizeRestore, never by GC.
+	restoreDirtyName = ".restore-dirty"
+	captureDirPrefix = "snapshot-"
 
 	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
 	MinDataDiskSize int64 = 16 << 20

@@ -1,8 +1,6 @@
 package firecracker
 
 import (
-	"path/filepath"
-
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
@@ -14,9 +12,5 @@ type Config struct {
 
 // NewConfig creates a Config from a global config.
 func NewConfig(conf *config.Config) *Config {
-	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "firecracker")}
+	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "firecracker", conf.FCBinary, pidFileName)}
 }
-
-func (c *Config) BinaryName() string { return filepath.Base(c.FCBinary) }
-
-func (c *Config) PIDFileName() string { return pidFileName }
