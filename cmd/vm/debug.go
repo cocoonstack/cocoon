@@ -144,7 +144,7 @@ func buildCHDebugSpec(cmd *cobra.Command, conf *config.Config, storageConfigs []
 	balloon, _ := cmd.Flags().GetInt("balloon")
 	cowPath, _ := cmd.Flags().GetString("cow")
 	chBin, _ := cmd.Flags().GetString("ch")
-	// Mirror runtime gating: Windows / sub-MinBalloon VMs never get balloon even with --balloon, so debug output stays truthful.
+	// runtime gating wins over --balloon so the printed command matches what cocoon would launch.
 	size, ok := hypervisor.BalloonSize(vmCfg.Config)
 	switch {
 	case !ok:

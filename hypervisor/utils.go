@@ -131,7 +131,7 @@ func ConsolePTYPath(runDir string) string { return filepath.Join(runDir, Console
 
 func VsockSockPath(runDir string) string { return filepath.Join(runDir, VsockSockName) }
 
-// BalloonSize returns (bytes, enabled); off when opted out, on Windows (virtio-win driver loops on deflation), and below MinBalloonMemory.
+// BalloonSize returns (bytes, enabled); Windows is always off since the virtio-win driver loops on deflation.
 func BalloonSize(cfg types.Config) (int64, bool) {
 	if cfg.NoBalloon || cfg.Windows || cfg.Memory < MinBalloonMemory {
 		return 0, false
