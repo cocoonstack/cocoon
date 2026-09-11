@@ -127,7 +127,7 @@ func (idx *VMIndex) Init() {
 
 func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
 	return b.update(ctx, func(t *vmTx) error {
-		before, idx, err := materialize(t)
+		before, idx, err := materialize(ctx, b.NS, t)
 		if err != nil {
 			return err
 		}
@@ -158,14 +158,14 @@ func testNamespace(t *testing.T, typ, dir string) *metajson.Store {
 	return store
 }
 
-func materialize(t *vmTx) (*VMIndex, *VMIndex, error) {
+func materialize(ctx context.Context, ns string, t *vmTx) (*VMIndex, *VMIndex, error) {
 	idx := &VMIndex{}
 	idx.Init()
 	var err error
 	if idx.VMs, err = t.All(); err != nil {
 		return nil, nil, err
 	}
-	if err := t.r.ScanRaw(t.ctx, t.ns, TableNames, func(name string, _ json.RawMessage) error {
+	if err := t.r.ScanRaw(ctx, ns, TableNames, func(name string, _ json.RawMessage) error {
 		id, ok, err := t.NameGet(name)
 		if err != nil || !ok {
 			return err

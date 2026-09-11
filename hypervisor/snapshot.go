@@ -230,7 +230,7 @@ func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
 	return meta, nil
 }
 
-func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone func(string, string) error) error {
+func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone CloneFilesFunc) error {
 	if err := clean(runDir); err != nil {
 		return fmt.Errorf("clean old snapshot files: %w", err)
 	}

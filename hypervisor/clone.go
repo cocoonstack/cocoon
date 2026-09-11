@@ -11,6 +11,9 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// CloneFilesFunc copies a snapshot's files from srcDir into dstDir.
+type CloneFilesFunc func(dstDir, srcDir string) error
+
 // AfterExtractFn finalizes a cloned VM after snapshot files are in place; sourceSnapshotID flows through for metering lineage.
 type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error)
 
@@ -23,7 +26,7 @@ type CloneSpec struct {
 }
 
 // DirectCloneBase clones from a local snapshot directory.
-func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSpec, srcDir string, cloneFiles func(dstDir, srcDir string) error) (*types.VM, error) {
+func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSpec, srcDir string, cloneFiles CloneFilesFunc) (*types.VM, error) {
 	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
 		if err := cloneFiles(runDir, srcDir); err != nil {
 			return fmt.Errorf("clone snapshot files: %w", err)

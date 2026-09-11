@@ -98,7 +98,7 @@ func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(),
 	return func() { _ = l.Unlock(ctx) }, true, nil
 }
 
-// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop; gen fences a stale observation from re-labelling a newer one.
+// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop; gen fences a stale observation from re-labeling a newer one.
 func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
 	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
