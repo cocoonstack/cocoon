@@ -119,7 +119,6 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	}
 }
 
-// fcStub fakes the Firecracker API: GET /, GET /vm/config, hot-plug PUT and DELETE on drives and network interfaces, PATCH /vm.
 type fcStub struct {
 	client *http.Client
 	mu     sync.Mutex

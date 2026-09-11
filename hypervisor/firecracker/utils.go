@@ -9,7 +9,11 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-const pidFileName = "fc.pid"
+const (
+	pidFileName = "fc.pid"
+
+	directIOIgnoredMsg = "directio on disk %s ignored: FC has no DirectIO knob (IoEngine=Async fixed)"
+)
 
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.VsockSockName}
 
@@ -29,4 +33,12 @@ func snapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
 		}
 	}
 	return nil
+}
+
+func recordedCOWPath(rec *hypervisor.VMRecord) (string, error) {
+	cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+	if cowPath == "" {
+		return "", fmt.Errorf("no COW disk recorded for %s", rec.ID)
+	}
+	return cowPath, nil
 }

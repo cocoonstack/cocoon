@@ -15,7 +15,7 @@ import (
 // ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows can take 10–20 s.
 const ejectWaitTimeout = 30 * time.Second
 
-// chNICOps drives CH's net devices for the shared resize driver; removal blocks on the guest's ACPI eject.
+// chNICOps drives CH's net devices for the shared resize driver.
 type chNICOps struct {
 	hc *http.Client
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
-	// The copy step's parse feeds cloneAfterExtractParsed: config.json is copied verbatim, so re-parsing the runDir copy would decode identical bytes.
+	// config.json is copied verbatim, so re-parsing the runDir copy would decode identical bytes.
 	var srcCfg *chVMConfig
 	spec := hypervisor.CloneSpec{
 		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,

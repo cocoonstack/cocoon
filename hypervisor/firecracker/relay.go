@@ -37,11 +37,11 @@ const (
 	relayLeaseCommitAck      = byte(3)
 )
 
-// broadcaster fans out PTY master reads to the single active console session, swapped atomically.
+// broadcaster swaps the PTY reader's sink atomically.
 type broadcaster struct {
 	master io.Reader
 	mu     sync.Mutex
-	sink   io.Writer // current session's conn; nil when no session
+	sink   io.Writer
 }
 
 func (b *broadcaster) setSink(w io.Writer) {
@@ -50,7 +50,6 @@ func (b *broadcaster) setSink(w io.Writer) {
 	b.mu.Unlock()
 }
 
-// readLoop runs as the relay's single lifetime PTY-reader goroutine, writing to the current sink.
 func (b *broadcaster) readLoop() {
 	buf := make([]byte, relayBufSize)
 	for {
@@ -68,7 +67,7 @@ func (b *broadcaster) readLoop() {
 	}
 }
 
-// cloneLeaseControl is the parent's half of the relay lease protocol; a nil control (no leases held) no-ops.
+// cloneLeaseControl is the parent's half of the relay lease protocol.
 type cloneLeaseControl struct {
 	commands  *os.File
 	responses *os.File
@@ -100,7 +99,7 @@ func IsRelayMode() bool {
 	return os.Getenv(relayEnvKey) == "1"
 }
 
-// RunRelay runs the console relay loop over inherited PTY, listener, and source-lease fds; one persistent PTY reader broadcasts so disconnects don't strand readers.
+// RunRelay runs the console relay loop over inherited PTY, listener, and source-lease fds.
 func RunRelay(ctx context.Context) {
 	master := os.NewFile(relayMasterFD, "pty-master")
 	defer master.Close() //nolint:errcheck
@@ -203,7 +202,7 @@ func waitRelayLeaseControl(control io.Reader, responses io.Writer, release, abor
 	var command [1]byte
 	if _, err := io.ReadFull(control, command[:]); err == nil && command[0] == relayCommitLeasesCommand {
 		release()
-		// Best-effort ACK: the parent treats the commit as done either way — the relay must not kill a committed VM.
+		// Best-effort ACK: the parent treats the commit as done either way.
 		_, _ = responses.Write([]byte{relayLeaseCommitAck})
 		return
 	}

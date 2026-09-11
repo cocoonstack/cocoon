@@ -21,7 +21,6 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		// Same sweep as DirectRestore's Populate: stale snapshot files from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
 			return cleanSnapshotFiles(rec.RunDir)
 		},
@@ -30,9 +29,9 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 }
 
 func (fc *Firecracker) restoreAfterExtractCOW(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-	cowPath := hypervisor.DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
-	if cowPath == "" {
-		return nil, fmt.Errorf("no COW disk recorded for %s", vmID)
+	cowPath, err := recordedCOWPath(rec)
+	if err != nil {
+		return nil, err
 	}
 	return fc.restoreAfterExtract(ctx, vmID, vmCfg, rec, cowPath)
 }

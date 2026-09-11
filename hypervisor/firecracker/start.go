@@ -39,12 +39,10 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 	})
 }
 
-// configureVM sends pre-boot config via REST then InstanceStart.
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
 	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
-	// No hugepages: FC's File restore backend cannot map hugetlbfs-backed snapshots, which would break hibernate/clone (#155).
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
 		VCPUCount:  rec.Config.CPU,
 		MemSizeMiB: memMiB,
@@ -65,9 +63,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	for i, sc := range rec.StorageConfigs {
 		driveID := fmt.Sprintf(driveIDFmt, i)
 		if sc.Role == types.StorageRoleData && sc.DirectIO != nil {
-			logger.Warnf(ctx,
-				"directio on data disk %s ignored: FC has no DirectIO knob (IoEngine=Async fixed)",
-				sc.Serial)
+			logger.Warnf(ctx, directIOIgnoredMsg, sc.Serial)
 		}
 		d := fcDrive{
 			DriveID:      driveID,
@@ -132,7 +128,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	logger := log.WithFunc("firecracker.launchProcessWithLeases")
 
 	fcLog := fc.LogFilePath(rec.LogDir)
-	// FC opens log O_WRONLY|O_APPEND without O_CREATE — touch first.
+	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon recreates it per launch.
 	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
 		_ = f.Close()
 	}

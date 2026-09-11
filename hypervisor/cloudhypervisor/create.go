@@ -83,7 +83,7 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	return configs, nil
 }
 
-// generateCidata writes the NoCloud cidata image. storageConfigs lets cidata pick up Role==Data disks for auto-mount via /dev/disk/by-id/virtio-<serial>.
+// generateCidata auto-mounts Role==Data disks via /dev/disk/by-id/virtio-<serial>.
 func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, storageConfigs []*types.StorageConfig) error {
 	dns, err := ch.conf.DNSServers()
 	if err != nil {
@@ -122,7 +122,6 @@ func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, ne
 	return f.Close()
 }
 
-// buildMountSpecs derives cloud-init mounts (defaults,nofail) for Role==Data disks with non-empty MountPoint and a known FSType.
 func buildMountSpecs(configs []*types.StorageConfig) []metadata.MountSpec {
 	var out []metadata.MountSpec
 	for _, sc := range configs {

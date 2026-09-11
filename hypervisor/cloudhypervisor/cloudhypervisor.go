@@ -28,13 +28,12 @@ var (
 	_ netresize.Resizer     = (*CloudHypervisor)(nil)
 )
 
-// CloudHypervisor implements hypervisor.Hypervisor.
 type CloudHypervisor struct {
 	*hypervisor.Backend
 	conf *Config
 }
 
-// New creates a CloudHypervisor backend. rec may be nil; the backend falls back to NopRecorder for emit calls.
+// New creates a CloudHypervisor backend; a nil rec falls back to NopRecorder.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*CloudHypervisor, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")

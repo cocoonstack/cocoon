@@ -29,7 +29,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 			return err
 		},
 		Kill: ch.killForRestore,
-		// Same sweep as DirectRestore's Populate: stale snapshot files from a previous incarnation must not survive the merge.
+		// stale snapshot files from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
 			return cleanSnapshotFiles(rec.RunDir)
 		},
@@ -61,7 +61,6 @@ func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec 
 	}, runtimeFiles)
 }
 
-// terminateVMM force-terminates rec's VMM over hc; shared by restore and hibernate.
 func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMRecord, hc *http.Client, pid int) error {
 	return ch.forceTerminate(ctx, hc, rec.ID, hypervisor.SocketPath(rec.RunDir), pid)
 }
@@ -123,7 +122,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	return ch.FinalizeRestore(ctx, vmID, vmCfg, rec, pid)
 }
 
-// resolveRestoreMode defaults plain private-anon snapshots to mmap (the mapping keeps the staged file's inode alive past snapshot GC) and downgrades an explicit mmap on hugepages or shared memory to copy with a warning, where CH would downgrade silently.
+// mmap keeps the staged snapshot's inode alive past GC; CH would downgrade it silently.
 func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 	if !mem.HugePages && !mem.Shared {
 		return cmp.Or(mode, restoreModeMmap)
@@ -139,7 +138,7 @@ func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 	return mode
 }
 
-// validateRestoreNICs rejects restore when the VM's NIC identity drifted since capture (net resize): vm.restore replays the snapshot's guest MACs verbatim, which would diverge from the live CNI/DB identity.
+// vm.restore replays the snapshot's guest MACs verbatim, so drifted NIC identity must fail first.
 func validateRestoreNICs(chCfg *chVMConfig, rec *hypervisor.VMRecord) error {
 	if len(chCfg.Nets) != len(rec.NetworkConfigs) {
 		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(chCfg.Nets), len(rec.NetworkConfigs))

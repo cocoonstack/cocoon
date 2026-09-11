@@ -2,7 +2,7 @@
 
 package firecracker
 
-func launchWithBinds(_ [][2]string, _ func() (int, error)) (int, error) {
+func launchWithBinds(_ [][2]string, _ vmmLaunchFn) (int, error) {
 	return 0, errBindSetup
 }
 

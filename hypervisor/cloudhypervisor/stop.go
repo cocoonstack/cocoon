@@ -36,7 +36,6 @@ func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 	}
 }
 
-// shutdownUEFI shuts down a UEFI-boot VM via ACPI power-button with poll-and-escalate handled by the shared GracefulStop helper.
 func (ch *CloudHypervisor) shutdownUEFI(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int, timeout time.Duration) error {
 	return ch.GracefulStop(
 		ctx, vmID, pid, timeout,

@@ -28,7 +28,7 @@ type Firecracker struct {
 	conf *Config
 }
 
-// New creates a Firecracker backend. rec may be nil; the backend falls back to NopRecorder for emit calls.
+// New creates a Firecracker backend; a nil rec falls back to NopRecorder.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecracker, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
@@ -41,7 +41,7 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecra
 	return &Firecracker{Backend: backend, conf: cfg}, nil
 }
 
-// Delete removes VMs. Running VMs require force=true (stops them first); a live clone's shared lease blocks the whole delete.
+// Delete requires force=true for running VMs and fails whole while a live clone holds a shared lease.
 func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
 	return fc.DeleteAll(ctx, refs, force, fc.stopOneLocked)
 }

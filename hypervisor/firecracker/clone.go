@@ -42,13 +42,15 @@ func (p *bindRedirectPlan) files() []*os.File {
 
 func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
-// recordExistsFn reports whether a VM record exists; clone uses it to tell a managed source from a foreign path.
+// recordExistsFn tells a live source VM from a dead one.
 type recordExistsFn func(string) (bool, error)
 
 // launchCloneFn starts the FC process over the plan's redirected drive FDs.
 type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
 
-// cloneLaunch carries one clone launch's anchoring inputs down the startCloneVM chain; src/dst are the snapshot's recorded drives and the clone's rebuilt ones, index-aligned.
+type vmmLaunchFn func() (int, error)
+
+// src and dst are index-aligned: the snapshot's recorded drives against the clone's rebuilt ones.
 type cloneLaunch struct {
 	launch           launchCloneFn
 	sockPath, runDir string
@@ -149,7 +151,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 	return info, nil
 }
 
-// startCloneVM launches FC, drives snapshot/load, then resumes and re-anchors; clone disks are bind-mounted over the source-absolute paths in a private mount namespace so siblings load in parallel without host symlinks.
 func (fc *Firecracker) startCloneVM(ctx context.Context, cl cloneLaunch) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 	pid, leaseControl, plan, err := fc.loadCloneSnapshot(ctx, cl)
 	if err != nil {
@@ -257,7 +258,7 @@ func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*type
 	return configs, nil
 }
 
-// redirectedDriveIndices lists drives whose source and clone paths differ — the one source of truth for both bind redirects and the re-anchor loop, which must never diverge.
+// redirectedDriveIndices feeds both the bind redirects and the re-anchor loop.
 func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int {
 	var indices []int
 	for i, src := range srcConfigs {
@@ -287,7 +288,6 @@ func redirectBinds(srcConfigs, dstConfigs []*types.StorageConfig) ([][2]string, 
 	return binds, nil
 }
 
-// holdBindableRedirects holds shared VM-operation leases for managed sources and creates regular bind mountpoints for dead sources.
 func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig, sourceRecordExists recordExistsFn) (*bindRedirectPlan, error) {
 	binds, err := redirectBinds(srcConfigs, dstConfigs)
 	if err != nil {

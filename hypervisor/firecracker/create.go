@@ -20,7 +20,7 @@ import (
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
 func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, bootCfg *types.BootConfig) (*types.VM, error) {
-	// Backend-owned capability limits; cmd/ repeats them only as flag-specific fast-fails.
+	// cmd/ repeats these as flag fast-fails; the backend stays authoritative.
 	if vmCfg.Windows {
 		return nil, fmt.Errorf("firecracker does not support Windows guests")
 	}
@@ -66,7 +66,7 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	return storageConfigs, nil
 }
 
-// setBootCmdline rebuilds boot.Cmdline from the final disk/NIC layout; nil boot is a no-op.
+// setBootCmdline rebuilds boot.Cmdline from the final disk/NIC layout.
 func (fc *Firecracker) setBootCmdline(boot *types.BootConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string) error {
 	if boot == nil {
 		return nil
@@ -88,7 +88,7 @@ func DevPath(idx int) string {
 	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
 }
 
-// EnsureVmlinuxBoot swaps boot.KernelPath for the uncompressed ELF FC requires; no-op without a kernel path.
+// EnsureVmlinuxBoot swaps boot.KernelPath for the uncompressed ELF FC requires.
 func EnsureVmlinuxBoot(boot *types.BootConfig) error {
 	if boot == nil || boot.KernelPath == "" {
 		return nil
@@ -190,7 +190,7 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
-	// Top layer first for overlayfs lowerdir; FC quirks (reboot=k, i8042.noaux, 8250.nr_uarts=1) skip absent-hardware probes, and FC itself adds pci=off on the MMIO transport.
+	// Top layer first for overlayfs lowerdir; the FC quirks skip absent-hardware probes.
 	layerDevs := hypervisor.ReverseLayers(storageConfigs, func(idx int, _ *types.StorageConfig) string { return DevPath(idx) })
 	return hypervisor.BuildBaseCmdline(
 		"console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
