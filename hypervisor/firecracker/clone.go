@@ -42,7 +42,7 @@ func (p *bindRedirectPlan) files() []*os.File {
 
 func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
-// recordExistsFn tells a live source VM from a dead one.
+// recordExistsFn reports whether the source VM's record survives; absent means the drive can be replaced with a placeholder.
 type recordExistsFn func(string) (bool, error)
 
 // launchCloneFn starts the FC process over the plan's redirected drive FDs.
