@@ -110,10 +110,6 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
 	}
-	noBalloon := snapCfg.NoBalloon
-	if cmd.Flags().Changed("no-balloon") {
-		noBalloon, _ = cmd.Flags().GetBool("no-balloon")
-	}
 
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
@@ -138,7 +134,7 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		Network:       network,
 		NoDirectIO:    noDirectIO,
 		NoWatchdog:    snapCfg.NoWatchdog,
-		NoBalloon:     noBalloon,
+		NoBalloon:     snapCfg.NoBalloon,
 		Windows:       snapCfg.Windows,
 		SharedMemory:  snapCfg.SharedMemory,
 		HugePages:     snapCfg.HugePages,
