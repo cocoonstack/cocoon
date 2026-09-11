@@ -61,7 +61,7 @@ func TestDeleteProtocolTeardownFailureKeepsTombstoneThenConverges(t *testing.T) 
 		t.Fatalf("record must stay live through deleting: %v", err)
 	}
 	b.SetNetwork(stubNetwork{})
-	done, err := b.recoverVMTombstone(ctx, "vmproto2")
+	done, err := b.RecoverTombstone(ctx, "vmproto2")
 	if err != nil || !done {
 		t.Fatalf("roll forward: done=%v err=%v", done, err)
 	}
@@ -87,7 +87,7 @@ func TestRecoverLeasedRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := b.recoverVMTombstone(ctx, "vmproto3")
+	done, err := b.RecoverTombstone(ctx, "vmproto3")
 	if err != nil || done {
 		t.Fatalf("leased must roll back, not finalize: done=%v err=%v", done, err)
 	}
@@ -122,7 +122,7 @@ func TestTombstoneFencingABA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := b.recoverVMTombstone(ctx, "vmproto4")
+	done, err := b.RecoverTombstone(ctx, "vmproto4")
 	if err != nil || !done {
 		t.Fatalf("recover: done=%v err=%v", done, err)
 	}

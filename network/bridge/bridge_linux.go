@@ -151,8 +151,7 @@ func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.
-func CleanupTAPs(tapPrefix string, vmIDs []string) []string {
-	cleaned := make([]string, 0, len(vmIDs))
+func CleanupTAPs(tapPrefix string, vmIDs []string) {
 	for _, vmID := range vmIDs {
 		var indices []int
 		for i := 0; ; i++ {
@@ -162,9 +161,7 @@ func CleanupTAPs(tapPrefix string, vmIDs []string) []string {
 			indices = append(indices, i)
 		}
 		_ = tearDownTAPs(tapPrefix, vmID, indices, true)
-		cleaned = append(cleaned, vmID)
 	}
-	return cleaned
 }
 
 // attachBridgeUp enslaves a TAP to the bridge, applies MTU/txqlen/GRO tuning and brings it up in one RTM_SETLINK, paying the node-wide rtnl lock once.

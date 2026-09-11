@@ -54,9 +54,6 @@ func parseSnapshotPolicy(cmd *cobra.Command) (localfile.EvictionPolicy, error) {
 		if err != nil {
 			return localfile.EvictionPolicy{}, fmt.Errorf("--snapshot-size %q: %w", sizeStr, err)
 		}
-		if n < 0 {
-			return localfile.EvictionPolicy{}, fmt.Errorf("--snapshot-size must be >= 0, got %s", sizeStr)
-		}
 		size = n
 	}
 

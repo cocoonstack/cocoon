@@ -66,9 +66,7 @@ func (b *Broadcaster) Stop() {
 // Run is the notifier goroutine body: watcher events are debounced; watcher errors, the optional extra trigger and a safety poll check immediately.
 func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
 	timer := time.NewTimer(0)
-	if !timer.Stop() {
-		<-timer.C
-	}
+	timer.Stop()
 	pending := false
 	poll := time.NewTicker(eventsSafetyPoll)
 	defer poll.Stop()

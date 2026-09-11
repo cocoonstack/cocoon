@@ -44,4 +44,4 @@ func (b *Bridge) Add(_ context.Context, _ string, _ *types.VMConfig, _ ...networ
 
 func (b *Bridge) Delete(_ context.Context, _ string) error { return errUnsupported }
 
-func CleanupTAPs(_ string, _ []string) []string { return nil }
+func CleanupTAPs(_ string, _ []string) {}

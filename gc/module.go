@@ -36,17 +36,9 @@ func (m Module[S]) readSnapshot(ctx context.Context) (any, error) {
 }
 
 func (m Module[S]) resolveTargets(ctx context.Context, snap any, others map[string]any) []string {
-	typed, ok := snap.(S)
-	if !ok {
-		return nil
-	}
-	return m.Resolve(ctx, typed, others)
+	return m.Resolve(ctx, snap.(S), others)
 }
 
 func (m Module[S]) collect(ctx context.Context, ids []string, snap any) error {
-	typed, ok := snap.(S)
-	if !ok {
-		return nil
-	}
-	return m.Collect(ctx, ids, typed)
+	return m.Collect(ctx, ids, snap.(S))
 }

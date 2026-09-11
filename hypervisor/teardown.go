@@ -30,6 +30,31 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 	return *rec, nil
 }
 
+// RecoverTombstone drives id's tombstone to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
+func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
+	ts := b.tombstones()
+	var (
+		rec     *tombstone.Record
+		leaseID string
+		cl      vmCleanup
+	)
+	if err := b.update(ctx, func(t *vmTx) error {
+		var err error
+		rec, leaseID, err = ts.Recover(ctx, t.w, id, &cl)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	if err := b.finishVMTeardown(ctx, id, leaseID, cl); err != nil {
+		return false, err
+	}
+	log.WithFunc(b.Typ+".RecoverTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
+	return true, nil
+}
+
 func (b *Backend) tombstones() *tombstone.Table {
 	return tombstone.NewTable(b.NS)
 }
@@ -96,31 +121,6 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 	return err
 }
 
-// recoverVMTombstone drives id's tombstone to completion under the held ops lock.
-func (b *Backend) recoverVMTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
-	ts := b.tombstones()
-	var (
-		rec     *tombstone.Record
-		leaseID string
-		cl      vmCleanup
-	)
-	if err := b.update(ctx, func(t *vmTx) error {
-		var err error
-		rec, leaseID, err = ts.Recover(ctx, t.w, id, &cl)
-		return err
-	}); err != nil {
-		return false, err
-	}
-	if rec == nil {
-		return false, nil
-	}
-	if err := b.finishVMTeardown(ctx, id, leaseID, cl); err != nil {
-		return false, err
-	}
-	log.WithFunc(b.Typ+".recoverVMTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
-	return true, nil
-}
-
 // entryGuard keeps the common no-tombstone path off the single sqlite writer connection.
 func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) {
 	ts := b.tombstones()
@@ -142,7 +142,7 @@ func (b *Backend) entryGuard(ctx context.Context, id string) (*VMRecord, error) 
 		return rec, nil
 	}
 	if tsRec.Phase != tombstone.PhaseLeased {
-		if _, rerr := b.recoverVMTombstone(ctx, id); rerr != nil {
+		if _, rerr := b.RecoverTombstone(ctx, id); rerr != nil {
 			return nil, fmt.Errorf("vm %s: recover interrupted delete: %w", id, rerr)
 		}
 		return nil, fmt.Errorf("vm %s was partially deleted; recovery finished the removal: %w", id, ErrNotFound)

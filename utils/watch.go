@@ -32,9 +32,7 @@ func watchLoop(ctx context.Context, watcher *fsnotify.Watcher, base string, debo
 	defer watcher.Close() //nolint:errcheck
 
 	timer := time.NewTimer(0)
-	if !timer.Stop() {
-		<-timer.C
-	}
+	timer.Stop()
 	pending := false
 
 	for {

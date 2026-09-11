@@ -29,15 +29,7 @@ func SameFilesystem(a, b string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	da, ok := sa.Sys().(*syscall.Stat_t)
-	if !ok {
-		return false, nil
-	}
-	db, ok := sb.Sys().(*syscall.Stat_t)
-	if !ok {
-		return false, nil
-	}
-	return da.Dev == db.Dev, nil
+	return sa.Sys().(*syscall.Stat_t).Dev == sb.Sys().(*syscall.Stat_t).Dev, nil
 }
 
 // EnsureDirs creates all directories with 0o750 permissions.
