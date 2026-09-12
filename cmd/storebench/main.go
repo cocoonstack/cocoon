@@ -40,7 +40,8 @@ func (c benchConfig) CgroupParentDir() string             { return filepath.Join
 func (c benchConfig) CgroupCPUFence() string              { return "" }
 
 func main() {
-	if len(os.Args) < 3 {
+	minArgs := map[string]int{"update": 5, opGet: 5, "create": 6, "createworker": 6, "micro": 6}
+	if len(os.Args) < 3 || len(os.Args) < minArgs[os.Args[1]] {
 		fmt.Fprintln(os.Stderr, "usage: storebench update|get <engine> <n> <ops> [dir]")
 		fmt.Fprintln(os.Stderr, "       storebench create <engine> <workers> <per-worker> <resident-n> [dir]")
 		os.Exit(2)
