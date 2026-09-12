@@ -431,7 +431,7 @@ func stubLifecycleSeams(t *testing.T) {
 	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
 	deleteTAPFn = func(string, string) error { return nil }
 	deleteNetnsFn = func(context.Context, string) error { return nil }
-	ensureNetnsFn = func(string, string) (bool, error) { return false, nil }
+	ensureNetnsFn = func(string, string) error { return nil }
 	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, int, error) { return "aa:bb:cc:dd:ee:01", 0, nil }
 	setLinkStateFn = func(string, []string, bool) error { return nil }
 	t.Cleanup(func() {
