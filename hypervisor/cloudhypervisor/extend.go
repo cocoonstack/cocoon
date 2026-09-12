@@ -43,7 +43,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 	makeBody := func(rec *hypervisor.VMRecord) any {
 		d := storageConfigToDisk(&types.StorageConfig{
 			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
-		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, ch.EffectiveCPUs(&rec.Config.Config))
+		}, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, hypervisor.PlacementCPUs(&rec.Config.Config))
 		d.ID = id
 		return d
 	}

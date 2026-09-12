@@ -170,11 +170,6 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 	return nil
 }
 
-// EffectiveCPUs resolves the host cpu set a VM under this backend may run on: explicit placement over the machine fence.
-func (b *Backend) EffectiveCPUs(cfg *types.Config) []int {
-	return cgroup.EffectiveCPUs(cfg.CPUSetCPUs, b.Conf.CgroupCPUFence())
-}
-
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)

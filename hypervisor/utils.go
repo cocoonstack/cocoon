@@ -292,6 +292,12 @@ func ValidateHostCPU(cpu int) error {
 	return nil
 }
 
+// PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
+func PlacementCPUs(cfg *types.Config) []int {
+	cpus, _ := cgroup.ParseCPUList(cfg.CPUSetCPUs)
+	return cpus
+}
+
 // ValidateSnapshotIntegrity asserts the sidecar is valid and every snapshot-resident disk is present; layers are shared blobs.
 func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) error {
 	if err := types.ValidateStorageConfigs(sidecar); err != nil {

@@ -262,18 +262,6 @@ func TestPlaceScopeReadGate(t *testing.T) {
 	}
 }
 
-func TestEffectiveCPUs(t *testing.T) {
-	if got := EffectiveCPUs("2-3", "0-14"); !slices.Equal(got, []int{2, 3}) {
-		t.Errorf("placement wins: got %v", got)
-	}
-	if got := EffectiveCPUs("", "0-1"); !slices.Equal(got, []int{0, 1}) {
-		t.Errorf("fence fallback: got %v", got)
-	}
-	if EffectiveCPUs("", "") != nil {
-		t.Error("no constraint: want nil")
-	}
-}
-
 func TestArmSetsQuotaThenBurst(t *testing.T) {
 	parent := t.TempDir()
 	dir := ScopeDir(parent, "A")
