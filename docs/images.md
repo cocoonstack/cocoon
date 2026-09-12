@@ -40,7 +40,7 @@ cocoon image inspect ubuntu:24.04
 cocoon image rm sha256:abc123def456
 ```
 
-A digest prefix must be at least 12 hex characters and unambiguous: a shorter prefix matches nothing, `image rm` errors on a prefix that matches more than one image (use a longer prefix), and `image inspect` treats an ambiguous prefix as not-found.
+A digest prefix must be at least 12 hex characters and unambiguous: a shorter prefix matches nothing, and both `image rm` and `image inspect` treat a prefix that matches more than one image as not-found — use a longer prefix.
 
 ## OS Images
 

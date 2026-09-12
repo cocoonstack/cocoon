@@ -243,8 +243,10 @@ cocoon vm clone --from-dir /nfs/golden --name fresh-vm --pull
 # Restore the same VM's externally-staged backup (envelope ID matches → silent OK):
 cocoon vm restore my-vm --from-dir /sync/from-host-a
 
-# Force-restore a foreign snapshot (acknowledges data-loss risk):
-cocoon vm restore my-vm --from-dir /unrelated/lineage --force
+# Restore a snapshot whose envelope id this VM does not own (acknowledges data-loss risk); Cloud Hypervisor
+# still requires the target's NIC MACs to match the snapshot's, so a truly unrelated lineage is refused by preflight —
+# clone it instead:
+cocoon vm restore my-vm --from-dir /sync/from-host-b --force
 ```
 
 The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image may not be present locally — `EnsureImage` pulls the envelope's image by digest when it is missing, and `image_blob_ids` pin its blobs against GC for the clone's lifetime.

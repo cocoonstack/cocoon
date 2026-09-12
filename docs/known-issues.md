@@ -35,7 +35,7 @@ When `--user` specifies a non-root username (e.g. `--user admin`), the user is c
 
 The root user's password is set via `chpasswd` (config stage, earlier) and is available sooner, but `--user admin` deliberately does not set a root password — root stays locked for security.
 
-**Workaround**: wait for `cloud-init status: done` before attempting SSH. The default `root`/`cocoon` credentials use the faster `chpasswd` path and are available immediately after SSH starts.
+**Workaround**: wait for `cloud-init status: done` before attempting SSH. The default `root`/`cocoon` credentials use the faster `chpasswd` path and work on the console as soon as it is set; stock cloud images ship sshd with `PermitRootLogin prohibit-password`, so root over SSH needs a key or a custom image — use `--user` for password SSH.
 
 ## Clone preserves guest credentials from snapshot
 
