@@ -212,10 +212,12 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			cfg := baseCHConfig()
-			cfg["disks"].([]any)[1].(map[string]any)["queue_affinity"] = []any{
+			sourceAffinity := []any{
 				map[string]any{"queue_index": 0, "host_cpus": []any{0}},
 				map[string]any{"queue_index": 1, "host_cpus": []any{1}},
 			}
+			cfg["disks"].([]any)[0].(map[string]any)["queue_affinity"] = sourceAffinity
+			cfg["disks"].([]any)[1].(map[string]any)["queue_affinity"] = sourceAffinity
 			path := writeCHConfig(t, dir, cfg)
 
 			opts := basePatchOpts()
@@ -229,9 +231,11 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseCHConfig: %v", err)
 			}
-			got := patched.Disks[1].QueueAffinity
-			if !slices.EqualFunc(got, tt.want, sameQueueAffinity) {
-				t.Errorf("got %+v, want %+v", got, tt.want)
+			if got := patched.Disks[1].QueueAffinity; !slices.EqualFunc(got, tt.want, sameQueueAffinity) {
+				t.Errorf("cow disk: got %+v, want %+v", got, tt.want)
+			}
+			if got := patched.Disks[0].QueueAffinity; got != nil {
+				t.Errorf("read-only layer: got %+v, want none", got)
 			}
 		})
 	}
@@ -365,7 +369,7 @@ func TestRestorePatchStorageConfigs_KeepsAllWhenSnapshotHadCidata(t *testing.T) 
 	}
 }
 
-func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
+func TestRestoreAndResumeCloneHotplugsByRoleWithPlacement(t *testing.T) {
 	sockDir, err := os.MkdirTemp("", "ch")
 	if err != nil {
 		t.Fatal(err)
@@ -378,7 +382,7 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 	}
 	var (
 		mu    sync.Mutex
-		added []string
+		added []chDisk
 	)
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "vm.add-disk") {
@@ -388,7 +392,7 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 				return
 			}
 			mu.Lock()
-			added = append(added, d.Path)
+			added = append(added, d)
 			mu.Unlock()
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -415,15 +419,27 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 		storageConfigs: storageConfigs,
 		dataDisks:      storageConfigs[2:],
 		snapshotCfg:    &chVMConfig{},
+		placementCPUs:  []int{8, 9},
 	}); err != nil {
 		t.Fatalf("restoreAndResumeClone: %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	want := []string{"/run/cidata.img", "/run/extra.raw"}
-	if !slices.Equal(added, want) {
-		t.Fatalf("vm.add-disk paths = %v, want %v", added, want)
+	wantPaths := []string{"/run/cidata.img", "/run/extra.raw"}
+	gotPaths := make([]string, len(added))
+	for i, d := range added {
+		gotPaths[i] = d.Path
+	}
+	if !slices.Equal(gotPaths, wantPaths) {
+		t.Fatalf("vm.add-disk paths = %v, want %v", gotPaths, wantPaths)
+	}
+	if got := added[0].QueueAffinity; got != nil {
+		t.Errorf("read-only cidata: got %+v, want none", got)
+	}
+	wantAffinity := []chQueueAffinity{{QueueIndex: 0, HostCPUs: []int{8}}, {QueueIndex: 1, HostCPUs: []int{9}}}
+	if got := added[1].QueueAffinity; !slices.EqualFunc(got, wantAffinity, sameQueueAffinity) {
+		t.Errorf("data disk: got %+v, want %+v", got, wantAffinity)
 	}
 }
 

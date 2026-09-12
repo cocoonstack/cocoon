@@ -90,7 +90,7 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 		}
 		// A snapshot's affinity targets the source host's cores and must not survive onto this one.
 		delete(elem, "queue_affinity")
-		if affinity != nil && !sc.RO {
+		if len(affinity) > 0 && !sc.RO {
 			if e := setField(elem, "queue_affinity", affinity); e != nil {
 				return e
 			}

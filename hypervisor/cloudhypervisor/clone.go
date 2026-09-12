@@ -96,12 +96,11 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		netTAPs[i] = network.TAPName(network.RestoreTAPPrefix, vmID, i)
 	}
 
-	consoleSock := hypervisor.ConsoleSockPath(runDir)
 	placementCPUs := hypervisor.PlacementCPUs(&vmCfg.Config)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: patchStorageConfigs,
 		netTAPs:        netTAPs,
-		consoleSock:    consoleSock,
+		consoleSock:    hypervisor.ConsoleSockPath(runDir),
 		vsockSock:      hypervisor.VsockSockPath(runDir),
 		directBoot:     directBoot,
 		diskQueueSize:  vmCfg.DiskQueueSize,

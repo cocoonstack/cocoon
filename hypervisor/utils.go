@@ -294,10 +294,7 @@ func ValidateHostCPU(cpu int) error {
 
 // PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
 func PlacementCPUs(cfg *types.Config) []int {
-	cpus, err := cgroup.ParseCPUList(cfg.CPUSetCPUs)
-	if err != nil {
-		return nil
-	}
+	cpus, _ := cgroup.ParseCPUList(cfg.CPUSetCPUs)
 	return cpus
 }
 
