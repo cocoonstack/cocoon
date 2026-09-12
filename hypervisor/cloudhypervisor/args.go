@@ -43,7 +43,7 @@ func DebugMemoryCLIArg(cfg *types.Config) string {
 	return memoryCLIArg(chMemory{Size: cfg.Memory, HugePages: cfg.HugePages, Shared: cfg.SharedMemory, Mergeable: cfg.Mergeable})
 }
 
-func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, placement []int) *chVMConfig {
+func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, placement []int, dnsServers []string) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
@@ -79,7 +79,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, placement [
 			cfg.Payload = &chPayload{
 				Kernel:    boot.KernelPath,
 				Initramfs: boot.InitrdPath,
-				Cmdline:   boot.Cmdline,
+				Cmdline:   buildCmdline(rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name, dnsServers),
 			}
 		case boot.FirmwarePath != "":
 			cfg.Payload = &chPayload{Firmware: boot.FirmwarePath}

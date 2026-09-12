@@ -22,7 +22,7 @@ func TestMemoryCLIArg(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: tt.cfg}}}
-			args := buildCLIArgs(buildVMConfig(rec, "", nil), "api.sock")
+			args := buildCLIArgs(buildVMConfig(rec, "", nil, nil), "api.sock")
 			i := slices.Index(args, "--memory")
 			if i < 0 || i+1 >= len(args) || args[i+1] != tt.want {
 				t.Fatalf("memory arg not %q (args: %s)", tt.want, strings.Join(args, " "))
@@ -65,7 +65,7 @@ func TestWatchdogPolicy(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}}
-			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
+			if got := buildVMConfig(rec, "", nil, nil).Watchdog; got != tt.want {
 				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
 			}
 		})
@@ -94,7 +94,7 @@ func TestBalloonPolicy(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}}
-			got := buildVMConfig(rec, "", nil).Balloon
+			got := buildVMConfig(rec, "", nil, nil).Balloon
 			if tt.wantSize == 0 {
 				if got != nil {
 					t.Fatalf("balloon = %+v, want none", got)
@@ -108,6 +108,38 @@ func TestBalloonPolicy(t *testing.T) {
 				t.Errorf("balloon size = %d, want %d", got.Size, tt.wantSize)
 			}
 		})
+	}
+}
+
+func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
+	rec := &hypervisor.VMRecord{
+		VM: types.VM{
+			Config: types.VMConfig{Name: "vm1", Config: types.Config{CPU: 2, Memory: 1 << 30}},
+			StorageConfigs: []*types.StorageConfig{
+				{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},
+				{Path: "/run/cow.raw", Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial},
+			},
+			NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{
+				{TAP: "tapvm1-0", MAC: "9a:29:2c:4b:27:e4", Network: &types.Network{IP: "10.211.0.134", Gateway: "10.211.0.1", Prefix: 22}},
+			}},
+		},
+		BootConfig: &types.BootConfig{
+			KernelPath: "/run/vmlinuz",
+			InitrdPath: "/run/initrd.img",
+			Cmdline:    "console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=l0 cocoon.cow=cow clocksource=kvm-clock rw net.ifnames=0 cocoon.hostname=vm1 ip=10.211.0.20::10.211.0.1:255.255.252.0:vm1:eth0:off",
+		},
+	}
+
+	cfg := buildVMConfig(rec, "", nil, nil)
+
+	if cfg.Payload == nil {
+		t.Fatal("no payload built for a direct-boot record")
+	}
+	if !strings.Contains(cfg.Payload.Cmdline, "ip=10.211.0.134::10.211.0.1:255.255.252.0:vm1:eth0:off") {
+		t.Errorf("cmdline = %q, want the address the record now holds", cfg.Payload.Cmdline)
+	}
+	if strings.Contains(cfg.Payload.Cmdline, "10.211.0.20") {
+		t.Errorf("cmdline = %q, still replays the address the VM was created with", cfg.Payload.Cmdline)
 	}
 }
 

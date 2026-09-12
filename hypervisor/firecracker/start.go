@@ -51,6 +51,9 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	}
 
 	if boot := rec.BootConfig; boot != nil {
+		if err := fc.setBootCmdline(boot, rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name); err != nil {
+			return err
+		}
 		if err := putBootSource(ctx, hc, fcBootSource{
 			KernelImagePath: boot.KernelPath,
 			InitrdPath:      boot.InitrdPath,
