@@ -87,7 +87,7 @@ func TestConfirmVMBootedWaitsOutACreatedVM(t *testing.T) {
 	if err == nil {
 		t.Fatal("confirmVMBooted accepted a VM that had been created but never booted")
 	}
-	if !strings.Contains(err.Error(), "never reported a running VM") {
+	if !strings.Contains(err.Error(), "wait for a running VM") {
 		t.Errorf("err = %v, want the unbooted VM named", err)
 	}
 }

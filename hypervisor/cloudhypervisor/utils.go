@@ -30,7 +30,7 @@ const (
 	chAPIBase     = "http://localhost/api/v1/"
 	apiSocketFlag = "--api-socket"
 
-	vmBootPollInterval = time.Millisecond
+	vmBootPollInterval = 10 * time.Millisecond
 
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"
@@ -256,15 +256,15 @@ func confirmVMBooted(ctx context.Context, hc *http.Client, pid int, timeout time
 	if err := utils.WaitFor(ctx, timeout, vmBootPollInterval, func() (bool, error) {
 		info, err := getVMInfo(ctx, hc)
 		switch {
-		case err == nil && info.State == chStateRunning:
-			return true, nil
+		case err == nil:
+			return info.State == chStateRunning, nil
 		case !utils.IsProcessAlive(pid):
 			return false, fmt.Errorf("cloud-hypervisor exited before the VM booted")
 		default:
 			return false, nil
 		}
 	}); err != nil {
-		return fmt.Errorf("cloud-hypervisor never reported a running VM (see vm logs): %w", err)
+		return fmt.Errorf("wait for a running VM (see vm logs): %w", err)
 	}
 	return nil
 }
