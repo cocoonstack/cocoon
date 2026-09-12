@@ -22,7 +22,7 @@ func TestEmitAppendsInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer s.Close() //nolint:errcheck
+	defer s.Close()
 
 	r := New(s)
 	r.Emit(t.Context(), metering.Entry{Kind: metering.KindVMComputeStart, VMID: "vm1"})

@@ -172,7 +172,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close() //nolint:errcheck
+	defer ln.Close()
 
 	_, err = b.DeleteAll(ctx, []string{id}, true, func(context.Context, string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "still responsive") {

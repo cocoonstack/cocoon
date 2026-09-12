@@ -195,7 +195,7 @@ func backupGet(t *testing.T, dest, id string) (string, bool) {
 	if err != nil {
 		t.Fatalf("open backup %s: %v", dest, err)
 	}
-	defer b.Close() //nolint:errcheck
+	defer b.Close()
 	var raw json.RawMessage
 	var ok bool
 	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {

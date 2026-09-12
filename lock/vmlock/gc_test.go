@@ -17,7 +17,7 @@ func TestGCModuleSweepsOnlyUnknownUnheldLocks(t *testing.T) {
 			t.Fatalf("seed lock %s: %v", id, err)
 		}
 		if id == "held" {
-			defer l.Unlock(ctx) //nolint:errcheck
+			defer l.Unlock(ctx)
 			continue
 		}
 

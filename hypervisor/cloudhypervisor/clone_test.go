@@ -397,7 +397,7 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithPlacement(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})}
-	go srv.Serve(ln) //nolint:errcheck
+	go srv.Serve(ln)
 	t.Cleanup(func() { _ = srv.Close() })
 
 	storageConfigs := []*types.StorageConfig{

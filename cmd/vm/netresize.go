@@ -14,7 +14,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// netResult is the vm net JSON envelope.
 type netResult struct {
 	netresize.Result
 	Hints []string `json:"hints,omitempty"`

@@ -476,7 +476,6 @@ func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 	}
 }
 
-// recordingExec fakes CNI plugin execution, recording each DEL's CNI_IFNAME and failing one.
 type recordingExec struct {
 	attempted []string
 	failIf    string

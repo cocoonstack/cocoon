@@ -13,7 +13,7 @@ func TestSharedLeaseInheritanceSurvivesParentDescriptorClose(t *testing.T) {
 		t.Fatalf("new shared lease: %v", err)
 	}
 
-	cmd := exec.Command("sleep", "30") //nolint:gosec // fixed test helper
+	cmd := exec.Command("sleep", "30")
 	cmd.ExtraFiles = append(cmd.ExtraFiles, lease.File())
 	if err := cmd.Start(); err != nil {
 		_ = lease.Close()
@@ -55,7 +55,7 @@ func TestSharedLeaseInheritanceSurvivesChildExit(t *testing.T) {
 		t.Fatalf("new shared lease: %v", err)
 	}
 
-	cmd := exec.Command("true") //nolint:gosec // fixed test helper
+	cmd := exec.Command("true")
 	cmd.ExtraFiles = append(cmd.ExtraFiles, lease.File())
 	if err := cmd.Run(); err != nil {
 		_ = lease.Close()
@@ -113,7 +113,7 @@ func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
 		t.Fatalf("lease after exclusive unlink: %v", err)
 	}
 	lease := <-leaseCh
-	defer lease.Close() //nolint:errcheck
+	defer lease.Close()
 
 	probe, err := New(rootDir, "source")
 	if err != nil {

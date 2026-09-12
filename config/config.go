@@ -58,9 +58,9 @@ type Config struct {
 	CNIBinDir string `json:"cni_bin_dir" mapstructure:"cni_bin_dir"`
 	// DNS: comma/semicolon-separated DNS servers injected into VM net config. Env: COCOON_DNS. Default: "8.8.8.8,1.1.1.1".
 	DNS string `json:"dns" mapstructure:"dns"`
-	// NetScope keys this installation's host network families (bridge TAPs <scope><vmid8>-<nic>, CNI netns <scope>-<vmid>) so co-hosted installations never GC each other's; two alphanumerics, empty keeps the legacy bt / cocoon- names.
+	// NetScope: two-alphanumeric prefix on this installation's TAP and netns names so co-hosted installations never GC each other's; empty keeps the legacy names.
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
-	// SocketWaitTimeoutSeconds: per-phase budget for the VMM to come up after start — the API socket appearing, then the VM reaching Running. Exceeding either kills the VMM. Default: 5; increase for slow storage.
+	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, then VM Running); exceeding it kills the VMM. Default: 5.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`

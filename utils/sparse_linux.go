@@ -72,7 +72,7 @@ func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 		holeStart, err := syscall.Seek(fd, dataStart, seekHole)
 		if err != nil {
 			if errors.Is(err, syscall.ENXIO) {
-				// Data extends to EOF.
+				// data extends to EOF.
 				holeStart = size
 			} else {
 				return nil, fmt.Errorf("seek_hole at %d: %w", dataStart, err)
