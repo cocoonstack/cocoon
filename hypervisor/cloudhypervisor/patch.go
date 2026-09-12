@@ -18,7 +18,7 @@ type patchOptions struct {
 	diskQueueSize  int
 	noDirectIO     bool
 	cpu            int
-	allowedCPUs    []int
+	placementCPUs  []int
 }
 
 // patchCHConfig patches specific fields in config.json while preserving all unknown fields that CH adds internally (platform, cpus.topology, etc.).
@@ -81,7 +81,7 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 	diskQueueSize := utils.OrDefault(opts.diskQueueSize, defaultDiskQueueSize)
 	var affinity []chQueueAffinity
 	if opts.cpu > 1 {
-		affinity = queueAffinity(opts.cpu, opts.allowedCPUs)
+		affinity = queueAffinity(opts.cpu, opts.placementCPUs)
 	}
 	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
 		sc := opts.storageConfigs[i]
@@ -91,7 +91,8 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 		if e := setField(elem, "queue_size", diskQueueSize); e != nil {
 			return e
 		}
-		// A snapshot's affinity targets are the source host's; re-derive so restore under a different fence/placement cannot aim at cores the scope no longer owns.
+		// A snapshot's affinity targets the source host's cores, so drop it before re-deriving under this VM's own placement.
+		delete(elem, "queue_affinity")
 		if affinity != nil && !sc.RO {
 			if e := setField(elem, "queue_affinity", affinity); e != nil {
 				return e

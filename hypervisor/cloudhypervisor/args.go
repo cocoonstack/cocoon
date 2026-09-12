@@ -30,10 +30,10 @@ func (b *kvBuilder) addIf(cond bool, kv string) {
 }
 
 // DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
-func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, allowed []int) []string {
+func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, placement []int) []string {
 	args := make([]string, 0, len(storageConfigs))
 	for _, storageConfig := range storageConfigs {
-		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO, allowed)))
+		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO, placement)))
 	}
 	return args
 }
@@ -43,7 +43,7 @@ func DebugMemoryCLIArg(cfg *types.Config) string {
 	return memoryCLIArg(chMemory{Size: cfg.Memory, HugePages: cfg.HugePages, Shared: cfg.SharedMemory, Mergeable: cfg.Mergeable})
 }
 
-func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []int) *chVMConfig {
+func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, placement []int) *chVMConfig {
 	cpu := rec.Config.CPU
 	mem := rec.Config.Memory
 
@@ -66,7 +66,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, allowed []i
 	}
 
 	for _, storageConfig := range activeDisks(rec) {
-		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, allowed))
+		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, placement))
 	}
 
 	for _, nc := range rec.NetworkConfigs {
@@ -192,7 +192,7 @@ func effectiveDirectIO(sc *types.StorageConfig, noDirectIO bool) bool {
 	return !sc.RO && !noDirectIO
 }
 
-func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, allowed []int) chDisk {
+func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, placement []int) chDisk {
 	diskQueueSize = utils.OrDefault(diskQueueSize, defaultDiskQueueSize)
 	d := chDisk{
 		Path:      storageConfig.Path,
@@ -215,20 +215,19 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 	}
 
 	if cpuCount > 1 && !storageConfig.RO {
-		d.QueueAffinity = queueAffinity(cpuCount, allowed)
+		d.QueueAffinity = queueAffinity(cpuCount, placement)
 	}
 	return d
 }
 
-// queueAffinity clamps to the allowed set so no queue targets a core the scope cannot run on; nil allowed keeps the identity mapping.
-func queueAffinity(cpuCount int, allowed []int) []chQueueAffinity {
+// queueAffinity spreads the queues over the cores this VM alone owns; without a placement it pins nothing, since a set the whole VM population shares would land every VM's queue threads on the same cores.
+func queueAffinity(cpuCount int, placement []int) []chQueueAffinity {
+	if len(placement) == 0 {
+		return nil
+	}
 	qa := make([]chQueueAffinity, cpuCount)
 	for i := range qa {
-		host := i
-		if len(allowed) > 0 {
-			host = allowed[i%len(allowed)]
-		}
-		qa[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{host}}
+		qa[i] = chQueueAffinity{QueueIndex: i, HostCPUs: []int{placement[i%len(placement)]}}
 	}
 	return qa
 }

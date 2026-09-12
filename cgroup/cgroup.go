@@ -102,15 +102,6 @@ func (k Knobs) Validate() error {
 	return nil
 }
 
-// EffectiveCPUs resolves the cpu set a VM may run on — explicit placement wins over the machine fence; nil means all cores.
-func EffectiveCPUs(placement, fence string) []int {
-	cpus, err := ParseCPUList(cmp.Or(placement, fence))
-	if err != nil {
-		return nil
-	}
-	return cpus
-}
-
 // ParseCPUList parses a kernel cpu-list ("0-14", "0,2-4"); empty input is nil (no placement).
 func ParseCPUList(s string) ([]int, error) {
 	if s == "" {

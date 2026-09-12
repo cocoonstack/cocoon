@@ -170,14 +170,18 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 	return nil
 }
 
-// EffectiveCPUs resolves the host cpu set a VM under this backend may run on: explicit placement over the machine fence.
-func (b *Backend) EffectiveCPUs(cfg *types.Config) []int {
-	return cgroup.EffectiveCPUs(cfg.CPUSetCPUs, b.Conf.CgroupCPUFence())
-}
-
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+}
+
+// PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
+func PlacementCPUs(cfg *types.Config) []int {
+	cpus, err := cgroup.ParseCPUList(cfg.CPUSetCPUs)
+	if err != nil {
+		return nil
+	}
+	return cpus
 }
 
 func raiseVMMRlimits(ctx context.Context) {

@@ -196,6 +196,47 @@ func TestPatchCHConfig_RetargetsNetTAPs(t *testing.T) {
 	}
 }
 
+func TestPatchCHConfig_QueueAffinity(t *testing.T) {
+	tests := []struct {
+		name      string
+		placement []int
+		want      []chQueueAffinity
+	}{
+		{name: "no placement drops the source host's mapping", placement: nil},
+		{name: "placement re-derives the mapping", placement: []int{8, 9}, want: []chQueueAffinity{
+			{QueueIndex: 0, HostCPUs: []int{8}},
+			{QueueIndex: 1, HostCPUs: []int{9}},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := baseCHConfig()
+			cfg["disks"].([]any)[1].(map[string]any)["queue_affinity"] = []any{
+				map[string]any{"queue_index": 0, "host_cpus": []any{0}},
+				map[string]any{"queue_index": 1, "host_cpus": []any{1}},
+			}
+			path := writeCHConfig(t, dir, cfg)
+
+			opts := basePatchOpts()
+			opts.cpu = 2
+			opts.placementCPUs = tt.placement
+			if err := patchCHConfig(path, opts); err != nil {
+				t.Fatalf("patchCHConfig: %v", err)
+			}
+
+			patched, err := parseCHConfig(path)
+			if err != nil {
+				t.Fatalf("parseCHConfig: %v", err)
+			}
+			got := patched.Disks[1].QueueAffinity
+			if !slices.EqualFunc(got, tt.want, sameQueueAffinity) {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateCOWPath_OCI(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
@@ -384,6 +425,10 @@ func TestRestoreAndResumeCloneHotplugsCidataByRole(t *testing.T) {
 	if !slices.Equal(added, want) {
 		t.Fatalf("vm.add-disk paths = %v, want %v", added, want)
 	}
+}
+
+func sameQueueAffinity(a, b chQueueAffinity) bool {
+	return a.QueueIndex == b.QueueIndex && slices.Equal(a.HostCPUs, b.HostCPUs)
 }
 
 func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
