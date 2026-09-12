@@ -1,6 +1,7 @@
 package cloudhypervisor
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/utils"
@@ -65,6 +68,32 @@ func TestSaveConsolePTYSkipsUEFI(t *testing.T) {
 
 	if utils.FileExists(hypervisor.ConsolePTYPath(runDir)) {
 		t.Error("console.pty written for a UEFI boot")
+	}
+}
+
+func TestConfirmVMMReadyAcceptsAnAnsweringVMM(t *testing.T) {
+	sockPath := serveVMInfo(t, "/dev/pts/7")
+
+	if err := confirmVMMReady(t.Context(), utils.NewSocketHTTPClient(sockPath)); err != nil {
+		t.Fatalf("confirmVMMReady: %v", err)
+	}
+}
+
+func TestConfirmVMMReadyRejectsASocketNothingServes(t *testing.T) {
+	sockPath := serveVMInfo(t, "/dev/pts/7")
+	if err := os.Remove(sockPath); err != nil {
+		t.Fatalf("remove %s: %v", sockPath, err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	err := confirmVMMReady(ctx, utils.NewSocketHTTPClient(sockPath))
+
+	if err == nil {
+		t.Fatal("confirmVMMReady accepted a VMM that never answered vm.info")
+	}
+	if !strings.Contains(err.Error(), "did not answer vm.info") {
+		t.Errorf("err = %v, want the launch failure to name the unanswered vm.info", err)
 	}
 }
 

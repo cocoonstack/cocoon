@@ -249,6 +249,16 @@ func powerButton(ctx context.Context, hc *http.Client) error {
 	return err
 }
 
+// confirmVMMReady proves the VMM answers its API: cloud-hypervisor binds the API socket before it validates its launch config.
+func confirmVMMReady(ctx context.Context, hc *http.Client) error {
+	if _, err := utils.DoWithRetry(ctx, func() (*chVMInfoResponse, error) {
+		return getVMInfo(ctx, hc)
+	}); err != nil {
+		return fmt.Errorf("cloud-hypervisor did not answer vm.info after launch (see vm logs): %w", err)
+	}
+	return nil
+}
+
 // queryConsolePTY GETs vm.info for the virtio-console PTY path; "" if console is not in Pty mode.
 func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) {
 	info, err := getVMInfo(ctx, utils.NewSocketHTTPClient(apiSocketPath))
