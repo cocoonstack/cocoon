@@ -79,7 +79,7 @@ func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
 		return err
 	}
 	if hot := hotAttachedDisks(cfg); len(hot) > 0 {
-		return fmt.Errorf("hot-attached disk %q: %w", hot[0].Name, hypervisor.ErrHotAttachedDisk)
+		return fmt.Errorf("hot-attached disk %q: %w", hot[0].Name, hypervisor.ErrHotAttached)
 	}
 	return nil
 }

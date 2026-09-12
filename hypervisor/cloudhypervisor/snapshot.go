@@ -66,6 +66,12 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	if err != nil {
 		return nil, fmt.Errorf("parse snapshot config: %w", err)
 	}
+	if len(chCfg.Fs) > 0 {
+		return nil, fmt.Errorf("hot-attached vhost-user-fs %q: %w", chCfg.Fs[0].Tag, hypervisor.ErrHotAttached)
+	}
+	if len(chCfg.Devices) > 0 {
+		return nil, fmt.Errorf("hot-attached device %q: %w", chCfg.Devices[0].Path, hypervisor.ErrHotAttached)
+	}
 	byPath := make(map[string]*types.StorageConfig, len(rec.StorageConfigs))
 	for _, sc := range rec.StorageConfigs {
 		byPath[sc.Path] = sc
@@ -75,7 +81,7 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 		sc, ok := byPath[d.Path]
 		if !ok {
 			if name := disk.NameFromID(d.ID); name != "" {
-				return nil, fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttachedDisk)
+				return nil, fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttached)
 			}
 			return nil, fmt.Errorf("snapshot config has disk %q not present in VM record", d.Path)
 		}
