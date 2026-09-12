@@ -30,6 +30,8 @@ const (
 	chAPIBase     = "http://localhost/api/v1/"
 	apiSocketFlag = "--api-socket"
 
+	vmBootPollInterval = time.Millisecond
+
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"
 	restoreModeMmap     = "mmap"
@@ -249,12 +251,20 @@ func powerButton(ctx context.Context, hc *http.Client) error {
 	return err
 }
 
-// confirmVMMReady proves the VMM answers its API: cloud-hypervisor binds the API socket before it validates its launch config.
-func confirmVMMReady(ctx context.Context, hc *http.Client) error {
-	if _, err := utils.DoWithRetry(ctx, func() (*chVMInfoResponse, error) {
-		return getVMInfo(ctx, hc)
+// confirmVMBooted waits for Running: cloud-hypervisor serves its API socket before parsing the launch config and boots behind a second request.
+func confirmVMBooted(ctx context.Context, hc *http.Client, pid int, timeout time.Duration) error {
+	if err := utils.WaitFor(ctx, timeout, vmBootPollInterval, func() (bool, error) {
+		info, err := getVMInfo(ctx, hc)
+		switch {
+		case err == nil && info.State == chStateRunning:
+			return true, nil
+		case !utils.IsProcessAlive(pid):
+			return false, fmt.Errorf("cloud-hypervisor exited before the VM booted")
+		default:
+			return false, nil
+		}
 	}); err != nil {
-		return fmt.Errorf("cloud-hypervisor did not answer vm.info after launch (see vm logs): %w", err)
+		return fmt.Errorf("cloud-hypervisor never reported a running VM (see vm logs): %w", err)
 	}
 	return nil
 }

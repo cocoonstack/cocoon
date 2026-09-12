@@ -1,13 +1,13 @@
 package cloudhypervisor
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,33 +71,54 @@ func TestSaveConsolePTYSkipsUEFI(t *testing.T) {
 	}
 }
 
-func TestConfirmVMMReadyAcceptsAnAnsweringVMM(t *testing.T) {
-	sockPath := serveVMInfo(t, "/dev/pts/7")
+func TestConfirmVMBootedAcceptsARunningVM(t *testing.T) {
+	sockPath := serveVMState(t, chStateRunning)
 
-	if err := confirmVMMReady(t.Context(), utils.NewSocketHTTPClient(sockPath)); err != nil {
-		t.Fatalf("confirmVMMReady: %v", err)
+	if err := confirmVMBooted(t.Context(), utils.NewSocketHTTPClient(sockPath), os.Getpid(), time.Second); err != nil {
+		t.Fatalf("confirmVMBooted: %v", err)
 	}
 }
 
-func TestConfirmVMMReadyRejectsASocketNothingServes(t *testing.T) {
-	sockPath := serveVMInfo(t, "/dev/pts/7")
+func TestConfirmVMBootedWaitsOutACreatedVM(t *testing.T) {
+	sockPath := serveVMState(t, "Created")
+
+	err := confirmVMBooted(t.Context(), utils.NewSocketHTTPClient(sockPath), os.Getpid(), 50*time.Millisecond)
+
+	if err == nil {
+		t.Fatal("confirmVMBooted accepted a VM that had been created but never booted")
+	}
+	if !strings.Contains(err.Error(), "never reported a running VM") {
+		t.Errorf("err = %v, want the unbooted VM named", err)
+	}
+}
+
+func TestConfirmVMBootedFailsFastWhenTheVMMIsGone(t *testing.T) {
+	sockPath := serveVMState(t, chStateRunning)
 	if err := os.Remove(sockPath); err != nil {
 		t.Fatalf("remove %s: %v", sockPath, err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
 
-	err := confirmVMMReady(ctx, utils.NewSocketHTTPClient(sockPath))
+	err := confirmVMBooted(t.Context(), utils.NewSocketHTTPClient(sockPath), reapedPID(t), time.Second)
 
 	if err == nil {
-		t.Fatal("confirmVMMReady accepted a VMM that never answered vm.info")
+		t.Fatal("confirmVMBooted accepted a launch whose VMM had exited")
 	}
-	if !strings.Contains(err.Error(), "did not answer vm.info") {
-		t.Errorf("err = %v, want the launch failure to name the unanswered vm.info", err)
+	if !strings.Contains(err.Error(), "exited before the VM booted") {
+		t.Errorf("err = %v, want the dead VMM named", err)
 	}
 }
 
+func serveVMState(t *testing.T, state string) string {
+	t.Helper()
+	return serveCHAPI(t, chVMInfoResponse{State: state})
+}
+
 func serveVMInfo(t *testing.T, ptyPath string) string {
+	t.Helper()
+	return serveCHAPI(t, chVMInfoResponse{Config: chVMInfoConfig{Console: chRuntimeFile{Mode: "Pty", File: ptyPath}}})
+}
+
+func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {
 	t.Helper()
 
 	sockDir, err := os.MkdirTemp("", "ch")
@@ -112,7 +133,6 @@ func serveVMInfo(t *testing.T, ptyPath string) string {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-		resp := chVMInfoResponse{Config: chVMInfoConfig{Console: chRuntimeFile{Mode: "Pty", File: ptyPath}}}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Errorf("encode vm.info: %v", err)
 		}
@@ -121,4 +141,13 @@ func serveVMInfo(t *testing.T, ptyPath string) string {
 	go srv.Serve(ln) //nolint:errcheck
 	t.Cleanup(func() { _ = srv.Close() })
 	return sockPath
+}
+
+func reapedPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("/usr/bin/true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run /usr/bin/true: %v", err)
+	}
+	return cmd.Process.Pid
 }
