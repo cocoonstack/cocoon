@@ -34,6 +34,9 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			if err := confirmVMBooted(ctx, utils.NewSocketHTTPClientWithTimeout(sockPath, ch.conf.SocketWaitTimeout()), pid, ch.conf.SocketWaitTimeout()); err != nil {
 				return err
 			}
+			if err := hypervisor.WaitForSocket(ctx, hypervisor.VsockSockPath(rec.RunDir), pid, ch.conf.SocketWaitTimeout(), ch.conf.BinaryName()); err != nil {
+				return err
+			}
 			saveConsolePTY(ctx, rec.ID, rec.RunDir, sockPath, hypervisor.IsDirectBoot(rec.BootConfig))
 			return nil
 		},
