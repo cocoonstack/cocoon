@@ -9,12 +9,14 @@ type chVMConfig struct {
 	Console *chRuntimeFile `json:"console,omitempty"`
 	Vsock   *chVsock       `json:"vsock,omitempty"`
 
-	CPUs     chCPUs   `json:"cpus"`
-	Memory   chMemory `json:"memory"`
-	Disks    []chDisk `json:"disks,omitempty"`
-	Nets     []chNet  `json:"net,omitempty"`
-	RNG      chRNG    `json:"rng"`
-	Watchdog bool     `json:"watchdog"`
+	CPUs     chCPUs     `json:"cpus"`
+	Memory   chMemory   `json:"memory"`
+	Disks    []chDisk   `json:"disks,omitempty"`
+	Fs       []chFs     `json:"fs,omitempty"`
+	Devices  []chDevice `json:"devices,omitempty"`
+	Nets     []chNet    `json:"net,omitempty"`
+	RNG      chRNG      `json:"rng"`
+	Watchdog bool       `json:"watchdog"`
 }
 
 type chNet struct {
