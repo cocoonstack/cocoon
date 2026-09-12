@@ -95,3 +95,14 @@ func TestVerifyFromDirCOWSkipsACloudimgOverlay(t *testing.T) {
 		t.Fatalf("rejected a dir with no raw cow: %v", err)
 	}
 }
+
+func TestInitNetworkRejectsNegativeNICs(t *testing.T) {
+	_, _, err := initNetwork(t.Context(), &config.Config{}, "vm1", -1, &types.VMConfig{}, 2, "")
+
+	if err == nil {
+		t.Fatal("initNetwork accepted a negative --nics instead of rejecting it")
+	}
+	if !strings.Contains(err.Error(), "--nics must be non-negative, got -1") {
+		t.Errorf("err = %v, want the same rejection the clone path gives", err)
+	}
+}

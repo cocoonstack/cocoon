@@ -49,6 +49,9 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
+	if _, err := cliutil.Format(cmd); err != nil {
+		return err
+	}
 	ctx, conf := h.Init(cmd)
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {

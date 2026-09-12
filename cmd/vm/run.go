@@ -625,6 +625,9 @@ func tapQueues(cpu int, useFC bool) int {
 }
 
 func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, queues int, bridgeDev string) (network.Network, types.NetSetup, error) {
+	if nics < 0 {
+		return nil, types.NetSetup{}, fmt.Errorf("--nics must be non-negative, got %d", nics)
+	}
 	var netProvider network.Network
 	var err error
 	if bridgeDev != "" {
