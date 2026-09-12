@@ -75,7 +75,7 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 		sc, ok := byPath[d.Path]
 		if !ok {
 			if name := disk.NameFromID(d.ID); name != "" {
-				return nil, fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttachedDisk)
+				return nil, fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttached)
 			}
 			return nil, fmt.Errorf("snapshot config has disk %q not present in VM record", d.Path)
 		}

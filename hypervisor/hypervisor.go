@@ -14,7 +14,7 @@ var (
 	ErrNotRunning = errors.New("vm not running")
 	ErrAmbiguous  = errors.New("vm ref resolves to multiple backends")
 
-	ErrHotAttachedDisk = errors.New("detach before snapshot or hibernate")
+	ErrHotAttached = errors.New("detach before snapshot or hibernate")
 )
 
 // Hypervisor manages VM lifecycle.
