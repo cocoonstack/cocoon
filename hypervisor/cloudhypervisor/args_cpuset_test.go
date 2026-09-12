@@ -16,6 +16,7 @@ func TestQueueAffinityFollowsPlacement(t *testing.T) {
 		want      [][]int
 	}{
 		{name: "no placement leaves the queues unpinned", cpu: 3},
+		{name: "a single queue is never pinned", cpu: 1, placement: []int{8, 9}},
 		{name: "round-robin within the placement", cpu: 4, placement: []int{8, 9}, want: [][]int{{8}, {9}, {8}, {9}}},
 	}
 	for _, tt := range tests {

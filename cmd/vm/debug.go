@@ -150,16 +150,15 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 	case balloon == 0:
 		balloon = int(size >> 20) //nolint:mnd
 	}
-	placement := hypervisor.PlacementCPUs(&vmCfg.Config)
 	return chDebugSpec{
 		Configs:   storageConfigs,
 		Boot:      boot,
 		VMCfg:     vmCfg,
-		Placement: placement,
 		CowPath:   cowPath,
 		CHBin:     chBin,
 		MaxCPU:    maxCPU,
 		Balloon:   balloon,
+		Placement: hypervisor.PlacementCPUs(&vmCfg.Config),
 	}
 }
 

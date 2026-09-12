@@ -79,10 +79,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 
 func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
 	diskQueueSize := utils.OrDefault(opts.diskQueueSize, defaultDiskQueueSize)
-	var affinity []chQueueAffinity
-	if opts.cpu > 1 {
-		affinity = queueAffinity(opts.cpu, opts.placementCPUs)
-	}
+	affinity := queueAffinity(opts.cpu, opts.placementCPUs)
 	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
 		sc := opts.storageConfigs[i]
 		if e := setField(elem, "path", sc.Path); e != nil {
@@ -91,7 +88,7 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 		if e := setField(elem, "queue_size", diskQueueSize); e != nil {
 			return e
 		}
-		// A snapshot's affinity targets the source host's cores, so drop it before re-deriving under this VM's own placement.
+		// A snapshot's affinity targets the source host's cores and must not survive onto this one.
 		delete(elem, "queue_affinity")
 		if affinity != nil && !sc.RO {
 			if e := setField(elem, "queue_affinity", affinity); e != nil {

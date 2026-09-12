@@ -214,15 +214,15 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 		d.Sparse = true
 	}
 
-	if cpuCount > 1 && !storageConfig.RO {
+	if !storageConfig.RO {
 		d.QueueAffinity = queueAffinity(cpuCount, placement)
 	}
 	return d
 }
 
-// queueAffinity spreads the queues over the cores this VM alone owns; without a placement it pins nothing, since a set the whole VM population shares would land every VM's queue threads on the same cores.
+// A core set the whole VM population shares stacks every VM's queue threads onto the same cores, so an unplaced VM pins nothing.
 func queueAffinity(cpuCount int, placement []int) []chQueueAffinity {
-	if len(placement) == 0 {
+	if cpuCount < 2 || len(placement) == 0 {
 		return nil
 	}
 	qa := make([]chQueueAffinity, cpuCount)

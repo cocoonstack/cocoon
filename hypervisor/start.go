@@ -175,15 +175,6 @@ func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir str
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
 
-// PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
-func PlacementCPUs(cfg *types.Config) []int {
-	cpus, err := cgroup.ParseCPUList(cfg.CPUSetCPUs)
-	if err != nil {
-		return nil
-	}
-	return cpus
-}
-
 func raiseVMMRlimits(ctx context.Context) {
 	logger := log.WithFunc("hypervisor.raiseVMMRlimits")
 	inf := unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}

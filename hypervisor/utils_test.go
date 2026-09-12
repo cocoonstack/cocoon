@@ -19,6 +19,25 @@ func TestHostCPUCountIgnoresAffinityMask(t *testing.T) {
 	}
 }
 
+func TestPlacementCPUs(t *testing.T) {
+	tests := []struct {
+		name   string
+		cpuset string
+		want   []int
+	}{
+		{name: "explicit placement parses", cpuset: "2-3", want: []int{2, 3}},
+		{name: "no placement is no pin", cpuset: ""},
+		{name: "malformed list is no pin", cpuset: "0-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PlacementCPUs(&types.Config{CPUSetCPUs: tt.cpuset}); !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateSnapshotIntegrity(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite := func(name string) {
