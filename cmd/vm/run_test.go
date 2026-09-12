@@ -1,10 +1,13 @@
 package vm
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -47,5 +50,48 @@ func TestCloneNICPlan(t *testing.T) {
 				t.Fatalf("plan = (%d, %d), want (%d, %d)", init, resize, tt.wantInit, tt.wantResize)
 			}
 		})
+	}
+}
+
+func TestVerifyFromDirCOWRejectsAShortRawDisk(t *testing.T) {
+	tests := []struct {
+		name    string
+		size    int64
+		storage int64
+		wantErr bool
+	}{
+		{"standard tar rebuilt a short cow", 78 << 20, 10 << 30, true},
+		{"cocoon export keeps the apparent size", 10 << 30, 10 << 30, false},
+		{"envelope records no storage", 78 << 20, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			f, err := os.Create(filepath.Join(dir, hypervisor.COWRawFileName))
+			if err != nil {
+				t.Fatalf("create cow: %v", err)
+			}
+			if err = f.Truncate(tt.size); err != nil {
+				t.Fatalf("truncate cow: %v", err)
+			}
+			if err = f.Close(); err != nil {
+				t.Fatalf("close cow: %v", err)
+			}
+
+			err = verifyFromDirCOW(dir, types.SnapshotConfig{Config: types.Config{Storage: tt.storage}})
+
+			if tt.wantErr && err == nil {
+				t.Fatal("accepted a cow.raw the envelope says is bigger")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("rejected a valid export: %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyFromDirCOWSkipsACloudimgOverlay(t *testing.T) {
+	if err := verifyFromDirCOW(t.TempDir(), types.SnapshotConfig{Config: types.Config{Storage: 10 << 30}}); err != nil {
+		t.Fatalf("rejected a dir with no raw cow: %v", err)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -228,6 +230,9 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
+	if err = verifyFromDirCOW(dir, cfg); err != nil {
+		return err
+	}
 	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
@@ -272,6 +277,9 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
+	}
+	if err = verifyFromDirCOW(dir, cfg); err != nil {
+		return err
 	}
 	// Local copy keeps backend flip from leaking to the caller's shared *config.Config.
 	localConf := *conf
@@ -580,6 +588,18 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
 	}
 	return func() { r.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
+}
+
+func verifyFromDirCOW(dir string, cfg types.SnapshotConfig) error {
+	st, err := os.Stat(filepath.Join(dir, hypervisor.COWRawFileName))
+	if err != nil || cfg.Storage <= 0 {
+		return nil
+	}
+	if st.Size() != cfg.Storage {
+		return fmt.Errorf("%s in %s is %d bytes but the envelope records %d: use `snapshot export --to-dir`, or `snapshot import` the exported tar — a third-party tar drops cocoon's sparse records and rebuilds a short, shifted disk",
+			hypervisor.COWRawFileName, dir, st.Size(), cfg.Storage)
+	}
+	return nil
 }
 
 func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, snapRef string, err error) {

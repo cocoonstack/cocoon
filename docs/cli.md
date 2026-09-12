@@ -232,7 +232,7 @@ When FILE is omitted, data is read from stdin. This enables piping: `cocoon snap
 
 ### Direct Clone / Restore From a Directory
 
-`vm clone --from-dir DIR` and `vm restore --from-dir DIR` accept any directory containing a `snapshot.json` envelope (output of `snapshot export --to-dir`, or an extracted `.tar`). The snapshot does not need to be in the local snapshot DB:
+`vm clone --from-dir DIR` and `vm restore --from-dir DIR` accept a directory produced by `snapshot export --to-dir`. Do not unpack an `export -o file.tar` with a third-party tar and pass the result: cocoon stores sparse disks with private pax records that only its own extractor understands, so another tar rebuilds a short, content-shifted disk. To go through a tar, use `snapshot import`. The snapshot does not need to be in the local snapshot DB:
 
 ```bash
 # Build a portable snapshot dir, ship it, clone from it:
