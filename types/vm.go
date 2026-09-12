@@ -22,6 +22,8 @@ const (
 	TransitionStopUser       TransitionReason = "stop-user"
 	TransitionError          TransitionReason = "error"
 	TransitionUnexpectedExit TransitionReason = "unexpected-exit" // any exit outside a cocoon stop; an adopted process cannot report its cause
+
+	maxQueueSize = 32768
 )
 
 var (
@@ -66,11 +68,11 @@ func (cfg *VMConfig) Validate() error {
 	if cfg.Storage < 10<<30 {
 		return fmt.Errorf("--storage must be at least 10G, got %d", cfg.Storage)
 	}
-	if cfg.QueueSize < 0 {
-		return fmt.Errorf("--queue-size must be non-negative, got %d", cfg.QueueSize)
+	if err := validateQueueSize("--queue-size", cfg.QueueSize); err != nil {
+		return err
 	}
-	if cfg.DiskQueueSize < 0 {
-		return fmt.Errorf("--disk-queue-size must be non-negative, got %d", cfg.DiskQueueSize)
+	if err := validateQueueSize("--disk-queue-size", cfg.DiskQueueSize); err != nil {
+		return err
 	}
 	if cfg.Mergeable && (cfg.HugePages || cfg.SharedMemory) {
 		return fmt.Errorf("--mergeable needs plain private memory; drop --hugepages/--shared-memory")
@@ -163,4 +165,16 @@ func (v *VM) firstNIC() *NetworkConfig {
 		return nil
 	}
 	return v.NetworkConfigs[0]
+}
+
+func validateQueueSize(flag string, size int) error {
+	switch {
+	case size < 0:
+		return fmt.Errorf("%s must be non-negative, got %d", flag, size)
+	case size == 0:
+		return nil
+	case size > maxQueueSize || size&(size-1) != 0:
+		return fmt.Errorf("%s must be a power of 2 no greater than %d, got %d", flag, maxQueueSize, size)
+	}
+	return nil
 }

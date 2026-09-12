@@ -19,7 +19,10 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-const chStatePaused = "Paused"
+const (
+	chStateRunning = "Running"
+	chStatePaused  = "Paused"
+)
 
 // makeBodyFn builds a device endpoint's request body from the record reloaded under the ops lock.
 type makeBodyFn func(rec *hypervisor.VMRecord) any

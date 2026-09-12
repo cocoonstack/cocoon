@@ -9,6 +9,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, error) {
@@ -24,7 +25,10 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			ch.saveCmdline(ctx, rec, args)
 			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)
 		},
-		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
+		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
+			if err := confirmVMBooted(ctx, utils.NewSocketHTTPClientWithTimeout(sockPath, ch.conf.SocketWaitTimeout()), pid, ch.conf.SocketWaitTimeout()); err != nil {
+				return err
+			}
 			saveConsolePTY(ctx, rec.ID, rec.RunDir, sockPath, hypervisor.IsDirectBoot(rec.BootConfig))
 			return nil
 		},

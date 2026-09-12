@@ -60,7 +60,7 @@ type Config struct {
 	DNS string `json:"dns" mapstructure:"dns"`
 	// NetScope keys this installation's host network families (bridge TAPs <scope><vmid8>-<nic>, CNI netns <scope>-<vmid>) so co-hosted installations never GC each other's; two alphanumerics, empty keeps the legacy bt / cocoon- names.
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
-	// SocketWaitTimeoutSeconds: wait for the CH API socket after start. Default: 5; increase for slow storage.
+	// SocketWaitTimeoutSeconds: per-phase budget for the VMM to come up after start — the API socket appearing, then the VM reaching Running. Exceeding either kills the VMM. Default: 5; increase for slow storage.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`

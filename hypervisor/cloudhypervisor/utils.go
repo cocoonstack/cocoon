@@ -30,6 +30,8 @@ const (
 	chAPIBase     = "http://localhost/api/v1/"
 	apiSocketFlag = "--api-socket"
 
+	vmBootPollInterval = 10 * time.Millisecond
+
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"
 	restoreModeMmap     = "mmap"
@@ -247,6 +249,24 @@ func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
 func powerButton(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.power-button", nil)
 	return err
+}
+
+// confirmVMBooted waits for Running: cloud-hypervisor serves its API socket before parsing the launch config and boots behind a second request.
+func confirmVMBooted(ctx context.Context, hc *http.Client, pid int, timeout time.Duration) error {
+	if err := utils.WaitFor(ctx, timeout, vmBootPollInterval, func() (bool, error) {
+		info, err := getVMInfo(ctx, hc)
+		switch {
+		case err == nil:
+			return info.State == chStateRunning, nil
+		case !utils.IsProcessAlive(pid):
+			return false, fmt.Errorf("cloud-hypervisor exited before the VM booted")
+		default:
+			return false, nil
+		}
+	}); err != nil {
+		return fmt.Errorf("wait for a running VM (see vm logs): %w", err)
+	}
+	return nil
 }
 
 // queryConsolePTY GETs vm.info for the virtio-console PTY path; "" if console is not in Pty mode.
