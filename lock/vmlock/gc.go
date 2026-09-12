@@ -42,7 +42,7 @@ func GCModule(rootDir string) gc.Module[lockSnapshot] {
 			return utils.FilterUnreferenced(snap.ids, gc.Collect(others, gc.VMIDs))
 		},
 		Collect: func(ctx context.Context, ids []string, _ lockSnapshot) error {
-			logger := log.WithFunc("vmlock.GCModule")
+			logger := log.WithFunc("gc.vmlock")
 			for _, id := range ids {
 				ok, err := flock.ReclaimTransient(ctx, Path(rootDir, id))
 				if err != nil {
