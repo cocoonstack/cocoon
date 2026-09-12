@@ -47,7 +47,10 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	format, _ := cmd.Flags().GetString("format")
+	format, err := cliutil.Format(cmd)
+	if err != nil {
+		return err
+	}
 	return statusOnce(ctx, hypers, nil, format, conf.CgroupParentDir())
 }
 
@@ -61,7 +64,10 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	if eventMode && watchMode {
 		return fmt.Errorf("--event and --watch are mutually exclusive")
 	}
-	format, _ := cmd.Flags().GetString("format")
+	format, err := cliutil.Format(cmd)
+	if err != nil {
+		return err
+	}
 
 	hypers, hyperErr := cmdcore.InitAllHypervisors(ctx, conf)
 	if hyperErr != nil {
@@ -77,7 +83,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	defer ticker.Stop()
 
 	if eventMode {
-		if format == "json" {
+		if format == cliutil.FormatJSON {
 			statusEventLoopJSON(ctx, hypers, args, watchCh, ticker.C)
 		} else {
 			statusEventLoop(ctx, hypers, args, watchCh, ticker.C)
@@ -105,7 +111,10 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 }
 
 func renderVMList(vms []*types.VM, format, scopeDir string) error {
-	if format == "json" {
+	if err := cliutil.ValidateFormat(format); err != nil {
+		return err
+	}
+	if format == cliutil.FormatJSON {
 		if vms == nil {
 			vms = []*types.VM{}
 		}

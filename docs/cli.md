@@ -296,6 +296,11 @@ Applies to `cocoon vm debug`:
 | `--cow`     |                      | COW disk path (default: auto-generated)             |
 | `--ch`      | `cloud-hypervisor`   | cloud-hypervisor binary path                        |
 
+`vm debug` prints the VMM launch command only. It does not prepare a netns or a
+TAP, so it emits no `--net` and no `ip=`, and `--nics`, `--queue-size`,
+`--network` and `--bridge` are ignored — setting any of them warns on stderr,
+like `--data-disk`.
+
 ### Console Flags
 
 | Flag             | Default  | Description                                       |

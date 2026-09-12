@@ -49,6 +49,9 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if len(vmCfg.DataDisks) > 0 {
 		fmt.Fprintln(os.Stderr, "warning: --data-disk is ignored in debug mode (debug only prints the hypervisor launch command; data disks need PrepareDataDisks to materialize)")
 	}
+	if set := changedFlags(cmd, "nics", "queue-size", "network", "bridge"); len(set) > 0 {
+		fmt.Fprintf(os.Stderr, "warning: %s ignored in debug mode (debug only prints the hypervisor launch command; NIC attachment needs a prepared netns and TAP, so no --net or ip= is emitted)\n", strings.Join(set, "/"))
+	}
 
 	storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
 	if err != nil {
@@ -229,4 +232,14 @@ func printCommonCHArgs(s chDebugSpec) {
 		fmt.Print("  --watchdog \\\n")
 	}
 	fmt.Println("  --serial tty --console off")
+}
+
+func changedFlags(cmd *cobra.Command, names ...string) []string {
+	var set []string
+	for _, n := range names {
+		if cmd.Flags().Changed(n) {
+			set = append(set, "--"+n)
+		}
+	}
+	return set
 }
