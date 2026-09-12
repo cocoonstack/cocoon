@@ -15,6 +15,9 @@ import (
 )
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
+	if _, err := cliutil.Format(cmd); err != nil {
+		return err
+	}
 	ctx, conf := h.Init(cmd)
 	backends, err := cmdcore.InitImageBackends(ctx, conf)
 	if err != nil {

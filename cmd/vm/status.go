@@ -111,9 +111,6 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 }
 
 func renderVMList(vms []*types.VM, format, scopeDir string) error {
-	if err := cliutil.ValidateFormat(format); err != nil {
-		return err
-	}
 	if format == cliutil.FormatJSON {
 		if vms == nil {
 			vms = []*types.VM{}

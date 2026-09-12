@@ -35,16 +35,7 @@ func AddFormatFlag(cmd *cobra.Command) {
 // Format reads --format and rejects a value outside the flag's enum.
 func Format(cmd *cobra.Command) (string, error) {
 	format, _ := cmd.Flags().GetString("format")
-	return format, ValidateFormat(format)
-}
-
-func ValidateFormat(format string) error {
-	switch format {
-	case "", FormatTable, FormatJSON:
-		return nil
-	default:
-		return fmt.Errorf("--format %q is invalid: want %q or %q", format, FormatTable, FormatJSON)
-	}
+	return format, validateFormat(format)
 }
 
 func AddOutputFlag(cmd *cobra.Command) {
@@ -85,7 +76,7 @@ func OutputFormatted(cmd *cobra.Command, data any, tableFn TableFunc) error {
 }
 
 func OutputFormattedStr(format string, data any, tableFn TableFunc) error {
-	if err := ValidateFormat(format); err != nil {
+	if err := validateFormat(format); err != nil {
 		return err
 	}
 	if format == FormatJSON {
@@ -103,4 +94,13 @@ func FormatSize(bytes int64) string {
 
 func IsURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+}
+
+func validateFormat(format string) error {
+	switch format {
+	case "", FormatTable, FormatJSON:
+		return nil
+	default:
+		return fmt.Errorf("--format %q is invalid: want %q or %q", format, FormatTable, FormatJSON)
+	}
 }

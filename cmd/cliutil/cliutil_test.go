@@ -15,14 +15,14 @@ func TestValidateFormat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
-			err := ValidateFormat(tt.format)
+			err := validateFormat(tt.format)
 			switch {
 			case tt.wantErr == "" && err != nil:
-				t.Fatalf("ValidateFormat(%q) = %v, want nil", tt.format, err)
+				t.Fatalf("validateFormat(%q) = %v, want nil", tt.format, err)
 			case tt.wantErr != "" && err == nil:
-				t.Fatalf("ValidateFormat(%q) = nil, want %q", tt.format, tt.wantErr)
+				t.Fatalf("validateFormat(%q) = nil, want %q", tt.format, tt.wantErr)
 			case tt.wantErr != "" && err.Error() != tt.wantErr:
-				t.Fatalf("ValidateFormat(%q) = %q, want %q", tt.format, err, tt.wantErr)
+				t.Fatalf("validateFormat(%q) = %q, want %q", tt.format, err, tt.wantErr)
 			}
 		})
 	}
