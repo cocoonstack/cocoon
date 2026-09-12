@@ -24,12 +24,12 @@ var (
 	// userDataTmpl renders cloud-config; also writes systemd-networkd fallback units so clone reinit survives netplan PERM-MAC mismatch.
 	userDataTmpl = template.Must(template.New("user-data").Funcs(tmplFuncs).Parse(`#cloud-config
 {{- if .Password}}
+ssh_pwauth: true
+{{- if eq .Username "root"}}
 chpasswd:
   expire: false
   list:
-    - '{{.Username}}:{{yamlQuote .Password}}'
-ssh_pwauth: true
-{{- if eq .Username "root"}}
+    - 'root:{{yamlQuote .Password}}'
 disable_root: false
 {{- end}}
 {{- if and .Username (ne .Username "root")}}
