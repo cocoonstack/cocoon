@@ -100,28 +100,28 @@ IMAGE_NAME="ghcr.io/cocoonstack/cocoon/android:14.0" bash start.sh   # run from 
 
 Every official OS image bakes the following on top of its base distro:
 
-- **cocoon-agent** (vsock exec) — pinned binary from [cocoonstack/cocoon-agent](https://github.com/cocoonstack/cocoon-agent), auto-started on boot. Backs `cocoon vm exec` (kubectl-style stdin/stdout/stderr/exit, no SSH/network dependency). Ubuntu uses a systemd unit; Android uses `/system/etc/init/cocoon-agent.rc`.
+- **cocoon-agent** (vsock exec) — pinned binary from [cocoonstack/cocoon-agent](https://github.com/cocoonstack/cocoon-agent), auto-started on boot. Backs `cocoon vm exec` (kubectl-style stdin/stdout/stderr/exit, no SSH/network dependency). Ubuntu and Debian use a systemd unit; Android uses `/system/etc/init/cocoon-agent.rc`.
 - **sshd** *(Ubuntu and Debian)* — `openssh-server` enabled with `PermitRootLogin yes`. Default credentials are `root:cocoon`. SSH covers the human-on-keyboard case while cocoon-agent handles control-plane traffic.
 
 Default credentials apply to fresh VMs. If you fork an image you should rotate the root password and (if you keep sshd) flip `PermitRootLogin` back to `no` once you have a non-root sudoer.
 
 ## DHCP and VM Cloning
 
-All Ubuntu images configure systemd-networkd with `ClientIdentifier=mac` in their DHCP settings. This ensures that when a VM is cloned from a snapshot, each clone uses its unique MAC address as the DHCP client identifier instead of the machine-id-derived DUID. Without this, clones from the same snapshot share an identical DUID and dnsmasq treats them as a single client, causing IP conflicts.
+All Ubuntu and Debian images configure systemd-networkd with `ClientIdentifier=mac` in their DHCP settings. This ensures that when a VM is cloned from a snapshot, each clone uses its unique MAC address as the DHCP client identifier instead of the machine-id-derived DUID. Without this, clones from the same snapshot share an identical DUID and dnsmasq treats them as a single client, causing IP conflicts.
 
-The setting is applied in two places:
-- `os-image/ubuntu/network.sh` — the initramfs DHCP fallback path
+The setting is applied in two places per family:
+- `os-image/ubuntu/network.sh` and `os-image/debian/network.sh` — the initramfs DHCP fallback path
 - Each Dockerfile's `20-wired.network` — the default systemd-networkd config
 
 ## Prerequisites
 
 - Linux with KVM access (`/dev/kvm` must be writable)
-- `wget`, `mkfs.erofs`, `mkfs.ext4` installed
+- `jq`, `wget`, `mkfs.erofs`, `mkfs.ext4` (start.sh installs any that are missing via `sudo apt-get`)
 - `sudo` required on every run to set `CAP_NET_ADMIN` on the hypervisor binary
 
 ## What start.sh Does
 
-1. Downloads [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) and sets capabilities
+1. Downloads [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v51.0 (static build, per-arch) and sets capabilities
 2. Pulls the container image specified by `IMAGE_NAME` in a daemonless manner via [crane](https://github.com/google/go-containerregistry)
 3. Extracts the kernel (`vmlinuz`) and initramfs (`initrd.img`) from the image, and compresses the rootfs into EROFS
 4. Creates a 10G COW (Copy-on-Write) disk as the writable layer

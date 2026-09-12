@@ -67,7 +67,7 @@ Flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--path` | required | Absolute path to an existing raw disk file |
-| `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`) |
+| `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`; the `cocoon-` prefix is reserved) |
 | `--readonly` | `false` | Attach read-only |
 | `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
 

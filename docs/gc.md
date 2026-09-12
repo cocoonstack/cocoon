@@ -57,7 +57,7 @@ Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record), **m
 
 Sub-flags combine as union of evictions (intersection of kept) — a snapshot is kept only if it passes **every** active criterion. All sub-flags require `--snapshot`; negative values are rejected.
 
-`LastAccessedAt` is updated on `Restore`, `vm clone` (via `DataDir`), `snapshot export`, and `snapshot import` (set to creation time). `Inspect` and `list` do not count as access.
+`LastAccessedAt` is updated on `Restore`, `vm clone` (via `DataDir`) and `snapshot export`, and set to the creation time by `snapshot save` and `snapshot import`, so a fresh snapshot is never age-evicted by the next sweep. `Inspect` and `list` do not count as access.
 
 ```bash
 # Preview what 30-day eviction would remove (snapshot-only — other GC modules still run)

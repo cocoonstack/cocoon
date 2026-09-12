@@ -13,6 +13,8 @@ Requirements, install paths, the doctor script, and a first VM.
   silently corrupts layers — cocoon refuses to convert with older versions)
 - UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`); on x86_64 `cocoon-check --upgrade` installs the [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) `dev` build (EFI ResetSystem for ACPI power-button shutdown and the IA32_FEATURE_CONTROL/VMXON lock, both needed by Windows guests — see [known issues](known-issues.md))
 - CNI plugins (`bridge`, `host-local`, `loopback`)
+- `mkfs.ext4` (from e2fsprogs, for the per-VM COW disk)
+- `zstd` (optional: Firecracker kernel decompression on distros that ship a compressed kernel)
 - Go 1.27+ (build only)
 
 ## Installation
@@ -34,6 +36,8 @@ install -m 0755 cocoon /usr/local/bin/
 # Or use go install
 go install github.com/cocoonstack/cocoon@latest
 ```
+
+Each release also ships an unstripped debug build, `cocoon_<version>_Linux_<arch>_debug.tar.gz` (binary `cocoon.dbg`), for symbolized stack traces.
 
 ### Build from source
 
@@ -57,8 +61,11 @@ install -m 0755 cocoon-check /usr/local/bin/
 # Check only — reports PASS/FAIL for each requirement
 cocoon-check
 
-# Check and fix — creates directories, sets sysctl, adds iptables rules
+# Check and fix — creates directories, sets sysctl, adds iptables rules, chmods /dev/kvm, generates a CNI conflist if none exists
 cocoon-check --fix
+
+# Generate the CNI bridge config on a different subnet (default 10.88.0.0/16)
+cocoon-check --fix --subnet=10.90.0.0/16
 
 # Full setup — install cloud-hypervisor, firmware, and CNI plugins
 cocoon-check --upgrade
@@ -69,6 +76,7 @@ The `--upgrade` flag downloads and installs:
 - Firecracker from the cocoonstack fork `dev` release (checksum-verified)
 - CLOUDHV.fd firmware: the cocoonstack firmware fork `dev` build on x86_64 (checksum-verified), upstream rust-hypervisor-firmware on aarch64
 - CNI plugins (bridge, host-local, loopback, etc.)
+- `zstd` via apt-get or yum when it is absent (Firecracker kernel decompression)
 
 Release tags and versions are overridable through `CH_REF`, `CH_REMOTE_VERSION`, `FC_REF`, `FW_REF`, `FW_VERSION` and `CNI_VERSION` (see `cocoon-check --help`).
 

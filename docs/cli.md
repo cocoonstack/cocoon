@@ -7,7 +7,7 @@ Every command and flag. Concept guides: [VM lifecycle](vm.md), [networking](netw
 ```
 cocoon
 ├── image
-│   ├── pull [--force] IMAGE [IMAGE...]  Pull OCI image(s) or cloud image URL(s) (--force to bypass cache)
+│   ├── pull [--force] IMAGE [IMAGE...]  Pull OCI image(s) or cloud image URL(s) (--force re-downloads a cloud-image URL)
 │   ├── list (alias: ls)           List locally stored images
 │   ├── rm ID [ID...]              Delete locally stored image(s)
 │   ├── import NAME [FILE...]      Import image from file(s) or stdin
@@ -120,9 +120,9 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | ----------- | ---------------- | --------------------------------------------- |
 | `--fc`      | `false`          | Use Firecracker backend (OCI images only)      |
 | `--name`    | `cocoon-<image>` | VM name                                       |
-| `--cpu`     | `2`              | Boot CPUs — also the VM's hard CPU cap (quota = N cores unless overridden; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)) |
-| `--memory`  | `1G`             | Memory size (e.g., 512M, 2G)                  |
-| `--storage` | `10G`            | COW disk size (e.g., 10G, 20G)                |
+| `--cpu`     | `2`              | Boot CPUs — also the VM's hard CPU cap (quota = N cores unless overridden; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)); refused above the host's online core count |
+| `--memory`  | `1G`             | Memory size (e.g., 512M, 2G); minimum 512M    |
+| `--storage` | `10G`            | COW disk size (e.g., 10G, 20G); minimum 10G   |
 | `--nics`    | `1`              | Number of network interfaces (0 = no network) |
 | `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
 | `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (CH only, ignored by FC) |
@@ -152,7 +152,7 @@ Applies to `cocoon vm clone`:
 | Flag        | Default                  | Description                                             |
 | ----------- | ------------------------ | ------------------------------------------------------- |
 | `--name`    | `cocoon-clone-<id>`      | VM name                                                 |
-| `--nics`    | inherit from snapshot    | Override NIC count at clone time; lets a 0-NIC snapshot clone with networking (CH hot-swaps NICs after restore) |
+| `--nics`    | inherit from snapshot    | Override NIC count at clone time; lets a 0-NIC snapshot clone with networking (CH hot-swaps NICs after restore; Firecracker only from a `--pci` snapshot) |
 | `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (0 = inherit from snapshot) |
 | `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (0 = inherit from snapshot; CH only) |
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
@@ -169,7 +169,7 @@ restore the guest from the snapshot's binary device state, so those values
 are fixed at snapshot time. NIC count inherits by default but `--nics N`
 overrides it: Cloud Hypervisor hot-swaps the snapshot's NICs for a fresh set
 right after restore, a Firecracker `--pci` clone restores the snapshot's NICs
-and hot-plugs the delta afterwards (MMIO snapshots keep their NIC set). Use
+and hot-plugs the delta afterwards; a Firecracker MMIO snapshot rejects the override (`--nics override on clone needs a --pci snapshot on Firecracker`). Use
 `cocoon vm run` to create a fresh VM with different CPU/memory/storage.
 
 **Network backend** is decided per clone (the snapshot does not persist a
@@ -292,14 +292,16 @@ Applies to `cocoon vm debug`:
 | Flag        | Default              | Description                                        |
 | ----------- | -------------------- | -------------------------------------------------- |
 | `--max-cpu` | `8`                  | Max CPUs for the generated command                  |
-| `--balloon` | `0`                  | Balloon size in MB (0 = auto); ignored when the VM gets no balloon (`--no-balloon`, `--windows`, or memory < 256 MiB) |
+| `--balloon` | `0`                  | Balloon size in MB (0 = auto); ignored when the VM gets no balloon (`--no-balloon` or `--windows`) |
 | `--cow`     |                      | COW disk path (default: auto-generated)             |
 | `--ch`      | `cloud-hypervisor`   | cloud-hypervisor binary path                        |
 
 `vm debug` prints the VMM launch command only. It does not prepare a netns or a
 TAP, so it emits no `--net` and no `ip=`, and `--nics`, `--queue-size`,
 `--network` and `--bridge` are ignored — setting any of them warns on stderr,
-like `--data-disk`.
+like `--data-disk`. `--max-cpu`, `--balloon`, `--cow` and `--ch` shape the Cloud
+Hypervisor command only; `vm debug --fc` prints the Firecracker REST sequence
+and ignores all four.
 
 ### Console Flags
 
@@ -327,7 +329,7 @@ $ cocoon vm exec -e FOO=bar myvm -- sh -c 'echo $FOO'
 bar
 ```
 
-Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*` and `ghcr.io/cocoonstack/cocoon/android:*` images now bake the binary and enable it on boot (systemd unit on Ubuntu, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.2 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
+Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*`, `ghcr.io/cocoonstack/cocoon/debian:*` and `ghcr.io/cocoonstack/cocoon/android:*` images bake the binary and enable it on boot (systemd unit on Ubuntu and Debian, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.2 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
 
 ### Logs Flags
 

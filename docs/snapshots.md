@@ -28,9 +28,9 @@ cocoon snapshot rm my-snap
 ### What Gets Captured
 
 A snapshot contains the full VM state:
-- **Memory**: complete RAM contents (memory-ranges)
-- **Disks**: COW disk (raw or qcow2), cidata disk (cloudimg)
-- **Config**: Cloud Hypervisor config.json and device state (state.json)
+- **Memory**: complete RAM contents (`memory-range-*` on Cloud Hypervisor, `mem` on Firecracker)
+- **Disks**: COW disk (raw or qcow2), every `--data-disk`, cidata disk (cloudimg)
+- **Config**: Cloud Hypervisor `config.json` plus device state (`state.json`), or Firecracker `vmstate`; both carry cocoon's `cocoon.json` sidecar (disk roles, boot config)
 - **Metadata**: image reference, hypervisor type, network/queue settings, and resource topology (CPU, memory, storage, NIC count) — CPU/memory/storage are fixed at snapshot time on every backend; NIC count inherits by default and can be overridden at clone time via `--nics N` (Cloud Hypervisor, or Firecracker `--pci` snapshots — see Clone Constraints)
 
 ### Clone Constraints
@@ -41,17 +41,17 @@ CPU, memory, and storage are fixed at snapshot time on both backends: the guest 
 
 Cloud Hypervisor clones and restores load guest memory via `--restore-mode`:
 
-- **`mmap`** (default for plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires the cocoonstack CH build.
+- **`mmap`** (default for plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires Cloud Hypervisor v54 or newer (`cocoon-check --upgrade` installs the cocoonstack fork build).
 - **`copy`** (the fallback for clones and restores whenever the snapshot uses hugepages or shared memory): eager full-memory load; the degradation from an explicit `mmap` request is logged as a warning.
 - **`ondemand`**: userfaultfd paging; pages load on first guest access.
 
 Firecracker restore is always memory-mapped by design and takes no mode flag.
 
-Concurrent clones are first-class: sibling clones of one snapshot run fully in parallel, and each clone holds a shared lease on its snapshot for the duration of setup, so a concurrent snapshot delete or GC waits for the burst to finish instead of destroying work in flight; Firecracker clones also hold a shared per-VM lease on a managed source, so `vm rm`/`vm restore` of the source waits too. A source that was already deleted still clones (its drives travel inside the snapshot).
+Concurrent clones are first-class: sibling clones of one snapshot run fully in parallel, and each clone holds a shared lease on its snapshot for the duration of setup, so a concurrent `snapshot rm` fails fast with `snapshot <id> is in use by an active clone/restore/export` and a GC sweep skips it until its next cycle, instead of destroying work in flight; Firecracker clones also hold a shared per-VM lease on a managed source, so `vm rm`/`vm restore` of the source waits too. A source that was already deleted still clones (its drives travel inside the snapshot).
 
 ### Post-Clone Guest Setup
 
-After cloning, the guest resumes with new NICs (MAC addresses are handled automatically via NIC hot-swap during clone), but the guest OS still has the old IP configuration. You must reconfigure networking inside the guest: `cocoon vm clone` prints the exact steps for that VM — a `--no-balloon` clone has no balloon to release, so it gets no `drop_caches` line.
+After cloning, the guest resumes with new NICs — Cloud Hypervisor clones hot-swap in fresh MAC addresses automatically, while a Firecracker clone keeps the source VM's MACs in the restored vmstate and `cocoon vm clone` prints the `ip link set dev ethN address <MAC>` lines to run first — but the guest OS still has the old IP configuration. You must reconfigure networking inside the guest: `cocoon vm clone` prints the exact steps for that VM — a `--no-balloon` clone has no balloon to release, so it gets no `drop_caches` line.
 
 **Cloudimg VMs** (cloud-init re-initialization):
 
