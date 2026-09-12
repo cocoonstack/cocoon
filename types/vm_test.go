@@ -85,6 +85,29 @@ func TestValidate(t *testing.T) {
 			modify: func(c *VMConfig) { c.DiskQueueSize = 0 },
 		},
 		{
+			name:    "queue size not a power of two",
+			modify:  func(c *VMConfig) { c.QueueSize = 7 },
+			wantErr: "--queue-size must be a power of 2 no greater than 32768, got 7",
+		},
+		{
+			name:    "queue size above the virtio ring bound",
+			modify:  func(c *VMConfig) { c.QueueSize = 65536 },
+			wantErr: "--queue-size must be a power of 2 no greater than 32768, got 65536",
+		},
+		{
+			name:    "disk queue size not a power of two",
+			modify:  func(c *VMConfig) { c.DiskQueueSize = 1000 },
+			wantErr: "--disk-queue-size must be a power of 2 no greater than 32768, got 1000",
+		},
+		{
+			name:   "queue size at the upper bound",
+			modify: func(c *VMConfig) { c.QueueSize = 32768 },
+		},
+		{
+			name:   "queue size default 512",
+			modify: func(c *VMConfig) { c.QueueSize = 512 },
+		},
+		{
 			name:   "valid username",
 			modify: func(c *VMConfig) { c.User = "deploy_user" },
 		},

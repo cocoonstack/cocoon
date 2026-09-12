@@ -124,8 +124,8 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--memory`  | `1G`             | Memory size (e.g., 512M, 2G)                  |
 | `--storage` | `10G`            | COW disk size (e.g., 10G, 20G)                |
 | `--nics`    | `1`              | Number of network interfaces (0 = no network) |
-| `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
-| `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device (CH only, ignored by FC) |
+| `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
+| `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (CH only, ignored by FC) |
 | `--network` | empty (default)  | CNI conflist name (empty = first conflist)     |
 | `--bridge`  | empty            | TAP-on-bridge mode (value is bridge device, e.g. `cni0`); mutually exclusive with `--network` |
 | `--user`    | `root`           | Guest username for cloud-init (cloudimg only)  |
@@ -153,8 +153,8 @@ Applies to `cocoon vm clone`:
 | ----------- | ------------------------ | ------------------------------------------------------- |
 | `--name`    | `cocoon-clone-<id>`      | VM name                                                 |
 | `--nics`    | inherit from snapshot    | Override NIC count at clone time; lets a 0-NIC snapshot clone with networking (CH hot-swaps NICs after restore) |
-| `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue (0 = inherit from snapshot) |
-| `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device (0 = inherit from snapshot; CH only) |
+| `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (0 = inherit from snapshot) |
+| `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (0 = inherit from snapshot; CH only) |
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); takes precedence over `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
