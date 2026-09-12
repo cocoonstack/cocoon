@@ -170,7 +170,7 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 }
 
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
-	vmID, _, err := b.ResolveAndLoad(ctx, vmRef)
+	vmID, err := b.ResolveRef(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err
 	}

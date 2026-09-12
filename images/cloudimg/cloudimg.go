@@ -80,6 +80,10 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 	err = c.store.View(ctx, func(idx *imageIndex) error {
 		result = make([][]*types.StorageConfig, len(vms))
 		boot = make([]*types.BootConfig, len(vms))
+		firmwarePath := images.FirmwarePath(c.conf.RootDir)
+		if !utils.ValidFile(firmwarePath) {
+			return fmt.Errorf("firmware not found: %s", firmwarePath)
+		}
 		for i, vm := range vms {
 			_, entry, ok := images.LookupOne(idx.Images, vm.Image)
 			if !ok {
@@ -99,11 +103,6 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 				Serial: "cocoon-base",
 				Role:   types.StorageRoleLayer,
 			}}
-
-			firmwarePath := images.FirmwarePath(c.conf.RootDir)
-			if !utils.ValidFile(firmwarePath) {
-				return fmt.Errorf("firmware not found: %s", firmwarePath)
-			}
 			boot[i] = &types.BootConfig{
 				FirmwarePath: firmwarePath,
 			}

@@ -28,6 +28,8 @@ import (
 
 const rollbackTimeout = 30 * time.Second
 
+type cloneFn func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error)
+
 type cloneResult struct {
 	*types.VM
 	Hints []string `json:"hints,omitempty"`
@@ -133,34 +135,9 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	defer stream.Close() //nolint:errcheck
 	defer cmdcore.CloseOnCancel(ctx, stream)()
 
-	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
-	if err != nil {
-		return err
-	}
-	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, sync.OnceFunc(cs.unlock)
-	netProvider, netSetup := cs.netProvider, cs.netSetup
-	defer unlock()
-
-	logger.Infof(ctx, "cloning VM from snapshot %s ...", snapID)
-
-	vm, cloneErr := hyper.Clone(ctx, vmID, vmCfg, netSetup, &cfg, stream)
-	if cloneErr != nil {
-		rollbackNetwork(ctx, netProvider, vmID)
-		rollbackReserve()
-		return fmt.Errorf("clone VM: %w", cloneErr)
-	}
-	h.reseedAfterResume(ctx, conf, hyper, vm, true)
-	// The deferred resize takes the ops lock itself, so the clone's reservation lock must be gone first.
-	unlock()
-	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
-
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, cloneResult{VM: vm, Hints: hints}); done {
-		return cmp.Or(finishErr, jsonErr)
-	}
-	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
-	printGuestHints(hints)
-	printPostCloneHints(vm)
-	return finishErr
+	return h.runClone(ctx, cmd, conf, hyper, cfg, fmt.Sprintf("snapshot %s", snapID), logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
+		return hyper.Clone(ctx, vmID, vmCfg, netSetup, &cfg, stream)
+	})
 }
 
 func (h Handler) Restore(cmd *cobra.Command, args []string) error {
@@ -299,26 +276,32 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 }
 
 func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
+	return h.runClone(ctx, cmd, conf, hyper, cfg, sourceLabel, logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
+		return dcr.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
+	})
+}
+
+// runClone reserves, clones through do, reseeds and finishes; the JSON envelope replaces the log lines under --output json.
+func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
-	vmCfg, vmID, rollbackReserve, unlock := cs.vmCfg, cs.vmID, cs.rollback, sync.OnceFunc(cs.unlock)
-	netProvider, netSetup := cs.netProvider, cs.netSetup
+	unlock := sync.OnceFunc(cs.unlock)
 	defer unlock()
 
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "cloning VM from %s ...", sourceLabel)
 	}
-
-	vm, cloneErr := dcr.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
+	vm, cloneErr := do(cs.vmID, cs.vmCfg, cs.netSetup)
 	if cloneErr != nil {
-		rollbackNetwork(ctx, netProvider, vmID)
-		rollbackReserve()
+		rollbackNetwork(ctx, cs.netProvider, cs.vmID)
+		cs.rollback()
 		return fmt.Errorf("clone VM: %w", cloneErr)
 	}
 	h.reseedAfterResume(ctx, conf, hyper, vm, true)
+	// The deferred resize takes the ops lock itself, so the clone's reservation lock must be gone first.
 	unlock()
 	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 

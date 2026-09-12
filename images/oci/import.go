@@ -144,12 +144,8 @@ func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *
 		if bf.src == "" || *bf.dst != "" {
 			continue
 		}
-		clean := filepath.Clean(bf.src)
-		if !filepath.IsAbs(clean) || filepath.Dir(clean) != filepath.Clean(baseDir) {
-			return fmt.Errorf("path %q escapes base dir", bf.src)
-		}
 		dst := filepath.Join(baseDir, bf.name)
-		if err := os.Rename(clean, dst); err != nil { //nolint:gosec // path validated above
+		if err := os.Rename(bf.src, dst); err != nil {
 			return fmt.Errorf("rename %s: %w", bf.name, err)
 		}
 		*bf.dst = dst

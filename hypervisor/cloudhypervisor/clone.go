@@ -121,15 +121,15 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 
 	sockPath := hypervisor.SocketPath(runDir)
 	args := []string{apiSocketFlag, sockPath}
-	ch.saveCmdline(ctx, &hypervisor.VMRecord{RunDir: runDir}, args)
-
-	pid, err := ch.launchProcess(ctx, &hypervisor.VMRecord{
+	rec := &hypervisor.VMRecord{
 		ID: vmID, Config: *vmCfg,
 		RunDir: runDir,
 		LogDir: logDir,
-	}, args, net.NetnsPath, true)
+	}
+	ch.saveCmdline(ctx, rec, args)
+
+	pid, err := ch.launchProcess(ctx, rec, args, net.NetnsPath, true)
 	if err != nil {
-		ch.MarkError(ctx, vmID)
 		return nil, fmt.Errorf("launch CH: %w", err)
 	}
 
@@ -305,9 +305,6 @@ func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types
 func hotSwapNets(ctx context.Context, hc *http.Client, oldNets []chNet, networkConfigs []*types.NetworkConfig) error {
 	logger := log.WithFunc("cloudhypervisor.hotSwapNets")
 	for _, oldNet := range oldNets {
-		if oldNet.ID == "" {
-			continue
-		}
 		if err := removeDeviceVM(ctx, hc, oldNet.ID); err != nil {
 			return fmt.Errorf("remove net device %s: %w", oldNet.ID, err)
 		}

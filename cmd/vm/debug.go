@@ -78,20 +78,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	cowPath := fmt.Sprintf("cow-%s.raw", vmCfg.Name)
 	memMiB := int(vmCfg.Memory >> 20) //nolint:mnd
 
-	nLayers := 0
-	for _, s := range configs {
-		if s.Role == types.StorageRoleLayer {
-			nLayers++
-		}
-	}
-	layerDevs := make([]string, nLayers)
-	for i := range nLayers {
-		layerDevs[nLayers-1-i] = firecracker.DevPath(i)
-	}
-	cowDev := firecracker.DevPath(nLayers)
-
-	cmdline := hypervisor.BuildBaseCmdline("console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
-		strings.Join(layerDevs, ","), cowDev, nil, vmCfg.Name, nil)
+	cmdline := firecracker.DebugCmdline(configs, vmCfg.Name)
 
 	printPrepareCOWDisk(vmCfg.Storage>>30, cowPath) //nolint:mnd
 
@@ -176,9 +163,7 @@ func printCHDebug(s chDebugSpec) {
 			{Path: s.CowPath, RO: false, Serial: hypervisor.CowSerial},
 		})
 		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO, s.Placement)
-		cocoonLayers := strings.Join(cloudhypervisor.ReverseLayerSerials(s.Configs), ",")
-		cmdline := hypervisor.BuildBaseCmdline("console=hvc0 loglevel=3",
-			cocoonLayers, hypervisor.CowSerial, nil, s.VMCfg.Name, nil)
+		cmdline := cloudhypervisor.DebugCmdline(s.Configs, s.VMCfg.Name)
 
 		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
 		fmt.Printf("# Launch VM: %s (image: %s, boot: direct kernel)\n", s.VMCfg.Name, s.VMCfg.Image)

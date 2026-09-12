@@ -140,15 +140,11 @@ func (t *Table) PendingIDs(ctx context.Context, r meta.Reader) ([]string, error)
 
 // Acquire starts protocol work on id under the held entity lock: takes over an existing tombstone (resumed reports it), or leases fresh from build.
 func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build func() (Payload, error)) (leaseID string, resumed *Record, err error) {
-	existing, err := t.Get(ctx, w, id)
+	taken, err := t.TakeOver(ctx, w, id)
 	if err != nil {
 		return "", nil, err
 	}
-	if existing != nil {
-		taken, takeErr := t.TakeOver(ctx, w, id)
-		if takeErr != nil {
-			return "", nil, takeErr
-		}
+	if taken != nil {
 		return taken.LeaseID, taken, nil
 	}
 	p, err := build()
@@ -173,18 +169,14 @@ func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (
 
 // Resume takes over id's tombstone for recovery under the held entity lock: a leased entry rolls back in place; a deleting one gets a fresh lease for the caller to roll forward.
 func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Record, leaseID string, err error) {
-	rec, err = t.Get(ctx, w, id)
+	rec, err = t.TakeOver(ctx, w, id)
 	if err != nil || rec == nil {
 		return rec, "", err
 	}
-	taken, err := t.TakeOver(ctx, w, id)
-	if err != nil {
-		return nil, "", err
-	}
 	if rec.Phase == PhaseLeased {
-		return rec, taken.LeaseID, t.Rollback(ctx, w, id, taken.LeaseID)
+		return rec, rec.LeaseID, t.Rollback(ctx, w, id, rec.LeaseID)
 	}
-	return rec, taken.LeaseID, nil
+	return rec, rec.LeaseID, nil
 }
 
 func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (*Record, error) {

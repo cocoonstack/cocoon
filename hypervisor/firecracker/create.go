@@ -79,6 +79,11 @@ func (fc *Firecracker) setBootCmdline(boot *types.BootConfig, storageConfigs []*
 	return nil
 }
 
+// DebugCmdline renders the guest cmdline for vm debug, which attaches no NIC.
+func DebugCmdline(storageConfigs []*types.StorageConfig, vmName string) string {
+	return buildCmdline(storageConfigs, nil, vmName, nil)
+}
+
 // DevPath maps idx to vda..vdz, vdaa..vdaz, vdba..vdbz, ...
 func DevPath(idx int) string {
 	const letters = 26

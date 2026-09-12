@@ -119,7 +119,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs, dataDisks: dataDisks,
 	})
 	if cloneErr != nil {
-		fc.MarkError(ctx, vmID)
 		return nil, cloneErr
 	}
 	defer plan.close()
