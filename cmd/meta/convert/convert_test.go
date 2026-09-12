@@ -154,6 +154,20 @@ func TestSourceChangedRefused(t *testing.T) {
 	}
 }
 
+func TestMissingJSONSourceRefused(t *testing.T) {
+	ctx := t.Context()
+	spec := testSpec(t, "vms")
+
+	err := Run(ctx, spec, "sqlite")
+
+	if err == nil || !strings.Contains(err.Error(), "to convert from") {
+		t.Fatalf("want missing-source refusal, got %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(spec.MetaRoot, "*manifest*")); len(left) != 0 {
+		t.Fatalf("manifest written before the source was checked: %v", left)
+	}
+}
+
 func TestTargetNotFreshRefused(t *testing.T) {
 	ctx := t.Context()
 	spec := testSpec(t, "vms")
