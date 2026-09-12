@@ -156,7 +156,7 @@ Applies to `cocoon vm clone`:
 | `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue (0 = inherit from snapshot) |
 | `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device (0 = inherit from snapshot; CH only) |
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
-| `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
+| `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); takes precedence over `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
 | `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
@@ -247,7 +247,7 @@ cocoon vm restore my-vm --from-dir /sync/from-host-a
 cocoon vm restore my-vm --from-dir /unrelated/lineage --force
 ```
 
-The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image's blobs may not be present locally — `EnsureImage` reads `image_blob_ids` from the envelope and pulls as needed.
+The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image may not be present locally — `EnsureImage` pulls the envelope's image by digest when it is missing, and `image_blob_ids` pin its blobs against GC for the clone's lifetime.
 
 ### Reconcile Stale Create
 

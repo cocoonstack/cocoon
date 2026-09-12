@@ -36,7 +36,7 @@ journalctl -u cocoon-gc.service --since today | awk '/gc.Run completed/'
 
 Reasons:
 - **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (a dead save's pending record — its build lease is free), `missing-dir` (a record whose dataDir is gone), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
-- **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating` (a dead create/clone's placeholder — its ops lock is free, no age wait), `stale-clone-lock` (a clone lock past the grace whose holder died), `migrated-delete-retry` (a migrated VM dir whose delete lost the race — the record is gone, so the path is the only pointer left)
+- **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating` (a dead create/clone's placeholder — its ops lock is free, no age wait), `stale-clone-lock` (a clone lock past the grace whose holder died)
 - **images (oci, cloudimg)**: `unreferenced`
 - **cni**: `orphan` (netns in this installation's `net_scope` family without active VM)
 - **bridge**: `orphan-tap` (TAP in this installation's `net_scope` family without active VM)
@@ -45,7 +45,7 @@ Reasons:
 
 ### Snapshot LRU Eviction
 
-Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record) and **stale pending** records (a save died mid-flight; every save holds its snapshot's build lease from placeholder to finalize, so a pending record whose lease GC can acquire is provably ownerless — no age wait). To also evict healthy snapshots by access recency, pass `--snapshot`:
+Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record), **missing-dir** records (a record whose data dir is gone) and **stale pending** records (a save died mid-flight; every save holds its snapshot's build lease from placeholder to finalize, so a pending record whose lease GC can acquire is provably ownerless — no age wait). To also evict healthy snapshots by access recency, pass `--snapshot`:
 
 | Flag                 | Effect                                                                                          |
 | -------------------- | ----------------------------------------------------------------------------------------------- |

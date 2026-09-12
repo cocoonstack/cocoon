@@ -17,7 +17,7 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 - **UEFI VMs (cloudimg)**: ACPI power-button → poll for graceful exit → timeout (default 30s, configurable via `stop_timeout_seconds` in config or `--timeout` flag) → SIGTERM → 5s → SIGKILL
 - **Windows VMs**: ACPI power-button works with our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) (~8-13s shutdown once fully booted). The guest ACPI handler needs ~60s from cold boot to initialize; stopping before that triggers the 30s timeout fallback. Clone-restored VMs inherit the ready ACPI state and shut down immediately. With upstream firmware, use `ssh shutdown /s /t 0` before stopping, or `--force` to skip the ACPI timeout (see [known issues](known-issues.md))
 - **Direct-boot VMs (CH, OCI)**: `vm.shutdown` API → SIGTERM → 5s → SIGKILL (no ACPI support)
-- **Firecracker VMs**: `SendCtrlAltDel` → SIGTERM → 5s → SIGKILL
+- **Firecracker VMs**: `SendCtrlAltDel` → up to `stop_timeout_seconds` (30s) for the guest to halt → SIGTERM → 5s → SIGKILL
 - **Force stop** (`--force`): skip ACPI, immediate SIGTERM → SIGKILL
 - **Force delete** (`vm rm --force`): same immediate path as force stop, then delete — no graceful window
 - PID ownership is verified before sending signals to prevent killing unrelated processes
@@ -151,9 +151,9 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 ### Snapshot/Clone/Restore
 
-Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); removing inherited disks at clone time is not supported, and Firecracker clones reject `--data-disk`.
+Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
 
-Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), and per-index Role/Path/RO match between sidecar and CH config.json **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
+Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), per-index Path/RO agreement between the sidecar and CH config.json, and Role/Serial agreement between the sidecar and the VM record **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 
 ## Status Monitoring
 

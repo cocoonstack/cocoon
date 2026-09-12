@@ -31,23 +31,23 @@ A snapshot contains the full VM state:
 - **Memory**: complete RAM contents (memory-ranges)
 - **Disks**: COW disk (raw or qcow2), cidata disk (cloudimg)
 - **Config**: Cloud Hypervisor config.json and device state (state.json)
-- **Metadata**: image reference, hypervisor type, network/queue settings, and resource topology (CPU, memory, storage, NIC count) — CPU/memory/storage are fixed at snapshot time on every backend; NIC count inherits by default and can be overridden at clone time via `--nics N` (Cloud Hypervisor only — see Clone Constraints)
+- **Metadata**: image reference, hypervisor type, network/queue settings, and resource topology (CPU, memory, storage, NIC count) — CPU/memory/storage are fixed at snapshot time on every backend; NIC count inherits by default and can be overridden at clone time via `--nics N` (Cloud Hypervisor, or Firecracker `--pci` snapshots — see Clone Constraints)
 
 ### Clone Constraints
 
-CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so growing them at clone time would not be honored. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones inherit the virtio transport with the snapshot: an MMIO clone must keep the snapshot's NIC topology (`network_overrides` only retargets existing interfaces) and rejects `--data-disk`, while a `--pci` clone restores the snapshot's NICs, then hot-plugs the `--nics` delta and any `--data-disk` after restore and prints the guest-side rescan. On both, the target network's MTU must equal the snapshot's, because the guest keeps the MTU the snapshot advertised (snapshots taken before `nic_mtus` was recorded skip this check). Fresh data disks can be added to a Cloud Hypervisor clone via `--data-disk` (hot-added after restore). Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.
+CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so growing them at clone time would not be honored. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones inherit the virtio transport with the snapshot: an MMIO clone must keep the snapshot's NIC topology (`network_overrides` only retargets existing interfaces) and rejects `--data-disk`, while a `--pci` clone restores the snapshot's NICs, then hot-plugs the `--nics` delta and any `--data-disk` after restore and prints the guest-side rescan. On Firecracker, the target network's MTU must equal the snapshot's, because the guest keeps the MTU the snapshot advertised (snapshots taken before `nic_mtus` was recorded skip this check); Cloud Hypervisor clones swap in fresh NICs after restore. Fresh data disks can be added to a Cloud Hypervisor clone via `--data-disk` (hot-added after restore). Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.
 
 ### Memory Restore Modes & Concurrency
 
-Cloud Hypervisor clones restore guest memory via `--restore-mode`:
+Cloud Hypervisor clones and restores load guest memory via `--restore-mode`:
 
-- **`mmap`** (default for clones of plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires the cocoonstack CH build.
+- **`mmap`** (default for plain private-anon snapshots): maps the snapshot's memory file copy-on-write — no upfront copy, and sibling clones of one snapshot share page cache for clean pages. Requires the cocoonstack CH build.
 - **`copy`** (the fallback for clones and restores whenever the snapshot uses hugepages or shared memory): eager full-memory load; the degradation from an explicit `mmap` request is logged as a warning.
 - **`ondemand`**: userfaultfd paging; pages load on first guest access.
 
 Firecracker restore is always memory-mapped by design and takes no mode flag.
 
-Concurrent clones are first-class: sibling clones of one snapshot run fully in parallel, and each clone holds a shared per-VM lease on its source for the duration of setup — a concurrent `vm rm`/`vm restore` of the source waits for the burst to finish instead of destroying work in flight. A source that was already deleted still clones (its drives travel inside the snapshot).
+Concurrent clones are first-class: sibling clones of one snapshot run fully in parallel, and each clone holds a shared lease on its snapshot for the duration of setup, so a concurrent snapshot delete or GC waits for the burst to finish instead of destroying work in flight; Firecracker clones also hold a shared per-VM lease on a managed source, so `vm rm`/`vm restore` of the source waits too. A source that was already deleted still clones (its drives travel inside the snapshot).
 
 ### Post-Clone Guest Setup
 
@@ -133,7 +133,7 @@ Restore reverts a VM — running or stopped — to a previous snapshot's state i
 cocoon vm restore my-vm my-snap
 ```
 
-Cocoon stages the snapshot into a scratch directory first, then (re)starts the hypervisor process only after the full extraction succeeds — a truncated or corrupt snapshot stream errors out with the VM in its prior state. Network is fully preserved — same IP, same MAC, same network namespace; restoring a stopped VM first runs the same network self-heal as `vm start`, so a hibernated VM resumes even after a host reboot. No guest-side reconfiguration is needed (unlike clone).
+A restore from a local snapshot store stops the VM and populates its run dir in place, quarantining the run dir if the population fails part-way so the VM cannot boot mixed-vintage files; a streamed restore stages the snapshot into a scratch directory first and (re)starts the hypervisor only after the full extraction succeeds, so a truncated or corrupt stream errors out with the VM in its prior state. Network is fully preserved — same IP, same MAC, same network namespace; restoring a stopped VM first runs the same network self-heal as `vm start`, so a hibernated VM resumes even after a host reboot. No guest-side reconfiguration is needed (unlike clone).
 
 ### Hibernate
 

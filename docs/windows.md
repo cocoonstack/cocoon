@@ -11,7 +11,7 @@ cocoon vm run --windows --name win11 --cpu 2 --memory 4G --storage 15G <cloudimg
 ```
 
 The `--windows` flag:
-- Forces UEFI firmware boot (cloudimg path)
+- Requires a cloudimg (UEFI firmware) image; OCI direct-boot images are rejected
 - Enables Hyper-V enlightenments (`kvm_hyperv=on`)
 - Skips cloud-init cidata disk generation (Windows does not use cloud-init)
 

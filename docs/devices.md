@@ -74,7 +74,7 @@ Flags:
 Detach blocks until the guest acks the ACPI eject (up to 30s — Windows can
 take 10–20s), so when it returns the slot, the name, and the backing file
 are free for immediate reuse; a guest that never acks fails the detach with
-a typed error.
+an error naming the device.
 
 The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
 usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink
