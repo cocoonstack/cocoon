@@ -51,7 +51,7 @@ const (
 	// socketReadyPollInterval matches a VMM socket appearing within a few ms of process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 
-	onlineCPUsPath = "/sys/devices/system/cpu/online"
+	onlineCPUsPath = cgroup.SysCPURoot + "/online"
 )
 
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.

@@ -293,13 +293,14 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations. Leaving Running drops the placement: a recorded placement means the VM holds those cpus.
+// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations.
 func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
 	r.State = state
 	r.TransitionGeneration++
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
+	// a recorded placement means the VM holds those cpus
 	if state != types.VMStateRunning {
 		r.CPUSet, r.QueueCPUs = "", ""
 	}

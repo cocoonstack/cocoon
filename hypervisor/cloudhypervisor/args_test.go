@@ -43,7 +43,7 @@ func TestEffectiveDirectIO(t *testing.T) {
 		{name: "readonly layer", sc: types.StorageConfig{Path: "/v/base.raw", RO: true, Role: types.StorageRoleLayer}},
 		{name: "qcow2 overlay stays buffered", sc: types.StorageConfig{Path: "/v/overlay.qcow2", Role: types.StorageRoleCOW}},
 		{name: "readonly qcow2 has no backing chain", sc: types.StorageConfig{Path: "/v/base.qcow2", RO: true, Role: types.StorageRoleLayer}},
-		{name: "explicit override wins", sc: types.StorageConfig{Path: "/v/data.raw", Role: types.StorageRoleData, DirectIO: ptr(false)}},
+		{name: "explicit override wins", sc: types.StorageConfig{Path: "/v/data.raw", Role: types.StorageRoleData, DirectIO: new(false)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -142,5 +142,3 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 		t.Errorf("cmdline = %q, still replays the address the VM was created with", cfg.Payload.Cmdline)
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

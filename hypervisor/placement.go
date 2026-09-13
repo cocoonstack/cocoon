@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/meta"
@@ -13,15 +14,19 @@ import (
 // sysCPURoot is the sysfs cpu tree; tests point it at a fixture.
 var sysCPURoot = cgroup.SysCPURoot
 
-// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements.
+// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements; the sysfs walk stays outside the lock.
 func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config) (VMRecord, error) {
+	topo, topoErr := b.placementTopology(cfg)
+	if topoErr != nil {
+		return VMRecord{}, topoErr
+	}
 	var placed VMRecord
 	err := b.updateRelaxed(ctx, b.PeerNS, func(t *vmTx) error {
 		r, err := t.getRecord(id)
 		if err != nil {
 			return err
 		}
-		if err := b.placeVM(ctx, t, r, cfg); err != nil {
+		if err := b.placeVM(ctx, t.r, r, cfg, topo); err != nil {
 			return err
 		}
 		if err := t.Put(id, r, meta.RelaxedOK); err != nil {
@@ -33,29 +38,36 @@ func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config)
 	return placed, err
 }
 
-// placeVM fills rec's placement from cfg: an explicit cpuset is copied; "auto" and no cpuset pick the least-loaded cache domain against the pins live VMs already hold.
-func (b *Backend) placeVM(ctx context.Context, t *vmTx, rec *VMRecord, cfg *types.Config) error {
-	rec.CPUSet, rec.QueueCPUs = "", ""
-	pins := b.PinsQueues && cfg.CPU > 1
-	switch {
-	case cfg.CPUSetCPUs == "" && !pins:
-		return nil
-	case cfg.CPUSetCPUs != "" && cfg.CPUSetCPUs != cgroup.AutoCPUSet:
-		rec.CPUSet = cfg.CPUSetCPUs
-		if pins {
-			rec.QueueCPUs = cfg.CPUSetCPUs
-		}
-		return nil
+// placementTopology reads the host's cache domains inside the fence when launch picks cfg's cpus; nil when cfg names them or pins nothing.
+func (b *Backend) placementTopology(cfg *types.Config) (*cgroup.Topology, error) {
+	if cfg.CPUSetCPUs != cgroup.AutoCPUSet && (cfg.CPUSetCPUs != "" || !b.pinsQueues(cfg)) {
+		return nil, nil
 	}
 	fence, err := cgroup.ParseCPUList(b.Conf.CgroupCPUFence())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	topo, err := cgroup.ReadTopology(sysCPURoot, fence)
 	if err != nil {
-		return fmt.Errorf("read cpu topology: %w", err)
+		return nil, fmt.Errorf("read cpu topology: %w", err)
 	}
-	load, err := b.placementLoad(ctx, t, rec.ID)
+	return topo, nil
+}
+
+// placeVM fills rec's placement from cfg: an explicit cpuset is copied; with a topology, "auto" and no cpuset pick the least-loaded cache domain against the placements live VMs already hold.
+func (b *Backend) placeVM(ctx context.Context, r meta.Reader, rec *VMRecord, cfg *types.Config, topo *cgroup.Topology) error {
+	rec.CPUSet, rec.QueueCPUs = "", ""
+	pins := b.pinsQueues(cfg)
+	if topo == nil {
+		if cfg.CPUSetCPUs != "" {
+			rec.CPUSet = cfg.CPUSetCPUs
+			if pins {
+				rec.QueueCPUs = cfg.CPUSetCPUs
+			}
+		}
+		return nil
+	}
+	load, err := b.placementLoad(ctx, r, rec.ID)
 	if err != nil {
 		return err
 	}
@@ -72,24 +84,25 @@ func (b *Backend) placeVM(ctx context.Context, t *vmTx, rec *VMRecord, cfg *type
 	return nil
 }
 
+func (b *Backend) pinsQueues(cfg *types.Config) bool {
+	return b.PinsQueues && cfg.CPU > 1
+}
+
 // placementLoad counts per host cpu the VMs across every backend holding it: queue pins, or the cpuset of a VM without pins; self is the VM being placed.
-func (b *Backend) placementLoad(ctx context.Context, t *vmTx, self string) (map[int]int, error) {
+func (b *Backend) placementLoad(ctx context.Context, r meta.Reader, self string) (map[int]int, error) {
 	load := map[int]int{}
-	count := func(id string, r *VMRecord) error {
+	count := func(id string, rec *VMRecord) error {
 		if id == self {
 			return nil
 		}
-		cpus, _ := cgroup.ParseCPUList(cmp.Or(r.QueueCPUs, r.CPUSet))
+		cpus, _ := cgroup.ParseCPUList(cmp.Or(rec.QueueCPUs, rec.CPUSet))
 		for _, c := range cpus {
 			load[c]++
 		}
 		return nil
 	}
-	if err := t.Scan(count); err != nil {
-		return nil, err
-	}
-	for _, ns := range b.PeerNS {
-		if err := meta.NewCollection[VMRecord](ns, TableRecords).Scan(ctx, t.r, count); err != nil {
+	for _, ns := range slices.Concat([]string{b.NS}, b.PeerNS) {
+		if err := meta.NewCollection[VMRecord](ns, TableRecords).Scan(ctx, r, count); err != nil {
 			return nil, err
 		}
 	}

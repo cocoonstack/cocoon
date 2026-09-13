@@ -78,6 +78,19 @@ func TestPlaceRecord(t *testing.T) {
 	}
 }
 
+func TestNewBackendPeerNamespaces(t *testing.T) {
+	dir := t.TempDir()
+	for _, tt := range []struct{ typ, peer string }{{"cloud-hypervisor", "firecracker"}, {"firecracker", "cloud-hypervisor"}} {
+		b, err := NewBackend(tt.typ, stubBackendConfig{rootDir: dir}, nil, testNamespace(t, tt.typ, t.TempDir()))
+		if err != nil {
+			t.Fatalf("NewBackend %s: %v", tt.typ, err)
+		}
+		if want := []string{VMNamespaceName(tt.peer)}; !slices.Equal(b.PeerNS, want) {
+			t.Errorf("%s: PeerNS = %v, want %v", tt.typ, b.PeerNS, want)
+		}
+	}
+}
+
 func TestPlaceRecordCountsPeerNamespaces(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

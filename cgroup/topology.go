@@ -35,17 +35,18 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 	}
 	t := &Topology{root: root}
 	llc := lastCacheIndex(root, online[0])
+	if llc == "" {
+		t.domains = [][]int{online}
+		return t, nil
+	}
 	for rest := online; len(rest) > 0; {
-		domain := rest
-		if llc != "" {
-			shared, err := readCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
-			if err != nil {
-				return nil, err
-			}
-			domain = slices.DeleteFunc(slices.Clone(rest), func(c int) bool { return !slices.Contains(shared, c) })
+		shared, err := readCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
+		if err != nil {
+			return nil, err
 		}
-		t.domains = append(t.domains, domain)
-		rest = slices.DeleteFunc(slices.Clone(rest), func(c int) bool { return slices.Contains(domain, c) })
+		inShared := func(c int) bool { return slices.Contains(shared, c) }
+		t.domains = append(t.domains, slices.DeleteFunc(slices.Clone(rest), func(c int) bool { return !inShared(c) }))
+		rest = slices.DeleteFunc(rest, inShared)
 	}
 	return t, nil
 }
@@ -67,27 +68,21 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int, err 
 		return nil, nil, err
 	}
 	byLoad := func(a, b int) int { return cmp.Or(cmp.Compare(load[a], load[b]), cmp.Compare(a, b)) }
+	layer := make(map[int]int, len(domain))
+	ranked := make([]int, 0, len(domain))
 	for _, core := range cores {
 		slices.SortFunc(core, byLoad)
-	}
-	for layer := 0; len(pins) < queues; layer++ {
-		var candidates []int
-		for _, core := range cores {
-			if layer < len(core) {
-				candidates = append(candidates, core[layer])
-			}
+		for i, c := range core {
+			layer[c] = i
 		}
-		if len(candidates) == 0 {
-			break
-		}
-		slices.SortFunc(candidates, byLoad)
-		pins = append(pins, candidates[:min(len(candidates), queues-len(pins))]...)
+		ranked = append(ranked, core...)
 	}
+	slices.SortFunc(ranked, func(a, b int) int { return cmp.Or(cmp.Compare(layer[a], layer[b]), byLoad(a, b)) })
+	pins = ranked[:min(queues, len(ranked))]
 	slices.Sort(pins)
 	return domain, pins, nil
 }
 
-// cores splits domain into its SMT sibling sets; a host without topology sysfs counts every cpu as its own core.
 func (t *Topology) cores(domain []int) ([][]int, error) {
 	var cores [][]int
 	seen := make(map[int]bool, len(domain))

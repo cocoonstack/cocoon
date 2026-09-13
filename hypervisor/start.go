@@ -1,7 +1,6 @@
 package hypervisor
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -135,7 +134,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	}()
 
 	knobs := cgroup.ResolveKnobs(&spec.Rec.Config.Config)
-	knobs.CPUSet = cmp.Or(spec.Rec.CPUSet, knobs.CPUSet)
+	knobs.CPUSet = spec.Rec.CPUSet
 	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, knobs, spec.DeferCPUQuota)
 	if err != nil {
 		return 0, fmt.Errorf("prepare cgroup scope: %w", err)

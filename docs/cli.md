@@ -143,7 +143,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — caps the long-run average; add `--cpu-burst-us -1` for a strict per-period ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
 | `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
-| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned regardless — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
+| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned on every Cloud Hypervisor launch of a multi-vCPU VM, cpuset or not — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 
 ### Clone Flags
 
@@ -158,7 +158,7 @@ Applies to `cocoon vm clone`:
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); takes precedence over `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
-| `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults |
+| `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults; `--cpuset-cpus` also accepts `auto`, resolved at the clone's launch |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
@@ -303,7 +303,8 @@ TAP, so it emits no `--net` and no `ip=`, and `--nics`, `--queue-size`,
 `--network` and `--bridge` are ignored — setting any of them warns on stderr,
 like `--data-disk`. `--max-cpu`, `--balloon`, `--cow` and `--ch` shape the Cloud
 Hypervisor command only; `vm debug --fc` prints the Firecracker REST sequence
-and ignores all four.
+and ignores all four. Queue placement happens at launch against the store, so
+the printed command carries no `queue_affinity` whatever `--cpuset-cpus` says.
 
 ### Console Flags
 
@@ -311,7 +312,7 @@ and ignores all four.
 | ---------------- | -------- | ------------------------------------------------- |
 | `--escape-char`  | `^]`     | Escape character (single char or `^X` caret notation) |
 
-For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start.
+For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start. It also reports the resolved placement as `cpuset` and `queue_cpus`, both absent once the VM is not running.
 
 ### Exec Flags
 

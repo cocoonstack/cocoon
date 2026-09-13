@@ -34,27 +34,12 @@ func TestQueueAffinityFollowsQueueCPUs(t *testing.T) {
 }
 
 func TestDiskCLIArgQueueAffinity(t *testing.T) {
-	tests := []struct {
-		name      string
-		queueCPUs []int
-		want      string
-	}{
-		{name: "no pins render no affinity", queueCPUs: nil},
-		{name: "pins render one host cpu per queue", queueCPUs: []int{8, 9}, want: "queue_affinity=[0@[8],1@[9],2@[8],3@[9]]"},
+	sc := &types.StorageConfig{Path: "/v/cow.raw", Role: types.StorageRoleCOW}
+	if got := diskToCLIArg(storageConfigToDisk(sc, 4, 0, false, nil)); strings.Contains(got, "queue_affinity") {
+		t.Errorf("got %s, want no queue_affinity", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sc := &types.StorageConfig{Path: "/v/cow.raw", Role: types.StorageRoleCOW}
-			got := diskToCLIArg(storageConfigToDisk(sc, 4, 0, false, tt.queueCPUs))
-			if tt.want == "" {
-				if strings.Contains(got, "queue_affinity") {
-					t.Errorf("got %s, want no queue_affinity", got)
-				}
-				return
-			}
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("got %s, want it to contain %s", got, tt.want)
-			}
-		})
+	want := "queue_affinity=[0@[8],1@[9],2@[8],3@[9]]"
+	if got := diskToCLIArg(storageConfigToDisk(sc, 4, 0, false, []int{8, 9})); !strings.Contains(got, want) {
+		t.Errorf("got %s, want it to contain %s", got, want)
 	}
 }

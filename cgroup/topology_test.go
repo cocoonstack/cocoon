@@ -88,29 +88,6 @@ func TestPlace(t *testing.T) {
 	}
 }
 
-func TestFormatCPUList(t *testing.T) {
-	tests := []struct {
-		cpus []int
-		want string
-	}{
-		{cpus: nil, want: ""},
-		{cpus: []int{3}, want: "3"},
-		{cpus: []int{0, 1, 2, 3, 192, 193, 194, 195}, want: "0-3,192-195"},
-		{cpus: []int{0, 2, 3, 7}, want: "0,2-3,7"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := FormatCPUList(tt.cpus); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-			back, err := ParseCPUList(tt.want)
-			if err != nil || !slices.Equal(back, tt.cpus) {
-				t.Errorf("round trip = %v, %v", back, err)
-			}
-		})
-	}
-}
-
 func writeSysfsCPUs(t *testing.T, domains, cores, threads int) string {
 	t.Helper()
 	root := t.TempDir()

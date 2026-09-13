@@ -29,11 +29,11 @@ func (b *kvBuilder) addIf(cond bool, kv string) {
 	}
 }
 
-// DebugDiskCLIArgs uses the same storage-to-disk mapping as launch.
-func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool, queueCPUs []int) []string {
+// DebugDiskCLIArgs uses the same storage-to-disk mapping as launch, minus the queue placement a launch derives from the store.
+func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueueSize int, noDirectIO bool) []string {
 	args := make([]string, 0, len(storageConfigs))
 	for _, storageConfig := range storageConfigs {
-		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO, queueCPUs)))
+		args = append(args, diskToCLIArg(storageConfigToDisk(storageConfig, cpuCount, diskQueueSize, noDirectIO, nil)))
 	}
 	return args
 }
@@ -70,8 +70,9 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, dnsServers 
 		}
 	}
 
+	queueCPUs := hypervisor.QueueCPUs(rec)
 	for _, storageConfig := range activeDisks(rec) {
-		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, hypervisor.QueueCPUs(rec)))
+		cfg.Disks = append(cfg.Disks, storageConfigToDisk(storageConfig, cpu, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, queueCPUs))
 	}
 
 	for _, nc := range rec.NetworkConfigs {
