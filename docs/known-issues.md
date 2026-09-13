@@ -73,6 +73,17 @@ Cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-
 
 This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333) and [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356). As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
 
+## A VM's netns deleted out from under it
+
+cocoon never removes a running VM's network namespace; if an operator or a foreign GC does (`ip netns del`), every TAP inside it goes with it and the VM's virtio-net backends are dead. The record is still correct — `vm list` shows the same IP — so the symptoms are guest-side: no traffic, `cocoon vm net` fails with `failed to open netns … no such file or directory`, while `cocoon vm exec` keeps working over vsock.
+
+Recovery is the start-time path, which rebuilds the whole network from the record (`Verify` → `Prepare` → re-plumb every NIC with its recorded MAC, IP and TAP name):
+
+- keep guest memory: `cocoon vm hibernate VM` then `cocoon vm restore VM <snapshot>` — about 300 ms, processes and RAM untouched
+- or reboot the guest: `cocoon vm stop --force VM` then `cocoon vm start VM`
+
+Do not recreate the namespace by hand: an empty netns lets a later `vm net` hot-plug one NIC into it and report success while the VM's other NICs stay dead, and the start-time recovery then collides with that TAP (`add ingress qdisc …: file exists`) and refuses to start the VM.
+
 ## DHCP networks should not use DHCP IPAM in CNI
 
 When using a DHCP-based network (e.g., macvlan attached to a network with an external DHCP server), the CNI conflist should **not** use the `dhcp` IPAM plugin. Instead, configure the CNI plugin with **no IPAM** (or `"ipam": {}`) and let the guest obtain its IP directly from the external DHCP server.
