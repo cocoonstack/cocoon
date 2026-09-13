@@ -3,6 +3,7 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"os"
 )
@@ -18,4 +19,8 @@ func SparseCopy(dst, src string, sync SyncMode) error {
 		}
 		return dstFile.Sync()
 	})
+}
+
+func scanDataSegments(int, int64) ([]sparseSegment, error) {
+	return nil, errors.ErrUnsupported
 }

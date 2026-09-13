@@ -18,16 +18,6 @@ const (
 // SyncMode selects whether a write helper fsyncs its output.
 type SyncMode bool
 
-// AtomicWriteFile writes data via temp + rename so readers never see a partial file; Sync fsyncs it, NoSync suits run-dir files regenerated on the next launch.
-func AtomicWriteFile(path string, data []byte, perm os.FileMode, mode SyncMode) error {
-	return atomicWriteFile(path, data, perm, bool(mode))
-}
-
-// AtomicWriteJSON marshals v to JSON and writes it atomically (see AtomicWriteFile).
-func AtomicWriteJSON(path string, v any, mode SyncMode) error {
-	return atomicWriteJSON(path, v, bool(mode))
-}
-
 // ReadJSONFile loads path and unmarshals it into v.
 func ReadJSONFile(path string, v any) error {
 	data, err := os.ReadFile(path) //nolint:gosec
@@ -85,7 +75,8 @@ func SyncTree(dir string) error {
 	return SyncParentDir(filepath.Dir(dir))
 }
 
-func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) error {
+// AtomicWriteFile writes data via temp + rename so readers never see a partial file; Sync fsyncs it, NoSync suits run-dir files regenerated on the next launch.
+func AtomicWriteFile(path string, data []byte, perm os.FileMode, mode SyncMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
@@ -103,7 +94,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) erro
 	if _, err = tmp.Write(data); err != nil {
 		return fmt.Errorf("write temp file: %w", err)
 	}
-	if sync {
+	if mode == Sync {
 		if err = tmp.Sync(); err != nil {
 			return fmt.Errorf("sync temp file: %w", err)
 		}
@@ -117,7 +108,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) erro
 	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename temp to target: %w", err)
 	}
-	if sync {
+	if mode == Sync {
 		if err = SyncParentDir(dir); err != nil {
 			return fmt.Errorf("sync parent dir: %w", err)
 		}
@@ -125,11 +116,12 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode, sync bool) erro
 	return nil
 }
 
-func atomicWriteJSON(path string, v any, sync bool) error {
+// AtomicWriteJSON marshals v to JSON and writes it atomically (see AtomicWriteFile).
+func AtomicWriteJSON(path string, v any, mode SyncMode) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}
 	data = append(data, '\n')
-	return atomicWriteFile(path, data, 0o644, sync)
+	return AtomicWriteFile(path, data, 0o644, mode)
 }

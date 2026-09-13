@@ -28,7 +28,7 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid 
 	return b.withRunningVM(ctx, rec, nil, fn)
 }
 
-// IsAPISocketLive: (true,nil)=confirmed live; (false,nil)=ENOENT/ECONNREFUSED; (true,err)=fail-closed for unknown dial errors.
+// IsAPISocketLive dials the record's API socket: ENOENT and ECONNREFUSED are a clean false, any other dial error returns fail-closed.
 func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, error) {
 	sock := SocketPath(rec.RunDir)
 	dialCtx, cancel := context.WithTimeout(ctx, socketProbeTimeout)

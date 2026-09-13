@@ -164,8 +164,8 @@ func captureStdout(t *testing.T, fn func()) string {
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	defer r.Close() //nolint:errcheck
-	defer w.Close() //nolint:errcheck // idempotent fallback if fn panics before the inline Close
+	defer r.Close()
+	defer w.Close()
 	orig := os.Stdout
 	defer func() { os.Stdout = orig }()
 	os.Stdout = w

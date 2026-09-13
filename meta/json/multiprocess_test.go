@@ -137,7 +137,7 @@ func TestAckedDurableSurvivesKill(t *testing.T) {
 		t.Skip("multi-process gate skipped in -short")
 	}
 	dir := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=TestAckWorker$", "-test.count=1") //nolint:gosec
+	cmd := exec.Command(os.Args[0], "-test.run=TestAckWorker$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "META_MP_DIR="+dir)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -205,7 +205,7 @@ func TestEventsExternalProcess(t *testing.T) {
 	}
 	defer release()
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestEventsWriterWorker$", "-test.count=1") //nolint:gosec
+	cmd := exec.Command(os.Args[0], "-test.run=TestEventsWriterWorker$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "META_MP_DIR="+dir)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("external writer: %v", err)

@@ -138,7 +138,7 @@ func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {
 		}
 	})
 	srv := &http.Server{Handler: mux}
-	go srv.Serve(ln) //nolint:errcheck
+	go srv.Serve(ln)
 	t.Cleanup(func() { _ = srv.Close() })
 	return sockPath
 }

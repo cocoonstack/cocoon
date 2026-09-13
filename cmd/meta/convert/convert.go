@@ -180,6 +180,9 @@ func ensureJSONDirs(spec Spec) error {
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == config.MetaBackendSQLite {
+		if !slices.ContainsFunc(spec.JSON, func(ns metajson.Namespace) bool { return utils.FileExists(ns.FilePath) }) {
+			return nil, fmt.Errorf("no json store under %s to convert from", spec.MetaRoot)
+		}
 		return metajson.Open(spec.JSON...)
 	}
 	// The driver would create an empty file on first touch; a missing source must fail before that.

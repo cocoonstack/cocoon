@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -71,17 +70,14 @@ func daemonConfig(cmd *cobra.Command, conf *config.Config) (cocoond.Config, erro
 		RootDir:           conf.RootDir,
 		ReconcileInterval: interval,
 		GCInterval:        gcInterval,
-		GC:                gcRunner(conf, gcInterval),
+		GC:                gcRunner(conf),
 		APIAddr:           addr,
 		APISockMode:       sockMode,
 	}, nil
 }
 
 // gcRunner builds the orchestrator per run so each sweep reads fresh state.
-func gcRunner(conf *config.Config, interval time.Duration) func(context.Context) error {
-	if interval <= 0 {
-		return nil
-	}
+func gcRunner(conf *config.Config) func(context.Context) error {
 	return func(ctx context.Context) error {
 		o, err := cmdcore.NewGCOrchestrator(ctx, conf)
 		if err != nil {

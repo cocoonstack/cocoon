@@ -165,7 +165,6 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	}
 	commitStart := time.Now()
 	if err := tx.Commit(); err != nil {
-		_ = tx.Rollback()
 		return mapErr(err)
 	}
 	commit, total := time.Since(commitStart), time.Since(start)

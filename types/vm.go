@@ -45,7 +45,7 @@ type VMConfig struct {
 	Config
 	Name string `json:"name"`
 
-	RestoreMode string         `json:"-"` // memory restore mode: copy|ondemand|mmap (CH only)
+	RestoreMode string         `json:"-"` // memory restore mode (CH only)
 	User        string         `json:"-"`
 	Password    string         `json:"-"`
 	DataDisks   []DataDiskSpec `json:"-"` // consumed by Create

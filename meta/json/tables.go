@@ -25,21 +25,12 @@ type TableCodec struct {
 }
 
 func (c TableCodec) Decode(data []byte) (*Model, error) {
-	return DecodeTables(data, c.Specs)
-}
-
-func (c TableCodec) Encode(m *Model) ([]byte, error) {
-	return EncodeTables(m, c.Specs)
-}
-
-// DecodeTables loads specs' map fields into a fresh Model (sorted insertion, matching what encoding/json always wrote).
-func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	m := NewModel()
 	if data == nil {
 		return m, nil
 	}
-	byKey := make(map[string]TableSpec, len(specs))
-	for _, sp := range specs {
+	byKey := make(map[string]TableSpec, len(c.Specs))
+	for _, sp := range c.Specs {
 		byKey[sp.Key] = sp
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -79,10 +70,9 @@ func DecodeTables(data []byte, specs []TableSpec) (*Model, error) {
 	return m, nil
 }
 
-// EncodeTables assembles the legacy object shape from specs' tables.
-func EncodeTables(m *Model, specs []TableSpec) ([]byte, error) {
+func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	buf := []byte{'{'}
-	for _, sp := range specs {
+	for _, sp := range c.Specs {
 		if sp.Optional && m.Len(sp.Table) == 0 {
 			continue
 		}

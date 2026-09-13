@@ -28,13 +28,13 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 	}
 	nsName := c.conf.netnsName(vmID)
 	nsPath := c.conf.netnsPath(vmID)
-	if _, err := ensureNetnsFn(nsName, nsPath); err != nil {
+	if err := ensureNetnsFn(nsName, nsPath); err != nil {
 		return "", fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
 	return nsPath, nil
 }
 
-// Add creates the netns (if absent) and allocates each NIC's CNI plumbing.
+// Add allocates each NIC's CNI plumbing inside the netns Prepare created.
 func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
 		return nil, c.errNoConflist()
@@ -49,7 +49,6 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 	vmCfg.Network = confList.Name
 	logger := log.WithFunc("cni.Add")
 
-	nsName := c.conf.netnsName(vmID)
 	nsPath := c.conf.netnsPath(vmID)
 
 	if err = c.guardAdd(ctx, vmID); err != nil {
@@ -69,11 +68,6 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("read network index: %w", err)
-	}
-
-	createdNetns, err := ensureNetnsFn(nsName, nsPath)
-	if err != nil {
-		return nil, fmt.Errorf("ensure netns %s: %w", nsName, err)
 	}
 
 	type addedNIC struct {
@@ -100,21 +94,16 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 				releasedIDs = append(releasedIDs, id)
 			}
 		}
-		kept := false
 		for _, a := range added {
 			ifn := ifName(a.index)
 			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
 				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept for GC)", vmID, ifn, delErr)
-				kept = true
 				continue
 			}
-			// setupTCRedirect creates the TAP; it would leak if the netns persists.
-			if !createdNetns {
-				if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
-					logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, a.index), delErr)
-					kept = true
-					continue
-				}
+			// setupTCRedirect creates the TAP; it would leak in the persisting netns.
+			if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
+				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, a.index), delErr)
+				continue
 			}
 			if a.recID != "" {
 				releasedIDs = append(releasedIDs, a.recID)
@@ -122,10 +111,6 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 		if delErr := c.deleteRecords(rctx, releasedIDs); delErr != nil {
 			logger.Warnf(rctx, "rollback records: %v", delErr)
-		}
-		// A kept record needs the netns for GC's retried DEL.
-		if createdNetns && !kept {
-			_ = deleteNetnsFn(rctx, nsName)
 		}
 	}()
 
@@ -337,17 +322,14 @@ func tapNameForVM(vmID string, nic int) string {
 	return network.TAPName(tapPrefix, vmID, nic)
 }
 
-// ensureNetns creates the netns if missing; bool reports whether this call did the creation.
-func ensureNetns(name, nsPath string) (bool, error) {
+// ensureNetns creates the netns if missing.
+func ensureNetns(name, nsPath string) error {
 	if _, err := os.Stat(nsPath); err == nil {
-		return false, nil
+		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return false, err
+		return err
 	}
-	if err := createNetns(name); err != nil {
-		return false, err
-	}
-	return true, nil
+	return createNetns(name)
 }
 
 func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Network, error) {

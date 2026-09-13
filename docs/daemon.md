@@ -76,8 +76,9 @@ the ledger, so it grows without bound until an external rotation trims it.
 
 `--gc-interval` runs the same sweep as a bare `cocoon gc` — orphans and stale
 records only. It never evicts healthy snapshots by access recency: the LRU policy
-comes from the `gc --snapshot*` flags, which the daemon has no equivalent of, and
-there is no size-based policy anywhere. Drive LRU eviction from a timer running
+— including the `--snapshot-size` storage cap — comes from the `gc --snapshot*`
+flags, which the daemon has no equivalent of, and nothing triggers a sweep on disk
+pressure. Drive LRU eviction from a timer running
 `cocoon gc --snapshot ...`; see [Garbage Collection](gc.md#snapshot-lru-eviction).
 
 ## How supervision works

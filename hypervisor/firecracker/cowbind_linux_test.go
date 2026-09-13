@@ -24,7 +24,7 @@ func TestVerifyDriveFDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 	if err := verifyDriveFDs(os.Getpid(), binds); err != nil {
 		t.Fatalf("verify with open fd: %v", err)
 	}

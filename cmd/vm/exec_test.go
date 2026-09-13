@@ -85,13 +85,13 @@ func TestDialHybridVsock_ConnectHandshake(t *testing.T) {
 	sockPath := f.Name()
 	_ = f.Close()
 	_ = os.Remove(sockPath)
-	defer os.Remove(sockPath) //nolint:errcheck
+	defer os.Remove(sockPath)
 
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close() //nolint:errcheck
+	defer ln.Close()
 
 	tests := []struct {
 		name    string
@@ -110,7 +110,7 @@ func TestDialHybridVsock_ConnectHandshake(t *testing.T) {
 				if aErr != nil {
 					return
 				}
-				defer server.Close() //nolint:errcheck
+				defer server.Close()
 				buf := make([]byte, 64)
 				n, _ := server.Read(buf)
 				want := "CONNECT 1024\n"

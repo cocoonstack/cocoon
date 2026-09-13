@@ -31,9 +31,9 @@ The Windows image is published as an **OCI artifact** (split qcow2 parts pushed 
 # 1. Pull split parts via oras (https://oras.land)
 oras pull ghcr.io/cocoonstack/windows/win11:25h2
 
-# 2. Reassemble and verify
-cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2
+# 2. Verify (cocoon image import also takes the parts directly, in order, and concatenates them itself)
 sha256sum -c SHA256SUMS
+cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2
 
 # 3. Import into Cocoon
 cocoon image import win11-25h2 windows-11-25h2.qcow2

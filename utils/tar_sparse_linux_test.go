@@ -122,7 +122,7 @@ func writeSparseFile(t *testing.T, path string, numSegments, blockSize int) int6
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 	for i := range numSegments {
 		offset := int64(i) * int64(blockSize) * 2
 		data := bytes.Repeat([]byte{byte((i % 250) + 1)}, blockSize)

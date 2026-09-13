@@ -59,7 +59,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open json after convert: %v", err)
 	}
-	defer js.Close() //nolint:errcheck
+	defer js.Close()
 	got := scanAll(t, js, "vms")
 	if len(got) != 5 || got["records/id3"] != `{"v":3}` || got["tombstones/id9"] != `{"dead":true}` {
 		t.Fatalf("json content after round trip: %v", got)
@@ -118,7 +118,7 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open after resume: %v", err)
 	}
-	defer sq.Close() //nolint:errcheck
+	defer sq.Close()
 	if got := scanAll(t, sq, "vms"); len(got) != 4 {
 		t.Fatalf("content after resume: %v", got)
 	}
@@ -151,6 +151,20 @@ func TestSourceChangedRefused(t *testing.T) {
 	err = Run(ctx, spec, "sqlite")
 	if err == nil || !strings.Contains(err.Error(), "source changed") {
 		t.Fatalf("want source-changed refusal, got %v", err)
+	}
+}
+
+func TestMissingJSONSourceRefused(t *testing.T) {
+	ctx := t.Context()
+	spec := testSpec(t, "vms")
+
+	err := Run(ctx, spec, "sqlite")
+
+	if err == nil || !strings.Contains(err.Error(), "to convert from") {
+		t.Fatalf("want missing-source refusal, got %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(spec.MetaRoot, "*manifest*")); len(left) != 0 {
+		t.Fatalf("manifest written before the source was checked: %v", left)
 	}
 }
 
@@ -248,7 +262,7 @@ func TestCrashRerunMatrix(t *testing.T) {
 				if oerr != nil {
 					t.Fatalf("open target after rerun: %v", oerr)
 				}
-				defer store.Close() //nolint:errcheck
+				defer store.Close()
 				if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
 					t.Fatalf("content after rerun at %s: %v", step, got)
 				}
@@ -303,7 +317,7 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer js2.Close() //nolint:errcheck
+	defer js2.Close()
 	if got := scanAll(t, js2, "vms"); got["records/id1"] != `{"gen":2}` {
 		t.Fatalf("served generation after torn main: %v", got)
 	}
@@ -322,7 +336,7 @@ func TestUncheckpointedWALReverseConversion(t *testing.T) {
 		t.Fatalf("forward convert: %v", err)
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestWALWriterWorker$", "-test.count=1") //nolint:gosec
+	cmd := exec.Command(os.Args[0], "-test.run=TestWALWriterWorker$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "META_MP_DIR="+spec.MetaRoot, "META_MP_DB="+spec.DBPath)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -352,7 +366,7 @@ func TestUncheckpointedWALReverseConversion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer js.Close() //nolint:errcheck
+	defer js.Close()
 	if got := scanAll(t, js, "vms"); got["records/walrec"] != `{"wal":1}` {
 		t.Fatalf("WAL-stranded commit lost across reverse conversion: %v", got)
 	}
@@ -397,7 +411,7 @@ func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open after convert: %v", err)
 	}
-	defer sq.Close() //nolint:errcheck
+	defer sq.Close()
 	if got := scanAll(t, sq, "vms"); len(got) != 4 {
 		t.Fatalf("content: %v", got)
 	}
@@ -435,7 +449,7 @@ func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open target: %v", err)
 	}
-	defer store.Close() //nolint:errcheck
+	defer store.Close()
 	if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
 		t.Fatalf("content after rerun: %v", got)
 	}
@@ -463,7 +477,7 @@ func seedJSON(t *testing.T, spec Spec, ns string) {
 	if err != nil {
 		t.Fatalf("open json: %v", err)
 	}
-	defer s.Close() //nolint:errcheck
+	defer s.Close()
 	err = s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
 		for id, raw := range map[string]string{"id1": `{"v":1}`, "id2": `{"v":2}`} {
 			if err := w.PutRaw(t.Context(), ns, "records", id, json.RawMessage(raw), false); err != nil {

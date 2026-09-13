@@ -38,6 +38,11 @@ func DebugDiskCLIArgs(storageConfigs []*types.StorageConfig, cpuCount, diskQueue
 	return args
 }
 
+// DebugCmdline renders the direct-boot guest cmdline for vm debug, which attaches no NIC.
+func DebugCmdline(storageConfigs []*types.StorageConfig, vmName string) string {
+	return buildCmdline(storageConfigs, nil, vmName, nil)
+}
+
 // DebugMemoryCLIArg uses the same memory mapping as launch.
 func DebugMemoryCLIArg(cfg *types.Config) string {
 	return memoryCLIArg(chMemory{Size: cfg.Memory, HugePages: cfg.HugePages, Shared: cfg.SharedMemory, Mergeable: cfg.Mergeable})

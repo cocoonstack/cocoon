@@ -77,11 +77,11 @@ func TestNewMissingParentDirErrors(t *testing.T) {
 
 func readEntries(t *testing.T, path string) []metering.Entry {
 	t.Helper()
-	f, err := os.Open(path) //nolint:gosec // test-controlled path
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 
 	var out []metering.Entry
 	sc := bufio.NewScanner(f)

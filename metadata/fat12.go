@@ -206,9 +206,6 @@ func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 // setFATEntry writes a 12-bit value into the FAT at the given cluster index.
 func setFATEntry(fat []byte, cluster int, val uint16) {
 	off := cluster + cluster/2 //nolint:mnd
-	if off+1 >= len(fat) {
-		return
-	}
 	word := uint16(fat[off]) | uint16(fat[off+1])<<8
 	if cluster%2 == 0 { //nolint:mnd
 		word = (word & 0xF000) | (val & 0x0FFF) //nolint:mnd

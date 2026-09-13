@@ -113,10 +113,10 @@ func printOCINetworkHints(vm *types.VM) {
 
 		fmt.Println("  for i in \"${!macs[@]}\"; do")
 		fmt.Println("    f=\"/etc/systemd/network/10-${macs[$i]//:/}.network\"")
-		writeNet := `    printf '[Match]\nMACAddress=` + `%s\n\n[Network]\nAddress=%s\n' "${macs[$i]}" "${addrs[$i]}" > "$f"`
+		writeNet := `    printf '[Match]\nMACAddress=%s\n\n[Network]\nAddress=%s\n' "${macs[$i]}" "${addrs[$i]}" > "$f"`
 		fmt.Println(writeNet)
 		if hasGW {
-			writeGW := `    [ -n "${gws[$i]}" ] && printf 'Gateway=` + `%s\n' "${gws[$i]}" >> "$f"`
+			writeGW := `    [ -n "${gws[$i]}" ] && printf 'Gateway=%s\n' "${gws[$i]}" >> "$f"`
 			fmt.Println(writeGW)
 		}
 		fmt.Println("  done")
@@ -126,7 +126,7 @@ func printOCINetworkHints(vm *types.VM) {
 		fmt.Println("  # DHCP NICs")
 		for _, mac := range dhcpMACs {
 			sanitized := strings.ReplaceAll(mac, ":", "")
-			writeDHCP := fmt.Sprintf(`  printf '[Match]\nMACAddress=%s\n\n[Network]\nDHCP=ipv4\n'`+` > "/etc/systemd/network/10-%s.network"`, mac, sanitized)
+			writeDHCP := fmt.Sprintf(`  printf '[Match]\nMACAddress=%s\n\n[Network]\nDHCP=ipv4\n' > "/etc/systemd/network/10-%s.network"`, mac, sanitized)
 			fmt.Println(writeDHCP)
 		}
 	}
@@ -135,12 +135,9 @@ func printOCINetworkHints(vm *types.VM) {
 }
 
 func printBashArray(name string, nics []nicHint, field func(nicHint) string) {
-	fmt.Printf("  %s=(", name)
+	quoted := make([]string, len(nics))
 	for i, n := range nics {
-		if i > 0 {
-			fmt.Print(" ")
-		}
-		fmt.Printf("'%s'", field(n))
+		quoted[i] = "'" + field(n) + "'"
 	}
-	fmt.Println(")")
+	fmt.Printf("  %s=(%s)\n", name, strings.Join(quoted, " "))
 }

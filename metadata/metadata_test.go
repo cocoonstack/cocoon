@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+func TestUserData_NonRootPasswordSetOnlyByRuncmd(t *testing.T) {
+	cfg := &Config{Username: "admin", Password: "pw"}
+
+	var buf bytes.Buffer
+	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "chpasswd:") {
+		t.Errorf("chpasswd module would run before runcmd creates admin: %s", out)
+	}
+	if !strings.Contains(out, "ssh_pwauth: true") || !strings.Contains(out, "useradd -m -s /bin/bash -N admin") || !strings.Contains(out, "echo ''admin:pw'' | chpasswd") {
+		t.Errorf("runcmd must create admin and set its password: %s", out)
+	}
+}
+
 func TestUserData_NoBootcmd(t *testing.T) {
 	cfg := &Config{
 		Username: "root", Password: "test",

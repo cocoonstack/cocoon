@@ -153,7 +153,7 @@ func TestKillStormAtomicity(t *testing.T) {
 	_ = newStore(t, dir, "alpha")
 	acked := map[string]struct{}{}
 	for round := range killRounds {
-		cmd := exec.Command(os.Args[0], "-test.run=TestKillStormWorker$", "-test.count=1") //nolint:gosec
+		cmd := exec.Command(os.Args[0], "-test.run=TestKillStormWorker$", "-test.count=1")
 		cmd.Env = append(os.Environ(), "META_MP_DIR="+dir, "META_MP_WORKER="+strconv.Itoa(round))
 		pipe, err := cmd.StdoutPipe()
 		if err != nil {
@@ -257,7 +257,7 @@ func integrityCheck(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 	var result string
 	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil || result != "ok" {
 		t.Fatalf("integrity check: %q err=%v", result, err)

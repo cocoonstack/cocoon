@@ -4,7 +4,7 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 ## Post-clone IP conflict window
 
-After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP address** configured inside the guest, even though CNI has allocated a new IP for the clone's network namespace. MAC addresses are handled automatically — during clone, the snapshot's old NICs are hot-swapped (removed and re-added with new MACs) while the VM is paused, so the guest wakes up with correct MACs. The clone can still reach the network during the IP conflict window because:
+After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP address** configured inside the guest, even though CNI has allocated a new IP for the clone's network namespace. On Cloud Hypervisor MAC addresses are handled automatically — during clone, the snapshot's old NICs are hot-swapped (removed and re-added with new MACs) while the VM is paused, so the guest wakes up with correct MACs; Firecracker clones keep the source VM's guest MAC (see [Firecracker clone guest MAC address](#firecracker-clone-guest-mac-address)). The clone can still reach the network during the IP conflict window because:
 
 - The entire data path is **L2** (TC ingress redirect + bridge) — no component checks whether the guest's source IP matches the CNI-allocated IP.
 - Standard **bridge CNI does not enforce IP ↔ veth binding** at the data plane. The `host-local` IPAM only tracks allocations in its control-plane state files; it does not install data-plane rules.
@@ -15,7 +15,7 @@ After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP addre
 
 ## Clone and restore resources are fixed at snapshot time
 
-`cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). MMIO Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected there (a `--pci` snapshot restores its NICs and hot-plugs the delta) — and the target network's MTU must equal the snapshot's because the guest keeps the advertised MTU. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
+`cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). MMIO Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected there (a `--pci` snapshot restores its NICs and hot-plugs the delta). On every Firecracker clone, MMIO and `--pci` alike, the target network's MTU must equal the snapshot's because the guest keeps the advertised MTU. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
 
 ## OCI VM multi-NIC kernel IP limitation
 
@@ -35,7 +35,7 @@ When `--user` specifies a non-root username (e.g. `--user admin`), the user is c
 
 The root user's password is set via `chpasswd` (config stage, earlier) and is available sooner, but `--user admin` deliberately does not set a root password — root stays locked for security.
 
-**Workaround**: wait for `cloud-init status: done` before attempting SSH. The default `root`/`cocoon` credentials use the faster `chpasswd` path and are available immediately after SSH starts.
+**Workaround**: wait for `cloud-init status: done` before attempting SSH. The default `root`/`cocoon` credentials use the faster `chpasswd` path and work on the console as soon as it is set; stock cloud images ship sshd with `PermitRootLogin prohibit-password`, so root over SSH needs a key or a custom image — use `--user` for password SSH.
 
 ## Clone preserves guest credentials from snapshot
 
@@ -73,6 +73,17 @@ Cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-
 
 This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333) and [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356). As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
 
+## A VM's netns deleted out from under it
+
+cocoon never removes a running VM's network namespace; if an operator or a foreign GC does (`ip netns del`), every TAP inside it goes with it and the VM's virtio-net backends are dead. The record is still correct — `vm list` shows the same IP — so the symptoms are guest-side: no traffic, `cocoon vm net` fails with `failed to open netns … no such file or directory`, while `cocoon vm exec` keeps working over vsock.
+
+Recovery is the start-time path, which rebuilds the whole network from the record (`Verify` → `Prepare` → re-plumb every NIC with its recorded MAC, IP and TAP name):
+
+- keep guest memory: `cocoon vm hibernate VM` then `cocoon vm restore VM <snapshot>` — about 300 ms, processes and RAM untouched
+- or reboot the guest: `cocoon vm stop --force VM` then `cocoon vm start VM`
+
+Do not recreate the namespace by hand: an empty netns lets a later `vm net` hot-plug one NIC into it and report success while the VM's other NICs stay dead, and the start-time recovery then collides with that TAP (`add ingress qdisc …: file exists`) and refuses to start the VM.
+
 ## DHCP networks should not use DHCP IPAM in CNI
 
 When using a DHCP-based network (e.g., macvlan attached to a network with an external DHCP server), the CNI conflist should **not** use the `dhcp` IPAM plugin. Instead, configure the CNI plugin with **no IPAM** (or `"ipam": {}`) and let the guest obtain its IP directly from the external DHCP server.
@@ -100,7 +111,7 @@ This applies to **all CNI plugins** where the upstream network provides DHCP (br
 }
 ```
 
-Cocoon detects when CNI returns no IP allocation and automatically configures the guest for DHCP — cloudimg VMs get `DHCP=ipv4` in their Netplan config, and OCI VMs get DHCP systemd-networkd units generated by the initramfs `cocoon-network` script.
+Cocoon detects when CNI returns no IP allocation and automatically configures the guest for DHCP — cloudimg VMs get `dhcp4: true` in their Netplan network-config (plus MAC-matched `DHCP=ipv4` systemd-networkd units written by cloud-init), and OCI VMs get DHCP systemd-networkd units generated by the initramfs `cocoon-network` script.
 
 Note: the OCI initramfs uses `IP=off` to prevent the initramfs from running its own DHCP client during boot. DHCP is handled entirely by systemd-networkd after switch_root. The `configure_networking` function is only called when a kernel `ip=` parameter is present (static IP from CNI).
 
@@ -188,7 +199,7 @@ Firecracker snapshots store absolute host paths in the vmstate binary (Rust serd
 
 This is a fundamental Firecracker design limitation. Cloud Hypervisor snapshots do not have this restriction because CH stores device config in a patchable JSON format (`config.json`).
 
-**Upstream fix in progress**: Firecracker [PR #5774](https://github.com/firecracker-microvm/firecracker/pull/5774) adds `drive_overrides` to the `PUT /snapshot/load` API, which would eliminate the symlink redirect and make FC snapshots natively portable. Track this PR for future simplification.
+**Upstream fix in progress**: Firecracker [PR #5774](https://github.com/firecracker-microvm/firecracker/pull/5774) adds `drive_overrides` to the `PUT /snapshot/load` API, which would eliminate the bind-mount redirect and make FC snapshots natively portable. Track this PR for future simplification.
 
 ## Firecracker virtio-blk serial numbers
 
@@ -201,7 +212,7 @@ When a cloudimg VM is snapshotted **after** it has been stopped and started at l
 **Consequence**: ~1 MB of dead weight inside the tar. No correctness impact:
 
 - Clone from such a snapshot regenerates a fresh `cidata.img` via `ensureCloneCidata` and overwrites the orphan with the clone's identity / network config.
-- Restore wipes the orphan via `cleanSnapshotFiles` before staging the snapshot back into the runDir.
+- Restore leaves the orphan in place: `cleanSnapshotFiles` removes only the memory ranges, `config.json`, `state.json`, `cocoon.json` and `data-*.raw`, so the staged `cidata.img` is merged back over the VM's own copy — harmless, since restore targets the same VM.
 
 This predates the data-disk feature; the cocoon.json sidecar just makes the asymmetry visible. We are not patching the copy logic because the orphan is harmless and the Cidata-disk file is small and reflinked.
 
@@ -219,9 +230,13 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 `cocoon vm fs attach` only works on CH VMs that were created with `--shared-memory`. CH's `memory shared=on` is fixed at VM creation: backend processes (e.g. virtiofsd) need to mmap guest memory via the negotiated memfd, and the memory model cannot be flipped on a running VM. If `--shared-memory` was omitted at create time, the only path is to recreate the VM. Cocoon's preflight reads `vm.info` and surfaces a clear error rather than letting CH return a vague rejection.
 
-## Snapshotting a VM with attached vhost-user-fs / VFIO is rejected by CH
+## Snapshotting a VM with attached vhost-user-fs / VFIO is refused
 
-Cloud Hypervisor refuses to snapshot a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device. Cocoon does not block the call client-side (the rejection comes from CH itself); the surfaced error explains the cause. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
+Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the snapshot's `config.json` and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`) before anything is recorded. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
+
+## `--from-dir` rejects a directory rebuilt by a third-party tar
+
+`cocoon vm clone --from-dir` and `cocoon vm restore --from-dir` compare `cow.raw`'s on-disk size with the size recorded in `snapshot.json`. cocoon's export tar stores sparse disks with private pax records that only its own extractor understands; a generic `tar -x` drops them and rebuilds a short, shifted disk that would restore into silent corruption. The directory is refused with `cow.raw in <dir> is N bytes but the envelope records M`. Use `snapshot export --to-dir` for the directory form, or `snapshot import` for an exported tar.
 
 ## Runtime attached devices do not survive VM stop / clone / restore
 
@@ -233,13 +248,13 @@ Upstream virtiofsd serves exactly one vhost-user client and exits when that clie
 
 ## Official OS images ship with default `root:cocoon` and `PermitRootLogin yes`
 
-Every Ubuntu image under `os-image/` enables `openssh-server` with `PermitRootLogin yes` and the default `root:cocoon` credentials baked in. This is convenient for development and matches the existing OCI-image behavior, but it is **not** safe for production exposure.
+Every Ubuntu and Debian image under `os-image/` enables `openssh-server` with `PermitRootLogin yes` and the default `root:cocoon` credentials baked in. This is convenient for development and matches the existing OCI-image behavior, but it is **not** safe for production exposure.
 
 Mitigations for production users:
 
 - Rotate the root password (`passwd root`) and/or disable password auth (`PasswordAuthentication no`) inside the guest before exposing it.
 - Add a non-root sudo user, then flip `PermitRootLogin` back to `no`.
-- Or fork the Dockerfile and adjust the `install-agent.sh` invocation to skip the SSH config step.
+- Or fork `install-agent.sh` and drop its sshd step (the `PermitRootLogin` sed and `systemctl enable ssh`); the script has no flag or env knob for it.
 
 Control-plane traffic from cocoon-managed hosts (vk-cocoon, `cocoon vm exec`) goes through cocoon-agent over vsock and never depends on SSH credentials.
 
@@ -262,6 +277,6 @@ Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device`
 
 ## Android cocoon-agent service may be blocked by SELinux
 
-`os-image/android/{14.0,15.0}` install the cocoon-agent binary at `/system/bin/cocoon-agent` and register it via `/system/etc/init/cocoon-agent.rc`. Android's SELinux policies don't ship with a domain for cocoon-agent, so the service may run in `init`'s domain or be denied outright depending on the redroid build.
+`os-image/android/{14.0,15.0,15.0-gms}` install the cocoon-agent binary at `/system/bin/cocoon-agent` and register it via `/system/etc/init/cocoon-agent.rc`. Android's SELinux policies don't ship with a domain for cocoon-agent, so the service may run in `init`'s domain or be denied outright depending on the redroid build.
 
 If `cocoon vm exec` against an Android VM returns `dial agent: ...`, check `logcat | grep -i avc` inside the guest. The fix is build-time — adjust the Android sepolicy to grant the new binary network/socket permissions — and is out of scope for the Dockerfile.

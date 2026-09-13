@@ -66,7 +66,7 @@ func TestTarFile_EmptyFile(t *testing.T) {
 	if err := openAndTarFile(tw, src, "empty.txt"); err != nil {
 		t.Fatalf("tarFile: %v", err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	tr := tar.NewReader(&buf)
 	hdr, err := tr.Next()
@@ -112,7 +112,7 @@ func TestTarDir(t *testing.T) {
 	if err := TarDir(tw, dir); err != nil {
 		t.Fatalf("TarDir: %v", err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	tr := tar.NewReader(&buf)
 	found := make(map[string][]byte)
@@ -153,7 +153,7 @@ func TestTarDir_Empty(t *testing.T) {
 	if err := TarDir(tw, dir); err != nil {
 		t.Fatalf("TarDir: %v", err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	tr := tar.NewReader(&buf)
 	if _, err := tr.Next(); !errors.Is(err, io.EOF) {
@@ -196,11 +196,11 @@ func TestExtractTar(t *testing.T) {
 func TestExtractTar_SkipsDirectories(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	tw.WriteHeader(&tar.Header{Name: "subdir/", Typeflag: tar.TypeDir, Mode: 0o755})           //nolint:errcheck
-	tw.WriteHeader(&tar.Header{Name: "file.txt", Size: 3, Typeflag: tar.TypeReg, Mode: 0o644}) //nolint:errcheck
-	tw.Write([]byte("abc"))                                                                    //nolint:errcheck
-	tw.WriteHeader(&tar.Header{Name: "link", Linkname: "file.txt", Typeflag: tar.TypeSymlink}) //nolint:errcheck
-	tw.Close()                                                                                 //nolint:errcheck
+	tw.WriteHeader(&tar.Header{Name: "subdir/", Typeflag: tar.TypeDir, Mode: 0o755})
+	tw.WriteHeader(&tar.Header{Name: "file.txt", Size: 3, Typeflag: tar.TypeReg, Mode: 0o644})
+	tw.Write([]byte("abc"))
+	tw.WriteHeader(&tar.Header{Name: "link", Linkname: "file.txt", Typeflag: tar.TypeSymlink})
+	tw.Close()
 
 	dir := t.TempDir()
 	if err := ExtractTar(dir, &buf); err != nil {
@@ -245,10 +245,10 @@ func TestExtractTar_SkipsDotNames(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	tw.WriteHeader(&tar.Header{Name: ".", Size: 0, Typeflag: tar.TypeReg, Mode: 0o644})      //nolint:errcheck
-	tw.WriteHeader(&tar.Header{Name: "ok.txt", Size: 2, Typeflag: tar.TypeReg, Mode: 0o644}) //nolint:errcheck
-	tw.Write([]byte("ok"))                                                                   //nolint:errcheck
-	tw.Close()                                                                               //nolint:errcheck
+	tw.WriteHeader(&tar.Header{Name: ".", Size: 0, Typeflag: tar.TypeReg, Mode: 0o644})
+	tw.WriteHeader(&tar.Header{Name: "ok.txt", Size: 2, Typeflag: tar.TypeReg, Mode: 0o644})
+	tw.Write([]byte("ok"))
+	tw.Close()
 
 	dir := t.TempDir()
 	if err := ExtractTar(dir, &buf); err != nil {
@@ -296,7 +296,7 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 	if err := TarDir(tw, srcDir); err != nil {
 		t.Fatalf("TarDir: %v", err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	dstDir := t.TempDir()
 	if err := ExtractTar(dstDir, &buf); err != nil {
@@ -418,7 +418,7 @@ func TestExtractTar_Sparse_EntireFileIsHole(t *testing.T) {
 func TestExtractTar_Sparse_InvalidMapJSON(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	tw.WriteHeader(&tar.Header{ //nolint:errcheck
+	tw.WriteHeader(&tar.Header{
 		Name:     "bad.bin",
 		Size:     0,
 		Mode:     0o644,
@@ -428,7 +428,7 @@ func TestExtractTar_Sparse_InvalidMapJSON(t *testing.T) {
 			paxSparseSize: "1024",
 		},
 	})
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	if err := ExtractTar(t.TempDir(), &buf); err == nil {
 		t.Fatal("expected error for invalid sparse map JSON")
@@ -439,7 +439,7 @@ func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
 	mapJSON, _ := json.Marshal([]sparseSegment{})
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	tw.WriteHeader(&tar.Header{ //nolint:errcheck
+	tw.WriteHeader(&tar.Header{
 		Name:     "bad.bin",
 		Size:     0,
 		Mode:     0o644,
@@ -449,7 +449,7 @@ func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
 			paxSparseSize: "not-a-number",
 		},
 	})
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	if err := ExtractTar(t.TempDir(), &buf); err == nil {
 		t.Fatal("expected error for invalid sparse size")
@@ -465,10 +465,10 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	tw.WriteHeader(&tar.Header{Name: "regular.txt", Size: 5, Typeflag: tar.TypeReg, Mode: 0o644}) //nolint:errcheck
-	tw.Write([]byte("hello"))                                                                     //nolint:errcheck
+	tw.WriteHeader(&tar.Header{Name: "regular.txt", Size: 5, Typeflag: tar.TypeReg, Mode: 0o644})
+	tw.Write([]byte("hello"))
 
-	tw.WriteHeader(&tar.Header{ //nolint:errcheck
+	tw.WriteHeader(&tar.Header{
 		Name:     "sparse.bin",
 		Size:     int64(len(dataContent)),
 		Mode:     0o644,
@@ -478,8 +478,8 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 			paxSparseSize: strconv.FormatInt(realSize, 10),
 		},
 	})
-	tw.Write(dataContent) //nolint:errcheck
-	tw.Close()            //nolint:errcheck
+	tw.Write(dataContent)
+	tw.Close()
 
 	dir := t.TempDir()
 	if err := ExtractTar(dir, &buf); err != nil {
@@ -758,7 +758,7 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 	if err := TarDir(tw, srcDir); err != nil {
 		t.Fatal(err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 
 	dstDir := t.TempDir()
 	if err := ExtractTar(dstDir, &buf); err != nil {
@@ -783,11 +783,11 @@ func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
 }
 
 func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
-	f, err := os.Open(path) //nolint:gosec
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -847,6 +847,6 @@ func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseS
 	if _, err := tw.Write(data); err != nil {
 		t.Fatal(err)
 	}
-	tw.Close() //nolint:errcheck
+	tw.Close()
 	return &buf
 }

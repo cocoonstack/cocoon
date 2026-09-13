@@ -15,7 +15,7 @@ cocoon image pull https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-
 cocoon image pull --force https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 ```
 
-Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3.
+Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3. A cloud-image URL must serve an uncompressed disk image — gzip/xz/bzip2/zstd payloads are refused (`cloudimg does not auto-decompress`); decompress first and use `image import`, which does unwrap gzip. Downloads are capped at 20 GiB.
 
 ## Importing
 
@@ -25,6 +25,7 @@ Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted
 - tar → converted to an EROFS layer in an OCI image
 - multiple FILE arguments → split qcow2 parts or multiple tar layers
 - no FILE → read from stdin
+- gzip-wrapped input takes the stream path and accepts exactly one FILE; split parts and multi-layer imports must be uncompressed
 
 ```bash
 cocoon image import myimg disk.qcow2
@@ -36,10 +37,10 @@ cat layers.tar.gz | cocoon image import mylayers
 ```bash
 cocoon image list
 cocoon image inspect ubuntu:24.04
-cocoon image rm sha256:abc123
+cocoon image rm sha256:abc123def456
 ```
 
-A digest prefix must be unambiguous: `image rm` errors on a short prefix that matches more than one image (use a longer prefix), and `image inspect` treats an ambiguous prefix as not-found.
+A digest prefix must be at least 12 hex characters and unambiguous: a shorter prefix matches nothing, and both `image rm` and `image inspect` treat a prefix that matches more than one image as not-found — use a longer prefix.
 
 ## OS Images
 

@@ -23,11 +23,6 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	storStr, _ := cmd.Flags().GetString("storage")
 	queueSize, _ := cmd.Flags().GetInt("queue-size")
 	diskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
-	cpuWeight, _ := cmd.Flags().GetInt("cpu-weight")
-	cpuQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
-	cpuPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
-	cpuBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
-	cpusetCPUs, _ := cmd.Flags().GetString("cpuset-cpus")
 	network, _ := cmd.Flags().GetString("network")
 	user, _ := cmd.Flags().GetString("user")
 	password, _ := cmd.Flags().GetString("password")
@@ -74,11 +69,6 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 		HugePages:     hugePages,
 		Mergeable:     mergeable,
 		PCI:           pci,
-		CPUWeight:     cpuWeight,
-		CPUQuotaUs:    cpuQuotaUs,
-		CPUPeriodUs:   cpuPeriodUs,
-		CPUBurstUs:    cpuBurstUs,
-		CPUSetCPUs:    cpusetCPUs,
 		User:          user,
 		Password:      password,
 		DataDisks:     dataDisks,
@@ -86,6 +76,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cgroupKnobsFromFlags(cmd, &cfg.Config)
 	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
 		return nil, err
 	}
@@ -101,11 +92,6 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	queueSize := cmp.Or(flagQueueSize, snapCfg.QueueSize)
 	flagDiskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
 	diskQueueSize := cmp.Or(flagDiskQueueSize, snapCfg.DiskQueueSize)
-	flagCPUWeight, _ := cmd.Flags().GetInt("cpu-weight")
-	flagCPUQuotaUs, _ := cmd.Flags().GetInt64("cpu-quota-us")
-	flagCPUPeriodUs, _ := cmd.Flags().GetInt64("cpu-period-us")
-	flagCPUBurstUs, _ := cmd.Flags().GetInt64("cpu-burst-us")
-	flagCPUSetCPUs, _ := cmd.Flags().GetString("cpuset-cpus")
 	noDirectIO := snapCfg.NoDirectIO
 	if cmd.Flags().Changed("no-direct-io") {
 		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
@@ -140,14 +126,10 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 		HugePages:     snapCfg.HugePages,
 		Mergeable:     snapCfg.Mergeable,
 		PCI:           snapCfg.PCI,
-		CPUWeight:     flagCPUWeight,
-		CPUQuotaUs:    flagCPUQuotaUs,
-		CPUPeriodUs:   flagCPUPeriodUs,
-		CPUBurstUs:    flagCPUBurstUs,
-		CPUSetCPUs:    flagCPUSetCPUs,
 		DataDisks:     dataDisks,
 		RestoreMode:   restoreMode,
 	}
+	cgroupKnobsFromFlags(cmd, &cfg.Config)
 	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {
 		return nil, err
 	}
@@ -339,4 +321,12 @@ func restoreModeFromFlags(cmd *cobra.Command) (string, error) {
 	default:
 		return "", fmt.Errorf("--restore-mode must be copy, ondemand or mmap, got %q", mode)
 	}
+}
+
+func cgroupKnobsFromFlags(cmd *cobra.Command, cfg *types.Config) {
+	cfg.CPUWeight, _ = cmd.Flags().GetInt("cpu-weight")
+	cfg.CPUQuotaUs, _ = cmd.Flags().GetInt64("cpu-quota-us")
+	cfg.CPUPeriodUs, _ = cmd.Flags().GetInt64("cpu-period-us")
+	cfg.CPUBurstUs, _ = cmd.Flags().GetInt64("cpu-burst-us")
+	cfg.CPUSetCPUs, _ = cmd.Flags().GetString("cpuset-cpus")
 }

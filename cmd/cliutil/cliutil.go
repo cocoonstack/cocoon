@@ -68,10 +68,7 @@ func MaybeOutputJSON(cmd *cobra.Command, v any) (bool, error) {
 }
 
 func OutputFormatted(cmd *cobra.Command, data any, tableFn TableFunc) error {
-	format, err := Format(cmd)
-	if err != nil {
-		return err
-	}
+	format, _ := cmd.Flags().GetString("format")
 	return OutputFormattedStr(format, data, tableFn)
 }
 
