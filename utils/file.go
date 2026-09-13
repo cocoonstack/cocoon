@@ -160,25 +160,8 @@ func RemoveMatching(ctx context.Context, dir string, match func(os.DirEntry) boo
 	return errs
 }
 
-func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("scan %s: %w", dir, err)
-	}
-	var result []string
-	for _, e := range entries {
-		if name, ok := fn(e); ok {
-			result = append(result, name)
-		}
-	}
-	return result, nil
-}
-
-// fn must not close dst.
-func copyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) (err error) {
+// CopyWithCleanup opens src and creates dst for fn and removes dst when fn fails; fn must not close dst.
+func CopyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) (err error) {
 	srcFile, err := os.Open(src) //nolint:gosec // caller-controlled internal path
 	if err != nil {
 		return fmt.Errorf("open src: %w", err)
@@ -199,4 +182,21 @@ func copyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) 
 	}()
 
 	return fn(srcFile, dstFile)
+}
+
+func scanDir(dir string, fn func(os.DirEntry) (string, bool)) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan %s: %w", dir, err)
+	}
+	var result []string
+	for _, e := range entries {
+		if name, ok := fn(e); ok {
+			result = append(result, name)
+		}
+	}
+	return result, nil
 }

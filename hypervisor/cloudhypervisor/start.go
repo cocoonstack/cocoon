@@ -25,7 +25,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 			if err != nil {
 				return 0, fmt.Errorf("parse DNS servers: %w", err)
 			}
-			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), hypervisor.PlacementCPUs(&rec.Config.Config), dns)
+			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), dns)
 			args := buildCLIArgs(vmCfg, sockPath)
 			ch.saveCmdline(ctx, rec, args)
 			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)

@@ -26,6 +26,8 @@ const (
 	DefaultParent = "cocoon.slice"
 	// DefaultPeriodUs is the kernel's default cpu.max period.
 	DefaultPeriodUs = 100000
+	// AutoCPUSet asks launch to place the VM on the least-loaded last-level-cache domain.
+	AutoCPUSet = "auto"
 
 	// MinWeight/MaxWeight are the kernel's cpu.weight bounds.
 	MinWeight = 1
@@ -96,7 +98,7 @@ func (k Knobs) Validate() error {
 	if k.BurstUs < 0 || k.BurstUs > k.QuotaUs {
 		return fmt.Errorf("--cpu-burst-us must be -1 (no burst) or 0..quota (%d), got %d", k.QuotaUs, k.BurstUs)
 	}
-	if _, err := ParseCPUList(k.CPUSet); err != nil {
+	if _, err := ParseCPUList(k.CPUSet); err != nil && k.CPUSet != AutoCPUSet {
 		return fmt.Errorf("--cpuset-cpus: %w", err)
 	}
 	return nil
@@ -126,6 +128,24 @@ func ParseCPUList(s string) ([]int, error) {
 	}
 	slices.Sort(cpus)
 	return slices.Compact(cpus), nil
+}
+
+// FormatCPUList renders sorted cpus as a kernel cpu-list ("0-7,192-199"); empty input is "".
+func FormatCPUList(cpus []int) string {
+	var parts []string
+	for i := 0; i < len(cpus); {
+		j := i
+		for j+1 < len(cpus) && cpus[j+1] == cpus[j]+1 {
+			j++
+		}
+		if j == i {
+			parts = append(parts, strconv.Itoa(cpus[i]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", cpus[i], cpus[j]))
+		}
+		i = j + 1
+	}
+	return strings.Join(parts, ",")
 }
 
 // ScopeDir returns vmID's scope directory under parentDir.

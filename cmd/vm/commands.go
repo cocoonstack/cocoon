@@ -328,7 +328,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")                                                //nolint:mnd
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count)")
 	addCPUBandwidthFlags(cmd)
-	cmd.Flags().String("cpuset-cpus", "", "pin the VM to host cpus (kernel cpu-list, e.g. 0-3); non-work-conserving, empty = anywhere inside the cgroup_cpus fence")
+	cmd.Flags().String("cpuset-cpus", "", "pin the VM to host cpus (kernel cpu-list, e.g. 0-3, or auto = the least-loaded cache domain at launch); non-work-conserving, empty = anywhere inside the cgroup_cpus fence")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = default); mutually exclusive with --bridge")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0); VM gets IP via DHCP from the bridge")
 	cmd.Flags().String("user", "root", "guest username for cloud-init (cloudimg only)")
@@ -351,7 +351,7 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
 	addCPUBandwidthFlags(cmd)
-	cmd.Flags().String("cpuset-cpus", "", "pin the clone to host cpus (kernel cpu-list; empty = anywhere inside the cgroup_cpus fence)")
+	cmd.Flags().String("cpuset-cpus", "", "pin the clone to host cpus (kernel cpu-list or auto; empty = anywhere inside the cgroup_cpus fence)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")

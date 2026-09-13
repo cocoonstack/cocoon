@@ -51,7 +51,7 @@ const (
 	// socketReadyPollInterval matches a VMM socket appearing within a few ms of process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 
-	onlineCPUsPath = "/sys/devices/system/cpu/online"
+	onlineCPUsPath = cgroup.SysCPURoot + "/online"
 )
 
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
@@ -229,26 +229,18 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 	return params.String()
 }
 
-func CopyFile(dst, src string) (err error) {
-	srcFile, err := os.Open(src) //nolint:gosec
-	if err != nil {
+func CopyFile(dst, src string) error {
+	return utils.CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+		fi, err := srcFile.Stat()
+		if err != nil {
+			return err
+		}
+		if err = dstFile.Chmod(fi.Mode()); err != nil {
+			return err
+		}
+		_, err = io.Copy(dstFile, srcFile)
 		return err
-	}
-	defer srcFile.Close() //nolint:errcheck
-
-	fi, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode()) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, dstFile.Close()) }()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
+	})
 }
 
 // MergeDirInto renames entries from src to dst, overwriting existing files; lock files never move (see isLockFile).
@@ -292,9 +284,9 @@ func ValidateHostCPU(cpu int) error {
 	return nil
 }
 
-// PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
-func PlacementCPUs(cfg *types.Config) []int {
-	cpus, _ := cgroup.ParseCPUList(cfg.CPUSetCPUs)
+// QueueCPUs parses the host cpus the record's writable disk queues pin to; nil leaves the scheduler in charge.
+func QueueCPUs(rec *VMRecord) []int {
+	cpus, _ := cgroup.ParseCPUList(rec.QueueCPUs)
 	return cpus
 }
 
@@ -307,10 +299,6 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 		fname := snapshotResidentBasename(sc)
 		if fname == "" {
 			continue
-		}
-		// A degenerate name would stat a directory and vacuously pass.
-		if fname == "." || fname == ".." || fname == string(filepath.Separator) {
-			return fmt.Errorf("invalid snapshot disk name %q", fname)
 		}
 		if _, err := os.Stat(filepath.Join(srcDir, fname)); err != nil {
 			return fmt.Errorf("snapshot file %s missing: %w", fname, err)

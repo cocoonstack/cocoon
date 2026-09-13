@@ -266,6 +266,10 @@ func (b *Backend) markFailedOperation(ctx context.Context, id string, markError 
 			markTransition(r, types.VMStateError, types.TransitionError, now)
 			changed = true
 		}
+		if r.CPUSet != "" || r.QueueCPUs != "" {
+			r.CPUSet, r.QueueCPUs = "", ""
+			changed = true
+		}
 		pending := needsQuiesce(r)
 		if r.QuiescePending != pending {
 			r.QuiescePending = pending
@@ -296,6 +300,10 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
+	// a recorded placement means the VM holds those cpus
+	if state != types.VMStateRunning {
+		r.CPUSet, r.QueueCPUs = "", ""
+	}
 }
 
 // needsQuiesce reports whether the VM owns host plumbing a stop must bring down.

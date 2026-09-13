@@ -103,7 +103,11 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
-	return &rec, nil
+	placed, err := b.placeRecord(ctx, id, &rec.Config.Config)
+	if err != nil {
+		return nil, fmt.Errorf("place VM: %w", err)
+	}
+	return &placed, nil
 }
 
 // LaunchVMProcess starts spec.Cmd and waits for the API socket; any post-Start error kills the process + removes the PID file.
@@ -129,7 +133,9 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		}
 	}()
 
-	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, cgroup.ResolveKnobs(&spec.Rec.Config.Config), spec.DeferCPUQuota)
+	knobs := cgroup.ResolveKnobs(&spec.Rec.Config.Config)
+	knobs.CPUSet = spec.Rec.CPUSet
+	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, knobs, spec.DeferCPUQuota)
 	if err != nil {
 		return 0, fmt.Errorf("prepare cgroup scope: %w", err)
 	}

@@ -17,14 +17,13 @@ import (
 )
 
 type chDebugSpec struct {
-	Configs   []*types.StorageConfig
-	Boot      *types.BootConfig
-	VMCfg     *types.VMConfig
-	CowPath   string
-	CHBin     string
-	MaxCPU    int
-	Balloon   int
-	Placement []int
+	Configs []*types.StorageConfig
+	Boot    *types.BootConfig
+	VMCfg   *types.VMConfig
+	CowPath string
+	CHBin   string
+	MaxCPU  int
+	Balloon int
 }
 
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
@@ -141,14 +140,13 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 		balloon = int(size >> 20) //nolint:mnd
 	}
 	return chDebugSpec{
-		Configs:   storageConfigs,
-		Boot:      boot,
-		VMCfg:     vmCfg,
-		CowPath:   cowPath,
-		CHBin:     chBin,
-		MaxCPU:    maxCPU,
-		Balloon:   balloon,
-		Placement: hypervisor.PlacementCPUs(&vmCfg.Config),
+		Configs: storageConfigs,
+		Boot:    boot,
+		VMCfg:   vmCfg,
+		CowPath: cowPath,
+		CHBin:   chBin,
+		MaxCPU:  maxCPU,
+		Balloon: balloon,
 	}
 }
 
@@ -162,7 +160,7 @@ func printCHDebug(s chDebugSpec) {
 		debugConfigs := slices.Concat(s.Configs, []*types.StorageConfig{
 			{Path: s.CowPath, RO: false, Serial: hypervisor.CowSerial},
 		})
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO, s.Placement)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO)
 		cmdline := cloudhypervisor.DebugCmdline(s.Configs, s.VMCfg.Name)
 
 		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
@@ -189,7 +187,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --firmware %s \\\n", s.Boot.FirmwarePath)
 		fmt.Print("  --disk \\\n")
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO, s.Placement)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO)
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
 	printCommonCHArgs(s)

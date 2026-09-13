@@ -156,6 +156,11 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 		if err := b.RecoverNetwork(ctx, run.rec); err != nil {
 			return fmt.Errorf("recover network: %w", err)
 		}
+		placed, err := b.placeRecord(ctx, run.vmID, &run.vmCfg.Config)
+		if err != nil {
+			return fmt.Errorf("place VM: %w", err)
+		}
+		run.rec.CPUSet, run.rec.QueueCPUs = placed.CPUSet, placed.QueueCPUs
 		var afterErr error
 		result, afterErr = run.afterExtract(ctx, run.vmID, run.vmCfg, run.rec)
 		return afterErr

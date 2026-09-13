@@ -54,9 +54,9 @@ func (b *Backend) update(ctx context.Context, fn func(*vmTx) error) error {
 	})
 }
 
-// updateRelaxed is the creating-placeholder write, today's only relaxed flow: its loss is re-derived by the GC orphan sweep.
-func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error {
-	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitRelaxed, func(w meta.Writer) error {
+// updateRelaxed skips the durable commit; every caller's write is re-derived by a later pass.
+func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmTx) error) error {
+	return b.Meta.Update(ctx, meta.Scope{Write: b.NS, Read: read}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
 }

@@ -39,7 +39,7 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 }
 
 func tryFiclone(dst, src string, sync SyncMode) error {
-	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd()); errno != 0 {
 			return fmt.Errorf("ficlone: %w", errno)
 		}

@@ -43,6 +43,7 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*CloudHy
 	if err != nil {
 		return nil, err
 	}
+	backend.PinsQueues = true
 	return &CloudHypervisor{Backend: backend, conf: cfg}, nil
 }
 
