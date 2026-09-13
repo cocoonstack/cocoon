@@ -30,7 +30,7 @@ type Config struct {
 	// PCI boots a Firecracker VM on the virtio-pci transport (device hot-plug prerequisite); fixed at create, persists through clone/restore.
 	PCI bool `json:"pci,omitempty"`
 
-	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU (CPUSetCPUs empty = no placement).
+	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU (CPUSetCPUs empty = no placement, "auto" = one cache domain picked at launch).
 	CPUWeight   int    `json:"cpu_weight,omitempty"`
 	CPUQuotaUs  int64  `json:"cpu_quota_us,omitempty"`
 	CPUPeriodUs int64  `json:"cpu_period_us,omitempty"`

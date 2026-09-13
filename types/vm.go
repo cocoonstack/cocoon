@@ -106,6 +106,8 @@ type VM struct {
 	SocketPath  string `json:"socket_path,omitempty"`  // CH API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 	ConsolePath string `json:"console_path,omitempty"` // guest console: console.sock UDS or CH-allocated PTY (direct boot)
+	CPUSet      string `json:"cpuset,omitempty"`       // resolved cgroup placement; --cpuset-cpus auto lands its cache domain here
+	QueueCPUs   string `json:"queue_cpus,omitempty"`   // host cpus the writable virtio-blk queue threads pin to
 
 	NetSetup
 

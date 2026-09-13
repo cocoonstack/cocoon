@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
@@ -24,7 +25,7 @@ type chDebugSpec struct {
 	CHBin     string
 	MaxCPU    int
 	Balloon   int
-	Placement []int
+	QueueCPUs []int
 }
 
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
@@ -140,6 +141,7 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 	case balloon == 0:
 		balloon = int(size >> 20) //nolint:mnd
 	}
+	queueCPUs, _ := cgroup.ParseCPUList(vmCfg.CPUSetCPUs)
 	return chDebugSpec{
 		Configs:   storageConfigs,
 		Boot:      boot,
@@ -148,7 +150,7 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 		CHBin:     chBin,
 		MaxCPU:    maxCPU,
 		Balloon:   balloon,
-		Placement: hypervisor.PlacementCPUs(&vmCfg.Config),
+		QueueCPUs: queueCPUs,
 	}
 }
 
@@ -162,7 +164,7 @@ func printCHDebug(s chDebugSpec) {
 		debugConfigs := slices.Concat(s.Configs, []*types.StorageConfig{
 			{Path: s.CowPath, RO: false, Serial: hypervisor.CowSerial},
 		})
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO, s.Placement)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO, s.QueueCPUs)
 		cmdline := cloudhypervisor.DebugCmdline(s.Configs, s.VMCfg.Name)
 
 		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
@@ -189,7 +191,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --firmware %s \\\n", s.Boot.FirmwarePath)
 		fmt.Print("  --disk \\\n")
-		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO, s.Placement)
+		diskArgs := cloudhypervisor.DebugDiskCLIArgs([]*types.StorageConfig{{Path: s.CowPath, RO: false}}, cpu, diskQueueSize, noDirectIO, s.QueueCPUs)
 		fmt.Printf("    \"%s\" \\\n", diskArgs[0])
 	}
 	printCommonCHArgs(s)

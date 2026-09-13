@@ -292,9 +292,9 @@ func ValidateHostCPU(cpu int) error {
 	return nil
 }
 
-// PlacementCPUs resolves the host cores an explicit cpuset placement gives this VM alone; nil means none and the machine fence, not cocoon, bounds its threads.
-func PlacementCPUs(cfg *types.Config) []int {
-	cpus, _ := cgroup.ParseCPUList(cfg.CPUSetCPUs)
+// QueueCPUs parses the host cpus the record's writable disk queues pin to; nil leaves the scheduler in charge.
+func QueueCPUs(rec *VMRecord) []int {
+	cpus, _ := cgroup.ParseCPUList(rec.QueueCPUs)
 	return cpus
 }
 

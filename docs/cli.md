@@ -143,7 +143,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — caps the long-run average; add `--cpu-burst-us -1` for a strict per-period ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
 | `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
-| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`); non-work-conserving, explicit opt-in |
+| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned regardless — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 
 ### Clone Flags
 

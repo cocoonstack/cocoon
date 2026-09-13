@@ -154,6 +154,13 @@ func TestParseCPUList(t *testing.T) {
 	}
 }
 
+func TestKnobsValidateAcceptsAutoCPUSet(t *testing.T) {
+	k := ResolveKnobs(&types.Config{CPU: 2, CPUSetCPUs: AutoCPUSet})
+	if err := k.Validate(); err != nil {
+		t.Errorf("auto cpuset: %v", err)
+	}
+}
+
 func TestKnobsValidateRejectsBadCPUSet(t *testing.T) {
 	k := Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, CPUSet: "9-1"}
 	if err := k.Validate(); err == nil {

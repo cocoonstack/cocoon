@@ -68,7 +68,8 @@ func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMCo
 	return fc.CloneFromStream(ctx, vmID, hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: fc.cloneAfterExtract}, snapshot)
 }
 
-func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
+func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
+	vmID, runDir := rec.ID, rec.RunDir
 	if len(vmCfg.DataDisks) > 0 && !vmCfg.PCI {
 		return nil, fmt.Errorf("--data-disk on a Firecracker clone needs a --pci snapshot (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend)
 	}
@@ -108,11 +109,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 
 	sockPath := hypervisor.SocketPath(runDir)
 	launch := func(leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
-		return fc.launchProcessWithLeases(ctx, &hypervisor.VMRecord{
-			ID: vmID, Config: *vmCfg,
-			RunDir: runDir,
-			LogDir: logDir,
-		}, sockPath, net.NetnsPath, leaseFiles, true)
+		return fc.launchProcessWithLeases(ctx, rec, sockPath, net.NetnsPath, leaseFiles, true)
 	}
 	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{
 		launch: launch, sockPath: sockPath, runDir: runDir, vmID: vmID, vmCfg: vmCfg,
@@ -129,7 +126,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, vmID string, vmCfg
 		return nil, fmt.Errorf("validate storage configs: %w", err)
 	}
 
-	info := fc.RunningCloneRecord(vmID, vmCfg, storageConfigs, net, runDir, now)
+	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
 		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)

@@ -22,7 +22,7 @@ func TestMemoryCLIArg(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: tt.cfg}}}
-			args := buildCLIArgs(buildVMConfig(rec, "", nil, nil), "api.sock")
+			args := buildCLIArgs(buildVMConfig(rec, "", nil), "api.sock")
 			i := slices.Index(args, "--memory")
 			if i < 0 || i+1 >= len(args) || args[i+1] != tt.want {
 				t.Fatalf("memory arg not %q (args: %s)", tt.want, strings.Join(args, " "))
@@ -65,7 +65,7 @@ func TestWatchdogPolicy(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}}
-			if got := buildVMConfig(rec, "", nil, nil).Watchdog; got != tt.want {
+			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
 				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
 			}
 		})
@@ -94,7 +94,7 @@ func TestBalloonPolicy(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}}
-			got := buildVMConfig(rec, "", nil, nil).Balloon
+			got := buildVMConfig(rec, "", nil).Balloon
 			if tt.wantSize == 0 {
 				if got != nil {
 					t.Fatalf("balloon = %+v, want none", got)
@@ -130,7 +130,7 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 		},
 	}
 
-	cfg := buildVMConfig(rec, "", nil, nil)
+	cfg := buildVMConfig(rec, "", nil)
 
 	if cfg.Payload == nil {
 		t.Fatal("no payload built for a direct-boot record")

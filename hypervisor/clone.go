@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
@@ -14,8 +13,8 @@ import (
 // CloneFilesFunc copies a snapshot's files from srcDir into dstDir.
 type CloneFilesFunc func(dstDir, srcDir string) error
 
-// AfterExtractFn finalizes a cloned VM after snapshot files are in place; sourceSnapshotID flows through for metering lineage.
-type AfterExtractFn func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error)
+// AfterExtractFn finalizes a cloned VM after snapshot files are in place; rec is the placed placeholder, sourceSnapshotID flows through for metering lineage.
+type AfterExtractFn func(ctx context.Context, rec *VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error)
 
 // CloneSpec carries one clone's inputs through the shared placeholder→populate→finalize skeleton.
 type CloneSpec struct {
@@ -45,14 +44,16 @@ func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSp
 	})
 }
 
-func (b *Backend) RunningCloneRecord(vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, runDir string, now time.Time) *types.VM {
+func (b *Backend) RunningCloneRecord(rec *VMRecord, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup) *types.VM {
+	now := rec.CreatedAt
 	info := &types.VM{
-		ID: vmID, Hypervisor: b.Typ, State: types.VMStateRunning,
+		ID: rec.ID, Hypervisor: b.Typ, State: types.VMStateRunning,
 		Config: *vmCfg, StorageConfigs: storageConfigs,
+		CPUSet: rec.CPUSet, QueueCPUs: rec.QueueCPUs,
 		NetSetup:  net,
 		CreatedAt: now, UpdatedAt: now, StartedAt: &now,
 	}
-	SetRunningSockets(info, runDir)
+	SetRunningSockets(info, rec.RunDir)
 	return info
 }
 
@@ -76,7 +77,7 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 }
 
 func (b *Backend) cloneBase(ctx context.Context, vmID string, spec CloneSpec, populate func(runDir string) error) (_ *types.VM, err error) {
-	runDir, logDir, now, cleanup, err := b.reservePlaceholder(ctx, vmID, spec.VMCfg, spec.SnapshotConfig.ImageBlobIDs)
+	runDir, _, cleanup, err := b.reservePlaceholder(ctx, vmID, spec.VMCfg, spec.SnapshotConfig.ImageBlobIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +86,12 @@ func (b *Backend) cloneBase(ctx context.Context, vmID string, spec CloneSpec, po
 			cleanup()
 		}
 	}()
+	rec, err := b.placeRecord(ctx, vmID, &spec.VMCfg.Config)
+	if err != nil {
+		return nil, fmt.Errorf("place VM: %w", err)
+	}
 	if err = populate(runDir); err != nil {
 		return nil, err
 	}
-	return spec.AfterExtract(ctx, vmID, spec.VMCfg, spec.Net, runDir, logDir, now, spec.SnapshotConfig.ID)
+	return spec.AfterExtract(ctx, &rec, spec.VMCfg, spec.Net, spec.SnapshotConfig.ID)
 }

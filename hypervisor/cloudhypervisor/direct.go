@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -16,8 +15,8 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 	var srcCfg *chVMConfig
 	spec := hypervisor.CloneSpec{
 		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,
-		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
-			return ch.cloneAfterExtractParsed(ctx, vmID, vmCfg, net, runDir, logDir, now, sourceSnapshotID, srcCfg)
+		AfterExtract: func(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
+			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg)
 		},
 	}
 	return ch.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {

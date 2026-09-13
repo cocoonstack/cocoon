@@ -167,6 +167,9 @@ type Backend struct {
 
 	// Net converges host networking inside the VM ops lock; nil disables it.
 	Net VMNetwork
+
+	// PinsQueues marks a backend that pins writable disk queue threads, so launch derives their host cpus.
+	PinsQueues bool
 }
 
 // NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.

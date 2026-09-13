@@ -199,11 +199,11 @@ func TestPatchCHConfig_RetargetsNetTAPs(t *testing.T) {
 func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 	tests := []struct {
 		name      string
-		placement []int
+		queueCPUs []int
 		want      []chQueueAffinity
 	}{
-		{name: "no placement drops the source host's mapping", placement: nil},
-		{name: "placement re-derives the mapping", placement: []int{8, 9}, want: []chQueueAffinity{
+		{name: "no pins drop the source host's mapping", queueCPUs: nil},
+		{name: "pins re-derive the mapping", queueCPUs: []int{8, 9}, want: []chQueueAffinity{
 			{QueueIndex: 0, HostCPUs: []int{8}},
 			{QueueIndex: 1, HostCPUs: []int{9}},
 		}},
@@ -222,7 +222,7 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 
 			opts := basePatchOpts()
 			opts.cpu = 2
-			opts.placementCPUs = tt.placement
+			opts.queueCPUs = tt.queueCPUs
 			if err := patchCHConfig(path, opts); err != nil {
 				t.Fatalf("patchCHConfig: %v", err)
 			}
@@ -369,7 +369,7 @@ func TestRestorePatchStorageConfigs_KeepsAllWhenSnapshotHadCidata(t *testing.T) 
 	}
 }
 
-func TestRestoreAndResumeCloneHotplugsByRoleWithPlacement(t *testing.T) {
+func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 	sockDir, err := os.MkdirTemp("", "ch")
 	if err != nil {
 		t.Fatal(err)
@@ -419,7 +419,7 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithPlacement(t *testing.T) {
 		storageConfigs: storageConfigs,
 		dataDisks:      storageConfigs[2:],
 		snapshotCfg:    &chVMConfig{},
-		placementCPUs:  []int{8, 9},
+		queueCPUs:      []int{8, 9},
 	}); err != nil {
 		t.Fatalf("restoreAndResumeClone: %v", err)
 	}

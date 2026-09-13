@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -27,23 +26,24 @@ type cloneResumeOpts struct {
 	dataDisks           []*types.StorageConfig
 	networkConfigs      []*types.NetworkConfig
 	snapshotCfg         *chVMConfig
-	placementCPUs       []int
+	queueCPUs           []int
 }
 
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
 	return ch.CloneFromStream(ctx, vmID, hypervisor.CloneSpec{VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig, AfterExtract: ch.cloneAfterExtract}, snapshot)
 }
 
-func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string) (*types.VM, error) {
-	chCfg, err := parseCHConfig(filepath.Join(runDir, configJSONName))
+func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
+	chCfg, err := parseCHConfig(filepath.Join(rec.RunDir, configJSONName))
 	if err != nil {
 		return nil, fmt.Errorf("parse CH config: %w", err)
 	}
-	return ch.cloneAfterExtractParsed(ctx, vmID, vmCfg, net, runDir, logDir, now, sourceSnapshotID, chCfg)
+	return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, chCfg)
 }
 
 // cloneAfterExtractParsed is cloneAfterExtract minus the config.json parse; DirectClone passes the copy step's parse of the verbatim-copied source.
-func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, runDir, logDir string, now time.Time, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
+func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
+	vmID, runDir := rec.ID, rec.RunDir
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("cloudhypervisor.cloneAfterExtractParsed")
 
@@ -96,7 +96,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		netTAPs[i] = network.TAPName(network.RestoreTAPPrefix, vmID, i)
 	}
 
-	placementCPUs := hypervisor.PlacementCPUs(&vmCfg.Config)
+	queueCPUs := hypervisor.QueueCPUs(rec)
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: patchStorageConfigs,
 		netTAPs:        netTAPs,
@@ -106,7 +106,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		diskQueueSize:  vmCfg.DiskQueueSize,
 		noDirectIO:     vmCfg.NoDirectIO,
 		cpu:            vmCfg.CPU,
-		placementCPUs:  placementCPUs,
+		queueCPUs:      queueCPUs,
 	}); err != nil {
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
@@ -121,11 +121,6 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 
 	sockPath := hypervisor.SocketPath(runDir)
 	args := []string{apiSocketFlag, sockPath}
-	rec := &hypervisor.VMRecord{
-		ID: vmID, Config: *vmCfg,
-		RunDir: runDir,
-		LogDir: logDir,
-	}
 	ch.saveCmdline(ctx, rec, args)
 
 	pid, err := ch.launchProcess(ctx, rec, args, net.NetnsPath, true)
@@ -142,13 +137,13 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, vmID str
 		dataDisks:           newDataDisks,
 		networkConfigs:      networkConfigs,
 		snapshotCfg:         chCfg,
-		placementCPUs:       placementCPUs,
+		queueCPUs:           queueCPUs,
 	}); err != nil {
 		return nil, err
 	}
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
-	info := ch.RunningCloneRecord(vmID, vmCfg, storageConfigs, net, runDir, now)
+	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
 	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
@@ -181,13 +176,13 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 		if i < 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
 		}
-		cidataDisk := storageConfigToDisk(opts.storageConfigs[i], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.placementCPUs)
+		cidataDisk := storageConfigToDisk(opts.storageConfigs[i], opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.queueCPUs)
 		if err = addDiskVM(ctx, hc, cidataDisk); err != nil {
 			return fmt.Errorf("vm.add-disk (cidata): %w", err)
 		}
 	}
 	for _, sc := range opts.dataDisks {
-		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.placementCPUs)); err != nil {
+		if err = addDiskVM(ctx, hc, storageConfigToDisk(sc, opts.vmCfg.CPU, opts.vmCfg.DiskQueueSize, opts.vmCfg.NoDirectIO, opts.queueCPUs)); err != nil {
 			return fmt.Errorf("vm.add-disk (data %s): %w", sc.Serial, err)
 		}
 	}
