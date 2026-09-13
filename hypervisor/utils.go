@@ -229,26 +229,18 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 	return params.String()
 }
 
-func CopyFile(dst, src string) (err error) {
-	srcFile, err := os.Open(src) //nolint:gosec
-	if err != nil {
+func CopyFile(dst, src string) error {
+	return utils.CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+		fi, err := srcFile.Stat()
+		if err != nil {
+			return err
+		}
+		if err = dstFile.Chmod(fi.Mode()); err != nil {
+			return err
+		}
+		_, err = io.Copy(dstFile, srcFile)
 		return err
-	}
-	defer srcFile.Close() //nolint:errcheck
-
-	fi, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode()) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, dstFile.Close()) }()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
+	})
 }
 
 // MergeDirInto renames entries from src to dst, overwriting existing files; lock files never move (see isLockFile).

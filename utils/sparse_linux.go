@@ -17,7 +17,7 @@ const (
 
 // SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA; dst is truncated to src size and only data segments are written.
 func SparseCopy(dst, src string, sync SyncMode) error {
-	return copyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		fi, err := srcFile.Stat()
 		if err != nil {
 			return fmt.Errorf("stat src: %w", err)
