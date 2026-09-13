@@ -2,16 +2,16 @@
 
 Limitations, workarounds, and upstream tracking. Fixed entries are kept for operators running older binaries.
 
-## Post-clone IP conflict window
+## Clone networking needs in-guest reconfiguration
 
-After `cocoon vm clone`, the cloned VM resumes with the **original VM's IP address** configured inside the guest, even though CNI has allocated a new IP for the clone's network namespace. On Cloud Hypervisor MAC addresses are handled automatically — during clone, the snapshot's old NICs are hot-swapped (removed and re-added with new MACs) while the VM is paused, so the guest wakes up with correct MACs; Firecracker clones keep the source VM's guest MAC (see [Firecracker clone guest MAC address](#firecracker-clone-guest-mac-address)). The clone can still reach the network during the IP conflict window because:
+`cocoon vm clone` allocates the clone its own IP, but the guest still carries the source VM's network configuration, so the clone does not answer on that IP until the guest is reconfigured. What the guest wakes up with differs by backend, because only Cloud Hypervisor changes the guest-visible MAC:
 
-- The entire data path is **L2** (TC ingress redirect + bridge) — no component checks whether the guest's source IP matches the CNI-allocated IP.
-- Standard **bridge CNI does not enforce IP ↔ veth binding** at the data plane. The `host-local` IPAM only tracks allocations in its control-plane state files; it does not install data-plane rules.
+- **Cloud Hypervisor** hot-swaps the snapshot's NICs while the VM is paused, so the clone comes up on a new interface with a fresh MAC (`ens3` → `ens8` on cloudimg, `eth0` → `eth1` on OCI). The snapshot's MAC-matched configuration then matches nothing and the guest has **no IPv4 address at all**: it cannot reach the network, and it cannot collide with the source VM either.
+- **Firecracker** keeps the source VM's guest MAC in the restored vmstate (see [Firecracker clone guest MAC address](#firecracker-clone-guest-mac-address)), so the per-MAC configuration still matches and the guest wakes up holding **the source VM's IP**.
 
-**Consequence**: if the original VM is still running, both VMs advertise the same IP via ARP with different MACs. The upstream gateway flaps between the two MACs, causing **intermittent connectivity loss for both VMs** until the clone's guest IP is reconfigured.
+**Consequence on Firecracker**: if the source VM is still running, both VMs advertise the same IP with different MACs, the upstream gateway flaps between them, and both see **intermittent connectivity loss** until the clone is reconfigured. Nothing in the data path prevents this — it is L2 end to end (TC ingress redirect + bridge), no component checks the guest's source IP against the allocated one, and bridge CNI does not enforce IP ↔ veth binding (`host-local` IPAM only tracks allocations in its control-plane state files, not in data-plane rules).
 
-**Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` as soon as possible (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs this means re-running `cloud-init`; for OCI VMs this means replacing the generated `/etc/systemd/network/10-*.network` files with per-MAC units for the new IP and restarting `systemd-networkd`.
+**Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs they re-run `cloud-init`; for OCI VMs they replace the generated `/etc/systemd/network/10-*.network` files with per-MAC units for the new IP and restart `systemd-networkd`; on Firecracker they set the new MAC first. The clone answers on its allocated IP a few seconds after they run.
 
 ## Clone and restore resources are fixed at snapshot time
 
@@ -73,16 +73,16 @@ Cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-
 
 This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333) and [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356). As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
 
-## A VM's netns deleted out from under it
+## Named netns path removed while a VM runs
 
-cocoon never removes a running VM's network namespace; if an operator or a foreign GC does (`ip netns del`), every TAP inside it goes with it and the VM's virtio-net backends are dead. The record is still correct — `vm list` shows the same IP — so the symptoms are guest-side: no traffic, `cocoon vm net` fails with `failed to open netns … no such file or directory`, while `cocoon vm exec` keeps working over vsock.
+cocoon never removes a running VM's named network namespace. If an operator or a foreign GC runs `ip netns del`, it removes the name under `/var/run/netns`; the running VMM still holds the original namespace and its TAPs. Existing traffic may continue, and `vm list` still shows the recorded IP. NIC hot-add cannot open the missing netns path, while `cocoon vm exec` can still work over vsock.
 
-Recovery is the start-time path, which rebuilds the whole network from the record (`Verify` → `Prepare` → re-plumb every NIC with its recorded MAC, IP and TAP name):
+To restore the named path, stop and relaunch the VMM through the start-time recovery path (`Verify` → `Prepare` → re-plumb every NIC with its recorded MAC, IP and TAP name):
 
 - keep guest memory: `cocoon vm hibernate VM` then `cocoon vm restore VM <snapshot>` — about 300 ms, processes and RAM untouched
 - or reboot the guest: `cocoon vm stop --force VM` then `cocoon vm start VM`
 
-Do not recreate the namespace by hand: an empty netns lets a later `vm net` hot-plug one NIC into it and report success while the VM's other NICs stay dead, and the start-time recovery then collides with that TAP (`add ingress qdisc …: file exists`) and refuses to start the VM.
+Do not recreate the name by hand while the VM runs: it would point to a different namespace from the one holding the VMM and existing TAPs, so a later NIC hot-add would provision in the wrong place.
 
 ## DHCP networks should not use DHCP IPAM in CNI
 
