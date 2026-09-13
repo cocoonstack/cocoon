@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -12,15 +13,15 @@ import (
 // sysCPURoot is the sysfs cpu tree; tests point it at a fixture.
 var sysCPURoot = cgroup.SysCPURoot
 
-// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's pins.
+// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements.
 func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config) (VMRecord, error) {
 	var placed VMRecord
-	err := b.updateRelaxed(ctx, func(t *vmTx) error {
+	err := b.updateRelaxed(ctx, b.PeerNS, func(t *vmTx) error {
 		r, err := t.getRecord(id)
 		if err != nil {
 			return err
 		}
-		if err := b.placeVM(t, r, cfg); err != nil {
+		if err := b.placeVM(ctx, t, r, cfg); err != nil {
 			return err
 		}
 		if err := t.Put(id, r, meta.RelaxedOK); err != nil {
@@ -33,7 +34,7 @@ func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config)
 }
 
 // placeVM fills rec's placement from cfg: an explicit cpuset is copied; "auto" and no cpuset pick the least-loaded cache domain against the pins live VMs already hold.
-func (b *Backend) placeVM(t *vmTx, rec *VMRecord, cfg *types.Config) error {
+func (b *Backend) placeVM(ctx context.Context, t *vmTx, rec *VMRecord, cfg *types.Config) error {
 	rec.CPUSet, rec.QueueCPUs = "", ""
 	pins := b.PinsQueues && cfg.CPU > 1
 	switch {
@@ -54,7 +55,7 @@ func (b *Backend) placeVM(t *vmTx, rec *VMRecord, cfg *types.Config) error {
 	if err != nil {
 		return fmt.Errorf("read cpu topology: %w", err)
 	}
-	load, err := pinLoad(t, rec.ID)
+	load, err := b.placementLoad(ctx, t, rec.ID)
 	if err != nil {
 		return err
 	}
@@ -71,17 +72,26 @@ func (b *Backend) placeVM(t *vmTx, rec *VMRecord, cfg *types.Config) error {
 	return nil
 }
 
-// pinLoad counts per host cpu the live VMs pinning queue threads to it; self is the VM being placed.
-func pinLoad(t *vmTx, self string) (map[int]int, error) {
+// placementLoad counts per host cpu the VMs across every backend holding it: queue pins, or the cpuset of a VM without pins; self is the VM being placed.
+func (b *Backend) placementLoad(ctx context.Context, t *vmTx, self string) (map[int]int, error) {
 	load := map[int]int{}
-	return load, t.Scan(func(id string, r *VMRecord) error {
-		if id == self || (r.State != types.VMStateCreating && r.State != types.VMStateRunning) {
+	count := func(id string, r *VMRecord) error {
+		if id == self {
 			return nil
 		}
-		cpus, _ := cgroup.ParseCPUList(r.QueueCPUs)
+		cpus, _ := cgroup.ParseCPUList(cmp.Or(r.QueueCPUs, r.CPUSet))
 		for _, c := range cpus {
 			load[c]++
 		}
 		return nil
-	})
+	}
+	if err := t.Scan(count); err != nil {
+		return nil, err
+	}
+	for _, ns := range b.PeerNS {
+		if err := meta.NewCollection[VMRecord](ns, TableRecords).Scan(ctx, t.r, count); err != nil {
+			return nil, err
+		}
+	}
+	return load, nil
 }

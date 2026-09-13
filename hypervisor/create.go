@@ -17,7 +17,7 @@ import (
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := timeNow()
 	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
-	return b.updateRelaxed(ctx, func(t *vmTx) error {
+	return b.updateRelaxed(ctx, nil, func(t *vmTx) error {
 		existing, err := t.Get(id)
 		if err != nil {
 			return err

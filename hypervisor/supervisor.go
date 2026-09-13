@@ -205,7 +205,7 @@ func (b *Backend) collectStaleCreate(ctx context.Context, id string, rec *VMReco
 
 // clearQuiescePending is relaxed: losing the clear only costs one idempotent re-quiesce on a later pass.
 func (b *Backend) clearQuiescePending(ctx context.Context, id string, gen uint64) error {
-	return b.updateRelaxed(ctx, func(t *vmTx) error {
+	return b.updateRelaxed(ctx, nil, func(t *vmTx) error {
 		r, err := t.Get(id)
 		if err != nil || r == nil || r.TransitionGeneration != gen || !r.QuiescePending {
 			return err

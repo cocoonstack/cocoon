@@ -266,6 +266,10 @@ func (b *Backend) markFailedOperation(ctx context.Context, id string, markError 
 			markTransition(r, types.VMStateError, types.TransitionError, now)
 			changed = true
 		}
+		if r.CPUSet != "" || r.QueueCPUs != "" {
+			r.CPUSet, r.QueueCPUs = "", ""
+			changed = true
+		}
 		pending := needsQuiesce(r)
 		if r.QuiescePending != pending {
 			r.QuiescePending = pending
@@ -289,13 +293,16 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations.
+// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations. Leaving Running drops the placement: a recorded placement means the VM holds those cpus.
 func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
 	r.State = state
 	r.TransitionGeneration++
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
+	if state != types.VMStateRunning {
+		r.CPUSet, r.QueueCPUs = "", ""
+	}
 }
 
 // needsQuiesce reports whether the VM owns host plumbing a stop must bring down.

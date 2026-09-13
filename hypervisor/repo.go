@@ -54,9 +54,9 @@ func (b *Backend) update(ctx context.Context, fn func(*vmTx) error) error {
 	})
 }
 
-// updateRelaxed serves the creating-placeholder and placement writes: a lost placeholder is re-derived by the GC orphan sweep, a lost placement by the next launch.
-func (b *Backend) updateRelaxed(ctx context.Context, fn func(*vmTx) error) error {
-	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitRelaxed, func(w meta.Writer) error {
+// updateRelaxed skips the durable commit for writes a later pass re-derives: the creating placeholder (GC orphan sweep), the placement (next launch), the quiesce clear (one more idempotent quiesce).
+func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmTx) error) error {
+	return b.Meta.Update(ctx, meta.Scope{Write: b.NS, Read: read}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
 }

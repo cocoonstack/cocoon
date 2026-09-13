@@ -52,8 +52,6 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	if info.State == types.VMStateRunning {
 		SetRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
-	} else {
-		info.CPUSet, info.QueueCPUs = "", ""
 	}
 	info.SnapshotIDs = maps.Clone(info.SnapshotIDs)
 	return &info

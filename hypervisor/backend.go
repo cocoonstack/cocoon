@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
@@ -170,6 +171,8 @@ type Backend struct {
 
 	// PinsQueues marks a backend that pins writable disk queue threads, so launch derives their host cpus.
 	PinsQueues bool
+	// PeerNS lists the other backends' VM namespaces; placement counts their placements too.
+	PeerNS []string
 }
 
 // NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.
@@ -180,13 +183,19 @@ func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store met
 	if rec == nil {
 		rec = metering.NopRecorder{}
 	}
-	return &Backend{
+	b := &Backend{
 		Typ:      typ,
 		NS:       VMNamespaceName(typ),
 		Conf:     conf,
 		Meta:     store,
 		Metering: rec,
-	}, nil
+	}
+	for _, t := range []config.HypervisorType{config.HypervisorCloudHypervisor, config.HypervisorFirecracker} {
+		if ns := VMNamespaceName(string(t)); ns != b.NS {
+			b.PeerNS = append(b.PeerNS, ns)
+		}
+	}
+	return b, nil
 }
 
 func (b *Backend) Type() string { return b.Typ }
