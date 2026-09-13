@@ -34,7 +34,7 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 	return nsPath, nil
 }
 
-// Add creates the netns (if absent) and allocates each NIC's CNI plumbing.
+// Add allocates each NIC's CNI plumbing inside the netns Prepare created.
 func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
 		return nil, c.errNoConflist()
