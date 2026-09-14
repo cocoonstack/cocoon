@@ -72,47 +72,41 @@ func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progres
 	return importTarFromReader(ctx, o.conf, o.store, name, tracker, r)
 }
 
-func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
+func (o *OCI) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.StorageConfig, boot *types.BootConfig, err error) {
 	err = o.store.View(ctx, func(idx *imageIndex) error {
-		result = make([][]*types.StorageConfig, len(vms))
-		boot = make([]*types.BootConfig, len(vms))
-		for i, vm := range vms {
-			_, entry, ok := images.LookupOne(idx.Images, vm.Image, normalizeRef)
-			if !ok {
-				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
+		_, entry, ok := images.LookupOne(idx.Images, vm.Image, normalizeRef)
+		if !ok {
+			return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
+		}
+		for j, layer := range entry.Layers {
+			blobPath := o.conf.BlobPath(layer.Digest.Hex())
+			if !utils.ValidFile(blobPath) {
+				return fmt.Errorf("blob invalid for VM %s layer %d (%s)", vm.Name, j, layer.Digest)
 			}
-			var configs []*types.StorageConfig
-			for j, layer := range entry.Layers {
-				blobPath := o.conf.BlobPath(layer.Digest.Hex())
-				if !utils.ValidFile(blobPath) {
-					return fmt.Errorf("blob invalid for VM %s layer %d (%s)", vm.Name, j, layer.Digest)
-				}
-				configs = append(configs, &types.StorageConfig{
-					Path:   blobPath,
-					RO:     true,
-					Serial: fmt.Sprintf("%s%d", serialPrefix, j),
-					Role:   types.StorageRoleLayer,
-				})
-			}
-			result[i] = configs
+			configs = append(configs, &types.StorageConfig{
+				Path:   blobPath,
+				RO:     true,
+				Serial: fmt.Sprintf("%s%d", serialPrefix, j),
+				Role:   types.StorageRoleLayer,
+			})
+		}
 
-			kernelPath := o.conf.KernelPath(entry.KernelLayer.Hex())
-			initrdPath := o.conf.InitrdPath(entry.InitrdLayer.Hex())
-			if !utils.ValidFile(kernelPath) {
-				return fmt.Errorf("kernel invalid for VM %s (%s)", vm.Name, entry.KernelLayer)
-			}
-			if !utils.ValidFile(initrdPath) {
-				return fmt.Errorf("initrd invalid for VM %s (%s)", vm.Name, entry.InitrdLayer)
-			}
-			// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
-			vm.ImageDigest = entry.EntryID()
-			vm.ImageType = o.Type()
-			boot[i] = &types.BootConfig{
-				KernelPath: kernelPath,
-				InitrdPath: initrdPath,
-			}
+		kernelPath := o.conf.KernelPath(entry.KernelLayer.Hex())
+		initrdPath := o.conf.InitrdPath(entry.InitrdLayer.Hex())
+		if !utils.ValidFile(kernelPath) {
+			return fmt.Errorf("kernel invalid for VM %s (%s)", vm.Name, entry.KernelLayer)
+		}
+		if !utils.ValidFile(initrdPath) {
+			return fmt.Errorf("initrd invalid for VM %s (%s)", vm.Name, entry.InitrdLayer)
+		}
+		// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+		vm.ImageDigest = entry.EntryID()
+		vm.ImageType = o.Type()
+		boot = &types.BootConfig{
+			KernelPath: kernelPath,
+			InitrdPath: initrdPath,
 		}
 		return nil
 	})
-	return result, boot, err
+	return configs, boot, err
 }
