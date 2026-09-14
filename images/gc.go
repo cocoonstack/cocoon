@@ -77,8 +77,8 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 		},
 		Collect: func(ctx context.Context, ids []string, _ ImageGCSnapshot) error {
 			errs := gcStaleTemp(ctx, cfg.TempDir, cfg.DirOnly)
-			// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 			logger := log.WithFunc("gc." + cfg.Name)
+			// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 			for _, hex := range ids {
 				fl := gofrsflock.New(cfg.LockPath(hex))
 				ok, err := fl.TryLock()

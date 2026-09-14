@@ -96,7 +96,6 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 	}
 
 	return withDownload(ctx, conf, url, tracker, func(f *os.File, tmpPath, digestHex string) error {
-		// Sniff using the still-open download handle — zero reopen.
 		if err := sniffImageSource(f); err != nil {
 			return fmt.Errorf("download %s: %w", url, err)
 		}

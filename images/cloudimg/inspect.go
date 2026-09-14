@@ -28,7 +28,7 @@ var nonImageSignatures = []struct {
 	{[]byte("BZh"), "content is bzip2-compressed (cloudimg does not auto-decompress)"},
 	{utils.ZstdMagic, "content is zstd-compressed (cloudimg does not auto-decompress)"},
 	{[]byte("PK"), "content is a zip archive, not a disk image"},
-	{[]byte{0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c}, "content is a 7z archive, not a disk image"},
+	{[]byte("\x37\x7a\xbc\xaf\x27\x1c"), "content is a 7z archive, not a disk image"},
 }
 
 type sourceImageInfo struct {
