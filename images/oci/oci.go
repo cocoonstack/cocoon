@@ -82,9 +82,6 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}
-			vm.ImageDigest = entry.EntryID()
-			vm.ImageType = o.Type()
-
 			var configs []*types.StorageConfig
 			for j, layer := range entry.Layers {
 				blobPath := o.conf.BlobPath(layer.Digest.Hex())
@@ -108,6 +105,9 @@ func (o *OCI) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*ty
 			if !utils.ValidFile(initrdPath) {
 				return fmt.Errorf("initrd invalid for VM %s (%s)", vm.Name, entry.InitrdLayer)
 			}
+			// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+			vm.ImageDigest = entry.EntryID()
+			vm.ImageType = o.Type()
 			boot[i] = &types.BootConfig{
 				KernelPath: kernelPath,
 				InitrdPath: initrdPath,

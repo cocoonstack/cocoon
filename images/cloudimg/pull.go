@@ -176,7 +176,7 @@ func downloadSerial(ctx context.Context, client *http.Client, url string, dst *o
 	limitedBody := io.LimitReader(resp.Body, maxDownloadBytes+1)
 	reader := io.TeeReader(limitedBody, h)
 
-	pw := countingWriter{w: dst, pc: &progressCounter{total: contentLength, tracker: tracker}}
+	pw := countingWriter{w: dst, pc: &progressCounter{total: max(contentLength, 0), tracker: tracker}}
 	written, err := io.Copy(pw, reader)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)

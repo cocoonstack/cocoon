@@ -74,7 +74,7 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 
 	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
-		if err := os.Rename(sourcePath, tmpBlobPath); err != nil {
+		if err = os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)
 		}
 		logger.Debugf(ctx, "source already qcow2 v3, renamed to %s", tmpBlobPath)
@@ -83,7 +83,7 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 
 	lockPath := conf.tmpBlobPath(digestHex) + ".lock"
 	convertLock := flock.New(lockPath)
-	if err := convertLock.Lock(ctx); err != nil {
+	if err = convertLock.Lock(ctx); err != nil {
 		return "", fmt.Errorf("acquire convert lock: %w", err)
 	}
 	defer convertLock.Unlock(ctx) //nolint:errcheck
@@ -94,8 +94,15 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	}
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseConvert})
-	tmpBlobPath := conf.tmpBlobPath(digestHex)
+	// a process-unique target: two importers of one digest can both be past the lock while the other's convert is mid-write
+	target, err := os.CreateTemp(conf.TempDir(), ".tmp-"+digestHex+"-*.qcow2")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	tmpBlobPath := target.Name()
+	_ = target.Close()
 	if err := convertToQcow2(ctx, info.Format, sourcePath, tmpBlobPath); err != nil {
+		os.Remove(tmpBlobPath) //nolint:errcheck,gosec
 		return "", err
 	}
 	logger.Debugf(ctx, "converted temp blob: %s", tmpBlobPath)
