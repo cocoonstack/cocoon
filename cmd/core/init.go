@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sync"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -32,6 +33,10 @@ type hypervisorCtor func(context.Context, *config.Config) (hypervisor.Hypervisor
 type hypervisorFactory struct {
 	typ  config.HypervisorType
 	ctor hypervisorCtor
+}
+
+type blobPinner interface {
+	PinnedBlobIDs(context.Context) (map[string]struct{}, error)
 }
 
 // networkedHypervisor is the constructor contract wireHypervisor adapts: a backend that accepts the network seam.
@@ -171,28 +176,17 @@ func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.R
 	}
 }
 
-// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; backends build lazily, GC-path only.
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; the backends build once, on the first candidate blob.
 func pinnedElsewhere(conf *config.Config) imagebackend.PinRecheck {
-	type pinner interface {
-		PinnedBlobIDs(context.Context) (map[string]struct{}, error)
-	}
+	var (
+		once    sync.Once
+		sources []blobPinner
+		initErr error
+	)
 	return func(ctx context.Context) (map[string]struct{}, error) {
-		hypers, err := InitAllHypervisors(ctx, conf)
-		if err != nil {
-			return nil, err
-		}
-		snapBackend, err := InitSnapshot(ctx, conf)
-		if err != nil {
-			return nil, err
-		}
-		sources := make([]pinner, 0, len(hypers)+1)
-		for _, h := range hypers {
-			if p, ok := h.(pinner); ok {
-				sources = append(sources, p)
-			}
-		}
-		if p, ok := snapBackend.(pinner); ok {
-			sources = append(sources, p)
+		once.Do(func() { sources, initErr = blobPinners(ctx, conf) })
+		if initErr != nil {
+			return nil, initErr
 		}
 		pins := map[string]struct{}{}
 		for _, s := range sources {
@@ -204,4 +198,25 @@ func pinnedElsewhere(conf *config.Config) imagebackend.PinRecheck {
 		}
 		return pins, nil
 	}
+}
+
+func blobPinners(ctx context.Context, conf *config.Config) ([]blobPinner, error) {
+	hypers, err := InitAllHypervisors(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+	snapBackend, err := InitSnapshot(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]blobPinner, 0, len(hypers)+1)
+	for _, h := range hypers {
+		if p, ok := h.(blobPinner); ok {
+			sources = append(sources, p)
+		}
+	}
+	if p, ok := snapBackend.(blobPinner); ok {
+		sources = append(sources, p)
+	}
+	return sources, nil
 }
