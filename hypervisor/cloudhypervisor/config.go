@@ -7,12 +7,10 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
-// Config holds Cloud Hypervisor specific configuration.
 type Config struct {
 	hypervisor.BaseConfig
 }
 
-// NewConfig creates a Config from a global config.
 func NewConfig(conf *config.Config) *Config {
 	return &Config{BaseConfig: hypervisor.NewBaseConfig(conf, "cloudhypervisor", conf.CHBinary, pidFileName)}
 }

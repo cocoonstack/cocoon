@@ -73,7 +73,6 @@ func (w *procWatcher) close() {
 	_ = w.poll.close()
 }
 
-// ensure watches proc for key, replacing any entry naming a different generation.
 func (w *procWatcher) ensure(key watchKey, proc utils.ProcRef, gen uint64) {
 	w.mu.Lock()
 	if cur, ok := w.byKey[key]; ok {
@@ -113,7 +112,6 @@ func (w *procWatcher) drop(key watchKey) {
 	}
 }
 
-// dropAbsent releases watches for VMs the latest scan of one backend no longer lists.
 func (w *procWatcher) dropAbsent(backend string, seen map[string]struct{}) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

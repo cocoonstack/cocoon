@@ -18,7 +18,6 @@ type Spec struct {
 	Target int
 }
 
-// Normalize validates the spec.
 func (s *Spec) Normalize() error {
 	if s.Target < 0 {
 		return fmt.Errorf("--nics must be non-negative, got %d", s.Target)
