@@ -10,7 +10,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
 - **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
 
-All three attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart — re-attach after the next start. cocoon refuses `snapshot save` and `vm hibernate` while any of the three is attached — umount an external disk in-guest, detach, capture, then re-attach after the wake/restore. Cloud Hypervisor does not enforce this itself: it captures a snapshot that names the vhost-user socket, and restoring that snapshot either fails once the backend is gone or hangs against a fresh one. External volumes are host state cocoon does not own: it never creates, copies, or deletes the backing file, and snapshot, restore, and clone carry no trace of them. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window. While the VM runs, `vm inspect` reports the live attach set under `.attached_devices` (`fs`, `devices`, `disks`).
+All three attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart — re-attach after the next start. cocoon refuses `snapshot save` and `vm hibernate` while any of the three is attached — umount an external disk in-guest, detach, capture, then re-attach after the wake/restore; on Cloud Hypervisor the refusal arrives after the capture completes, so detach before capturing rather than relying on the error. Cloud Hypervisor does not enforce this itself: it captures a snapshot that names the vhost-user socket, and restoring that snapshot either fails once the backend is gone or hangs against a fresh one. External volumes are host state cocoon does not own: it never creates, copies, or deletes the backing file, and snapshot, restore, and clone carry no trace of them. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window. While the VM runs, `vm inspect` reports the live attach set under `.attached_devices` (`fs`, `devices`, `disks`).
 
 ### Vhost-user-fs
 
@@ -54,7 +54,7 @@ cocoon vm disk attach my-vm --path /srv/volumes/vol1.raw --name vol1
 # Inside the guest:
 mount /dev/disk/by-id/virtio-vol1 /mnt/vol1
 
-# Detach later (backing file kept; re-attach to any VM to see the same data):
+# Detach later (backing file kept; re-attach to another VM to see the same data — the same VM refuses a duplicate path or serial):
 cocoon vm disk detach my-vm --name vol1
 ```
 
@@ -69,12 +69,13 @@ Flags:
 | `--path` | required | Absolute path to an existing raw disk file |
 | `--name` | required | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`; the `cocoon-` prefix is reserved) |
 | `--readonly` | `false` | Attach read-only |
-| `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs) |
+| `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs); Cloud Hypervisor only, Firecracker ignores it with a warning |
 
-Detach blocks until the guest acks the ACPI eject (up to 30s — Windows can
-take 10–20s), so when it returns the slot, the name, and the backing file
-are free for immediate reuse; a guest that never acks fails the detach with
-an error naming the device.
+On Cloud Hypervisor, detach blocks until the guest acks the ACPI eject (up to
+30s — Windows can take 10–20s), so when it returns the slot, the name, and the
+backing file are free for immediate reuse; a guest that never acks fails the
+detach with an error naming the device. Firecracker detach returns as soon as
+the DELETE lands; run the printed hint so the guest drops the stale node.
 
 The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
 usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink
@@ -99,7 +100,7 @@ cocoon vm device attach my-vm --pci 01:00.0 --id mygpu
 cocoon vm device detach my-vm --id mygpu
 ```
 
-`cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs.
+`cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs and whenever the live attach set is empty.
 
 ## Firecracker (`--pci`)
 

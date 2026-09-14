@@ -57,7 +57,7 @@ The `file` backend writes one JSON object per line to
 `mem_bytes`, and `storage_bytes`.
 
 ```json
-{"kind":"vm.compute.start","vm_id":"ABC123","reason":"boot","hypervisor":"ch","shape":{"cpu":4,"mem_bytes":1073741824,"storage_bytes":10737418240},"emitted_at":"2026-05-20T01:02:03Z"}
+{"kind":"vm.compute.start","vm_id":"ABC123","reason":"boot","hypervisor":"cloud-hypervisor","shape":{"cpu":4,"mem_bytes":1073741824,"storage_bytes":10737418240},"emitted_at":"2026-05-20T01:02:03Z"}
 ```
 
 `kind` is one of `vm.compute.start`, `vm.compute.stop`, `vm.storage.start`,

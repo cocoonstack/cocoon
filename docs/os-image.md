@@ -30,7 +30,7 @@ checksum-verified agent.
 
 ### Android (Redroid)
 
-Runs Android via [Redroid](https://github.com/remote-android/redroid-doc) directly as PID 1 in the VM — no Ubuntu/systemd layer. The `android/` images are `linux/amd64` only; the 16.0-gms-h264 image builds under `ubuntu/` on the default multi-arch matrix.
+The three bare `android/` tags run Android via [Redroid](https://github.com/remote-android/redroid-doc) directly as PID 1 in the VM — no Ubuntu/systemd layer — and are `linux/amd64` only; the 16.0-gms-h264 image is Ubuntu-based, builds under `ubuntu/` on the default multi-arch matrix, and behaves like the Ubuntu images below.
 
 | Image | Tag | IMAGE_NAME |
 |-------|-----|------------|
@@ -71,8 +71,7 @@ Pull and import into Cocoon:
 # 1. Pull split parts via oras (https://oras.land)
 oras pull ghcr.io/cocoonstack/windows/win11:25h2
 
-# 2. Reassemble and verify
-cat windows-11-25h2.qcow2.*.qcow2.part > windows-11-25h2.qcow2
+# 2. Verify (cocoon image import takes the parts directly, in order, and concatenates them itself)
 sha256sum -c SHA256SUMS
 
 # 3. Import into Cocoon
@@ -90,6 +89,8 @@ See [cocoonstack/windows](https://github.com/cocoonstack/windows) for build step
 IMAGE_NAME="ghcr.io/cocoonstack/cocoon/ubuntu:24.04" bash start.sh   # run from os-image/ in the repo
 ```
 
+`IMAGE_NAME` is required: `start.sh` has no default image.
+
 ### Android
 
 ```bash
@@ -100,8 +101,8 @@ IMAGE_NAME="ghcr.io/cocoonstack/cocoon/android:14.0" bash start.sh   # run from 
 
 Every official OS image bakes the following on top of its base distro:
 
-- **cocoon-agent** (vsock exec) — pinned binary from [cocoonstack/cocoon-agent](https://github.com/cocoonstack/cocoon-agent), auto-started on boot. Backs `cocoon vm exec` (kubectl-style stdin/stdout/stderr/exit, no SSH/network dependency). Ubuntu and Debian use a systemd unit; Android uses `/system/etc/init/cocoon-agent.rc`.
-- **sshd** *(Ubuntu and Debian)* — `openssh-server` enabled with `PermitRootLogin yes`. Default credentials are `root:cocoon`. SSH covers the human-on-keyboard case while cocoon-agent handles control-plane traffic.
+- **cocoon-agent** (vsock exec) — pinned binary from [cocoonstack/cocoon-agent](https://github.com/cocoonstack/cocoon-agent), auto-started on boot. Backs `cocoon vm exec` (kubectl-style stdin/stdout/stderr/exit, no SSH/network dependency). Ubuntu and Debian (and the Ubuntu-based `android:16.0-gms-h264`) use a systemd unit; the three bare `android/` tags use `/system/etc/init/cocoon-agent.rc`.
+- **sshd** *(Ubuntu and Debian, including `android:16.0-gms-h264`)* — `openssh-server` enabled with `PermitRootLogin yes`. Default credentials are `root:cocoon`. SSH covers the human-on-keyboard case while cocoon-agent handles control-plane traffic.
 
 Default credentials apply to fresh VMs. If you fork an image you should rotate the root password and (if you keep sshd) flip `PermitRootLogin` back to `no` once you have a non-root sudoer.
 

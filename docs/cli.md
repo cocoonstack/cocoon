@@ -93,7 +93,7 @@ Config-file / env-only keys (no CLI flag):
 | `use_firecracker` | `COCOON_USE_FIRECRACKER` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
 | `log.filename` | `COCOON_LOG_FILENAME` | empty (stderr) | Log file path; setting it is what switches logging from stderr to a file and enables the `log.maxsize` / `log.maxage` / `log.maxbackups` rotation knobs |
 | `log.usejson` | `COCOON_LOG_USEJSON` | `false` | Emit JSON-structured log records instead of plain text |
-| `socket_wait_timeout_seconds` | `COCOON_SOCKET_WAIT_TIMEOUT_SECONDS` | `5` | How long to wait for the CH API socket after launch; raise on slow storage |
+| `socket_wait_timeout_seconds` | `COCOON_SOCKET_WAIT_TIMEOUT_SECONDS` | `5` | Per-phase launch timeout (API socket up, then VM running, then the vsock UDS on CH); exceeding it aborts the launch and kills the VMM — raise on slow storage |
 | `terminate_grace_period_seconds` | `COCOON_TERMINATE_GRACE_PERIOD_SECONDS` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
 | `metering.backend` | `COCOON_METERING_BACKEND` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |
 | `metering.file.path` | `COCOON_METERING_FILE_PATH` | `<root-dir>/metering/ledger.jsonl` | Ledger path for the `file` backend; see the rotation note in [Daemon](daemon.md) |

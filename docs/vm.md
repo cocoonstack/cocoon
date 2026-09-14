@@ -10,7 +10,8 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 | `created`  | Registered, hypervisor process not yet started           |
 | `running`  | Hypervisor process alive, guest is up                    |
 | `stopped`  | Hypervisor process exited cleanly                        |
-| `error`    | Start, stop, or restore failed — recover with `vm restore` |
+| `error`    | Start, stop, or restore failed — recover with `vm restore`; a failed restore also quarantines the record, so `vm start` is refused until a later restore succeeds or `vm rm` deletes it |
+| `stopped (stale)` | Rendered, never persisted: the record reads `running` but the VMM is gone |
 
 ### Shutdown Behavior
 
@@ -157,7 +158,7 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 ### Snapshot/Clone/Restore
 
-Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
+Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); clone-created disks are hot-added after cidata is regenerated, so they are never auto-mounted — `mount=` has no effect on `vm clone --data-disk`; mount them inside the guest. Removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
 
 Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), per-index Path/RO agreement between the sidecar and CH config.json, and Role/Serial agreement between the sidecar and the VM record **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 
