@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	coretypes "github.com/projecteru2/core/types"
@@ -86,10 +89,39 @@ func TestLogMaxSizeDecodeIsStable(t *testing.T) {
 	}
 }
 
+func TestEveryConfigKeyRegistered(t *testing.T) {
+	viper.Reset()
+	newRootCmd()
+	registered := viper.AllKeys()
+	for _, key := range configKeys(reflect.TypeOf(config.Config{}), "") {
+		if !slices.Contains(registered, key) {
+			t.Errorf("config key %s is not registered with viper, so its COCOON_* variable never reaches Unmarshal", key)
+		}
+	}
+}
+
 func logConfig(t *testing.T) *coretypes.ServerLogConfig {
 	t.Helper()
 	if conf.Log == nil {
 		t.Fatal("log config is nil: a lost viper default would decode as nil")
 	}
 	return conf.Log
+}
+
+func configKeys(typ reflect.Type, prefix string) []string {
+	var keys []string
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		name := cmp.Or(f.Tag.Get("mapstructure"), strings.ToLower(f.Name))
+		ft := f.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Struct {
+			keys = append(keys, configKeys(ft, prefix+name+".")...)
+			continue
+		}
+		keys = append(keys, prefix+name)
+	}
+	return keys
 }
