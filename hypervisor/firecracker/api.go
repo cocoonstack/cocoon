@@ -107,11 +107,6 @@ type fcVMConfig struct {
 	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
 }
 
-func fcAPI(ctx context.Context, hc *http.Client, endpoint string, body []byte) error {
-	_, err := utils.DoAPIWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, body)
-	return err
-}
-
 func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
 	_, err := utils.DoJSONWithRetry(ctx, hc, http.MethodPut, "http://localhost"+endpoint, kind, payload)
 	return err
@@ -151,7 +146,8 @@ func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkIn
 }
 
 func putEntropy(ctx context.Context, hc *http.Client) error {
-	return fcAPI(ctx, hc, "/entropy", []byte("{}"))
+	_, err := utils.DoAPIWithRetry(ctx, hc, http.MethodPut, "http://localhost/entropy", []byte("{}"))
+	return err
 }
 
 func putVsock(ctx context.Context, hc *http.Client, vsock fcVsock) error {

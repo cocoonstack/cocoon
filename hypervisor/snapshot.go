@@ -82,12 +82,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
 	pause := func() error { return spec.Pause(&rec, hc) }
 	resume := func() error { return spec.Resume(&rec, hc) }
-	captureWindow := func() error {
-		return b.WithPausedVM(ctx, &rec, pause, resume, func() error {
-			return spec.Capture(&rec, hc, tmpDir)
-		})
-	}
-	if err = captureWindow(); err != nil {
+	if err = b.WithPausedVM(ctx, &rec, pause, resume, func() error { return spec.Capture(&rec, hc, tmpDir) }); err != nil {
 		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
@@ -238,18 +233,6 @@ func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone Clon
 		return fmt.Errorf("clone snapshot files: %w", err)
 	}
 	return nil
-}
-
-// PreflightRestore returns the validated meta so later phases skip re-reading it.
-func PreflightRestore(srcDir, rootDir, runDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
-	meta, err := LoadAndValidateMeta(srcDir, rootDir, runDir)
-	if err != nil {
-		return nil, err
-	}
-	if err := integrity(srcDir, meta.StorageConfigs); err != nil {
-		return nil, err
-	}
-	return meta, ValidateRoleSequence(meta.StorageConfigs, rec.StorageConfigs)
 }
 
 func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.StorageConfig {

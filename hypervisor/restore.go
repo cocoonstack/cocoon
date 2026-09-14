@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -39,7 +40,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	}); err != nil {
 		return nil, fmt.Errorf("update record: %w", err)
 	}
-	if rmErr := os.Remove(filepath.Join(rec.RunDir, restoreDirtyName)); rmErr != nil && !os.IsNotExist(rmErr) {
+	if rmErr := os.Remove(filepath.Join(rec.RunDir, restoreDirtyName)); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
 		log.WithFunc(b.Typ+".FinalizeRestore").Errorf(ctx, rmErr, "clear restore-dirty marker for %s; start will refuse it until the file goes", vmID)
 	}
 

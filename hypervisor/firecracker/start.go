@@ -158,7 +158,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		return 0, nil, err
 	}
 
-	leaseControl, relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid, leaseFiles)
+	leaseControl, relayErr := fc.startConsoleRelay(rec.RunDir, master, pid, leaseFiles)
 	switch {
 	case relayErr == nil:
 		// Master fd ownership transferred to relay; close parent's copy.
@@ -186,7 +186,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 }
 
 // startConsoleRelay forks a relay that holds the PTY master, serves console.sock, and exits when fcPID dies.
-func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, master *os.File, fcPID int, leaseFiles []*os.File) (*cloneLeaseControl, error) {
+func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID int, leaseFiles []*os.File) (*cloneLeaseControl, error) {
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 
 	listener, err := net.Listen("unix", consoleSock)

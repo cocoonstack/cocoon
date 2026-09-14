@@ -52,13 +52,10 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if err := spec.Normalize(); err != nil {
 		return netresize.Result{}, err
 	}
-	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	hc, rec, _, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return netresize.Result{}, err
 	}
 	defer unlock()
-	if _, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
-		return netresize.Result{}, err
-	}
 	return ch.NetResizeWith(ctx, rec.ID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
 }

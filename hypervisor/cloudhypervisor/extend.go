@@ -197,28 +197,19 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	})
 }
 
-// lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, making precheck-then-call atomic against concurrent attach/detach/restore.
+// lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, with an ownerless pause already resumed.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
-	hc, vmID, err := ch.RunningVMClient(ctx, vmRef)
+	hc, rec, unlock, err := ch.LockedRunningOp(ctx, vmRef)
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
-	}
-	unlock, err := ch.LockVMOps(ctx, vmID)
-	if err != nil {
-		return nil, hypervisor.VMRecord{}, nil, nil, err
-	}
-	fail := func(err error) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
-		unlock()
-		return nil, hypervisor.VMRecord{}, nil, nil, err
-	}
-	// Entrypoint discipline (design §5): device attach is reference-creating.
-	rec, err := ch.EntryGuardLoad(ctx, vmID)
-	if err != nil {
-		return fail(err)
 	}
 	info, err := getVMInfo(ctx, hc)
+	if err == nil {
+		info, err = convergeOrphanedPause(ctx, hc, rec.ID, info)
+	}
 	if err != nil {
-		return fail(err)
+		unlock()
+		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
 	return hc, rec, info, unlock, nil
 }
@@ -229,9 +220,6 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 		return "", err
 	}
 	defer unlock()
-	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
-		return "", err
-	}
 	if checkErr := preCheck(info); checkErr != nil {
 		return "", checkErr
 	}
@@ -259,14 +247,11 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 }
 
 func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn) error {
-	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	hc, _, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if info, err = convergeOrphanedPause(ctx, hc, rec.ID, info); err != nil {
-		return err
-	}
 	deviceID, err := findID(info)
 	if err != nil {
 		return err

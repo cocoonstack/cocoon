@@ -67,9 +67,6 @@ func (b *Backend) netResizeAdd(ctx context.Context, vmID string, rec *VMRecord, 
 		if err != nil {
 			return res, fmt.Errorf("nic %d host plumbing: %w", i, err)
 		}
-		if len(ncs) != 1 || ncs[0] == nil {
-			return res, fmt.Errorf("nic %d: plumbing returned %d configs", i, len(ncs))
-		}
 		nc := ncs[0]
 		devID, err := dev.AddNIC(ctx, i, nc)
 		if err != nil {

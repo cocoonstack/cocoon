@@ -28,3 +28,21 @@ func (b *Backend) RunningVMClient(ctx context.Context, vmRef string) (*http.Clie
 	}
 	return utils.NewSocketHTTPClient(sockPath), vmID, nil
 }
+
+// LockedRunningOp takes the ops lock of a running VM and loads its record under the entry guard; the caller owns unlock.
+func (b *Backend) LockedRunningOp(ctx context.Context, vmRef string) (*http.Client, VMRecord, func(), error) {
+	hc, vmID, err := b.RunningVMClient(ctx, vmRef)
+	if err != nil {
+		return nil, VMRecord{}, nil, err
+	}
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return nil, VMRecord{}, nil, err
+	}
+	rec, err := b.EntryGuardLoad(ctx, vmID)
+	if err != nil {
+		unlock()
+		return nil, VMRecord{}, nil, err
+	}
+	return hc, rec, unlock, nil
+}
