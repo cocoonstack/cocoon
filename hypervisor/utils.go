@@ -45,9 +45,6 @@ const (
 	restoreDirtyName = ".restore-dirty"
 	captureDirPrefix = "snapshot-"
 
-	// MinDataDiskSize is the minimum user data disk size; mkfs.ext4 is unstable below this on small sparse files.
-	MinDataDiskSize int64 = 16 << 20
-
 	// socketReadyPollInterval matches a VMM socket appearing within a few ms of process start.
 	socketReadyPollInterval = 1 * time.Millisecond
 

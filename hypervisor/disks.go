@@ -81,8 +81,8 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			return nil, fmt.Errorf("data disk: name %q duplicated", spec.Name)
 		}
 		seen[spec.Name] = struct{}{}
-		if spec.Size < MinDataDiskSize {
-			return nil, fmt.Errorf("data disk %s: size %d below %d minimum", spec.Name, spec.Size, MinDataDiskSize)
+		if spec.Size < types.MinDataDiskSize {
+			return nil, fmt.Errorf("data disk %s: size %d below %d minimum", spec.Name, spec.Size, types.MinDataDiskSize)
 		}
 		if spec.FSType != types.FSTypeExt4 && spec.FSType != types.FSTypeNone {
 			return nil, fmt.Errorf("data disk %s: fstype %q not supported", spec.Name, spec.FSType)
