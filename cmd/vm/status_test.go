@@ -159,6 +159,22 @@ func TestApplyFilters(t *testing.T) {
 	}
 }
 
+func TestVMEventCarriesStale(t *testing.T) {
+	vm := &types.VM{ID: "v1", State: types.VMStateStopped}
+	out, err := json.Marshal(vmEvent{Event: "MODIFIED", VM: vmOutput{VM: vm, Stale: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"event":"MODIFIED"`, `"vm":{"id":"v1"`, `"state":"stopped"`, `"stale":true`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("json %s lacks %s", out, want)
+		}
+	}
+	if out, _ = json.Marshal(vmEvent{Event: "ADDED", VM: vmOutput{VM: vm}}); strings.Contains(string(out), "stale") {
+		t.Errorf("a live record must not carry a stale key: %s", out)
+	}
+}
+
 func TestVMOutputCarriesStale(t *testing.T) {
 	vm := &types.VM{ID: "v1", State: types.VMStateStopped, PID: 4242}
 	out, err := json.Marshal(vmOutput{VM: vm, Stale: true})
