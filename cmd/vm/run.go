@@ -306,7 +306,7 @@ func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.
 	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
 	if wantJSON {
-		return cmp.Or(finishErr, cliutil.OutputJSON(cloneResult{VM: vm, Hints: hints}))
+		return cmp.Or(cliutil.OutputJSON(cloneResult{VM: vm, Hints: hints}), finishErr)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
 	printGuestHints(hints)

@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -204,11 +205,15 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 		allDone = append(allDone, done...)
 		errs = append(errs, err)
 	}
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+	err := errors.Join(errs...)
+	if err != nil {
+		err = fmt.Errorf("%s: %w", name, err)
 	}
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
-		return jsonErr
+		return cmp.Or(jsonErr, err)
+	}
+	if err != nil {
+		return err
 	}
 	if len(allDone) == 0 {
 		logger.Infof(ctx, "no VMs %s", pastTense)
