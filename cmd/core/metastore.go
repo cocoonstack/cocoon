@@ -111,7 +111,7 @@ func LegacyJSONPresent(conf *config.Config) bool {
 	})
 }
 
-// MetaStore builds the process-wide meta store once — one store, every namespace — and injects it into every backend (design §10 P0 boundary). The engine follows ResolveMetaBackend; a fresh sqlite root bootstraps itself.
+// MetaStore builds the process-wide meta store once, one store for every namespace and backend; the engine follows ResolveMetaBackend, and a fresh sqlite root bootstraps itself.
 func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
 		// Bootstrap owns its context: the store outlives any single caller, and a canceled first caller must not poison the Once for everyone.
@@ -144,7 +144,7 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 	return metaStore, metaErr
 }
 
-// CloseMetaStore ends the store's unified lifecycle at command teardown (design §10 P0); a process that never opened it is a no-op.
+// CloseMetaStore closes the process-wide store at command teardown.
 func CloseMetaStore(ctx context.Context) {
 	if metaStore == nil {
 		return
