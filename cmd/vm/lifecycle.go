@@ -84,7 +84,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}
-	info.State = types.VMState(cmdcore.ReconcileState(info))
+	info.State, _ = cmdcore.ReconcileState(info)
 
 	out := inspectOutput{VM: info}
 	if info.State == types.VMStateRunning {

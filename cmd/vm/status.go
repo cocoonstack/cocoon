@@ -104,13 +104,15 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
 	// JSON serializes vms as-is, so stale-running records must reconcile here, not per output row.
+	stale := map[string]bool{}
 	for _, vm := range vms {
-		vm.State = types.VMState(cmdcore.ReconcileState(vm))
+		vm.State, stale[vm.ID] = cmdcore.ReconcileState(vm)
 	}
-	return renderVMList(vms, format, scopeDir)
+	return renderVMList(vms, format, scopeDir, stale)
 }
 
-func renderVMList(vms []*types.VM, format, scopeDir string) error {
+// renderVMList prints vms as JSON or a table; stale marks records whose VMM is gone, shown only in the table.
+func renderVMList(vms []*types.VM, format, scopeDir string, stale map[string]bool) error {
 	if format == cliutil.FormatJSON {
 		if vms == nil {
 			vms = []*types.VM{}
@@ -122,7 +124,7 @@ func renderVMList(vms []*types.VM, format, scopeDir string) error {
 		return nil
 	}
 	return cliutil.OutputFormattedStr(format, vms, func(w *tabwriter.Writer) {
-		printVMTable(w, vms, scopeDir)
+		printVMTable(w, vms, scopeDir, stale)
 	})
 }
 
@@ -161,7 +163,7 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 	var prev []vmSnapshot
 	runLoop(ctx, watchCh, tick, func() {
 		vms := listAndFilter(ctx, hypers, filters)
-		curr := snapshotAll(vms)
+		curr, stale := snapshotAll(vms)
 		if slices.Equal(prev, curr) {
 			return
 		}
@@ -177,7 +179,7 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 			return
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		printVMTable(w, vms, scopeDir)
+		printVMTable(w, vms, scopeDir, stale)
 		_ = w.Flush()
 	})
 }
@@ -212,10 +214,10 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 		vms := listAndFilter(ctx, hypers, filters)
 		curr := make(map[string]entry, len(vms))
 		for _, vm := range vms {
-			state := cmdcore.ReconcileState(vm)
+			state, isStale := cmdcore.ReconcileState(vm)
 			vmCopy := *vm
-			vmCopy.State = types.VMState(state)
-			curr[vm.ID] = entry{snap: takeSnapshot(vm, state), vm: vmCopy}
+			vmCopy.State = state
+			curr[vm.ID] = entry{snap: takeSnapshot(vm, stateLabel(state, isStale)), vm: vmCopy}
 		}
 		if emitter.begin != nil {
 			emitter.begin()
@@ -239,6 +241,13 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 		}
 		prev = curr
 	})
+}
+
+func stateLabel(state types.VMState, stale bool) string {
+	if stale {
+		return string(state) + " (stale)"
+	}
+	return string(state)
 }
 
 func takeSnapshot(vm *types.VM, state string) vmSnapshot {
@@ -284,25 +293,25 @@ func matchesFilter(vm *types.VM, filters []string) bool {
 	})
 }
 
-func snapshotAll(vms []*types.VM) []vmSnapshot {
+func snapshotAll(vms []*types.VM) ([]vmSnapshot, map[string]bool) {
 	result := make([]vmSnapshot, len(vms))
+	stale := map[string]bool{}
 	for i, vm := range vms {
-		state := cmdcore.ReconcileState(vm)
-		vm.State = types.VMState(state)
-		result[i] = takeSnapshot(vm, state)
+		vm.State, stale[vm.ID] = cmdcore.ReconcileState(vm)
+		result[i] = takeSnapshot(vm, stateLabel(vm.State, stale[vm.ID]))
 	}
-	return result
+	return result, stale
 }
 
 func sortVMs(vms []*types.VM) {
 	slices.SortFunc(vms, func(a, b *types.VM) int { return a.CreatedAt.Compare(b.CreatedAt) })
 }
 
-func printVMTable(w *tabwriter.Writer, vms []*types.VM, scopeDir string) {
+func printVMTable(w *tabwriter.Writer, vms []*types.VM, scopeDir string, stale map[string]bool) {
 	fmt.Fprintln(w, "ID\tNAME\tSTATE\tCPU\tMEMORY\tSTORAGE\tTHROTTLED\tIP\tIMAGE\tCREATED") //nolint:errcheck
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
-			vm.ID, vm.Config.Name, vm.State,
+			vm.ID, vm.Config.Name, stateLabel(vm.State, stale[vm.ID]),
 			vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory),
 			cliutil.FormatSize(vm.Config.Storage),
 			vmThrottled(scopeDir, vm),
