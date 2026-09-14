@@ -1,7 +1,6 @@
 package hypervisor
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -88,21 +87,21 @@ func (b *Backend) pinsQueues(cfg *types.Config) bool {
 	return b.PinsQueues && cfg.CPU > 1
 }
 
-// placementLoad counts per host cpu the VMs across every backend holding it: queue pins, or the cpuset of a VM without pins; self is the VM being placed.
+// placementLoad counts per host cpu the VMs across every backend holding it, from the placement rows; self is the VM being placed.
 func (b *Backend) placementLoad(ctx context.Context, r meta.Reader, self string) (map[int]int, error) {
 	load := map[int]int{}
-	count := func(id string, rec *VMRecord) error {
+	count := func(id string, cpuList *string) error {
 		if id == self {
 			return nil
 		}
-		cpus, _ := cgroup.ParseCPUList(cmp.Or(rec.QueueCPUs, rec.CPUSet))
+		cpus, _ := cgroup.ParseCPUList(*cpuList)
 		for _, c := range cpus {
 			load[c]++
 		}
 		return nil
 	}
 	for _, ns := range slices.Concat([]string{b.NS}, b.PeerNS) {
-		if err := meta.NewCollection[VMRecord](ns, TableRecords).Scan(ctx, r, count); err != nil {
+		if err := meta.NewCollection[string](ns, TablePlacements).Scan(ctx, r, count); err != nil {
 			return nil, err
 		}
 	}

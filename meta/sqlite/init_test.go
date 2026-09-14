@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,6 +144,28 @@ func TestInitIfMissingRepairsCrashedInit(t *testing.T) {
 	}
 	if _, err := Open(path, testDecls()...); err != nil {
 		t.Fatalf("open repaired store: %v", err)
+	}
+}
+
+func TestOpenRefusesOlderGeneration(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), DBFileName)
+	if err := Init(ctx, path, testDecls()...); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	db, err := open(path, "FULL", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion-1)); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta-upgrade.py") {
+		t.Fatalf("open of an older generation = %v; want a refusal naming the upgrade script", err)
+	}
+	if err := InitIfMissing(ctx, path, testDecls()...); err != nil {
+		t.Fatalf("bootstrap must pass an initialized store through untouched: %v", err)
 	}
 }
 

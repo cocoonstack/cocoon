@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -8,11 +9,33 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+type vmTxFunc func(*vmTx) error
+
 type vmTx struct {
 	*meta.NamedTx[VMRecord]
 
-	r meta.Reader
-	w meta.Writer
+	ctx        context.Context
+	r          meta.Reader
+	w          meta.Writer
+	placements *meta.Collection[string]
+}
+
+// Put writes rec and mirrors its placement row, which the launch tally scans instead of every record.
+func (t *vmTx) Put(id string, rec *VMRecord, opts ...meta.WriteOpt) error {
+	if err := t.NamedTx.Put(id, rec, opts...); err != nil {
+		return err
+	}
+	if cpus := cmp.Or(rec.QueueCPUs, rec.CPUSet); cpus != "" {
+		return t.placements.Upsert(t.ctx, t.w, id, &cpus, opts...)
+	}
+	return t.placements.Delete(t.ctx, t.w, id, opts...)
+}
+
+func (t *vmTx) Del(id string) error {
+	if err := t.NamedTx.Del(id); err != nil {
+		return err
+	}
+	return t.placements.Delete(t.ctx, t.w, id)
 }
 
 func (t *vmTx) loadDetached(id string) (VMRecord, error) {
@@ -42,20 +65,20 @@ func (t *vmTx) resolveMany(refs []string) ([]string, error) {
 	return t.ResolveMany(refs, ErrNotFound)
 }
 
-func (b *Backend) view(ctx context.Context, fn func(*vmTx) error) error {
+func (b *Backend) view(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.View(ctx, []string{b.NS}, func(r meta.Reader) error {
 		return fn(b.tx(ctx, r, nil))
 	})
 }
 
-func (b *Backend) update(ctx context.Context, fn func(*vmTx) error) error {
+func (b *Backend) update(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
 }
 
 // updateRelaxed skips the durable commit; every caller's write is re-derived by a later pass.
-func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmTx) error) error {
+func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn vmTxFunc) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS, Read: read}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
@@ -63,9 +86,11 @@ func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmT
 
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
-		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
-		r:       r,
-		w:       w,
+		NamedTx:    meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
+		ctx:        ctx,
+		r:          r,
+		w:          w,
+		placements: meta.NewCollection[string](b.NS, TablePlacements),
 	}
 }
 

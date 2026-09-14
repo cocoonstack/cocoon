@@ -24,15 +24,15 @@ import (
 )
 
 const (
-	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6).
+	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6); scripts/meta-upgrade.py moves a store between generations. Generation 2 adds the VM placements tables.
 	ApplicationID = 0x434F434E
-	UserVersion   = 1
+	UserVersion   = 2
 
 	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse (§6).
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
-	// busyRetryPause caps the jittered pause between BEGIN IMMEDIATE retries; the in-driver busy_timeout already did the real waiting (§4).
+	// busyRetryCeiling bounds the BEGIN IMMEDIATE retry loop; busyRetryPause caps the jittered pause between retries (§4).
 	busyRetryCeiling   = 5 * time.Second
 	busyRetryPause     = 2 * time.Millisecond
 	slowTxnWarn        = 500 * time.Millisecond
@@ -257,6 +257,9 @@ func (s *Store) verifyIdentity() error {
 	}
 	if version > UserVersion {
 		return fmt.Errorf("%s: schema version %d newer than this binary (%d); upgrade cocoon: %w", s.path, version, UserVersion, meta.ErrCorrupt)
+	}
+	if version < UserVersion {
+		return fmt.Errorf("%s: schema version %d behind this binary (%d); run scripts/meta-upgrade.py once: %w", s.path, version, UserVersion, meta.ErrCorrupt)
 	}
 	for name := range s.nss {
 		var state string
