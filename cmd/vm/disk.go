@@ -5,8 +5,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 type diskResult struct {
@@ -25,7 +25,7 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	readonly, _ := cmd.Flags().GetBool("readonly")
 	dioVal, _ := cmd.Flags().GetString("directio")
-	directIO, err := cmdcore.ParseDirectIO(dioVal)
+	directIO, err := types.ParseDirectIO(dioVal)
 	if err != nil {
 		return err
 	}

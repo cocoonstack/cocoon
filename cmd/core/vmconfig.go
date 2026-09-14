@@ -11,7 +11,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -174,21 +173,6 @@ func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
 	}
 }
 
-// ParseDirectIO maps a directio value (on/off/auto) to the tri-state StorageConfig.DirectIO; auto is nil.
-func ParseDirectIO(val string) (*bool, error) {
-	switch val {
-	case "on":
-		t := true
-		return &t, nil
-	case "off":
-		f := false
-		return &f, nil
-	case "auto":
-		return nil, nil
-	}
-	return nil, fmt.Errorf("directio must be on/off/auto, got %q", val)
-}
-
 func sanitizeVMName(image string) string {
 	ref, err := name.ParseReference(image)
 	if err != nil {
@@ -213,9 +197,9 @@ func sanitizeVMName(image string) string {
 func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	specs := make([]types.DataDiskSpec, 0, len(raw))
 	for _, s := range raw {
-		spec, err := parseDataDiskSpec(s)
+		spec, err := types.ParseDataDiskSpec(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--data-disk: %w", err)
 		}
 		specs = append(specs, spec)
 	}
@@ -223,58 +207,6 @@ func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 		return nil, err
 	}
 	return specs, nil
-}
-
-// parseDataDiskSpec parses a comma-separated --data-disk arg; size is required (≥16MiB), others default via normalizeDataDiskSpecs.
-func parseDataDiskSpec(s string) (types.DataDiskSpec, error) {
-	var spec types.DataDiskSpec
-	if s == "" {
-		return spec, fmt.Errorf("--data-disk: empty spec")
-	}
-	for part := range strings.SplitSeq(s, ",") {
-		rawKey, rawVal, ok := strings.Cut(part, "=")
-		if !ok {
-			return spec, fmt.Errorf("--data-disk: %q is not key=value", part)
-		}
-		key := strings.TrimSpace(rawKey)
-		val := strings.TrimSpace(rawVal)
-		switch key {
-		case "size":
-			n, err := units.RAMInBytes(val)
-			if err != nil {
-				return spec, fmt.Errorf("--data-disk: invalid size %q: %w", val, err)
-			}
-			if n < hypervisor.MinDataDiskSize {
-				return spec, fmt.Errorf("--data-disk: size %s below 16MiB minimum", val)
-			}
-			spec.Size = n
-		case "name":
-			if !types.ValidDataDiskName(val) {
-				return spec, fmt.Errorf("--data-disk: invalid name %q (must match [a-z][a-z0-9_-]{0,19}, no cocoon- prefix)", val)
-			}
-			spec.Name = val
-		case "fstype":
-			if val != types.FSTypeExt4 && val != types.FSTypeNone {
-				return spec, fmt.Errorf("--data-disk: unsupported fstype %q (only ext4, none in Phase 1)", val)
-			}
-			spec.FSType = val
-		case "mount":
-			spec.MountPoint = val
-			spec.MountPointSet = true
-		case "directio":
-			dio, err := ParseDirectIO(val)
-			if err != nil {
-				return spec, fmt.Errorf("--data-disk: %w", err)
-			}
-			spec.DirectIO = dio
-		default:
-			return spec, fmt.Errorf("--data-disk: unknown key %q", key)
-		}
-	}
-	if spec.Size == 0 {
-		return spec, fmt.Errorf("--data-disk: size= required")
-	}
-	return spec, nil
 }
 
 // normalizeDataDiskSpecs fills defaults (FSType=ext4, Name=dataN, MountPoint=/mnt/<name>) and enforces unique names; fstype=none rejects non-empty MountPoint.
