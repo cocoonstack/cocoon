@@ -67,7 +67,11 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 					continue
 				}
 				ok, lockErr := lk.TryLock(ctx)
-				if lockErr != nil || !ok {
+				if lockErr != nil {
+					errs = append(errs, fmt.Errorf("lock %s: %w", vmID, lockErr))
+					continue
+				}
+				if !ok {
 					logger.Warnf(ctx, "skip %s: vm lock busy", vmID)
 					continue
 				}
@@ -108,7 +112,11 @@ func (c *CNI) gcRecover(ctx context.Context) []error {
 			continue
 		}
 		ok, err := lk.TryLock(ctx)
-		if err != nil || !ok {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("lock %s: %w", vmID, err))
+			continue
+		}
+		if !ok {
 			continue
 		}
 		if _, err := c.recoverTombstone(ctx, vmID); err != nil {
