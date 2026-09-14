@@ -59,7 +59,7 @@ cocoon
 
 `daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
-The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the effective backend (default sqlite).
+The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves, and a store stamped with an older schema generation gains the tables the newer generation declares on its next open. `meta convert` always converts TO the effective backend (default sqlite).
 
 ## Global Flags
 
