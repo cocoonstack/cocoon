@@ -150,7 +150,8 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 		return "", 0, fmt.Errorf("find tap %s: %w", tapName, err)
 	}
 
-	_ = network.TuneTAP(tapLink)
+	_ = netlink.LinkSetTxQLen(tapLink, network.TAPTxQueueLen)
+	_ = netlink.LinkSetGROMaxSize(tapLink, network.GROMaxSize)
 
 	if mtu := link.Attrs().MTU; mtu > 0 {
 		if mtuErr := netlink.LinkSetMTU(tapLink, mtu); mtuErr != nil {

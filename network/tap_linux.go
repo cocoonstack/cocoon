@@ -49,11 +49,3 @@ func CreateTAP(name string, numQueues int) (int, error) {
 	}
 	return index, nil
 }
-
-// TuneTAP applies best-effort performance tuning to a TAP device.
-func TuneTAP(link netlink.Link) error {
-	if err := netlink.LinkSetTxQLen(link, TAPTxQueueLen); err != nil {
-		return err
-	}
-	return netlink.LinkSetGROMaxSize(link, GROMaxSize)
-}
