@@ -14,7 +14,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Export streams the snapshot as a raw tar (first entry: snapshot.json envelope; rest: data files).
 func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, error) {
 	return lf.export(ctx, ref, false)
 }

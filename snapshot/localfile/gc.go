@@ -166,7 +166,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					errs = append(errs, err)
 					break
 				}
-				// An active save holds the lease exclusively and readers hold it shared, so acquiring it exclusively proves the pending record's owner died; no age gate needed.
+				// an exclusive acquire proves the pending record's owner died; no age gate needed
 				fl, ok, lockErr := lf.tryExclusiveLease(id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
@@ -176,7 +176,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active holder", id)
 					continue
 				}
-				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
+				// the reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
 				var sawRecord bool
 				revalidate := func(rec *snapshot.SnapshotRecord) bool {
 					sawRecord = true

@@ -25,13 +25,14 @@ type StorageRole string
 
 // StorageConfig describes a disk attached to a VM.
 type StorageConfig struct {
-	Path       string      `json:"path"`
-	RO         bool        `json:"ro"`
-	Serial     string      `json:"serial"`
-	Role       StorageRole `json:"role"`
-	MountPoint string      `json:"mount_point,omitempty"` // Role==Data only
-	FSType     string      `json:"fstype,omitempty"`      // Role==Data only
-	DirectIO   *bool       `json:"direct_io,omitempty"`   // Role==Data only; nil inherits VM-level NoDirectIO
+	Path   string      `json:"path"`
+	RO     bool        `json:"ro"`
+	Serial string      `json:"serial"`
+	Role   StorageRole `json:"role"`
+	// MountPoint, FSType and DirectIO apply to Role==Data only; a nil DirectIO inherits the VM-level NoDirectIO.
+	MountPoint string `json:"mount_point,omitempty"`
+	FSType     string `json:"fstype,omitempty"`
+	DirectIO   *bool  `json:"direct_io,omitempty"`
 }
 
 // DataDiskSpec is the user-facing description of an extra data disk parsed from --data-disk. Transient — never persisted.
