@@ -31,7 +31,7 @@ func ReadPIDFile(path string) (int, error) {
 	return pid, nil
 }
 
-// IsProcessAlive uses kill(pid, 0) — true if the process exists; EPERM still counts (process exists, lacking signal permission).
+// IsProcessAlive treats EPERM as alive: the process exists, this one lacks signal permission.
 func IsProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false

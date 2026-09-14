@@ -42,7 +42,7 @@ func EnsureDirs(dirs ...string) error {
 	return nil
 }
 
-// FileHead returns up to n bytes from offset 0 without moving the read position. Truncated at EOF, no error if shorter than n.
+// FileHead returns up to n bytes from offset 0 without moving the read position.
 func FileHead(f *os.File, n int) ([]byte, error) {
 	buf := make([]byte, n)
 	m, err := f.ReadAt(buf, 0)
@@ -52,7 +52,7 @@ func FileHead(f *os.File, n int) ([]byte, error) {
 	return buf[:m], nil
 }
 
-// FileExists reports bare existence; ValidFile additionally demands a non-empty regular file.
+// FileExists reports bare existence.
 func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

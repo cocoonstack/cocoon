@@ -511,7 +511,7 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 
 func TestExtractFile_RunsAcrossReadBuffer(t *testing.T) {
 	data := make([]byte, extractReadBuf+3*sparseBlockSize)
-	for i := 0; i < sparseBlockSize; i++ {
+	for i := range sparseBlockSize {
 		data[i] = 0xA5
 	}
 	for i := extractReadBuf + sparseBlockSize; i < extractReadBuf+2*sparseBlockSize; i++ {

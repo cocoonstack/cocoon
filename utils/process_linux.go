@@ -43,7 +43,7 @@ func (s ProcScan) Find(expectArg string) []int {
 	return pids
 }
 
-// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find(); batch callers should use ScanProcsByBinary directly to share one /proc walk.
+// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find().
 func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 	scan, err := ScanProcsByBinary(binaryName)
 	if err != nil {

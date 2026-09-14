@@ -19,7 +19,7 @@ const (
 
 	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
-	// extractReadBuf bounds one read; runs of data or zero blocks inside it coalesce into one write or one seek.
+	// extractReadBuf bounds one read.
 	extractReadBuf = 1 << 20
 )
 
@@ -232,7 +232,7 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 
 	segments, err := scanDataSegments(int(f.Fd()), size)
 	if err != nil {
-		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS). Fall back.
+		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS).
 		return rewindAndTarFull(tw, f, fi, path, nameInTar)
 	}
 

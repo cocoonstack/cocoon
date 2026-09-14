@@ -118,7 +118,7 @@ func IsRetryable(err error) bool {
 	return true
 }
 
-// DoAPIWithRetry wraps DoAPIOnce in DoWithRetry; successCodes[0] is primary, codes[1:] are also accepted (silent nil-body).
+// DoAPIWithRetry wraps DoAPIOnce in DoWithRetry.
 func DoAPIWithRetry(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
 	return DoWithRetry(ctx, func() ([]byte, error) {
 		return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
