@@ -25,7 +25,7 @@ import (
 
 type vmEvent struct {
 	Event string   `json:"event"`
-	VM    types.VM `json:"vm"`
+	VM    vmOutput `json:"vm"`
 }
 
 type vmSnapshot struct {
@@ -36,7 +36,7 @@ type vmSnapshot struct {
 
 type eventEmitter struct {
 	begin func()
-	emit  func(event string, snap vmSnapshot, vm types.VM)
+	emit  func(event string, snap vmSnapshot, vm vmOutput)
 	end   func()
 }
 
@@ -190,7 +190,7 @@ func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filter
 	var w *tabwriter.Writer
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{
 		begin: func() { w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0) },
-		emit:  func(event string, snap vmSnapshot, _ types.VM) { printEventRow(w, event, snap) },
+		emit:  func(event string, snap vmSnapshot, _ vmOutput) { printEventRow(w, event, snap) },
 		end:   func() { _ = w.Flush() },
 	})
 }
@@ -198,7 +198,7 @@ func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filter
 func statusEventLoopJSON(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time) {
 	enc := json.NewEncoder(os.Stdout)
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{
-		emit: func(event string, _ vmSnapshot, vm types.VM) {
+		emit: func(event string, _ vmSnapshot, vm vmOutput) {
 			_ = enc.Encode(vmEvent{Event: event, VM: vm})
 		},
 	})
@@ -207,7 +207,7 @@ func statusEventLoopJSON(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, emitter eventEmitter) {
 	type entry struct {
 		snap vmSnapshot
-		vm   types.VM
+		vm   vmOutput
 	}
 	prev := map[string]entry{}
 	runLoop(ctx, watchCh, tick, func() {
@@ -217,7 +217,7 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 			state, isStale := cmdcore.ReconcileState(vm)
 			vmCopy := *vm
 			vmCopy.State = state
-			curr[vm.ID] = entry{snap: takeSnapshot(vm, stateLabel(state, isStale)), vm: vmCopy}
+			curr[vm.ID] = entry{snap: takeSnapshot(vm, stateLabel(state, isStale)), vm: vmOutput{VM: &vmCopy, Stale: isStale}}
 		}
 		if emitter.begin != nil {
 			emitter.begin()
