@@ -104,13 +104,10 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						snap.stalePending = append(snap.stalePending, id)
 						return nil
 					}
-					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
-						snap.missingDir = append(snap.missingDir, id)
-					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
 						hypervisor:   rec.Hypervisor,
-						lastAccessed: rec.LastAccessedAt,
+						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
 					}
 					return nil
@@ -185,10 +182,9 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						return false // a record appeared for a dir orphaned at ReadDB
 					default: // LRU picks: a touch since ReadDB voids the eviction choice
 						m, ok := snap.records[id]
-						return ok && rec.LastAccessedAt.Equal(m.lastAccessed)
+						return ok && cmp.Or(rec.LastAccessedAt, rec.CreatedAt).Equal(m.lastAccessed)
 					}
 				}
-				// Record-backed candidates go through the phase protocol; a recordless leftover dir converges by plain removal.
 				deleted, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
 					_ = fl.Close()

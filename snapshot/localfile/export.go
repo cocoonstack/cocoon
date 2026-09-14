@@ -25,7 +25,7 @@ func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadC
 }
 
 // ExportToDir reflinks snapshot data into dir + writes snapshot.json last so its presence is the all-data-ready marker for --from-dir.
-func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
+func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err error) {
 	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
 		return err
@@ -52,6 +52,14 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) error {
 			names = append(names, entry.Name())
 		}
 	}
+	// a partial tree would make the retry refuse the non-empty target
+	defer func() {
+		if err != nil {
+			for _, name := range names {
+				os.Remove(filepath.Join(dir, name)) //nolint:errcheck,gosec
+			}
+		}
+	}()
 	// Fan out: snapshot dirs hold a few large files (memory, COW, data disks), so wall time is the longest copy, not the sum.
 	if _, err = utils.Map(ctx, names, func(ctx context.Context, _ int, name string) (struct{}, error) {
 		if copyErr := utils.ReflinkCopy(ctx, filepath.Join(dir, name), filepath.Join(dataDir, name), utils.Sync); copyErr != nil {
