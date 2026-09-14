@@ -62,7 +62,7 @@ func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 	return p, nil
 }
 
-// A recover error aborts the launch, since half-built networking strands the guest.
+// Recover fails the launch on error: half-built networking strands the guest.
 func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	backend := vm.ResolvedNetBackend()
 	if backend == "" || (backend == types.BackendBridge && len(vm.NetworkConfigs) == 0) {
@@ -94,13 +94,12 @@ func (n *NetProviders) Quiesce(ctx context.Context, vm *types.VM) error {
 	return p.Quiesce(ctx, vm.ID)
 }
 
-// A partial CNI failure leaves the tombstone for retry or GC to resume.
+// Cleanup leaves the tombstone on a partial CNI failure for retry or GC to resume.
 func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
 	bridgenet.CleanupTAPs(n.conf.BridgeTAPPrefix(), []string{vmID})
 	p, err := n.cniOnly()
 	if err != nil {
-		// Lazy CNI; OK to skip for bridge-only setups.
-		return nil
+		return err
 	}
 	return p.Delete(ctx, vmID)
 }
