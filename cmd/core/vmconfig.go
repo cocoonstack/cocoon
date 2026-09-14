@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
@@ -37,11 +36,11 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 
 	vmName = cmp.Or(vmName, sanitizeVMName(image))
 
-	memBytes, err := units.RAMInBytes(memStr)
+	memBytes, err := types.ParseSize(memStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
 	}
-	storBytes, err := units.RAMInBytes(storStr)
+	storBytes, err := types.ParseSize(storStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
 	}

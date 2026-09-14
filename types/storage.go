@@ -115,7 +115,7 @@ func ParseDataDiskSpec(s string) (DataDiskSpec, error) {
 		val := strings.TrimSpace(rawVal)
 		switch key {
 		case "size":
-			n, err := units.RAMInBytes(val)
+			n, err := ParseSize(val)
 			if err != nil {
 				return spec, fmt.Errorf("invalid size %q: %w", val, err)
 			}
