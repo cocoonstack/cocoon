@@ -8,8 +8,16 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/cocoonstack/cocoon/utils"
+)
+
+const (
+	// logHeadSigLen spans CH/FC's boot timestamp on line 1.
+	logHeadSigLen = 64
+
+	logFollowDebounce = 100 * time.Millisecond
 )
 
 func streamLog(ctx context.Context, path string, follow bool, tail int) error {

@@ -128,7 +128,7 @@ func renderVMList(vms []*types.VM, format, scopeDir string, stale map[string]boo
 	})
 }
 
-// metaEvents subscribes to the meta store's coalesced change signal.
+// metaEvents returns nil when the store has no event channel; callers fall back to the ticker.
 func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
 	store, err := cmdcore.MetaStore(conf)
 	if err != nil {

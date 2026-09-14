@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/moby/term"
 	"github.com/projecteru2/core/log"
@@ -21,13 +20,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-)
-
-const (
-	// logHeadSigLen spans CH/FC's boot timestamp on line 1.
-	logHeadSigLen = 64
-
-	logFollowDebounce = 100 * time.Millisecond
 )
 
 type batchOp func(hypervisor.Hypervisor, []string) ([]string, error)
