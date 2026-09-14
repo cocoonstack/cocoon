@@ -24,20 +24,29 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	return initStore(ctx, dbPath, namespaces)
 }
 
-// InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
+// InitIfMissing bootstraps a fresh store, repairs a crashed one, or adds the tables a newer schema generation declares, serializing racing processes behind a transient flock.
 func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
-	if need, err := initNeeded(dbPath); err != nil || !need {
+	need, err := initNeeded(dbPath)
+	if err != nil {
 		return err
+	}
+	if !need {
+		if behind, verr := schemaBehind(dbPath); verr != nil || !behind {
+			return verr
+		}
 	}
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
 	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
 		need, err := initNeeded(dbPath)
-		if err != nil || !need {
+		if err != nil {
 			return err
 		}
-		return Init(ctx, dbPath, namespaces...)
+		if need {
+			return Init(ctx, dbPath, namespaces...)
+		}
+		return upgradeSchema(ctx, dbPath, namespaces)
 	})
 }
 
@@ -90,6 +99,52 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 		return mapErr(err)
 	}
 	return mapErr(tx.Commit())
+}
+
+// upgradeSchema creates the declared tables an older generation lacks and stamps the current one, in one transaction; every generation so far only adds tables.
+func upgradeSchema(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
+	behind, err := schemaBehind(dbPath)
+	if err != nil || !behind {
+		return err
+	}
+	db, err := open(dbPath, "FULL", true)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return mapErr(err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, ns := range namespaces {
+		for _, tbl := range ns.Tables {
+			if _, err := tx.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+tableName(ns.Name, tbl)+" (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL)"); err != nil {
+				return mapErr(err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", UserVersion)); err != nil {
+		return mapErr(err)
+	}
+	return mapErr(tx.Commit())
+}
+
+// schemaBehind reports a cocoon store stamped with an older generation; a foreign or newer store is left for Open to refuse.
+func schemaBehind(dbPath string) (bool, error) {
+	db, err := open(dbPath, "FULL", false)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close() //nolint:errcheck
+	var appID, version int64
+	if err := db.QueryRow("PRAGMA application_id").Scan(&appID); err != nil {
+		return false, mapErr(err)
+	}
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return false, mapErr(err)
+	}
+	return appID == ApplicationID && version < UserVersion, nil
 }
 
 func createSchema(ctx context.Context, tx *sql.Tx, namespaces []Namespace) error {

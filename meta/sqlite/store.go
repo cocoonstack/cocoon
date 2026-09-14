@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6).
+	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written at init and by the table upgrade (§6). Generation 2 adds the VM placements tables.
 	ApplicationID = 0x434F434E
-	UserVersion   = 1
+	UserVersion   = 2
 
 	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse (§6).
 	DBFileName   = "meta.db"
