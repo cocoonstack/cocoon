@@ -3,11 +3,11 @@ package others
 import (
 	"fmt"
 
-	"github.com/docker/go-units"
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
+	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/version"
 )
 
@@ -50,7 +50,7 @@ func parseSnapshotPolicy(cmd *cobra.Command) (localfile.EvictionPolicy, error) {
 
 	var size int64
 	if sizeStr != "" {
-		n, err := units.RAMInBytes(sizeStr)
+		n, err := types.ParseSize(sizeStr)
 		if err != nil {
 			return localfile.EvictionPolicy{}, fmt.Errorf("--snapshot-size %q: %w", sizeStr, err)
 		}

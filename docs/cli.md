@@ -112,8 +112,8 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--fc`      | `false`          | Use Firecracker backend (OCI images only)      |
 | `--name`    | `cocoon-<image>` | VM name                                       |
 | `--cpu`     | `2`              | Boot CPUs — also the VM's hard CPU cap (quota = N cores unless overridden; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)); refused above the host's online core count |
-| `--memory`  | `1G`             | Memory size (e.g., 512M, 2G); minimum 512M    |
-| `--storage` | `10G`            | COW disk size (e.g., 10G, 20G); minimum 10G   |
+| `--memory`  | `1G`             | Memory size (e.g., 512M, 2G, 2Gi); minimum 512M |
+| `--storage` | `10G`            | COW disk size (e.g., 10G, 20G, 20Gi); minimum 10G |
 | `--nics`    | `1`              | Number of network interfaces (0 = no network) |
 | `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
 | `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (CH only, ignored by FC) |
@@ -135,6 +135,8 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
 | `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
 | `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned on every Cloud Hypervisor launch of a multi-vCPU VM, cpuset or not — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
+
+Every size flag (`--memory`, `--storage`, `--data-disk size=`, `gc --snapshot-size`) accepts the Docker spelling (`20G`, `20GiB`) and the Kubernetes spelling (`20Gi`); all units are binary, so `20G` is 20 GiB.
 
 ### Clone Flags
 
