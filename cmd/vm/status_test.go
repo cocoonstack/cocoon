@@ -1,14 +1,18 @@
 package vm
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -191,6 +195,47 @@ func TestVMOutputCarriesStale(t *testing.T) {
 	}
 }
 
+func TestStatusWatchRefreshesThrottlingWithoutVMChanges(t *testing.T) {
+	scopeDir := t.TempDir()
+	statDir := cgroup.ScopeDir(scopeDir, "vm-1")
+	if err := os.MkdirAll(statDir, 0o750); err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	statPath := filepath.Join(statDir, "cpu.stat")
+	if err := os.WriteFile(statPath, []byte("nr_throttled 1\nthrottled_usec 1000\n"), 0o600); err != nil {
+		t.Fatalf("write initial cpu.stat: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var writeErr error
+	h := &statusWatchHypervisor{
+		vm: &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
+		onList: func(n int) {
+			if n == 2 {
+				writeErr = os.WriteFile(statPath, []byte("nr_throttled 2\nthrottled_usec 2000\n"), 0o600)
+				cancel()
+			}
+		},
+	}
+	tick := make(chan time.Time, 1)
+	tick <- time.Now()
+	out := captureStdout(t, func() {
+		statusRefreshLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, tick, true, scopeDir)
+	})
+	if writeErr != nil {
+		t.Fatalf("update cpu.stat: %v", writeErr)
+	}
+	for _, want := range []string{"1/1ms", "2/2ms"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("watch output %q lacks %q", out, want)
+		}
+	}
+	if got := strings.Count(out, "\033[H\033[2J"); got != 2 {
+		t.Errorf("screen redraws = %d, want 2", got)
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -214,4 +259,17 @@ func captureStdout(t *testing.T, fn func()) string {
 	_ = w.Close()
 	<-done
 	return string(buf)
+}
+
+type statusWatchHypervisor struct {
+	hypervisor.Hypervisor
+	vm     *types.VM
+	onList func(int)
+	calls  int
+}
+
+func (h *statusWatchHypervisor) List(context.Context) ([]*types.VM, error) {
+	h.calls++
+	h.onList(h.calls)
+	return []*types.VM{h.vm}, nil
 }

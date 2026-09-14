@@ -103,11 +103,7 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
-	stale := map[string]bool{}
-	for _, vm := range vms {
-		vm.State, stale[vm.ID] = cmdcore.ReconcileState(vm)
-	}
-	return renderVMList(vms, format, scopeDir, stale)
+	return renderVMList(vms, format, scopeDir, reconcileVMStates(vms))
 }
 
 // renderVMList prints vms as JSON or a table; stale marks records whose VMM is gone, a flag in JSON and a state suffix in the table.
@@ -160,14 +156,9 @@ func runLoop(ctx context.Context, watchCh <-chan struct{}, tick <-chan time.Time
 }
 
 func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, isTTY bool, scopeDir string) {
-	var prev []vmSnapshot
 	runLoop(ctx, watchCh, tick, func() {
 		vms := listAndFilter(ctx, hypers, filters)
-		curr, stale := snapshotAll(vms)
-		if slices.Equal(prev, curr) {
-			return
-		}
-		prev = curr
+		stale := reconcileVMStates(vms)
 		if isTTY {
 			fmt.Print("\033[H\033[2J") //nolint:errcheck
 		}
@@ -293,14 +284,12 @@ func matchesFilter(vm *types.VM, filters []string) bool {
 	})
 }
 
-func snapshotAll(vms []*types.VM) ([]vmSnapshot, map[string]bool) {
-	result := make([]vmSnapshot, len(vms))
-	stale := map[string]bool{}
-	for i, vm := range vms {
+func reconcileVMStates(vms []*types.VM) map[string]bool {
+	stale := make(map[string]bool, len(vms))
+	for _, vm := range vms {
 		vm.State, stale[vm.ID] = cmdcore.ReconcileState(vm)
-		result[i] = takeSnapshot(vm, stateLabel(vm.State, stale[vm.ID]))
 	}
-	return result, stale
+	return stale
 }
 
 func sortVMs(vms []*types.VM) {
