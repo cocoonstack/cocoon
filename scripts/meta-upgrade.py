@@ -7,8 +7,9 @@ A cocoon at generation 2 refuses an older sqlite store by name; this script is
 the upgrade. On a sqlite root it creates the tables, writes one row for every
 record that carries a placement (VMs the previous binary launched and left
 running), and stamps the generation, in one transaction. On a json root it adds
-the same rows to each VM namespace file under the engine's lock. Rerunning is a
-no-op. Run it as the user that owns the root, with the old binary already gone.
+the same rows to each VM namespace file and its .prev generation under the
+engine's lock. Rerunning is a no-op. Run it as the user that owns the root, with
+the old binary already gone.
 
 usage: meta-upgrade.py [--root-dir /var/lib/cocoon]
 """
@@ -30,6 +31,8 @@ def placement(record):
 
 
 def upgrade_sqlite(db_path):
+    if os.path.exists(os.path.join(os.path.dirname(db_path), "meta-convert.manifest")):
+        sys.exit(f"{db_path}: a meta convert is in flight; finish it first")
     db = sqlite3.connect(db_path, timeout=5, isolation_level=None)
     app_id = db.execute("PRAGMA application_id").fetchone()[0]
     if app_id != APPLICATION_ID:
@@ -55,12 +58,23 @@ def upgrade_sqlite(db_path):
     print(f"{db_path}: schema generation {version} -> {USER_VERSION}")
 
 
+def write_file(path, data):
+    tmp = path + ".upgrade"
+    with open(tmp, "w") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmp, path)
+
+
 def upgrade_json(root):
+    found = 0
     for backend in BACKENDS:
         db_dir = os.path.join(root, backend, "db")
         path = os.path.join(db_dir, "vms.json")
         if not os.path.exists(path):
             continue
+        found += 1
         with open(os.path.join(db_dir, "vms.lock"), "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             with open(path) as f:
@@ -70,17 +84,15 @@ def upgrade_json(root):
                 print(f"{path}: {len(rows)} placement rows already present")
                 continue
             doc["placements"] = rows
-            tmp = path + ".upgrade"
-            with open(tmp, "w") as f:
-                json.dump(doc, f, separators=(",", ":"), ensure_ascii=False)
-                f.write("\n")
-                f.flush()
-                os.fsync(f.fileno())
-            os.rename(tmp, path)
+            data = json.dumps(doc, separators=(",", ":"), ensure_ascii=False) + "\n"
+            for target in (path, path + ".prev"):
+                write_file(target, data)
             dir_fd = os.open(db_dir, os.O_RDONLY)
             os.fsync(dir_fd)
             os.close(dir_fd)
         print(f"{path}: {len(rows)} placement rows")
+    if not found:
+        sys.exit(f"{root}: no meta store found (neither meta/meta.db nor a VM namespace file)")
 
 
 def main():

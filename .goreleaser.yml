@@ -40,6 +40,10 @@ archives:
   - id: release
     builds:
       - cocoon-linux
+    files:
+      - LICENSE*
+      - README*
+      - scripts/meta-upgrade.py
     name_template: >-
       {{- .ProjectName }}_{{- .Version }}_
       {{- title .Os }}_
@@ -51,6 +55,10 @@ archives:
   - id: debug
     builds:
       - cocoon-debug
+    files:
+      - LICENSE*
+      - README*
+      - scripts/meta-upgrade.py
     name_template: >-
       {{- .ProjectName }}_{{- .Version }}_
       {{- title .Os }}_
@@ -63,6 +71,10 @@ archives:
   - id: release-latest
     builds:
       - cocoon-linux
+    files:
+      - LICENSE*
+      - README*
+      - scripts/meta-upgrade.py
     name_template: >-
       {{- .ProjectName }}_
       {{- title .Os }}_
