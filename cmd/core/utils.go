@@ -71,13 +71,12 @@ func ReconcileState(vm *types.VM) (types.VMState, bool) {
 }
 
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
-	vms := []*types.VMConfig{vmCfg}
 	var owner imagebackend.Images
 	var storageConfigs []*types.StorageConfig
 	var bootCfg *types.BootConfig
 	var backendErrs []string
 	for _, b := range backends {
-		confs, boots, err := b.Config(ctx, vms)
+		confs, boot, err := b.Config(ctx, vmCfg)
 		if err != nil {
 			backendErrs = append(backendErrs, fmt.Sprintf("%s: %v", b.Type(), err))
 			continue
@@ -87,8 +86,8 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 				vmCfg.Image, imagebackend.ErrAmbiguous, owner.Type(), b.Type())
 		}
 		owner = b
-		storageConfigs = confs[0]
-		bootCfg = boots[0]
+		storageConfigs = confs
+		bootCfg = boot
 	}
 	if owner == nil {
 		return nil, nil, fmt.Errorf("image %q not resolved: %s", vmCfg.Image, strings.Join(backendErrs, "; "))

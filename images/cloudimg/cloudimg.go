@@ -74,38 +74,32 @@ func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker pr
 	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
 }
 
-func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result [][]*types.StorageConfig, boot []*types.BootConfig, err error) {
+func (c *CloudImg) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.StorageConfig, boot *types.BootConfig, err error) {
 	err = c.store.View(ctx, func(idx *imageIndex) error {
-		result = make([][]*types.StorageConfig, len(vms))
-		boot = make([]*types.BootConfig, len(vms))
 		firmwarePath := images.FirmwarePath(c.conf.RootDir)
 		if !utils.ValidFile(firmwarePath) {
 			return fmt.Errorf("firmware not found: %s", firmwarePath)
 		}
-		for i, vm := range vms {
-			_, entry, ok := images.LookupOne(idx.Images, vm.Image)
-			if !ok {
-				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
-			}
-			blobPath := c.conf.BlobPath(entry.ContentSum.Hex())
-			if !utils.ValidFile(blobPath) {
-				return fmt.Errorf("blob invalid for VM %s (%s)", vm.Name, entry.ContentSum)
-			}
-			// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
-			vm.ImageDigest = entry.EntryID()
-			vm.ImageType = c.Type()
-
-			result[i] = []*types.StorageConfig{{
-				Path:   blobPath,
-				RO:     true,
-				Serial: "cocoon-base",
-				Role:   types.StorageRoleLayer,
-			}}
-			boot[i] = &types.BootConfig{
-				FirmwarePath: firmwarePath,
-			}
+		_, entry, ok := images.LookupOne(idx.Images, vm.Image)
+		if !ok {
+			return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 		}
+		blobPath := c.conf.BlobPath(entry.ContentSum.Hex())
+		if !utils.ValidFile(blobPath) {
+			return fmt.Errorf("blob invalid for VM %s (%s)", vm.Name, entry.ContentSum)
+		}
+		// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+		vm.ImageDigest = entry.EntryID()
+		vm.ImageType = c.Type()
+
+		configs = []*types.StorageConfig{{
+			Path:   blobPath,
+			RO:     true,
+			Serial: "cocoon-base",
+			Role:   types.StorageRoleLayer,
+		}}
+		boot = &types.BootConfig{FirmwarePath: firmwarePath}
 		return nil
 	})
-	return result, boot, err
+	return configs, boot, err
 }

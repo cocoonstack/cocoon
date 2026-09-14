@@ -162,6 +162,6 @@ func (f *fakeImageBackend) Delete(context.Context, []string) ([]string, error) {
 	return nil, nil
 }
 func (f *fakeImageBackend) RegisterGC(*gc.Orchestrator) {}
-func (f *fakeImageBackend) Config(context.Context, []*types.VMConfig) ([][]*types.StorageConfig, []*types.BootConfig, error) {
+func (f *fakeImageBackend) Config(context.Context, *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
 	return nil, nil, nil
 }
