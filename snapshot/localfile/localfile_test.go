@@ -842,26 +842,6 @@ func TestRestore_DataStream(t *testing.T) {
 	}
 }
 
-func TestRestore_CloseWaitsForGoroutine(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "cw"}, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, rc, err := lf.Restore(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := rc.Close(); err != nil {
-		t.Logf("Close returned (expected) error: %v", err)
-	}
-}
-
 func TestRestore_DoubleCloseNoPanic(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()

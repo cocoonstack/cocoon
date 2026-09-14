@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -370,21 +369,11 @@ func TestRestorePatchStorageConfigs_KeepsAllWhenSnapshotHadCidata(t *testing.T) 
 }
 
 func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
-	sockDir, err := os.MkdirTemp("", "ch")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
-	sock := filepath.Join(sockDir, "a.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
 	var (
 		mu    sync.Mutex
 		added []chDisk
 	)
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "vm.add-disk") {
 			var d chDisk
 			if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
@@ -396,9 +385,7 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 			mu.Unlock()
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})}
-	go srv.Serve(ln)
-	t.Cleanup(func() { _ = srv.Close() })
+	}))
 
 	storageConfigs := []*types.StorageConfig{
 		{Path: "/store/cow.raw", Role: types.StorageRoleCOW, Serial: "cocoon-cow"},

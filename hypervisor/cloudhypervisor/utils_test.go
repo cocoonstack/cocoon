@@ -120,7 +120,17 @@ func serveVMInfo(t *testing.T, ptyPath string) string {
 
 func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {
 	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode vm.info: %v", err)
+		}
+	})
+	return serveCHHandler(t, mux)
+}
 
+func serveCHHandler(t *testing.T, handler http.Handler) string {
+	t.Helper()
 	sockDir, err := os.MkdirTemp("", "ch")
 	if err != nil {
 		t.Fatal(err)
@@ -131,13 +141,7 @@ func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {
 	if err != nil {
 		t.Fatalf("listen %s: %v", sockPath, err)
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Errorf("encode vm.info: %v", err)
-		}
-	})
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: handler}
 	go srv.Serve(ln)
 	t.Cleanup(func() { _ = srv.Close() })
 	return sockPath
