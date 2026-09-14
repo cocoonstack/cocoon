@@ -260,6 +260,41 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	}
 }
 
+func TestDeleteRefusesAfterSubsetRollForward(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	ctx := t.Context()
+	seedRecords(t, c, "vm8", "eth0", "eth1")
+
+	ts := c.tombstones()
+	var leaseID string
+	if err := c.update(ctx, func(tx *netTx) error {
+		cleanup, err := tombstone.MarshalCleanup(netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
+		if err != nil {
+			return err
+		}
+		leaseID, err = ts.Lease(ctx, tx.Writer(), "vm8", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeSubset, Cleanup: cleanup})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.update(ctx, func(tx *netTx) error {
+		return ts.MarkDeleting(ctx, tx.Writer(), "vm8", leaseID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Delete(ctx, "vm8"); !errors.Is(err, meta.ErrConflict) {
+		t.Fatalf("Delete over a subset tombstone must finish it and refuse with ErrConflict, got %v", err)
+	}
+	assertRecordIDs(t, c, []string{"n-eth0"})
+
+	if err := c.Delete(ctx, "vm8"); err != nil {
+		t.Fatalf("retry after recovery: %v", err)
+	}
+	assertRecordIDs(t, c, nil)
+}
+
 func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

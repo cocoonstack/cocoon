@@ -10,10 +10,11 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// netCleanup is the networks-namespace tombstone payload: aggregate removes every listed record plus the netns; subset removes only the named record IDs (never NIC indices — they cannot disambiguate duplicate rows).
+// netCleanup is the networks-namespace tombstone payload; it names record IDs, never NIC indices, which cannot disambiguate duplicate rows.
 type netCleanup struct {
 	Netns   string             `json:"netns,omitempty"`
 	Records []netCleanupRecord `json:"records"`
@@ -33,12 +34,13 @@ func (c *CNI) tombstones() *tombstone.Table {
 func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string, deleteTAP bool) error {
 	ts := c.tombstones()
 	var (
-		leaseID string
-		cl      netCleanup
-		mode    tombstone.Mode
+		leaseID   string
+		cl        netCleanup
+		mode      tombstone.Mode
+		recovered bool
 	)
 	if err := c.update(ctx, func(t *netTx) error {
-		leaseID, cl = "", netCleanup{}
+		leaseID, cl, recovered = "", netCleanup{}, false
 		records, err := t.byVMID(vmID)
 		if err != nil {
 			return err
@@ -48,14 +50,14 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 			mode = tombstone.ModeSubset
 			records = filterRecords(records, subset)
 		}
+		for _, r := range records {
+			cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
+		}
+		if mode == tombstone.ModeAggregate {
+			cl.Netns = c.conf.netnsPath(vmID)
+		}
 		var resumed *tombstone.Record
 		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), vmID, func() (tombstone.Payload, error) {
-			for _, r := range records {
-				cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
-			}
-			if mode == tombstone.ModeAggregate {
-				cl.Netns = c.conf.netnsPath(vmID)
-			}
 			kind := tombstone.KindRecord
 			if len(cl.Records) == 0 {
 				kind = tombstone.KindOrphan // a 0-NIC VM still owns its netns
@@ -69,9 +71,15 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		if err != nil || resumed == nil {
 			return err
 		}
-		mode = resumed.Payload.Mode
+		want := cl
 		cl = netCleanup{}
-		return json.Unmarshal(resumed.Payload.Cleanup, &cl)
+		if err := json.Unmarshal(resumed.Payload.Cleanup, &cl); err != nil {
+			return err
+		}
+		// A retry of the interrupted operation resumes it; any other intent is finished first and refused, since its outcome is not this call's.
+		recovered = resumed.Payload.Mode != mode || (mode == tombstone.ModeSubset && !subsetOf(recordIDs(want), recordIDs(cl)))
+		mode = resumed.Payload.Mode
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -80,7 +88,13 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 	}); err != nil {
 		return err
 	}
-	return c.finishTeardown(ctx, vmID, leaseID, mode, cl, deleteTAP)
+	if err := c.finishTeardown(ctx, vmID, leaseID, mode, cl, deleteTAP); err != nil {
+		return err
+	}
+	if recovered {
+		return fmt.Errorf("vm %s network teardown was interrupted; recovery completed, retry the operation: %w", vmID, meta.ErrConflict)
+	}
+	return nil
 }
 
 // finishTeardown runs the slow CNI DEL / netns work outside any transaction, driven by the payload, then the fenced finalize.
@@ -158,4 +172,16 @@ func filterRecords(records []networkRecord, ids []string) []networkRecord {
 		want[id] = true
 	}
 	return slices.DeleteFunc(records, func(r networkRecord) bool { return !want[r.ID] })
+}
+
+func recordIDs(cl netCleanup) []string {
+	ids := make([]string, 0, len(cl.Records))
+	for _, r := range cl.Records {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+func subsetOf(ids, of []string) bool {
+	return !slices.ContainsFunc(ids, func(id string) bool { return !slices.Contains(of, id) })
 }
