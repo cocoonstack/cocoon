@@ -9,6 +9,8 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+type vmTxFunc func(*vmTx) error
+
 type vmTx struct {
 	*meta.NamedTx[VMRecord]
 
@@ -63,20 +65,20 @@ func (t *vmTx) resolveMany(refs []string) ([]string, error) {
 	return t.ResolveMany(refs, ErrNotFound)
 }
 
-func (b *Backend) view(ctx context.Context, fn func(*vmTx) error) error {
+func (b *Backend) view(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.View(ctx, []string{b.NS}, func(r meta.Reader) error {
 		return fn(b.tx(ctx, r, nil))
 	})
 }
 
-func (b *Backend) update(ctx context.Context, fn func(*vmTx) error) error {
+func (b *Backend) update(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})
 }
 
 // updateRelaxed skips the durable commit; every caller's write is re-derived by a later pass.
-func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmTx) error) error {
+func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn vmTxFunc) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS, Read: read}, meta.CommitRelaxed, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))
 	})

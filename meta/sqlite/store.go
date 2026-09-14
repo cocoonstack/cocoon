@@ -32,7 +32,7 @@ const (
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
-	// busyRetryPause caps the jittered pause between BEGIN IMMEDIATE retries; the in-driver busy_timeout already did the real waiting (§4).
+	// busyRetryCeiling bounds the BEGIN IMMEDIATE retry loop; busyRetryPause caps the jittered pause between retries (§4).
 	busyRetryCeiling   = 5 * time.Second
 	busyRetryPause     = 2 * time.Millisecond
 	slowTxnWarn        = 500 * time.Millisecond
