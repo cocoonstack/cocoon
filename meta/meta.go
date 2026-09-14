@@ -47,9 +47,9 @@ type Scope struct {
 // Store is the engine-neutral transaction boundary. Closures must be pure and retryable: they may run more than once, all effects go through the handle, and results are published only after the transaction returns nil.
 type Store interface {
 	// View runs fn over a consistent snapshot of the given namespaces.
-	View(ctx context.Context, nss []string, fn func(Reader) error) error
+	View(ctx context.Context, nss []string, fn ViewFunc) error
 	// Update runs fn in a serializable transaction writing sc.Write; commit follows mode.
-	Update(ctx context.Context, sc Scope, mode CommitMode, fn func(Writer) error) error
+	Update(ctx context.Context, sc Scope, mode CommitMode, fn UpdateFunc) error
 	// Events returns a coalesced change signal; release unsubscribes.
 	Events(ctx context.Context) (<-chan struct{}, func(), error)
 	Close() error
@@ -64,6 +64,10 @@ type Reader interface {
 
 // RawScanFunc receives one raw record per ScanRaw visit.
 type RawScanFunc func(id string, raw json.RawMessage) error
+
+type ViewFunc func(Reader) error
+
+type UpdateFunc func(Writer) error
 
 // Writer is the raw write SPI; relaxedOK mirrors the per-op RelaxedOK opt-in.
 type Writer interface {

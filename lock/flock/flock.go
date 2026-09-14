@@ -123,7 +123,7 @@ func (l *Lock) dropFlock() {
 	l.fl = nil
 }
 
-// BoundToPath reports whether held still describes the inode bound to path — the shared half of every transient acquirer's stale-inode check.
+// BoundToPath reports whether held still describes the inode bound to path.
 func BoundToPath(held fs.FileInfo, path string) bool {
 	cur, err := os.Stat(path)
 	return err == nil && os.SameFile(held, cur)

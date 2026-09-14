@@ -19,7 +19,7 @@ type TableSpec struct {
 
 var _ Codec = TableCodec{}
 
-// TableCodec is the declaration-only codec for pure table-shaped namespaces: a subsystem states its legacy field layout and owns no codec code.
+// TableCodec is the declaration-only codec for pure table-shaped namespaces.
 type TableCodec struct {
 	Specs []TableSpec
 }
