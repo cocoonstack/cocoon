@@ -21,7 +21,6 @@ func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 		},
 		TempDir:         c.conf.TempDir(),
 		PinnedElsewhere: c.pinnedElsewhere,
-		DirOnly:         false,
 	})
 }
 

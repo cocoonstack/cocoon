@@ -43,10 +43,8 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 		conf:  cfg,
 		store: store,
 		Ops: images.Ops[imageEntry]{
-			Store:      store,
-			Type:       typ,
-			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id) },
-			Sizer:      func(e *imageEntry) int64 { return e.Size },
+			Store: store,
+			Type:  typ,
 		},
 	}
 	return c, nil

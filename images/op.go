@@ -10,20 +10,17 @@ import (
 
 // Ops bundles the store and callbacks shared by Inspect/List/Delete; one per backend.
 type Ops[E Entry] struct {
-	Store      *Store[E]
-	Type       string
-	LookupRefs func(map[string]*E, string) []string
-	Sizer      func(*E) int64
+	Store       *Store[E]
+	Type        string
+	Normalizers []func(string) (string, bool)
 }
 
 // Inspect returns (nil, nil) when no entry matches id or the id is an ambiguous prefix spanning distinct digests (LookupOne semantics).
 func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {
 	err = ops.Store.View(ctx, func(idx *Index[E]) error {
-		refs := ops.LookupRefs(idx.Images, id)
-		if len(refs) == 0 || !refsShareDigest(idx.Images, refs) {
-			return nil
+		if _, entry, ok := LookupOne(idx.Images, id, ops.Normalizers...); ok {
+			result = entryToImage(entry, ops.Type)
 		}
-		result = entryToImage(idx.Images[refs[0]], ops.Type, ops.Sizer)
 		return nil
 	})
 	return result, err
@@ -31,7 +28,7 @@ func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, 
 
 func (ops Ops[E]) List(ctx context.Context) (result []*types.Image, err error) {
 	err = ops.Store.View(ctx, func(idx *Index[E]) error {
-		result = listImages(idx.Images, ops.Type, ops.Sizer)
+		result = listImages(idx.Images, ops.Type)
 		return nil
 	})
 	return result, err
@@ -42,7 +39,7 @@ func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, e
 	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error
 		deleted, delErr = deleteByID(ctx, ops.Type+".Delete", idx.Images, func(id string) []string {
-			return ops.LookupRefs(idx.Images, id)
+			return LookupRefs(idx.Images, id, ops.Normalizers...)
 		}, ids)
 		return delErr
 	})

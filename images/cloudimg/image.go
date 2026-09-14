@@ -18,4 +18,5 @@ type imageEntry struct {
 func (e imageEntry) EntryID() string           { return e.ContentSum.String() }
 func (e imageEntry) EntryRef() string          { return e.Ref }
 func (e imageEntry) EntryCreatedAt() time.Time { return e.CreatedAt }
+func (e imageEntry) EntrySize() int64          { return e.Size }
 func (e imageEntry) DigestHexes() []string     { return []string{e.ContentSum.Hex()} }

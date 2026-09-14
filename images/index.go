@@ -18,6 +18,7 @@ type Entry interface {
 	EntryID() string
 	EntryRef() string
 	EntryCreatedAt() time.Time
+	EntrySize() int64
 	DigestHexes() []string
 }
 
@@ -61,7 +62,6 @@ func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(st
 	if entry, ok := images[id]; ok && entry != nil {
 		return []string{id}
 	}
-	// Try normalizers (e.g., OCI "ubuntu:24.04" -> "docker.io/library/ubuntu:24.04").
 	for _, norm := range normalizers {
 		if normalized, ok := norm(id); ok {
 			if entry, ok := images[normalized]; ok && entry != nil {
@@ -127,7 +127,7 @@ func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[strin
 	return deleted, nil
 }
 
-func entryToImage[E Entry](entry *E, typ string, sizer func(*E) int64) *types.Image {
+func entryToImage[E Entry](entry *E, typ string) *types.Image {
 	if entry == nil {
 		return nil
 	}
@@ -136,12 +136,12 @@ func entryToImage[E Entry](entry *E, typ string, sizer func(*E) int64) *types.Im
 		ID:        e.EntryID(),
 		Name:      e.EntryRef(),
 		Type:      typ,
-		Size:      sizer(&e),
+		Size:      e.EntrySize(),
 		CreatedAt: e.EntryCreatedAt(),
 	}
 }
 
-func listImages[E Entry](images map[string]*E, typ string, sizer func(*E) int64) []*types.Image {
+func listImages[E Entry](images map[string]*E, typ string) []*types.Image {
 	if len(images) == 0 {
 		return nil
 	}
@@ -150,7 +150,7 @@ func listImages[E Entry](images map[string]*E, typ string, sizer func(*E) int64)
 		if ep == nil {
 			continue
 		}
-		out = append(out, entryToImage(ep, typ, sizer))
+		out = append(out, entryToImage(ep, typ))
 	}
 	return out
 }
