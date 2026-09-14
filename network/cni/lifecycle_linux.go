@@ -62,7 +62,7 @@ func tapPresentInNetns(nsPath, tapName string) error {
 	})
 }
 
-// deleteTAPInNetns is idempotent: an absent TAP or an already-deleted netns is success, or every teardown retry after a partial failure would wedge on the missing device.
+// deleteTAPInNetns treats an absent TAP or netns as success, so a teardown retry cannot wedge on the missing device.
 func deleteTAPInNetns(nsPath, tapName string) error {
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
 		link, err := netlink.LinkByName(tapName)
@@ -184,7 +184,6 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 	return mac, link.Attrs().MTU, nil
 }
 
-// addTCRedirect redirects all ingress packets from one link to another.
 func addTCRedirect(from, to netlink.Link) error {
 	filter := &netlink.U32{
 		LinkIndex: from.Attrs().Index,

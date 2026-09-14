@@ -157,7 +157,7 @@ func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build fun
 
 // Recover is the shared recover skeleton: Resume, then decode a deleting-phase payload into cl. A nil Record means nothing to roll forward (no tombstone, or leased — rolled back in place).
 func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (*Record, string, error) {
-	rec, leaseID, err := t.Resume(ctx, w, id)
+	rec, leaseID, err := t.resume(ctx, w, id)
 	if err != nil || rec == nil || rec.Phase == PhaseLeased {
 		return nil, "", err
 	}
@@ -167,8 +167,8 @@ func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (
 	return rec, leaseID, nil
 }
 
-// Resume takes over id's tombstone for recovery under the held entity lock: a leased entry rolls back in place; a deleting one gets a fresh lease for the caller to roll forward.
-func (t *Table) Resume(ctx context.Context, w meta.Writer, id string) (rec *Record, leaseID string, err error) {
+// resume takes over id's tombstone for recovery under the held entity lock: a leased entry rolls back in place; a deleting one gets a fresh lease for the caller to roll forward.
+func (t *Table) resume(ctx context.Context, w meta.Writer, id string) (rec *Record, leaseID string, err error) {
 	rec, err = t.TakeOver(ctx, w, id)
 	if err != nil || rec == nil {
 		return rec, "", err
