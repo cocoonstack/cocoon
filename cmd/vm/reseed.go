@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -87,7 +88,7 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 	return fmt.Errorf("reseed: dial agent: %w", dialErr)
 }
 
-// detachReseed passes resolved dirs as flags so a file-configured parent behaves like an env-configured one.
+// detachReseed passes the resolved dirs and meta engine to the child, which has no config file.
 func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenMachineID bool) bool {
 	exe, err := os.Executable()
 	if err != nil {
@@ -98,6 +99,7 @@ func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenM
 		args = append(args, "--machine-id")
 	}
 	c := exec.Command(exe, append(args, vm.ID)...) //nolint:gosec // self re-exec: path from os.Executable, args are internal flags/IDs
+	c.Env = append(os.Environ(), "COCOON_META_BACKEND="+cmdcore.ResolveMetaBackend(conf))
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := c.Start(); err != nil {
 		log.WithFunc("cmd.vm.reseed").Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
