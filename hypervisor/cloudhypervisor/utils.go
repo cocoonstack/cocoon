@@ -199,7 +199,6 @@ func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }
 
-// waitDeviceEjected blocks until id is gone from CH's device_tree, bounded by ejectWaitTimeout.
 func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) error {
 	return utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
 		info, err := getVMInfo(ctx, hc)
@@ -271,7 +270,6 @@ func confirmVMBooted(ctx context.Context, hc *http.Client, pid int, timeout time
 	return nil
 }
 
-// queryConsolePTY GETs vm.info for the virtio-console PTY path; "" if console is not in Pty mode.
 func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) {
 	info, err := getVMInfo(ctx, utils.NewSocketHTTPClient(apiSocketPath))
 	if err != nil {
@@ -283,7 +281,6 @@ func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) 
 	return info.Config.Console.File, nil
 }
 
-// resolveConsole returns the CH-allocated PTY (direct-boot OCI) or the console socket (UEFI).
 func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, directBoot bool) string {
 	if directBoot {
 		consolePath, err := utils.DoWithRetry(ctx, func() (string, error) {

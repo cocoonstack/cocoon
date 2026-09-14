@@ -227,7 +227,6 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 	if err != nil {
 		return "", fmt.Errorf("marshal %s: %w", endpoint, err)
 	}
-	// vmAPIOnce: vm.add-fs / vm.add-device aren't idempotent — a retry after a lost ACK echoes as "duplicate id".
 	resp, err := vmAPIOnce(ctx, hc, endpoint, bodyBytes, http.StatusOK, http.StatusNoContent)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", endpoint, err)
