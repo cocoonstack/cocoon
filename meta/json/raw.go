@@ -6,8 +6,8 @@ import (
 	"slices"
 )
 
-// AppendTable appends tbl as a compact JSON object with sorted keys, values verbatim.
-func AppendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
+// appendTable appends tbl as a compact JSON object with sorted keys, values verbatim.
+func appendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
 	t := m.tables[tbl]
 	dst = append(dst, '{')
 	if t != nil {

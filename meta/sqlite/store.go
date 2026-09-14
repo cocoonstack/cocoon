@@ -109,7 +109,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if s.readers, err = open(dbPath, "FULL", false); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
-	s.readers.SetMaxOpenConns(max(2, runtime.NumCPU()))
+	s.readers.SetMaxOpenConns(max(2, runtime.GOMAXPROCS(0)))
 	if err = s.verifyIdentity(); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
@@ -167,12 +167,8 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if err := tx.Commit(); err != nil {
 		return mapErr(err)
 	}
-	commit, total := time.Since(commitStart), time.Since(start)
-	logger := log.WithFunc("meta.sqlite.Update")
-	if total > slowTxnWarn {
-		logger.Warnf(ctx, "slow transaction on %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
-	} else {
-		logger.Debugf(ctx, "txn %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
+	if total := time.Since(start); total > slowTxnWarn {
+		log.WithFunc("meta.sqlite.Update").Warnf(ctx, "slow transaction on %s: total %s wait %s commit %s", sc.Write, total, wait, time.Since(commitStart))
 	}
 	return nil
 }

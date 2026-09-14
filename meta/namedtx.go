@@ -106,19 +106,19 @@ func (x *NamedTx[R]) NameDelIfOwned(name, id string) error {
 	return x.NameDel(name)
 }
 
-// Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at least three characters; notFound is the subsystem's sentinel.
+// Resolve tries an exact ID, then a name, then an ID prefix of at least three characters; notFound is the subsystem's sentinel.
 func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
-	if rec, err := x.Get(ref); err != nil {
+	if _, ok, err := x.r.GetRaw(x.ctx, x.recs.ns, x.recs.table, ref); err != nil {
 		return "", err
-	} else if rec != nil {
+	} else if ok {
 		return ref, nil
 	}
 	if id, ok, err := x.NameGet(ref); err != nil {
 		return "", err
 	} else if ok {
-		if rec, err := x.Get(id); err != nil {
+		if _, found, err := x.r.GetRaw(x.ctx, x.recs.ns, x.recs.table, id); err != nil {
 			return "", err
-		} else if rec != nil {
+		} else if found {
 			return id, nil
 		}
 	}

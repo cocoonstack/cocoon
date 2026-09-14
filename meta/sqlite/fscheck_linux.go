@@ -3,14 +3,16 @@ package sqlite
 import (
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // WAL needs coherent shared memory; these magics mark filesystems that cannot provide it (§4), FUSE refused as unknowable.
 var unsupportedFS = map[uint32]string{
-	0x6969:     "nfs",
-	0xFF534D42: "cifs",
-	0xFE534D42: "smb2",
-	0x65735546: "fuse",
+	unix.NFS_SUPER_MAGIC:  "nfs",
+	unix.CIFS_SUPER_MAGIC: "cifs",
+	unix.SMB2_SUPER_MAGIC: "smb2",
+	unix.FUSE_SUPER_MAGIC: "fuse",
 }
 
 func statfsCheck(dbPath string) error {

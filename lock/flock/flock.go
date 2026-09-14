@@ -38,14 +38,10 @@ func (l *Lock) Lock(ctx context.Context) error {
 		return fmt.Errorf("acquire lock %s: %w", l.path, ctx.Err())
 	}
 	for {
-		ok, err := l.commitFlock(func(fl *flock.Flock) (bool, error) {
+		if _, err := l.commitFlock(func(fl *flock.Flock) (bool, error) {
 			return fl.TryLockContext(ctx, retryDelay)
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("acquire flock %s: %w", l.path, err)
-		}
-		if !ok {
-			return fmt.Errorf("acquire flock %s: %w", l.path, ctx.Err())
 		}
 		if l.pathBound() {
 			return nil
