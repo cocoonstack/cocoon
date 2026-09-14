@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,46 +147,25 @@ func TestInitIfMissingRepairsCrashedInit(t *testing.T) {
 	}
 }
 
-func TestInitIfMissingAddsTablesOfANewerGeneration(t *testing.T) {
+func TestOpenRefusesOlderGeneration(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), DBFileName)
-	older := []Namespace{{Name: "vms", Tables: []string{"records"}}}
-	newer := []Namespace{{Name: "vms", Tables: []string{"records", "placements"}}}
-	if err := Init(ctx, path, older...); err != nil {
+	if err := Init(ctx, path, testDecls()...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	db, err := open(path, "FULL", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version = 1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO "vms__records" (id, data) VALUES ('a', '{"id":"a"}')`); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion-1)); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()
-	if _, err := Open(path, newer...); err == nil {
-		t.Fatal("open with an undeclared table must fail before the upgrade")
+	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta-upgrade.py") {
+		t.Fatalf("open of an older generation = %v; want a refusal naming the upgrade script", err)
 	}
-	if err := InitIfMissing(ctx, path, newer...); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
-	s, err := Open(path, newer...)
-	if err != nil {
-		t.Fatalf("open upgraded store: %v", err)
-	}
-	defer s.Close() //nolint:errcheck
-	var version int64
-	if err := s.readers.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != UserVersion {
-		t.Errorf("user_version = %d, %v; want %d", version, err, UserVersion)
-	}
-	var data string
-	if err := s.readers.QueryRow(`SELECT data FROM "vms__records" WHERE id = 'a'`).Scan(&data); err != nil || data != `{"id":"a"}` {
-		t.Errorf("record after upgrade = %q, %v", data, err)
-	}
-	if err := InitIfMissing(ctx, path, newer...); err != nil {
-		t.Errorf("second bootstrap over a current store: %v", err)
+	if err := InitIfMissing(ctx, path, testDecls()...); err != nil {
+		t.Fatalf("bootstrap must pass an initialized store through untouched: %v", err)
 	}
 }
 

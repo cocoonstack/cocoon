@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written at init and by the table upgrade (§6). Generation 2 adds the VM placements tables.
+	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6); scripts/meta-upgrade.py moves a store between generations. Generation 2 adds the VM placements tables.
 	ApplicationID = 0x434F434E
 	UserVersion   = 2
 
@@ -257,6 +257,9 @@ func (s *Store) verifyIdentity() error {
 	}
 	if version > UserVersion {
 		return fmt.Errorf("%s: schema version %d newer than this binary (%d); upgrade cocoon: %w", s.path, version, UserVersion, meta.ErrCorrupt)
+	}
+	if version < UserVersion {
+		return fmt.Errorf("%s: schema version %d behind this binary (%d); run scripts/meta-upgrade.py once: %w", s.path, version, UserVersion, meta.ErrCorrupt)
 	}
 	for name := range s.nss {
 		var state string

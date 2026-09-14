@@ -59,7 +59,7 @@ cocoon
 
 `daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
-The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves, and a store stamped with an older schema generation gains the tables the newer generation declares on its next open. `meta convert` always converts TO the effective backend (default sqlite).
+The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the effective backend (default sqlite). Run `scripts/meta-upgrade.py --root-dir <root_dir>` once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
 
 ## Global Flags
 
