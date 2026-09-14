@@ -46,7 +46,7 @@ func (o chNICOps) RemoveNIC(ctx context.Context, id string) error {
 	return nil
 }
 
-func (chNICOps) TAPQueues(cpu int) int { return network.NetNumQueues(cpu) }
+func (o chNICOps) TAPQueues(cpu int) int { return network.NetNumQueues(cpu) }
 
 func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec netresize.Spec, plumbing netresize.Plumbing) (netresize.Result, error) {
 	if err := spec.Normalize(); err != nil {
