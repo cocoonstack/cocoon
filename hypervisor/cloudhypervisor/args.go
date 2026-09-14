@@ -3,7 +3,6 @@ package cloudhypervisor
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -285,8 +284,6 @@ func balloonToCLIArg(b *chBalloon) string {
 
 func runtimeFileToCLIArg(c *chRuntimeFile) string {
 	switch strings.ToLower(c.Mode) {
-	case "file":
-		return "file=" + c.File
 	case "socket":
 		return "socket=" + c.Socket
 	default:
@@ -297,11 +294,7 @@ func runtimeFileToCLIArg(c *chRuntimeFile) string {
 func queueAffinityToCLI(qa []chQueueAffinity) string {
 	parts := make([]string, len(qa))
 	for i, a := range qa {
-		cpus := make([]string, len(a.HostCPUs))
-		for j, c := range a.HostCPUs {
-			cpus[j] = strconv.Itoa(c)
-		}
-		parts[i] = fmt.Sprintf("%d@[%s]", a.QueueIndex, strings.Join(cpus, ","))
+		parts[i] = fmt.Sprintf("%d@[%d]", a.QueueIndex, a.HostCPUs[0])
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }

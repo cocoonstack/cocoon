@@ -56,7 +56,7 @@ type Daemon struct {
 }
 
 // New builds a daemon over already-wired backends; store is the shared meta store the CLI also writes.
-func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) {
+func New(conf Config, store meta.Store, backends []Supervisor) *Daemon {
 	if conf.ReconcileInterval <= 0 {
 		conf.ReconcileInterval = DefaultReconcileInterval
 	}
@@ -71,7 +71,7 @@ func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) 
 		order:    backends,
 		watcher:  newProcWatcher(),
 		state:    newCache(),
-	}, nil
+	}
 }
 
 // Run supervises until ctx is canceled; it fails when another instance holds the single-instance lock.

@@ -8,8 +8,11 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// exitQueue buffers observed exits so the poll loop never blocks behind a pass in flight.
-const exitQueue = 64
+const (
+	// exitQueue buffers observed exits so the poll loop never blocks behind a pass in flight.
+	exitQueue = 64
+	pollBatch = 64
+)
 
 type watchKey struct {
 	backend string
@@ -132,7 +135,7 @@ func (w *procWatcher) pidOf(key watchKey) int {
 }
 
 func (w *procWatcher) run(ctx context.Context) {
-	ready := make([]int, exitQueue)
+	ready := make([]int, pollBatch)
 	for ctx.Err() == nil {
 		n, err := w.poll.wait(ready)
 		if err != nil {
