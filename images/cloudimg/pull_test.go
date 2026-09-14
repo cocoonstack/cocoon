@@ -35,7 +35,9 @@ func TestDownloadToFileParallelRange(t *testing.T) {
 
 func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
 	data := testPayload(64 * 1024)
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
 	}))
@@ -50,6 +52,29 @@ func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
 		t.Errorf("digest = %s, want %s", digest, want)
 	}
 	assertFileContent(t, dst, data)
+	if n := requests.Load(); n != 1 {
+		t.Errorf("non-range server saw %d requests, want 1 (the probe reply is the download)", n)
+	}
+}
+
+func TestDownloadToFileRejectsNonImageBeforeWriting(t *testing.T) {
+	html := append([]byte("<!DOCTYPE html>"), testPayload(1<<20)...)
+	for name, handler := range map[string]http.Handler{
+		"range":    rangeHandler(html, nil),
+		"no-range": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(html) }),
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			dst := createTempFile(t)
+			if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil || !strings.Contains(err.Error(), "HTML") {
+				t.Fatalf("downloadToFile() = %v, want the HTML rejection", err)
+			}
+			if st, err := dst.Stat(); err != nil || st.Size() != 0 {
+				t.Errorf("rejected download wrote %d bytes (err %v), want 0", st.Size(), err)
+			}
+		})
+	}
 }
 
 func TestDownloadToFileOneRangeFailureAbortsWhole(t *testing.T) {
