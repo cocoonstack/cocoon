@@ -198,17 +198,15 @@ func (s *Store) Close() error {
 			}
 		}
 	}
-	s.stmtsDurable, s.stmtsRelaxed, s.stmtsReaders = nil, nil, nil
 	for _, db := range []*sql.DB{s.writerDurable, s.writerRelaxed, s.readers} {
 		if db != nil {
 			errs = append(errs, db.Close())
 		}
 	}
-	s.writerDurable, s.writerRelaxed, s.readers = nil, nil, nil
 	return errors.Join(errs...)
 }
 
-// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop: the short in-driver busy_timeout does the real waiting (and bounds ctx latency, clause 6), so between attempts only a tiny jittered pause bounds spin — an exponential backoff here would idle past a freed lock.
+// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop; the in-driver busy_timeout does the real waiting, so the pause between attempts is a tiny jitter.
 func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 	deadline := time.Now().Add(busyRetryCeiling)
 	for {
