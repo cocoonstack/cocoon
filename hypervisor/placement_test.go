@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/cgroup"
-	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -104,8 +103,9 @@ func TestPlaceRecordCountsPeerNamespaces(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	b := &Backend{Typ: "own", NS: own, PeerNS: []string{peer}, Conf: stubBackendConfig{rootDir: dir}, Meta: store, PinsQueues: true}
-	if err := store.Update(ctx, meta.Scope{Write: peer}, meta.CommitDurable, func(w meta.Writer) error {
-		return meta.NewCollection[VMRecord](peer, TableRecords).Insert(ctx, w, "p", &VMRecord{VM: types.VM{ID: "p", State: types.VMStateRunning, CPUSet: "0-3"}})
+	peerBackend := &Backend{Typ: "peer", NS: peer, Meta: store}
+	if err := peerBackend.update(ctx, func(tx *vmTx) error {
+		return tx.Put("p", &VMRecord{VM: types.VM{ID: "p", State: types.VMStateRunning, CPUSet: "0-3"}})
 	}); err != nil {
 		t.Fatalf("seed peer: %v", err)
 	}
@@ -120,6 +120,42 @@ func TestPlaceRecordCountsPeerNamespaces(t *testing.T) {
 	}
 	if placed.QueueCPUs != "4-7" {
 		t.Errorf("queue_cpus = %q, want 4-7 clear of the peer backend's cpuset", placed.QueueCPUs)
+	}
+}
+
+func TestPlacementRowFollowsTheRecord(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	row := func() string {
+		var got string
+		if err := b.view(ctx, func(tx *vmTx) error {
+			return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
+				got += id + "=" + *cpus + ";"
+				return nil
+			})
+		}); err != nil {
+			t.Fatalf("scan placements: %v", err)
+		}
+		return got
+	}
+	put := func(rec *VMRecord) {
+		t.Helper()
+		if err := b.update(ctx, func(tx *vmTx) error { return tx.Put(rec.ID, rec) }); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+	}
+	put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"}})
+	put(&VMRecord{VM: types.VM{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"}})
+	put(&VMRecord{VM: types.VM{ID: "n", State: types.VMStateRunning}})
+	if got := row(); got != "a=0-3;f=4-7;" {
+		t.Errorf("rows after placements = %q, want a=0-3;f=4-7;", got)
+	}
+	put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateStopped}})
+	if err := b.update(ctx, func(tx *vmTx) error { return tx.Del("f") }); err != nil {
+		t.Fatalf("del: %v", err)
+	}
+	if got := row(); got != "" {
+		t.Errorf("rows after a cleared placement and a delete = %q, want none", got)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 var testVMTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "vms", Table: TableRecords},
 	{Key: "names", Table: TableNames},
+	{Key: "placements", Table: TablePlacements, Optional: true},
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 

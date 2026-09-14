@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -11,8 +12,28 @@ import (
 type vmTx struct {
 	*meta.NamedTx[VMRecord]
 
-	r meta.Reader
-	w meta.Writer
+	ctx        context.Context
+	r          meta.Reader
+	w          meta.Writer
+	placements *meta.Collection[string]
+}
+
+// Put writes rec and mirrors its placement row, which the launch tally scans instead of every record.
+func (t *vmTx) Put(id string, rec *VMRecord, opts ...meta.WriteOpt) error {
+	if err := t.NamedTx.Put(id, rec, opts...); err != nil {
+		return err
+	}
+	if cpus := cmp.Or(rec.QueueCPUs, rec.CPUSet); cpus != "" {
+		return t.placements.Upsert(t.ctx, t.w, id, &cpus, opts...)
+	}
+	return t.placements.Delete(t.ctx, t.w, id, opts...)
+}
+
+func (t *vmTx) Del(id string) error {
+	if err := t.NamedTx.Del(id); err != nil {
+		return err
+	}
+	return t.placements.Delete(t.ctx, t.w, id)
 }
 
 func (t *vmTx) loadDetached(id string) (VMRecord, error) {
@@ -63,9 +84,11 @@ func (b *Backend) updateRelaxed(ctx context.Context, read []string, fn func(*vmT
 
 func (b *Backend) tx(ctx context.Context, r meta.Reader, w meta.Writer) *vmTx {
 	return &vmTx{
-		NamedTx: meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
-		r:       r,
-		w:       w,
+		NamedTx:    meta.NewNamedTx[VMRecord](ctx, b.NS, TableRecords, TableNames, r, w),
+		ctx:        ctx,
+		r:          r,
+		w:          w,
+		placements: meta.NewCollection[string](b.NS, TablePlacements),
 	}
 }
 
