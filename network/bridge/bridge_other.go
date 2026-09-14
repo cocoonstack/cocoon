@@ -1,6 +1,6 @@
 //go:build !linux
 
-// Package bridge: non-Linux stubs. All Bridge methods return errUnsupported; CleanupTAPs is a no-op.
+// Package bridge: non-Linux stubs.
 package bridge
 
 import (

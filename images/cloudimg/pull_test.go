@@ -218,15 +218,15 @@ func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
 
 func parseTestRange(h string, size int64) (start, end int64, ok bool) {
 	h = strings.TrimPrefix(h, "bytes=")
-	parts := strings.SplitN(h, "-", 2)
-	if len(parts) != 2 {
+	first, rest, found := strings.Cut(h, "-")
+	if !found {
 		return 0, 0, false
 	}
-	start, err := strconv.ParseInt(parts[0], 10, 64)
+	start, err := strconv.ParseInt(first, 10, 64)
 	if err != nil {
 		return 0, 0, false
 	}
-	end, err = strconv.ParseInt(parts[1], 10, 64)
+	end, err = strconv.ParseInt(rest, 10, 64)
 	if err != nil {
 		return 0, 0, false
 	}

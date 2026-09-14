@@ -6,16 +6,16 @@ Cross-module GC, snapshot LRU eviction, and scheduled cleanup.
 
 `cocoon gc` performs cross-module garbage collection:
 
-1. **Recover** every module's interrupted deletions first, so discovery sees no half-removed resources
-2. **Snapshot** each module's index (a loose read; every destructive decision is revalidated later under the module's own entity locks and tombstone leases)
+1. **Recover** the interrupted deletions of every module that has a recovery step (snapshot, both hypervisor backends, CNI), so discovery sees no half-removed resources
+2. **Snapshot** each module's index (a loose read; every destructive decision is revalidated later under the module's own entity locks and tombstone leases); a module whose index read fails aborts the whole cycle before anything is collected
 3. **Resolve** each module identifies unreferenced resources using the full snapshot set (e.g., image GC checks VM and snapshot records for blob references)
-4. **Collect** — delete identified targets
+4. **Collect** — delete identified targets; Resolve and Collect run back to back per module against the already-taken snapshot set
 
-This ensures blobs referenced by running VMs or saved snapshots are never deleted.
+This ensures blobs referenced by running VMs or saved snapshots are never deleted. `cocoon gc` also terminates a VMM still bound to an orphaned run dir (SIGTERM, then SIGKILL) before removing the dir.
 
 ### Log Output
 
-Every collected item is logged at INFO level with a structured `key=value` payload under `gc.<module>`, and a summary line ends the cycle. Sample:
+Every collected item is logged at INFO level with a structured `key=value` payload under `gc.<module>`, and a summary line ends the cycle; the summary counts candidates identified, not deletions confirmed. Sample:
 
 ```
 INFO gc.snapshot          collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=3221225472 last_accessed=2026-04-12T10:30:00Z reason=lru-age
@@ -52,12 +52,12 @@ Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record), **m
 | `--snapshot`           | Enable LRU eviction. Bare flag = evict **every** non-pending snapshot.                          |
 | `--snapshot-keep N`    | Keep at most N most-recently-accessed snapshots.                                                |
 | `--snapshot-age DUR`   | Evict snapshots last accessed before this duration (e.g. `720h` for 30d).                       |
-| `--snapshot-size SZ`   | Evict oldest snapshots until total size ≤ this (e.g. `100GB`).                                  |
+| `--snapshot-size SZ`   | Evict oldest snapshots until total size ≤ this (e.g. `100GiB`; suffixes are binary, `GB` = `GiB`). |
 | `--snapshot-dry-run`   | Log which snapshots would be LRU-evicted; act on nothing. **Snapshot-only — orphans and other GC modules still execute.** |
 
 Sub-flags combine as union of evictions (intersection of kept) — a snapshot is kept only if it passes **every** active criterion. All sub-flags require `--snapshot`; negative values are rejected.
 
-`LastAccessedAt` is updated on `Restore`, `vm clone` (via `DataDir`) and `snapshot export`, and set to the creation time by `snapshot save` and `snapshot import`, so a fresh snapshot is never age-evicted by the next sweep. `Inspect` and `list` do not count as access.
+`LastAccessedAt` is updated on `Restore`, `vm clone` (via `DataDir`) and `snapshot export`, set at finalize time by `snapshot save` and to the creation time by `snapshot import`, so a fresh snapshot is never age-evicted by the next sweep. `Inspect` and `list` do not count as access.
 
 ```bash
 # Preview what 30-day eviction would remove (snapshot-only — other GC modules still run)
@@ -67,7 +67,7 @@ cocoon gc --snapshot --snapshot-age=720h --snapshot-dry-run
 cocoon gc --snapshot --snapshot-age=168h --snapshot-keep=50
 
 # Cap storage at 100GB
-cocoon gc --snapshot --snapshot-size=100GB
+cocoon gc --snapshot --snapshot-size=100GiB
 
 # Nuke all snapshots (dev / test reset)
 cocoon gc --snapshot
@@ -75,7 +75,7 @@ cocoon gc --snapshot
 
 ### Scheduled Snapshot GC
 
-`cocoon gc` is a one-shot, lock-safe operation — drive periodic execution from a systemd timer or cron. Recommended template (systemd):
+`cocoon gc` is a one-shot, lock-safe operation — drive periodic execution from a systemd timer or cron. If you already run `cocoon daemon --gc-interval`, that sweep covers orphans and a timer is only needed for LRU eviction. Recommended template (systemd):
 
 ```ini
 # /etc/systemd/system/cocoon-gc.service

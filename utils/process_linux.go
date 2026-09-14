@@ -22,20 +22,20 @@ type procEntry struct {
 	cmdline string
 }
 
-// ProcScan caches /proc cmdlines for one binaryName. Batch callers scan once then Find per id, replacing N /proc walks with one.
+// ProcScan caches /proc cmdlines for one binaryName.
 type ProcScan []procEntry
 
-// ScanProcsByBinary walks /proc once, capturing argv[0]-basename matches. Read errors from processes that vanished mid-scan are skipped; errors on live processes fail closed.
+// ScanProcsByBinary skips processes that vanished mid-scan and fails closed on a live one it cannot read.
 func ScanProcsByBinary(binaryName string) (ProcScan, error) {
 	return scanProcsByBinary(binaryName, os.ReadFile, IsProcessAlive)
 }
 
-// Find returns the cached pids whose cmdline contains expectArg, sorted numerically; empty expectArg matches all.
+// Find returns the cached pids whose cmdline contains expectArg, sorted numerically.
 func (s ProcScan) Find(expectArg string) []int {
 	var pids []int
 	for _, e := range s {
 		_, rest, _ := strings.Cut(e.cmdline, "\x00")
-		if expectArg == "" || strings.Contains(rest, expectArg) {
+		if strings.Contains(rest, expectArg) {
 			pids = append(pids, e.pid)
 		}
 	}
@@ -43,7 +43,7 @@ func (s ProcScan) Find(expectArg string) []int {
 	return pids
 }
 
-// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find(); batch callers should use ScanProcsByBinary directly to share one /proc walk.
+// FindVMMByCmdline is the one-shot equivalent of ScanProcsByBinary().Find().
 func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 	scan, err := ScanProcsByBinary(binaryName)
 	if err != nil {
@@ -88,9 +88,6 @@ func verifyProcessCmdline(pid int, binaryName, expectArg string) (bool, error) {
 	argv0, rest, _ := strings.Cut(string(data), "\x00")
 	if filepath.Base(argv0) != binaryName {
 		return false, nil
-	}
-	if expectArg == "" {
-		return true, nil
 	}
 	return strings.Contains(rest, expectArg), nil
 }

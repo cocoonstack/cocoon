@@ -207,8 +207,8 @@ func TestReconcileStateClearsRuntimePathsOnStaleRunning(t *testing.T) {
 		VsockSocket: "/run/vsock.uds",
 		ConsolePath: "/dev/pts/3",
 	}
-	if got := ReconcileState(vm); got != "stopped (stale)" {
-		t.Fatalf("ReconcileState = %q, want %q", got, "stopped (stale)")
+	if got, stale := ReconcileState(vm); got != types.VMStateStopped || !stale {
+		t.Fatalf("ReconcileState = %q, %v; want stopped, stale", got, stale)
 	}
 	if vm.SocketPath != "" || vm.VsockSocket != "" || vm.ConsolePath != "" {
 		t.Errorf("stale-running VM keeps runtime paths: socket=%q vsock=%q console=%q",
@@ -216,8 +216,8 @@ func TestReconcileStateClearsRuntimePathsOnStaleRunning(t *testing.T) {
 	}
 
 	alive := &types.VM{State: types.VMStateRunning, PID: os.Getpid(), ConsolePath: "/dev/pts/3"}
-	if got := ReconcileState(alive); got != string(types.VMStateRunning) {
-		t.Fatalf("ReconcileState = %q, want running", got)
+	if got, stale := ReconcileState(alive); got != types.VMStateRunning || stale {
+		t.Fatalf("ReconcileState = %q, %v; want running, live", got, stale)
 	}
 	if alive.ConsolePath == "" {
 		t.Error("live VM lost its console path")

@@ -1,4 +1,4 @@
-// Package vmlock resolves per-VM operation locks by vmID alone, so recordless consumers (orphan-netns GC, dead-source clone leases) derive the path without a record. Locks are transient: an exclusive release unlinks the file while still holding it, and every acquirer — including SharedLease — rebinds when it lands on an unlinked inode, so lease files self-clean instead of accumulating one per VM ever created.
+// Package vmlock resolves per-VM operation locks by vmID alone, so recordless consumers (orphan-netns GC, dead-source clone leases) derive the path without a record.
 package vmlock
 
 import (

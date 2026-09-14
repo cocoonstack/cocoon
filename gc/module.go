@@ -18,7 +18,6 @@ type Module[S any] struct {
 	// Resolve returns IDs to delete; others holds snapshots from peer modules.
 	Resolve func(ctx context.Context, snap S, others map[string]any) []string
 
-	// Collect removes the given IDs.
 	Collect func(ctx context.Context, ids []string, snap S) error
 }
 

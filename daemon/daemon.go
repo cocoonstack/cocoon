@@ -27,7 +27,7 @@ const (
 	lockFileName = "daemon.lock"
 )
 
-var ErrAlreadyRunning = errors.New("another cocoon daemon is already running")
+var errAlreadyRunning = errors.New("another cocoon daemon is already running")
 
 // Supervisor is the backend surface supervision drives.
 type Supervisor = hypervisor.Supervisable
@@ -56,7 +56,7 @@ type Daemon struct {
 }
 
 // New builds a daemon over already-wired backends; store is the shared meta store the CLI also writes.
-func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) {
+func New(conf Config, store meta.Store, backends []Supervisor) *Daemon {
 	if conf.ReconcileInterval <= 0 {
 		conf.ReconcileInterval = DefaultReconcileInterval
 	}
@@ -71,7 +71,7 @@ func New(conf Config, store meta.Store, backends []Supervisor) (*Daemon, error) 
 		order:    backends,
 		watcher:  newProcWatcher(),
 		state:    newCache(),
-	}, nil
+	}
 }
 
 // Run supervises until ctx is canceled; it fails when another instance holds the single-instance lock.
@@ -118,7 +118,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			// A dead subscription is invisible — the meta layer never closes a subscriber channel — so the ticker doubles as the resubscribe cadence.
+			// A failed first subscribe leaves events nil; the ticker retries it.
 			if events == nil {
 				if ch, rel, retryErr := d.store.Events(ctx); retryErr == nil {
 					events, release = ch, rel
@@ -153,7 +153,7 @@ func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("acquire daemon lock: %w", err)
 	}
 	if !ok {
-		return nil, ErrAlreadyRunning
+		return nil, errAlreadyRunning
 	}
 	return func() { _ = l.Unlock(ctx) }, nil
 }

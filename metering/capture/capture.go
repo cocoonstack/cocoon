@@ -1,4 +1,4 @@
-// Package capture is a test-only metering recorder; Entries and Reset are testing helpers.
+// Package capture is a test-only metering recorder.
 package capture
 
 import (

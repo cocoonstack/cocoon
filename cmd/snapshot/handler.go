@@ -210,7 +210,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 
-	if err = (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+	if err = cmdcore.EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
 		return err
 	}
 

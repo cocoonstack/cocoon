@@ -34,6 +34,7 @@ func (p EvictionPolicy) hasCriteria() bool {
 }
 
 type snapshotMeta struct {
+	dataDir      string
 	name         string
 	hypervisor   string
 	lastAccessed time.Time
@@ -104,19 +105,23 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						snap.stalePending = append(snap.stalePending, id)
 						return nil
 					}
-					if _, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id))); errors.Is(statErr, fs.ErrNotExist) {
-						snap.missingDir = append(snap.missingDir, id)
-					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
 						hypervisor:   rec.Hypervisor,
-						lastAccessed: rec.LastAccessedAt,
+						dataDir:      cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)),
+						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
 					}
 					return nil
 				})
 			}); err != nil {
 				return snap, err
+			}
+			// the stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
+			for id, m := range snap.records {
+				if _, statErr := os.Stat(m.dataDir); errors.Is(statErr, fs.ErrNotExist) {
+					snap.missingDir = append(snap.missingDir, id)
+				}
 			}
 			var err error
 			if snap.dataDirs, err = utils.ScanSubdirs(conf.DataDir()); err != nil {
@@ -161,7 +166,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					errs = append(errs, err)
 					break
 				}
-				// An active save holds the lease exclusively and readers hold it shared, so acquiring it exclusively proves the pending record's owner died; no age gate needed.
+				// an exclusive acquire proves the pending record's owner died; no age gate needed
 				fl, ok, lockErr := lf.tryExclusiveLease(id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
@@ -171,7 +176,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active holder", id)
 					continue
 				}
-				// Candidacy revalidation under the lease: the reason picked at ReadDB must still hold, or a create/touch that landed in the window evicts the wrong snapshot.
+				// the reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
 				var sawRecord bool
 				revalidate := func(rec *snapshot.SnapshotRecord) bool {
 					sawRecord = true
@@ -185,10 +190,9 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 						return false // a record appeared for a dir orphaned at ReadDB
 					default: // LRU picks: a touch since ReadDB voids the eviction choice
 						m, ok := snap.records[id]
-						return ok && rec.LastAccessedAt.Equal(m.lastAccessed)
+						return ok && cmp.Or(rec.LastAccessedAt, rec.CreatedAt).Equal(m.lastAccessed)
 					}
 				}
-				// Record-backed candidates go through the phase protocol; a recordless leftover dir converges by plain removal.
 				deleted, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
 					_ = fl.Close()
@@ -217,7 +221,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
-// pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
+// pickLRU maps each evict ID to its reason.
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {
 		return records[a].lastAccessed.Compare(records[b].lastAccessed)

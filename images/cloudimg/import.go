@@ -41,7 +41,7 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 	logger.Debugf(ctx, "hashed %s -> sha256:%s", filePath, digestHex[:12])
 
 	if utils.ValidFile(conf.BlobPath(digestHex)) {
-		if err = commit(ctx, conf, store, name, tracker, "", digestHex); err != nil {
+		if err = commit(ctx, conf, store, name, tracker, filePath, digestHex); err != nil {
 			return err
 		}
 		logger.Infof(ctx, "import complete (cached): %s -> sha256:%s", name, digestHex)
@@ -68,14 +68,14 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 			filePath, digestHex[:12], verifyHex[:12])
 	}
 
-	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
+	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex)
 }
 
-func finishQcow2Import(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, tmpPath, digestHex string, logger *log.Fields) error {
+func finishQcow2Import(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, tmpPath, digestHex string) error {
 	if err := commit(ctx, conf, store, name, tracker, tmpPath, digestHex); err != nil {
 		return err
 	}
-	logger.Infof(ctx, "import complete: %s -> sha256:%s", name, digestHex)
+	log.WithFunc("cloudimg.finishQcow2Import").Infof(ctx, "import complete: %s -> sha256:%s", name, digestHex)
 	return nil
 }
 
@@ -105,7 +105,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 
 	digestHex := hex.EncodeToString(h.Sum(nil))
 	logger.Debugf(ctx, "buffered stream -> sha256:%s", digestHex[:12])
-	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex, logger)
+	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex)
 }
 
 func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) (err error) {
@@ -118,7 +118,12 @@ func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[im
 		if openErr != nil {
 			return fmt.Errorf("open %s: %w", filePath, openErr)
 		}
-		defer func() { err = errors.Join(err, src.Close()) }()
+		// a part that fails to close after the blob is committed is not an import failure
+		defer func() {
+			if closeErr := src.Close(); closeErr != nil {
+				log.WithFunc("cloudimg.importQcow2Concat").Warnf(ctx, "close %s: %v", filePath, closeErr)
+			}
+		}()
 		readers = append(readers, src)
 	}
 	return importQcow2Reader(ctx, conf, store, name, tracker, io.MultiReader(readers...))

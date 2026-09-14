@@ -21,13 +21,14 @@ type Config struct {
 	NoWatchdog    bool   `json:"no_watchdog,omitempty"`  // omit the virtio watchdog device (guest/driver compatibility)
 	NoBalloon     bool   `json:"no_balloon,omitempty"`   // omit the virtio-balloon device (guests that thrash before deflate-on-OOM fires)
 	Windows       bool   `json:"windows,omitempty"`      // Windows guest: UEFI boot, kvm_hyperv=on, no cidata
-	// SharedMemory toggles CH memory shared=on (vhost-user-fs prerequisite); fixed at create, persists through clone/restore.
+	// The four toggles below are fixed at create and persist through clone/restore.
+	// SharedMemory toggles CH memory shared=on (vhost-user-fs prerequisite).
 	SharedMemory bool `json:"shared_memory,omitempty"`
-	// HugePages backs CH guest memory with hugetlbfs (costs snapshots the mmap fast path); fixed at create, persists through clone/restore.
+	// HugePages backs CH guest memory with hugetlbfs (costs snapshots the mmap fast path).
 	HugePages bool `json:"hugepages,omitempty"`
-	// Mergeable marks CH guest memory MADV_MERGEABLE for host KSM dedup (needs plain private memory); fixed at create, persists through clone/restore.
+	// Mergeable marks CH guest memory MADV_MERGEABLE for host KSM dedup (needs plain private memory).
 	Mergeable bool `json:"mergeable,omitempty"`
-	// PCI boots a Firecracker VM on the virtio-pci transport (device hot-plug prerequisite); fixed at create, persists through clone/restore.
+	// PCI boots a Firecracker VM on the virtio-pci transport (device hot-plug prerequisite).
 	PCI bool `json:"pci,omitempty"`
 
 	// Raw cgroup v2 CPU knobs; zero derives the Guaranteed-at-N defaults from CPU (CPUSetCPUs empty = no placement).

@@ -202,7 +202,10 @@ func (d *Daemon) convergeExit(ctx context.Context, ev exitEvent) bool {
 		return false
 	}
 	// A newer transition owns the record; this event may not date or label it.
-	if dead, _ := d.confirmDead(ctx, b, rec); rec.TransitionGeneration != ev.gen || !dead {
+	if rec.TransitionGeneration != ev.gen {
+		return false
+	}
+	if dead, _ := d.confirmDead(ctx, b, rec); !dead {
 		return false
 	}
 	logger := log.WithFunc("daemon.convergeExit")

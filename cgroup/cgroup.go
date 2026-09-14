@@ -24,19 +24,19 @@ const (
 	Root = "/sys/fs/cgroup"
 	// DefaultParent holds every per-VM scope unless cgroup_parent overrides it.
 	DefaultParent = "cocoon.slice"
-	// DefaultPeriodUs is the kernel's default cpu.max period.
-	DefaultPeriodUs = 100000
+	// defaultPeriodUs is the kernel's default cpu.max period.
+	defaultPeriodUs = 100000
 	// AutoCPUSet asks launch to place the VM on the least-loaded last-level-cache domain.
 	AutoCPUSet = "auto"
 
-	// MinWeight/MaxWeight are the kernel's cpu.weight bounds.
-	MinWeight = 1
-	MaxWeight = 10000
-	// MinPeriodUs/MaxPeriodUs are the kernel's cpu.max period bounds.
-	MinPeriodUs = 1000
-	MaxPeriodUs = 1000000
-	// MinQuotaUs is the kernel's minimum cpu.max quota.
-	MinQuotaUs = 1000
+	// minWeight/maxWeight are the kernel's cpu.weight bounds.
+	minWeight = 1
+	maxWeight = 10000
+	// minPeriodUs/maxPeriodUs are the kernel's cpu.max period bounds.
+	minPeriodUs = 1000
+	maxPeriodUs = 1000000
+	// minQuotaUs is the kernel's minimum cpu.max quota.
+	minQuotaUs = 1000
 
 	scopePrefix = "vm-"
 	scopeSuffix = ".scope"
@@ -66,7 +66,7 @@ type Knobs struct {
 
 // ResolveKnobs applies the Guaranteed-at-N defaults: weight = vCPU count, quota = vCPU count x period, burst = quota, no placement. CPUBurstUs -1 means no burst.
 func ResolveKnobs(cfg *types.Config) Knobs {
-	period := cmp.Or(cfg.CPUPeriodUs, int64(DefaultPeriodUs))
+	period := cmp.Or(cfg.CPUPeriodUs, int64(defaultPeriodUs))
 	quota := cmp.Or(cfg.CPUQuotaUs, int64(cfg.CPU)*period)
 	k := Knobs{
 		Weight:   cmp.Or(cfg.CPUWeight, cfg.CPU),
@@ -86,14 +86,14 @@ func ResolveKnobs(cfg *types.Config) Knobs {
 
 // Validate checks resolved knob values against the kernel's accepted ranges.
 func (k Knobs) Validate() error {
-	if k.Weight < MinWeight || k.Weight > MaxWeight {
-		return fmt.Errorf("--cpu-weight must be %d..%d, got %d", MinWeight, MaxWeight, k.Weight)
+	if k.Weight < minWeight || k.Weight > maxWeight {
+		return fmt.Errorf("--cpu-weight must be %d..%d, got %d", minWeight, maxWeight, k.Weight)
 	}
-	if k.PeriodUs < MinPeriodUs || k.PeriodUs > MaxPeriodUs {
-		return fmt.Errorf("--cpu-period-us must be %d..%d, got %d", MinPeriodUs, MaxPeriodUs, k.PeriodUs)
+	if k.PeriodUs < minPeriodUs || k.PeriodUs > maxPeriodUs {
+		return fmt.Errorf("--cpu-period-us must be %d..%d, got %d", minPeriodUs, maxPeriodUs, k.PeriodUs)
 	}
-	if k.QuotaUs < MinQuotaUs {
-		return fmt.Errorf("--cpu-quota-us must be at least %d, got %d", MinQuotaUs, k.QuotaUs)
+	if k.QuotaUs < minQuotaUs {
+		return fmt.Errorf("--cpu-quota-us must be at least %d, got %d", minQuotaUs, k.QuotaUs)
 	}
 	if k.BurstUs < 0 || k.BurstUs > k.QuotaUs {
 		return fmt.Errorf("--cpu-burst-us must be -1 (no burst) or 0..quota (%d), got %d", k.QuotaUs, k.BurstUs)

@@ -90,27 +90,18 @@ Config-file / env-only keys (no CLI flag):
 | `log.maxsize` | `COCOON_LOG_MAXSIZE` | `500` | Rotation: max log file size in MB; applies only when `log.filename` is set |
 | `log.maxage` | `COCOON_LOG_MAXAGE` | `28` | Rotation: max age in days of a retained log file; applies only when `log.filename` is set |
 | `log.maxbackups` | `COCOON_LOG_MAXBACKUPS` | `3` | Rotation: max number of retained rotated files; applies only when `log.filename` is set |
+| `use_firecracker` | `COCOON_USE_FIRECRACKER` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
+| `log.filename` | `COCOON_LOG_FILENAME` | empty (stderr) | Log file path; setting it is what switches logging from stderr to a file and enables the `log.maxsize` / `log.maxage` / `log.maxbackups` rotation knobs |
+| `log.usejson` | `COCOON_LOG_USEJSON` | `false` | Emit JSON-structured log records instead of plain text |
+| `socket_wait_timeout_seconds` | `COCOON_SOCKET_WAIT_TIMEOUT_SECONDS` | `5` | Per-phase launch timeout (API socket up, then VM running, then the vsock UDS on CH); exceeding it aborts the launch and kills the VMM — raise on slow storage |
+| `terminate_grace_period_seconds` | `COCOON_TERMINATE_GRACE_PERIOD_SECONDS` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
+| `metering.backend` | `COCOON_METERING_BACKEND` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |
+| `metering.file.path` | `COCOON_METERING_FILE_PATH` | `<root-dir>/metering/ledger.jsonl` | Ledger path for the `file` backend; see the rotation note in [Daemon](daemon.md) |
 
 The `log` section is decoded by field name, so its keys are the compact
 spellings — `level`, `filename`, `usejson`, `maxsize`, `maxage`, `maxbackups`
 (not `use_json` / `max_age` / `max_backups`). A dotted key maps to its env
 variable by replacing `.` with `_`, hence `COCOON_LOG_MAXSIZE` for `log.maxsize`.
-
-Config-file-only keys — the env loader binds only keys that are registered, and
-these are not, so a `COCOON_*` variable does **not** reach them on its own. Once
-a config file defines the key, the matching `COCOON_*` variable **does** override
-it (for example `COCOON_METERING_BACKEND` takes effect only when the config file
-already sets `metering.backend`):
-
-| Key          | Default | Description                                                            |
-| ------------ | ------- | ---------------------------------------------------------------------- |
-| `use_firecracker` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
-| `log.filename` | empty (stderr) | Log file path; setting it is what switches logging from stderr to a file and enables the `log.maxsize` / `log.maxage` / `log.maxbackups` rotation knobs |
-| `log.usejson` | `false` | Emit JSON-structured log records instead of plain text |
-| `socket_wait_timeout_seconds` | `5` | How long to wait for the CH API socket after launch; raise on slow storage |
-| `terminate_grace_period_seconds` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
-| `metering.backend` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |
-| `metering.file.path` | `<root-dir>/metering/ledger.jsonl` | Ledger path for the `file` backend; see the rotation note in [Daemon](daemon.md) |
 
 ## VM Flags
 
@@ -296,7 +287,7 @@ Applies to `cocoon vm debug`:
 | `--max-cpu` | `8`                  | Max CPUs for the generated command                  |
 | `--balloon` | `0`                  | Balloon size in MB (0 = auto); ignored when the VM gets no balloon (`--no-balloon` or `--windows`) |
 | `--cow`     |                      | COW disk path (default: auto-generated)             |
-| `--ch`      | `cloud-hypervisor`   | cloud-hypervisor binary path                        |
+| `--ch`      | `ch_binary` from the config | cloud-hypervisor binary path                 |
 
 `vm debug` prints the VMM launch command only. It does not prepare a netns or a
 TAP, so it emits no `--net` and no `ip=`, and `--nics`, `--queue-size`,

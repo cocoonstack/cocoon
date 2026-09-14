@@ -8,8 +8,11 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// exitQueue buffers observed exits so the poll loop never blocks behind a pass in flight.
-const exitQueue = 64
+const (
+	// exitQueue buffers observed exits so the poll loop never blocks behind a pass in flight.
+	exitQueue = 64
+	pollBatch = 64
+)
 
 type watchKey struct {
 	backend string
@@ -70,7 +73,6 @@ func (w *procWatcher) close() {
 	_ = w.poll.close()
 }
 
-// ensure watches proc for key, replacing any entry naming a different generation.
 func (w *procWatcher) ensure(key watchKey, proc utils.ProcRef, gen uint64) {
 	w.mu.Lock()
 	if cur, ok := w.byKey[key]; ok {
@@ -110,7 +112,6 @@ func (w *procWatcher) drop(key watchKey) {
 	}
 }
 
-// dropAbsent releases watches for VMs the latest scan of one backend no longer lists.
 func (w *procWatcher) dropAbsent(backend string, seen map[string]struct{}) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -132,7 +133,7 @@ func (w *procWatcher) pidOf(key watchKey) int {
 }
 
 func (w *procWatcher) run(ctx context.Context) {
-	ready := make([]int, exitQueue)
+	ready := make([]int, pollBatch)
 	for ctx.Err() == nil {
 		n, err := w.poll.wait(ready)
 		if err != nil {

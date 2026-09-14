@@ -69,4 +69,5 @@ type testEntry struct {
 func (e testEntry) EntryID() string           { return e.id }
 func (e testEntry) EntryRef() string          { return e.ref }
 func (e testEntry) EntryCreatedAt() time.Time { return time.Time{} }
+func (e testEntry) EntrySize() int64          { return 0 }
 func (e testEntry) DigestHexes() []string     { return nil }

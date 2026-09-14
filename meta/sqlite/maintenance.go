@@ -31,7 +31,7 @@ func Checkpoint(ctx context.Context, dbPath string) error {
 	})
 }
 
-// Backup replaces destPath with a consistent single-file copy: VACUUM INTO a temp file, integrity-check, fsync, atomic rename, parent-dir sync (§4). A previously published backup stays intact until the rename commits (§9).
+// Backup replaces destPath atomically (VACUUM INTO a temp file, integrity check, fsync, rename), so a previously published backup stays intact until the rename commits (§9).
 func Backup(ctx context.Context, dbPath, destPath string) error {
 	if !utils.FileExists(dbPath) {
 		return fmt.Errorf("no sqlite store at %s to back up", dbPath)

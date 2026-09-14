@@ -125,7 +125,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 			continue
 		}
 
-		dir := filepath.Dir(entryName)
+		dir := strings.TrimPrefix(filepath.Dir(entryName), "/")
 		if dir != "boot" && dir != "." {
 			continue
 		}

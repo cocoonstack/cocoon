@@ -103,7 +103,7 @@ func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
 	}
 }
 
-func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) {
+func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) string {
 	t.Helper()
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
 	dir := shortTempDir(t)
@@ -115,4 +115,5 @@ func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) {
 	}); err != nil {
 		t.Fatalf("seed dirs: %v", err)
 	}
+	return dir
 }

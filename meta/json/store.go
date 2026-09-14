@@ -72,7 +72,7 @@ func Open(namespaces ...Namespace) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) View(ctx context.Context, nss []string, fn func(meta.Reader) error) error {
+func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error {
 	states, err := s.resolve(nss)
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn func(meta.Reader) err
 	})
 }
 
-func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
+func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
 	if sc.Write == "" {
 		return fmt.Errorf("update requires a write namespace: %w", meta.ErrScope)
 	}
@@ -110,7 +110,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		if err := fn(w); err != nil {
 			return err
 		}
-		// A clean transaction commits nothing — the encode/rotate/fsync tail would rewrite identical bytes on every read-only guard. A recovered generation still commits: that is the read-repair of a torn main.
+		// A clean transaction commits nothing; a recovered generation still commits, which is the read-repair of a torn main.
 		if !models[sc.Write].model.Dirty() && !models[sc.Write].recovered {
 			return nil
 		}
@@ -152,14 +152,13 @@ func (s *Store) resolve(nss []string) ([]*nsState, error) {
 	return states, nil
 }
 
-// withLocked holds every namespace flock (sorted names = fixed global order). Unlock errors log only: joining them would make callers roll back an already-durable commit; a leaked flock fails the next Lock loudly instead.
+// withLocked holds every namespace flock in sorted order; unlock errors log only, since joining them would make callers roll back an already-durable commit.
 func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() error) error {
-	logger := log.WithFunc("meta.json.withLocked")
 	for i, st := range states {
 		if err := st.locker.Lock(ctx); err != nil {
 			for _, held := range slices.Backward(states[:i]) {
 				if uerr := held.locker.Unlock(ctx); uerr != nil {
-					logger.Errorf(ctx, uerr, "unlock %s", held.def.Name)
+					log.WithFunc("meta.json.withLocked").Errorf(ctx, uerr, "unlock %s", held.def.Name)
 				}
 			}
 			return fmt.Errorf("lock %s: %w", st.def.Name, err)
@@ -168,7 +167,7 @@ func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() err
 	defer func() {
 		for _, st := range slices.Backward(states) {
 			if err := st.locker.Unlock(ctx); err != nil {
-				logger.Errorf(ctx, err, "unlock %s", st.def.Name)
+				log.WithFunc("meta.json.withLocked").Errorf(ctx, err, "unlock %s", st.def.Name)
 			}
 		}
 	}()
@@ -247,7 +246,7 @@ type coded struct {
 func (c *coded) Error() string   { return c.err.Error() }
 func (c *coded) Unwrap() []error { return []error{c.err, c.mark} }
 
-// loadNamespace ports the legacy load: a missing file is empty, an undecodable main falls back to the .prev generation, read errors fail closed.
+// loadNamespace treats a missing file as empty, falls back to .prev when main does not decode, and fails closed on read errors.
 func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	raw, err := os.ReadFile(def.FilePath) //nolint:gosec
 	switch {
@@ -280,7 +279,7 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	return &loaded{model: prev, recovered: true}, nil
 }
 
-// commitLocked rotates .prev via link+rename (one exists at every instant), then renames the fresh bytes in; syncCommitted makes them durable.
+// commitLocked rotates .prev via link+rename (one exists at every instant), then renames the fresh bytes in.
 func commitLocked(st *nsState, l *loaded) error {
 	data, err := st.def.Codec.Encode(l.model)
 	if err != nil {

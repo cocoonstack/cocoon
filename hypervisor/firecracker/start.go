@@ -131,8 +131,8 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	logger := log.WithFunc("firecracker.launchProcessWithLeases")
 
 	fcLog := fc.LogFilePath(rec.LogDir)
-	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon recreates it per launch.
-	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
+	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon creates it; appending keeps the previous launch's tail.
+	if f, createErr := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); createErr == nil { //nolint:gosec
 		_ = f.Close()
 	}
 
@@ -158,7 +158,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		return 0, nil, err
 	}
 
-	leaseControl, relayErr := fc.startConsoleRelay(ctx, rec.RunDir, master, pid, leaseFiles)
+	leaseControl, relayErr := fc.startConsoleRelay(rec.RunDir, master, pid, leaseFiles)
 	switch {
 	case relayErr == nil:
 		// Master fd ownership transferred to relay; close parent's copy.
@@ -170,6 +170,8 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = fcCmd.Wait()
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
+		// the socket file outlives a failed relay and would make inspect report a console nobody serves
+		_ = os.Remove(hypervisor.ConsoleSockPath(rec.RunDir))
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
@@ -184,7 +186,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 }
 
 // startConsoleRelay forks a relay that holds the PTY master, serves console.sock, and exits when fcPID dies.
-func (fc *Firecracker) startConsoleRelay(_ context.Context, runDir string, master *os.File, fcPID int, leaseFiles []*os.File) (*cloneLeaseControl, error) {
+func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID int, leaseFiles []*os.File) (*cloneLeaseControl, error) {
 	consoleSock := hypervisor.ConsoleSockPath(runDir)
 
 	listener, err := net.Listen("unix", consoleSock)

@@ -409,10 +409,7 @@ func newFake() *fakeSupervisor {
 
 func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
 	t.Helper()
-	d, err := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	d := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
 	return d
 }
 

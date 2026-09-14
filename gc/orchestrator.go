@@ -20,7 +20,6 @@ type Orchestrator struct {
 // New returns an Orchestrator with no registered modules.
 func New() *Orchestrator { return &Orchestrator{} }
 
-// Run executes one GC cycle.
 func (o *Orchestrator) Run(ctx context.Context) error {
 	start := time.Now()
 	logger := log.WithFunc("gc.Run")

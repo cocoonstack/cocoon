@@ -214,7 +214,7 @@ When a cloudimg VM is snapshotted **after** it has been stopped and started at l
 - Clone from such a snapshot regenerates a fresh `cidata.img` via `ensureCloneCidata` and overwrites the orphan with the clone's identity / network config.
 - Restore leaves the orphan in place: `cleanSnapshotFiles` removes only the memory ranges, `config.json`, `state.json`, `cocoon.json` and `data-*.raw`, so the staged `cidata.img` is merged back over the VM's own copy — harmless, since restore targets the same VM.
 
-This predates the data-disk feature; the cocoon.json sidecar just makes the asymmetry visible. We are not patching the copy logic because the orphan is harmless and the Cidata-disk file is small and reflinked.
+This predates the data-disk feature; the cocoon.json sidecar just makes the asymmetry visible. We are not patching the copy logic because the orphan is harmless and the cidata disk is small (sparse-copied, ~1 MB).
 
 ## Firecracker clone guest MAC address
 
@@ -273,7 +273,7 @@ Firecracker VMs created with `--pci` resize through the same command; the guest 
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 
-Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, a few seconds on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the new wait only applies to the running-VM resize.
+Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, 10–20 s on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the new wait only applies to the running-VM resize.
 
 ## Android cocoon-agent service may be blocked by SELinux
 

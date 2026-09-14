@@ -43,10 +43,8 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 		conf:  cfg,
 		store: store,
 		Ops: images.Ops[imageEntry]{
-			Store:      store,
-			Type:       typ,
-			LookupRefs: func(m map[string]*imageEntry, id string) []string { return images.LookupRefs(m, id) },
-			Sizer:      func(e *imageEntry) int64 { return e.Size },
+			Store: store,
+			Type:  typ,
 		},
 	}
 	return c, nil
@@ -89,13 +87,13 @@ func (c *CloudImg) Config(ctx context.Context, vms []*types.VMConfig) (result []
 			if !ok {
 				return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 			}
-			vm.ImageDigest = entry.EntryID()
-			vm.ImageType = c.Type()
-
 			blobPath := c.conf.BlobPath(entry.ContentSum.Hex())
 			if !utils.ValidFile(blobPath) {
 				return fmt.Errorf("blob invalid for VM %s (%s)", vm.Name, entry.ContentSum)
 			}
+			// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+			vm.ImageDigest = entry.EntryID()
+			vm.ImageType = c.Type()
 
 			result[i] = []*types.StorageConfig{{
 				Path:   blobPath,

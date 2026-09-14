@@ -48,7 +48,7 @@ func newFAT12Builder(label string) *fat12Builder {
 		rootDir:     make([]byte, rootEntryCount*dirEntrySize),
 		nextCluster: 2, //nolint:mnd
 	}
-	// Reserved FAT entries.
+	// clusters 0 and 1 are reserved by the FAT spec
 	setFATEntry(b.fat, 0, 0xFF8) //nolint:mnd
 	setFATEntry(b.fat, 1, fatEntryEOC)
 	b.addVolumeLabel()

@@ -12,7 +12,7 @@ type table struct {
 	recs map[string]json.RawMessage
 }
 
-// Model is one namespace's decoded state: named tables preserving insertion order — loaded file order first, new ids appended — which legacy codecs rely on for order-sensitive fields.
+// Model is one namespace's decoded state: named tables preserving insertion order (file order first, new ids appended).
 type Model struct {
 	tables map[string]*table
 	dirty  bool
@@ -83,7 +83,7 @@ func (m *Model) Len(tbl string) int {
 	return len(t.ids)
 }
 
-// TableNames returns all table names sorted; for generic codecs.
+// TableNames returns all table names sorted.
 func (m *Model) TableNames() []string {
 	return slices.Sorted(maps.Keys(m.tables))
 }

@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	DefaultNumQueues = 1
-	DefaultQueueSize = 1024
+	defaultNumQueues = 1
+	defaultQueueSize = 1024
+	fsIDPrefix       = "cocoon-fs-"
 )
 
 var (
@@ -51,8 +52,8 @@ func (s *Spec) Normalize() error {
 	if s.QueueSize < 0 {
 		return fmt.Errorf("queue-size must be non-negative, got %d", s.QueueSize)
 	}
-	s.NumQueues = cmp.Or(s.NumQueues, DefaultNumQueues)
-	s.QueueSize = cmp.Or(s.QueueSize, DefaultQueueSize)
+	s.NumQueues = cmp.Or(s.NumQueues, defaultNumQueues)
+	s.QueueSize = cmp.Or(s.QueueSize, defaultQueueSize)
 	return nil
 }
 
@@ -76,5 +77,5 @@ type Lister interface {
 
 // DeriveID returns the deterministic CH device id for a tag (used by attach + detach so concurrent attaches collide on CH's id check).
 func DeriveID(tag string) string {
-	return "cocoon-fs-" + tag
+	return fsIDPrefix + tag
 }

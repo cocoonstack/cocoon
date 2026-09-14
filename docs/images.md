@@ -1,6 +1,6 @@
 # Images
 
-Cocoon boots two image families: OCI VM images (kernel + rootfs layers, direct boot) and cloud images (qcow2, UEFI boot).
+Cocoon boots two image families: OCI VM images (kernel + rootfs layers, direct boot) and cloud images (qcow2, UEFI boot). A registry image without `vmlinuz` and `initrd.img` is rejected after download, so ordinary container images cannot be booted.
 
 ## Pulling
 
@@ -15,7 +15,7 @@ cocoon image pull https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-
 cocoon image pull --force https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 ```
 
-Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3. A cloud-image URL must serve an uncompressed disk image — gzip/xz/bzip2/zstd payloads are refused (`cloudimg does not auto-decompress`); decompress first and use `image import`, which does unwrap gzip. Downloads are capped at 20 GiB.
+Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3. A cloud-image URL must serve an uncompressed disk image — gzip/xz/bzip2/zstd payloads are refused (`cloudimg does not auto-decompress`); decompress first and use `image import`, which does unwrap gzip. Cloud-image URL downloads are capped at 20 GiB; OCI pulls and `image import` are uncapped.
 
 ## Importing
 
@@ -40,7 +40,7 @@ cocoon image inspect ubuntu:24.04
 cocoon image rm sha256:abc123def456
 ```
 
-A digest prefix must be at least 12 hex characters and unambiguous: a shorter prefix matches nothing, and both `image rm` and `image inspect` treat a prefix that matches more than one image as not-found — use a longer prefix.
+`image rm` drops the reference only; run `cocoon gc` to reclaim the blobs (see [GC](gc.md)). A digest prefix must be at least 12 hex characters and unambiguous: a shorter prefix matches nothing, and both `image rm` and `image inspect` treat a prefix that matches more than one image as not-found — use a longer prefix.
 
 ## OS Images
 
@@ -52,6 +52,6 @@ cocoon image pull ghcr.io/cocoonstack/cocoon/debian:13
 cocoon image pull ghcr.io/cocoonstack/cocoon/android:15.0
 ```
 
-These images include kernel, initramfs, and a systemd-based rootfs with an overlayfs boot script. Every official OS image (Ubuntu, Debian, Android) bakes `cocoon-agent` (vsock exec) with auto-start; the Ubuntu and Debian images additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
+These images include kernel, initramfs, and a systemd-based rootfs with an overlayfs boot script. Every official OS image (Ubuntu, Debian, Android) bakes `cocoon-agent` (vsock exec) with auto-start; the Ubuntu and Debian images, including the Ubuntu-based `android:16.0-gms-h264`, additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
 
 Build scripts, image contents, and the local `start.sh` harness are documented in [OS Images](os-image.md).

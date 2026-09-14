@@ -131,7 +131,6 @@ type VM struct {
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 }
 
-// ResolvedNetnsPath returns NetnsPath, with NIC[0] fallback.
 func (v *VM) ResolvedNetnsPath() string {
 	if v == nil {
 		return ""
@@ -142,7 +141,6 @@ func (v *VM) ResolvedNetnsPath() string {
 	return v.NetnsPath
 }
 
-// ResolvedNetBackend returns NetBackend, with NIC[0] fallback.
 func (v *VM) ResolvedNetBackend() string {
 	if v == nil {
 		return ""
@@ -153,7 +151,6 @@ func (v *VM) ResolvedNetBackend() string {
 	return v.NetBackend
 }
 
-// ResolvedNetBridgeDev returns NetBridgeDev, with NIC[0] fallback.
 func (v *VM) ResolvedNetBridgeDev() string {
 	if v == nil {
 		return ""

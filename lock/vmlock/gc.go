@@ -18,7 +18,7 @@ type lockSnapshot struct {
 	ids []string
 }
 
-// GCModule sweeps lease files for VMs no backend knows anymore; a held lock loses the exclusive TryLock and survives, and an acquirer racing the unlink rebinds to a fresh inode.
+// GCModule sweeps lease files for VMs no backend knows anymore.
 func GCModule(rootDir string) gc.Module[lockSnapshot] {
 	return gc.Module[lockSnapshot]{
 		Name: "vmlock",

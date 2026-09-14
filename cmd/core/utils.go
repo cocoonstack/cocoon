@@ -61,13 +61,13 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 	return result, nil
 }
 
-// ReconcileState returns the effective display state; a stale-running VM also loses its runtime paths — they died with the process, and a reused PTY number must not be advertised.
-func ReconcileState(vm *types.VM) string {
+// ReconcileState reports vm's state and whether a Running record's VMM is gone; a stale record's runtime paths are cleared.
+func ReconcileState(vm *types.VM) (types.VMState, bool) {
 	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
 		vm.SocketPath, vm.VsockSocket, vm.ConsolePath = "", "", ""
-		return "stopped (stale)"
+		return types.VMStateStopped, true
 	}
-	return string(vm.State)
+	return vm.State, false
 }
 
 func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
@@ -114,7 +114,7 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 			logger.Warnf(ctx, "inspect image %s: %v — will attempt pull", lookupRef, inspectErr)
 		}
 		if img != nil {
-			return // exact image version exists locally
+			return
 		}
 		// Pull by digest when available — the tag may point at a different manifest than at snapshot time.
 		pullRef := digestPullRef(vmCfg.Image, vmCfg.ImageDigest, vmCfg.ImageType)
@@ -210,7 +210,7 @@ func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapsh
 	return PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 }
 
-// PersistSnapshotDir stores a finalized capture dir, preferring a direct in-place move (DirectCreator) when srcDir shares a filesystem with the backend's data dir, and falling back to a tar stream otherwise (cross-filesystem, or a backend without DirectCreator such as a remote store). srcDir is consumed on every path.
+// PersistSnapshotDir stores a finalized capture dir, moving it in place when srcDir shares a filesystem with the backend and streaming a tar otherwise; srcDir is consumed on every path.
 func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
 	cfg.Name = name
 	cfg.Description = description

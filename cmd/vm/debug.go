@@ -48,9 +48,10 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if len(vmCfg.DataDisks) > 0 {
 		fmt.Fprintln(os.Stderr, "warning: --data-disk is ignored in debug mode (debug only prints the hypervisor launch command; data disks need PrepareDataDisks to materialize)")
 	}
-	if set := changedFlags(cmd, "nics", "queue-size", "network", "bridge"); len(set) > 0 {
-		fmt.Fprintf(os.Stderr, "warning: %s ignored in debug mode (debug only prints the hypervisor launch command; NIC attachment needs a prepared netns and TAP, so no --net or ip= is emitted)\n", strings.Join(set, "/"))
+	if set := changedFlags(cmd, "nics", "queue-size", "network", "bridge", "cpu-weight", "cpu-quota-us", "cpu-period-us", "cpu-burst-us", "cpuset-cpus"); len(set) > 0 {
+		fmt.Fprintf(os.Stderr, "warning: %s ignored in debug mode (debug only prints the hypervisor launch command; NICs need a prepared netns and TAP, cgroup knobs are applied by cocoon at launch)\n", strings.Join(set, "/"))
 	}
+	fmt.Fprintln(os.Stderr, "note: the printed command omits the agent vsock, cocoon's max-vcpu and console wiring, and any cidata disk; vm exec and cloud-init do not reach a VM launched from it")
 
 	storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
 	if err != nil {
@@ -69,7 +70,9 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	printCHDebug(buildCHDebugSpec(cmd, storageConfigs, boot, vmCfg))
+	spec := buildCHDebugSpec(cmd, storageConfigs, boot, vmCfg)
+	spec.CHBin = cmp.Or(spec.CHBin, conf.CHBinary)
+	printCHDebug(spec)
 	return nil
 }
 

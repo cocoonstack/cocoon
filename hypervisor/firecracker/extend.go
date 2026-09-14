@@ -143,29 +143,19 @@ func (fc *Firecracker) DiskList(ctx context.Context, vmRef string) ([]disk.Attac
 
 // MMIO VMs are refused: only the virtio-pci transport hot-plugs.
 func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsupported error) (*http.Client, string, hypervisor.VMRecord, func(), error) {
-	hc, vmID, err := fc.RunningVMClient(ctx, vmRef)
+	hc, rec, unlock, err := fc.LockedRunningOp(ctx, vmRef)
 	if err != nil {
 		return nil, "", hypervisor.VMRecord{}, nil, err
 	}
-	unlock, err := fc.LockVMOps(ctx, vmID)
-	if err != nil {
-		return nil, "", hypervisor.VMRecord{}, nil, err
+	err = requirePCI(&rec, errUnsupported)
+	if err == nil {
+		err = convergeOrphanedPause(ctx, hc, rec.ID)
 	}
-	fail := func(err error) (*http.Client, string, hypervisor.VMRecord, func(), error) {
+	if err != nil {
 		unlock()
 		return nil, "", hypervisor.VMRecord{}, nil, err
 	}
-	rec, err := fc.EntryGuardLoad(ctx, vmID)
-	if err != nil {
-		return fail(err)
-	}
-	if err := requirePCI(&rec, errUnsupported); err != nil {
-		return fail(err)
-	}
-	if err := convergeOrphanedPause(ctx, hc, vmID); err != nil {
-		return fail(err)
-	}
-	return hc, vmID, rec, unlock, nil
+	return hc, rec.ID, rec, unlock, nil
 }
 
 // the pause is ownerless: callers hold the ops lock every capture window holds.

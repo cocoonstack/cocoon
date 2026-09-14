@@ -226,6 +226,10 @@ func ifName(index int) string {
 
 // ifIndex parses the NIC index back out of an ifName-scheme guest interface name.
 func ifIndex(name string) (int, bool) {
-	n, err := strconv.Atoi(strings.TrimPrefix(name, "eth"))
-	return n, err == nil && n >= 0 && strings.HasPrefix(name, "eth")
+	rest, ok := strings.CutPrefix(name, "eth")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	return n, err == nil && n >= 0
 }

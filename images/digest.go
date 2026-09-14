@@ -2,7 +2,7 @@ package images
 
 import godigest "github.com/opencontainers/go-digest"
 
-// Digest represents a content-addressable digest in "algorithm:hex" format (e.g., "sha256:abcdef..."). Backed by opencontainers/go-digest.
+// Digest represents a content-addressable digest in "algorithm:hex" format (e.g., "sha256:abcdef...").
 type Digest string
 
 func NewDigest(hex string) Digest {

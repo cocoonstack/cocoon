@@ -21,7 +21,7 @@ const (
 	relayBinaryEnvKey     = "_COCOON_FC_BINARY"
 	relaySocketEnvKey     = "_COCOON_FC_SOCKET"
 
-	// fd offsets for ExtraFiles (fd 3 = ExtraFiles[0]), in append order
+	// relayMasterFD is ExtraFiles[0]; the relay fds follow in append order.
 	relayMasterFD        = 3
 	relayListenerFD      = relayMasterFD + 1
 	relayLeaseControlFD  = relayListenerFD + 1

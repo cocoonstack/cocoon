@@ -10,7 +10,7 @@ import (
 
 const resolvePrefixMin = 3
 
-// RecordTx is the id→record map view of one table inside a transaction: Get mirrors map lookup (nil when absent), Put is an upsert.
+// RecordTx is the id→record map view of one table inside a transaction.
 type RecordTx[R any] struct {
 	ctx  context.Context
 	r    Reader
@@ -37,7 +37,6 @@ func (x *RecordTx[R]) Put(id string, rec *R, opts ...WriteOpt) error {
 	return x.recs.Upsert(x.ctx, x.w, id, rec, opts...)
 }
 
-// Del mirrors delete(items, id).
 func (x *RecordTx[R]) Del(id string) error {
 	return x.recs.Delete(x.ctx, x.w, id)
 }
@@ -58,7 +57,7 @@ func (x *RecordTx[R]) Reader() Reader { return x.r }
 // Writer exposes the transaction's write handle for satellite tables.
 func (x *RecordTx[R]) Writer() Writer { return x.w }
 
-// NamedTx is RecordTx plus an explicit name→id index shared by cocoon subsystems; name entries are claimed and released explicitly.
+// NamedTx is RecordTx plus an explicit name→id index.
 type NamedTx[R any] struct {
 	*RecordTx[R]
 	names *Collection[string]
@@ -72,7 +71,6 @@ func NewNamedTx[R any](ctx context.Context, ns, recordsTable, namesTable string,
 	}
 }
 
-// NameGet mirrors names[name] lookup.
 func (x *NamedTx[R]) NameGet(name string) (string, bool, error) {
 	id, err := x.names.Get(x.ctx, x.r, name)
 	if errors.Is(err, ErrNotFound) {
@@ -84,12 +82,10 @@ func (x *NamedTx[R]) NameGet(name string) (string, bool, error) {
 	return *id, true, nil
 }
 
-// NameSet mirrors names[name] = id.
 func (x *NamedTx[R]) NameSet(name, id string, opts ...WriteOpt) error {
 	return x.names.Upsert(x.ctx, x.w, name, &id, opts...)
 }
 
-// NameDel mirrors delete(names, name).
 func (x *NamedTx[R]) NameDel(name string) error {
 	return x.names.Delete(x.ctx, x.w, name)
 }
@@ -106,19 +102,19 @@ func (x *NamedTx[R]) NameDelIfOwned(name, id string) error {
 	return x.NameDel(name)
 }
 
-// Resolve ports utils.ResolveRef: exact ID, then name, then ID prefix of at least three characters; notFound is the subsystem's sentinel.
+// Resolve tries an exact ID, then a name, then an ID prefix of at least three characters; notFound is the subsystem's sentinel.
 func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
-	if rec, err := x.Get(ref); err != nil {
+	if _, ok, err := x.r.GetRaw(x.ctx, x.recs.ns, x.recs.table, ref); err != nil {
 		return "", err
-	} else if rec != nil {
+	} else if ok {
 		return ref, nil
 	}
 	if id, ok, err := x.NameGet(ref); err != nil {
 		return "", err
 	} else if ok {
-		if rec, err := x.Get(id); err != nil {
+		if _, found, err := x.r.GetRaw(x.ctx, x.recs.ns, x.recs.table, id); err != nil {
 			return "", err
-		} else if rec != nil {
+		} else if found {
 			return id, nil
 		}
 	}
@@ -146,7 +142,7 @@ func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
 	return "", notFound
 }
 
-// ResolveMany ports utils.ResolveRefs: batch resolve with dedup.
+// ResolveMany resolves refs, dropping duplicate ids.
 func (x *NamedTx[R]) ResolveMany(refs []string, notFound error) ([]string, error) {
 	seen := make(map[string]struct{}, len(refs))
 	var ids []string

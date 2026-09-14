@@ -25,7 +25,7 @@ func CloseFD(fd int) {
 	}
 }
 
-// terminateWithPidfd uses pidfd_open + pidfd_send_signal for TOCTOU-safe process termination. Returns false if pidfd is unavailable (kernel < 5.3).
+// terminateWithPidfd signals through a pidfd, immune to PID reuse; handled is false without pidfd support (kernel < 5.3).
 func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
 	fd, err := unix.PidfdOpen(pid, 0)
 	if err != nil {

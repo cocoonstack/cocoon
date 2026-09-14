@@ -12,7 +12,7 @@ const (
 	eventsSafetyPoll = 5 * time.Second
 )
 
-// Broadcaster is the engine-shared half of an Events notifier: it owns the subscriber set and the debounce/poll loop, funneling every trigger into the engine's check func — which calls Broadcast only when state moved.
+// Broadcaster is the engine-shared half of an Events notifier: the subscriber set and the debounce/poll loop feeding the engine's check func.
 type Broadcaster struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}
@@ -63,7 +63,7 @@ func (b *Broadcaster) Stop() {
 	_ = b.watcher.Close()
 }
 
-// Run is the notifier goroutine body: watcher events are debounced; watcher errors, the optional extra trigger and a safety poll check immediately.
+// Run is the notifier goroutine body.
 func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
 	timer := time.NewTimer(0)
 	timer.Stop()

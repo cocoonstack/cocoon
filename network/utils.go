@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// NetQueueSize: default virtio-net ring depth per queue; 512 balances throughput vs request latency.
-	NetQueueSize = 512
+	// netQueueSize is the default virtio-net ring depth per queue.
+	netQueueSize = 512
 
 	// RestoreTAPPrefix names CH's throwaway restore TAPs; a scope equal to it would collide with a clone's own bridge TAPs.
 	RestoreTAPPrefix = "rm"
@@ -32,7 +32,7 @@ func NetNumQueues(cpu int) int {
 }
 
 func ResolveQueueSize(qs int) int {
-	return cmp.Or(qs, NetQueueSize)
+	return cmp.Or(qs, netQueueSize)
 }
 
 func ResolveQueues(specQueues, cpu int) int {

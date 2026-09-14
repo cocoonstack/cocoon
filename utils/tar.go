@@ -19,7 +19,7 @@ const (
 
 	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
-	// extractReadBuf bounds one read; runs of data or zero blocks inside it coalesce into one write or one seek.
+	// extractReadBuf bounds one read.
 	extractReadBuf = 1 << 20
 )
 
@@ -78,11 +78,11 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 			if parseErr != nil {
 				return fmt.Errorf("parse sparse size for %s: %w", name, parseErr)
 			}
-			if err := extractFileSparse(outPath, tr, hdr.FileInfo().Mode(), realSize, mapJSON); err != nil {
+			if err := extractFileSparse(outPath, tr, hdr.FileInfo().Mode().Perm(), realSize, hdr.Size, mapJSON); err != nil {
 				return fmt.Errorf("extract sparse %s: %w", name, err)
 			}
 		} else {
-			if err := extractFile(outPath, tr, hdr.FileInfo().Mode(), hdr.Size); err != nil {
+			if err := extractFile(outPath, tr, hdr.FileInfo().Mode().Perm(), hdr.Size); err != nil {
 				return fmt.Errorf("extract %s: %w", name, err)
 			}
 		}
@@ -108,7 +108,7 @@ func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) e
 }
 
 // extractFileSparse restores a sparse file from its segment map.
-func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int64, mapJSON string) (err error) {
+func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dataSize int64, mapJSON string) (err error) {
 	var segments []sparseSegment
 	if err = json.Unmarshal([]byte(mapJSON), &segments); err != nil {
 		return fmt.Errorf("decode sparse map: %w", err)
@@ -124,6 +124,17 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize int6
 		return err
 	}
 
+	var sum int64
+	for _, seg := range segments {
+		if seg.Offset < 0 || seg.Length < 0 || seg.Offset > realSize || seg.Length > realSize-seg.Offset {
+			return fmt.Errorf("sparse map segment %d+%d exceeds the %d-byte file", seg.Offset, seg.Length, realSize)
+		}
+		sum += seg.Length
+	}
+	// a tar rewritten by a third-party tool keeps the map but not the data it describes
+	if sum != dataSize {
+		return fmt.Errorf("sparse map describes %d data bytes, entry holds %d", sum, dataSize)
+	}
 	for _, seg := range segments {
 		if _, err := f.Seek(seg.Offset, io.SeekStart); err != nil {
 			return err
@@ -221,7 +232,7 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 
 	segments, err := scanDataSegments(int(f.Fd()), size)
 	if err != nil {
-		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS). Fall back.
+		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS).
 		return rewindAndTarFull(tw, f, fi, path, nameInTar)
 	}
 
@@ -247,7 +258,7 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("tar header for %s: %w", path, err)
 	}
 	hdr.Name = nameInTar
-	hdr.Size = dataSize // only actual data bytes in the tar entry
+	hdr.Size = dataSize
 	hdr.PAXRecords = map[string]string{
 		paxSparseMap:  string(mapJSON),
 		paxSparseSize: strconv.FormatInt(size, 10),

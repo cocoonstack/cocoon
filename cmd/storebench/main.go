@@ -1,4 +1,4 @@
-// storebench times meta-engine operations through the hypervisor backend: update/get loop in-process at resident N, create fans out worker processes doing reserve+finalize on one shared store (§9's concurrent VM-creation shape).
+// storebench times meta-engine operations through the hypervisor backend: update/get in-process, create across worker processes on one shared store.
 package main
 
 import (
@@ -44,6 +44,8 @@ func main() {
 	if len(os.Args) < 3 || len(os.Args) < minArgs[os.Args[1]] {
 		fmt.Fprintln(os.Stderr, "usage: storebench update|get <engine> <n> <ops> [dir]")
 		fmt.Fprintln(os.Stderr, "       storebench create <engine> <workers> <per-worker> <resident-n> [dir]")
+		fmt.Fprintln(os.Stderr, "       storebench createworker <engine> <worker-id> <per-worker> <dir>")
+		fmt.Fprintln(os.Stderr, "       storebench micro <engine> <op> <n> <ops> [dir]")
 		os.Exit(2)
 	}
 	mode, engine := os.Args[1], os.Args[2]
@@ -82,7 +84,11 @@ func runLoop(ctx context.Context, mode, engine string, n, ops int, dir string) e
 		}
 	}
 	if pf := os.Getenv("CPUPROFILE"); pf != "" {
-		f, _ := os.Create(pf) //nolint:gosec // bench-only profile path from env
+		f, err := os.Create(pf) //nolint:gosec // bench-only profile path from env
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
 		_ = pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
@@ -165,7 +171,7 @@ func runWorker(ctx context.Context, engine, prefix string, per int, dir string) 
 	return nil
 }
 
-// runMicro times one engine primitive per durable (or relaxed) transaction: the §9 microbench matrix. Seeding batches 1000 rows per transaction.
+// runMicro times one engine primitive per durable (or relaxed) transaction.
 func runMicro(ctx context.Context, engine, op string, n, ops int, dir string) error {
 	store, err := openStore(ctx, engine, dir)
 	if err != nil {

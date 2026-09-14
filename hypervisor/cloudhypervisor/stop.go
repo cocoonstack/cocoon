@@ -44,7 +44,7 @@ func (ch *CloudHypervisor) shutdownUEFI(ctx context.Context, hc *http.Client, vm
 	)
 }
 
-// forceTerminate flushes disks via REST then SIGTERM→SIGKILL; verifies pid is still cloud-hypervisor to avoid signaling a reused PID.
+// forceTerminate swallows the vm.shutdown failure: SIGTERM follows regardless.
 func (ch *CloudHypervisor) forceTerminate(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int) error {
 	if err := shutdownVM(ctx, hc); err != nil {
 		log.WithFunc("cloudhypervisor.forceTerminate").Warnf(ctx, "vm.shutdown %s: %v", vmID, err)

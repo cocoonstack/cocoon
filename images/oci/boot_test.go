@@ -53,6 +53,18 @@ func TestScanBootFilesSkipsNonBoot(t *testing.T) {
 	}
 }
 
+func TestScanBootFilesLeadingSlash(t *testing.T) {
+	dir := t.TempDir()
+	tr := writeBootTar(t, "/boot/vmlinuz-6.8.0", "/boot/initrd.img-6.8.0")
+	kernel, initrd, err := scanBootFiles(t.Context(), tr, dir, "import-0")
+	if err != nil {
+		t.Fatalf("scanBootFiles: %v", err)
+	}
+	if kernel == "" || initrd == "" {
+		t.Fatalf("leading-slash entries skipped: kernel=%q initrd=%q", kernel, initrd)
+	}
+}
+
 func writeBootTar(t *testing.T, paths ...string) *bytes.Reader {
 	t.Helper()
 	var buf bytes.Buffer

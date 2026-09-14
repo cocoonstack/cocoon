@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"errors"
+	"syscall"
 
 	"github.com/projecteru2/core/log"
 
@@ -25,7 +26,13 @@ func CgroupGCModule(parentDir string) gc.Module[[]string] {
 			logger := log.WithFunc("gc.cgroup")
 			var errs []error
 			for _, id := range ids {
-				if err := cgroup.RemoveEmpty(parentDir, id); err != nil {
+				// a scope populated since the VM snapshot was read belongs to a launch in flight, not to an orphan
+				err := cgroup.RemoveEmpty(parentDir, id)
+				if errors.Is(err, syscall.EBUSY) {
+					logger.Infof(ctx, "skipped scope vm-%s reason=populated", id)
+					continue
+				}
+				if err != nil {
 					errs = append(errs, err)
 					continue
 				}

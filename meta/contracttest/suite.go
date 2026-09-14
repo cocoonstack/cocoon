@@ -34,7 +34,7 @@ type retryStore struct {
 	meta.Store
 }
 
-func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
+func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
 	err := r.Store.Update(ctx, sc, mode, func(w meta.Writer) error {
 		if err := fn(w); err != nil {
 			return err
@@ -381,7 +381,7 @@ func testEvents(t *testing.T, factory Factory) {
 	}
 }
 
-// testLogCursor asserts §9's log contract: committed Seq unique and strictly increasing across a rolled-back append.
+// testLogCursor asserts committed Seq unique and strictly increasing across a rolled-back append (§9).
 func testLogCursor(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})
@@ -428,7 +428,7 @@ func get1(t *testing.T, s meta.Store, c *meta.Collection[record]) (*record, erro
 	return rec, err
 }
 
-func update(t *testing.T, s meta.Store, ns string, fn func(meta.Writer) error) {
+func update(t *testing.T, s meta.Store, ns string, fn meta.UpdateFunc) {
 	t.Helper()
 	if err := s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, fn); err != nil {
 		t.Fatal(err)

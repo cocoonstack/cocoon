@@ -12,10 +12,8 @@ import (
 	"syscall"
 
 	"github.com/projecteru2/core/log"
+	"golang.org/x/sys/unix"
 )
-
-// ficlone is the ioctl number for btrfs/xfs/bcachefs CoW file cloning.
-const ficlone = 0x40049409
 
 // noReflink remembers the filesystems whose FICLONE answered "not supported", so later copies on them skip the create/ioctl/unlink round trip.
 var noReflink sync.Map
@@ -40,8 +38,8 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 
 func tryFiclone(dst, src string, sync SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
-		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, dstFile.Fd(), ficlone, srcFile.Fd()); errno != 0 {
-			return fmt.Errorf("ficlone: %w", errno)
+		if err := unix.IoctlFileClone(int(dstFile.Fd()), int(srcFile.Fd())); err != nil {
+			return fmt.Errorf("ficlone: %w", err)
 		}
 		// FICLONE only shares extents — still honor Sync, or the fast path silently drops durability.
 		if sync == Sync {

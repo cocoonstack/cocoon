@@ -28,6 +28,7 @@ type imageEntry struct {
 func (e imageEntry) EntryID() string           { return e.ManifestDigest.String() }
 func (e imageEntry) EntryRef() string          { return e.Ref }
 func (e imageEntry) EntryCreatedAt() time.Time { return e.CreatedAt }
+func (e imageEntry) EntrySize() int64          { return e.Size }
 
 func (e imageEntry) DigestHexes() []string {
 	hexes := make([]string, len(e.Layers))

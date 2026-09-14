@@ -10,7 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// Events subscribes to committed-change signals: fsnotify on the DB's parent dir confirmed via data_version on a pinned connection — the counter is only comparable across calls on ONE connection and never moves for that connection's own commits (§7).
+// Events subscribes to committed-change signals; data_version is comparable only across calls on one pinned connection and never moves for that connection's own commits (§7).
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	if s.notifier == nil {

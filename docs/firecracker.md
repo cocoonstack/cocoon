@@ -33,17 +33,23 @@ cocoon vm clone my-snap --name clone-vm
 | qcow2 storage | Y | N |
 | Interactive console | Y | Y |
 | HugePages | Y (opt-in `--hugepages`) | N (would break snapshot restore) |
-| Boot time | ~200-500ms | ~125ms |
-| Memory overhead | ~10-20 MiB/VM | <5 MiB/VM |
+| Disk hot-plug and NIC resize | Y | Only with `--pci` |
+| Vhost-user-fs and VFIO hot-plug | Y | N |
+| Boot time (indicative, not measured here) | ~200-500ms | ~125ms |
+| Memory overhead (indicative, not measured here) | ~10-20 MiB/VM | <5 MiB/VM |
 
 ### Limitations
 
-- **OCI images only**: `--fc` is mutually exclusive with `--windows` and rejects cloudimg (UEFI boot) images
+- **OCI images only**: `--fc` is mutually exclusive with `--windows`, `--shared-memory`, `--hugepages`, `--mergeable` and `--no-watchdog`, and rejects cloudimg (UEFI boot) images
+- **MMIO by default**: without `--pci` (fixed for the VM lifetime, inherited by snapshots) disk attach/detach, NIC resize and clone-time `--data-disk`/`--nics` are refused
+- **io_uring required**: writable disks use the `Async` engine with no opt-out, so a restrictive seccomp profile (Docker's default) breaks them; `--no-direct-io` is ignored
+- **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before SIGKILL
+- **Clone MTU must match**: a clone requires the target network's MTU to equal the snapshot's
 - **Raw disks only**: Firecracker uses raw virtio-blk without serial support; disks are referenced by device path (`/dev/vdX`)
 - **Single-queue networking**: `NetworkConfig.NumQueues` is ignored
-- **Snapshot portability requires same directory layout**: FC snapshots store absolute paths in the vmstate binary (not patchable); cross-host export/import requires the target host to use the same `root_dir`/`run_dir` and have the same OCI image pulled
+- **Snapshot portability requires same directory layout**: FC snapshots store absolute paths in the vmstate binary; cocoon bind-mounts the snapshot's drives into place inside a private mount namespace and re-anchors them after resume, so a differing `run_dir` fails outright (`unusable source ... is outside the managed run root`) rather than corrupting the clone, and the same OCI image must be pulled
 - **Console via PTY relay**: a background relay process bridges FC's serial (stdin/stdout) to `console.sock`
 
 ### OCI Image Compatibility
 
-OCI images must include a `resolve_disk()` init script that supports device paths (e.g., `/dev/vda`) in addition to virtio serial names. Images built from `os-image/ubuntu/overlay.sh` (v0.3+) support both formats automatically.
+OCI images must include a `resolve_disk()` init script that supports device paths (e.g., `/dev/vda`) in addition to virtio serial names. Every current `os-image/` family supports both forms.

@@ -78,6 +78,11 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("cni_bin_dir", "/opt/cni/bin")
 	viper.SetDefault("dns", "8.8.8.8,1.1.1.1")
 	viper.SetDefault("stop_timeout_seconds", 30)
+	viper.SetDefault("socket_wait_timeout_seconds", 5)
+	viper.SetDefault("terminate_grace_period_seconds", 5)
+	viper.SetDefault("use_firecracker", false)
+	viper.SetDefault("log.filename", "")
+	viper.SetDefault("log.usejson", false)
 	viper.SetDefault("pool_size", runtime.NumCPU())
 	viper.SetDefault("pull_conns", 8)
 	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
@@ -89,6 +94,8 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("log.maxsize", 500)
 	viper.SetDefault("log.maxage", 28)
 	viper.SetDefault("log.maxbackups", 3)
+	viper.SetDefault("metering.backend", "")
+	viper.SetDefault("metering.file.path", "")
 
 	base := cmdcore.BaseHandler{ConfProvider: func() *config.Config { return conf }}
 

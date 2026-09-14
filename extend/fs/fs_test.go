@@ -13,7 +13,7 @@ func TestSpecNormalize(t *testing.T) {
 		wantNumQ  int
 		wantQSize int
 	}{
-		{name: "minimal valid", spec: Spec{Socket: "/tmp/x.sock", Tag: "share"}, wantNumQ: DefaultNumQueues, wantQSize: DefaultQueueSize},
+		{name: "minimal valid", spec: Spec{Socket: "/tmp/x.sock", Tag: "share"}, wantNumQ: defaultNumQueues, wantQSize: defaultQueueSize},
 		{name: "explicit queues", spec: Spec{Socket: "/tmp/x.sock", Tag: "share", NumQueues: 4, QueueSize: 256}, wantNumQ: 4, wantQSize: 256},
 		{name: "missing socket", spec: Spec{Tag: "share"}, wantErr: "socket is required"},
 		{name: "relative socket", spec: Spec{Socket: "rel.sock", Tag: "share"}, wantErr: "socket must be absolute"},

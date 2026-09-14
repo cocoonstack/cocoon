@@ -76,8 +76,16 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 	return LoadAndValidateMeta(dir, c.RootDir, c.Config.RunDir)
 }
 
+// PreflightRestore returns the validated meta so later phases skip re-reading it.
 func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
-	return PreflightRestore(srcDir, c.RootDir, c.Config.RunDir, rec, integrity)
+	meta, err := c.LoadAndValidateMeta(srcDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := integrity(srcDir, meta.StorageConfigs); err != nil {
+		return nil, err
+	}
+	return meta, ValidateRoleSequence(meta.StorageConfigs, rec.StorageConfigs)
 }
 
 func (c *BaseConfig) RootDirPath() string { return c.RootDir }

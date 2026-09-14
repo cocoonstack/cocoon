@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,7 +30,7 @@ type tarImportJob struct {
 
 func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 0 {
-		return fmt.Errorf("no tar files provided")
+		return errors.New("no tar files provided")
 	}
 	for _, f := range file {
 		if _, err := os.Stat(f); err != nil {

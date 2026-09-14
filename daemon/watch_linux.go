@@ -8,11 +8,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const (
-	// pollTimeoutMS bounds how long a wait blocks, so shutdown is not gated on a VM exiting.
-	pollTimeoutMS = 500
-	maxPollEvents = 64
-)
+// pollTimeoutMS bounds how long a wait blocks, so shutdown is not gated on a VM exiting.
+const pollTimeoutMS = 500
 
 // poller waits for pidfd readability, which the kernel signals once the process exits.
 type poller struct {
@@ -25,7 +22,7 @@ func newPoller() (*poller, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &poller{epfd: epfd, events: make([]unix.EpollEvent, maxPollEvents)}, nil
+	return &poller{epfd: epfd, events: make([]unix.EpollEvent, pollBatch)}, nil
 }
 
 func (p *poller) add(fd int) error {
@@ -38,7 +35,7 @@ func (p *poller) remove(fd int) error {
 }
 
 func (p *poller) wait(out []int) (int, error) {
-	n, err := unix.EpollWait(p.epfd, p.events[:min(len(out), maxPollEvents)], pollTimeoutMS)
+	n, err := unix.EpollWait(p.epfd, p.events[:len(out)], pollTimeoutMS)
 	if err != nil {
 		if errors.Is(err, unix.EINTR) {
 			return 0, nil

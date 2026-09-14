@@ -231,7 +231,7 @@ func TestKillStormWorker(t *testing.T) {
 	}
 }
 
-func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn func(meta.Writer) error) {
+func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn meta.UpdateFunc) {
 	t.Helper()
 	for {
 		err := s.Update(t.Context(), sc, meta.CommitDurable, fn)

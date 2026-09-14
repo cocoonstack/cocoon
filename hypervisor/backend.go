@@ -44,7 +44,7 @@ const (
 	GracefulStopPollInterval = 500 * time.Millisecond
 )
 
-// timeNow is the deterministic-clock seam the differential trace injects (design §10).
+// timeNow is the clock seam tests inject.
 var timeNow = time.Now
 
 // BackendConfig provides backend-specific values needed by shared Backend methods.
@@ -73,7 +73,7 @@ type LaunchSpec struct {
 	// Rec names the VM whose CPU scope the process enters at spawn (ID + cgroup knobs); every VM enters a scope.
 	Rec *VMRecord
 
-	// DeferCPUQuota leaves the scope's ceiling at max through the paused provisioning window (#186); the backend arms the finite quota before resume.
+	// DeferCPUQuota leaves the scope's ceiling at max through the paused provisioning window; the backend arms the finite quota before resume.
 	DeferCPUQuota bool
 }
 

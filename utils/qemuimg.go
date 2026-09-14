@@ -12,7 +12,6 @@ func RunQemuImg(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("qemu-img: no args")
 	}
-	// shell out because no Go qcow2 writer covers create/resize/convert at qemu-img's fidelity.
 	out, err := exec.CommandContext(ctx, "qemu-img", args...).CombinedOutput() //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("qemu-img %s: %s: %w", args[0], strings.TrimSpace(string(out)), err)

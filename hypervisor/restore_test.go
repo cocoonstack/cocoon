@@ -154,15 +154,7 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-merge-fail"
-	runDir := t.TempDir()
-	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed state: %v", err)
-	}
+	runDir := seedStoppedVMWithDirs(t, b, id)
 
 	if err := os.MkdirAll(filepath.Join(runDir, "b"), 0o750); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -311,14 +303,7 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-sweep-fail"
-	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = t.TempDir()
-		return nil
-	}); err != nil {
-		t.Fatalf("seed state: %v", err)
-	}
+	seedStoppedVMWithDirs(t, b, id)
 
 	spec := RestoreSpec{
 		VMCfg:       &types.VMConfig{Config: types.Config{CPU: 1, Memory: 512, Storage: 1024}},

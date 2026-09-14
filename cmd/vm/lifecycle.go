@@ -1,11 +1,11 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/moby/term"
 	"github.com/projecteru2/core/log"
@@ -20,13 +20,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
-)
-
-const (
-	// logHeadSigLen spans CH/FC's boot timestamp on line 1.
-	logHeadSigLen = 64
-
-	logFollowDebounce = 100 * time.Millisecond
 )
 
 type batchOp func(hypervisor.Hypervisor, []string) ([]string, error)
@@ -84,7 +77,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}
-	info.State = types.VMState(cmdcore.ReconcileState(info))
+	info.State, _ = cmdcore.ReconcileState(info)
 
 	out := inspectOutput{VM: info}
 	if info.State == types.VMStateRunning {
@@ -204,11 +197,15 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 		allDone = append(allDone, done...)
 		errs = append(errs, err)
 	}
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+	err := errors.Join(errs...)
+	if err != nil {
+		err = fmt.Errorf("%s: %w", name, err)
 	}
 	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, map[string][]string{"succeeded": allDone}); done {
-		return jsonErr
+		return cmp.Or(jsonErr, err)
+	}
+	if err != nil {
+		return err
 	}
 	if len(allDone) == 0 {
 		logger.Infof(ctx, "no VMs %s", pastTense)

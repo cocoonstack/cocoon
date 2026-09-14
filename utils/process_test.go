@@ -127,7 +127,7 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 	_ = cmd.Wait()
 
 	if IsProcessAlive(pid) {
-		t.Skip("PID recycled too quickly, skipping")
+		t.Errorf("reaped pid %d reported alive", pid)
 	}
 }
 
@@ -138,12 +138,6 @@ func TestVerifyProcessCmdline_InvalidPID(t *testing.T) {
 	if VerifyProcessCmdline(-1, "x", "y") {
 		t.Error("expected false for PID -1")
 	}
-}
-
-func TestVerifyProcessCmdline_WrongBinary(t *testing.T) {
-	pid := os.Getpid()
-	result := VerifyProcessCmdline(pid, "definitely-not-the-binary", "definitely-not-the-arg")
-	_ = result
 }
 
 func TestTerminateProcess_SleepProcess(t *testing.T) {

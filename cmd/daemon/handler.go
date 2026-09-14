@@ -42,11 +42,7 @@ func (h Handler) Run(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := cocoond.New(dconf, store, supervisors)
-	if err != nil {
-		return err
-	}
-	return d.Run(ctx)
+	return cocoond.New(dconf, store, supervisors).Run(ctx)
 }
 
 func daemonConfig(cmd *cobra.Command, conf *config.Config) (cocoond.Config, error) {

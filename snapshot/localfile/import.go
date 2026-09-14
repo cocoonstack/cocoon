@@ -17,7 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// Import reads a snapshot tar (gzip auto-detected), stores it, returns the new ID. Non-empty name/description override the envelope.
 func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description string) (_ string, err error) {
 	tarReader, gzCloser, err := unwrapGzip(r)
 	if err != nil {

@@ -1,4 +1,4 @@
-// Package sqlite is the meta scale engine: one WAL database, namespace = table group, generic (id, data) rows per root-declared table (§2-§4, v2.28).
+// Package sqlite is the meta scale engine: one WAL database, namespace = table group, generic (id, data) rows per root-declared table (§2-§4).
 package sqlite
 
 import (
@@ -24,9 +24,10 @@ import (
 )
 
 const (
-	// ApplicationID marks a cocoon DB ("COCN"); UserVersion is the schema generation — verified on every open, written only at init (§6); scripts/meta-upgrade.py moves a store between generations. Generation 2 adds the VM placements tables.
+	// ApplicationID marks a cocoon DB ("COCN").
 	ApplicationID = 0x434F434E
-	UserVersion   = 2
+	// UserVersion is the schema generation, verified on every open and written only at init; scripts/meta-upgrade.py moves a store between generations.
+	UserVersion = 2
 
 	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse (§6).
 	DBFileName   = "meta.db"
@@ -52,7 +53,7 @@ type tableStmts struct {
 
 var _ meta.Store = (*Store)(nil)
 
-// Store is the sqlite engine: writerDurable/writerRelaxed single-conn handles, a bounded reader pool, and a pinned notifier connection (§4). Statements are prepared per handle at Open — the table set is static.
+// Store is the sqlite engine; statements are prepared per handle at Open, since the table set is static (§4).
 type Store struct {
 	path          string
 	nss           map[string]Namespace
@@ -68,7 +69,7 @@ type Store struct {
 	notifier *notifier
 }
 
-// Open verifies identity, version and per-namespace meta_state, then builds the connection set. It never creates or migrates — that is Init's job.
+// Open never creates or migrates: that is Init's job.
 func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
 	if err := RefuseManifest(dbPath); err != nil {
 		return nil, err
@@ -82,7 +83,7 @@ func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 }
 
 func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
-	// The driver creates a file on first touch; Open never creates — that is Init's job (§6) — and §4 refuses network filesystems before WAL work.
+	// The driver creates a file on first touch, so a missing store is refused before it is opened; §4 refuses network filesystems before WAL work.
 	if !utils.FileExists(dbPath) {
 		return nil, fmt.Errorf("no sqlite store at %s: run `cocoon meta init` or `cocoon meta convert`", dbPath)
 	}
@@ -109,7 +110,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if s.readers, err = open(dbPath, "FULL", false); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
-	s.readers.SetMaxOpenConns(max(2, runtime.NumCPU()))
+	s.readers.SetMaxOpenConns(max(2, runtime.GOMAXPROCS(0)))
 	if err = s.verifyIdentity(); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
@@ -128,7 +129,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) View(ctx context.Context, nss []string, fn func(meta.Reader) error) error {
+func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error {
 	if err := s.checkScope(nss); err != nil {
 		return err
 	}
@@ -140,7 +141,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn func(meta.Reader) err
 	return fn(&txHandle{ctx: ctx, tx: tx, sm: s.stmtsReaders, scope: scopeSet(nss)})
 }
 
-func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn func(meta.Writer) error) error {
+func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
 	if sc.Write == "" {
 		return fmt.Errorf("update requires a write namespace: %w", meta.ErrScope)
 	}
@@ -167,12 +168,8 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if err := tx.Commit(); err != nil {
 		return mapErr(err)
 	}
-	commit, total := time.Since(commitStart), time.Since(start)
-	logger := log.WithFunc("meta.sqlite.Update")
-	if total > slowTxnWarn {
-		logger.Warnf(ctx, "slow transaction on %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
-	} else {
-		logger.Debugf(ctx, "txn %s: total %s wait %s commit %s", sc.Write, total, wait, commit)
+	if total := time.Since(start); total > slowTxnWarn {
+		log.WithFunc("meta.sqlite.Update").Warnf(ctx, "slow transaction on %s: total %s wait %s commit %s", sc.Write, total, wait, time.Since(commitStart))
 	}
 	return nil
 }
@@ -198,17 +195,15 @@ func (s *Store) Close() error {
 			}
 		}
 	}
-	s.stmtsDurable, s.stmtsRelaxed, s.stmtsReaders = nil, nil, nil
 	for _, db := range []*sql.DB{s.writerDurable, s.writerRelaxed, s.readers} {
 		if db != nil {
 			errs = append(errs, db.Close())
 		}
 	}
-	s.writerDurable, s.writerRelaxed, s.readers = nil, nil, nil
 	return errors.Join(errs...)
 }
 
-// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop: the short in-driver busy_timeout does the real waiting (and bounds ctx latency, clause 6), so between attempts only a tiny jittered pause bounds spin — an exponential backoff here would idle past a freed lock.
+// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop; the in-driver busy_timeout does the real waiting, so the pause between attempts is a tiny jitter.
 func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 	deadline := time.Now().Add(busyRetryCeiling)
 	for {
@@ -243,7 +238,7 @@ func (s *Store) checkScope(nss []string) error {
 	return nil
 }
 
-// verifyIdentity reads application_id, user_version and meta_state — never writes them (§6): wrong id or a newer version fails closed; a namespace with no meta_state row is uninitialized, never empty.
+// verifyIdentity never writes (§6): a wrong id or a mismatched version fails closed, and a namespace with no meta_state row is uninitialized, never empty.
 func (s *Store) verifyIdentity() error {
 	var appID, version int64
 	if err := s.readers.QueryRow("PRAGMA application_id").Scan(&appID); err != nil {

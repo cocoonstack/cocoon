@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	erofsVersionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+	erofsVersionRe = regexp.MustCompile(`mkfs\.erofs\D*(\d+)\.(\d+)`)
 
 	erofsCheckMu sync.Mutex
 	erofsCheckOK bool

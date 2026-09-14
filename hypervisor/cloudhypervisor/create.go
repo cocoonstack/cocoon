@@ -83,7 +83,6 @@ func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmC
 	return configs, nil
 }
 
-// generateCidata auto-mounts Role==Data disks via /dev/disk/by-id/virtio-<serial>.
 func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, networkConfigs []*types.NetworkConfig, storageConfigs []*types.StorageConfig) error {
 	dns, err := ch.conf.DNSServers()
 	if err != nil {
