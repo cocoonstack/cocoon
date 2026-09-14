@@ -34,6 +34,7 @@ func (p EvictionPolicy) hasCriteria() bool {
 }
 
 type snapshotMeta struct {
+	dataDir      string
 	name         string
 	hypervisor   string
 	lastAccessed time.Time
@@ -107,6 +108,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
 						hypervisor:   rec.Hypervisor,
+						dataDir:      cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)),
 						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
 					}
@@ -114,6 +116,12 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				})
 			}); err != nil {
 				return snap, err
+			}
+			// the stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
+			for id, m := range snap.records {
+				if _, statErr := os.Stat(m.dataDir); errors.Is(statErr, fs.ErrNotExist) {
+					snap.missingDir = append(snap.missingDir, id)
+				}
 			}
 			var err error
 			if snap.dataDirs, err = utils.ScanSubdirs(conf.DataDir()); err != nil {
@@ -213,7 +221,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
-// pickLRU maps each evict ID to its reason ("+" joins multi-match; no criteria → "lru-all").
+// pickLRU maps each evict ID to its reason.
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {
 		return records[a].lastAccessed.Compare(records[b].lastAccessed)
