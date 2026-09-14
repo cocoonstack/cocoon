@@ -11,7 +11,7 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 | `running`  | Hypervisor process alive, guest is up                    |
 | `stopped`  | Hypervisor process exited cleanly                        |
 | `error`    | Start, stop, or restore failed — recover with `vm restore`; a failed restore also quarantines the record, so `vm start` is refused until a later restore succeeds or `vm rm` deletes it |
-| `stopped (stale)` | Rendered, never persisted: the record reads `running` but the VMM is gone |
+| `stopped (stale)` | Rendered, never persisted: the record reads `running` but the VMM is gone; `--output json` reports `"state": "stopped"` with `"stale": true` |
 
 ### Shutdown Behavior
 

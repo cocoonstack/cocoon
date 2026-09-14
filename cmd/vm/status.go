@@ -103,7 +103,6 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	}
 	vms = applyFilters(vms, filters)
 	sortVMs(vms)
-	// JSON serializes vms as-is, so stale-running records must reconcile here, not per output row.
 	stale := map[string]bool{}
 	for _, vm := range vms {
 		vm.State, stale[vm.ID] = cmdcore.ReconcileState(vm)
@@ -111,13 +110,14 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	return renderVMList(vms, format, scopeDir, stale)
 }
 
-// renderVMList prints vms as JSON or a table; stale marks records whose VMM is gone, shown only in the table.
+// renderVMList prints vms as JSON or a table; stale marks records whose VMM is gone, a flag in JSON and a state suffix in the table.
 func renderVMList(vms []*types.VM, format, scopeDir string, stale map[string]bool) error {
 	if format == cliutil.FormatJSON {
-		if vms == nil {
-			vms = []*types.VM{}
+		items := make([]vmOutput, len(vms))
+		for i, vm := range vms {
+			items[i] = vmOutput{VM: vm, Stale: stale[vm.ID]}
 		}
-		return cliutil.OutputJSON(vms)
+		return cliutil.OutputJSON(items)
 	}
 	if len(vms) == 0 {
 		fmt.Println("No VMs found.")

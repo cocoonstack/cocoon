@@ -30,8 +30,10 @@ type attachedDevices struct {
 	Disks   []disk.Attached `json:"disks,omitempty"`
 }
 
-type inspectOutput struct {
+// vmOutput is the JSON shape of one VM; Stale marks a record still reading running whose VMM is gone.
+type vmOutput struct {
 	*types.VM
+	Stale           bool             `json:"stale,omitempty"`
 	AttachedDevices *attachedDevices `json:"attached_devices,omitempty"`
 }
 
@@ -77,9 +79,10 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect: %w", err)
 	}
-	info.State, _ = cmdcore.ReconcileState(info)
+	var stale bool
+	info.State, stale = cmdcore.ReconcileState(info)
 
-	out := inspectOutput{VM: info}
+	out := vmOutput{VM: info, Stale: stale}
 	if info.State == types.VMStateRunning {
 		out.AttachedDevices = collectAttachedDevices(ctx, hyper, args[0])
 	}
