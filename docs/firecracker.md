@@ -33,7 +33,8 @@ cocoon vm clone my-snap --name clone-vm
 | qcow2 storage | Y | N |
 | Interactive console | Y | Y |
 | HugePages | Y (opt-in `--hugepages`) | N (would break snapshot restore) |
-| Device hot-plug (disk, fs, VFIO) and NIC resize | Y | Only with `--pci` |
+| Disk hot-plug and NIC resize | Y | Only with `--pci` |
+| Vhost-user-fs and VFIO hot-plug | Y | N |
 | Boot time (indicative, not measured here) | ~200-500ms | ~125ms |
 | Memory overhead (indicative, not measured here) | ~10-20 MiB/VM | <5 MiB/VM |
 

@@ -71,11 +71,11 @@ Pull and import into Cocoon:
 # 1. Pull split parts via oras (https://oras.land)
 oras pull ghcr.io/cocoonstack/windows/win11:25h2
 
-# 2. Verify (cocoon image import takes the parts directly, in order, and concatenates them itself)
+# 2. Verify the split parts
 sha256sum -c SHA256SUMS
 
-# 3. Import into Cocoon
-cocoon image import win11-25h2 windows-11-25h2.qcow2
+# 3. Import the parts into Cocoon in order
+cocoon image import win11-25h2 windows-11-25h2.qcow2.*.qcow2.part
 cocoon vm run --windows --name win11 --cpu 4 --memory 4G win11-25h2
 ```
 
