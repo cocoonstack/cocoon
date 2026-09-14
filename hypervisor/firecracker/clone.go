@@ -94,6 +94,9 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if prepErr != nil {
 		return nil, prepErr
 	}
+	if err := types.ValidateStorageConfigs(append(slices.Clone(storageConfigs), dataDisks...)); err != nil {
+		return nil, fmt.Errorf("validate storage configs: %w", err)
+	}
 	bootCfg := meta.BootConfig
 	if err := EnsureVmlinuxBoot(bootCfg); err != nil {
 		return nil, err
@@ -120,11 +123,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	}
 	defer plan.close()
 	storageConfigs = append(storageConfigs, dataDisks...)
-	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
-		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
-		return nil, fmt.Errorf("validate storage configs: %w", err)
-	}
 
 	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {

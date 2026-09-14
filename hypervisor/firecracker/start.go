@@ -131,8 +131,8 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	logger := log.WithFunc("firecracker.launchProcessWithLeases")
 
 	fcLog := fc.LogFilePath(rec.LogDir)
-	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon recreates it per launch.
-	if f, createErr := os.Create(fcLog); createErr == nil { //nolint:gosec
+	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon creates it; appending keeps the previous launch's tail.
+	if f, createErr := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); createErr == nil { //nolint:gosec
 		_ = f.Close()
 	}
 
@@ -170,6 +170,8 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = fcCmd.Wait()
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
+		// the socket file outlives a failed relay and would make inspect report a console nobody serves
+		_ = os.Remove(hypervisor.ConsoleSockPath(rec.RunDir))
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 

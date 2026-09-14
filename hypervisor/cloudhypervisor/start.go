@@ -45,9 +45,9 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
 
 func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VMRecord, args []string, netnsPath string, deferQuota bool) (int, error) {
 	processLog := ch.LogFilePath(rec.LogDir)
-	logFile, err := os.Create(processLog) //nolint:gosec
+	logFile, err := os.OpenFile(processLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec
 	if err != nil {
-		log.WithFunc("cloudhypervisor.launchProcess").Warnf(ctx, "create process log: %v", err)
+		log.WithFunc("cloudhypervisor.launchProcess").Warnf(ctx, "open process log: %v", err)
 	} else {
 		defer logFile.Close() //nolint:errcheck
 	}
