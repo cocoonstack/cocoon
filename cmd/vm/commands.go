@@ -68,6 +68,7 @@ func Command(h Handler) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List VMs with status",
+		Args:    cobra.NoArgs,
 		RunE:    h.List,
 	}
 	cliutil.AddFormatFlag(listCmd)
@@ -167,7 +168,7 @@ func Command(h Handler) *cobra.Command {
 	debugCmd.Flags().Int("max-cpu", 8, "max CPUs")           //nolint:mnd
 	debugCmd.Flags().Int("balloon", 0, "balloon size in MB") //nolint:mnd
 	debugCmd.Flags().String("cow", "", "COW disk path")
-	debugCmd.Flags().String("ch", "cloud-hypervisor", "cloud-hypervisor binary path")
+	debugCmd.Flags().String("ch", "", "cloud-hypervisor binary path (default: ch_binary from the config)")
 
 	statusCmd := &cobra.Command{
 		Use:   "status [VM...]",
@@ -331,6 +332,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().String("cpuset-cpus", "", "pin the VM to host cpus (kernel cpu-list, e.g. 0-3, or auto = the least-loaded cache domain at launch); non-work-conserving, empty = anywhere inside the cgroup_cpus fence")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = default); mutually exclusive with --bridge")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0); VM gets IP via DHCP from the bridge")
+	cmd.MarkFlagsMutuallyExclusive("network", "bridge")
 	cmd.Flags().String("user", "root", "guest username for cloud-init (cloudimg only)")
 	cmd.Flags().String("password", "cocoon", "guest password for cloud-init (cloudimg only)")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (use page cache instead; CH only)")
@@ -354,6 +356,7 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("cpuset-cpus", "", "pin the clone to host cpus (kernel cpu-list or auto; empty = anywhere inside the cgroup_cpus fence)")
 	cmd.Flags().String("network", "", "CNI conflist name (empty = inherit from source VM)")
 	cmd.Flags().String("bridge", "", "use TAP-on-bridge instead of CNI (value is bridge device, e.g. cni0)")
+	cmd.MarkFlagsMutuallyExclusive("network", "bridge")
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	addRestoreModeFlag(cmd)
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
