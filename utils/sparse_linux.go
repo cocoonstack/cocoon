@@ -8,11 +8,8 @@ import (
 	"io"
 	"os"
 	"syscall"
-)
 
-const (
-	seekData = 3 // SEEK_DATA
-	seekHole = 4 // SEEK_HOLE
+	"golang.org/x/sys/unix"
 )
 
 // SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA; dst is truncated to src size and only data segments are written.
@@ -60,7 +57,7 @@ func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 	offset := int64(0)
 
 	for offset < size {
-		dataStart, err := syscall.Seek(fd, offset, seekData)
+		dataStart, err := syscall.Seek(fd, offset, unix.SEEK_DATA)
 		if err != nil {
 			// ENXIO means no more data after offset — rest is hole.
 			if errors.Is(err, syscall.ENXIO) {
@@ -69,7 +66,7 @@ func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 			return nil, fmt.Errorf("seek_data at %d: %w", offset, err)
 		}
 
-		holeStart, err := syscall.Seek(fd, dataStart, seekHole)
+		holeStart, err := syscall.Seek(fd, dataStart, unix.SEEK_HOLE)
 		if err != nil {
 			if errors.Is(err, syscall.ENXIO) {
 				// data extends to EOF.

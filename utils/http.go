@@ -100,13 +100,10 @@ func DoWithRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 			return zero, err
 		}
 		if i < MaxRetries {
-			backoff := BaseBackoff * time.Duration(1<<i)
-			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
-				timer.Stop()
 				return zero, ctx.Err()
-			case <-timer.C:
+			case <-time.After(BaseBackoff * time.Duration(1<<i)):
 			}
 		}
 	}
