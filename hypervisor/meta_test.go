@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -149,11 +151,26 @@ func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.S
 	return store
 }
 
-func testNamespace(t *testing.T, typ, dir string) *metajson.Store {
+func testNamespace(t *testing.T, typ, dir string) meta.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: filepath.Join(dir, "index.json"), LockPath: filepath.Join(dir, "index.lock"), Codec: testVMTables})
 	if err != nil {
 		t.Fatalf("open meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+func testSQLiteNamespace(t *testing.T, typ, dir string) meta.Store {
+	t.Helper()
+	path := filepath.Join(dir, metasqlite.DBFileName)
+	decl := metasqlite.Namespace{Name: VMNamespaceName(typ), Tables: []string{TableRecords, TableNames, TablePlacements, tombstone.TableName}}
+	if err := metasqlite.Init(t.Context(), path, decl); err != nil {
+		t.Fatalf("init sqlite store: %v", err)
+	}
+	store, err := metasqlite.Open(path, decl)
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store

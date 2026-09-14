@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -124,38 +125,42 @@ func TestPlaceRecordCountsPeerNamespaces(t *testing.T) {
 }
 
 func TestPlacementRowFollowsTheRecord(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	row := func() string {
-		var got string
-		if err := b.view(ctx, func(tx *vmTx) error {
-			return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
-				got += id + "=" + *cpus + ";"
-				return nil
-			})
-		}); err != nil {
-			t.Fatalf("scan placements: %v", err)
-		}
-		return got
-	}
-	put := func(rec *VMRecord) {
-		t.Helper()
-		if err := b.update(ctx, func(tx *vmTx) error { return tx.Put(rec.ID, rec) }); err != nil {
-			t.Fatalf("put: %v", err)
-		}
-	}
-	put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"}})
-	put(&VMRecord{VM: types.VM{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"}})
-	put(&VMRecord{VM: types.VM{ID: "n", State: types.VMStateRunning}})
-	if got := row(); got != "a=0-3;f=4-7;" {
-		t.Errorf("rows after placements = %q, want a=0-3;f=4-7;", got)
-	}
-	put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateStopped}})
-	if err := b.update(ctx, func(tx *vmTx) error { return tx.Del("f") }); err != nil {
-		t.Fatalf("del: %v", err)
-	}
-	if got := row(); got != "" {
-		t.Errorf("rows after a cleared placement and a delete = %q, want none", got)
+	for engine, open := range map[string]func(*testing.T, string, string) meta.Store{"json": testNamespace, "sqlite": testSQLiteNamespace} {
+		t.Run(engine, func(t *testing.T) {
+			b := &Backend{NS: VMNamespaceName("test-hv"), Meta: open(t, "test-hv", t.TempDir())}
+			ctx := t.Context()
+			row := func() string {
+				var got string
+				if err := b.view(ctx, func(tx *vmTx) error {
+					return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
+						got += id + "=" + *cpus + ";"
+						return nil
+					})
+				}); err != nil {
+					t.Fatalf("scan placements: %v", err)
+				}
+				return got
+			}
+			put := func(rec *VMRecord) {
+				t.Helper()
+				if err := b.update(ctx, func(tx *vmTx) error { return tx.Put(rec.ID, rec) }); err != nil {
+					t.Fatalf("put: %v", err)
+				}
+			}
+			put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"}})
+			put(&VMRecord{VM: types.VM{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"}})
+			put(&VMRecord{VM: types.VM{ID: "n", State: types.VMStateRunning}})
+			if got := row(); got != "a=0-3;f=4-7;" {
+				t.Errorf("rows after placements = %q, want a=0-3;f=4-7;", got)
+			}
+			put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateStopped}})
+			if err := b.update(ctx, func(tx *vmTx) error { return tx.Del("f") }); err != nil {
+				t.Fatalf("del: %v", err)
+			}
+			if got := row(); got != "" {
+				t.Errorf("rows after a cleared placement and a delete = %q, want none", got)
+			}
+		})
 	}
 }
 
