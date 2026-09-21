@@ -290,7 +290,7 @@ func TestIsDataDiskFile(t *testing.T) {
 func TestBuildBaseCmdline(t *testing.T) {
 	const (
 		chPrefix = "console=hvc0 loglevel=3"
-		fcPrefix = "console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1"
+		fcPrefix = "console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1"
 	)
 	nics := []*types.NetworkConfig{
 		{Network: &types.Network{IP: "10.0.0.2", Gateway: "10.0.0.1", Prefix: 24}},
@@ -308,7 +308,7 @@ func TestBuildBaseCmdline(t *testing.T) {
 		},
 		{
 			name: "fc no network", prefix: fcPrefix, layers: "/dev/vda", cow: "/dev/vdb",
-			want: "console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=/dev/vda cocoon.cow=/dev/vdb clocksource=kvm-clock rw",
+			want: "console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=/dev/vda cocoon.cow=/dev/vdb clocksource=kvm-clock rw",
 		},
 		{
 			name: "ch with nic + dns", prefix: chPrefix, layers: "L", cow: "C", nics: nics, dns: []string{"1.1.1.1"},
