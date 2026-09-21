@@ -78,11 +78,11 @@ func TAPName(prefix, vmID string, nic int) string {
 }
 
 func TAPIndex(tapName string) (int, bool) {
-	i := strings.LastIndexByte(tapName, '-')
-	if i < 0 {
+	_, after, ok := strings.CutLast(tapName, "-")
+	if !ok {
 		return 0, false
 	}
-	n, err := strconv.Atoi(tapName[i+1:])
+	n, err := strconv.Atoi(after)
 	if err != nil || n < 0 {
 		return 0, false
 	}

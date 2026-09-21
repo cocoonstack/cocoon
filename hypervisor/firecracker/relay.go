@@ -211,11 +211,11 @@ func waitRelayLeaseControl(control io.Reader, responses io.Writer, release, abor
 
 func abortRelayFirecracker(ctx context.Context, pid int, binaryName, sockPath string) {
 	logger := log.WithFunc("firecracker.abortRelayFirecracker")
-	for relayFirecrackerAlive(pid, binaryName, sockPath) {
+	for utils.VerifyProcessCmdline(pid, binaryName, sockPath) {
 		if err := utils.TerminateProcess(ctx, pid, binaryName, sockPath, relayAbortGrace); err != nil {
 			logger.Warnf(ctx, "terminate Firecracker %d after clone parent exit: %v", pid, err)
 		}
-		if !relayFirecrackerAlive(pid, binaryName, sockPath) {
+		if !utils.VerifyProcessCmdline(pid, binaryName, sockPath) {
 			return
 		}
 		select {
@@ -224,13 +224,6 @@ func abortRelayFirecracker(ctx context.Context, pid int, binaryName, sockPath st
 		case <-time.After(relayAbortRetryInterval):
 		}
 	}
-}
-
-func relayFirecrackerAlive(pid int, binaryName, sockPath string) bool {
-	if binaryName != "" && sockPath != "" {
-		return utils.VerifyProcessCmdline(pid, binaryName, sockPath)
-	}
-	return utils.IsProcessAlive(pid)
 }
 
 func relayInheritedLeaseCount() (int, bool) {

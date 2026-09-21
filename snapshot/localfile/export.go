@@ -86,56 +86,36 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		return nil, err
 	}
 
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		var streamErr error
-		defer func() {
-			if streamErr != nil {
-				pw.CloseWithError(streamErr) //nolint:errcheck,gosec
-			} else {
-				pw.Close() //nolint:errcheck,gosec
-			}
-			done <- streamErr
-		}()
-
-		var w io.Writer = pw
+	return utils.PipeStream(release, func(w io.Writer) error {
 		var gw *gzip.Writer
 		if compress {
 			var gzErr error
-			gw, gzErr = gzip.NewWriterLevel(pw, gzip.BestSpeed)
-			if gzErr != nil {
-				streamErr = fmt.Errorf("create gzip writer: %w", gzErr)
-				return
+			if gw, gzErr = gzip.NewWriterLevel(w, gzip.BestSpeed); gzErr != nil {
+				return fmt.Errorf("create gzip writer: %w", gzErr)
 			}
 			w = gw
 		}
 		tw := tar.NewWriter(w)
-
-		streamErr = tw.WriteHeader(&tar.Header{
+		if err := tw.WriteHeader(&tar.Header{
 			Name:    snapshot.SnapshotJSONName,
 			Size:    int64(len(jsonData)),
 			Mode:    0o644,
 			ModTime: time.Now(),
-		})
-		if streamErr != nil {
-			return
+		}); err != nil {
+			return err
 		}
-		if _, streamErr = tw.Write(jsonData); streamErr != nil {
-			return
+		if _, err := tw.Write(jsonData); err != nil {
+			return err
 		}
-
-		if streamErr = utils.TarDir(tw, dataDir); streamErr != nil {
-			return
+		if err := utils.TarDir(tw, dataDir); err != nil {
+			return err
 		}
-
-		if streamErr = tw.Close(); streamErr != nil {
-			return
+		if err := tw.Close(); err != nil {
+			return err
 		}
 		if gw != nil {
-			streamErr = gw.Close()
+			return gw.Close()
 		}
-	}()
-
-	return utils.NewPipeStreamReader(pr, done, release), nil
+		return nil
+	}), nil
 }

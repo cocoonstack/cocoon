@@ -8,7 +8,6 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
-	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
@@ -39,9 +38,7 @@ func (h Handler) ReconcileStaleCreate(cmd *cobra.Command, args []string) error {
 }
 
 func outputStaleCreate(ctx context.Context, cmd *cobra.Command, ref string, res staleCreateResult) error {
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, res); done {
-		return jsonErr
-	}
-	log.WithFunc("cmd.vm.reconcileStaleCreate").Infof(ctx, "%s: %s", ref, res.Outcome)
-	return nil
+	return outputOrLog(cmd, res, func() {
+		log.WithFunc("cmd.vm.reconcileStaleCreate").Infof(ctx, "%s: %s", ref, res.Outcome)
+	})
 }

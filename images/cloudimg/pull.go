@@ -142,17 +142,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 		}
 	}
 
-	return withDownload(ctx, conf, url, tracker, func(_ *os.File, tmpPath, digestHex string) error {
-		if err := commit(ctx, conf, store, url, tracker, tmpPath, digestHex); err != nil {
-			return err
-		}
-		logger.Infof(ctx, "pull complete: %s -> sha256:%s", url, digestHex)
-		return nil
-	})
-}
-
-func withDownload(ctx context.Context, conf *Config, url string, tracker progress.Tracker, fn func(f *os.File, tmpPath, digestHex string) error) error {
-	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "pull-*.img")
+	tmpFile, tmpPath, cleanup, err := conf.TempFile("pull-*.img")
 	if err != nil {
 		return err
 	}
@@ -162,7 +152,11 @@ func withDownload(ctx context.Context, conf *Config, url string, tracker progres
 	if err != nil {
 		return err
 	}
-	return fn(tmpFile, tmpPath, digestHex)
+	if err := commit(ctx, conf, store, url, tracker, tmpPath, digestHex); err != nil {
+		return err
+	}
+	logger.Infof(ctx, "pull complete: %s -> sha256:%s", url, digestHex)
+	return nil
 }
 
 func downloadToFile(ctx context.Context, url string, dst *os.File, tracker progress.Tracker, pullConns int) (string, error) {

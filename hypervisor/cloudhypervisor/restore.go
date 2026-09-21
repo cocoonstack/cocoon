@@ -29,7 +29,6 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 			return err
 		},
 		Kill: ch.killForRestore,
-		// stale snapshot files from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
 			return cleanSnapshotFiles(rec.RunDir)
 		},
@@ -71,9 +70,6 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
 	diskCount := len(meta.StorageConfigs)
-	if diskCount > len(rec.StorageConfigs) {
-		return nil, fmt.Errorf("snapshot has %d disks, VM record has %d", diskCount, len(rec.StorageConfigs))
-	}
 
 	if err = patchCHConfig(chConfigPath, &patchOptions{
 		storageConfigs: rec.StorageConfigs[:diskCount],

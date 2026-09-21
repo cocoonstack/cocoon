@@ -118,13 +118,6 @@ func IsRetryable(err error) bool {
 	return true
 }
 
-// DoAPIWithRetry wraps DoAPIOnce in DoWithRetry.
-func DoAPIWithRetry(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
-	return DoWithRetry(ctx, func() ([]byte, error) {
-		return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
-	})
-}
-
 // DoAPIOnce sends one non-retried request; successCodes defaults to 204 and codes[1:] are tolerated alternatives.
 func DoAPIOnce(ctx context.Context, hc *http.Client, method, url string, body []byte, successCodes ...int) ([]byte, error) {
 	primary := http.StatusNoContent
@@ -148,11 +141,4 @@ func DoJSONOnce[T any](ctx context.Context, hc *http.Client, method, url, kind s
 		return nil, fmt.Errorf("marshal %s: %w", kind, err)
 	}
 	return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
-}
-
-// DoJSONWithRetry is DoJSONOnce under DoWithRetry, for idempotent endpoints.
-func DoJSONWithRetry[T any](ctx context.Context, hc *http.Client, method, url, kind string, payload T, successCodes ...int) ([]byte, error) {
-	return DoWithRetry(ctx, func() ([]byte, error) {
-		return DoJSONOnce(ctx, hc, method, url, kind, payload, successCodes...)
-	})
 }

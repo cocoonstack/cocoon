@@ -48,13 +48,11 @@ func (h Handler) Create(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, vm); done {
-		return jsonErr
-	}
-	logger := log.WithFunc("cmd.vm.create")
-	logger.Infof(ctx, "VM created: %s (name: %s, state: %s)", vm.ID, vm.Config.Name, vm.State)
-	logger.Infof(ctx, "start with: cocoon vm start %s", vm.ID)
-	return nil
+	return outputOrLog(cmd, vm, func() {
+		logger := log.WithFunc("cmd.vm.create")
+		logger.Infof(ctx, "VM created: %s (name: %s, state: %s)", vm.ID, vm.Config.Name, vm.State)
+		logger.Infof(ctx, "start with: cocoon vm start %s", vm.ID)
+	})
 }
 
 func (h Handler) Run(cmd *cobra.Command, args []string) error {
@@ -173,9 +171,10 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	}
 
 	// Pin the inspected IDs: re-resolving mutable names here would let a delete+reuse bypass the ownership check above.
-	done, directErr := h.restoreDirect(ctx, cmd, conf, snapInfo.ID, vm.ID, vmCfg, snapBackend, hyper, logger)
-	if done {
-		return directErr
+	if da, ok := snapBackend.(snapshot.Direct); ok {
+		if dcr, ok := hyper.(hypervisor.Direct); ok {
+			return h.restoreDirect(ctx, cmd, conf, hyper, dcr, da, snapInfo.ID, vm.ID, vmCfg, logger)
+		}
 	}
 
 	_, stream, err := snapBackend.Restore(ctx, snapInfo.ID)
@@ -193,11 +192,9 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 	}
 	h.reseedAfterResume(ctx, conf, hyper, result, false)
 
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, result); done {
-		return jsonErr
-	}
-	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
-	return nil
+	return outputOrLog(cmd, result, func() {
+		logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
+	})
 }
 
 func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, vmRef, dir string, logger *log.Fields) error {
@@ -386,21 +383,13 @@ func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, v
 	return refreshVM(ctx, hyper, vm), hints, nil
 }
 
-func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, snapRef, vmRef string, vmCfg *types.VMConfig, snapBackend snapshot.Snapshot, hyper hypervisor.Hypervisor, logger *log.Fields) (bool, error) {
-	da, ok := snapBackend.(snapshot.Direct)
-	if !ok {
-		return false, nil
-	}
-	dcr, ok := hyper.(hypervisor.Direct)
-	if !ok {
-		return false, nil
-	}
+func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, da snapshot.Direct, snapRef, vmRef string, vmCfg *types.VMConfig, logger *log.Fields) error {
 	dataDir, snapCfg, release, err := da.DataDir(ctx, snapRef)
 	if err != nil {
-		return true, fmt.Errorf("open snapshot: %w", err)
+		return fmt.Errorf("open snapshot: %w", err)
 	}
 	defer release()
-	return true, h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
+	return h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
@@ -447,7 +436,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, err
 	}
 
-	storageConfigs, bootCfg, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
+	owner, storageConfigs, bootCfg, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -459,7 +448,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	vmID := utils.GenerateID()
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 	// Digest locks span resolve → reserve commit, so image GC cannot collect a blob inside the window.
-	releasePins, err := pinResolvedBlobs(ctx, backends, vmCfg.Image, blobIDs)
+	releasePins, err := pinResolvedBlobs(ctx, owner, blobIDs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -538,13 +527,9 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 }
 
 // pinResolvedBlobs holds the resolved image's digest locks until the reserve commits; the empty set (bridge/dataless) pins nothing.
-func pinResolvedBlobs(ctx context.Context, backends []imagebackend.Images, ref string, blobIDs map[string]struct{}) (func(), error) {
+func pinResolvedBlobs(ctx context.Context, owner imagebackend.Images, blobIDs map[string]struct{}) (func(), error) {
 	if len(blobIDs) == 0 {
 		return func() {}, nil
-	}
-	owner, err := cmdcore.ResolveImageOwner(ctx, backends, ref)
-	if err != nil {
-		return nil, fmt.Errorf("pin image blobs: %w", err)
 	}
 	return owner.PinBlobs(ctx, blobIDs)
 }

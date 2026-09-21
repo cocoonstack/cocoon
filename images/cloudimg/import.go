@@ -55,7 +55,7 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 		return fmt.Errorf("seek %s: %w", filePath, err)
 	}
 
-	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
+	tmpFile, tmpPath, cleanup, err := conf.TempFile("import-*.img")
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 		return fmt.Errorf("import %s: %w", name, sniffErr)
 	}
 
-	tmpFile, tmpPath, cleanup, err := newTempImage(conf, "import-*.img")
+	tmpFile, tmpPath, cleanup, err := conf.TempFile("import-*.img")
 	if err != nil {
 		return err
 	}

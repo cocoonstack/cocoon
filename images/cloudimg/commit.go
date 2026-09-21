@@ -119,20 +119,12 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	}
 	tmpBlobPath := target.Name()
 	_ = target.Close()
-	if err := convertToQcow2(ctx, info.Format, sourcePath, tmpBlobPath); err != nil {
+	if err := utils.RunQemuImg(ctx, "convert", "-f", info.Format, "-O", "qcow2", "-o", "compat=1.1", sourcePath, tmpBlobPath); err != nil {
 		os.Remove(tmpBlobPath) //nolint:errcheck,gosec
 		return "", err
 	}
 	logger.Debugf(ctx, "converted temp blob: %s", tmpBlobPath)
 	return tmpBlobPath, nil
-}
-
-func convertToQcow2(ctx context.Context, srcFormat, src, dst string) error {
-	if err := utils.RunQemuImg(ctx, "convert", "-f", srcFormat, "-O", "qcow2", "-o", "compat=1.1", src, dst); err != nil {
-		os.Remove(dst) //nolint:errcheck,gosec
-		return err
-	}
-	return nil
 }
 
 func writeIndexEntry(idx *imageIndex, conf *Config, ref, digestHex string) error {

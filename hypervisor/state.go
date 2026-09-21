@@ -44,34 +44,23 @@ func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, err
 	return true, err
 }
 
-// WithPausedVM pauses, runs fn, resumes; eager resume on success promotes its error, deferred resume on fn-error only logs.
+// WithPausedVM pauses, runs fn and resumes on the way out; a resume failure is promoted only when fn succeeded.
 func (b *Backend) WithPausedVM(ctx context.Context, rec *VMRecord, pause, resume, fn func() error) error {
-	return b.WithRunningVM(ctx, rec, func(_ int) error {
-		if err := pause(); err != nil {
+	return b.WithRunningVM(ctx, rec, func(_ int) (err error) {
+		if err = pause(); err != nil {
 			return fmt.Errorf("pause: %w", err)
 		}
-		var resumed bool
-		var resumeErr error
-		logger := log.WithFunc(b.Typ + ".WithPausedVM")
-		doResume := func() {
-			if resumed {
+		defer func() {
+			resumeErr := resume()
+			if resumeErr == nil {
 				return
 			}
-			resumed = true
-			resumeErr = resume()
-			if resumeErr != nil {
-				logger.Warnf(ctx, "resume VM %s: %v", rec.ID, resumeErr)
+			log.WithFunc(b.Typ+".WithPausedVM").Warnf(ctx, "resume VM %s: %v", rec.ID, resumeErr)
+			if err == nil {
+				err = fmt.Errorf("snapshot data captured but resume failed: %w", resumeErr)
 			}
-		}
-		defer doResume()
-		if err := fn(); err != nil {
-			return err
-		}
-		doResume()
-		if resumeErr != nil {
-			return fmt.Errorf("snapshot data captured but resume failed: %w", resumeErr)
-		}
-		return nil
+		}()
+		return fn()
 	})
 }
 
@@ -261,23 +250,11 @@ func (b *Backend) markFailedOperation(ctx context.Context, id string, markError 
 		if err != nil || r == nil {
 			return err
 		}
-		changed := false
 		if markError && r.State != types.VMStateError {
 			markTransition(r, types.VMStateError, types.TransitionError, now)
-			changed = true
 		}
-		if r.CPUSet != "" || r.QueueCPUs != "" {
-			r.CPUSet, r.QueueCPUs = "", ""
-			changed = true
-		}
-		pending := needsQuiesce(r)
-		if r.QuiescePending != pending {
-			r.QuiescePending = pending
-			changed = true
-		}
-		if !changed {
-			return nil
-		}
+		r.CPUSet, r.QueueCPUs = "", ""
+		r.QuiescePending = needsQuiesce(r)
 		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".markFailedOperation").Errorf(ctx, err, "persist failed operation for VM %s", id)

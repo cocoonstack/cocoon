@@ -9,33 +9,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
 )
 
 func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error) {
-	vmName, _ := cmd.Flags().GetString("name")
-	cpu, _ := cmd.Flags().GetInt("cpu")
-	memStr, _ := cmd.Flags().GetString("memory")
-	storStr, _ := cmd.Flags().GetString("storage")
-	queueSize, _ := cmd.Flags().GetInt("queue-size")
-	diskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
-	network, _ := cmd.Flags().GetString("network")
-	user, _ := cmd.Flags().GetString("user")
-	password, _ := cmd.Flags().GetString("password")
-	noDirectIO, _ := cmd.Flags().GetBool("no-direct-io")
-	noWatchdog, _ := cmd.Flags().GetBool("no-watchdog")
-	noBalloon, _ := cmd.Flags().GetBool("no-balloon")
-	windows, _ := cmd.Flags().GetBool("windows")
-	sharedMemory, _ := cmd.Flags().GetBool("shared-memory")
-	hugePages, _ := cmd.Flags().GetBool("hugepages")
-	mergeable, _ := cmd.Flags().GetBool("mergeable")
-	pci, _ := cmd.Flags().GetBool("pci")
-	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
-
-	vmName = cmp.Or(vmName, sanitizeVMName(image))
-
+	memStr, storStr := cliutil.FlagStr(cmd, "memory"), cliutil.FlagStr(cmd, "storage")
 	memBytes, err := types.ParseSize(memStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
@@ -45,30 +26,30 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 		return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
 	}
 
-	dataDisks, err := parseDataDiskFlags(dataDiskRaw)
+	dataDisks, err := parseDataDiskFlags(cliutil.FlagStrings(cmd, "data-disk"))
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := &types.VMConfig{
-		Name:          vmName,
-		CPU:           cpu,
+		Name:          cmp.Or(cliutil.FlagStr(cmd, "name"), sanitizeVMName(image)),
+		CPU:           cliutil.FlagInt(cmd, "cpu"),
 		Memory:        memBytes,
 		Storage:       storBytes,
-		QueueSize:     queueSize,
-		DiskQueueSize: diskQueueSize,
+		QueueSize:     cliutil.FlagInt(cmd, "queue-size"),
+		DiskQueueSize: cliutil.FlagInt(cmd, "disk-queue-size"),
 		Image:         image,
-		Network:       network,
-		NoDirectIO:    noDirectIO,
-		NoWatchdog:    noWatchdog,
-		NoBalloon:     noBalloon,
-		Windows:       windows,
-		SharedMemory:  sharedMemory,
-		HugePages:     hugePages,
-		Mergeable:     mergeable,
-		PCI:           pci,
-		User:          user,
-		Password:      password,
+		Network:       cliutil.FlagStr(cmd, "network"),
+		NoDirectIO:    cliutil.FlagBool(cmd, "no-direct-io"),
+		NoWatchdog:    cliutil.FlagBool(cmd, "no-watchdog"),
+		NoBalloon:     cliutil.FlagBool(cmd, "no-balloon"),
+		Windows:       cliutil.FlagBool(cmd, "windows"),
+		SharedMemory:  cliutil.FlagBool(cmd, "shared-memory"),
+		HugePages:     cliutil.FlagBool(cmd, "hugepages"),
+		Mergeable:     cliutil.FlagBool(cmd, "mergeable"),
+		PCI:           cliutil.FlagBool(cmd, "pci"),
+		User:          cliutil.FlagStr(cmd, "user"),
+		Password:      cliutil.FlagStr(cmd, "password"),
 		DataDisks:     dataDisks,
 	}
 	if err := cfg.Validate(); err != nil {
@@ -83,39 +64,31 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 
 // CloneVMConfigFromFlags builds VMConfig for a clone. The snapshot's cgroup knobs record its source VM's policy and are never applied; the clone's policy comes from flags alone.
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
-	vmName, _ := cmd.Flags().GetString("name")
-	flagNetwork, _ := cmd.Flags().GetString("network")
-	network := cmp.Or(flagNetwork, snapCfg.Network)
-	flagQueueSize, _ := cmd.Flags().GetInt("queue-size")
-	queueSize := cmp.Or(flagQueueSize, snapCfg.QueueSize)
-	flagDiskQueueSize, _ := cmd.Flags().GetInt("disk-queue-size")
-	diskQueueSize := cmp.Or(flagDiskQueueSize, snapCfg.DiskQueueSize)
 	noDirectIO := snapCfg.NoDirectIO
 	if cmd.Flags().Changed("no-direct-io") {
-		noDirectIO, _ = cmd.Flags().GetBool("no-direct-io")
+		noDirectIO = cliutil.FlagBool(cmd, "no-direct-io")
 	}
 
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
 		return nil, err
 	}
-	dataDiskRaw, _ := cmd.Flags().GetStringArray("data-disk")
-	dataDisks, err := parseDataDiskFlags(dataDiskRaw)
+	dataDisks, err := parseDataDiskFlags(cliutil.FlagStrings(cmd, "data-disk"))
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := &types.VMConfig{
-		Name:          vmName,
+		Name:          cliutil.FlagStr(cmd, "name"),
 		CPU:           snapCfg.CPU,
 		Memory:        snapCfg.Memory,
 		Storage:       snapCfg.Storage,
-		QueueSize:     queueSize,
-		DiskQueueSize: diskQueueSize,
+		QueueSize:     cmp.Or(cliutil.FlagInt(cmd, "queue-size"), snapCfg.QueueSize),
+		DiskQueueSize: cmp.Or(cliutil.FlagInt(cmd, "disk-queue-size"), snapCfg.DiskQueueSize),
 		Image:         snapCfg.Image,
 		ImageDigest:   snapCfg.ImageDigest,
 		ImageType:     snapCfg.ImageType,
-		Network:       network,
+		Network:       cmp.Or(cliutil.FlagStr(cmd, "network"), snapCfg.Network),
 		NoDirectIO:    noDirectIO,
 		NoWatchdog:    snapCfg.NoWatchdog,
 		NoBalloon:     snapCfg.NoBalloon,
@@ -208,7 +181,6 @@ func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	return specs, nil
 }
 
-// normalizeDataDiskSpecs fills defaults (FSType=ext4, Name=dataN, MountPoint=/mnt/<name>) and enforces unique names; fstype=none rejects non-empty MountPoint.
 func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
 	used := make(map[string]bool)
 	for _, s := range specs {
@@ -245,8 +217,7 @@ func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
 }
 
 func restoreModeFromFlags(cmd *cobra.Command) (string, error) {
-	mode, _ := cmd.Flags().GetString("restore-mode")
-	switch mode {
+	switch mode := cliutil.FlagStr(cmd, "restore-mode"); mode {
 	case "", "copy", "ondemand", "mmap":
 		return mode, nil
 	default:
@@ -255,9 +226,9 @@ func restoreModeFromFlags(cmd *cobra.Command) (string, error) {
 }
 
 func cgroupKnobsFromFlags(cmd *cobra.Command, cfg *types.Config) {
-	cfg.CPUWeight, _ = cmd.Flags().GetInt("cpu-weight")
-	cfg.CPUQuotaUs, _ = cmd.Flags().GetInt64("cpu-quota-us")
-	cfg.CPUPeriodUs, _ = cmd.Flags().GetInt64("cpu-period-us")
-	cfg.CPUBurstUs, _ = cmd.Flags().GetInt64("cpu-burst-us")
-	cfg.CPUSetCPUs, _ = cmd.Flags().GetString("cpuset-cpus")
+	cfg.CPUWeight = cliutil.FlagInt(cmd, "cpu-weight")
+	cfg.CPUQuotaUs = cliutil.FlagInt64(cmd, "cpu-quota-us")
+	cfg.CPUPeriodUs = cliutil.FlagInt64(cmd, "cpu-period-us")
+	cfg.CPUBurstUs = cliutil.FlagInt64(cmd, "cpu-burst-us")
+	cfg.CPUSetCPUs = cliutil.FlagStr(cmd, "cpuset-cpus")
 }

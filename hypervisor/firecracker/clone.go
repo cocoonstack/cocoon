@@ -87,9 +87,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if err != nil {
 		return nil, err
 	}
-	if err := types.ValidateStorageConfigs(storageConfigs); err != nil {
-		return nil, fmt.Errorf("validate sidecar: %w", err)
-	}
 	dataDisks, prepErr := fc.PrepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
 	if prepErr != nil {
 		return nil, prepErr

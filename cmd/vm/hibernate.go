@@ -12,7 +12,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Hibernate atomically snapshots a running VM and stops it.
 func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 	logger := log.WithFunc("cmd.vm.hibernate")

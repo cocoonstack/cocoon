@@ -40,7 +40,7 @@ func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imag
 
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(file)})
 
-	workDir, cleanup, err := newWorkDir(conf, "import-*")
+	workDir, cleanup, err := conf.WorkDir("import-*")
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imag
 func importTarFromReader(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, r io.Reader) error {
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: 1})
 
-	workDir, cleanup, err := newWorkDir(conf, "import-*")
+	workDir, cleanup, err := conf.WorkDir("import-*")
 	if err != nil {
 		return err
 	}
@@ -133,25 +133,21 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 }
 
 func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *pullLayerResult) error {
-	type bootFile struct {
-		src  string
-		dst  *string
-		name string
-	}
-	for _, bf := range []bootFile{
-		{kernelPath, &result.kernelPath, digestHex + ".vmlinuz"},
-		{initrdPath, &result.initrdPath, digestHex + ".initrd.img"},
-	} {
-		if bf.src == "" || *bf.dst != "" {
-			continue
+	move := func(src, name string, dst *string) error {
+		if src == "" || *dst != "" {
+			return nil
 		}
-		dst := filepath.Join(baseDir, bf.name)
-		if err := os.Rename(bf.src, dst); err != nil {
-			return fmt.Errorf("rename %s: %w", bf.name, err)
+		target := filepath.Join(baseDir, name)
+		if err := os.Rename(src, target); err != nil {
+			return fmt.Errorf("rename %s: %w", name, err)
 		}
-		*bf.dst = dst
+		*dst = target
+		return nil
 	}
-	return nil
+	if err := move(kernelPath, digestHex+".vmlinuz", &result.kernelPath); err != nil {
+		return err
+	}
+	return move(initrdPath, digestHex+".initrd.img", &result.initrdPath)
 }
 
 func computeManifestDigest(results []pullLayerResult) images.Digest {

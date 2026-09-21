@@ -56,9 +56,6 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 
 // RestoreSequence is the shared restore skeleton (preflight before kill).
 func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec) (*types.VM, error) {
-	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
-		return nil, err
-	}
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
@@ -94,9 +91,6 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 
 // DirectRestoreSequence restores from a local snapshot directory.
 func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec DirectRestoreSpec) (*types.VM, error) {
-	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
-		return nil, err
-	}
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
@@ -176,6 +170,9 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 }
 
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig) (string, *VMRecord, func(), error) {
+	if err := ValidateHostCPU(vmCfg.CPU); err != nil {
+		return "", nil, nil, err
+	}
 	vmID, err := b.ResolveRef(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err

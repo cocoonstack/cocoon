@@ -19,8 +19,7 @@ const (
 
 	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
-	// extractReadBuf bounds one read.
-	extractReadBuf = 1 << 20
+	extractReadBuf  = 1 << 20
 )
 
 // maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
@@ -225,10 +224,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
 	size := fi.Size()
-
-	if size == 0 {
-		return tarFileFrom(tw, f, fi, nameInTar)
-	}
 
 	segments, err := scanDataSegments(int(f.Fd()), size)
 	if err != nil {

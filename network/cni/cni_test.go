@@ -362,6 +362,38 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	}
 }
 
+func TestAddRollsBackTheNICsItAttemptedOnAPartialFailure(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	var deletedTAPs []string
+	deleteTAPFn = func(_, tap string) error {
+		deletedTAPs = append(deletedTAPs, tap)
+		return nil
+	}
+
+	exec.failIf = "eth1"
+	if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddSpec{Index: 0}, network.AddSpec{Index: 1}); err == nil {
+		t.Fatal("Add succeeded, want the eth1 failure")
+	}
+	if want := []string{"eth0", "eth1", "eth0", "eth1"}; !slices.Equal(exec.attempted, want) {
+		t.Fatalf("plugin calls = %v, want %v", exec.attempted, want)
+	}
+	if want := []string{tapNameForVM("vm1", 0)}; !slices.Equal(deletedTAPs, want) {
+		t.Fatalf("deleted TAPs = %v, want %v", deletedTAPs, want)
+	}
+	var got []networkRecord
+	if err := c.view(t.Context(), func(t *netTx) error {
+		var err error
+		got, err = t.byVMID("vm1")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].IfName != "eth1" {
+		t.Fatalf("records = %+v, want only the eth1 intent kept for GC", got)
+	}
+}
+
 func TestAddCarriesTAPMTU(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
