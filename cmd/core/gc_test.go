@@ -21,7 +21,7 @@ func TestVMInUseChecksBothBackends(t *testing.T) {
 		{name: "second backend", errs: []error{hypervisor.ErrNotFound, nil}, want: true},
 		{name: "orphan", errs: []error{hypervisor.ErrNotFound, hypervisor.ErrNotFound}},
 		{name: "read failure", errs: []error{readErr}, wantErr: readErr},
-		{name: "ambiguous prefix", errs: []error{hypervisor.ErrAmbiguous}, wantErr: hypervisor.ErrAmbiguous},
+		{name: "other read error", errs: []error{hypervisor.ErrAmbiguous}, wantErr: hypervisor.ErrAmbiguous},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			hypers := make([]hypervisor.Hypervisor, 0, len(tt.errs))

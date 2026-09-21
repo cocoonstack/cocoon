@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +18,7 @@ func TestCgroupGCModuleSweepsUnownedScopes(t *testing.T) {
 		}
 	}
 
-	m := CgroupGCModule(parent)
+	m := CgroupGCModule(parent, noVMInUse)
 	scopes, err := m.ReadDB(t.Context())
 	if err != nil {
 		t.Fatalf("ReadDB: %v", err)
@@ -49,6 +50,22 @@ func TestCgroupGCModuleSweepsUnownedScopes(t *testing.T) {
 	}
 }
 
+func TestCgroupGCModuleLeavesScopeOfAVMCreatedAfterTheSnapshot(t *testing.T) {
+	parent := t.TempDir()
+	dir := cgroup.ScopeDir(parent, "LAUNCHING")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	m := CgroupGCModule(parent, func(_ context.Context, id string) (bool, error) { return id == "LAUNCHING", nil })
+	if err := m.Collect(t.Context(), []string{"LAUNCHING"}, nil); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("empty scope of a VM whose record landed after the snapshot removed: %v", err)
+	}
+}
+
 func TestCgroupGCModuleLeavesPopulatedScope(t *testing.T) {
 	parent := t.TempDir()
 	dir := cgroup.ScopeDir(parent, "BUSY")
@@ -56,7 +73,7 @@ func TestCgroupGCModuleLeavesPopulatedScope(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	m := CgroupGCModule(parent)
+	m := CgroupGCModule(parent, noVMInUse)
 	if err := m.Collect(t.Context(), []string{"BUSY"}, nil); err == nil {
 		t.Error("want error for populated scope, got nil")
 	}
@@ -64,3 +81,5 @@ func TestCgroupGCModuleLeavesPopulatedScope(t *testing.T) {
 		t.Errorf("populated scope removed: %v", err)
 	}
 }
+
+func noVMInUse(context.Context, string) (bool, error) { return false, nil }
