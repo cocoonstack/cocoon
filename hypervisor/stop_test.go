@@ -153,6 +153,33 @@ func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 	if _, err := b.LoadRecord(ctx, id); err == nil {
 		t.Error("record should be gone after force delete")
 	}
+	if entries := b.Metering.(*meteringcapture.Recorder).Entries(); len(entries) != 0 {
+		t.Errorf("got %+v, want no ledger entry for a placeholder that never started", entries)
+	}
+}
+
+func TestDeleteCreatingPlaceholderEmitsNoMetering(t *testing.T) {
+	b, rec := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-creating-rm"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateCreating
+		return nil
+	}); err != nil {
+		t.Fatalf("seed creating: %v", err)
+	}
+
+	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
+		t.Fatal("stopLocked must not run for a placeholder without a VMM")
+		return nil
+	})
+	if err != nil || len(deleted) != 1 {
+		t.Fatalf("DeleteAll = %v, %v; want [%s]", deleted, err, id)
+	}
+	if entries := rec.Entries(); len(entries) != 0 {
+		t.Errorf("got %+v, want no ledger entry for a placeholder that never started", entries)
+	}
 }
 
 func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {

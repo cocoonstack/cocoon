@@ -163,6 +163,9 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	if err := b.deleteVMProtocol(ctx, id, rec); err != nil {
 		return err
 	}
+	if rec.State == types.VMStateCreating {
+		return nil
+	}
 	computeReason := metering.ReasonStopCrash
 	if stoppedByUs {
 		computeReason = metering.ReasonStopUser
