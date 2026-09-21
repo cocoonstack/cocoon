@@ -48,9 +48,11 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 		return err
 	}
 	if !utils.ValidFile(blobPath) {
-		if tmpBlobPath == "" {
-			return errBlobCacheMiss
+		path, err := ensureTmpBlob(ctx, conf, tracker, sourcePath, tmpBlobPath, digestHex)
+		if err != nil {
+			return err
 		}
+		tmpBlobPath = path
 		if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
 			return fmt.Errorf("rename blob: %w", renameErr)
 		}
@@ -66,6 +68,16 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDone})
 	return nil
+}
+
+func ensureTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker, sourcePath, tmpBlobPath, digestHex string) (string, error) {
+	if tmpBlobPath != "" {
+		return tmpBlobPath, nil
+	}
+	if sourcePath == "" {
+		return "", errBlobCacheMiss
+	}
+	return prepareTmpBlob(ctx, conf, tracker, sourcePath, digestHex)
 }
 
 func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker, sourcePath, digestHex string) (string, error) {

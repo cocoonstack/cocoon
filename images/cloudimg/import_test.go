@@ -100,6 +100,40 @@ func TestImportPreservesSourceAcrossCacheGC(t *testing.T) {
 	}
 }
 
+func TestCommitRepublishesABlobCollectedAfterTheEntryCheck(t *testing.T) {
+	c := newImportTestBackend(t)
+	ctx := t.Context()
+	payload := make([]byte, 32)
+	copy(payload, utils.Qcow2Magic)
+	binary.BigEndian.PutUint32(payload[4:8], 3)
+	digest := sha256Hex(payload)
+	if err := os.WriteFile(c.conf.BlobPath(digest), payload, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(c.conf.TempDir(), "pull-download.qcow2")
+	if err := os.WriteFile(source, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
+		if e.Phase == cloudimgProgress.PhaseCommit {
+			if err := os.Remove(c.conf.BlobPath(digest)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	if err := commit(ctx, c.conf, c.store, "pulled", tracker, source, digest); err != nil {
+		t.Fatalf("commit after the cached blob was collected: %v", err)
+	}
+	got, err := os.ReadFile(c.conf.BlobPath(digest))
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("blob not republished from the download: %v", err)
+	}
+	if img, err := c.Inspect(ctx, "pulled"); err != nil || img.ID != images.NewDigest(digest).String() {
+		t.Fatalf("published image=%+v err=%v", img, err)
+	}
+}
+
 func newImportTestBackend(t *testing.T) *CloudImg {
 	t.Helper()
 	root := t.TempDir()
