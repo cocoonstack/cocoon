@@ -2,7 +2,13 @@
 
 package bridge
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/vishvananda/netlink"
+)
 
 func TestParseTAPName(t *testing.T) {
 	tests := []struct {
@@ -33,6 +39,61 @@ func TestParseTAPName(t *testing.T) {
 			}
 			if gotPrefix != tt.wantPrefix {
 				t.Errorf("parseTAPName(%q, %q) prefix = %q, want %q", tt.tapPrefix, tt.name, gotPrefix, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
+	readErr := errors.New("owner read failed")
+	for _, tt := range []struct {
+		name  string
+		inUse bool
+		err   error
+	}{
+		{name: "completed create", inUse: true},
+		{name: "orphan"},
+		{name: "read failure", err: readErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			oldList, oldDelete := listLinksFn, deleteLinkFn
+			t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
+			lists, deletes, reads := 0, 0, 0
+			listLinksFn = func() ([]netlink.Link, error) {
+				lists++
+				return []netlink.Link{&netlink.Dummy{Name: "bt12345678-0", Index: 123}}, nil
+			}
+			deleteLinkFn = func(link netlink.Link) error {
+				deletes++
+				if link.Attrs().Index != 123 {
+					t.Errorf("delete index = %d", link.Attrs().Index)
+				}
+				return nil
+			}
+			m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
+				reads++
+				if lists != 2 || id != "12345678" {
+					t.Fatalf("owner read before current TAP discovery: lists=%d ref=%q", lists, id)
+				}
+				return tt.inUse, tt.err
+			})
+			snap, err := m.ReadDB(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := m.Resolve(t.Context(), snap, nil)
+			if err := m.Collect(t.Context(), ids, snap); !errors.Is(err, tt.err) {
+				t.Fatalf("collect error = %v, want %v", err, tt.err)
+			}
+			if reads != 1 {
+				t.Errorf("owner reads = %d, want 1", reads)
+			}
+			wantDeletes := 0
+			if !tt.inUse && tt.err == nil {
+				wantDeletes = 1
+			}
+			if deletes != wantDeletes {
+				t.Errorf("TAP deletes = %d, want %d", deletes, wantDeletes)
 			}
 		})
 	}

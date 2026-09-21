@@ -10,6 +10,8 @@ import (
 
 var ErrNotConfigured = errors.New("network provider not configured")
 
+type VMInUse func(context.Context, string) (bool, error)
+
 // AddSpec is one NIC's add request; Existing != nil reuses MAC/IP for recovery.
 type AddSpec struct {
 	Index    int
@@ -28,7 +30,7 @@ type Network interface {
 	Quiesce(ctx context.Context, vmID string) error
 	Unquiesce(ctx context.Context, vmID string) error
 	Delete(ctx context.Context, vmID string) error
-	RegisterGC(*gc.Orchestrator)
+	RegisterGC(*gc.Orchestrator, VMInUse)
 }
 
 // AddRange builds AddSpecs for a contiguous block of fresh NIC indices.

@@ -16,18 +16,23 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+var (
+	listLinksFn  = netlink.LinkList
+	deleteLinkFn = netlink.LinkDel
+)
+
 type bridgeSnapshot struct {
 	prefixes map[string]struct{}
 }
 
 // GCModule returns a GC module reclaiming orphan TAP devices under tapPrefix; it needs no Bridge instance.
-func GCModule(tapPrefix string) gc.Module[bridgeSnapshot] {
+func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
 		Name: typ,
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			snap := bridgeSnapshot{prefixes: make(map[string]struct{})}
 
-			links, err := netlink.LinkList()
+			links, err := listLinksFn()
 			if err != nil {
 				return snap, err
 			}
@@ -59,7 +64,7 @@ func GCModule(tapPrefix string) gc.Module[bridgeSnapshot] {
 				orphanSet[p] = struct{}{}
 			}
 
-			links, err := netlink.LinkList()
+			links, err := listLinksFn()
 			if err != nil {
 				return err
 			}
@@ -72,7 +77,12 @@ func GCModule(tapPrefix string) gc.Module[bridgeSnapshot] {
 				if _, orphan := orphanSet[prefix]; !orphan {
 					continue
 				}
-				if err := netlink.LinkDel(l); err != nil {
+				if inUse, err := vmInUse(ctx, prefix); err != nil {
+					return err
+				} else if inUse {
+					continue
+				}
+				if err := deleteLinkFn(l); err != nil {
 					logger.Warnf(ctx, "delete orphan TAP %s: %v", name, err)
 				} else {
 					logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
@@ -89,9 +99,9 @@ func parseTAPName(tapPrefix, name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	idx := strings.LastIndex(rest, "-")
-	if idx <= 0 {
+	prefix, _, ok := strings.CutLast(rest, "-")
+	if !ok || prefix == "" {
 		return "", false
 	}
-	return rest[:idx], true
+	return prefix, true
 }

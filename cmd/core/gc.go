@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
@@ -38,9 +40,25 @@ func NewGCOrchestrator(ctx context.Context, conf *config.Config, snapOpts ...loc
 		hyper.RegisterGC(o)
 	}
 	gc.Register(o, hypervisor.CgroupGCModule(conf.CgroupParentDir()))
-	netProvider.RegisterGC(o)
-	gc.Register(o, bridge.GCModule(conf.BridgeTAPPrefix()))
+	inUse := vmInUse(hypers)
+	netProvider.RegisterGC(o, inUse)
+	gc.Register(o, bridge.GCModule(conf.BridgeTAPPrefix(), inUse))
 	gc.Register(o, vmlock.GCModule(conf.RootDir))
 	snapBackend.RegisterGC(o)
 	return o, nil
+}
+
+func vmInUse(hypers []hypervisor.Hypervisor) network.VMInUse {
+	return func(ctx context.Context, ref string) (bool, error) {
+		for _, h := range hypers {
+			_, err := h.Inspect(ctx, ref)
+			if err == nil {
+				return true, nil
+			}
+			if !errors.Is(err, hypervisor.ErrNotFound) {
+				return false, err
+			}
+		}
+		return false, nil
+	}
 }
