@@ -13,6 +13,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,7 +23,7 @@ type cniSnapshot struct {
 }
 
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.
-func (c *CNI) GCModule() gc.Module[cniSnapshot] {
+func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 	// The prefix scopes GC to this installation's netns, so docker/containerd and peer-installation entries survive.
 	netnsPrefix := c.conf.NetnsPrefix()
 	return gc.Module[cniSnapshot]{
@@ -75,11 +76,16 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 					logger.Warnf(ctx, "skip %s: vm lock busy", vmID)
 					continue
 				}
-				tdErr := c.teardownProtocol(ctx, vmID, nil, false)
+				inUse, tdErr := vmInUse(ctx, vmID)
+				if tdErr == nil && !inUse {
+					tdErr = c.teardownProtocol(ctx, vmID, nil, false)
+				}
 				_ = lk.Unlock(ctx)
 				if tdErr != nil {
-					// Keep the netns: the next cycle's retried DEL runs with its context intact.
-					errs = append(errs, fmt.Errorf("nic release incomplete for %s, netns kept: %w", vmID, tdErr))
+					errs = append(errs, fmt.Errorf("collect network %s: %w", vmID, tdErr))
+					continue
+				}
+				if inUse {
 					continue
 				}
 				logger.Infof(ctx, "collected id=%s netns=%s reason=orphan", vmID, c.conf.netnsName(vmID))
@@ -90,8 +96,8 @@ func (c *CNI) GCModule() gc.Module[cniSnapshot] {
 }
 
 // RegisterGC registers the CNI GC module with the given Orchestrator.
-func (c *CNI) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, c.GCModule())
+func (c *CNI) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
+	gc.Register(orch, c.GCModule(vmInUse))
 }
 
 // gcRecover resumes existing network tombstones by phase before discovery, each under its owning VM's lock (design §5 recovery-precedes-discovery).

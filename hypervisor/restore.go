@@ -59,7 +59,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 	return result, nil
 }
 
-func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
+func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig) (string, *VMRecord, func(), error) {
 	vmID, err := b.ResolveRef(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err
@@ -198,6 +198,9 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 	}
 	if vErr := validateRecordInvariants(&rec); vErr != nil {
 		return fail(vErr)
+	}
+	if !sameImage(vmCfg, &rec.Config) {
+		return fail(fmt.Errorf("snapshot base image differs from vm %s; use vm clone instead", vmID))
 	}
 	return vmID, &rec, unlock, nil
 }
@@ -265,4 +268,14 @@ func markRestoreDirty(runDir string) error {
 		return fmt.Errorf("mark restore dirty: %w", err)
 	}
 	return nil
+}
+
+func sameImage(a, b *types.VMConfig) bool {
+	if a.ImageType != b.ImageType {
+		return false
+	}
+	if a.ImageDigest != "" && b.ImageDigest != "" {
+		return a.ImageDigest == b.ImageDigest
+	}
+	return a.Image == b.Image
 }

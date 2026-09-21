@@ -1,13 +1,16 @@
 package sqlite
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -195,6 +198,43 @@ func TestUnsupportedFSRefused(t *testing.T) {
 	}
 	if utils.FileExists(fresh) {
 		t.Fatal("init created WAL state on refused filesystem")
+	}
+}
+
+func TestInitIfMissingWaitsOutABusyBootstrap(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), DBFileName)
+	initLock := flock.NewTransient(filepath.Join(filepath.Dir(path), initLockName))
+	if err := initLock.Lock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := raw.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- InitIfMissing(ctx, path, testDecls()...) }()
+	time.Sleep(500 * time.Millisecond)
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	_ = raw.Close()
+	if err := initLock.Unlock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("bootstrap behind a busy racer: %v", err)
+	}
+	if _, err := Open(path, testDecls()...); err != nil {
+		t.Fatalf("open bootstrapped store: %v", err)
 	}
 }
 

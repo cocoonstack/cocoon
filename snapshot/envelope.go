@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/types"
@@ -51,4 +52,16 @@ func WriteSnapshotEnvelope(dir string, cfg types.SnapshotConfig) error {
 		return err
 	}
 	return utils.AtomicWriteFile(filepath.Join(dir, SnapshotJSONName), data, 0o644, utils.Sync)
+}
+
+func VerifyCOWSize(dir string, cfg types.SnapshotConfig) error {
+	st, err := os.Stat(filepath.Join(dir, types.COWRawFileName))
+	if err != nil || cfg.Storage <= 0 {
+		return nil
+	}
+	if st.Size() != cfg.Storage {
+		return fmt.Errorf("%s in %s is %d bytes but the envelope records %d: a third-party tar drops cocoon's sparse records and rebuilds a short, shifted disk; use the export tar as cocoon wrote it, or `snapshot export --to-dir`",
+			types.COWRawFileName, dir, st.Size(), cfg.Storage)
+	}
+	return nil
 }

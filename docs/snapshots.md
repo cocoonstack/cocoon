@@ -110,7 +110,7 @@ cocoon vm clone imported-snap
 cocoon snapshot export my-snap -o - | ssh host2 cocoon snapshot import --name my-snap
 ```
 
-The archive contains the snapshot config, VM config, COW disk, memory ranges, and device state — every file carries sparse-aware pax headers for efficient compression — everything needed to reconstruct the snapshot on a different machine. `snapshot export --to-dir` writes the same files as a directory that `vm clone --from-dir` and `vm restore --from-dir` consume without a tar round-trip. Do not repack an export with a third-party tar: it drops cocoon's sparse records and rebuilds a short, shifted disk, which `--from-dir` then refuses.
+The archive contains the snapshot config, VM config, COW disk, memory ranges, and device state — every file carries sparse-aware pax headers for efficient compression — everything needed to reconstruct the snapshot on a different machine. `snapshot export --to-dir` writes the same files as a directory that `vm clone --from-dir` and `vm restore --from-dir` consume without a tar round-trip. Do not repack an export with a third-party tar: dropping cocoon's sparse records can rebuild a short, shifted disk. `--from-dir` and `snapshot import` reject a `cow.raw` whose size differs from the envelope's recorded storage size.
 
 #### Cross-Node Clone
 
@@ -151,6 +151,7 @@ Pause, capture, persist, and VMM termination share one pause window: the snapsho
 ### Restore Constraints
 
 - **VM must be running, stopped, or error.** Restore cold-spawns a fresh hypervisor process from the snapshot; a stopped target (e.g. hibernated) gets the `vm start` network self-heal first. Error-state VMs are admitted because restore rebuilds the run dir — it is the recovery path for a crashed or interrupted restore (which `vm start` refuses).
-- **Snapshot must belong to the VM.** Only snapshots created from the same VM (tracked in `snapshot_ids`) are accepted; pass `--force` with `--from-dir` to opt into a foreign lineage.
+- **Snapshot ownership.** Only snapshots created from the same VM (tracked in `snapshot_ids`) are normally accepted; `--force` with `--from-dir` skips this ownership check only.
+- **Keep the same base-image lineage.** Restore retains the target's base-image paths, boot configuration, and image references. `--force` cannot bypass the base-image check: a different image backend or resolved image digest is rejected before stopping the VM or overwriting its disks. Use `vm clone` for another base image. Cloud Hypervisor also checks NIC MACs; Firecracker requires the snapshot's recorded COW and data-disk paths to match the target.
 - **CPU, memory, and storage come from the snapshot.** The hypervisor reconstructs the guest from snapshot state, so these are not configurable at restore time; cocoon realigns the persisted record to match.
 - **NIC count must match the target VM.** Restore reuses the VM's existing network namespace, TAP devices, and IP allocation; a mismatched count is rejected.

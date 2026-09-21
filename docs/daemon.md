@@ -119,10 +119,12 @@ the restart reliable.
 ## Transition tracking
 
 Supervision needs to tell a transition it has seen from one it has not, so every
-committed state change stamps the record:
+committed transition after the `creating` placeholder stamps the record (the
+placeholder itself is unstamped: generation 0, no reason, no timestamp):
 
 - `transition_generation` — increments once per committed transition;
-- `last_transition_reason` — `create`, `boot`, `restart`, `clone`, `restore`,
+- `last_transition_reason` — `create` (written with the finished record, never
+  on a `creating` placeholder), `boot`, `restart`, `clone`, `restore`,
   `stop-user`, `error`, or `unexpected-exit`;
 - `last_transition_at`.
 
@@ -157,4 +159,5 @@ curl --unix-socket /var/lib/cocoon/run/cocoond.sock -N http://localhost/v1/event
 The stream is a hint, not a log: it replays nothing and a slow reader loses
 events. After a reconnect, compare each VM's `transition_generation` against the
 last one you handled — a generation you have not seen whose state is `stopped`
-and whose reason is `unexpected-exit` is a crash you missed.
+and whose reason is `unexpected-exit` is a crash you missed. A `MODIFIED` can
+repeat a generation: the quiesce-pending flag is cleared without bumping it.

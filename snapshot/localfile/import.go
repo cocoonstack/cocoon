@@ -59,6 +59,9 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	if err != nil {
 		return "", err
 	}
+	if err = snapshot.VerifyCOWSize(dataDir, cfg); err != nil {
+		return "", err
+	}
 
 	cfg.ID = id
 	cfg.Name = cmp.Or(name, cfg.Name)

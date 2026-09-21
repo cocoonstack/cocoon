@@ -138,8 +138,8 @@ func (b *Bridge) Delete(_ context.Context, vmID string) error {
 }
 
 // RegisterGC reclaims orphan bridge TAP devices.
-func (b *Bridge) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, GCModule(b.tapPrefix))
+func (b *Bridge) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
+	gc.Register(orch, GCModule(b.tapPrefix, vmInUse))
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.

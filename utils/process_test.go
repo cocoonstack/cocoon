@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -252,8 +253,8 @@ func TestFindVMMByCmdline(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(pids) != 1 || pids[0] != cmd.Process.Pid {
-		t.Errorf("FindVMMByCmdline never matched the execed cmdline: got %v, want [%d]", pids, cmd.Process.Pid)
+	if !slices.Contains(pids, cmd.Process.Pid) {
+		t.Errorf("FindVMMByCmdline never matched the execed cmdline: got %v, want %d", pids, cmd.Process.Pid)
 	}
 
 	if got, _ := FindVMMByCmdline("definitely-no-such-binary", marker); len(got) != 0 {

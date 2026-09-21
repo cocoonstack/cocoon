@@ -89,6 +89,99 @@ func TestStopAfterUnexpectedExitIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStopRefusesACreatingPlaceholder(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-creating"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, false)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateCreating
+		return nil
+	}); err != nil {
+		t.Fatalf("seed creating: %v", err)
+	}
+
+	err := b.StopOneLocked(ctx, id, StopSpec{})
+	if err == nil || !strings.Contains(err.Error(), "still being created") {
+		t.Fatalf("StopOneLocked: %v, want a still-being-created refusal", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateCreating {
+		t.Fatalf("state = %s, want creating left for the stale-create reclaim", rec.State)
+	}
+}
+
+func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	ctx := t.Context()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateCreating
+		return nil
+	}); err != nil {
+		t.Fatalf("seed creating: %v", err)
+	}
+	rec := recordOf(t, b, id)
+	pid, err := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
+	if err != nil {
+		t.Fatalf("read stub pid: %v", err)
+	}
+	sock := SocketPath(rec.RunDir)
+	if err := os.Remove(sock); err != nil {
+		t.Fatalf("drop placeholder sock: %v", err)
+	}
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+	stopLocked := func(ctx context.Context, id string) error {
+		return b.StopOneLocked(ctx, id, StopSpec{RuntimeFiles: []string{APISocketName}})
+	}
+
+	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
+	if err != nil {
+		t.Fatalf("DeleteAll --force: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0] != id {
+		t.Fatalf("deleted = %v, want [%s]", deleted, id)
+	}
+	if utils.IsProcessAlive(pid) {
+		t.Errorf("orphan vmm pid %d still alive", pid)
+	}
+	if _, err := b.LoadRecord(ctx, id); err == nil {
+		t.Error("record should be gone after force delete")
+	}
+	if entries := b.Metering.(*meteringcapture.Recorder).Entries(); len(entries) != 0 {
+		t.Errorf("got %+v, want no ledger entry for a placeholder that never started", entries)
+	}
+}
+
+func TestDeleteCreatingPlaceholderEmitsNoMetering(t *testing.T) {
+	b, rec := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-creating-rm"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateCreating
+		return nil
+	}); err != nil {
+		t.Fatalf("seed creating: %v", err)
+	}
+
+	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
+		t.Fatal("stopLocked must not run for a placeholder without a VMM")
+		return nil
+	})
+	if err != nil || len(deleted) != 1 {
+		t.Fatalf("DeleteAll = %v, %v; want [%s]", deleted, err, id)
+	}
+	if entries := rec.Entries(); len(entries) != 0 {
+		t.Errorf("got %+v, want no ledger entry for a placeholder that never started", entries)
+	}
+}
+
 func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()

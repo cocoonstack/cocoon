@@ -28,7 +28,7 @@ cocoon
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
 │   ├── restore [flags] VM [SNAP] Restore a VM (running or stopped) to a snapshot (or --from-dir)
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
-│   ├── status [VM...]             Watch VM status in real time
+│   ├── status [VM...]             Show VM status (--watch refreshes, --event streams)
 │   ├── fs
 │   │   ├── attach [flags] VM     Attach a vhost-user-fs share (CH only)
 │   │   └── detach [flags] VM     Detach a vhost-user-fs share by --tag
@@ -51,7 +51,7 @@ cocoon
 ├── meta
 │   ├── init                       Initialize a fresh sqlite meta store (normally automatic on fresh roots)
 │   ├── convert                    Convert existing metadata to the configured meta_backend (crash-resumable)
-│   └── backup DEST                Back up the sqlite meta store to a single consistent file
+│   └── backup DEST                Back up the sqlite meta store to a single consistent file (leaves a DEST.lock beside it)
 ├── daemon [flags]                 Supervise cocoon-managed VMs (optional resident process)
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]
@@ -149,7 +149,7 @@ Applies to `cocoon vm clone`:
 | `--queue-size` | `0` (inherit)         | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (0 = inherit from snapshot) |
 | `--disk-queue-size` | `0` (inherit)    | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (0 = inherit from snapshot; CH only) |
 | `--network` | empty (inherit)          | CNI conflist name (empty = inherit from source VM)       |
-| `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); takes precedence over `--network` |
+| `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
 | `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults; `--cpuset-cpus` also accepts `auto`, resolved at the clone's launch |
 | `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
@@ -166,10 +166,10 @@ and hot-plugs the delta afterwards; a Firecracker MMIO snapshot rejects the over
 `cocoon vm run` to create a fresh VM with different CPU/memory/storage.
 
 **Network backend** is decided per clone (the snapshot does not persist a
-bridge device). Precedence:
+bridge device). `--bridge` and `--network` are mutually exclusive:
 
 1. `--bridge X` → bridge backend with bridge device `X`.
-2. `--network Y` (no `--bridge`) → CNI backend with conflist `Y`.
+2. `--network Y` → CNI backend with conflist `Y`.
 3. neither → CNI backend, conflist inherited from the snapshot's recorded
    `vmCfg.Network` (empty = CNI default).
 
@@ -189,7 +189,10 @@ Applies to `cocoon vm restore`:
 CPU, memory, and storage come from the snapshot (the hypervisor
 reconstructs the guest from snapshot state, so the persisted record is
 realigned to match). NIC count must match the target VM — restore reuses
-its existing network namespace, TAP devices, and IP allocation.
+its existing network namespace, TAP devices, and IP allocation. `--force`
+only skips snapshot ownership validation; it does not switch the target's
+base image, and an incompatible base image is rejected before the VM stops.
+See [restore constraints](snapshots.md#restore-constraints).
 
 ### Snapshot Flags
 
@@ -236,9 +239,7 @@ cocoon vm clone --from-dir /nfs/golden --name fresh-vm --pull
 # Restore the same VM's externally-staged backup (envelope ID matches → silent OK):
 cocoon vm restore my-vm --from-dir /sync/from-host-a
 
-# Restore a snapshot whose envelope id this VM does not own (acknowledges data-loss risk); Cloud Hypervisor
-# still requires the target's NIC MACs to match the snapshot's, so a truly unrelated lineage is refused by preflight —
-# clone it instead:
+# Override the envelope ownership check for a compatible backup of the same base image:
 cocoon vm restore my-vm --from-dir /sync/from-host-b --force
 ```
 

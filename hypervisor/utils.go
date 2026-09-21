@@ -325,6 +325,17 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	return nil
 }
 
+// ValidateResidentPaths runs after ValidateRoleSequence, which bounds sidecar by rec.
+func ValidateResidentPaths(sidecar, rec []*types.StorageConfig) error {
+	for i, sc := range sidecar {
+		if snapshotResidentBasename(sc) == "" || sc.Path == rec[i].Path {
+			continue
+		}
+		return fmt.Errorf("disk[%d] is recorded at %s but this VM's is %s: Firecracker reopens the snapshot's own paths, so restore into the VM it was taken from or use vm clone", i, sc.Path, rec[i].Path)
+	}
+	return nil
+}
+
 func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
 	for _, sc := range storageConfigs {
 		if sc.Role != types.StorageRoleLayer {

@@ -43,8 +43,6 @@ cocoon vm clone base --name fresh
 cocoon vm rm --force my-vm fresh
 ```
 
-Full walkthroughs: [Installation](docs/install.md) · [CLI reference](docs/cli.md) · [Images](docs/images.md) · [VM lifecycle](docs/vm.md) · [Networking](docs/networking.md) · [Snapshots & clone](docs/snapshots.md) · [Device attach](docs/devices.md) · [Windows](docs/windows.md) · [Firecracker](docs/firecracker.md) · [GC](docs/gc.md) · [Daemon](docs/daemon.md) · [OS images](docs/os-image.md) · [Known issues](docs/known-issues.md)
-
 ## Development
 
 ```bash

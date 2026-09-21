@@ -32,6 +32,8 @@ cocoon image import myimg disk.qcow2
 cat layers.tar.gz | cocoon image import mylayers
 ```
 
+Import preserves the input files. A cached cloud-image import reuses the blob without copying the input; if GC collects that blob before publication, import falls back to a private temporary copy.
+
 ## Managing
 
 ```bash

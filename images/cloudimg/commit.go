@@ -2,6 +2,7 @@ package cloudimg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -14,6 +15,8 @@ import (
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+var errBlobCacheMiss = errors.New("cached blob no longer exists")
 
 func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], ref string, tracker progress.Tracker, sourcePath, digestHex string) error {
 	logger := log.WithFunc("cloudimg.commit")
@@ -28,7 +31,7 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 		}
 	}()
 
-	if !utils.ValidFile(blobPath) {
+	if sourcePath != "" && !utils.ValidFile(blobPath) {
 		path, err := prepareTmpBlob(ctx, conf, tracker, sourcePath, digestHex)
 		if err != nil {
 			return err
@@ -44,7 +47,12 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 	if err := blobLocks.Lock(conf.BlobLockPath(digestHex)); err != nil {
 		return err
 	}
-	if tmpBlobPath != "" && !utils.ValidFile(blobPath) {
+	if !utils.ValidFile(blobPath) {
+		path, err := ensureTmpBlob(ctx, conf, tracker, sourcePath, tmpBlobPath, digestHex)
+		if err != nil {
+			return err
+		}
+		tmpBlobPath = path
 		if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
 			return fmt.Errorf("rename blob: %w", renameErr)
 		}
@@ -60,6 +68,16 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDone})
 	return nil
+}
+
+func ensureTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker, sourcePath, tmpBlobPath, digestHex string) (string, error) {
+	if tmpBlobPath != "" {
+		return tmpBlobPath, nil
+	}
+	if sourcePath == "" {
+		return "", errBlobCacheMiss
+	}
+	return prepareTmpBlob(ctx, conf, tracker, sourcePath, digestHex)
 }
 
 func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker, sourcePath, digestHex string) (string, error) {

@@ -64,7 +64,7 @@ func RouteRefs(ctx context.Context, hypers []hypervisor.Hypervisor, refs []strin
 // ReconcileState reports vm's state and whether a Running record's VMM is gone; a stale record's runtime paths are cleared.
 func ReconcileState(vm *types.VM) (types.VMState, bool) {
 	if vm.State == types.VMStateRunning && !utils.IsProcessAlive(vm.PID) {
-		vm.SocketPath, vm.VsockSocket, vm.ConsolePath = "", "", ""
+		vm.PID, vm.SocketPath, vm.VsockSocket, vm.ConsolePath = 0, "", "", ""
 		return types.VMStateStopped, true
 	}
 	return vm.State, false

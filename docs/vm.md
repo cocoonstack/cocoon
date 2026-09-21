@@ -6,11 +6,11 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 
 | State      | Description                                              |
 | ---------- | -------------------------------------------------------- |
-| `creating` | DB placeholder written, disks being prepared             |
+| `creating` | DB placeholder written, disks being prepared; `vm start` and `vm stop` refuse it, and an ownerless one (its create or clone died) is reclaimed by `vm reconcile-stale-create`, `gc` or the daemon |
 | `created`  | Registered, hypervisor process not yet started           |
 | `running`  | Hypervisor process alive, guest is up                    |
 | `stopped`  | Hypervisor process exited cleanly                        |
-| `error`    | Start, stop, or restore failed — recover with `vm restore`; a failed restore also quarantines the record, so `vm start` is refused until a later restore succeeds or `vm rm` deletes it |
+| `error`    | Start, stop, or restore failed — recover with `vm restore`; a failed restore also quarantines the record, so `vm start` is refused until a later restore succeeds or `vm rm` deletes it. Not sticky once the VM has been up: the daemon and the next `vm start` converge a dead VMM to `stopped` / `unexpected-exit`, and a VMM that is still alive is repaired to `running`; only a failed first start leaves `error` in place |
 | `stopped (stale)` | Rendered, never persisted: the record reads `running` but the VMM is gone; `vm list -o json`, `vm status --event --format json` and `vm inspect` report `"state": "stopped"` with `"stale": true` |
 
 ### Shutdown Behavior
@@ -160,7 +160,7 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); clone-created disks are hot-added after cidata is regenerated, so they are never auto-mounted — `mount=` has no effect on `vm clone --data-disk`; mount them inside the guest. Removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
 
-Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw`), per-index Path/RO agreement between the sidecar and CH config.json, and Role/Serial agreement between the sidecar and the VM record **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
+Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw` — presence, not size; `--from-dir` and `snapshot import` separately check the COW size against the envelope), per-index Path/RO agreement between the sidecar and CH config.json, Role/Serial agreement between the sidecar and the VM record, and on Firecracker that every COW and data disk is recorded at this VM's own path, all **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 
 ## Status Monitoring
 
@@ -180,4 +180,4 @@ cocoon vm status --event
 cocoon vm status --event -n 2 my-vm other-vm
 ```
 
-State changes are detected via **fsnotify** on the meta store (the sqlite database's directory, or the json index file; sub-second latency), with a configurable poll interval as fallback. Event mode emits `ADDED`, `MODIFIED`, and `DELETED` lines suitable for machine consumption.
+State changes are detected via **fsnotify** on the meta store's directory (the sqlite database's directory, or the json index file's parent, since an atomic rename changes the file's inode; sub-second latency), with a configurable poll interval as fallback. Event mode emits `ADDED`, `MODIFIED`, and `DELETED` lines suitable for machine consumption.

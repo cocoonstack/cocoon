@@ -293,7 +293,7 @@ func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// markTransition stamps one committed state change; every state write goes through it so generations stay dense enough to fence stale observations.
+// markTransition stamps one committed state change; every transition after the creating placeholder goes through it so generations stay dense enough to fence stale observations.
 func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
 	r.State = state
 	r.TransitionGeneration++

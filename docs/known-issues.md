@@ -193,7 +193,7 @@ See [cocoonstack/windows](https://github.com/cocoonstack/windows) for download a
 
 Firecracker snapshots store absolute host paths in the vmstate binary (Rust serde format, not patchable). This means:
 
-- **Same-host clone/restore**: restore always resolves disks through the live record's own run dir, never the snapshot's recorded paths; clone rejects a missing source drive whose recorded path falls outside the current managed `run_dir`
+- **Same-host clone/restore**: restore sends no drive override, so the vmstate reopens the paths it recorded; the restore preflight therefore refuses a snapshot whose COW or data disks are recorded under another VM's run dir (even with `--force`), and clone rejects a missing source drive whose recorded path falls outside the current managed `run_dir`
 - **Cross-host export/import**: requires the target host to use **identical `root_dir` and `run_dir`** (default: `/var/lib/cocoon` and `/var/lib/cocoon/run`) and have the **same OCI image pulled**
 - **Drive path redirect**: during `snapshot/load` Cocoon bind-mounts the clone's disks over the source-absolute paths inside a private mount namespace, holding a shared per-VM lease on the source so concurrent source operations wait; a dead source gets an empty placeholder file to bind over. The host namespace is never mutated
 
@@ -232,11 +232,15 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 ## Snapshotting a VM with attached vhost-user-fs / VFIO is refused
 
-Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the snapshot's `config.json` and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`) before anything is recorded. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
+Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the live `vm.info` before pausing the guest and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`) before anything is captured or recorded. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
 
-## `--from-dir` rejects a directory rebuilt by a third-party tar
+## Snapshot lease files are never reclaimed
 
-`cocoon vm clone --from-dir` and `cocoon vm restore --from-dir` compare `cow.raw`'s on-disk size with the size recorded in `snapshot.json`. cocoon's export tar stores sparse disks with private pax records that only its own extractor understands; a generic `tar -x` drops them and rebuilds a short, shifted disk that would restore into silent corruption. The directory is refused with `cow.raw in <dir> is N bytes but the envelope records M`. Use `snapshot export --to-dir` for the directory form, or `snapshot import` for an exported tar.
+Every `snapshot save` leaves a zero-byte `<root>/snapshot/localfile/<id>.lease` behind, and `snapshot rm` and `gc` remove only the data dir (the GC orphan sweep even creates a lease for a recordless dir it collects). The files are inert but accumulate one inode per snapshot ever created; delete them by hand while no snapshot verb runs. Reclaiming them in GC needs the snapshot leases to move onto the rebind-guarded transient lock the VM ops lock uses.
+
+## `--from-dir` and `snapshot import` reject a snapshot rebuilt by a third-party tar
+
+`cocoon vm clone --from-dir`, `cocoon vm restore --from-dir` and `cocoon snapshot import` compare `cow.raw`'s on-disk size with the size recorded in `snapshot.json`. cocoon's export tar stores sparse disks with private pax records that only its own extractor understands; a generic `tar -x` drops them and rebuilds a short, shifted disk that would restore into silent corruption. The snapshot is refused with `cow.raw in <dir> is N bytes but the envelope records M`. Use `snapshot export --to-dir` for the directory form, or `snapshot import` on the tar exactly as cocoon wrote it.
 
 ## Runtime attached devices do not survive VM stop / clone / restore
 

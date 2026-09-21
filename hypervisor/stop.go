@@ -47,6 +47,9 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	if err != nil {
 		return err
 	}
+	if rec.State == types.VMStateCreating {
+		return fmt.Errorf("vm %s is still being created", id)
+	}
 	sockPath := SocketPath(rec.RunDir)
 	shutdownErr := b.WithRunningVM(ctx, &rec, func(pid int) error {
 		return spec.Shutdown(ctx, &rec, sockPath, pid)
@@ -122,6 +125,9 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 			return errors.New("running (force required)")
 		}
 		stoppedByUs = true
+		if rec.State == types.VMStateCreating {
+			return b.ensureOrphanVMMDead(ctx, rec.RunDir)
+		}
 		return stopLocked(ctx, id)
 	}); runningErr != nil && !errors.Is(runningErr, ErrNotRunning) {
 		return fmt.Errorf("stop before delete: %w", runningErr)
@@ -156,6 +162,9 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	}
 	if err := b.deleteVMProtocol(ctx, id, rec); err != nil {
 		return err
+	}
+	if rec.State == types.VMStateCreating {
+		return nil
 	}
 	computeReason := metering.ReasonStopCrash
 	if stoppedByUs {

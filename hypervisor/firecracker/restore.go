@@ -49,7 +49,7 @@ func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecor
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {
 	logger := log.WithFunc("firecracker.restoreAfterExtract")
 
-	snapshotCOW := filepath.Join(rec.RunDir, hypervisor.COWRawFileName)
+	snapshotCOW := filepath.Join(rec.RunDir, types.COWRawFileName)
 	if snapshotCOW != cowPath && utils.FileExists(snapshotCOW) {
 		if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {
 			return nil, fmt.Errorf("move COW: %w", renameErr)

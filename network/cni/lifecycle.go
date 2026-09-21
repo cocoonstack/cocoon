@@ -349,6 +349,8 @@ func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Net
 			}
 			if ipCfg.Gateway != nil {
 				info.Gateway = ipCfg.Gateway.String()
+			} else {
+				info.Gateway = defaultRouteGateway(newResult.Routes)
 			}
 			return info, nil
 		}
@@ -357,4 +359,13 @@ func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Net
 	log.WithFunc("cni.extractNetworkInfo").Warnf(ctx,
 		"CNI result has %d IPs but no IPv4; skipping network info (IPv6-only is unsupported)", len(newResult.IPs))
 	return nil, nil
+}
+
+func defaultRouteGateway(routes []*cnitypes.Route) string {
+	for _, r := range routes {
+		if ones, _ := r.Dst.Mask.Size(); ones == 0 && r.Dst.IP.To4() != nil && r.GW.To4() != nil {
+			return r.GW.String()
+		}
+	}
+	return ""
 }

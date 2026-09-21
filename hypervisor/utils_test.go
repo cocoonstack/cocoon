@@ -191,6 +191,76 @@ func TestValidateRoleSequence(t *testing.T) {
 	}
 }
 
+func TestValidateResidentPaths(t *testing.T) {
+	tests := []struct {
+		name    string
+		sidecar []*types.StorageConfig
+		rec     []*types.StorageConfig
+		wantErr string
+	}{
+		{
+			name: "same VM",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleLayer, Path: "/root/blobs/l0"},
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+				{Role: types.StorageRoleData, Serial: "x", Path: "/run/vm-a/data-x.raw"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleLayer, Path: "/root/blobs/l0"},
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+				{Role: types.StorageRoleData, Serial: "x", Path: "/run/vm-a/data-x.raw"},
+			},
+		},
+		{
+			name: "another VM's COW",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW, Path: "/run/vm-b/cow.raw"},
+			},
+			wantErr: "disk[0] is recorded at /run/vm-a/cow.raw",
+		},
+		{
+			name: "another VM's data disk",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+				{Role: types.StorageRoleData, Serial: "x", Path: "/run/vm-a/data-x.raw"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+				{Role: types.StorageRoleData, Serial: "x", Path: "/run/vm-b/data-x.raw"},
+			},
+			wantErr: "disk[1] is recorded at /run/vm-a/data-x.raw",
+		},
+		{
+			name: "shared layer elsewhere is not resident",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleLayer, Path: "/root/blobs/l0"},
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleLayer, Path: "/root/blobs/l1"},
+				{Role: types.StorageRoleCOW, Path: "/run/vm-a/cow.raw"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateResidentPaths(tt.sidecar, tt.rec)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %v does not contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDataDiskBaseName(t *testing.T) {
 	if got := DataDiskBaseName("foo"); got != "data-foo.raw" {
 		t.Errorf("got %q, want data-foo.raw", got)
@@ -220,7 +290,7 @@ func TestIsDataDiskFile(t *testing.T) {
 func TestBuildBaseCmdline(t *testing.T) {
 	const (
 		chPrefix = "console=hvc0 loglevel=3"
-		fcPrefix = "console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1"
+		fcPrefix = "console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1"
 	)
 	nics := []*types.NetworkConfig{
 		{Network: &types.Network{IP: "10.0.0.2", Gateway: "10.0.0.1", Prefix: 24}},
@@ -238,7 +308,7 @@ func TestBuildBaseCmdline(t *testing.T) {
 		},
 		{
 			name: "fc no network", prefix: fcPrefix, layers: "/dev/vda", cow: "/dev/vdb",
-			want: "console=ttyS0 reboot=k loglevel=3 pci=off i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=/dev/vda cocoon.cow=/dev/vdb clocksource=kvm-clock rw",
+			want: "console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1 boot=cocoon-overlay cocoon.layers=/dev/vda cocoon.cow=/dev/vdb clocksource=kvm-clock rw",
 		},
 		{
 			name: "ch with nic + dns", prefix: chPrefix, layers: "L", cow: "C", nics: nics, dns: []string{"1.1.1.1"},

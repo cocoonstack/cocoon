@@ -1154,6 +1154,28 @@ func TestImport_FromRawTarReader(t *testing.T) {
 	}
 }
 
+func TestImport_RefusesAShortCOW(t *testing.T) {
+	lf := newTestLF(t)
+	envelope, err := json.Marshal(types.SnapshotExport{Version: 1, Config: types.SnapshotConfig{Name: "repacked", Config: types.Config{Storage: 8 << 20}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := makeTar(t, map[string][]byte{"snapshot.json": envelope, "cow.raw": make([]byte, 12<<10)})
+
+	_, err = lf.Import(t.Context(), stream, "", "")
+
+	if err == nil || !strings.Contains(err.Error(), "envelope records") {
+		t.Fatalf("err = %v, want the short cow.raw refused", err)
+	}
+	snaps, err := lf.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("snapshots = %d, want the truncated archive left unregistered", len(snaps))
+	}
+}
+
 func TestExportCompressed_ImportRoundtrip(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -1498,6 +1520,10 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 	t.Helper()
 	ctx := t.Context()
 	stream := makeTar(t, files)
+	storage := int64(10 << 30)
+	if cow, ok := files[types.COWRawFileName]; ok {
+		storage = int64(len(cow))
+	}
 	cfg := &types.SnapshotConfig{
 		ID:           testID(t),
 		Name:         name,
@@ -1508,7 +1534,7 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 			Image:   "ubuntu:24.04",
 			CPU:     4,
 			Memory:  1 << 30,
-			Storage: 10 << 30,
+			Storage: storage,
 		},
 	}
 	id, err := lf.Create(ctx, cfg, stream)
