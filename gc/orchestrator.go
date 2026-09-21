@@ -66,13 +66,9 @@ func formatSummary(s map[string]int) string {
 	if len(s) == 0 {
 		return "nothing to collect"
 	}
-	keys := slices.Sorted(maps.Keys(s))
-	var sb strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			sb.WriteByte(' ')
-		}
-		fmt.Fprintf(&sb, "%s=%d", k, s[k])
+	parts := make([]string, 0, len(s))
+	for _, k := range slices.Sorted(maps.Keys(s)) {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, s[k]))
 	}
-	return sb.String()
+	return strings.Join(parts, " ")
 }

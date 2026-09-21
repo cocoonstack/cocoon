@@ -61,35 +61,34 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 			if len(prefixes) == 0 {
 				return nil
 			}
-			orphanSet := make(map[string]struct{}, len(prefixes))
-			for _, p := range prefixes {
-				orphanSet[p] = struct{}{}
-			}
-
 			links, err := listLinksFn()
 			if err != nil {
 				return err
 			}
-			var errs []error
+			// Group first: one owner lookup per VM, not per TAP — each is a meta transaction holding the namespace lock.
+			orphans := make(map[string][]netlink.Link, len(prefixes))
 			for _, l := range links {
-				name := l.Attrs().Name
-				prefix, ok := parseTAPName(tapPrefix, name)
-				if !ok {
+				if prefix, ok := parseTAPName(tapPrefix, l.Attrs().Name); ok && slices.Contains(prefixes, prefix) {
+					orphans[prefix] = append(orphans[prefix], l)
+				}
+			}
+			var errs []error
+			for _, prefix := range prefixes {
+				inUse, err := vmInUse(ctx, prefix)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("owner of TAP prefix %s: %w", prefix, err))
 					continue
 				}
-				if _, orphan := orphanSet[prefix]; !orphan {
+				if inUse {
 					continue
 				}
-				if inUse, err := vmInUse(ctx, prefix); err != nil {
-					errs = append(errs, fmt.Errorf("owner of TAP %s: %w", name, err))
-					continue
-				} else if inUse {
-					continue
-				}
-				if err := deleteLinkFn(l); err != nil {
-					logger.Warnf(ctx, "delete orphan TAP %s: %v", name, err)
-				} else {
-					logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
+				for _, l := range orphans[prefix] {
+					name := l.Attrs().Name
+					if err := deleteLinkFn(l); err != nil {
+						logger.Warnf(ctx, "delete orphan TAP %s: %v", name, err)
+					} else {
+						logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
+					}
 				}
 			}
 			return errors.Join(errs...)

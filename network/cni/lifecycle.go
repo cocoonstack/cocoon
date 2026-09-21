@@ -70,11 +70,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		return nil, fmt.Errorf("read network index: %w", err)
 	}
 
-	type addedNIC struct {
-		index int
-		recID string // "" for recovered NICs whose records pre-exist
-	}
-	added := make([]addedNIC, 0, len(specs))
+	attempted := 0
 	var recIDs map[int]string
 	defer func() {
 		if retErr == nil {
@@ -85,28 +81,28 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		defer rcancel()
 		var releasedIDs []string
 		// Intents whose ADD never started need no DEL.
-		attempted := make(map[string]struct{}, len(added))
-		for _, a := range added {
-			attempted[a.recID] = struct{}{}
+		tried := make(map[string]struct{}, attempted)
+		for _, spec := range specs[:attempted] {
+			tried[recIDs[spec.Index]] = struct{}{}
 		}
 		for _, id := range recIDs {
-			if _, ok := attempted[id]; !ok {
+			if _, ok := tried[id]; !ok {
 				releasedIDs = append(releasedIDs, id)
 			}
 		}
-		for _, a := range added {
-			ifn := ifName(a.index)
+		for _, spec := range specs[:attempted] {
+			ifn := ifName(spec.Index)
 			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
 				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept for GC)", vmID, ifn, delErr)
 				continue
 			}
 			// setupTCRedirect creates the TAP; it would leak in the persisting netns.
-			if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, a.index)); delErr != nil {
-				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, a.index), delErr)
+			if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, spec.Index)); delErr != nil {
+				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, spec.Index), delErr)
 				continue
 			}
-			if a.recID != "" {
-				releasedIDs = append(releasedIDs, a.recID)
+			if recID := recIDs[spec.Index]; recID != "" {
+				releasedIDs = append(releasedIDs, recID)
 			}
 		}
 		if delErr := c.deleteRecords(rctx, releasedIDs); delErr != nil {
@@ -114,46 +110,41 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 	}()
 
-	type freshNIC struct {
-		index int
-		recID string
-		cfg   *types.NetworkConfig
-	}
 	recIDs, err = c.stageNICIntents(ctx, confList, vmID, nsPath, specs, stale)
 	if err != nil {
 		return nil, err
 	}
 
 	configs = make([]*types.NetworkConfig, 0, len(specs))
-	fresh := make([]freshNIC, 0, len(specs))
 	for _, spec := range specs {
 		rt := c.nicRuntime(ctx, confList, vmID, nsPath, spec)
-		// Registered before ADD so a mid-ADD failure still gets a cleanup DEL.
-		added = append(added, addedNIC{index: spec.Index, recID: recIDs[spec.Index]})
+		// Counted before ADD so a mid-ADD failure still gets a cleanup DEL.
+		attempted++
 
 		cfg, addErr := c.provisionNIC(ctx, confList, rt, vmID, nsPath, vmCfg, spec)
 		if addErr != nil {
 			return nil, addErr
 		}
 		configs = append(configs, cfg)
-		if spec.Existing == nil {
-			fresh = append(fresh, freshNIC{index: spec.Index, recID: recIDs[spec.Index], cfg: cfg})
-		}
 	}
 
 	return configs, c.update(ctx, func(t *netTx) error {
-		for _, f := range fresh {
-			rec, err := t.Get(f.recID)
+		for i, spec := range specs {
+			if spec.Existing != nil {
+				continue
+			}
+			recID := recIDs[spec.Index]
+			rec, err := t.Get(recID)
 			if err != nil {
 				return err
 			}
 			if rec == nil { // intent vanished (concurrent sweep): reinsert
-				rec = &networkRecord{ID: f.recID, Type: confList.Name, VMID: vmID, IfName: ifName(f.index)}
+				rec = &networkRecord{ID: recID, Type: confList.Name, VMID: vmID, IfName: ifName(spec.Index)}
 			}
-			if f.cfg.Network != nil {
-				rec.Network = *f.cfg.Network
+			if configs[i].Network != nil {
+				rec.Network = *configs[i].Network
 			}
-			if err := t.Put(f.recID, rec); err != nil {
+			if err := t.Put(recID, rec); err != nil {
 				return err
 			}
 		}
