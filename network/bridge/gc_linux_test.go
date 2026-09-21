@@ -44,6 +44,33 @@ func TestParseTAPName(t *testing.T) {
 	}
 }
 
+func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
+	oldList, oldDelete := listLinksFn, deleteLinkFn
+	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
+	listLinksFn = func() ([]netlink.Link, error) {
+		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}, &netlink.Dummy{Name: "btBBBBBBBB-0", Index: 2}}, nil
+	}
+	var deleted []int
+	deleteLinkFn = func(link netlink.Link) error {
+		deleted = append(deleted, link.Attrs().Index)
+		return nil
+	}
+	readErr := errors.New("owner read failed")
+	m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
+		if id == "AAAAAAAA" {
+			return false, readErr
+		}
+		return false, nil
+	})
+	err := m.Collect(t.Context(), []string{"AAAAAAAA", "BBBBBBBB"}, bridgeSnapshot{})
+	if !errors.Is(err, readErr) {
+		t.Fatalf("collect error = %v, want the owner read failure reported", err)
+	}
+	if len(deleted) != 1 || deleted[0] != 2 {
+		t.Fatalf("deleted = %v, want only the orphan whose owner lookup succeeded", deleted)
+	}
+}
+
 func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 	readErr := errors.New("owner read failed")
 	for _, tt := range []struct {

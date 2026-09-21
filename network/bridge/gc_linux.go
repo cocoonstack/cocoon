@@ -4,6 +4,8 @@ package bridge
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -68,6 +70,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 			if err != nil {
 				return err
 			}
+			var errs []error
 			for _, l := range links {
 				name := l.Attrs().Name
 				prefix, ok := parseTAPName(tapPrefix, name)
@@ -78,7 +81,8 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 					continue
 				}
 				if inUse, err := vmInUse(ctx, prefix); err != nil {
-					return err
+					errs = append(errs, fmt.Errorf("owner of TAP %s: %w", name, err))
+					continue
 				} else if inUse {
 					continue
 				}
@@ -88,7 +92,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 					logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
 				}
 			}
-			return nil
+			return errors.Join(errs...)
 		},
 	}
 }
