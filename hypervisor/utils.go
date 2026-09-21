@@ -325,6 +325,7 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 	return nil
 }
 
+// ValidateResidentPaths runs after ValidateRoleSequence, which bounds sidecar by rec.
 func ValidateResidentPaths(sidecar, rec []*types.StorageConfig) error {
 	for i, sc := range sidecar {
 		if snapshotResidentBasename(sc) == "" || sc.Path == rec[i].Path {
