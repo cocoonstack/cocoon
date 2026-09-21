@@ -41,7 +41,7 @@ Reasons:
 - **cni**: `orphan` (netns in this installation's `net_scope` family without active VM)
 - **bridge**: `orphan-tap` (TAP in this installation's `net_scope` family without active VM)
 - **cgroup**: `orphan-scope` (empty `vm-<id>.scope` under `cgroup_parent` that no VM record owns; scopes with live members are left alone)
-- **vmlock**: `orphan-lease` (lease file for a VM no backend knows)
+- **vmlock**: `orphan-lease` (lease file for a VM no backend knows; the ops lock unlinks on release, so `locks/vm/` is normally empty even with VMs running)
 
 ### Snapshot LRU Eviction
 

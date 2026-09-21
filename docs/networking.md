@@ -16,7 +16,7 @@ Guest virtio-net  ←→  TAP (multi-queue)  ←TC redirect→  veth  ←→  CN
 - **Offload**: TSO, UFO, and checksum offload are enabled on the virtio-net device; TAP uses `VNET_HDR` for zero-copy GSO passthrough
 - **MAC passthrough**: the guest NIC inherits the CNI veth's MAC address, satisfying anti-spoofing requirements of Cilium, Calico eBPF, and VPC ENI plugins
 - **MTU sync**: TAP MTU is automatically synced to the veth to prevent silent large-packet drops in overlay or jumbo-frame setups
-- **IPv4 only**: cocoon records the first IPv4 address from the CNI result; IPv6-only plugin results are not persisted (a warning is logged and the NIC carries no network info)
+- **IPv4 only**: cocoon records the first IPv4 address from the CNI result, with its `ips[].gateway` or, when that is empty, the gateway of the result's IPv4 default route; IPv6-only plugin results are not persisted (a warning is logged and the NIC carries no network info)
 
 ### Options
 

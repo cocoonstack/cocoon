@@ -28,7 +28,7 @@ cocoon
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
 │   ├── restore [flags] VM [SNAP] Restore a VM (running or stopped) to a snapshot (or --from-dir)
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
-│   ├── status [VM...]             Watch VM status in real time
+│   ├── status [VM...]             Show VM status (--watch refreshes, --event streams)
 │   ├── fs
 │   │   ├── attach [flags] VM     Attach a vhost-user-fs share (CH only)
 │   │   └── detach [flags] VM     Detach a vhost-user-fs share by --tag
@@ -51,7 +51,7 @@ cocoon
 ├── meta
 │   ├── init                       Initialize a fresh sqlite meta store (normally automatic on fresh roots)
 │   ├── convert                    Convert existing metadata to the configured meta_backend (crash-resumable)
-│   └── backup DEST                Back up the sqlite meta store to a single consistent file
+│   └── backup DEST                Back up the sqlite meta store to a single consistent file (leaves a DEST.lock beside it)
 ├── daemon [flags]                 Supervise cocoon-managed VMs (optional resident process)
 ├── version                        Show version, revision, and build time
 └── completion [bash|zsh|fish|powershell]

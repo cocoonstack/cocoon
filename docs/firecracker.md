@@ -42,6 +42,7 @@ cocoon vm clone my-snap --name clone-vm
 
 - **OCI images only**: `--fc` is mutually exclusive with `--windows`, `--shared-memory`, `--hugepages`, `--mergeable` and `--no-watchdog`, and rejects cloudimg (UEFI boot) images
 - **MMIO by default**: without `--pci` (fixed for the VM lifetime, inherited by snapshots) disk attach/detach, NIC resize and clone-time `--data-disk`/`--nics` are refused
+- **Hot-plug is ahead of the published spec**: the Firecracker swagger still lists `PUT /drives/{id}` as pre-boot only and omits the `DELETE` verbs, while the router implements post-boot PUT and DELETE for drives and network interfaces; `--pci` hot-plug relies on the router, not the spec
 - **io_uring required**: writable disks use the `Async` engine with no opt-out, so a restrictive seccomp profile (Docker's default) breaks them; `--no-direct-io` is ignored
 - **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before SIGKILL
 - **Clone MTU must match**: a clone requires the target network's MTU to equal the snapshot's
