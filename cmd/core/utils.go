@@ -23,11 +23,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func FindHypervisor(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, error) {
-	owner, _, err := FindVM(ctx, conf, ref)
-	return owner, err
-}
-
 func FindVM(ctx context.Context, conf *config.Config, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	hypers, err := InitAllHypervisors(ctx, conf)
 	if err != nil {
@@ -70,7 +65,7 @@ func ReconcileState(vm *types.VM) (types.VMState, bool) {
 	return vm.State, false
 }
 
-func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
+func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) (imagebackend.Images, []*types.StorageConfig, *types.BootConfig, error) {
 	var owner imagebackend.Images
 	var storageConfigs []*types.StorageConfig
 	var bootCfg *types.BootConfig
@@ -82,7 +77,7 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 			continue
 		}
 		if owner != nil {
-			return nil, nil, fmt.Errorf("image %s: %w (matched both %s and %s)",
+			return nil, nil, nil, fmt.Errorf("image %s: %w (matched both %s and %s)",
 				vmCfg.Image, imagebackend.ErrAmbiguous, owner.Type(), b.Type())
 		}
 		owner = b
@@ -90,9 +85,9 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 		bootCfg = boot
 	}
 	if owner == nil {
-		return nil, nil, fmt.Errorf("image %q not resolved: %s", vmCfg.Image, strings.Join(backendErrs, "; "))
+		return nil, nil, nil, fmt.Errorf("image %q not resolved: %s", vmCfg.Image, strings.Join(backendErrs, "; "))
 	}
-	return storageConfigs, bootCfg, nil
+	return owner, storageConfigs, bootCfg, nil
 }
 
 // EnsureImage pulls the digest-pinned base if missing; only warns so VerifyBaseFiles surfaces the real error for imported images.
@@ -168,20 +163,16 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 		return nil
 	}
 	// The name index, not Inspect: a killed save leaves a pending record still holding the name that Inspect reports as not-found, and passing that preflight wastes the whole capture before the insert rejects it.
-	if nh, ok := snapBackend.(snapshot.NameHolder); ok {
-		id, held, err := nh.NameOwner(ctx, name)
-		if err != nil {
-			return fmt.Errorf("check snapshot name: %w", err)
-		}
-		if held {
-			return fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
-		}
-		return nil
+	nh, ok := snapBackend.(snapshot.NameHolder)
+	if !ok {
+		return fmt.Errorf("backend %s has no snapshot name index", snapBackend.Type())
 	}
-	if _, err := snapBackend.Inspect(ctx, name); err == nil {
-		return fmt.Errorf("snapshot name %q already exists", name)
-	} else if !errors.Is(err, snapshot.ErrNotFound) {
+	id, held, err := nh.NameOwner(ctx, name)
+	if err != nil {
 		return fmt.Errorf("check snapshot name: %w", err)
+	}
+	if held {
+		return fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
 	}
 	return nil
 }
@@ -211,6 +202,7 @@ func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapsh
 
 // PersistSnapshotDir stores a finalized capture dir, moving it in place when srcDir shares a filesystem with the backend and streaming a tar otherwise; srcDir is consumed on every path.
 func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
+	logger := log.WithFunc("core.PersistSnapshotDir")
 	cfg.Name = name
 	cfg.Description = description
 	if dc, ok := snapBackend.(snapshot.DirectCreator); ok {
@@ -220,20 +212,14 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 			return "", fmt.Errorf("save snapshot: %w", err)
 		}
 		if done {
-			log.WithFunc("core.PersistSnapshotDir").Info(ctx, "saved snapshot data (direct)")
+			logger.Info(ctx, "saved snapshot data (direct)")
 			return id, nil
 		}
 	}
-	return PersistSnapshotStream(ctx, snapBackend, cfg, utils.TarDirStreamWithRemove(srcDir), name, description)
-}
-
-// PersistSnapshotStream labels cfg and stores the stream, closing it either way.
-func PersistSnapshotStream(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, stream io.ReadCloser, name, description string) (string, error) {
+	stream := utils.TarDirStreamWithRemove(srcDir)
 	defer stream.Close() //nolint:errcheck
 	defer CloseOnCancel(ctx, stream)()
-	cfg.Name = name
-	cfg.Description = description
-	log.WithFunc("core.PersistSnapshotStream").Info(ctx, "saving snapshot data ...")
+	logger.Info(ctx, "saving snapshot data ...")
 	snapID, err := snapBackend.Create(ctx, cfg, stream)
 	if err != nil {
 		return "", fmt.Errorf("save snapshot: %w", err)

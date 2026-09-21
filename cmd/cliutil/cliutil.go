@@ -89,6 +89,20 @@ func FormatSize(bytes int64) string {
 	return units.BytesSize(float64(bytes))
 }
 
+// The discarded error on each Flag* accessor means "no such flag", which the command tree makes impossible.
+func FlagBool(cmd *cobra.Command, name string) bool { v, _ := cmd.Flags().GetBool(name); return v }
+
+func FlagInt(cmd *cobra.Command, name string) int { v, _ := cmd.Flags().GetInt(name); return v }
+
+func FlagInt64(cmd *cobra.Command, name string) int64 { v, _ := cmd.Flags().GetInt64(name); return v }
+
+func FlagStr(cmd *cobra.Command, name string) string { v, _ := cmd.Flags().GetString(name); return v }
+
+func FlagStrings(cmd *cobra.Command, name string) []string {
+	v, _ := cmd.Flags().GetStringArray(name)
+	return v
+}
+
 func IsURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
 }

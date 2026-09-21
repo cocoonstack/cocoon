@@ -53,7 +53,7 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintln(os.Stderr, "note: the printed command omits the agent vsock, cocoon's max-vcpu and console wiring, and any cidata disk; vm exec and cloud-init do not reach a VM launched from it")
 
-	storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
+	_, storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
 	if err != nil {
 		return err
 	}

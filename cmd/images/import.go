@@ -59,11 +59,8 @@ func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name
 			logger.Infof(ctx, "importing tar layers (%d files) ...", len(plan.files))
 		}
 		return h.importOCIFiles(ctx, conf, name, plan.files...)
-	case importSourceStream:
-		return h.importLocalStream(ctx, conf, name, plan.files[0])
-	default:
-		return fmt.Errorf("unsupported local import source")
 	}
+	return h.importLocalStream(ctx, conf, name, plan.files[0])
 }
 
 func (h Handler) importLocalStream(ctx context.Context, conf *config.Config, name, filePath string) error {
@@ -85,14 +82,10 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 	}
 	defer cleanup()
 
-	switch typ {
-	case imageTypeQcow2:
+	if typ == imageTypeQcow2 {
 		return h.importCloudimgReader(ctx, conf, name, reader)
-	case imageTypeTar:
-		return h.importOCIReader(ctx, conf, name, reader)
-	default:
-		return fmt.Errorf("unsupported image type")
 	}
+	return h.importOCIReader(ctx, conf, name, reader)
 }
 
 func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {

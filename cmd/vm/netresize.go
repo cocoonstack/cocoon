@@ -6,7 +6,6 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
-	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/netresize"
@@ -41,17 +40,15 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	if isFirecracker(hyper.Type()) {
 		out.Hints = fcNetHints(res)
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
-		return jsonErr
-	}
-	logger := log.WithFunc("cmd.vm.net")
-	logger.Infof(ctx, "resized %s: before=%d after=%d added=%d removed=%d",
-		args[0], res.Before, res.After, len(res.Added), len(res.Removed))
-	for _, w := range res.Warnings {
-		logger.Warnf(ctx, "%s: %s", args[0], w)
-	}
-	printGuestHints(out.Hints)
-	return nil
+	return outputOrLog(cmd, out, func() {
+		logger := log.WithFunc("cmd.vm.net")
+		logger.Infof(ctx, "resized %s: before=%d after=%d added=%d removed=%d",
+			args[0], res.Before, res.After, len(res.Added), len(res.Removed))
+		for _, w := range res.Warnings {
+			logger.Warnf(ctx, "%s: %s", args[0], w)
+		}
+		printGuestHints(out.Hints)
+	})
 }
 
 // plumbingForVM works at 0 NICs because NetBackend persists.

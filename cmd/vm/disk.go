@@ -4,7 +4,6 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
-	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -37,12 +36,10 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	if isFirecracker(hyper.Type()) {
 		out.Hints = []string{pciRescanHint}
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
-		return jsonErr
-	}
-	log.WithFunc("cmd.vm.disk.attach").Infof(ctx, "attached disk name=%s id=%s vm=%s", name, id, args[0])
-	printGuestHints(out.Hints)
-	return nil
+	return outputOrLog(cmd, out, func() {
+		log.WithFunc("cmd.vm.disk.attach").Infof(ctx, "attached disk name=%s id=%s vm=%s", name, id, args[0])
+		printGuestHints(out.Hints)
+	})
 }
 
 func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
@@ -58,10 +55,8 @@ func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
 	if isFirecracker(hyper.Type()) {
 		out.Hints = []string{pciDiskRemoveHint}
 	}
-	if done, jsonErr := cliutil.MaybeOutputJSON(cmd, out); done {
-		return jsonErr
-	}
-	log.WithFunc("cmd.vm.disk.detach").Infof(ctx, "detached disk name=%s vm=%s", name, args[0])
-	printGuestHints(out.Hints)
-	return nil
+	return outputOrLog(cmd, out, func() {
+		log.WithFunc("cmd.vm.disk.detach").Infof(ctx, "detached disk name=%s vm=%s", name, args[0])
+		printGuestHints(out.Hints)
+	})
 }

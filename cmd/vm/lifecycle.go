@@ -38,36 +38,15 @@ type vmOutput struct {
 }
 
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
-	ctx, conf := h.Init(cmd)
-
-	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
-	if err != nil {
-		return err
-	}
-	routed, err := cmdcore.RouteRefs(ctx, hypers, args)
-	if err != nil {
-		return err
-	}
-
-	return batchRoutedCmd(ctx, cmd, "start", "started", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+	return h.runRouted(cmd, args, "start", "started", func(ctx context.Context, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Start(ctx, refs)
 	})
 }
 
 func (h Handler) Stop(cmd *cobra.Command, args []string) error {
-	ctx, conf := h.Init(cmd)
-
+	_, conf := h.Init(cmd)
 	applyStopFlags(conf, cmd)
-
-	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
-	if err != nil {
-		return err
-	}
-	routed, err := cmdcore.RouteRefs(ctx, hypers, args)
-	if err != nil {
-		return err
-	}
-	return batchRoutedCmd(ctx, cmd, "stop", "stopped", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+	return h.runRouted(cmd, args, "stop", "stopped", func(ctx context.Context, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Stop(ctx, refs)
 	})
 }
@@ -92,7 +71,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
+	hyper, _, err := cmdcore.FindVM(ctx, conf, args[0])
 	if err != nil {
 		return fmt.Errorf("console: %w", err)
 	}
@@ -141,7 +120,7 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 
 func (h Handler) Logs(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
-	hyper, err := cmdcore.FindHypervisor(ctx, conf, args[0])
+	hyper, _, err := cmdcore.FindVM(ctx, conf, args[0])
 	if err != nil {
 		return fmt.Errorf("logs: %w", err)
 	}
@@ -155,10 +134,16 @@ func (h Handler) Logs(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
-	ctx, conf := h.Init(cmd)
+	_, conf := h.Init(cmd)
 	force, _ := cmd.Flags().GetBool("force")
 	applyStopFlags(conf, cmd)
+	return h.runRouted(cmd, args, "rm", "deleted", func(ctx context.Context, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+		return hyper.Delete(ctx, refs, force)
+	})
+}
 
+func (h Handler) runRouted(cmd *cobra.Command, args []string, name, pastTense string, fn func(context.Context, hypervisor.Hypervisor, []string) ([]string, error)) error {
+	ctx, conf := h.Init(cmd)
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
 		return err
@@ -167,9 +152,8 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	return batchRoutedCmd(ctx, cmd, "rm", "deleted", routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-		return hyper.Delete(ctx, refs, force)
+	return batchRoutedCmd(ctx, cmd, name, pastTense, routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
+		return fn(ctx, hyper, refs)
 	})
 }
 
