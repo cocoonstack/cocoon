@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/containernetworking/cni/libcni"
+	cnitypes "github.com/containernetworking/cni/pkg/types"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/cni/pkg/version"
 
 	"github.com/cocoonstack/cocoon/config"
@@ -136,6 +139,54 @@ func TestLoadConfLists(t *testing.T) {
 			t.Fatalf("expected parse error, got nil")
 		}
 	})
+}
+
+func TestExtractNetworkInfoGatewayFallsBackToTheDefaultRoute(t *testing.T) {
+	addr := net.IPNet{IP: net.ParseIP("10.22.0.10").To4(), Mask: net.CIDRMask(16, 32)}
+	v4Default := net.IPNet{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(0, 32)}
+	v6Default := net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)}
+	tests := []struct {
+		name   string
+		result *current.Result
+		want   string
+	}{
+		{
+			name: "ips gateway wins",
+			result: &current.Result{
+				IPs:    []*current.IPConfig{{Address: addr, Gateway: net.ParseIP("10.22.0.1")}},
+				Routes: []*cnitypes.Route{{Dst: v4Default, GW: net.ParseIP("10.22.0.254")}},
+			},
+			want: "10.22.0.1",
+		},
+		{
+			name: "routes only",
+			result: &current.Result{
+				IPs: []*current.IPConfig{{Address: addr}},
+				Routes: []*cnitypes.Route{
+					{Dst: v6Default, GW: net.ParseIP("fd00::1")},
+					{Dst: net.IPNet{IP: net.ParseIP("10.30.0.0").To4(), Mask: net.CIDRMask(16, 32)}, GW: net.ParseIP("10.22.0.2")},
+					{Dst: v4Default, GW: net.ParseIP("10.22.0.1")},
+				},
+			},
+			want: "10.22.0.1",
+		},
+		{
+			name:   "no gateway anywhere",
+			result: &current.Result{IPs: []*current.IPConfig{{Address: addr}}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.result.CNIVersion = "1.0.0"
+			info, err := extractNetworkInfo(t.Context(), tt.result)
+			if err != nil {
+				t.Fatalf("extractNetworkInfo: %v", err)
+			}
+			if info.IP != "10.22.0.10" || info.Prefix != 16 || info.Gateway != tt.want {
+				t.Fatalf("info = %+v, want ip 10.22.0.10/16 gateway %q", info, tt.want)
+			}
+		})
+	}
 }
 
 func TestTearDownNICsAttemptsAllRecords(t *testing.T) {
