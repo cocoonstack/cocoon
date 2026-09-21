@@ -41,16 +41,10 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 		return true, nil
 	}
 
-	if err := unix.PidfdSendSignal(fd, syscall.SIGTERM, nil, 0); err != nil {
-		if !IsProcessAlive(pid) {
+	if err := unix.PidfdSendSignal(fd, syscall.SIGTERM, nil, 0); err == nil {
+		if waitErr := waitPidfd(ctx, fd, gracePeriod); waitErr == nil {
 			return true, nil
 		}
-		_ = unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0)
-		return true, waitPidfd(ctx, fd, killWaitTimeout)
-	}
-
-	if err := waitPidfd(ctx, fd, gracePeriod); err == nil {
-		return true, nil
 	}
 
 	if err := unix.PidfdSendSignal(fd, syscall.SIGKILL, nil, 0); err != nil {

@@ -225,11 +225,7 @@ func needsLFN(name string) bool {
 
 // blankSFN returns an 11-byte SFN buffer space-padded per the FAT 8.3 layout.
 func blankSFN() [11]byte {
-	var b [11]byte
-	for i := range b {
-		b[i] = ' '
-	}
-	return b
+	return [11]byte{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '}
 }
 
 // splitName splits an uppercased name into base and extension at the last dot; ext is "" when there is no dot.
@@ -262,10 +258,7 @@ func generateShortName(name string, seq int) [11]byte {
 		base = base[:maxBase]
 	}
 	copy(result[:8], base+tail) //nolint:mnd
-	if len(ext) > 3 {           //nolint:mnd
-		ext = ext[:3] //nolint:mnd
-	}
-	copy(result[8:], ext) //nolint:mnd
+	copy(result[8:], ext)       //nolint:mnd
 	return result
 }
 

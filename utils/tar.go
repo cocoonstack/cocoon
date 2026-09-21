@@ -226,10 +226,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	}
 	size := fi.Size()
 
-	if size == 0 {
-		return tarFileFrom(tw, f, fi, nameInTar)
-	}
-
 	segments, err := scanDataSegments(int(f.Fd()), size)
 	if err != nil {
 		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS).
