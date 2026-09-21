@@ -302,6 +302,9 @@ func TestRemoveMatching_NoMatches(t *testing.T) {
 }
 
 func TestRemoveMatching_RemoveAllError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes a read-only directory's contents")
+	}
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "protected")
 	os.Mkdir(sub, 0o755)
@@ -313,7 +316,12 @@ func TestRemoveMatching_RemoveAllError(t *testing.T) {
 		return e.Name() == "protected"
 	})
 
-	_ = errs
+	if len(errs) != 1 {
+		t.Fatalf("errs = %v, want one removal error", errs)
+	}
+	if _, err := os.Stat(sub); err != nil {
+		t.Fatalf("protected dir removed: %v", err)
+	}
 }
 
 func TestRemoveMatching_RemovesSubdirs(t *testing.T) {
