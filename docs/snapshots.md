@@ -110,7 +110,7 @@ cocoon vm clone imported-snap
 cocoon snapshot export my-snap -o - | ssh host2 cocoon snapshot import --name my-snap
 ```
 
-The archive contains the snapshot config, VM config, COW disk, memory ranges, and device state — every file carries sparse-aware pax headers for efficient compression — everything needed to reconstruct the snapshot on a different machine. `snapshot export --to-dir` writes the same files as a directory that `vm clone --from-dir` and `vm restore --from-dir` consume without a tar round-trip. Do not repack an export with a third-party tar: dropping cocoon's sparse records can rebuild a short, shifted disk. `--from-dir` and `snapshot import` reject a `cow.raw` whose size differs from the envelope's recorded storage size.
+The archive contains the snapshot config, VM config, COW disk, memory ranges, and device state — sparse files carry cocoon's own pax records so their holes survive the round-trip — everything needed to reconstruct the snapshot on a different machine. `snapshot export --to-dir` writes the same files as a directory that `vm clone --from-dir` and `vm restore --from-dir` consume without a tar round-trip. Do not repack an export with a third-party tar: dropping cocoon's sparse records can rebuild a short, shifted disk. `--from-dir` and `snapshot import` reject a `cow.raw` whose size differs from the envelope's recorded storage size.
 
 #### Cross-Node Clone
 

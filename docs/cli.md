@@ -330,7 +330,7 @@ Requires cocoon-agent to be running inside the guest. All official `ghcr.io/coco
 
 ### Logs Flags
 
-`cocoon vm logs` prints the per-VM hypervisor process log (`cloud-hypervisor.log` or `firecracker.log` under the configured `log_dir`). The log captures VMM-side activity — device init warnings, API errors, virtio messages, shutdown — but **not** guest console output (use `cocoon vm console` for that). The file lives under the VM's log dir for as long as the VM record exists (cleaned up on `vm rm`); each `vm run` / `vm start` truncates and rewrites it from scratch — `-f` detects the truncation and seeks back to the start of the file so you don't miss the new boot's lines.
+`cocoon vm logs` prints the per-VM hypervisor process log (`cloud-hypervisor.log` or `firecracker.log` under the configured `log_dir`). The log captures VMM-side activity — device init warnings, API errors, virtio messages, shutdown — but **not** guest console output (use `cocoon vm console` for that). The file lives under the VM's log dir for as long as the VM record exists (cleaned up on `vm rm`); each `vm run` / `vm start` appends to it, so the previous boot's lines stay above the new one's; `-f` also detects an external truncation and seeks back to the start of the file.
 
 | Flag             | Default | Description                                                          |
 | ---------------- | ------- | -------------------------------------------------------------------- |
