@@ -11,7 +11,6 @@ import (
 	"strings"
 )
 
-// aliveFn reports whether a pid is still running.
 type aliveFn func(int) bool
 
 // cmdlineVerifier reports whether pid's /proc cmdline still matches the expected binary and arg.

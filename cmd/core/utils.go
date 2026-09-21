@@ -292,7 +292,6 @@ func validateRefShape(ref, imageType string) error {
 	return nil
 }
 
-// digestPullRef pins OCI pulls by digest; returns image as-is for others.
 func digestPullRef(image, digest, imageType string) string {
 	if digest == "" || imageType != types.ImageTypeOCI {
 		return image

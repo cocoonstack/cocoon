@@ -181,7 +181,6 @@ func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	return specs, nil
 }
 
-// normalizeDataDiskSpecs fills defaults (FSType=ext4, Name=dataN, MountPoint=/mnt/<name>) and enforces unique names; fstype=none rejects non-empty MountPoint.
 func normalizeDataDiskSpecs(specs []types.DataDiskSpec) error {
 	used := make(map[string]bool)
 	for _, s := range specs {

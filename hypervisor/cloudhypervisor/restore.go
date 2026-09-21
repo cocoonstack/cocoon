@@ -29,7 +29,6 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 			return err
 		},
 		Kill: ch.killForRestore,
-		// stale snapshot files from a previous incarnation must not survive the merge.
 		BeforeMerge: func(rec *hypervisor.VMRecord) error {
 			return cleanSnapshotFiles(rec.RunDir)
 		},

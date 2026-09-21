@@ -19,8 +19,7 @@ const (
 
 	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
-	// extractReadBuf bounds one read.
-	extractReadBuf = 1 << 20
+	extractReadBuf  = 1 << 20
 )
 
 // maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
