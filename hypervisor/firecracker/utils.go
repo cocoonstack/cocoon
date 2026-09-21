@@ -18,8 +18,11 @@ const (
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.VsockSockName}
 
 func (fc *Firecracker) preflightRestore(srcDir string, rec *hypervisor.VMRecord) error {
-	_, err := fc.conf.PreflightRestore(srcDir, rec, snapshotIntegrity)
-	return err
+	meta, err := fc.conf.PreflightRestore(srcDir, rec, snapshotIntegrity)
+	if err != nil {
+		return err
+	}
+	return hypervisor.ValidateResidentPaths(meta.StorageConfigs, rec.StorageConfigs)
 }
 
 // snapshotIntegrity adds the vmstate and memory file checks: the sidecar is FC's only disk-shape source.
