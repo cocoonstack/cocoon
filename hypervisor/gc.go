@@ -150,12 +150,8 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	for _, id := range ids {
 		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
 		ok := b.withOpsTryLock(ctx, id, func() {
-			var rec *VMRecord
-			if err := b.view(ctx, func(t *vmTx) error {
-				var err error
-				rec, err = t.Get(id)
-				return err
-			}); err != nil {
+			rec, err := b.PeekRecord(ctx, id)
+			if err != nil {
 				errs = append(errs, err)
 				return
 			}
