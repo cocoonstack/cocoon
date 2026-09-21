@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -59,7 +60,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	if err := ValidateHostCPU(spec.VMCfg.CPU); err != nil {
 		return nil, err
 	}
-	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef)
+	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +176,7 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 	return result, nil
 }
 
-func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VMRecord, func(), error) {
+func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig) (string, *VMRecord, func(), error) {
 	vmID, err := b.ResolveRef(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err
@@ -198,6 +199,10 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string) (string, *VM
 	}
 	if vErr := validateRecordInvariants(&rec); vErr != nil {
 		return fail(vErr)
+	}
+	if vmCfg.ImageType != rec.Config.ImageType ||
+		cmp.Or(vmCfg.ImageDigest, vmCfg.Image) != cmp.Or(rec.Config.ImageDigest, rec.Config.Image) {
+		return fail(fmt.Errorf("snapshot base image differs from vm %s; use vm clone instead", vmID))
 	}
 	return vmID, &rec, unlock, nil
 }

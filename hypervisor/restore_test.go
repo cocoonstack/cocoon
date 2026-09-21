@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -289,7 +290,7 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("seed: %v", err)
 			}
-			_, _, unlock, err := b.prepareRestore(ctx, id)
+			_, _, unlock, err := b.prepareRestore(ctx, id, &types.VMConfig{})
 			if unlock != nil {
 				unlock()
 			}
@@ -328,6 +329,67 @@ func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr != nil {
 		t.Error("the restore-dirty tombstone must survive a failed destructive phase")
+	}
+}
+
+func TestRestoreRejectsDifferentImageBeforeStagingOrKill(t *testing.T) {
+	preflightErr := errors.New("preflight reached")
+	for _, imageType := range []string{types.ImageTypeCloudImg, types.ImageTypeOCI} {
+		for _, direct := range []bool{false, true} {
+			for _, tt := range []struct {
+				name          string
+				digest        string
+				backend       string
+				wantPreflight bool
+			}{
+				{name: "same image under another name", digest: "sha256:a", backend: imageType, wantPreflight: true},
+				{name: "another base image", digest: "sha256:b", backend: imageType},
+				{name: "missing identity", backend: imageType},
+				{name: "another backend", digest: "sha256:a", backend: "other"},
+			} {
+				t.Run(fmt.Sprintf("%s/direct=%v/%s", imageType, direct, tt.name), func(t *testing.T) {
+					b, _ := newMeteringTestBackend(t)
+					const id = "restore-image"
+					runDir := seedStoppedVMWithDirs(t, b, id)
+					if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+						r.Config.Image, r.Config.ImageDigest, r.Config.ImageType = "original", "sha256:a", imageType
+						return nil
+					}); err != nil {
+						t.Fatal(err)
+					}
+					cfg := &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024, Image: "alias", ImageDigest: tt.digest, ImageType: tt.backend}
+					called := false
+					preflight := func(string, *VMRecord) error { called = true; return preflightErr }
+					kill := func(context.Context, string, *VMRecord) error {
+						t.Fatal("image validation must precede kill")
+						return nil
+					}
+					var err error
+					if direct {
+						_, err = b.DirectRestoreSequence(t.Context(), id, DirectRestoreSpec{VMCfg: cfg, SrcDir: t.TempDir(), Preflight: preflight, Kill: kill})
+					} else {
+						_, err = b.RestoreSequence(t.Context(), id, RestoreSpec{VMCfg: cfg, Snapshot: tarWithFiles(t, "snapshot"), Preflight: preflight, Kill: kill})
+					}
+					if called != tt.wantPreflight {
+						t.Fatalf("preflight called=%v, want %v", called, tt.wantPreflight)
+					}
+					if tt.wantPreflight {
+						if !errors.Is(err, preflightErr) {
+							t.Fatalf("restore = %v, want preflight error", err)
+						}
+					} else if err == nil || !strings.Contains(err.Error(), "snapshot base image differs") {
+						t.Fatalf("restore = %v, want base-image refusal", err)
+					}
+					after := recordOf(t, b, id)
+					if after.State != types.VMStateStopped || after.Config.ImageDigest != "sha256:a" {
+						t.Errorf("target changed: state=%s image=%s", after.State, after.Config.ImageDigest)
+					}
+					if _, err := os.Stat(filepath.Join(runDir, restoreDirtyName)); !errors.Is(err, os.ErrNotExist) {
+						t.Errorf("destructive restore marker created: %v", err)
+					}
+				})
+			}
+		}
 	}
 }
 
