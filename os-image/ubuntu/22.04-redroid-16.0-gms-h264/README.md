@@ -190,7 +190,7 @@ commit the `master` release must be at, and both `Dockerfile` and
 Export a Cocoon-importable rootfs (per arch):
 
 ```bash
-cid="$(docker create local/ubuntu-redroid-16.0-gms-h264:22.04-android16)"
+cid="$(docker create local/android:16.0-gms-h264)"
 docker export "$cid" | gzip -9 > redroid16-gms-cocoon-amd64-rootfs.tar.gz
 docker rm "$cid"
 ```

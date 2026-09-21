@@ -39,15 +39,19 @@ All `.conflist` files in `--cni-conf-dir` (default `/etc/cni/net.d`) are loaded 
 {
   "cniVersion": "1.0.0",
   "name": "cocoon",
-  "type": "bridge",
-  "bridge": "cni0",
-  "isGateway": true,
-  "ipMasq": true,
-  "ipam": {
-    "type": "host-local",
-    "subnet": "10.22.0.0/16",
-    "routes": [{ "dst": "0.0.0.0/0" }]
-  }
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isGateway": true,
+      "ipMasq": true,
+      "ipam": {
+        "type": "host-local",
+        "subnet": "10.22.0.0/16",
+        "routes": [{ "dst": "0.0.0.0/0" }]
+      }
+    }
+  ]
 }
 ```
 
