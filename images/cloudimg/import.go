@@ -41,11 +41,14 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 	logger.Debugf(ctx, "hashed %s -> sha256:%s", filePath, digestHex[:12])
 
 	if utils.ValidFile(conf.BlobPath(digestHex)) {
-		if err = commit(ctx, conf, store, name, tracker, filePath, digestHex); err != nil {
+		err = commit(ctx, conf, store, name, tracker, "", digestHex)
+		if err == nil {
+			logger.Infof(ctx, "import complete (cached): %s -> sha256:%s", name, digestHex)
+			return nil
+		}
+		if !errors.Is(err, errBlobCacheMiss) {
 			return err
 		}
-		logger.Infof(ctx, "import complete (cached): %s -> sha256:%s", name, digestHex)
-		return nil
 	}
 
 	if _, err = srcFile.Seek(0, io.SeekStart); err != nil {
