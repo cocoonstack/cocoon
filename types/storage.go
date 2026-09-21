@@ -20,6 +20,9 @@ const (
 
 	// MinDataDiskSize floors a user data disk; mkfs.ext4 is unstable below it on small sparse files.
 	MinDataDiskSize int64 = 16 << 20
+
+	// COWRawFileName is the raw COW disk's file name in the run dir and the snapshot (single owner so snapshot matchers and clone path rewrites can't drift).
+	COWRawFileName = "cow.raw"
 )
 
 // dataDiskNameRe caps length at 20 to match Linux's /dev/disk/by-id/virtio-<first 20 chars> truncation.

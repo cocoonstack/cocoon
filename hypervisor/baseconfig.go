@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -43,7 +44,7 @@ func (c *BaseConfig) VMRunDir(vmID string) string { return filepath.Join(c.RunDi
 func (c *BaseConfig) VMLogDir(vmID string) string { return filepath.Join(c.LogDir(), vmID) }
 
 func (c *BaseConfig) COWRawPath(vmID string) string {
-	return filepath.Join(c.VMRunDir(vmID), COWRawFileName)
+	return filepath.Join(c.VMRunDir(vmID), types.COWRawFileName)
 }
 
 func (c *BaseConfig) EnsureDirs() error {

@@ -27,8 +27,6 @@ const (
 
 	// CowSerial is the well-known virtio serial for the COW disk attached to OCI VMs.
 	CowSerial = "cocoon-cow"
-	// COWRawFileName is the raw COW disk's file name in the run dir (single owner so snapshot matchers and clone path rewrites can't drift).
-	COWRawFileName = "cow.raw"
 
 	// CreatingStateGCGrace ages leftover capture/staging dirs and clone locks, where no held lock proves the owner died; creating records need no age — their ops lock is the proof.
 	CreatingStateGCGrace = 24 * time.Hour
