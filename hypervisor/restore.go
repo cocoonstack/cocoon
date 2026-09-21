@@ -1,7 +1,6 @@
 package hypervisor
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -200,8 +199,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 	if vErr := validateRecordInvariants(&rec); vErr != nil {
 		return fail(vErr)
 	}
-	if vmCfg.ImageType != rec.Config.ImageType ||
-		cmp.Or(vmCfg.ImageDigest, vmCfg.Image) != cmp.Or(rec.Config.ImageDigest, rec.Config.Image) {
+	if !sameImage(vmCfg, &rec.Config) {
 		return fail(fmt.Errorf("snapshot base image differs from vm %s; use vm clone instead", vmID))
 	}
 	return vmID, &rec, unlock, nil
@@ -270,4 +268,14 @@ func markRestoreDirty(runDir string) error {
 		return fmt.Errorf("mark restore dirty: %w", err)
 	}
 	return nil
+}
+
+func sameImage(a, b *types.VMConfig) bool {
+	if a.ImageType != b.ImageType {
+		return false
+	}
+	if a.ImageDigest != "" && b.ImageDigest != "" {
+		return a.ImageDigest == b.ImageDigest
+	}
+	return a.Image == b.Image
 }

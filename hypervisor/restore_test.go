@@ -338,14 +338,16 @@ func TestRestoreRejectsDifferentImageBeforeStagingOrKill(t *testing.T) {
 		for _, direct := range []bool{false, true} {
 			for _, tt := range []struct {
 				name          string
+				image         string
 				digest        string
 				backend       string
 				wantPreflight bool
 			}{
-				{name: "same image under another name", digest: "sha256:a", backend: imageType, wantPreflight: true},
-				{name: "another base image", digest: "sha256:b", backend: imageType},
-				{name: "missing identity", backend: imageType},
-				{name: "another backend", digest: "sha256:a", backend: "other"},
+				{name: "same image under another name", image: "alias", digest: "sha256:a", backend: imageType, wantPreflight: true},
+				{name: "another base image", image: "alias", digest: "sha256:b", backend: imageType},
+				{name: "digestless envelope of another ref", image: "alias", backend: imageType},
+				{name: "digestless envelope of the same ref", image: "original", backend: imageType, wantPreflight: true},
+				{name: "another backend", image: "alias", digest: "sha256:a", backend: "other"},
 			} {
 				t.Run(fmt.Sprintf("%s/direct=%v/%s", imageType, direct, tt.name), func(t *testing.T) {
 					b, _ := newMeteringTestBackend(t)
@@ -357,7 +359,7 @@ func TestRestoreRejectsDifferentImageBeforeStagingOrKill(t *testing.T) {
 					}); err != nil {
 						t.Fatal(err)
 					}
-					cfg := &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024, Image: "alias", ImageDigest: tt.digest, ImageType: tt.backend}
+					cfg := &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024, Image: tt.image, ImageDigest: tt.digest, ImageType: tt.backend}
 					called := false
 					preflight := func(string, *VMRecord) error { called = true; return preflightErr }
 					kill := func(context.Context, string, *VMRecord) error {
