@@ -9,7 +9,7 @@ Cross-module GC, snapshot LRU eviction, and scheduled cleanup.
 1. **Recover** the interrupted deletions of every module that has a recovery step (snapshot, both hypervisor backends, CNI), so discovery sees no half-removed resources
 2. **Snapshot** each module's index (a loose read; every destructive decision is revalidated later under the module's own entity locks and tombstone leases); a module whose index read fails aborts the whole cycle before anything is collected
 3. **Resolve** each module identifies unreferenced resources using the full snapshot set (e.g., image GC checks VM and snapshot records for blob references)
-4. **Collect** — recheck ownership and delete remaining targets; CNI checks both VM backends under the VM ops lock, and bridge checks the current owner after locating each TAP. A failed owner lookup preserves the network and reports an error.
+4. **Collect** — recheck ownership and delete remaining targets; CNI checks both VM backends under the VM ops lock, bridge checks the current owner after locating each TAP, and the cgroup module checks it before removing an empty scope. The bridge and cgroup rechecks need no lock because create writes the VM record before it provisions a TAP or a scope, so a live device always has a record. A failed owner lookup preserves that resource, reports an error, and lets the sweep continue with the rest.
 
 This ensures blobs referenced by running VMs or saved snapshots are never deleted. `cocoon gc` also terminates a VMM still bound to an orphaned run dir (SIGTERM, then SIGKILL) before removing the dir.
 
