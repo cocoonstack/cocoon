@@ -1,14 +1,61 @@
 package cloudhypervisor
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
+
+func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  chVMInfoConfig
+		wantErr bool
+	}{
+		{"vhost-user-fs", chVMInfoConfig{Fs: []chFs{{ID: "cocoon-fs-data", Tag: "data"}}}, true},
+		{"vfio device", chVMInfoConfig{Devices: []chDevice{{ID: "gpu", Path: "/sys/bus/pci/devices/0000:01:00.0"}}}, true},
+		{"hot-attached disk", chVMInfoConfig{Disks: []chDisk{{ID: "cocoon-disk-vol1", Path: "/vols/a.raw"}}}, true},
+		{"only recorded disks", chVMInfoConfig{Disks: []chDisk{{ID: "_disk0", Path: "/run/vm/cow.raw"}}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			pauses := 0
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(chVMInfoResponse{State: chStateRunning, Config: tt.config})
+			})
+			mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+				mu.Lock()
+				pauses++
+				mu.Unlock()
+				w.WriteHeader(http.StatusNoContent)
+			})
+			hc := newStubHTTPClient(t, mux)
+
+			err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc)
+
+			if tt.wantErr != errors.Is(err, hypervisor.ErrHotAttached) {
+				t.Fatalf("err = %v, want hot-attached refusal %v", err, tt.wantErr)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if tt.wantErr && pauses != 0 {
+				t.Fatalf("pauses = %d, want the VM left running when the capture is refused", pauses)
+			}
+			if !tt.wantErr && pauses != 1 {
+				t.Fatalf("pauses = %d, want one pause for a clean device set", pauses)
+			}
+		})
+	}
+}
 
 func TestBuildSnapshotMetaRefusesUnrecordedDisk(t *testing.T) {
 	tests := []struct {

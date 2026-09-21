@@ -28,7 +28,12 @@ func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist fu
 
 func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec {
 	return hypervisor.SnapshotSpec{
-		Pause:  func(_ *hypervisor.VMRecord, hc *http.Client) error { return pauseVM(ctx, hc) },
+		Pause: func(_ *hypervisor.VMRecord, hc *http.Client) error {
+			if err := refuseHotAttached(ctx, hc); err != nil {
+				return err
+			}
+			return pauseVM(ctx, hc)
+		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		Capture: func(rec *hypervisor.VMRecord, hc *http.Client, tmpDir string) error {
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
@@ -66,11 +71,8 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	if err != nil {
 		return nil, fmt.Errorf("parse snapshot config: %w", err)
 	}
-	if len(chCfg.Fs) > 0 {
-		return nil, fmt.Errorf("hot-attached vhost-user-fs %q: %w", chCfg.Fs[0].Tag, hypervisor.ErrHotAttached)
-	}
-	if len(chCfg.Devices) > 0 {
-		return nil, fmt.Errorf("hot-attached device %q: %w", chCfg.Devices[0].Path, hypervisor.ErrHotAttached)
+	if err := hotAttachedError(chCfg.Fs, chCfg.Devices, chCfg.Disks); err != nil {
+		return nil, err
 	}
 	byPath := make(map[string]*types.StorageConfig, len(rec.StorageConfigs))
 	for _, sc := range rec.StorageConfigs {
@@ -80,9 +82,6 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	for _, d := range chCfg.Disks {
 		sc, ok := byPath[d.Path]
 		if !ok {
-			if name := disk.NameFromID(d.ID); name != "" {
-				return nil, fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttached)
-			}
 			return nil, fmt.Errorf("snapshot config has disk %q not present in VM record", d.Path)
 		}
 		ordered = append(ordered, sc)
@@ -91,4 +90,27 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 		StorageConfigs: hypervisor.CloneStorageConfigs(ordered),
 		BootConfig:     rec.BootConfig,
 	}, nil
+}
+
+func refuseHotAttached(ctx context.Context, hc *http.Client) error {
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return err
+	}
+	return hotAttachedError(info.Config.Fs, info.Config.Devices, info.Config.Disks)
+}
+
+func hotAttachedError(fs []chFs, devices []chDevice, disks []chDisk) error {
+	if len(fs) > 0 {
+		return fmt.Errorf("hot-attached vhost-user-fs %q: %w", fs[0].Tag, hypervisor.ErrHotAttached)
+	}
+	if len(devices) > 0 {
+		return fmt.Errorf("hot-attached device %q: %w", devices[0].Path, hypervisor.ErrHotAttached)
+	}
+	for _, d := range disks {
+		if name := disk.NameFromID(d.ID); name != "" {
+			return fmt.Errorf("hot-attached disk %q: %w", name, hypervisor.ErrHotAttached)
+		}
+	}
+	return nil
 }
