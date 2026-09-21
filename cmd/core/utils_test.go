@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -120,9 +121,13 @@ func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
 }
 
 func TestReconcileStateClearsRuntimePathsOnStaleRunning(t *testing.T) {
+	exited := exec.Command("true")
+	if err := exited.Run(); err != nil {
+		t.Fatalf("run true: %v", err)
+	}
 	vm := &types.VM{
 		State:       types.VMStateRunning,
-		PID:         0,
+		PID:         exited.Process.Pid,
 		SocketPath:  "/run/api.sock",
 		VsockSocket: "/run/vsock.uds",
 		ConsolePath: "/dev/pts/3",
@@ -130,9 +135,9 @@ func TestReconcileStateClearsRuntimePathsOnStaleRunning(t *testing.T) {
 	if got, stale := ReconcileState(vm); got != types.VMStateStopped || !stale {
 		t.Fatalf("ReconcileState = %q, %v; want stopped, stale", got, stale)
 	}
-	if vm.SocketPath != "" || vm.VsockSocket != "" || vm.ConsolePath != "" {
-		t.Errorf("stale-running VM keeps runtime paths: socket=%q vsock=%q console=%q",
-			vm.SocketPath, vm.VsockSocket, vm.ConsolePath)
+	if vm.PID != 0 || vm.SocketPath != "" || vm.VsockSocket != "" || vm.ConsolePath != "" {
+		t.Errorf("stale-running VM keeps runtime fields: pid=%d socket=%q vsock=%q console=%q",
+			vm.PID, vm.SocketPath, vm.VsockSocket, vm.ConsolePath)
 	}
 
 	alive := &types.VM{State: types.VMStateRunning, PID: os.Getpid(), ConsolePath: "/dev/pts/3"}
