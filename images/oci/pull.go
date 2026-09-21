@@ -46,35 +46,26 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 
 	tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhasePull, Index: -1, Total: len(layers)})
 
-	workDir, cleanup, mkErr := newWorkDir(conf, "pull-*")
+	workDir, cleanup, mkErr := conf.WorkDir("pull-*")
 	if mkErr != nil {
 		return mkErr
 	}
 	defer cleanup()
 
-	results, waitErr := processLayers(ctx, conf, layers, workDir, knownBootHexes, tracker)
-	if waitErr != nil {
-		return waitErr
-	}
-
-	healCachedBootFiles(ctx, conf, layers, results, workDir)
-
-	return finishImport(ctx, conf, store, ref, images.NewDigest(digestHex), results, tracker, "Pulled")
-}
-
-func processLayers(ctx context.Context, conf *Config, layers []v1.Layer, workDir string, knownBootHexes map[string]struct{}, tracker progress.Tracker) ([]pullLayerResult, error) {
-	totalLayers := len(layers)
 	results, waitErr := utils.Map(ctx, layers, func(ctx context.Context, i int, layer v1.Layer) (pullLayerResult, error) {
 		var r pullLayerResult
 		err := processLayer(ctx, layerJob{
-			conf: conf, idx: i, total: totalLayers, layer: layer,
+			conf: conf, idx: i, total: len(layers), layer: layer,
 			workDir: workDir, knownBootHexes: knownBootHexes,
 			tracker: tracker, result: &r,
 		})
 		return r, err
 	}, conf.PoolSize)
 	if waitErr != nil {
-		return nil, fmt.Errorf("process layers: %w", waitErr)
+		return fmt.Errorf("process layers: %w", waitErr)
 	}
-	return results, nil
+
+	healCachedBootFiles(ctx, conf, layers, results, workDir)
+
+	return finishImport(ctx, conf, store, ref, images.NewDigest(digestHex), results, tracker, "Pulled")
 }

@@ -39,6 +39,26 @@ func (c *BaseConfig) OwnsBlob(hex string) bool {
 	return err == nil
 }
 
+func (c *BaseConfig) TempFile(pattern string) (f *os.File, path string, cleanup func(), err error) {
+	f, err = os.CreateTemp(c.TempDir(), pattern)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("create temp file: %w", err)
+	}
+	cleanup = func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+	return f, f.Name(), cleanup, nil
+}
+
+func (c *BaseConfig) WorkDir(pattern string) (dir string, cleanup func(), err error) {
+	dir, err = os.MkdirTemp(c.TempDir(), pattern)
+	if err != nil {
+		return "", nil, fmt.Errorf("create work dir: %w", err)
+	}
+	return dir, func() { _ = os.RemoveAll(dir) }, nil
+}
+
 func (c *BaseConfig) EnsureDirs() error {
 	if c.RootDir == "" {
 		return fmt.Errorf("root dir must not be empty")
