@@ -326,7 +326,7 @@ $ cocoon vm exec -e FOO=bar myvm -- sh -c 'echo $FOO'
 bar
 ```
 
-Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*`, `ghcr.io/cocoonstack/cocoon/debian:*` and `ghcr.io/cocoonstack/cocoon/android:*` images bake the binary and enable it on boot (systemd unit on Ubuntu and Debian, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.3 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
+Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*`, `ghcr.io/cocoonstack/cocoon/debian:*` and `ghcr.io/cocoonstack/cocoon/android:*` images bake the binary and enable it on boot (systemd unit on Ubuntu and Debian, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.4 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
 
 ### Logs Flags
 
