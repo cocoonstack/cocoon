@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -47,10 +49,26 @@ func createNetns(name string) error {
 
 // deleteNetns removes a named netns with retry for async kernel cleanup.
 func deleteNetns(ctx context.Context, name string) error {
-	return utils.WaitFor(ctx, time.Second, netnsDeleteRetryInterval, func() (bool, error) {
-		err := netns.DeleteNamed(name)
-		return err == nil || errors.Is(err, fs.ErrNotExist), nil
+	path := filepath.Join(netnsBasePath, name)
+	var last error
+	err := utils.WaitFor(ctx, time.Second, netnsDeleteRetryInterval, func() (bool, error) {
+		last = netns.DeleteNamed(name)
+		switch {
+		case last == nil, errors.Is(last, fs.ErrNotExist):
+			return true, nil
+		case errors.Is(last, syscall.EINVAL):
+			rmErr := os.Remove(path)
+			if rmErr == nil || errors.Is(rmErr, fs.ErrNotExist) {
+				return true, nil
+			}
+			last = rmErr
+		}
+		return false, nil
 	})
+	if err != nil && last != nil {
+		return fmt.Errorf("%w: %w", err, last)
+	}
+	return err
 }
 
 func tapPresentInNetns(nsPath, tapName string) error {
