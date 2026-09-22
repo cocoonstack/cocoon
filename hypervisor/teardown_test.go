@@ -252,7 +252,7 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := b.PrepareStart(ctx, "vmentry1", nil); !errors.Is(err, ErrNotFound) {
+	if _, err := b.PrepareStart(ctx, "vmentry1", nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("mid-deleting VM must refuse to boot with ErrNotFound, got %v", err)
 	}
 	if _, err := b.LoadRecord(ctx, "vmentry1"); err == nil {

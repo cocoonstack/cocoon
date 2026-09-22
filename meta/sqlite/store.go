@@ -455,7 +455,7 @@ func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 				continue
 			}
 			var walBytes int64
-			if st, serr := os.Stat(dbPath + "-wal"); serr == nil {
+			if st, serr := os.Stat(dbPath + "-wal"); serr == nil { //nolint:gosec // dbPath is root-declared, not caller input
 				walBytes = st.Size()
 			}
 			logger.Debugf(ctx, "passive checkpoint: %d/%d frames, wal %dB, %s", moved, frames, walBytes, time.Since(start))

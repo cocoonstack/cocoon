@@ -140,7 +140,7 @@ type MountSpec struct {
 
 // Generate streams a cloud-init NoCloud cidata disk image (FAT12) to w.
 func Generate(w io.Writer, cfg *Config) error {
-	files := make(map[string][]byte, 3) //nolint:mnd
+	files := make(map[string][]byte, 3)
 
 	var buf bytes.Buffer
 	render := func(name string, tmpl *template.Template) error {

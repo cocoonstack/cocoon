@@ -78,11 +78,11 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 
 func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig, fcBin string) {
 	cowPath := fmt.Sprintf("cow-%s.raw", vmCfg.Name)
-	memMiB := int(vmCfg.Memory >> 20) //nolint:mnd
+	memMiB := int(vmCfg.Memory >> 20)
 
 	cmdline := firecracker.DebugCmdline(configs, vmCfg.Name)
 
-	printPrepareCOWDisk(vmCfg.Storage>>30, cowPath) //nolint:mnd
+	printPrepareCOWDisk(vmCfg.Storage>>30, cowPath)
 
 	fmt.Printf("# Launch Firecracker: %s (image: %s)\n", vmCfg.Name, vmCfg.Image)
 	pciFlag := ""
@@ -120,7 +120,7 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 	if size, ok := hypervisor.BalloonSize(vmCfg.Config); ok {
 		fmt.Println("# 4. Balloon")
 		fmt.Printf("curl --unix-socket %s -X PUT http://localhost/balloon \\\n", sock)
-		fmt.Printf("  -d '{\"amount_mib\": %d, \"deflate_on_oom\": true, \"free_page_reporting\": true}'\n", size>>20) //nolint:mnd
+		fmt.Printf("  -d '{\"amount_mib\": %d, \"deflate_on_oom\": true, \"free_page_reporting\": true}'\n", size>>20)
 		fmt.Println()
 	}
 
@@ -140,7 +140,7 @@ func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig,
 	case !ok:
 		balloon = 0
 	case balloon == 0:
-		balloon = int(size >> 20) //nolint:mnd
+		balloon = int(size >> 20)
 	}
 	return chDebugSpec{
 		Configs: storageConfigs,
@@ -166,7 +166,7 @@ func printCHDebug(s chDebugSpec) {
 		diskArgs := cloudhypervisor.DebugDiskCLIArgs(debugConfigs, cpu, diskQueueSize, noDirectIO)
 		cmdline := cloudhypervisor.DebugCmdline(s.Configs, s.VMCfg.Name)
 
-		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath) //nolint:mnd
+		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath)
 		fmt.Printf("# Launch VM: %s (image: %s, boot: direct kernel)\n", s.VMCfg.Name, s.VMCfg.Image)
 		fmt.Printf("%s \\\n", s.CHBin)
 		fmt.Printf("  --kernel %s \\\n", s.Boot.KernelPath)
@@ -183,7 +183,7 @@ func printCHDebug(s chDebugSpec) {
 		fmt.Println("# Prepare COW overlay")
 		fmt.Printf("qemu-img create -f qcow2 -F qcow2 -b %s %s\n", basePath, s.CowPath)
 		if s.VMCfg.Storage > 0 {
-			fmt.Printf("qemu-img resize %s %dG\n", s.CowPath, s.VMCfg.Storage>>30) //nolint:mnd
+			fmt.Printf("qemu-img resize %s %dG\n", s.CowPath, s.VMCfg.Storage>>30)
 		}
 		fmt.Println()
 		fmt.Printf("# Launch VM: %s (image: %s, boot: UEFI firmware)\n", s.VMCfg.Name, s.VMCfg.Image)

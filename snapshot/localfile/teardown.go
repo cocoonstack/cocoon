@@ -106,14 +106,14 @@ func (lf *LocalFile) finishSnapTeardown(ctx context.Context, id, leaseID string,
 
 // recoverSnapTombstone drives id's tombstone under a freshly acquired exclusive lease: leased rolls back, deleting rolls forward.
 func (lf *LocalFile) recoverSnapTombstone(ctx context.Context, id string) error {
-	fl, ok, err := lf.tryExclusiveLease(id)
+	release, ok, err := lf.tryExclusiveLease(ctx, id)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil // an active holder will meet the tombstone at its own entrypoint
 	}
-	defer fl.Close() //nolint:errcheck
+	defer release()
 	return lf.recoverSnapTombstoneLocked(ctx, id)
 }
 

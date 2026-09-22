@@ -31,7 +31,7 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 }
 
 // RecoverTombstone drives id's tombstone to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
-func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) { //nolint:unparam // done is asserted by the protocol gates
+func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) {
 	ts := b.tombstones()
 	var (
 		rec     *tombstone.Record

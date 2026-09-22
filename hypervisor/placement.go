@@ -13,7 +13,7 @@ import (
 // sysCPURoot is the sysfs cpu tree; tests point it at a fixture.
 var sysCPURoot = cgroup.SysCPURoot
 
-// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements; the sysfs walk stays outside the lock.
+// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements; the memoized sysfs walk stays outside the lock.
 func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config) (VMRecord, error) {
 	topo, topoErr := b.placementTopology(cfg)
 	if topoErr != nil {
@@ -37,20 +37,22 @@ func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config)
 	return placed, err
 }
 
-// placementTopology reads the host's cache domains inside the fence when launch picks cfg's cpus; nil when cfg names them or pins nothing.
+// placementTopology reads the host's cache domains inside the fence once per process when launch picks cfg's cpus; nil when cfg names them or pins nothing.
 func (b *Backend) placementTopology(cfg *types.Config) (*cgroup.Topology, error) {
 	if cfg.CPUSetCPUs != cgroup.AutoCPUSet && (cfg.CPUSetCPUs != "" || !b.pinsQueues(cfg)) {
 		return nil, nil
 	}
-	fence, err := cgroup.ParseCPUList(b.Conf.CgroupCPUFence())
-	if err != nil {
-		return nil, err
-	}
-	topo, err := cgroup.ReadTopology(sysCPURoot, fence)
-	if err != nil {
-		return nil, fmt.Errorf("read cpu topology: %w", err)
-	}
-	return topo, nil
+	b.topoOnce.Do(func() {
+		fence, err := cgroup.ParseCPUList(b.Conf.CgroupCPUFence())
+		if err != nil {
+			b.topoErr = err
+			return
+		}
+		if b.topo, err = cgroup.ReadTopology(sysCPURoot, fence); err != nil {
+			b.topoErr = fmt.Errorf("read cpu topology: %w", err)
+		}
+	})
+	return b.topo, b.topoErr
 }
 
 // placeVM fills rec's placement from cfg: an explicit cpuset is copied; with a topology, "auto" and no cpuset pick the least-loaded cache domain against the placements live VMs already hold.

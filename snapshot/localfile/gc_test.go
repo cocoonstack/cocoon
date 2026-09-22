@@ -461,12 +461,10 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	stalePendingID := testID(t)
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
-			Snapshot: types.Snapshot{
-				SnapshotConfig: types.SnapshotConfig{ID: stalePendingID},
-				CreatedAt:      time.Now().Add(-48 * time.Hour),
-			},
-			Pending: true,
-			DataDir: filepath.Join(lf.conf.DataDir(), stalePendingID),
+			ID:        stalePendingID,
+			CreatedAt: time.Now().Add(-48 * time.Hour),
+			Pending:   true,
+			DataDir:   filepath.Join(lf.conf.DataDir(), stalePendingID),
 		}
 		return nil
 	}); err != nil {
@@ -526,7 +524,7 @@ func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 	id := testID(t)
-	release, err := lf.acquireBuildLease(id)
+	release, err := lf.acquireBuildLease(t.Context(), id)
 	if err != nil {
 		t.Fatalf("acquireBuildLease: %v", err)
 	}
@@ -545,6 +543,68 @@ func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 	}
 	if owner, held, err := lf.NameOwner(ctx, "live-build"); err != nil || !held || owner != id {
 		t.Fatalf("NameOwner = (%q, %v, %v), want the live build's record untouched", owner, held, err)
+	}
+}
+
+func TestDeleteReclaimsTheLeaseFile(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+
+	id, err := lf.Create(ctx, &types.SnapshotConfig{
+		ID: testID(t), Name: "leased", Hypervisor: "cloud-hypervisor",
+	}, makeTar(t, map[string][]byte{"cow.raw": []byte("x")}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := lf.deleteOne(ctx, id); err != nil {
+		t.Fatalf("deleteOne: %v", err)
+	}
+	if _, err := os.Stat(lf.conf.LeasePath(id)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("lease file survived delete: stat err = %v", err)
+	}
+}
+
+func TestGCSweepsALeaseWithNoRecordOrDataDir(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	stale := lf.conf.LeasePath("GONE_ID")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stale lease survived GC: stat err = %v", err)
+	}
+}
+
+func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	release, err := lf.acquireBuildLease(ctx, id)
+	if err != nil {
+		t.Fatalf("acquireBuildLease: %v", err)
+	}
+	defer release()
+
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(lf.conf.LeasePath(id)); err != nil {
+		t.Fatalf("GC swept a lease held by a live build: %v", err)
 	}
 }
 

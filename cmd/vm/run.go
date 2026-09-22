@@ -198,10 +198,11 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, vmRef, dir string, logger *log.Fields) error {
-	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
+	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
+	cfg := envelope.Config
 	if err = snapshot.VerifyCOWSize(dir, cfg); err != nil {
 		return err
 	}
@@ -245,10 +246,11 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 
 // cloneFromDir keeps the dir read-only, so concurrent clones of a golden image are safe.
 func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, dir string, logger *log.Fields) error {
-	cfg, err := snapshot.ReadSnapshotEnvelope(dir)
+	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
 	if err != nil {
 		return fmt.Errorf("load envelope: %w", err)
 	}
+	cfg := envelope.Config
 	if err = snapshot.VerifyCOWSize(dir, cfg); err != nil {
 		return err
 	}
@@ -275,7 +277,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	})
 }
 
-// runClone reserves, clones through do, reseeds and finishes; the JSON envelope replaces the log lines under --output json.
+// runClone emits its progress lines only when --output json is off; the JSON envelope replaces them.
 func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {

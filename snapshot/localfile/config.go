@@ -7,6 +7,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+const leaseSuffix = ".lease"
+
 // Config holds localfile snapshot backend configuration, embedding the global config.
 type Config struct {
 	*config.Config
@@ -27,8 +29,8 @@ func (c *Config) DataDir() string { return filepath.Join(c.dir(), "localfile") }
 
 func (c *Config) SnapshotDataDir(id string) string { return filepath.Join(c.DataDir(), id) }
 
-// LeasePath is the per-snapshot read-lease flock, a sibling of the data dir so removing the dir leaves the held inode alone.
-func (c *Config) LeasePath(id string) string { return c.SnapshotDataDir(id) + ".lease" }
+// LeasePath is the per-snapshot lease flock, a sibling of the data dir so removing the dir leaves the held inode alone.
+func (c *Config) LeasePath(id string) string { return c.SnapshotDataDir(id) + leaseSuffix }
 
 func (c *Config) IndexFile() string { return filepath.Join(c.dbDir(), "snapshots.json") }
 

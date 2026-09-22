@@ -93,7 +93,7 @@ func TestEveryConfigKeyRegistered(t *testing.T) {
 	viper.Reset()
 	newRootCmd()
 	registered := viper.AllKeys()
-	for _, key := range configKeys(reflect.TypeOf(config.Config{}), "") {
+	for _, key := range configKeys(reflect.TypeFor[config.Config](), "") {
 		if !slices.Contains(registered, key) {
 			t.Errorf("config key %s is not registered with viper, so its COCOON_* variable never reaches Unmarshal", key)
 		}
@@ -110,8 +110,7 @@ func logConfig(t *testing.T) *coretypes.ServerLogConfig {
 
 func configKeys(typ reflect.Type, prefix string) []string {
 	var keys []string
-	for i := range typ.NumField() {
-		f := typ.Field(i)
+	for f := range typ.Fields() {
 		name := cmp.Or(f.Tag.Get("mapstructure"), strings.ToLower(f.Name))
 		ft := f.Type
 		if ft.Kind() == reflect.Pointer {

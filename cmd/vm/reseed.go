@@ -128,7 +128,7 @@ func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
 func refreshVM(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM) *types.VM {
 	info, err := hyper.Inspect(ctx, vm.ID)
 	if err != nil {
-		log.WithFunc("cmd.vm.reseed").Debugf(ctx, "refresh VM %s before reseed: %v", vm.ID, err)
+		log.WithFunc("cmd.vm.refreshVM").Debugf(ctx, "refresh VM %s: %v", vm.ID, err)
 		return vm
 	}
 	return info

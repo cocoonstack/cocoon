@@ -14,7 +14,7 @@ const startTimeField = 19
 
 // procStartTime reads /proc/<pid>/stat; parsing resumes after the last ')' because comm may itself contain parens.
 func procStartTime(pid int) (uint64, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)) //nolint:gosec // internal runtime path
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return 0, err
 	}

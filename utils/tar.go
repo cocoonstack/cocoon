@@ -33,20 +33,31 @@ type sparseSegment struct {
 
 // TarDir writes regular files in dir into tw as flat tar entries.
 func TarDir(tw *tar.Writer, dir string) error {
-	entries, err := os.ReadDir(dir)
+	names, err := ListRegularFiles(dir)
 	if err != nil {
-		return fmt.Errorf("read dir %s: %w", dir, err)
+		return err
 	}
-
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		if err := tarFileMaybeSparse(tw, filepath.Join(dir, entry.Name()), entry.Name()); err != nil {
+	for _, name := range names {
+		if err := tarFileMaybeSparse(tw, filepath.Join(dir, name), name); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ListRegularFiles returns the names of dir's regular files in directory order, the set TarDir archives.
+func ListRegularFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read dir %s: %w", dir, err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			names = append(names, entry.Name())
+		}
+	}
+	return names, nil
 }
 
 // ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped. It never fsyncs — callers needing durability follow with SyncTree.

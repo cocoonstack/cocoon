@@ -36,4 +36,5 @@ type Snapshot struct {
 type SnapshotExport struct {
 	Config  SnapshotConfig `json:"config"`
 	Version int            `json:"version"`
+	Files   []string       `json:"files,omitempty"` // data-dir files the export carries; absent on exports older than the manifest
 }

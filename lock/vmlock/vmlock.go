@@ -2,6 +2,8 @@
 package vmlock
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/lock/flock"
@@ -21,6 +23,15 @@ func New(rootDir, vmID string) (*flock.Lock, error) {
 		return nil, err
 	}
 	return flock.NewTransient(p), nil
+}
+
+// NewSharedLease acquires vmID's shared operation lease, creating the lock directory on demand.
+func NewSharedLease(ctx context.Context, rootDir, vmID string) (*flock.SharedLease, error) {
+	p := Path(rootDir, vmID)
+	if err := utils.EnsureDirs(filepath.Dir(p)); err != nil {
+		return nil, fmt.Errorf("create VM lease directory: %w", err)
+	}
+	return flock.AcquireShared(ctx, p)
 }
 
 func lockDir(rootDir string) string {

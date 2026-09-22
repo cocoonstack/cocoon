@@ -12,6 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestBatchMarkStartedEmitsComputeStart(t *testing.T) {
@@ -123,7 +124,7 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 		t.Errorf("MarkError must not write StoppedAt; got %v", loaded.StoppedAt)
 	}
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil)
+	prep, err := b.PrepareStart(ctx, "vm1", nil, nil)
 	if err != nil {
 		t.Fatalf("PrepareStart: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	}
 	rec.Reset()
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil)
+	prep, err := b.PrepareStart(ctx, "vm1", nil, nil)
 	if err != nil {
 		t.Fatalf("PrepareStart: %v", err)
 	}
@@ -248,7 +249,7 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
-	newCfg := &types.VMConfig{Config: types.Config{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}}
+	newCfg := &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}
 	spec := DirectRestoreSpec{
 		VMCfg:            newCfg,
 		SrcDir:           t.TempDir(),
@@ -303,7 +304,7 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
 	spec := DirectRestoreSpec{
-		VMCfg:            &types.VMConfig{Config: types.Config{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}},
+		VMCfg:            &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30},
 		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
@@ -333,7 +334,7 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 	seedRunningVM(t, b, "vm-running", 1, 1<<30, 10<<30)
 	seedRunningVM(t, b, "vm-stale", 2, 2<<30, 20<<30)
 
-	startOne := func(ctx context.Context, id string) error {
+	startOne := func(ctx context.Context, id string, _ *utils.ProcScan) error {
 		switch id {
 		case "vm-stopped", "vm-stale":
 			return b.BatchMarkStarted(ctx, []string{id})
@@ -528,14 +529,14 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
 	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM")
 	}
 
 	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
 		t.Fatalf("UpdateStates: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
 	}
 }
@@ -557,7 +558,7 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, id, nil); err == nil {
+	if _, err := b.PrepareStart(ctx, id, nil, nil); err == nil {
 		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
 	}
 }
@@ -568,7 +569,7 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
 		t.Fatal("PrepareStart must refuse a creating placeholder")
 	}
 }
@@ -674,12 +675,10 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 	t.Helper()
 	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id] = &VMRecord{
-			VM: types.VM{
-				ID:          id,
-				Hypervisor:  b.Typ,
-				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
-				FirstBooted: firstBooted,
-			},
+			ID:          id,
+			Hypervisor:  b.Typ,
+			Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
+			FirstBooted: firstBooted,
 
 			RunDir: t.TempDir(),
 			LogDir: t.TempDir(),

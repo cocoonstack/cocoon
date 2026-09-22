@@ -11,10 +11,10 @@ import (
 
 func TestBuildSnapshotConfigRecordsNICMTUs(t *testing.T) {
 	b := &Backend{Typ: "firecracker"}
-	rec := &VMRecord{VM: types.VM{NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{
+	rec := &VMRecord{NetworkConfigs: []*types.NetworkConfig{
 		{MTU: 9000},
 		{MTU: 1500},
-	}}}}
+	}}
 	got := b.BuildSnapshotConfig("snap", rec)
 	if want := []int{9000, 1500}; !slices.Equal(got.NICMTUs, want) {
 		t.Errorf("NICMTUs = %v, want %v", got.NICMTUs, want)

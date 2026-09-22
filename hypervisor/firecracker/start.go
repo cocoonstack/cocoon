@@ -27,8 +27,8 @@ func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, erro
 	return fc.StartAll(ctx, refs, fc.startOne)
 }
 
-func (fc *Firecracker) startOne(ctx context.Context, id string) error {
-	return fc.StartSequence(ctx, id, hypervisor.StartSpec{
+func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
+	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)
@@ -42,7 +42,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
-	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
+	memMiB := int(rec.Config.Memory >> 20)
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
 		VCPUCount:  rec.Config.CPU,
 		MemSizeMiB: memMiB,
@@ -96,7 +96,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 
 	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
 		if err := putBalloon(ctx, hc, fcBalloon{
-			AmountMiB:         int(size >> 20), //nolint:mnd
+			AmountMiB:         int(size >> 20),
 			DeflateOnOOM:      true,
 			FreePageReporting: true,
 		}); err != nil {
@@ -147,7 +147,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
-	pid, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
+	pid, exited, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           fcCmd,
 		NetnsPath:     netnsPath,
 		OnFail:        func() { _ = master.Close() },
@@ -167,7 +167,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = master.Close()
 		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
 		_ = fcCmd.Process.Kill()
-		_ = fcCmd.Wait()
+		<-exited
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
 		// the socket file outlives a failed relay and would make inspect report a console nobody serves
@@ -175,13 +175,13 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
-	go func() {
-		_ = fcCmd.Wait()
-		// A failed relay kept master open to preserve ttyS0; close it now that FC exited or the fd leaks forever.
-		if relayErr != nil {
+	if relayErr != nil {
+		// A failed relay kept master open to preserve ttyS0; close it once FC exits or the fd leaks forever.
+		go func() {
+			<-exited
 			_ = master.Close()
-		}
-	}()
+		}()
+	}
 	return pid, leaseControl, nil
 }
 

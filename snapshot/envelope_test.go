@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"
@@ -34,7 +35,7 @@ func TestVerifyCOWSizeRejectsAShortRawDisk(t *testing.T) {
 				t.Fatalf("close cow: %v", err)
 			}
 
-			err = VerifyCOWSize(dir, types.SnapshotConfig{Config: types.Config{Storage: tt.storage}})
+			err = VerifyCOWSize(dir, types.SnapshotConfig{Storage: tt.storage})
 
 			if tt.wantErr && err == nil {
 				t.Fatal("accepted a cow.raw the envelope says is bigger")
@@ -47,7 +48,7 @@ func TestVerifyCOWSizeRejectsAShortRawDisk(t *testing.T) {
 }
 
 func TestVerifyCOWSizeSkipsACloudimgOverlay(t *testing.T) {
-	if err := VerifyCOWSize(t.TempDir(), types.SnapshotConfig{Config: types.Config{Storage: 10 << 30}}); err != nil {
+	if err := VerifyCOWSize(t.TempDir(), types.SnapshotConfig{Storage: 10 << 30}); err != nil {
 		t.Fatalf("rejected a dir with no raw cow: %v", err)
 	}
 }
@@ -60,15 +61,35 @@ func TestReadSnapshotEnvelope_RoundTrip(t *testing.T) {
 		Hypervisor: "cloud-hypervisor",
 		NICs:       1,
 	}
-	if err := WriteSnapshotEnvelope(dir, cfg); err != nil {
+	if err := WriteSnapshotEnvelope(dir, cfg, []string{"cow.raw", "vmstate"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	got, err := ReadSnapshotEnvelope(dir)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got.ID != cfg.ID || got.Name != cfg.Name || got.Hypervisor != cfg.Hypervisor || got.NICs != cfg.NICs {
-		t.Errorf("got %+v, want %+v", got, cfg)
+	if got.Config.ID != cfg.ID || got.Config.Name != cfg.Name || got.Config.Hypervisor != cfg.Hypervisor || got.Config.NICs != cfg.NICs {
+		t.Errorf("got %+v, want %+v", got.Config, cfg)
+	}
+	if len(got.Files) != 2 || got.Files[0] != "cow.raw" || got.Files[1] != "vmstate" {
+		t.Errorf("files = %v, want [cow.raw vmstate]", got.Files)
+	}
+}
+
+func TestVerifyManifestRejectsAMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cow.raw"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyManifest(dir, []string{"cow.raw"}); err != nil {
+		t.Fatalf("VerifyManifest with every file present = %v, want nil", err)
+	}
+	if err := VerifyManifest(dir, nil); err != nil {
+		t.Fatalf("VerifyManifest without a manifest = %v, want nil for pre-manifest exports", err)
+	}
+	err := VerifyManifest(dir, []string{"cow.raw", "vmstate"})
+	if err == nil || !strings.Contains(err.Error(), "vmstate") {
+		t.Fatalf("VerifyManifest = %v, want the missing vmstate named", err)
 	}
 }
 

@@ -263,7 +263,7 @@ func TestDurableSyncOrder(t *testing.T) {
 	}
 	idxOf := func(name string) int { return slices.Index(steps, name) }
 	renamed, mainSync, prevSync, dirSync := idxOf("main-renamed"), idxOf("main-synced"), idxOf("prev-synced"), idxOf("dir-synced")
-	if renamed < 0 || mainSync < 0 || prevSync < 0 || dirSync < 0 || !(renamed < mainSync && mainSync < prevSync && prevSync < dirSync) {
+	if renamed < 0 || mainSync < 0 || prevSync < 0 || dirSync < 0 || renamed >= mainSync || mainSync >= prevSync || prevSync >= dirSync {
 		t.Fatalf("durable ack without full sync order: %v", steps)
 	}
 

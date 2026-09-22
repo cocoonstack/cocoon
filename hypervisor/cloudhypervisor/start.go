@@ -17,8 +17,8 @@ func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, 
 	return ch.StartAll(ctx, refs, ch.startOne)
 }
 
-func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
-	return ch.StartSequence(ctx, id, hypervisor.StartSpec{
+func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
+	return ch.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			dns, err := ch.conf.DNSServers()
@@ -61,17 +61,11 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 		cmd.Stderr = logFile
 	}
 
-	pid, err := ch.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
+	pid, _, err := ch.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           cmd,
 		NetnsPath:     netnsPath,
 		Rec:           rec,
 		DeferCPUQuota: deferQuota,
 	})
-	if err != nil {
-		return 0, err
-	}
-
-	// Daemon mode: parent must wait() or zombie blocks IsProcessAlive on stop/delete.
-	go cmd.Wait() //nolint:errcheck
-	return pid, nil
+	return pid, err
 }

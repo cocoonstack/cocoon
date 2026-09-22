@@ -277,8 +277,8 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
-	// a recorded placement means the VM holds those cpus
-	if state != types.VMStateRunning {
+	// a recorded placement means the VMM may hold those cpus; only Stopped proves it is gone, an Error-state VMM may still be pinned
+	if state == types.VMStateStopped {
 		r.CPUSet, r.QueueCPUs = "", ""
 	}
 }

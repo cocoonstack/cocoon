@@ -390,7 +390,7 @@ func TestWALWriterWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println("ACK")
-	select {} //nolint:staticcheck // hang until SIGKILL keeps the WAL un-checkpointed
+	select {}
 }
 
 func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {

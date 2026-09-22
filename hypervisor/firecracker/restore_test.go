@@ -22,10 +22,10 @@ func TestPreflightRestoreRefusesAnotherVMsDrives(t *testing.T) {
 		t.Fatalf("write sidecar: %v", err)
 	}
 	recordFor := func(cowPath string) *hypervisor.VMRecord {
-		return &hypervisor.VMRecord{VM: types.VM{
+		return &hypervisor.VMRecord{
 			ID:             filepath.Base(filepath.Dir(cowPath)),
 			StorageConfigs: []*types.StorageConfig{{Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial, Path: cowPath}},
-		}}
+		}
 	}
 
 	err := fc.preflightRestore(srcDir, recordFor(fc.conf.COWRawPath("vm-b")))

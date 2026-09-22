@@ -283,6 +283,40 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
 }
 
+func TestWaitProcessExitReturnsOnExit(t *testing.T) {
+	cmd := exec.Command("sleep", "0.1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	go func() { _ = cmd.Wait() }()
+
+	const timeout = 5 * time.Second
+	start := time.Now()
+	if err := WaitProcessExit(t.Context(), pid, timeout); err != nil {
+		t.Fatalf("WaitProcessExit: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > timeout/5 {
+		t.Fatalf("elapsed = %s, want the wait to end with the process, not to poll out %s", elapsed, timeout)
+	}
+}
+
+func TestWaitProcessExitTimesOutOnALiveProcess(t *testing.T) {
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	err := WaitProcessExit(t.Context(), cmd.Process.Pid, 50*time.Millisecond)
+	if err == nil {
+		t.Fatal("WaitProcessExit = nil, want a timeout while the process is alive")
+	}
+}
+
 func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
 	t.Helper()
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -50,6 +51,8 @@ const (
 
 	onlineCPUsPath = cgroup.SysCPURoot + "/online"
 )
+
+var hostCPUCount = sync.OnceValue(readHostCPUCount)
 
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
@@ -260,17 +263,7 @@ func MergeDirInto(src, dst string) error {
 }
 
 // HostCPUCount returns the host's online CPU count; runtime.NumCPU reports the process affinity mask, which undersizes guests when the control plane is core-pinned.
-func HostCPUCount() int {
-	data, err := os.ReadFile(onlineCPUsPath)
-	if err != nil {
-		return runtime.NumCPU()
-	}
-	cpus, err := cgroup.ParseCPUList(strings.TrimSpace(string(data)))
-	if err != nil || len(cpus) == 0 {
-		return runtime.NumCPU()
-	}
-	return len(cpus)
-}
+func HostCPUCount() int { return hostCPUCount() }
 
 // ValidateHostCPU rejects vCPU counts beyond the host's online cores.
 func ValidateHostCPU(cpu int) error {
@@ -482,4 +475,16 @@ func snapshotResidentBasename(sc *types.StorageConfig) string {
 	default:
 		return ""
 	}
+}
+
+func readHostCPUCount() int {
+	data, err := os.ReadFile(onlineCPUsPath)
+	if err != nil {
+		return runtime.NumCPU()
+	}
+	cpus, err := cgroup.ParseCPUList(strings.TrimSpace(string(data)))
+	if err != nil || len(cpus) == 0 {
+		return runtime.NumCPU()
+	}
+	return len(cpus)
 }

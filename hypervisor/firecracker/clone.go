@@ -29,7 +29,7 @@ var errBindSetup = errors.New("bind-mount clone redirect unavailable")
 
 type bindRedirectPlan struct {
 	binds  [][2]string
-	leases []*vmlock.SharedLease
+	leases []*flock.SharedLease
 }
 
 func (p *bindRedirectPlan) files() []*os.File {
@@ -415,8 +415,8 @@ func managedSourceVMIDs(runRoot string, srcConfigs, dstConfigs []*types.StorageC
 	return slices.Compact(ids)
 }
 
-func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) ([]*vmlock.SharedLease, error) {
-	var leases []*vmlock.SharedLease
+func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, srcConfigs, dstConfigs []*types.StorageConfig) ([]*flock.SharedLease, error) {
+	var leases []*flock.SharedLease
 	for _, id := range managedSourceVMIDs(runRoot, srcConfigs, dstConfigs) {
 		lease, err := vmlock.NewSharedLease(ctx, rootDir, id)
 		if err != nil {
@@ -428,7 +428,7 @@ func holdManagedSourceVMLeases(ctx context.Context, rootDir, runRoot string, src
 	return leases, nil
 }
 
-func closeLeases(leases []*vmlock.SharedLease) {
+func closeLeases(leases []*flock.SharedLease) {
 	for _, lease := range slices.Backward(leases) {
 		_ = lease.Close()
 	}

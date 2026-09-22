@@ -21,7 +21,7 @@ func TestMemoryCLIArg(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: tt.cfg}}}
+			rec := &hypervisor.VMRecord{Config: types.VMConfig{Config: tt.cfg}}
 			args := buildCLIArgs(buildVMConfig(rec, "", nil), "api.sock")
 			i := slices.Index(args, "--memory")
 			if i < 0 || i+1 >= len(args) || args[i+1] != tt.want {
@@ -64,7 +64,7 @@ func TestWatchdogPolicy(t *testing.T) {
 		{name: "explicitly disabled", noWatchdog: true, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}}
+			rec := &hypervisor.VMRecord{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}
 			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
 				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
 			}
@@ -93,7 +93,7 @@ func TestBalloonPolicy(t *testing.T) {
 		{name: "explicitly disabled", noBalloon: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{VM: types.VM{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}}
+			rec := &hypervisor.VMRecord{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}
 			got := buildVMConfig(rec, "", nil).Balloon
 			if tt.wantSize == 0 {
 				if got != nil {
@@ -113,15 +113,13 @@ func TestBalloonPolicy(t *testing.T) {
 
 func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 	rec := &hypervisor.VMRecord{
-		VM: types.VM{
-			Config: types.VMConfig{Name: "vm1", Config: types.Config{CPU: 2, Memory: 1 << 30}},
-			StorageConfigs: []*types.StorageConfig{
-				{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},
-				{Path: "/run/cow.raw", Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial},
-			},
-			NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{
-				{TAP: "tapvm1-0", MAC: "9a:29:2c:4b:27:e4", Network: &types.Network{IP: "10.211.0.134", Gateway: "10.211.0.1", Prefix: 22}},
-			}},
+		Config: types.VMConfig{Name: "vm1", Config: types.Config{CPU: 2, Memory: 1 << 30}},
+		StorageConfigs: []*types.StorageConfig{
+			{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},
+			{Path: "/run/cow.raw", Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial},
+		},
+		NetworkConfigs: []*types.NetworkConfig{
+			{TAP: "tapvm1-0", MAC: "9a:29:2c:4b:27:e4", Network: &types.Network{IP: "10.211.0.134", Gateway: "10.211.0.1", Prefix: 22}},
 		},
 		BootConfig: &types.BootConfig{
 			KernelPath: "/run/vmlinuz",

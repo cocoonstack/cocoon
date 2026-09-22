@@ -145,14 +145,13 @@ func (b *Bridge) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.
 func CleanupTAPs(tapPrefix string, vmIDs []string) {
 	for _, vmID := range vmIDs {
-		var indices []int
 		for i := 0; ; i++ {
-			if _, err := netlink.LinkByName(network.TAPName(tapPrefix, vmID, i)); err != nil {
+			link, err := netlink.LinkByName(network.TAPName(tapPrefix, vmID, i))
+			if err != nil {
 				break
 			}
-			indices = append(indices, i)
+			_ = netlink.LinkDel(link)
 		}
-		_ = tearDownTAPs(tapPrefix, vmID, indices, true)
 	}
 }
 
@@ -197,7 +196,7 @@ func tearDownTAPs(tapPrefix, vmID string, indices []int, bestEffort bool) error 
 }
 
 func generateMAC() string {
-	buf := make([]byte, 6) //nolint:mnd
+	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
 	buf[0] = (buf[0] | 0x02) & 0xfe
 	return net.HardwareAddr(buf).String()

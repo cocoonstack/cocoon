@@ -46,7 +46,7 @@ func TestFCNICOpsRoundTrip(t *testing.T) {
 }
 
 func TestRequirePCI(t *testing.T) {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1"}}
+	rec := &hypervisor.VMRecord{ID: "vm1"}
 	if err := requirePCI(rec, disk.ErrUnsupportedBackend); err == nil || !strings.Contains(err.Error(), "MMIO") {
 		t.Fatalf("err = %v, want an MMIO rejection wrapping the backend error", err)
 	}

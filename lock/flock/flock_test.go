@@ -233,6 +233,20 @@ func TestTransientWaiterRequeuesAcrossUnlink(t *testing.T) {
 	}
 }
 
+func TestReclaimTransientLeavesAMissingPathAlone(t *testing.T) {
+	path := lockPath(t)
+	ok, err := ReclaimTransient(t.Context(), path)
+	if err != nil {
+		t.Fatalf("ReclaimTransient: %v", err)
+	}
+	if ok {
+		t.Fatal("ok = true for a path that never existed; a sweeper would log a reclaim that did not happen")
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("ReclaimTransient created the file it was asked to reclaim: %v", statErr)
+	}
+}
+
 func lockPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "test.lock")

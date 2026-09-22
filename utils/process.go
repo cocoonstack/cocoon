@@ -83,6 +83,14 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 	return killAndWait(ctx, proc, pid, binaryName, expectArg)
 }
 
+// WaitProcessExit blocks until pid exits, the timeout elapses, or ctx ends; a pidfd makes the wait kernel-driven where the OS has one.
+func WaitProcessExit(ctx context.Context, pid int, timeout time.Duration) error {
+	if handled, err := waitExitWithPidfd(ctx, pid, timeout); handled {
+		return err
+	}
+	return waitDead(ctx, pid, timeout)
+}
+
 func killAndWait(ctx context.Context, proc *os.Process, pid int, binaryName, expectArg string) error {
 	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
 	if err != nil || !match {

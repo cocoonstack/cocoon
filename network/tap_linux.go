@@ -20,7 +20,7 @@ const (
 // CreateTAP adds a multi-queue TAP sized for numQueues virtio-net queues and returns its index, then closes the kernel fds (CH/QEMU reopen it by name).
 func CreateTAP(name string, numQueues int) (int, error) {
 	// queue_pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
-	queuePairs := max(1, numQueues/2) //nolint:mnd
+	queuePairs := max(1, numQueues/2)
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {
 		flags |= netlink.TUNTAP_ONE_QUEUE

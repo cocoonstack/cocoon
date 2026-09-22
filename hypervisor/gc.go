@@ -94,19 +94,16 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 		Resolve: func(_ context.Context, snap VMGCSnapshot, _ map[string]any) []string {
 			runOrphans := utils.FilterUnreferenced(snap.runDirs, snap.vmIDs, gcReservedDirNames)
 			logOrphans := utils.FilterUnreferenced(snap.logDirs, snap.vmIDs, gcReservedDirNames)
-			for _, id := range snap.staleCreate {
-				snap.reasons[id] = "stale-creating"
-			}
-			for _, id := range runOrphans {
-				if _, ok := snap.reasons[id]; !ok {
-					snap.reasons[id] = "orphan-runDir"
+			setReason := func(ids []string, reason string) {
+				for _, id := range ids {
+					if _, ok := snap.reasons[id]; !ok {
+						snap.reasons[id] = reason
+					}
 				}
 			}
-			for _, id := range logOrphans {
-				if _, ok := snap.reasons[id]; !ok {
-					snap.reasons[id] = "orphan-logDir"
-				}
-			}
+			setReason(snap.staleCreate, "stale-creating")
+			setReason(runOrphans, "orphan-runDir")
+			setReason(logOrphans, "orphan-logDir")
 			candidates := slices.Concat(runOrphans, logOrphans, snap.staleCreate)
 			slices.Sort(candidates)
 			return slices.Compact(candidates)

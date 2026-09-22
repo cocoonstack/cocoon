@@ -60,8 +60,9 @@ func TestNewSocketHTTPClient_DialsSocket(t *testing.T) {
 
 func TestNewSocketHTTPClient_BadSocket(t *testing.T) {
 	hc := NewSocketHTTPClient("/nonexistent/socket.sock")
-	_, err := hc.Get("http://localhost/ping")
+	resp, err := hc.Get("http://localhost/ping")
 	if err == nil {
+		resp.Body.Close()
 		t.Fatal("expected error for nonexistent socket")
 	}
 }

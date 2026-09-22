@@ -3,8 +3,11 @@ package hypervisor
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -15,7 +18,7 @@ func TestStartSequenceFlipsRunningUnderLock(t *testing.T) {
 	const id = "vm-start"
 	seedStoppedVMWithDirs(t, b, id)
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) { return 4242, nil },
 	})
 	if err != nil {
@@ -46,7 +49,7 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 		t.Fatalf("seed nil NIC: %v", err)
 	}
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) {
 			t.Fatal("Launch must not run with a nil NIC in the record")
 			return 0, nil
@@ -81,7 +84,7 @@ func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
 		return nil
 	}})
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) {
 			cancel()
 			return 0, errors.New("launch canceled")
@@ -100,6 +103,28 @@ func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
 	after := recordOf(t, b, id)
 	if quiesced != 1 || after.QuiescePending {
 		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, after.QuiescePending)
+	}
+}
+
+func TestWaitForSocketFailsFastOnAReapedProcess(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "exit 1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start probe: %v", err)
+	}
+	pid := cmd.Process.Pid
+	reaped := make(chan struct{})
+	reapProcess(cmd, reaped)
+	<-reaped
+
+	const timeout = 2 * time.Second
+	start := time.Now()
+	err := WaitForSocket(t.Context(), filepath.Join(t.TempDir(), "api.sock"), pid, timeout, "sh")
+	elapsed := time.Since(start)
+	if err == nil || !strings.Contains(err.Error(), "exited before socket was ready") {
+		t.Fatalf("err = %v, want exited before socket was ready", err)
+	}
+	if elapsed > timeout/2 {
+		t.Fatalf("elapsed = %s, want a fast fail well inside %s", elapsed, timeout)
 	}
 }
 

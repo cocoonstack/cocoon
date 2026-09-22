@@ -2,6 +2,7 @@ package hypervisor
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"strings"
@@ -215,6 +216,49 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	}
 	if quiesced != 1 || rec.QuiescePending {
 		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, rec.QuiescePending)
+	}
+}
+
+func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	ctx := t.Context()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].CPUSet, idx.VMs[id].QueueCPUs = "8-15", "8-9"
+		return nil
+	}); err != nil {
+		t.Fatalf("seed placement: %v", err)
+	}
+	rows := func() string {
+		var got string
+		if err := b.view(ctx, func(tx *vmTx) error {
+			return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
+				got += id + "=" + *cpus + ";"
+				return nil
+			})
+		}); err != nil {
+			t.Fatalf("scan placements: %v", err)
+		}
+		return got
+	}
+	if got := rows(); got != id+"=8-9;" {
+		t.Fatalf("placement rows before stop = %q, want %s=8-9;", got, id)
+	}
+
+	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(context.Context, *VMRecord, string, int) error {
+		return errors.New("timeout after 5s")
+	}})
+	if err == nil {
+		t.Fatal("StopOneLocked = nil, want the shutdown error")
+	}
+	rec := recordOf(t, b, id)
+	if rec.State != types.VMStateError {
+		t.Fatalf("state = %s, want error", rec.State)
+	}
+	if rec.CPUSet != "8-15" || rec.QueueCPUs != "8-9" {
+		t.Fatalf("cpuset %q queue_cpus %q after a failed stop of a live VMM, want 8-15/8-9 kept", rec.CPUSet, rec.QueueCPUs)
+	}
+	if got := rows(); got != id+"=8-9;" {
+		t.Fatalf("placement rows after a failed stop = %q, want the live VMM's row kept", got)
 	}
 }
 

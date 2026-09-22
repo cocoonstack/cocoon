@@ -17,8 +17,8 @@ const SysCPURoot = "/sys/devices/system/cpu"
 
 // Topology is the host's online cpus inside the fence, grouped by the last-level cache they share.
 type Topology struct {
-	root    string
 	domains [][]int
+	cores   [][][]int // per domain, the hardware threads of each physical core
 }
 
 // ReadTopology groups the online cpus inside fence by last-level cache; a host without cache sysfs forms one domain.
@@ -33,44 +33,48 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 	if len(online) == 0 {
 		return nil, errors.New("no online cpu inside the cgroup_cpus fence")
 	}
-	t := &Topology{root: root}
-	llc := lastCacheIndex(root, online[0])
-	if llc == "" {
+	t := &Topology{}
+	if llc := lastCacheIndex(root, online[0]); llc == "" {
 		t.domains = [][]int{online}
-		return t, nil
+	} else {
+		for rest := online; len(rest) > 0; {
+			shared, err := readCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
+			if err != nil {
+				return nil, err
+			}
+			inShared := func(c int) bool { return slices.Contains(shared, c) }
+			t.domains = append(t.domains, slices.DeleteFunc(slices.Clone(rest), func(c int) bool { return !inShared(c) }))
+			rest = slices.DeleteFunc(rest, inShared)
+		}
 	}
-	for rest := online; len(rest) > 0; {
-		shared, err := readCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
+	for _, domain := range t.domains {
+		cores, err := coresOf(root, domain)
 		if err != nil {
 			return nil, err
 		}
-		inShared := func(c int) bool { return slices.Contains(shared, c) }
-		t.domains = append(t.domains, slices.DeleteFunc(slices.Clone(rest), func(c int) bool { return !inShared(c) }))
-		rest = slices.DeleteFunc(rest, inShared)
+		t.cores = append(t.cores, cores)
 	}
 	return t, nil
 }
 
 // Place picks the least-loaded domain and, for two or more queues, one hardware thread per queue inside it: distinct cores before SMT siblings, fewer pins than queues once the domain runs out.
 func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int, err error) {
-	domain = t.domains[0]
-	best := sumLoad(domain, load)
-	for _, d := range t.domains[1:] {
+	pick := 0
+	best := sumLoad(t.domains[0], load)
+	for i, d := range t.domains[1:] {
 		if l := sumLoad(d, load); l < best {
-			domain, best = d, l
+			pick, best = i+1, l
 		}
 	}
+	domain = slices.Clone(t.domains[pick])
 	if queues < 2 {
 		return domain, nil, nil
-	}
-	cores, err := t.cores(domain)
-	if err != nil {
-		return nil, nil, err
 	}
 	byLoad := func(a, b int) int { return cmp.Or(cmp.Compare(load[a], load[b]), cmp.Compare(a, b)) }
 	layer := make(map[int]int, len(domain))
 	ranked := make([]int, 0, len(domain))
-	for _, core := range cores {
+	for _, c := range t.cores[pick] {
+		core := slices.Clone(c)
 		slices.SortFunc(core, byLoad)
 		for i, c := range core {
 			layer[c] = i
@@ -83,14 +87,14 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int, err 
 	return domain, pins, nil
 }
 
-func (t *Topology) cores(domain []int) ([][]int, error) {
+func coresOf(root string, domain []int) ([][]int, error) {
 	var cores [][]int
 	seen := make(map[int]bool, len(domain))
 	for _, c := range domain {
 		if seen[c] {
 			continue
 		}
-		siblings, err := readCPUList(filepath.Join(cpuDir(t.root, c), "topology", "thread_siblings_list"))
+		siblings, err := readCPUList(filepath.Join(cpuDir(root, c), "topology", "thread_siblings_list"))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			siblings = []int{c}

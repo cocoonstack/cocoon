@@ -51,7 +51,7 @@ func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...N
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
-	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
+	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil { //nolint:gosec // dbPath is root-declared, not caller input
 		return merr
 	}
 	if ferr := checkFS(dbPath); ferr != nil {
@@ -65,7 +65,7 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 		if !partial {
 			return fmt.Errorf("%s already exists; refusing to reinitialize", dbPath)
 		}
-		if rerr := os.Remove(dbPath); rerr != nil {
+		if rerr := os.Remove(dbPath); rerr != nil { //nolint:gosec // dbPath is root-declared, not caller input
 			return rerr
 		}
 	}

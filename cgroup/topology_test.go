@@ -86,6 +86,9 @@ func TestPlace(t *testing.T) {
 			}
 		})
 	}
+	if !slices.Equal(topo.domains[0], []int{0, 1, 4, 5}) || !slices.Equal(topo.cores[0][0], []int{0, 4}) {
+		t.Errorf("Place mutated the shared topology: domains[0] = %v cores[0][0] = %v", topo.domains[0], topo.cores[0][0])
+	}
 }
 
 func writeSysfsCPUs(t *testing.T, domains, cores, threads int) string {

@@ -14,6 +14,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -45,6 +46,7 @@ type snapshotGCSnapshot struct {
 	blobIDs      map[string]struct{}
 	snapshotIDs  map[string]struct{}
 	dataDirs     []string
+	leaseIDs     []string
 	stalePending []string
 	missingDir   []string // finalized records whose data dir vanished (rm dir-deleted, DB update failed)
 	records      map[string]snapshotMeta
@@ -127,6 +129,9 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 			if snap.dataDirs, err = utils.ScanSubdirs(conf.DataDir()); err != nil {
 				return snap, err
 			}
+			if snap.leaseIDs, err = utils.ScanFileStems(conf.DataDir(), leaseSuffix); err != nil {
+				return snap, err
+			}
 			if policy.MaxSize > 0 {
 				backfillSizeBytes(ctx, lf, snap.records)
 			}
@@ -167,7 +172,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					break
 				}
 				// an exclusive acquire proves the pending record's owner died; no age gate needed
-				fl, ok, lockErr := lf.tryExclusiveLease(id)
+				release, ok, lockErr := lf.tryExclusiveLease(ctx, id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
 					continue
@@ -195,29 +200,50 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				}
 				deleted, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, revalidate)
 				if err != nil {
-					_ = fl.Close()
+					release()
 					errs = append(errs, fmt.Errorf("collect snapshot %s: %w", id, err))
 					continue
 				}
 				if !deleted {
 					if snap.reasons[id] != reasonOrphan || sawRecord {
-						_ = fl.Close() // candidacy voided under the lease; the next cycle re-picks
+						release() // candidacy voided under the lease; the next cycle re-picks
 						continue
 					}
 					if err := os.RemoveAll(conf.SnapshotDataDir(id)); err != nil {
-						_ = fl.Close()
+						release()
 						errs = append(errs, fmt.Errorf("remove snapshot %s: %w", id, err))
 						continue
 					}
 				}
-				_ = fl.Close() // lease file kept: unlinking a lock path splits exclusion
+				release()
 				logEvictRow(ctx, logger, "collected", id, snap.records[id], snap.reasons[id])
 				if deleted && !cleanup.Pending {
 					emitSnapStop(ctx, recorder, id, cleanup.Hypervisor)
 				}
 			}
+			sweepLeases(ctx, conf, snap)
 			return errors.Join(errs...)
 		},
+	}
+}
+
+// sweepLeases reclaims lease files left by hosts that predate the transient lease, and by any crash between acquire and release.
+func sweepLeases(ctx context.Context, conf *Config, snap snapshotGCSnapshot) {
+	logger := log.WithFunc("gc.snapshot")
+	live := make(map[string]struct{}, len(snap.snapshotIDs)+len(snap.dataDirs))
+	maps.Copy(live, snap.snapshotIDs)
+	for _, dir := range snap.dataDirs {
+		live[dir] = struct{}{}
+	}
+	for _, id := range utils.FilterUnreferenced(snap.leaseIDs, live) {
+		ok, err := flock.ReclaimTransient(ctx, conf.LeasePath(id))
+		if err != nil {
+			logger.Warnf(ctx, "sweep lease %s: %v", id, err)
+			continue
+		}
+		if ok {
+			logger.Infof(ctx, "collected id=%s reason=orphan-lease", id)
+		}
 	}
 }
 

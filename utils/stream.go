@@ -9,15 +9,30 @@ import (
 	"sync"
 )
 
-// PipeStreamReader wraps a PipeReader with background error collection and cleanup.
-type PipeStreamReader struct {
+// pipeStreamReader wraps a PipeReader with background error collection and cleanup.
+type pipeStreamReader struct {
 	*io.PipeReader
 	close func() error
 }
 
-// NewPipeStreamReader pairs pr with the producer's done channel so Close surfaces background errors and runs cleanup exactly once.
-func NewPipeStreamReader(pr *io.PipeReader, done <-chan error, cleanup func()) *PipeStreamReader {
-	return &PipeStreamReader{
+func (r *pipeStreamReader) Close() error {
+	return r.close()
+}
+
+// PipeStream runs write against the pipe's writer in a goroutine; its error closes the pipe and resurfaces on the reader's Close.
+func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		err := write(pw)
+		if err != nil {
+			pw.CloseWithError(err)
+		} else {
+			pw.Close() //nolint:errcheck,gosec
+		}
+		done <- err
+	}()
+	return &pipeStreamReader{
 		PipeReader: pr,
 		close: sync.OnceValue(func() error {
 			err := pr.Close()
@@ -30,26 +45,6 @@ func NewPipeStreamReader(pr *io.PipeReader, done <-chan error, cleanup func()) *
 			return err
 		}),
 	}
-}
-
-func (r *PipeStreamReader) Close() error {
-	return r.close()
-}
-
-// PipeStream runs write against the pipe's writer in a goroutine; its error closes the pipe and resurfaces on the reader's Close.
-func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		err := write(pw)
-		if err != nil {
-			pw.CloseWithError(err) //nolint:errcheck,gosec
-		} else {
-			pw.Close() //nolint:errcheck,gosec
-		}
-		done <- err
-	}()
-	return NewPipeStreamReader(pr, done, cleanup)
 }
 
 // TarDirStream streams a directory as a tar archive via a pipe.

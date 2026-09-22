@@ -248,7 +248,7 @@ func (c *coded) Unwrap() []error { return []error{c.err, c.mark} }
 
 // loadNamespace treats a missing file as empty, falls back to .prev when main does not decode, and fails closed on read errors.
 func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
-	raw, err := os.ReadFile(def.FilePath) //nolint:gosec
+	raw, err := os.ReadFile(def.FilePath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		m, cerr := def.Codec.Decode(nil)
@@ -265,7 +265,7 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 		m.markClean()
 		return &loaded{model: m}, nil
 	}
-	prevRaw, prevErr := os.ReadFile(def.FilePath + prevSuffix) //nolint:gosec
+	prevRaw, prevErr := os.ReadFile(def.FilePath + prevSuffix)
 	if prevErr != nil {
 		return nil, code(errors.Join(fmt.Errorf("decode %s: %w", def.FilePath, decodeErr), prevErr), meta.ErrCorrupt)
 	}

@@ -129,8 +129,11 @@ func BoundToPath(held fs.FileInfo, path string) bool {
 	return err == nil && os.SameFile(held, cur)
 }
 
-// ReclaimTransient removes path's transient lock file when nobody holds it; false with a nil error means the lock was busy.
+// ReclaimTransient removes path's transient lock file when nobody holds it; false with a nil error means busy or already gone, since TryLock would otherwise create the file it is about to unlink.
 func ReclaimTransient(ctx context.Context, path string) (bool, error) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
 	l := NewTransient(path)
 	ok, err := l.TryLock(ctx)
 	if err != nil || !ok {

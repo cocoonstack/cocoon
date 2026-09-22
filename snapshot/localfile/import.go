@@ -27,7 +27,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	dataDir := lf.conf.SnapshotDataDir(id)
 
 	// Import writes the data dir before any DB record exists; the build lease keeps GC's orphan sweep off it.
-	release, err := lf.acquireBuildLease(id)
+	release, err := lf.acquireBuildLease(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -55,10 +55,14 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 		}
 	}
 
-	cfg, err := readAndRemoveSnapshotJSON(dataDir)
+	envelope, err := readAndRemoveSnapshotJSON(dataDir)
 	if err != nil {
 		return "", err
 	}
+	if err = snapshot.VerifyManifest(dataDir, envelope.Files); err != nil {
+		return "", err
+	}
+	cfg := envelope.Config
 	if err = snapshot.VerifyCOWSize(dataDir, cfg); err != nil {
 		return "", err
 	}
@@ -121,17 +125,17 @@ func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
 }
 
 // readAndRemoveSnapshotJSON reads the envelope and deletes it; the registered snapshot dir keeps only runtime sidecars (cocoon.json), not import metadata.
-func readAndRemoveSnapshotJSON(dataDir string) (types.SnapshotConfig, error) {
-	cfg, err := snapshot.ReadSnapshotEnvelope(dataDir)
+func readAndRemoveSnapshotJSON(dataDir string) (types.SnapshotExport, error) {
+	envelope, err := snapshot.ReadSnapshotEnvelope(dataDir)
 	if err != nil {
 		if errors.Is(err, snapshot.ErrEnvelopeMissing) {
-			return types.SnapshotConfig{}, fmt.Errorf("invalid snapshot archive: %s not found", snapshot.SnapshotJSONName)
+			return types.SnapshotExport{}, fmt.Errorf("invalid snapshot archive: %s not found", snapshot.SnapshotJSONName)
 		}
-		return types.SnapshotConfig{}, err
+		return types.SnapshotExport{}, err
 	}
 	path := filepath.Join(dataDir, snapshot.SnapshotJSONName)
 	if err := os.Remove(path); err != nil {
-		return types.SnapshotConfig{}, fmt.Errorf("remove %s from data dir: %w", snapshot.SnapshotJSONName, err)
+		return types.SnapshotExport{}, fmt.Errorf("remove %s from data dir: %w", snapshot.SnapshotJSONName, err)
 	}
-	return cfg, nil
+	return envelope, nil
 }

@@ -2,7 +2,6 @@ version: "2"
 
 run:
   timeout: 5m
-  tests: false
   modules-download-mode: readonly
 
 linters:
@@ -24,6 +23,7 @@ linters:
     - modernize
     - nakedret
     - nestif
+    - nolintlint
     - revive
     - staticcheck
     - unconvert
@@ -61,11 +61,16 @@ linters:
     rules:
       - path: _test\.go
         linters:
+          - dogsled
           - errcheck
           - gosec
           - unparam
           - goconst
           - gocyclo
+      - path: _test\.go
+        linters:
+          - govet
+        text: "^shadow:"
 
 formatters:
   enable:

@@ -19,9 +19,7 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 		logger.Warnf(ctx, "shutdown signal %s: %v — escalating", vmID, err)
 		return escalate()
 	}
-	if err := utils.WaitFor(ctx, timeout, GracefulStopPollInterval, func() (bool, error) {
-		return !utils.IsProcessAlive(pid), nil
-	}); err == nil {
+	if err := utils.WaitProcessExit(ctx, pid, timeout); err == nil {
 		return nil
 	}
 	if ctx.Err() != nil {
@@ -120,7 +118,7 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked VMOp, rec *VMRecord, procScan utils.ProcScan) error {
 	sockPath := SocketPath(rec.RunDir)
 	stoppedByUs := false
-	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {
+	if runningErr := b.withRunningVM(ctx, rec, &procScan, func(_ int) error {
 		if !force {
 			return errors.New("running (force required)")
 		}
