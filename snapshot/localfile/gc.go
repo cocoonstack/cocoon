@@ -236,11 +236,7 @@ func sweepLeases(ctx context.Context, conf *Config, snap snapshotGCSnapshot) {
 		live[dir] = struct{}{}
 	}
 	for _, id := range utils.FilterUnreferenced(snap.leaseIDs, live) {
-		path := conf.LeasePath(id)
-		if !utils.FileExists(path) {
-			continue
-		}
-		ok, err := flock.ReclaimTransient(ctx, path)
+		ok, err := flock.ReclaimTransient(ctx, conf.LeasePath(id))
 		if err != nil {
 			logger.Warnf(ctx, "sweep lease %s: %v", id, err)
 			continue
