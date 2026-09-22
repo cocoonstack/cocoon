@@ -204,6 +204,23 @@ func TestPlaceRecordConcurrentLaunchesNeverShareACPU(t *testing.T) {
 	}
 }
 
+func TestPlacementTopologyIsReadOncePerBackend(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	b.PinsQueues = true
+	cfg := &types.Config{CPU: 2}
+	first, err := b.placementTopology(cfg)
+	if err != nil {
+		t.Fatalf("placementTopology: %v", err)
+	}
+	second, err := b.placementTopology(cfg)
+	if err != nil {
+		t.Fatalf("placementTopology again: %v", err)
+	}
+	if first == nil || first != second {
+		t.Fatalf("topology pointers %p and %p, want the same walk reused across launches", first, second)
+	}
+}
+
 func TestLeavingRunningClearsPlacement(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()

@@ -18,7 +18,7 @@ func TestStartSequenceFlipsRunningUnderLock(t *testing.T) {
 	const id = "vm-start"
 	seedStoppedVMWithDirs(t, b, id)
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) { return 4242, nil },
 	})
 	if err != nil {
@@ -49,7 +49,7 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 		t.Fatalf("seed nil NIC: %v", err)
 	}
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) {
 			t.Fatal("Launch must not run with a nil NIC in the record")
 			return 0, nil
@@ -84,7 +84,7 @@ func TestStartSequenceLaunchFailureSchedulesNetworkConvergence(t *testing.T) {
 		return nil
 	}})
 
-	err := b.StartSequence(ctx, id, StartSpec{
+	err := b.StartSequence(ctx, id, nil, StartSpec{
 		Launch: func(context.Context, *VMRecord, string) (int, error) {
 			cancel()
 			return 0, errors.New("launch canceled")

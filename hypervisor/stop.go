@@ -118,7 +118,7 @@ func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runti
 func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked VMOp, rec *VMRecord, procScan utils.ProcScan) error {
 	sockPath := SocketPath(rec.RunDir)
 	stoppedByUs := false
-	if runningErr := b.WithRunningVM(ctx, rec, func(_ int) error {
+	if runningErr := b.withRunningVM(ctx, rec, &procScan, func(_ int) error {
 		if !force {
 			return errors.New("running (force required)")
 		}

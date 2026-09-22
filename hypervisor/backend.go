@@ -6,12 +6,15 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"sync"
 	"time"
 
+	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -75,6 +78,9 @@ type LaunchSpec struct {
 
 // VMOp is one backend's per-VM lifecycle step, run by ForEachVM under the batch fan-out.
 type VMOp func(context.Context, string) error
+
+// StartOp is a backend's per-VM start, handed the batch's one /proc scan for its liveness check.
+type StartOp func(ctx context.Context, id string, scan *utils.ProcScan) error
 
 // PreflightHook validates rec against the snapshot source dir before anything is applied.
 type PreflightHook func(dir string, rec *VMRecord) error
@@ -169,6 +175,11 @@ type Backend struct {
 	PinsQueues bool
 	// PeerNS lists the other backends' VM namespaces; placement counts their placements too.
 	PeerNS []string
+
+	// topo memoizes the sysfs cache-domain walk: host topology is constant for the process and cpu hotplug is not tracked.
+	topoOnce sync.Once
+	topo     *cgroup.Topology
+	topoErr  error
 }
 
 // NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.

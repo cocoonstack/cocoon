@@ -27,8 +27,8 @@ func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, erro
 	return fc.StartAll(ctx, refs, fc.startOne)
 }
 
-func (fc *Firecracker) startOne(ctx context.Context, id string) error {
-	return fc.StartSequence(ctx, id, hypervisor.StartSpec{
+func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
+	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)

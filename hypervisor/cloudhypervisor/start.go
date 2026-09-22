@@ -17,8 +17,8 @@ func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, 
 	return ch.StartAll(ctx, refs, ch.startOne)
 }
 
-func (ch *CloudHypervisor) startOne(ctx context.Context, id string) error {
-	return ch.StartSequence(ctx, id, hypervisor.StartSpec{
+func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
+	return ch.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			dns, err := ch.conf.DNSServers()

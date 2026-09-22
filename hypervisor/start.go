@@ -17,23 +17,29 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// StartAll runs startOne per ref; each start flips its own state under its VM's ops lock.
-func (b *Backend) StartAll(ctx context.Context, refs []string, startOne VMOp) ([]string, error) {
+// StartAll runs startOne per ref over one /proc scan; each start flips its own state under its VM's ops lock.
+func (b *Backend) StartAll(ctx context.Context, refs []string, startOne StartOp) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	return b.ForEachVM(ctx, ids, "Start", startOne)
+	procScan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
+	if err != nil {
+		return nil, fmt.Errorf("refuse start: /proc scan errored: %w (resolve the host issue and retry)", err)
+	}
+	return b.ForEachVM(ctx, ids, "Start", func(ctx context.Context, id string) error {
+		return startOne(ctx, id, &procScan)
+	})
 }
 
-// StartSequence flips Running inside the ops lock, so a stop queued behind this start cannot be overwritten by a late state write.
-func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) error {
+// StartSequence flips Running inside the ops lock, so a stop queued behind this start cannot be overwritten by a late state write; a nil scan walks /proc itself.
+func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.ProcScan, spec StartSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	rec, err := b.PrepareStart(ctx, id, spec.RuntimeFiles)
+	rec, err := b.PrepareStart(ctx, id, scan, spec.RuntimeFiles)
 	if err != nil {
 		return err
 	}
@@ -69,7 +75,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, spec StartSpec) 
 	return nil
 }
 
-func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []string) (*VMRecord, error) {
+func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcScan, runtimeFiles []string) (*VMRecord, error) {
 	rec, err := b.EntryGuardLoad(ctx, id)
 	if err != nil {
 		return nil, err
@@ -87,7 +93,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
 	}
 
-	runErr := b.WithRunningVM(ctx, &rec, func(_ int) error { return nil })
+	runErr := b.withRunningVM(ctx, &rec, scan, func(_ int) error { return nil })
 	switch {
 	case runErr == nil:
 		if rec.State != types.VMStateRunning {
