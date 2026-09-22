@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/cocoonstack/cocoon/lock/flock"
 )
 
 func TestSharedLeaseInheritanceSurvivesParentDescriptorClose(t *testing.T) {
@@ -93,7 +95,7 @@ func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	leaseCh := make(chan *SharedLease, 1)
+	leaseCh := make(chan *flock.SharedLease, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		lease, err := NewSharedLease(ctx, rootDir, "source")

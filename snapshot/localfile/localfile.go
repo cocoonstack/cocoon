@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	gofrsflock "github.com/gofrs/flock"
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/gc"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/snapshot"
@@ -24,9 +24,6 @@ import (
 
 const (
 	typ = "localfile"
-
-	// leaseRetryDelay is the shared-lease poll cadence; contended only while a delete briefly holds the exclusive lock.
-	leaseRetryDelay = 2 * time.Millisecond
 
 	rollbackTimeout = 30 * time.Second
 )
@@ -254,58 +251,50 @@ func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, 
 	return id, held, nil
 }
 
-// tryExclusiveLease TryLocks id's lease file; ok=false means an active holder. The caller owns fl.Close() when ok.
-func (lf *LocalFile) tryExclusiveLease(id string) (fl *gofrsflock.Flock, ok bool, err error) {
-	fl = gofrsflock.New(lf.conf.LeasePath(id))
-	locked, err := fl.TryLock()
+// tryExclusiveLease TryLocks id's transient lease; ok=false means an active holder. The caller owns release when ok, and releasing unlinks the lease file.
+func (lf *LocalFile) tryExclusiveLease(ctx context.Context, id string) (release func(), ok bool, err error) {
+	l := flock.NewTransient(lf.conf.LeasePath(id))
+	locked, err := l.TryLock(ctx)
 	if err != nil {
-		_ = fl.Close()
 		return nil, false, fmt.Errorf("lease snapshot %s: %w", id, err)
 	}
 	if !locked {
-		_ = fl.Close()
 		return nil, false, nil
 	}
-	return fl, true, nil
+	return func() { _ = l.Unlock(ctx) }, true, nil
 }
 
 // acquireBuildLease exclusively leases id while its data dir is being built (Create/Import), so rm/GC cannot resolve-and-delete the half-written dir.
-func (lf *LocalFile) acquireBuildLease(id string) (func(), error) {
-	fl, ok, err := lf.tryExclusiveLease(id)
+func (lf *LocalFile) acquireBuildLease(ctx context.Context, id string) (func(), error) {
+	release, ok, err := lf.tryExclusiveLease(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, fmt.Errorf("snapshot %s is in use", id)
 	}
-	return func() { _ = fl.Close() }, nil
+	return release, nil
 }
 
-// acquireReadLease holds a shared flock on the snapshot's lease file so delete/GC (exclusive) cannot reap the data dir mid-read; lock/flock has no shared mode, hence gofrs directly.
+// acquireReadLease holds a shared lease so delete/GC (exclusive) cannot reap the data dir mid-read.
 func (lf *LocalFile) acquireReadLease(ctx context.Context, id string) (func(), error) {
-	fl := gofrsflock.New(lf.conf.LeasePath(id))
-	ok, err := fl.TryRLockContext(ctx, leaseRetryDelay)
+	lease, err := flock.AcquireShared(ctx, lf.conf.LeasePath(id))
 	if err != nil {
-		_ = fl.Close()
 		return nil, fmt.Errorf("lease snapshot %s: %w", id, err)
 	}
-	if !ok {
-		_ = fl.Close()
-		return nil, fmt.Errorf("lease snapshot %s: %w", id, ctx.Err())
-	}
-	return func() { _ = fl.Close() }, nil
+	return func() { _ = lease.Close() }, nil
 }
 
 // deleteOne is idempotent under concurrent rm; the rival's emit is skipped so the ledger keeps exactly one stop per snapshot.
 func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
-	fl, ok, err := lf.tryExclusiveLease(id)
+	release, ok, err := lf.tryExclusiveLease(ctx, id)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return fmt.Errorf("snapshot %s is in use by an active clone/restore/export", id)
 	}
-	defer fl.Close() //nolint:errcheck
+	defer release()
 	// A recordless leftover dir converges without a tombstone — nothing points at it.
 	deletedRecord, cleanup, err := lf.deleteSnapshotProtocol(ctx, id, nil)
 	if err != nil {
@@ -320,7 +309,6 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	if !cleanup.Pending {
 		emitSnapStop(ctx, lf.metering, id, cleanup.Hypervisor)
 	}
-	// The lease file stays: flock syncs on the inode, so deleting it would split exclusion for a live waiter.
 	return nil
 }
 
@@ -329,7 +317,7 @@ func (lf *LocalFile) beginBuild(ctx context.Context, cfg *types.SnapshotConfig) 
 	if cfg.ID == "" {
 		return "", nil, fmt.Errorf("snapshot ID is required (must be set by caller)")
 	}
-	release, err := lf.acquireBuildLease(cfg.ID)
+	release, err := lf.acquireBuildLease(ctx, cfg.ID)
 	if err != nil {
 		return "", nil, err
 	}
