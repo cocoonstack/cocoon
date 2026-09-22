@@ -185,7 +185,6 @@ func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir str
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
 
-// reapProcess waits cmd in the background and closes done, so the child never lingers as a zombie.
 func reapProcess(cmd *exec.Cmd, done chan<- struct{}) {
 	go func() {
 		_ = cmd.Wait()
