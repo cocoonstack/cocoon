@@ -19,9 +19,7 @@ func (b *Backend) GracefulStop(ctx context.Context, vmID string, pid int, timeou
 		logger.Warnf(ctx, "shutdown signal %s: %v — escalating", vmID, err)
 		return escalate()
 	}
-	if err := utils.WaitFor(ctx, timeout, GracefulStopPollInterval, func() (bool, error) {
-		return !utils.IsProcessAlive(pid), nil
-	}); err == nil {
+	if err := utils.WaitProcessExit(ctx, pid, timeout); err == nil {
 		return nil
 	}
 	if ctx.Err() != nil {

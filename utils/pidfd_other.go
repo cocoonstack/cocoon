@@ -19,3 +19,7 @@ func CloseFD(int) {}
 func terminateWithPidfd(_ context.Context, _ int, _, _ string, _ time.Duration) (bool, error) {
 	return false, nil
 }
+
+func waitExitWithPidfd(_ context.Context, _ int, _ time.Duration) (bool, error) {
+	return false, nil
+}

@@ -38,8 +38,6 @@ const (
 	MinBalloonMemory = 256 << 20
 
 	DefaultBalloonDiv = 4
-
-	GracefulStopPollInterval = 500 * time.Millisecond
 )
 
 // timeNow is the clock seam tests inject.

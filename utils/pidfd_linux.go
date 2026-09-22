@@ -55,6 +55,16 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 	return true, waitPidfd(ctx, fd, killWaitTimeout)
 }
 
+// waitExitWithPidfd blocks on pid's exit through a pidfd; handled is false without pidfd support (kernel < 5.3).
+func waitExitWithPidfd(ctx context.Context, pid int, timeout time.Duration) (handled bool, err error) {
+	fd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		return false, nil
+	}
+	defer func() { _ = unix.Close(fd) }()
+	return true, waitPidfd(ctx, fd, timeout)
+}
+
 // waitPidfd blocks until the pidfd reports exit; the kernel wakes the poll instead of a kill(0) loop.
 func waitPidfd(ctx context.Context, fd int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
