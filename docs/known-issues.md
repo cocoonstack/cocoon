@@ -234,9 +234,11 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the live `vm.info` before pausing the guest and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`) before anything is captured or recorded. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
 
-## Snapshot lease files are never reclaimed
+## Snapshot lease files are never reclaimed (fixed after v0.6.7)
 
-Every `snapshot save` leaves a zero-byte `<root>/snapshot/localfile/<id>.lease` behind, and `snapshot rm` and `gc` remove only the data dir (the GC orphan sweep even creates a lease for a recordless dir it collects). The files are inert but accumulate one inode per snapshot ever created; delete them by hand while no snapshot verb runs. Reclaiming them in GC needs the snapshot leases to move onto the rebind-guarded transient lock the VM ops lock uses.
+Fixed on master by #253: `snapshot rm` unlinks the snapshot's `<root>/snapshot/localfile/<id>.lease` when it releases the exclusive lease, and `gc` reclaims the leases of snapshots that no longer have a record or a data dir, so a host upgraded from an older binary converges on its first `gc` run (133 leftover files on one testbed went to the four live snapshots' leases).
+
+On v0.6.7 and older every `snapshot save` leaves that zero-byte file behind and `snapshot rm` and `gc` remove only the data dir, so the files accumulate one inode per snapshot ever created; delete them by hand while no snapshot verb runs.
 
 ## `--from-dir` and `snapshot import` reject a snapshot rebuilt by a third-party tar
 
