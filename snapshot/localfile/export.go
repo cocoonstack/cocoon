@@ -68,7 +68,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	}); err != nil {
 		return err
 	}
-	if err = snapshot.WriteSnapshotEnvelope(dir, cfg); err != nil {
+	if err = snapshot.WriteSnapshotEnvelope(dir, cfg, names); err != nil {
 		return fmt.Errorf("write envelope: %w", err)
 	}
 	return nil
@@ -80,7 +80,12 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		return nil, err
 	}
 
-	jsonData, err := snapshot.MarshalEnvelope(cfg)
+	files, err := utils.ListRegularFiles(dataDir)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	jsonData, err := snapshot.MarshalEnvelope(cfg, files)
 	if err != nil {
 		release()
 		return nil, err

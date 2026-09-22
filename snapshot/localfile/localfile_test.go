@@ -217,7 +217,7 @@ func TestImportEmitsSnapStorageStart(t *testing.T) {
 		ID:         "src-snap",
 		Name:       "src-name",
 		Hypervisor: "cloud-hypervisor",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("MarshalEnvelope: %v", err)
 	}
@@ -1310,12 +1310,15 @@ func TestExportToDir_RoundTrip(t *testing.T) {
 		t.Fatalf("ExportToDir: %v", err)
 	}
 
-	cfg, err := snapshot.ReadSnapshotEnvelope(dst)
+	envelope, err := snapshot.ReadSnapshotEnvelope(dst)
 	if err != nil {
 		t.Fatalf("ReadSnapshotEnvelope: %v", err)
 	}
-	if cfg.Name != "to-dir-src" || cfg.CPU != 4 {
+	if cfg := envelope.Config; cfg.Name != "to-dir-src" || cfg.CPU != 4 {
 		t.Errorf("envelope mismatch: %+v", cfg)
+	}
+	if len(envelope.Files) != len(origFiles) {
+		t.Errorf("envelope files = %v, want the %d exported files", envelope.Files, len(origFiles))
 	}
 
 	for name, want := range origFiles {
@@ -1426,6 +1429,42 @@ func TestImportPinsEnvelopeBlobs(t *testing.T) {
 	}
 	if !released {
 		t.Fatal("pin never released")
+	}
+}
+
+func TestImportRejectsEveryTruncatedExport(t *testing.T) {
+	src := newTestLF(t)
+	ctx := t.Context()
+	id, err := src.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "whole", Hypervisor: "cloud-hypervisor"},
+		makeTar(t, map[string][]byte{"cow.raw": bytes.Repeat([]byte("c"), 1500), "vmstate": bytes.Repeat([]byte("v"), 300)}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	stream, err := src.Export(ctx, id)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	full, err := io.ReadAll(stream)
+	_ = stream.Close()
+	if err != nil {
+		t.Fatalf("read export: %v", err)
+	}
+
+	const trailer = 2 * 512
+	manifestCaught := 0
+	for cut := 512; cut < len(full)-trailer; cut += 512 {
+		dst := newTestLF(t)
+		_, err := dst.Import(ctx, bytes.NewReader(full[:cut]), "cut", "")
+		if err == nil {
+			t.Errorf("import of the first %d of %d bytes succeeded; a truncated export must never register a snapshot", cut, len(full))
+			continue
+		}
+		if strings.Contains(err.Error(), "listed by the envelope") {
+			manifestCaught++
+		}
+	}
+	if manifestCaught == 0 {
+		t.Fatalf("no cut of a %d-byte export was caught by the manifest; every failure came from the tar layer, so a boundary cut would still import", len(full))
 	}
 }
 
