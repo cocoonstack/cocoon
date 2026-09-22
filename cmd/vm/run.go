@@ -275,7 +275,7 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	})
 }
 
-// runClone reserves, clones through do, reseeds and finishes; the JSON envelope replaces the log lines under --output json.
+// runClone emits its progress lines only when --output json is off; the JSON envelope replaces them.
 func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
