@@ -17,7 +17,7 @@ func TestLookupOne(t *testing.T) {
 		t.Errorf("unique prefix: ok=%v ref=%q", ok, ref)
 	}
 
-	if _, e, ok := LookupOne(images, "sha256:aabb000011112222333344445555666a"); !ok || (*e).EntryID() != "sha256:aabb000011112222333344445555666a" {
+	if _, e, ok := LookupOne(images, "sha256:aabb000011112222333344445555666a"); !ok || e.EntryID() != "sha256:aabb000011112222333344445555666a" {
 		t.Errorf("multi-tag single-digest must resolve: ok=%v", ok)
 	}
 

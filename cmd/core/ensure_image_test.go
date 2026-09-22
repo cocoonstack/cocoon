@@ -25,11 +25,9 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 		{
 			name: "digest pinned -> force=true",
 			vmCfg: &types.VMConfig{
-				Config: types.Config{
-					Image:       url,
-					ImageDigest: digest,
-					ImageType:   types.ImageTypeCloudImg,
-				},
+				Image:       url,
+				ImageDigest: digest,
+				ImageType:   types.ImageTypeCloudImg,
 			},
 			wantPullRef: url,
 			wantForce:   true,
@@ -37,10 +35,8 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 		{
 			name: "no digest -> force=false",
 			vmCfg: &types.VMConfig{
-				Config: types.Config{
-					Image:     url,
-					ImageType: types.ImageTypeCloudImg,
-				},
+				Image:     url,
+				ImageType: types.ImageTypeCloudImg,
 			},
 			wantPullRef: url,
 			wantForce:   false,
@@ -78,9 +74,7 @@ func TestEnsureImage_SkipsBadShape(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &fakeImageBackend{typ: tt.imageType}
-			EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{
-				Config: types.Config{Image: tt.image, ImageType: tt.imageType},
-			})
+			EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{Image: tt.image, ImageType: tt.imageType})
 			if len(f.pullRefs) != 0 {
 				t.Errorf("Pull called %d time(s) with %v, want 0 (shape should have failed)", len(f.pullRefs), f.pullRefs)
 			}
@@ -101,7 +95,7 @@ func TestEnsureImage_AcceptsGoodShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &fakeImageBackend{typ: tt.imageType}
 			EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{
-				Config: types.Config{Image: tt.image, ImageType: tt.imageType},
+				Image: tt.image, ImageType: tt.imageType,
 			})
 			if len(f.pullRefs) != 1 || f.pullRefs[0] != tt.image {
 				t.Errorf("Pull = %v, want one call for %q", f.pullRefs, tt.image)
@@ -119,11 +113,9 @@ func TestEnsureImage_SkipsPullWhenDigestLocal(t *testing.T) {
 		},
 	}
 	EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{
-		Config: types.Config{
-			Image:       "https://epoch.example/dl/simular/win11",
-			ImageDigest: digest,
-			ImageType:   types.ImageTypeCloudImg,
-		},
+		Image:       "https://epoch.example/dl/simular/win11",
+		ImageDigest: digest,
+		ImageType:   types.ImageTypeCloudImg,
 	})
 	if len(f.pullRefs) != 0 {
 		t.Errorf("Pull called %d time(s), want 0", len(f.pullRefs))

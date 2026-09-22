@@ -11,7 +11,7 @@ import (
 
 func TestCloneAfterExtractRejectsDataDisks(t *testing.T) {
 	fc := &Firecracker{}
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "id"}, RunDir: t.TempDir(), LogDir: t.TempDir()}
+	rec := &hypervisor.VMRecord{ID: "id", RunDir: t.TempDir(), LogDir: t.TempDir()}
 	_, err := fc.cloneAfterExtract(t.Context(), rec, &types.VMConfig{
 		DataDisks: []types.DataDiskSpec{{Name: "v", Size: 1 << 24}},
 	}, types.NetSetup{}, "")

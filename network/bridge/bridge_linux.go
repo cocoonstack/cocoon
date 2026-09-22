@@ -197,7 +197,7 @@ func tearDownTAPs(tapPrefix, vmID string, indices []int, bestEffort bool) error 
 }
 
 func generateMAC() string {
-	buf := make([]byte, 6) //nolint:mnd
+	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
 	buf[0] = (buf[0] | 0x02) & 0xfe
 	return net.HardwareAddr(buf).String()

@@ -524,7 +524,7 @@ func stubLifecycleSeams(t *testing.T) {
 }
 
 func testVMCfg() *types.VMConfig {
-	return &types.VMConfig{Config: types.Config{CPU: 2, Network: "cni-bridge"}}
+	return &types.VMConfig{CPU: 2, Network: "cni-bridge"}
 }
 
 func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {

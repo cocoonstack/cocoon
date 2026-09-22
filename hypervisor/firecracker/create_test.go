@@ -121,7 +121,7 @@ func TestBuildCmdlineLeavesPCIToFirecracker(t *testing.T) {
 }
 
 func TestLaunchArgsEnablePCI(t *testing.T) {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1"}}
+	rec := &hypervisor.VMRecord{ID: "vm1"}
 	if args := launchArgs(rec, "/run/api.sock", "/log/fc.log"); slices.Contains(args, "--enable-pci") {
 		t.Errorf("MMIO launch passes --enable-pci: %v", args)
 	}

@@ -38,7 +38,7 @@ type sourceImageInfo struct {
 }
 
 func sniffImageSource(f *os.File) error {
-	head, err := utils.FileHead(f, 8) //nolint:mnd
+	head, err := utils.FileHead(f, 8)
 	if err != nil {
 		return fmt.Errorf("read source: %w", err)
 	}

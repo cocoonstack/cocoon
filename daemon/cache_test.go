@@ -86,7 +86,7 @@ func TestCacheReleaseStopsDelivery(t *testing.T) {
 }
 
 func statusOf(id string, state types.VMState, gen uint64, live bool) VMStatus {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: id, State: state, TransitionGeneration: gen}}
+	rec := &hypervisor.VMRecord{ID: id, State: state, TransitionGeneration: gen}
 	return newVMStatus("fake-hv", rec, live, 0, time.Now())
 }
 

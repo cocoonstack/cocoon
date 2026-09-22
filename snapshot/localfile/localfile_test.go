@@ -668,11 +668,9 @@ func TestDataDir(t *testing.T) {
 		ID:           testID(t),
 		Name:         "datadir",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
-		Config: types.Config{
-			Image:  "ubuntu:24.04",
-			CPU:    2,
-			Memory: 1 << 30,
-		},
+		Image:        "ubuntu:24.04",
+		CPU:          2,
+		Memory:       1 << 30,
 	}
 
 	id, err := lf.Create(ctx, cfg, stream)
@@ -755,12 +753,10 @@ func TestRestore_ConfigRoundtrip(t *testing.T) {
 		Description:  "roundtrip",
 		ImageBlobIDs: map[string]struct{}{"deadbeef": {}},
 		NICs:         2,
-		Config: types.Config{
-			Image:   "ubuntu:22.04",
-			CPU:     4,
-			Memory:  1 << 30,
-			Storage: 10 << 30,
-		},
+		Image:        "ubuntu:22.04",
+		CPU:          4,
+		Memory:       1 << 30,
+		Storage:      10 << 30,
 	}
 
 	id, err := lf.Create(ctx, cfg, stream)
@@ -1530,12 +1526,10 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		Description:  "export test",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
 		NICs:         2,
-		Config: types.Config{
-			Image:   "ubuntu:24.04",
-			CPU:     4,
-			Memory:  1 << 30,
-			Storage: storage,
-		},
+		Image:        "ubuntu:24.04",
+		CPU:          4,
+		Memory:       1 << 30,
+		Storage:      storage,
 	}
 	id, err := lf.Create(ctx, cfg, stream)
 	if err != nil {

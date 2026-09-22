@@ -248,7 +248,7 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
-	newCfg := &types.VMConfig{Config: types.Config{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}}
+	newCfg := &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}
 	spec := DirectRestoreSpec{
 		VMCfg:            newCfg,
 		SrcDir:           t.TempDir(),
@@ -303,7 +303,7 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
 	spec := DirectRestoreSpec{
-		VMCfg:            &types.VMConfig{Config: types.Config{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}},
+		VMCfg:            &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30},
 		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
@@ -674,12 +674,10 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 	t.Helper()
 	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
 		idx.VMs[id] = &VMRecord{
-			VM: types.VM{
-				ID:          id,
-				Hypervisor:  b.Typ,
-				Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
-				FirstBooted: firstBooted,
-			},
+			ID:          id,
+			Hypervisor:  b.Typ,
+			Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
+			FirstBooted: firstBooted,
 
 			RunDir: t.TempDir(),
 			LogDir: t.TempDir(),

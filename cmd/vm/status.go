@@ -58,7 +58,7 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
 	interval, _ := cmd.Flags().GetInt("interval")
-	interval = utils.OrDefault(interval, 5) //nolint:mnd
+	interval = utils.OrDefault(interval, 5)
 	eventMode, _ := cmd.Flags().GetBool("event")
 	watchMode, _ := cmd.Flags().GetBool("watch")
 	if eventMode && watchMode {
@@ -160,7 +160,7 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 		vms := listAndFilter(ctx, hypers, filters)
 		stale := reconcileVMStates(vms)
 		if isTTY {
-			fmt.Print("\033[H\033[2J") //nolint:errcheck
+			fmt.Print("\033[H\033[2J")
 		}
 		now := time.Now()
 		fmt.Printf("Every %s — press Ctrl+C to quit (%s)\n\n",
@@ -176,7 +176,7 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 }
 
 func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time) {
-	fmt.Println("EVENT\tID\tNAME\tSTATE\tCPU\tMEMORY\tIP\tIMAGE") //nolint:errcheck
+	fmt.Println("EVENT\tID\tNAME\tSTATE\tCPU\tMEMORY\tIP\tIMAGE")
 
 	var w *tabwriter.Writer
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{

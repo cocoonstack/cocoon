@@ -83,7 +83,7 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			}
 
 			spec := DirectRestoreSpec{
-				VMCfg:     &types.VMConfig{Config: types.Config{CPU: 1, Memory: 512, Storage: 1024}},
+				VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
 				SrcDir:    t.TempDir(),
 				Preflight: func(string, *VMRecord) error { return nil },
 				Kill:      func(context.Context, string, *VMRecord) error { return nil },
@@ -127,7 +127,7 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 	}})
 
 	_, err := b.DirectRestoreSequence(ctx, id, DirectRestoreSpec{
-		VMCfg:     &types.VMConfig{Config: types.Config{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}},
+		VMCfg:     &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
 		SrcDir:    t.TempDir(),
 		Preflight: func(string, *VMRecord) error { return nil },
 		Kill:      func(context.Context, string, *VMRecord) error { return nil },
@@ -161,7 +161,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	spec := RestoreSpec{
-		VMCfg:     &types.VMConfig{Config: types.Config{CPU: 1, Memory: 512, Storage: 1024}},
+		VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
 		Snapshot:  tarWithFiles(t, "a", "b"),
 		Preflight: func(string, *VMRecord) error { return nil },
 		Kill:      func(context.Context, string, *VMRecord) error { return nil },
@@ -307,7 +307,7 @@ func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
 	seedStoppedVMWithDirs(t, b, id)
 
 	spec := RestoreSpec{
-		VMCfg:       &types.VMConfig{Config: types.Config{CPU: 1, Memory: 512, Storage: 1024}},
+		VMCfg:       &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
 		Snapshot:    tarWithFiles(t, "a"),
 		Preflight:   func(string, *VMRecord) error { return nil },
 		Kill:        func(context.Context, string, *VMRecord) error { return nil },

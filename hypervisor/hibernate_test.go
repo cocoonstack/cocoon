@@ -163,14 +163,12 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 
 func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {
 	return HibernateSpec{
-		SnapshotSpec: SnapshotSpec{
-			Pause:  func(*VMRecord, *http.Client) error { return nil },
-			Resume: func(*VMRecord, *http.Client) error { calls.resumed = true; return nil },
-			Capture: func(_ *VMRecord, _ *http.Client, tmpDir string) error {
-				return os.WriteFile(filepath.Join(tmpDir, "mem"), []byte("x"), 0o600)
-			},
-			BuildMeta: func(*VMRecord, string) (*SnapshotMeta, error) { return &SnapshotMeta{}, nil },
+		Pause:  func(*VMRecord, *http.Client) error { return nil },
+		Resume: func(*VMRecord, *http.Client) error { calls.resumed = true; return nil },
+		Capture: func(_ *VMRecord, _ *http.Client, tmpDir string) error {
+			return os.WriteFile(filepath.Join(tmpDir, "mem"), []byte("x"), 0o600)
 		},
+		BuildMeta: func(*VMRecord, string) (*SnapshotMeta, error) { return &SnapshotMeta{}, nil },
 		Terminate: func(*VMRecord, *http.Client, int) error { calls.terminated = true; return nil },
 	}
 }

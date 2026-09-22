@@ -156,7 +156,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 				src = io.LimitReader(gz, maxKernelBytes+1)
 			}
 		}
-		written, copyErr := io.Copy(f, src) //nolint:gosec
+		written, copyErr := io.Copy(f, src)
 		if gz != nil {
 			_ = gz.Close()
 		}

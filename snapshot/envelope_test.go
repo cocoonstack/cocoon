@@ -34,7 +34,7 @@ func TestVerifyCOWSizeRejectsAShortRawDisk(t *testing.T) {
 				t.Fatalf("close cow: %v", err)
 			}
 
-			err = VerifyCOWSize(dir, types.SnapshotConfig{Config: types.Config{Storage: tt.storage}})
+			err = VerifyCOWSize(dir, types.SnapshotConfig{Storage: tt.storage})
 
 			if tt.wantErr && err == nil {
 				t.Fatal("accepted a cow.raw the envelope says is bigger")
@@ -47,7 +47,7 @@ func TestVerifyCOWSizeRejectsAShortRawDisk(t *testing.T) {
 }
 
 func TestVerifyCOWSizeSkipsACloudimgOverlay(t *testing.T) {
-	if err := VerifyCOWSize(t.TempDir(), types.SnapshotConfig{Config: types.Config{Storage: 10 << 30}}); err != nil {
+	if err := VerifyCOWSize(t.TempDir(), types.SnapshotConfig{Storage: 10 << 30}); err != nil {
 		t.Fatalf("rejected a dir with no raw cow: %v", err)
 	}
 }

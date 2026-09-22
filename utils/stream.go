@@ -43,7 +43,7 @@ func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
 	go func() {
 		err := write(pw)
 		if err != nil {
-			pw.CloseWithError(err) //nolint:errcheck,gosec
+			pw.CloseWithError(err)
 		} else {
 			pw.Close() //nolint:errcheck,gosec
 		}

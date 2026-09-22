@@ -76,11 +76,11 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		record(op, loadJSON(id), nil)
 	}
 
-	cfgAlpha := &types.VMConfig{Name: "alpha", Config: types.Config{Image: "img:1", CPU: 2, Memory: 1 << 30, Storage: 10 << 30}}
+	cfgAlpha := &types.VMConfig{Name: "alpha", Image: "img:1", CPU: 2, Memory: 1 << 30, Storage: 10 << 30}
 	record("reserve-vm1", "", b.ReserveVM(ctx, "VM1", cfgAlpha, map[string]struct{}{"blobA": {}}, "/r/VM1", "/l/VM1"))
 	record("reserve-name-collision", "", b.ReserveVM(ctx, "VM2", cfgAlpha, nil, "/r/VM2", "/l/VM2"))
 	recordLoad("reserve-adopt", "VM1", b.ReserveVM(ctx, "VM1", cfgAlpha, map[string]struct{}{"blobA": {}, "blobB": {}}, "/r2/VM1", "/l2/VM1"))
-	cfgGamma := &types.VMConfig{Name: "gamma", Config: types.Config{CPU: 1}}
+	cfgGamma := &types.VMConfig{Name: "gamma", CPU: 1}
 	record("reserve-id-collision", "", b.ReserveVM(ctx, "VM1", cfgGamma, nil, "/r/VM1", "/l/VM1"))
 	info := &types.VM{ID: "VM1", Hypervisor: typ, State: types.VMStateStopped, Config: *cfgAlpha}
 	recordLoad("finalize", "VM1", b.FinalizeCreate(ctx, "VM1", info, nil, map[string]struct{}{"blobA": {}, "blobB": {}}))
@@ -95,7 +95,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	}))
 	recordLoad("mark-started", "VM1", b.BatchMarkStarted(ctx, []string{"VM1"}))
 	recordLoad("update-stopped", "VM1", b.UpdateStates(ctx, []string{"VM1"}, types.VMStateStopped))
-	cfgBeta := &types.VMConfig{Name: "beta", Config: types.Config{CPU: 1}}
+	cfgBeta := &types.VMConfig{Name: "beta", CPU: 1}
 	record("reserve-vm3", "", b.ReserveVM(ctx, "VM3", cfgBeta, nil, "/r/VM3", "/l/VM3"))
 	b.RollbackCreate(ctx, "VM3", "beta")
 	_, err = b.ResolveRef(ctx, "beta")
@@ -109,7 +109,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 
-	cfgDelta := &types.VMConfig{Name: "delta", Config: types.Config{CPU: 1}}
+	cfgDelta := &types.VMConfig{Name: "delta", CPU: 1}
 	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, t.TempDir(), t.TempDir()))
 	clock = clock.Add(CreatingStateGCGrace + time.Hour)
 	orch := gc.New()
@@ -118,7 +118,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.ResolveRef(ctx, "delta")
 	record("gc-pass-then-resolve", "", err)
 
-	cfgEps := &types.VMConfig{Name: "epsilon", Config: types.Config{Image: "img:2", CPU: 1, Memory: 1 << 29, Storage: 5 << 30}}
+	cfgEps := &types.VMConfig{Name: "epsilon", Image: "img:2", CPU: 1, Memory: 1 << 29, Storage: 5 << 30}
 	recordLoad("reserve-vm5", "VM5", b.ReserveVM(ctx, "VM5", cfgEps, map[string]struct{}{"blobC": {}}, "/r/VM5", "/l/VM5"))
 
 	if len(steps) != len(golden.Steps) {

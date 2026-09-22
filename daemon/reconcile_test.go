@@ -94,7 +94,7 @@ func TestReconcileLeavesInterruptedDeleteLockedByAnOwner(t *testing.T) {
 }
 
 func TestReconcileAdoptsLiveDriftedRecord(t *testing.T) {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 3}}
+	rec := &hypervisor.VMRecord{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 3}
 	f := newFake().put(rec)
 	f.live["vm1"] = utils.ProcRef{PID: 4242, Start: 99}
 	newTestDaemon(t, f).reconcile(t.Context())
@@ -108,7 +108,7 @@ func TestReconcileAdoptsLiveDriftedRecord(t *testing.T) {
 }
 
 func TestReconcileLeavesQuarantinedRecordAlone(t *testing.T) {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateError}, Quarantine: "partial restore"}
+	rec := &hypervisor.VMRecord{ID: "vm1", State: types.VMStateError, Quarantine: "partial restore"}
 	f := newFake().put(rec)
 	f.live["vm1"] = utils.ProcRef{PID: 4242, Start: 99}
 	newTestDaemon(t, f).reconcile(t.Context())
@@ -119,7 +119,7 @@ func TestReconcileLeavesQuarantinedRecordAlone(t *testing.T) {
 }
 
 func TestReconcileCollectsOwnerlessCreating(t *testing.T) {
-	f := newFake().put(&hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateCreating}})
+	f := newFake().put(&hypervisor.VMRecord{ID: "vm1", State: types.VMStateCreating})
 	newTestDaemon(t, f).reconcile(t.Context())
 
 	if len(f.collected) != 1 || f.collected[0] != "vm1" {
@@ -128,7 +128,7 @@ func TestReconcileCollectsOwnerlessCreating(t *testing.T) {
 }
 
 func TestReconcileLeavesInFlightCreating(t *testing.T) {
-	f := newFake().put(&hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateCreating}})
+	f := newFake().put(&hypervisor.VMRecord{ID: "vm1", State: types.VMStateCreating})
 	f.busy["vm1"] = struct{}{}
 	newTestDaemon(t, f).reconcile(t.Context())
 
@@ -138,7 +138,7 @@ func TestReconcileLeavesInFlightCreating(t *testing.T) {
 }
 
 func TestReconcileRetriesPendingQuiesce(t *testing.T) {
-	rec := &hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 2}}
+	rec := &hypervisor.VMRecord{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 2}
 	rec.QuiescePending = true
 	f := newFake().put(rec)
 	newTestDaemon(t, f).reconcile(t.Context())
@@ -152,7 +152,7 @@ func TestReconcileRetriesPendingQuiesce(t *testing.T) {
 }
 
 func TestReconcileLeavesSettledVMAlone(t *testing.T) {
-	f := newFake().put(&hypervisor.VMRecord{VM: types.VM{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 2}})
+	f := newFake().put(&hypervisor.VMRecord{ID: "vm1", State: types.VMStateStopped, TransitionGeneration: 2})
 	newTestDaemon(t, f).reconcile(t.Context())
 
 	if len(f.converged)+len(f.quiesced)+len(f.adopted) != 0 {
@@ -414,5 +414,5 @@ func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
 }
 
 func runningRec(id string, gen uint64) *hypervisor.VMRecord {
-	return &hypervisor.VMRecord{VM: types.VM{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}}
+	return &hypervisor.VMRecord{ID: id, State: types.VMStateRunning, TransitionGeneration: gen}
 }

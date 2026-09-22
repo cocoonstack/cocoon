@@ -217,11 +217,11 @@ func TestNeedsDeadConvergence(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"creating stays with the create path", &VMRecord{VM: types.VM{State: types.VMStateCreating}}, false},
-		{"running", &VMRecord{VM: types.VM{State: types.VMStateRunning}}, true},
-		{"stopped and settled", &VMRecord{VM: types.VM{State: types.VMStateStopped}}, false},
-		{"error with an open interval", &VMRecord{VM: types.VM{State: types.VMStateError, StartedAt: &started}}, true},
-		{"error already closed", &VMRecord{VM: types.VM{State: types.VMStateError, StartedAt: &started, StoppedAt: &started}}, false},
+		{"creating stays with the create path", &VMRecord{State: types.VMStateCreating}, false},
+		{"running", &VMRecord{State: types.VMStateRunning}, true},
+		{"stopped and settled", &VMRecord{State: types.VMStateStopped}, false},
+		{"error with an open interval", &VMRecord{State: types.VMStateError, StartedAt: &started}, true},
+		{"error already closed", &VMRecord{State: types.VMStateError, StartedAt: &started, StoppedAt: &started}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestNeedsDeadConvergence(t *testing.T) {
 func TestReconcileStaleCreateCollectsAndFreesTheName(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
-	cfg := &types.VMConfig{Name: "alpha", Config: types.Config{CPU: 1}}
+	cfg := &types.VMConfig{Name: "alpha", CPU: 1}
 	if err := b.ReserveVM(ctx, "vm1", cfg, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestReconcileStaleCreateCollectsAndFreesTheName(t *testing.T) {
 func TestReconcileStaleCreateRefusesInFlightCreate(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
-	cfg := &types.VMConfig{Name: "alpha", Config: types.Config{CPU: 1}}
+	cfg := &types.VMConfig{Name: "alpha", CPU: 1}
 	if err := b.ReserveVM(ctx, "vm1", cfg, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}

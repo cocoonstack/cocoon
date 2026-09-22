@@ -402,7 +402,7 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 	}
 	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
 		vmID:           "T",
-		vmCfg:          &types.VMConfig{Config: types.Config{CPU: 2}},
+		vmCfg:          &types.VMConfig{CPU: 2},
 		storageConfigs: storageConfigs,
 		dataDisks:      storageConfigs[2:],
 		snapshotCfg:    &chVMConfig{},

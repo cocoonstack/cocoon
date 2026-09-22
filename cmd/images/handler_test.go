@@ -7,13 +7,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestDetectReader(t *testing.T) {
-	qcow2Data := append(utils.Qcow2Magic, make([]byte, 100)...)
+	qcow2Data := slices.Concat(utils.Qcow2Magic, make([]byte, 100))
 	tarData := []byte("this is a tar-like stream of data, not really tar but not qcow2 either")
 
 	tests := []struct {

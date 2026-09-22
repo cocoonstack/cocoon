@@ -26,9 +26,9 @@ var validScope = regexp.MustCompile(`^[A-Za-z0-9]{2}$`)
 // NetNumQueues returns the virtio-net queue count for cpu; CH uses TX+RX pairs, so the result is always even (>= 2).
 func NetNumQueues(cpu int) int {
 	if cpu <= 1 {
-		return 2 //nolint:mnd
+		return 2
 	}
-	return cpu * 2 //nolint:mnd
+	return cpu * 2
 }
 
 func ResolveQueueSize(qs int) int {

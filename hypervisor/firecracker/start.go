@@ -42,7 +42,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string) error {
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
-	memMiB := int(rec.Config.Memory >> 20) //nolint:mnd
+	memMiB := int(rec.Config.Memory >> 20)
 	if err := putMachineConfig(ctx, hc, fcMachineConfig{
 		VCPUCount:  rec.Config.CPU,
 		MemSizeMiB: memMiB,
@@ -96,7 +96,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 
 	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
 		if err := putBalloon(ctx, hc, fcBalloon{
-			AmountMiB:         int(size >> 20), //nolint:mnd
+			AmountMiB:         int(size >> 20),
 			DeflateOnOOM:      true,
 			FreePageReporting: true,
 		}); err != nil {

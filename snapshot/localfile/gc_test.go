@@ -461,12 +461,10 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	stalePendingID := testID(t)
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
 		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
-			Snapshot: types.Snapshot{
-				SnapshotConfig: types.SnapshotConfig{ID: stalePendingID},
-				CreatedAt:      time.Now().Add(-48 * time.Hour),
-			},
-			Pending: true,
-			DataDir: filepath.Join(lf.conf.DataDir(), stalePendingID),
+			ID:        stalePendingID,
+			CreatedAt: time.Now().Add(-48 * time.Hour),
+			Pending:   true,
+			DataDir:   filepath.Join(lf.conf.DataDir(), stalePendingID),
 		}
 		return nil
 	}); err != nil {

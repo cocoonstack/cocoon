@@ -46,10 +46,10 @@ func newFAT12Builder(label string) *fat12Builder {
 		label:       label,
 		fat:         make([]byte, sectorsPerFAT*sectorSize),
 		rootDir:     make([]byte, rootEntryCount*dirEntrySize),
-		nextCluster: 2, //nolint:mnd
+		nextCluster: 2,
 	}
 	// clusters 0 and 1 are reserved by the FAT spec
-	setFATEntry(b.fat, 0, 0xFF8) //nolint:mnd
+	setFATEntry(b.fat, 0, 0xFF8)
 	setFATEntry(b.fat, 1, fatEntryEOC)
 	b.addVolumeLabel()
 	return b
@@ -59,7 +59,7 @@ func (b *fat12Builder) addVolumeLabel() {
 	name := padLabel(b.label)
 	off := b.rootUsed * dirEntrySize
 	copy(b.rootDir[off:], name[:])
-	b.rootDir[off+11] = 0x08 //nolint:mnd
+	b.rootDir[off+11] = 0x08
 	putTimestamps(b.rootDir[off:], time.Now())
 	b.rootUsed++
 }
@@ -69,7 +69,7 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 
 	var startCluster uint16
 	if numClusters > 0 {
-		if int(b.nextCluster)+numClusters > (totalSectors-firstDataSec)+2 { //nolint:mnd
+		if int(b.nextCluster)+numClusters > (totalSectors-firstDataSec)+2 {
 			return fmt.Errorf("fat12: not enough space for %s", name)
 		}
 		startCluster = b.nextCluster
@@ -104,10 +104,10 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 	if err != nil {
 		return err
 	}
-	b.rootDir[off+11] = 0x20 // archive //nolint:mnd
+	b.rootDir[off+11] = 0x20 // archive
 	putTimestamps(b.rootDir[off:], time.Now())
-	binary.LittleEndian.PutUint16(b.rootDir[off+26:], startCluster)         //nolint:mnd
-	binary.LittleEndian.PutUint32(b.rootDir[off+28:], uint32(len(content))) //nolint:mnd,gosec
+	binary.LittleEndian.PutUint16(b.rootDir[off+26:], startCluster)
+	binary.LittleEndian.PutUint32(b.rootDir[off+28:], uint32(len(content))) //nolint:gosec
 	return nil
 }
 
@@ -167,27 +167,27 @@ func (b *fat12Builder) makeBootSector() []byte {
 	boot := make([]byte, sectorSize)
 
 	// x86 jump + NOP
-	boot[0], boot[1], boot[2] = 0xEB, 0x3C, 0x90 //nolint:mnd
+	boot[0], boot[1], boot[2] = 0xEB, 0x3C, 0x90
 
-	copy(boot[3:], "COCOON  ")                                              //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[11:], sectorSize)                    //nolint:mnd
-	boot[13] = sectorsPerClus                                               //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[14:], reservedSec)                   //nolint:mnd
-	boot[16] = numFATs                                                      //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[17:], rootEntryCount)                //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[19:], totalSectors)                  //nolint:mnd
-	boot[21] = mediaDesc                                                    //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[22:], sectorsPerFAT)                 //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[24:], 32)                            // sectors per track //nolint:mnd
-	binary.LittleEndian.PutUint16(boot[26:], 64)                            // heads //nolint:mnd
-	boot[36] = 0x80                                                         // drive number //nolint:mnd
-	boot[38] = 0x29                                                         // extended boot signature //nolint:mnd
-	binary.LittleEndian.PutUint32(boot[39:], uint32(time.Now().UnixNano())) //nolint:mnd,gosec
+	copy(boot[3:], "COCOON  ")
+	binary.LittleEndian.PutUint16(boot[11:], sectorSize)
+	boot[13] = sectorsPerClus
+	binary.LittleEndian.PutUint16(boot[14:], reservedSec)
+	boot[16] = numFATs
+	binary.LittleEndian.PutUint16(boot[17:], rootEntryCount)
+	binary.LittleEndian.PutUint16(boot[19:], totalSectors)
+	boot[21] = mediaDesc
+	binary.LittleEndian.PutUint16(boot[22:], sectorsPerFAT)
+	binary.LittleEndian.PutUint16(boot[24:], 32)                            // sectors per track
+	binary.LittleEndian.PutUint16(boot[26:], 64)                            // heads
+	boot[36] = 0x80                                                         // drive number
+	boot[38] = 0x29                                                         // extended boot signature
+	binary.LittleEndian.PutUint32(boot[39:], uint32(time.Now().UnixNano())) //nolint:gosec
 
 	label := padLabel(b.label)
-	copy(boot[43:54], label[:])       //nolint:mnd
-	copy(boot[54:62], "FAT12   ")     //nolint:mnd
-	boot[510], boot[511] = 0x55, 0xAA //nolint:mnd
+	copy(boot[43:54], label[:])
+	copy(boot[54:62], "FAT12   ")
+	boot[510], boot[511] = 0x55, 0xAA
 	return boot
 }
 
@@ -205,22 +205,22 @@ func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 
 // setFATEntry writes a 12-bit value into the FAT at the given cluster index.
 func setFATEntry(fat []byte, cluster int, val uint16) {
-	off := cluster + cluster/2 //nolint:mnd
+	off := cluster + cluster/2
 	word := uint16(fat[off]) | uint16(fat[off+1])<<8
-	if cluster%2 == 0 { //nolint:mnd
-		word = (word & 0xF000) | (val & 0x0FFF) //nolint:mnd
+	if cluster%2 == 0 {
+		word = (word & 0xF000) | (val & 0x0FFF)
 	} else {
-		word = (word & 0x000F) | ((val & 0x0FFF) << 4) //nolint:mnd
+		word = (word & 0x000F) | ((val & 0x0FFF) << 4)
 	}
-	fat[off] = byte(word)        //nolint:gosec
-	fat[off+1] = byte(word >> 8) //nolint:mnd
+	fat[off] = byte(word) //nolint:gosec
+	fat[off+1] = byte(word >> 8)
 }
 
 // needsLFN reports whether name requires VFAT long-filename entries.
 func needsLFN(name string) bool {
 	upper := strings.ToUpper(name)
 	base, ext := splitName(upper)
-	return len(base) > 8 || len(ext) > 3 || name != upper || strings.Count(name, ".") > 1 //nolint:mnd
+	return len(base) > 8 || len(ext) > 3 || name != upper || strings.Count(name, ".") > 1
 }
 
 // blankSFN returns an 11-byte SFN buffer space-padded per the FAT 8.3 layout.
@@ -240,8 +240,8 @@ func splitName(upper string) (base, ext string) {
 func toShortName(name string) [11]byte {
 	result := blankSFN()
 	base, ext := splitName(strings.ToUpper(name))
-	copy(result[:8], base) //nolint:mnd
-	copy(result[8:], ext)  //nolint:mnd
+	copy(result[:8], base)
+	copy(result[8:], ext)
 	return result
 }
 
@@ -253,12 +253,12 @@ func generateShortName(name string, seq int) [11]byte {
 	base = strings.ReplaceAll(base, ".", "")
 
 	tail := fmt.Sprintf("~%d", seq)
-	maxBase := 8 - len(tail) //nolint:mnd
+	maxBase := 8 - len(tail)
 	if len(base) > maxBase {
 		base = base[:maxBase]
 	}
-	copy(result[:8], base+tail) //nolint:mnd
-	copy(result[8:], ext)       //nolint:mnd
+	copy(result[:8], base+tail)
+	copy(result[8:], ext)
 	return result
 }
 
@@ -266,7 +266,7 @@ func generateShortName(name string, seq int) [11]byte {
 func makeLFNEntries(name string, shortName [11]byte) [][]byte {
 	runes := utf16.Encode([]rune(name))
 	chksum := lfnChecksum(shortName)
-	numEntries := (len(runes) + 12) / 13 //nolint:mnd
+	numEntries := (len(runes) + 12) / 13
 
 	entries := make([][]byte, numEntries)
 	for i := range numEntries {
@@ -274,16 +274,16 @@ func makeLFNEntries(name string, shortName [11]byte) [][]byte {
 
 		seq := byte(i + 1)
 		if i == numEntries-1 {
-			seq |= 0x40 //nolint:mnd
+			seq |= 0x40
 		}
 		entry[0] = seq
-		entry[11] = 0x0F   // LFN attribute //nolint:mnd
-		entry[13] = chksum //nolint:mnd
+		entry[11] = 0x0F // LFN attribute
+		entry[13] = chksum
 
-		base := i * 13                               //nolint:mnd
-		putLFNChars(entry[1:11], runes, base, 5)     //nolint:mnd
-		putLFNChars(entry[14:26], runes, base+5, 6)  //nolint:mnd
-		putLFNChars(entry[28:32], runes, base+11, 2) //nolint:mnd
+		base := i * 13
+		putLFNChars(entry[1:11], runes, base, 5)
+		putLFNChars(entry[14:26], runes, base+5, 6)
+		putLFNChars(entry[28:32], runes, base+11, 2)
 
 		entries[i] = entry
 	}
@@ -296,14 +296,14 @@ func makeLFNEntries(name string, shortName [11]byte) [][]byte {
 func putLFNChars(dst []byte, runes []uint16, offset, count int) {
 	for j := range count {
 		idx := offset + j
-		pos := j * 2 //nolint:mnd
+		pos := j * 2
 		switch {
 		case idx < len(runes):
 			binary.LittleEndian.PutUint16(dst[pos:], runes[idx])
 		case idx == len(runes):
 			// null terminator
 		default:
-			binary.LittleEndian.PutUint16(dst[pos:], 0xFFFF) //nolint:mnd
+			binary.LittleEndian.PutUint16(dst[pos:], 0xFFFF)
 		}
 	}
 }
@@ -311,7 +311,7 @@ func putLFNChars(dst []byte, runes []uint16, offset, count int) {
 func lfnChecksum(shortName [11]byte) byte {
 	var sum byte
 	for _, b := range shortName {
-		sum = ((sum >> 1) | (sum << 7)) + b //nolint:mnd
+		sum = ((sum >> 1) | (sum << 7)) + b
 	}
 	return sum
 }
@@ -324,15 +324,15 @@ func padLabel(label string) [11]byte {
 
 func putTimestamps(entry []byte, t time.Time) {
 	date, tm := encodeFATDateTime(t)
-	binary.LittleEndian.PutUint16(entry[14:], tm)   //nolint:mnd
-	binary.LittleEndian.PutUint16(entry[16:], date) //nolint:mnd
-	binary.LittleEndian.PutUint16(entry[18:], date) // last access //nolint:mnd
-	binary.LittleEndian.PutUint16(entry[22:], tm)   //nolint:mnd
-	binary.LittleEndian.PutUint16(entry[24:], date) //nolint:mnd
+	binary.LittleEndian.PutUint16(entry[14:], tm)
+	binary.LittleEndian.PutUint16(entry[16:], date)
+	binary.LittleEndian.PutUint16(entry[18:], date) // last access
+	binary.LittleEndian.PutUint16(entry[22:], tm)
+	binary.LittleEndian.PutUint16(entry[24:], date)
 }
 
 func encodeFATDateTime(t time.Time) (date, fatTime uint16) {
-	date = uint16((t.Year()-1980)<<9) | uint16(int(t.Month())<<5) | uint16(t.Day()) //nolint:mnd,gosec
-	fatTime = uint16(t.Hour()<<11) | uint16(t.Minute()<<5) | uint16(t.Second()/2)   //nolint:mnd,gosec
+	date = uint16((t.Year()-1980)<<9) | uint16(int(t.Month())<<5) | uint16(t.Day()) //nolint:gosec
+	fatTime = uint16(t.Hour()<<11) | uint16(t.Minute()<<5) | uint16(t.Second()/2)   //nolint:gosec
 	return date, fatTime
 }

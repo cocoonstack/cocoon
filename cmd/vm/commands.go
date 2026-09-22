@@ -165,8 +165,8 @@ func Command(h Handler) *cobra.Command {
 		RunE:  h.Debug,
 	}
 	addVMFlags(debugCmd)
-	debugCmd.Flags().Int("max-cpu", 8, "max CPUs")           //nolint:mnd
-	debugCmd.Flags().Int("balloon", 0, "balloon size in MB") //nolint:mnd
+	debugCmd.Flags().Int("max-cpu", 8, "max CPUs")
+	debugCmd.Flags().Int("balloon", 0, "balloon size in MB")
 	debugCmd.Flags().String("cow", "", "COW disk path")
 	debugCmd.Flags().String("ch", "", "cloud-hypervisor binary path (default: ch_binary from the config)")
 
@@ -175,7 +175,7 @@ func Command(h Handler) *cobra.Command {
 		Short: "Show VM status; --watch for refresh loop, --event for streaming",
 		RunE:  h.Status,
 	}
-	statusCmd.Flags().IntP("interval", "n", 5, "poll interval in seconds (only with --watch or --event)") //nolint:mnd
+	statusCmd.Flags().IntP("interval", "n", 5, "poll interval in seconds (only with --watch or --event)")
 	statusCmd.Flags().BoolP("watch", "w", false, "refresh-loop mode (full-screen redraw each tick); omit for one-shot snapshot")
 	statusCmd.Flags().Bool("event", false, "event stream mode (append changes instead of refreshing); implies polling")
 	statusCmd.Flags().String("format", "", "output format: json (one-shot + event modes; --watch always renders a table)")
@@ -268,7 +268,7 @@ func buildFsCommand(h Handler) *cobra.Command {
 	attach.Flags().String("socket", "", "absolute path to a virtiofsd unix socket (required)")
 	attach.Flags().String("tag", "", "guest mount tag (required; also detach key)")
 	attach.Flags().Int("num-queues", 0, "request queues (0 = default 1)")
-	attach.Flags().Int("queue-size", 0, "queue depth (0 = default 1024)") //nolint:mnd
+	attach.Flags().Int("queue-size", 0, "queue depth (0 = default 1024)")
 	_ = attach.MarkFlagRequired("socket")
 	_ = attach.MarkFlagRequired("tag")
 	cliutil.AddOutputFlag(attach)
@@ -321,12 +321,12 @@ func buildDeviceCommand(h Handler) *cobra.Command {
 func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("fc", false, "use Firecracker backend instead of Cloud Hypervisor (OCI images only)")
 	cmd.Flags().String("name", "", "VM name")
-	cmd.Flags().Int("cpu", 2, "boot CPUs")                //nolint:mnd
-	cmd.Flags().String("memory", "1G", "memory size")     //nolint:mnd
-	cmd.Flags().String("storage", "10G", "COW disk size") //nolint:mnd
+	cmd.Flags().Int("cpu", 2, "boot CPUs")
+	cmd.Flags().String("memory", "1G", "memory size")
+	cmd.Flags().String("storage", "10G", "COW disk size")
 	cmd.Flags().Int("nics", 1, "number of network interfaces (0 = no network); multiple NICs with auto IP config only works for cloudimg; OCI images auto-configure only the last NIC, others require manual setup inside the guest")
-	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; tradeoff: larger improves download throughput, smaller improves RPC latency)") //nolint:mnd
-	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")                                                //nolint:mnd
+	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; tradeoff: larger improves download throughput, smaller improves RPC latency)")
+	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count)")
 	addCPUBandwidthFlags(cmd)
 	cmd.Flags().String("cpuset-cpus", "", "pin the VM to host cpus (kernel cpu-list, e.g. 0-3, or auto = the least-loaded cache domain at launch); non-work-conserving, empty = anywhere inside the cgroup_cpus fence")
@@ -349,8 +349,8 @@ func addVMFlags(cmd *cobra.Command) {
 func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
 	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot; on Firecracker only for --pci snapshots)")
-	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")       //nolint:mnd
-	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)") //nolint:mnd
+	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")
+	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)")
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
 	addCPUBandwidthFlags(cmd)
 	cmd.Flags().String("cpuset-cpus", "", "pin the clone to host cpus (kernel cpu-list or auto; empty = anywhere inside the cgroup_cpus fence)")

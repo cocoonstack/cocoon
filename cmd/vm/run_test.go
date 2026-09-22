@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidateBackendFlagsRejectsPCIOnCloudHypervisor(t *testing.T) {
-	vmCfg := &types.VMConfig{Config: types.Config{PCI: true}}
+	vmCfg := &types.VMConfig{PCI: true}
 	if err := validateBackendFlags(&config.Config{}, vmCfg); err == nil || !strings.Contains(err.Error(), "--pci") {
 		t.Fatalf("err = %v, want a --pci rejection", err)
 	}
@@ -19,7 +19,7 @@ func TestValidateBackendFlagsRejectsPCIOnCloudHypervisor(t *testing.T) {
 }
 
 func TestCloneNICPlan(t *testing.T) {
-	pci := types.SnapshotConfig{Config: types.Config{PCI: true}, NICs: 1}
+	pci := types.SnapshotConfig{PCI: true, NICs: 1}
 	mmio := types.SnapshotConfig{NICs: 1}
 	tests := []struct {
 		name       string

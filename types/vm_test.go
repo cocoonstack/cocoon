@@ -282,11 +282,9 @@ func TestVMResolvedNetNilReceiver(t *testing.T) {
 
 func validConfig() VMConfig {
 	return VMConfig{
-		Name: "test-vm",
-		Config: Config{
-			CPU:     2,
-			Memory:  1 << 30,
-			Storage: 20 << 30,
-		},
+		Name:    "test-vm",
+		CPU:     2,
+		Memory:  1 << 30,
+		Storage: 20 << 30,
 	}
 }

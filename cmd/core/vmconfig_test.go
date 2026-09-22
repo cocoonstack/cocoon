@@ -46,10 +46,10 @@ func TestRestoreVMConfigKeepsHostCPUPolicy(t *testing.T) {
 		Name:   "v",
 		Config: types.Config{CPU: 1, CPUWeight: 25, CPUQuotaUs: 150000, CPUPeriodUs: 50000, CPUBurstUs: 10000, Network: "keepnet"},
 	}}
-	snapCfg := types.SnapshotConfig{Config: types.Config{
+	snapCfg := types.SnapshotConfig{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
 		CPUWeight: 9999, CPUQuotaUs: 999999, CPUPeriodUs: 100000, CPUBurstUs: 999999,
-	}}
+	}
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("restore-mode", "", "")
@@ -77,7 +77,7 @@ func TestRestoreVMConfigRejectsKnobsUnfitForSnapshotCPU(t *testing.T) {
 		Name:   "v",
 		Config: types.Config{CPU: 2, CPUBurstUs: 150000},
 	}}
-	snapCfg := types.SnapshotConfig{Config: types.Config{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}}
+	snapCfg := types.SnapshotConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("restore-mode", "", "")
@@ -87,11 +87,11 @@ func TestRestoreVMConfigRejectsKnobsUnfitForSnapshotCPU(t *testing.T) {
 }
 
 func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
-	snapCfg := types.SnapshotConfig{Config: types.Config{
+	snapCfg := types.SnapshotConfig{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
 		CPUWeight: 40, CPUQuotaUs: 200000, CPUBurstUs: 50000,
 		NoWatchdog: true, NoBalloon: true, PCI: true,
-	}}
+	}
 
 	tests := []struct {
 		name           string

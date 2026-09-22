@@ -216,7 +216,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 
 	var r io.Reader
 	if len(args) > 0 {
-		f, openErr := os.Open(args[0]) //nolint:gosec
+		f, openErr := os.Open(args[0])
 		if openErr != nil {
 			return fmt.Errorf("open archive: %w", openErr)
 		}

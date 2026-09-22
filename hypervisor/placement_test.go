@@ -47,12 +47,12 @@ func TestPlaceRecord(t *testing.T) {
 			b.PinsQueues = !tt.noQueuePins
 			ctx := t.Context()
 			if err := b.update(ctx, func(tx *vmTx) error {
-				if err := tx.Put("self", &VMRecord{VM: types.VM{ID: "self", State: tt.selfState, QueueCPUs: tt.selfQueueCPUs}}); err != nil {
+				if err := tx.Put("self", &VMRecord{ID: "self", State: tt.selfState, QueueCPUs: tt.selfQueueCPUs}); err != nil {
 					return err
 				}
 				for i, o := range tt.others {
 					id := string(rune('a' + i))
-					if err := tx.Put(id, &VMRecord{VM: types.VM{ID: id, State: o.state, CPUSet: o.cpuset, QueueCPUs: o.queueCPUs}}); err != nil {
+					if err := tx.Put(id, &VMRecord{ID: id, State: o.state, CPUSet: o.cpuset, QueueCPUs: o.queueCPUs}); err != nil {
 						return err
 					}
 				}
@@ -106,12 +106,12 @@ func TestPlaceRecordCountsPeerNamespaces(t *testing.T) {
 	b := &Backend{Typ: "own", NS: own, PeerNS: []string{peer}, Conf: stubBackendConfig{rootDir: dir}, Meta: store, PinsQueues: true}
 	peerBackend := &Backend{Typ: "peer", NS: peer, Meta: store}
 	if err := peerBackend.update(ctx, func(tx *vmTx) error {
-		return tx.Put("p", &VMRecord{VM: types.VM{ID: "p", State: types.VMStateRunning, CPUSet: "0-3"}})
+		return tx.Put("p", &VMRecord{ID: "p", State: types.VMStateRunning, CPUSet: "0-3"})
 	}); err != nil {
 		t.Fatalf("seed peer: %v", err)
 	}
 	if err := b.update(ctx, func(tx *vmTx) error {
-		return tx.Put("self", &VMRecord{VM: types.VM{ID: "self"}})
+		return tx.Put("self", &VMRecord{ID: "self"})
 	}); err != nil {
 		t.Fatalf("seed self: %v", err)
 	}
@@ -147,13 +147,13 @@ func TestPlacementRowFollowsTheRecord(t *testing.T) {
 					t.Fatalf("put: %v", err)
 				}
 			}
-			put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"}})
-			put(&VMRecord{VM: types.VM{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"}})
-			put(&VMRecord{VM: types.VM{ID: "n", State: types.VMStateRunning}})
+			put(&VMRecord{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"})
+			put(&VMRecord{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"})
+			put(&VMRecord{ID: "n", State: types.VMStateRunning})
 			if got := row(); got != "a=0-3;f=4-7;" {
 				t.Errorf("rows after placements = %q, want a=0-3;f=4-7;", got)
 			}
-			put(&VMRecord{VM: types.VM{ID: "a", State: types.VMStateStopped}})
+			put(&VMRecord{ID: "a", State: types.VMStateStopped})
 			if err := b.update(ctx, func(tx *vmTx) error { return tx.Del("f") }); err != nil {
 				t.Fatalf("del: %v", err)
 			}
@@ -171,7 +171,7 @@ func TestPlaceRecordConcurrentLaunchesNeverShareACPU(t *testing.T) {
 	ids := []string{"a", "b", "c", "d"}
 	if err := b.update(ctx, func(tx *vmTx) error {
 		for _, id := range ids {
-			if err := tx.Put(id, &VMRecord{VM: types.VM{ID: id, State: types.VMStateStopped}}); err != nil {
+			if err := tx.Put(id, &VMRecord{ID: id, State: types.VMStateStopped}); err != nil {
 				return err
 			}
 		}
@@ -210,7 +210,7 @@ func TestLeavingRunningClearsPlacement(t *testing.T) {
 	seed := func(id string, state types.VMState) {
 		t.Helper()
 		if err := b.update(ctx, func(tx *vmTx) error {
-			return tx.Put(id, &VMRecord{VM: types.VM{ID: id, State: state, CPUSet: "0-3", QueueCPUs: "0-3"}})
+			return tx.Put(id, &VMRecord{ID: id, State: state, CPUSet: "0-3", QueueCPUs: "0-3"})
 		}); err != nil {
 			t.Fatalf("seed %s: %v", id, err)
 		}
