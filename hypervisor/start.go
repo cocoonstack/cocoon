@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/projecteru2/core/log"
@@ -110,8 +111,9 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, runtimeFiles []st
 	return &placed, nil
 }
 
-// LaunchVMProcess starts spec.Cmd and waits for the API socket; any post-Start error kills the process + removes the PID file.
-func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int, err error) {
+// LaunchVMProcess starts spec.Cmd and waits for the API socket; exited closes once the VMM is reaped, and any post-Start error kills the process + removes the PID file.
+func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int, exited <-chan struct{}, err error) {
+	reaped := make(chan struct{})
 	started := false
 	pidWritten := false
 	binaryName := b.Conf.BinaryName()
@@ -123,7 +125,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		}
 		if started {
 			_ = spec.Cmd.Process.Kill()
-			_ = spec.Cmd.Wait()
+			<-reaped
 		}
 		if pidWritten {
 			_ = os.Remove(pidPath)
@@ -137,7 +139,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	knobs.CPUSet = spec.Rec.CPUSet
 	scope, err := cgroup.Prepare(b.Conf.CgroupParentDir(), b.Conf.CgroupCPUFence(), spec.Rec.ID, knobs, spec.DeferCPUQuota)
 	if err != nil {
-		return 0, fmt.Errorf("prepare cgroup scope: %w", err)
+		return 0, nil, fmt.Errorf("prepare cgroup scope: %w", err)
 	}
 	defer scope.Close() //nolint:errcheck
 	setCmdCgroupFD(spec.Cmd, scope)
@@ -145,27 +147,29 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	if spec.NetnsPath != "" {
 		restore, nsErr := EnterNetns(spec.NetnsPath)
 		if nsErr != nil {
-			return 0, fmt.Errorf("enter netns: %w", nsErr)
+			return 0, nil, fmt.Errorf("enter netns: %w", nsErr)
 		}
 		defer restore()
 	}
 
 	raiseVMMRlimits(ctx)
 	if err = spec.Cmd.Start(); err != nil {
-		return 0, fmt.Errorf("exec %s: %w", binaryName, err)
+		return 0, nil, fmt.Errorf("exec %s: %w", binaryName, err)
 	}
 	started = true
+	// Reap before the socket wait: an unreaped zombie answers kill(0), so a VMM that died on bad args would wait out the full timeout.
+	reapProcess(spec.Cmd, reaped)
 	pid = spec.Cmd.Process.Pid
 
 	if err = utils.WritePIDFile(pidPath, pid); err != nil {
-		return 0, fmt.Errorf("write PID file: %w", err)
+		return 0, nil, fmt.Errorf("write PID file: %w", err)
 	}
 	pidWritten = true
 
 	if err = WaitForSocket(ctx, sockPath, pid, b.Conf.SocketWaitTimeout(), binaryName); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return pid, nil
+	return pid, reaped, nil
 }
 
 // ArmCPUQuota sets the finite quota on a scope launched with DeferCPUQuota; call after memory load, before resume.
@@ -179,6 +183,14 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+}
+
+// reapProcess waits cmd in the background and closes done, so the child never lingers as a zombie.
+func reapProcess(cmd *exec.Cmd, done chan<- struct{}) {
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
 }
 
 func raiseVMMRlimits(ctx context.Context) {

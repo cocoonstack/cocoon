@@ -147,7 +147,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
-	pid, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
+	pid, exited, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           fcCmd,
 		NetnsPath:     netnsPath,
 		OnFail:        func() { _ = master.Close() },
@@ -167,7 +167,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		_ = master.Close()
 		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
 		_ = fcCmd.Process.Kill()
-		_ = fcCmd.Wait()
+		<-exited
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
 		// the socket file outlives a failed relay and would make inspect report a console nobody serves
@@ -175,13 +175,13 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
 	}
 
-	go func() {
-		_ = fcCmd.Wait()
-		// A failed relay kept master open to preserve ttyS0; close it now that FC exited or the fd leaks forever.
-		if relayErr != nil {
+	if relayErr != nil {
+		// A failed relay kept master open to preserve ttyS0; close it once FC exits or the fd leaks forever.
+		go func() {
+			<-exited
 			_ = master.Close()
-		}
-	}()
+		}()
+	}
 	return pid, leaseControl, nil
 }
 

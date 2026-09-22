@@ -61,17 +61,11 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 		cmd.Stderr = logFile
 	}
 
-	pid, err := ch.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
+	pid, _, err := ch.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           cmd,
 		NetnsPath:     netnsPath,
 		Rec:           rec,
 		DeferCPUQuota: deferQuota,
 	})
-	if err != nil {
-		return 0, err
-	}
-
-	// Daemon mode: parent must wait() or zombie blocks IsProcessAlive on stop/delete.
-	go cmd.Wait() //nolint:errcheck
-	return pid, nil
+	return pid, err
 }
