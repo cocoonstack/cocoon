@@ -267,8 +267,9 @@ func listAndFilter(ctx context.Context, hypers []hypervisor.Hypervisor, filters 
 		log.WithFunc("cmd.vm.listAndFilter").Warnf(ctx, "list: %v", err)
 		return nil
 	}
+	vms = applyFilters(vms, filters)
 	sortVMs(vms)
-	return applyFilters(vms, filters)
+	return vms
 }
 
 func applyFilters(vms []*types.VM, filters []string) []*types.VM {

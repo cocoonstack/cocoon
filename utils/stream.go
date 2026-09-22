@@ -9,30 +9,13 @@ import (
 	"sync"
 )
 
-// PipeStreamReader wraps a PipeReader with background error collection and cleanup.
-type PipeStreamReader struct {
+// pipeStreamReader wraps a PipeReader with background error collection and cleanup.
+type pipeStreamReader struct {
 	*io.PipeReader
 	close func() error
 }
 
-// NewPipeStreamReader pairs pr with the producer's done channel so Close surfaces background errors and runs cleanup exactly once.
-func NewPipeStreamReader(pr *io.PipeReader, done <-chan error, cleanup func()) *PipeStreamReader {
-	return &PipeStreamReader{
-		PipeReader: pr,
-		close: sync.OnceValue(func() error {
-			err := pr.Close()
-			if streamErr := <-done; streamErr != nil {
-				err = streamErr
-			}
-			if cleanup != nil {
-				cleanup()
-			}
-			return err
-		}),
-	}
-}
-
-func (r *PipeStreamReader) Close() error {
+func (r *pipeStreamReader) Close() error {
 	return r.close()
 }
 
@@ -49,7 +32,19 @@ func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
 		}
 		done <- err
 	}()
-	return NewPipeStreamReader(pr, done, cleanup)
+	return &pipeStreamReader{
+		PipeReader: pr,
+		close: sync.OnceValue(func() error {
+			err := pr.Close()
+			if streamErr := <-done; streamErr != nil {
+				err = streamErr
+			}
+			if cleanup != nil {
+				cleanup()
+			}
+			return err
+		}),
+	}
 }
 
 // TarDirStream streams a directory as a tar archive via a pipe.
