@@ -2,10 +2,6 @@ package vmlock
 
 import (
 	"context"
-	"errors"
-	"io/fs"
-	"os"
-	"strings"
 
 	"github.com/projecteru2/core/log"
 
@@ -23,20 +19,8 @@ func GCModule(rootDir string) gc.Module[lockSnapshot] {
 	return gc.Module[lockSnapshot]{
 		Name: "vmlock",
 		ReadDB: func(context.Context) (lockSnapshot, error) {
-			entries, err := os.ReadDir(lockDir(rootDir))
-			if err != nil {
-				if errors.Is(err, fs.ErrNotExist) {
-					return lockSnapshot{}, nil
-				}
-				return lockSnapshot{}, err
-			}
-			var snap lockSnapshot
-			for _, e := range entries {
-				if name, ok := strings.CutSuffix(e.Name(), lockSuffix); ok && e.Type().IsRegular() {
-					snap.ids = append(snap.ids, name)
-				}
-			}
-			return snap, nil
+			ids, err := utils.ScanFileStems(lockDir(rootDir), lockSuffix)
+			return lockSnapshot{ids: ids}, err
 		},
 		Resolve: func(_ context.Context, snap lockSnapshot, others map[string]any) []string {
 			return utils.FilterUnreferenced(snap.ids, gc.Collect(others, gc.VMIDs))
