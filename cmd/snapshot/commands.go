@@ -10,6 +10,8 @@ func Command(h Handler) *cobra.Command {
 	snapshotCmd := &cobra.Command{
 		Use:   "snapshot",
 		Short: "Manage VM snapshots",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 
 	saveCmd := &cobra.Command{

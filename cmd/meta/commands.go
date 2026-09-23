@@ -2,12 +2,16 @@ package meta
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 )
 
 func Command(h Handler) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "meta",
 		Short: "Meta store operations",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 	cmd.AddCommand(
 		&cobra.Command{

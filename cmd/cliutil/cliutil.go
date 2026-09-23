@@ -28,6 +28,8 @@ func CommandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
+func ShowHelp(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+
 func AddFormatFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("format", "o", FormatTable, `output format: "table" or "json"`)
 }
