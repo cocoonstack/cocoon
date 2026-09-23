@@ -8,7 +8,7 @@
 # Usage:
 #   ./doctor/vm-inspect.sh <VM_ID_or_NAME>
 #
-# Requirements: jq, ip, tc, nsenter (standard on any Linux with iproute2).
+# Requirements: cocoon, jq, ip, tc, nsenter (standard on any Linux with iproute2).
 
 set -uo pipefail
 
@@ -18,7 +18,7 @@ set -uo pipefail
 COCOON_ROOT_DIR="${COCOON_ROOT_DIR:-/var/lib/cocoon}"
 COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 
-VM_DB="${COCOON_ROOT_DIR}/cloudhypervisor/db/vms.json"
+COCOON_BIN="${COCOON_BIN:-cocoon}"
 CH_RUN_DIR="${COCOON_RUN_DIR}/cloudhypervisor"
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ per-NIC network chain (veth ↔ tap, MAC, IP, TC filters, queue counts),
 and validates configuration consistency.
 
 Environment:
-  COCOON_ROOT_DIR   (default: /var/lib/cocoon)
+  COCOON_BIN        (default: cocoon)
   COCOON_RUN_DIR    (default: /var/lib/cocoon/run)
 EOF
     exit 0
@@ -58,51 +58,24 @@ REF="$1"
 # ---------------------------------------------------------------------------
 # Dependency check
 # ---------------------------------------------------------------------------
-for cmd in jq ip tc curl; do
+for cmd in jq ip tc curl "$COCOON_BIN"; do
     command -v "$cmd" &>/dev/null || die "$cmd not found in PATH"
 done
 
 # ---------------------------------------------------------------------------
-# 1. Resolve VM ID from DB
+# 1. VM record
 # ---------------------------------------------------------------------------
 header "VM Record"
 
-[ -f "$VM_DB" ] || die "VM database not found: $VM_DB"
-
-# Try exact ID match first, then name lookup, then prefix match.
-VM_ID=""
-if jq -e ".vms[\"$REF\"]" "$VM_DB" &>/dev/null; then
-    VM_ID="$REF"
-else
-    # Name lookup
-    VM_ID=$(jq -r ".names[\"$REF\"] // empty" "$VM_DB")
-    if [ -z "$VM_ID" ]; then
-        # Prefix match (>= 3 chars)
-        if [ ${#REF} -ge 3 ]; then
-            VM_ID=$(jq -r ".vms | keys[] | select(startswith(\"$REF\"))" "$VM_DB" | head -1)
-        fi
-    fi
-fi
-
-[ -n "$VM_ID" ] || die "VM '$REF' not found in $VM_DB"
-
-VM_REC=$(jq ".vms[\"$VM_ID\"]" "$VM_DB")
+VM_REC=$("$COCOON_BIN" vm inspect "$REF" 2>/dev/null) || die "VM '$REF' not found ($COCOON_BIN vm inspect failed)"
+VM_ID=$(echo "$VM_REC" | jq -r '.id')
 VM_NAME=$(echo "$VM_REC" | jq -r '.config.name // "<unnamed>"')
 VM_NETWORK=$(echo "$VM_REC" | jq -r '.config.network // empty')
 VM_STATE=$(echo "$VM_REC" | jq -r '.state // "unknown"')
-RUN_DIR=$(echo "$VM_REC" | jq -r '.run_dir // empty')
-LOG_DIR=$(echo "$VM_REC" | jq -r '.log_dir // empty')
-
-# Fallback run dir
-RUN_DIR="${RUN_DIR:-${CH_RUN_DIR}/${VM_ID}}"
-SOCK_PATH="${RUN_DIR}/api.sock"
-
-# PID is not stored in DB — read from the PID file at runtime (same as cocoon does).
-PID_FILE="${RUN_DIR}/ch.pid"
-VM_PID=0
-if [ -f "$PID_FILE" ]; then
-    VM_PID=$(tr -d '[:space:]' < "$PID_FILE" 2>/dev/null || echo 0)
-fi
+VM_PID=$(echo "$VM_REC" | jq -r '.pid // 0')
+CONSOLE_PATH=$(echo "$VM_REC" | jq -r '.console_path // empty')
+RUN_DIR="${CH_RUN_DIR}/${VM_ID}"
+SOCK_PATH=$(echo "$VM_REC" | jq -r ".socket_path // \"${RUN_DIR}/api.sock\"")
 
 kv "ID" "$VM_ID"
 kv "Name" "$VM_NAME"
@@ -110,7 +83,6 @@ kv "Network" "${VM_NETWORK:-<default>}"
 kv "State" "$VM_STATE"
 kv "PID" "$VM_PID"
 kv "RunDir" "$RUN_DIR"
-kv "LogDir" "${LOG_DIR:-<not set>}"
 
 # ---------------------------------------------------------------------------
 # 2. Process liveness
@@ -133,45 +105,17 @@ fi
 # ---------------------------------------------------------------------------
 header "Console / PTY"
 
-CONSOLE_SOCK="${RUN_DIR}/console.sock"
-
-# Check if boot is direct (OCI) or UEFI (cloudimg)
-BOOT_CONFIG=$(echo "$VM_REC" | jq '.boot_config // empty')
-KERNEL_PATH=$(echo "$VM_REC" | jq -r '.boot_config.kernel_path // empty')
-
-if [ -n "$KERNEL_PATH" ]; then
-    kv "Boot mode" "direct kernel (OCI)"
-    # Direct boot uses PTY allocated by CH — query vm.info
-    if [ -S "$SOCK_PATH" ]; then
-        VM_INFO=$(curl -s --unix-socket "$SOCK_PATH" http://localhost/api/v1/vm.info 2>/dev/null || echo "{}")
-        CONSOLE_MODE=$(echo "$VM_INFO" | jq -r '.config.console.mode // "unknown"')
-        CONSOLE_FILE=$(echo "$VM_INFO" | jq -r '.config.console.file // empty')
-        SERIAL_MODE=$(echo "$VM_INFO" | jq -r '.config.serial.mode // "unknown"')
-        SERIAL_FILE=$(echo "$VM_INFO" | jq -r '.config.serial.file // empty')
-
-        kv "Console mode" "$CONSOLE_MODE"
-        [ -n "$CONSOLE_FILE" ] && kv "Console PTY" "$CONSOLE_FILE"
-        kv "Serial mode" "$SERIAL_MODE"
-        [ -n "$SERIAL_FILE" ] && kv "Serial PTY" "$SERIAL_FILE"
-
-        if [ -n "$CONSOLE_FILE" ] && [ -e "$CONSOLE_FILE" ]; then
-            pass "Console PTY exists: $CONSOLE_FILE"
-        elif [ -n "$CONSOLE_FILE" ]; then
-            fail "Console PTY missing: $CONSOLE_FILE"
-        fi
+if [ -n "$CONSOLE_PATH" ]; then
+    kv "Console" "$CONSOLE_PATH"
+    if [ -e "$CONSOLE_PATH" ]; then
+        pass "Console endpoint exists"
+    elif [ "$VM_STATE" = "running" ]; then
+        fail "Console endpoint missing but VM is running"
     else
-        warn "API socket not available: $SOCK_PATH"
+        info "Console endpoint absent (VM not running)"
     fi
 else
-    kv "Boot mode" "UEFI firmware (cloudimg)"
-    kv "Console socket" "$CONSOLE_SOCK"
-    if [ -S "$CONSOLE_SOCK" ]; then
-        pass "Console socket exists"
-    elif [ "$VM_STATE" = "running" ]; then
-        fail "Console socket missing but VM is running"
-    else
-        info "Console socket absent (VM not running)"
-    fi
+    info "no console path recorded (VM not running)"
 fi
 
 # ---------------------------------------------------------------------------

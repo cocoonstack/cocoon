@@ -13,6 +13,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 COCOON_ROOT_DIR="${COCOON_ROOT_DIR:-/var/lib/cocoon}"
 COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
+COCOON_BIN="${COCOON_BIN:-cocoon}"
 COCOON_LOG_DIR="${COCOON_LOG_DIR:-/var/log/cocoon}"
 COCOON_CNI_CONF_DIR="${COCOON_CNI_CONF_DIR:-/etc/cni/net.d}"
 COCOON_CNI_BIN_DIR="${COCOON_CNI_BIN_DIR:-/opt/cni/bin}"
@@ -76,6 +77,7 @@ Environment variables:
   FW_VERSION        upstream firmware version, aarch64 only    (default: ${FW_VERSION})
   CNI_VERSION       CNI plugins version                        (default: ${CNI_VERSION})
   COCOON_ROOT_DIR / COCOON_RUN_DIR / COCOON_LOG_DIR
+  COCOON_BIN        cocoon binary used for store inspection (default: cocoon)
   COCOON_CNI_CONF_DIR / COCOON_CNI_BIN_DIR
   COCOON_META_BACKEND Metadata engine       (default: auto — existing store wins, fresh roots get sqlite)
 EOF
@@ -461,66 +463,15 @@ fi
 # ---------------------------------------------------------------------------
 header "Snapshot health"
 
-SNAP_DB="${COCOON_ROOT_DIR}/snapshot/db/snapshots.json"
-SNAP_DATA_DIR="${COCOON_ROOT_DIR}/snapshot/localfile"
-
-if [ -f "$SNAP_DB" ]; then
-    if command -v jq &>/dev/null; then
-        SNAP_COUNT=$(jq '.snapshots | length' "$SNAP_DB" 2>/dev/null || echo "?")
-        pass "snapshot DB readable ($SNAP_COUNT snapshot(s))"
-
-        # Check for stale pending snapshots (pending=true, older than 1 hour).
-        STALE=$(jq -r '
-            .snapshots | to_entries[]
-            | select(.value.pending == true)
-            | select((.value.created_at // "1970-01-01T00:00:00Z") | fromdateiso8601 < (now - 3600))
-            | .key' "$SNAP_DB" 2>/dev/null || true)
-        if [ -n "$STALE" ]; then
-            for sid in $STALE; do
-                warn "stale pending snapshot: $sid (pending > 1 hour, will be GC'd after 24h)"
-            done
-        else
-            pass "no stale pending snapshots"
-        fi
-
-        # Check for orphan data dirs (dirs in localfile/ with no matching DB record).
-        if [ -d "$SNAP_DATA_DIR" ]; then
-            ORPHANS=""
-            for dir in "$SNAP_DATA_DIR"/*/; do
-                [ -d "$dir" ] || continue
-                dir_id=$(basename "$dir")
-                if ! jq -e ".snapshots[\"$dir_id\"]" "$SNAP_DB" &>/dev/null; then
-                    ORPHANS="${ORPHANS} ${dir_id}"
-                fi
-            done
-            if [ -n "$ORPHANS" ]; then
-                for oid in $ORPHANS; do
-                    warn "orphan snapshot data dir: $oid (no DB record, run 'cocoon gc' to clean)"
-                done
-            else
-                pass "no orphan snapshot data dirs"
-            fi
-        fi
-
-        # Check for DB records whose data dir is missing.
-        MISSING_DATA=$(jq -r '
-            .snapshots | to_entries[]
-            | select(.value.pending != true)
-            | select(.value.data_dir != null and .value.data_dir != "")
-            | select(.value.data_dir)
-            | "\(.key) \(.value.data_dir)"' "$SNAP_DB" 2>/dev/null || true)
-        if [ -n "$MISSING_DATA" ]; then
-            while IFS=' ' read -r sid sdir; do
-                if [ ! -d "$sdir" ]; then
-                    fail "snapshot $sid: data dir missing: $sdir"
-                fi
-            done <<< "$MISSING_DATA"
-        fi
+if command -v "$COCOON_BIN" &>/dev/null && command -v jq &>/dev/null; then
+    if SNAP_JSON=$("$COCOON_BIN" snapshot list --format json 2>/dev/null); then
+        SNAP_COUNT=$(echo "$SNAP_JSON" | jq 'length' 2>/dev/null || echo 0)
+        pass "snapshot store readable ($SNAP_COUNT snapshot(s))"
     else
-        warn "jq not found — skipping snapshot DB inspection"
+        fail "$COCOON_BIN snapshot list failed (store unreadable)"
     fi
 else
-    info "no snapshot DB yet (no snapshots created)"
+    warn "$COCOON_BIN or jq not found — skipping snapshot inspection"
 fi
 
 # ---------------------------------------------------------------------------
