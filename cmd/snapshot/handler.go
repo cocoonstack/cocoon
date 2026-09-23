@@ -49,7 +49,8 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	if _, err := cliutil.Format(cmd); err != nil {
+	format, err := cliutil.Format(cmd)
+	if err != nil {
 		return err
 	}
 	ctx, conf := h.Init(cmd)
@@ -67,8 +68,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		}
 		filterIDs = vm.SnapshotIDs
 		if len(filterIDs) == 0 {
-			fmt.Println("No snapshots found for VM.")
-			return nil
+			return printNoSnapshots(format, "No snapshots found for VM.")
 		}
 	}
 
@@ -85,8 +85,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(snapshots) == 0 {
-		fmt.Println("No snapshots found.")
-		return nil
+		return printNoSnapshots(format, "No snapshots found.")
 	}
 
 	slices.SortFunc(snapshots, func(a, b *types.Snapshot) int { return a.CreatedAt.Compare(b.CreatedAt) })
@@ -253,5 +252,13 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	if len(deleted) == 0 {
 		logger.Info(ctx, "no snapshots deleted")
 	}
+	return nil
+}
+
+func printNoSnapshots(format, msg string) error {
+	if format == cliutil.FormatJSON {
+		return cliutil.OutputJSON([]*types.Snapshot{})
+	}
+	fmt.Println(msg)
 	return nil
 }
