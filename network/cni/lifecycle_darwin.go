@@ -27,6 +27,6 @@ func setLinkStateInNetns(_ string, _ []string, _ bool) error {
 	return errNotSupported
 }
 
-func tapPresentInNetns(_, _ string) error {
+func tapProvisionedInNetns(_, _ string) error {
 	return errNotSupported
 }

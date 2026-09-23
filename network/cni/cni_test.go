@@ -285,16 +285,16 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 
 func TestVerifyDetectsMissingTAP(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
-	origStat, origTap := statNetnsFn, tapPresentFn
+	origStat, origTap := statNetnsFn, tapProvisionedFn
 	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
-	tapPresentFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
-	t.Cleanup(func() { statNetnsFn, tapPresentFn = origStat, origTap })
+	tapProvisionedFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
+	t.Cleanup(func() { statNetnsFn, tapProvisionedFn = origStat, origTap })
 
 	expected := []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
 	if err := c.Verify(t.Context(), "vm1", expected); err == nil {
 		t.Fatal("Verify must fail when an expected TAP is missing")
 	}
-	tapPresentFn = func(_, _ string) error { return nil }
+	tapProvisionedFn = func(_, _ string) error { return nil }
 	if err := c.Verify(t.Context(), "vm1", expected); err != nil {
 		t.Fatalf("Verify with all TAPs present: %v", err)
 	}
