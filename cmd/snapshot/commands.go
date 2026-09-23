@@ -7,12 +7,7 @@ import (
 )
 
 func Command(h Handler) *cobra.Command {
-	snapshotCmd := &cobra.Command{
-		Use:   "snapshot",
-		Short: "Manage VM snapshots",
-		Args:  cobra.NoArgs,
-		RunE:  cliutil.ShowHelp,
-	}
+	snapshotCmd := cliutil.GroupCommand("snapshot", "Manage VM snapshots")
 
 	saveCmd := &cobra.Command{
 		Use:   "save [flags] VM",

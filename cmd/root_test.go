@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"cmp"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -100,6 +101,17 @@ func TestEveryConfigKeyRegistered(t *testing.T) {
 	}
 }
 
+func TestCommandGroupsRejectAnUnknownVerb(t *testing.T) {
+	for _, group := range [][]string{{"vm"}, {"vm", "disk"}, {"vm", "fs"}, {"vm", "device"}, {"image"}, {"snapshot"}, {"meta"}} {
+		if err := executeRoot(t, group...); err != nil {
+			t.Errorf("%v: bare group: %v, want its help", group, err)
+		}
+		if err := executeRoot(t, append(slices.Clone(group), "bogus")...); err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Errorf("%v bogus: err = %v, want unknown command", group, err)
+		}
+	}
+}
+
 func logConfig(t *testing.T) *coretypes.ServerLogConfig {
 	t.Helper()
 	if conf.Log == nil {
@@ -123,4 +135,14 @@ func configKeys(typ reflect.Type, prefix string) []string {
 		keys = append(keys, prefix+name)
 	}
 	return keys
+}
+
+func executeRoot(t *testing.T, args ...string) error {
+	t.Helper()
+	viper.Reset()
+	root := newRootCmd()
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs(args)
+	return root.ExecuteContext(t.Context())
 }

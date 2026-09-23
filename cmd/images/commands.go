@@ -7,12 +7,7 @@ import (
 )
 
 func Command(h Handler) *cobra.Command {
-	imageCmd := &cobra.Command{
-		Use:   "image",
-		Short: "Manage images",
-		Args:  cobra.NoArgs,
-		RunE:  cliutil.ShowHelp,
-	}
+	imageCmd := cliutil.GroupCommand("image", "Manage images")
 	listCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
