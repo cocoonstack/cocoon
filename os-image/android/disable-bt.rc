@@ -5,13 +5,9 @@
 # Bluetooth: no real BT hardware. The sim HAL aborts with "Invalid address",
 # and the framework BT service crash-loops trying to connect to the dead HAL.
 #
-# Play Store: Redroid is AOSP without GApps. com.android.vending crash-loops
-# because Google Services Framework (com.google.android.gsf.gservices
-# ContentProvider) is missing.
-#
 # Strategy:
 # - early-init: set property to signal BT should be off
-# - boot_completed: pm disable packages + clear bluetooth_on flag
+# - boot_completed: pm disable the package + clear bluetooth_on flag
 #   This persists in COW, so only the first boot has crash noise.
 
 on early-init
@@ -20,4 +16,3 @@ on early-init
 on property:sys.boot_completed=1
     exec - root -- /system/bin/pm disable-user --user 0 com.android.bluetooth
     exec - root -- /system/bin/settings put global bluetooth_on 0
-    exec - root -- /system/bin/pm disable-user --user 0 com.android.vending

@@ -390,7 +390,6 @@ validate_network_and_services() {
   local rootfs=$1
   local default_network="$rootfs/etc/systemd/network/20-wired.network"
   local agent_unit="$rootfs/etc/systemd/system/cocoon-agent.service"
-  local sshd_development_config="$rootfs/etc/ssh/sshd_config.d/00-cocoon-development.conf"
   local shadow_line
   local root_hash
 
@@ -418,8 +417,6 @@ validate_network_and_services() {
       record_failure "root account is locked or has no password"
       ;;
   esac
-  assert_contains_regex "$sshd_development_config" '^PermitRootLogin[[:space:]]+yes$' "sshd development config does not permit root login"
-  assert_contains_regex "$sshd_development_config" '^PasswordAuthentication[[:space:]]+yes$' "sshd development config does not permit password authentication"
 }
 
 validate_sshd_effective_config() {

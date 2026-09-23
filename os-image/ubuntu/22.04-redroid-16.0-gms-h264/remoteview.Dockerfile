@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     for f in "$ARTIFACT" scrcpy-server-secure.jar "su1000-linux-$TARGETARCH"; do \
       curl -fsSL "$BASE/$f?commit=$SCRCPY_RFB_COMMIT" -o "$f" && \
       curl -fsSL "$BASE/$f.sha256?commit=$SCRCPY_RFB_COMMIT" -o "$f.sha256" && \
-      sha256sum -c "$f.sha256"; \
+      sha256sum -c "$f.sha256" || exit 1; \
     done && \
     install -m 0755 "$ARTIFACT" /usr/local/bin/scrcpy-rfb && \
     install -m 0644 scrcpy-server-secure.jar /usr/local/share/scrcpy/scrcpy-server.jar && \

@@ -1,0 +1,9 @@
+# /system/etc/init/cocoon-disable-vending.rc
+#
+# Play Store: AOSP images without GApps ship com.android.vending, which
+# crash-loops because Google Services Framework (com.google.android.gsf.gservices
+# ContentProvider) is missing. GMS images keep the store and skip this file.
+# Persists in COW, so only the first boot has crash noise.
+
+on property:sys.boot_completed=1
+    exec - root -- /system/bin/pm disable-user --user 0 com.android.vending
