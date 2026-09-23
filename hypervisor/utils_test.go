@@ -325,6 +325,31 @@ func TestBuildBaseCmdline(t *testing.T) {
 	}
 }
 
+func TestBuildIPParams(t *testing.T) {
+	nics := []*types.NetworkConfig{
+		{Network: &types.Network{IP: "10.0.0.2", Gateway: "10.0.0.1", Prefix: 24}},
+		{},
+		{Network: &types.Network{IP: "10.1.0.2", Prefix: 16}},
+	}
+	const (
+		eth0 = " ip=10.0.0.2::10.0.0.1:255.255.255.0:vm:eth0:off"
+		eth2 = " ip=10.1.0.2:::255.255.0.0:vm:eth2:off"
+	)
+	for _, tt := range []struct {
+		dns  []string
+		want string
+	}{
+		{nil, " cocoon.hostname=vm" + eth0 + eth2},
+		{[]string{"1.1.1.1"}, " cocoon.hostname=vm" + eth0 + ":1.1.1.1" + eth2 + ":1.1.1.1"},
+		{[]string{"1.1.1.1", "8.8.8.8"}, " cocoon.hostname=vm" + eth0 + ":1.1.1.1:8.8.8.8" + eth2 + ":1.1.1.1:8.8.8.8"},
+		{[]string{"1.1.1.1", "8.8.8.8", "9.9.9.9"}, " cocoon.hostname=vm" + eth0 + ":1.1.1.1:8.8.8.8" + eth2 + ":1.1.1.1:8.8.8.8"},
+	} {
+		if got := BuildIPParams(nics, "vm", tt.dns); got != tt.want {
+			t.Errorf("dns %v:\n got: %q\nwant: %q", tt.dns, got, tt.want)
+		}
+	}
+}
+
 func TestDiskPathByRole(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/r/layer.erofs", Role: types.StorageRoleLayer},
