@@ -72,10 +72,11 @@ func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	if err != nil {
 		return err
 	}
-	if p.Verify(ctx, vm.ID, vm.NetworkConfigs) == nil {
+	verifyErr := p.Verify(ctx, vm.ID, vm.NetworkConfigs)
+	if verifyErr == nil {
 		return p.Unquiesce(ctx, vm.ID)
 	}
-	log.WithFunc("core.NetProviders.Recover").Warnf(ctx, "network missing for VM %s, recovering", vm.ID)
+	log.WithFunc("core.NetProviders.Recover").Warnf(ctx, "network incomplete for VM %s, recovering: %v", vm.ID, verifyErr)
 	if _, prepErr := p.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
 		return fmt.Errorf("prepare netns: %w", prepErr)
 	}

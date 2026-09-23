@@ -395,9 +395,9 @@ func scopeSet(nss []string) map[string]struct{} {
 }
 
 // open applies the per-connection runtime contract (§4); cache_size is KB (negative form) and mmap_size covers the whole file at meta scale.
-func open(dbPath, sync string, writer bool) (*sql.DB, error) {
+func open(dbPath, synchronous string, writer bool) (*sql.DB, error) {
 	dsn := "file:" + dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_pragma=trusted_schema(0)" +
-		"&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=synchronous(" + sync + ")"
+		"&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=synchronous(" + synchronous + ")"
 	if writer {
 		dsn += "&_txlock=immediate"
 	}

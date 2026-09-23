@@ -111,7 +111,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 
 	cfgDelta := &types.VMConfig{Name: "delta", CPU: 1}
 	record("reserve-vm4", "", b.ReserveVM(ctx, "VM4", cfgDelta, nil, t.TempDir(), t.TempDir()))
-	clock = clock.Add(CreatingStateGCGrace + time.Hour)
+	clock = clock.Add(StaleArtifactGCGrace + time.Hour)
 	orch := gc.New()
 	b.RegisterGC(orch)
 	record("gc-pass", "", orch.Run(ctx))

@@ -111,7 +111,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex)
 }
 
-func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) (err error) {
+func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 0 {
 		return errors.New("no qcow2 files provided")
 	}
