@@ -245,8 +245,12 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 		if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifn); delErr != nil {
 			log.WithFunc("cni.nicRuntime").Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifn, delErr)
 		}
+		rt.Args = [][2]string{{"IgnoreUnknown", "1"}}
+		if spec.Existing.MAC != "" {
+			rt.Args = append(rt.Args, [2]string{"MAC", spec.Existing.MAC})
+		}
 		if spec.Existing.Network != nil && spec.Existing.Network.IP != "" {
-			rt.Args = [][2]string{{"IgnoreUnknown", "1"}, {"IP", spec.Existing.Network.IP}}
+			rt.Args = append(rt.Args, [2]string{"IP", spec.Existing.Network.IP})
 		}
 	}
 	return rt
