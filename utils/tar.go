@@ -45,7 +45,7 @@ func TarDir(tw *tar.Writer, dir string) error {
 	return nil
 }
 
-// ListRegularFiles returns the names of dir's regular files in directory order, the set TarDir archives.
+// ListRegularFiles returns the names of dir's regular files, the set TarDir archives.
 func ListRegularFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

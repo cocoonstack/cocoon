@@ -45,7 +45,6 @@ func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 // recordExistsFn reports whether the source VM's record survives; absent means the drive can be replaced with a placeholder.
 type recordExistsFn func(string) (bool, error)
 
-// launchCloneFn starts the FC process over the plan's redirected drive FDs.
 type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
 
 type vmmLaunchFn func() (int, error)
@@ -243,7 +242,6 @@ func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*type
 	return configs, nil
 }
 
-// redirectedDriveIndices feeds both the bind redirects and the re-anchor loop.
 func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int {
 	var indices []int
 	for i, src := range srcConfigs {

@@ -32,7 +32,7 @@ func (b *Backend) StartAll(ctx context.Context, refs []string, startOne StartOp)
 	})
 }
 
-// StartSequence flips Running inside the ops lock, so a stop queued behind this start cannot be overwritten by a late state write; a nil scan walks /proc itself.
+// StartSequence flips Running inside the ops lock, so a stop queued behind this start cannot be overwritten by a late state write.
 func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.ProcScan, spec StartSpec) error {
 	unlock, err := b.LockVMOps(ctx, id)
 	if err != nil {

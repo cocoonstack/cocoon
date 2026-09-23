@@ -139,7 +139,7 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	return errs
 }
 
-// gcCollect sweeps orphan dirs/locks and removes candidate IDs; every candidate revalidates under its VM lock.
+// gcCollect sweeps orphan dirs/locks and removes candidate IDs.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))

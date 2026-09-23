@@ -46,7 +46,7 @@ type Namespace struct {
 	Tables []string
 }
 
-// tableStmts holds one table's prepared statements; scan/put/del are nil on read-only handles.
+// tableStmts holds one table's prepared statements; put/del are nil on reader handles.
 type tableStmts struct {
 	get, scan, put, del *sql.Stmt
 }
@@ -83,7 +83,7 @@ func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 }
 
 func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
-	// The driver creates a file on first touch, so a missing store is refused before it is opened; §4 refuses network filesystems before WAL work.
+	// The driver creates a file on first touch, so a missing store is refused before it is opened.
 	if !utils.FileExists(dbPath) {
 		return nil, fmt.Errorf("no sqlite store at %s: run `cocoon meta init` or `cocoon meta convert`", dbPath)
 	}

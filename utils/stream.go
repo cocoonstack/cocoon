@@ -9,7 +9,6 @@ import (
 	"sync"
 )
 
-// pipeStreamReader wraps a PipeReader with background error collection and cleanup.
 type pipeStreamReader struct {
 	*io.PipeReader
 	close func() error

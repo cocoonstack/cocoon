@@ -277,7 +277,6 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	})
 }
 
-// runClone emits its progress lines only when --output json is off; the JSON envelope replaces them.
 func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
@@ -362,7 +361,6 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup, resizeTo: resizeTo}, nil
 }
 
-// finishClone is deferred because the resize needs the ops lock the clone still holds.
 func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, cs cloneSetup) (*types.VM, []string, error) {
 	var hints []string
 	if vm.Config.PCI && len(vm.Config.DataDisks) > 0 {
@@ -494,7 +492,6 @@ func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target in
 	return cfg.NICs, target, nil
 }
 
-// validateBackendFlags is shared by create and debug so the capability gate list cannot drift.
 func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 	if !conf.UseFirecracker {
 		if vmCfg.PCI {

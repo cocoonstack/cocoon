@@ -65,7 +65,6 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 		if set := changedFlags(cmd, "max-cpu", "balloon", "cow", "ch"); len(set) > 0 {
 			fmt.Fprintf(os.Stderr, "warning: %s ignored with --fc (Cloud Hypervisor debug flags)\n", strings.Join(set, "/"))
 		}
-		// FC requires an uncompressed ELF kernel.
 		if err := firecracker.EnsureVmlinuxBoot(boot); err != nil {
 			return err
 		}
