@@ -240,7 +240,7 @@ jobs:
         run: bash "os-image/${{ matrix.name }}/${{ matrix.tag }}/ci-prepare.sh"
 
       - name: Build and push
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: os-image/${{ matrix.name }}
           file: os-image/${{ matrix.name }}/${{ matrix.tag }}/Dockerfile
