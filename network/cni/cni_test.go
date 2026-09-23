@@ -427,6 +427,56 @@ func TestQuiesceSkipsMissingNetns(t *testing.T) {
 	}
 }
 
+func TestAddRecoveryPassesIdentityToPlugin(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		existing *types.NetworkConfig
+		wantArgs []string
+	}{
+		{
+			name:     "MAC only",
+			existing: &types.NetworkConfig{MAC: "02:00:00:00:00:01"},
+			wantArgs: []string{"IgnoreUnknown=1", "MAC=02:00:00:00:00:01"},
+		},
+		{
+			name: "MAC and IP",
+			existing: &types.NetworkConfig{
+				MAC:     "02:00:00:00:00:01",
+				Network: &types.Network{IP: "10.22.0.10"},
+			},
+			wantArgs: []string{"IgnoreUnknown=1", "MAC=02:00:00:00:00:01", "IP=10.22.0.10"},
+		},
+		{
+			name:     "IP only",
+			existing: &types.NetworkConfig{Network: &types.Network{IP: "10.22.0.10"}},
+			wantArgs: []string{"IgnoreUnknown=1", "IP=10.22.0.10"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			slices.Sort(tt.wantArgs)
+			c, exec := newTestCNIWithStore(t)
+			stubLifecycleSeams(t)
+			seedRecords(t, c, "vm1", "eth0")
+
+			for range 2 {
+				exec.addArgs = nil
+				if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover([]*types.NetworkConfig{tt.existing})...); err != nil {
+					t.Fatalf("recover Add: %v", err)
+				}
+				if len(exec.addArgs) != 1 {
+					t.Fatalf("ADD calls = %d, want 1", len(exec.addArgs))
+				}
+				got := strings.Split(exec.addArgs[0], ";")
+				slices.Sort(got)
+				if !slices.Equal(got, tt.wantArgs) {
+					t.Fatalf("CNI_ARGS = %v, want %v", got, tt.wantArgs)
+				}
+				assertRecordIDs(t, c, []string{"n-eth0"})
+			}
+		})
+	}
+}
+
 func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	var gotNS string
@@ -561,15 +611,22 @@ func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 
 type recordingExec struct {
 	attempted []string
+	addArgs   []string
 	failIf    string
 }
 
 func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
-	var ifName string
+	var ifName, args string
 	for _, kv := range environ {
 		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
 			ifName = v
 		}
+		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
+			args = v
+		}
+	}
+	if slices.Contains(environ, "CNI_COMMAND=ADD") {
+		e.addArgs = append(e.addArgs, args)
 	}
 	e.attempted = append(e.attempted, ifName)
 	if ifName == e.failIf {
