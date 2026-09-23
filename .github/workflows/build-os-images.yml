@@ -105,9 +105,12 @@ jobs:
               [[ -z "$dockerfile" ]] && continue
               [[ -f "$(dirname "$dockerfile")/.skip-generic-build" ]] && continue
               tag=$(echo "$dockerfile" | cut -d'/' -f3)
-              if [[ -n "$tag" ]]; then
-                matrix_entries+=("{\"name\":\"$name\",\"tag\":\"$tag\",\"no_cache\":\"$needs_no_cache\",\"platforms\":\"$platforms\"}")
+              [[ -n "$tag" ]] || continue
+              tag_no_cache="$needs_no_cache"
+              if [[ "$tag_no_cache" == "false" ]] && grep -v '/Dockerfile$' <<< "$all_changed" | grep -q "^os-image/$name/$tag/"; then
+                tag_no_cache="true"
               fi
+              matrix_entries+=("{\"name\":\"$name\",\"tag\":\"$tag\",\"no_cache\":\"$tag_no_cache\",\"platforms\":\"$platforms\"}")
             done <<< "$(find "os-image/$name" -name Dockerfile -type f)"
           done
 
