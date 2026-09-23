@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -182,8 +183,7 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("create output file: %w", err)
 	}
 	defer func() {
-		_ = f.Close()
-		if err != nil {
+		if err = errors.Join(err, f.Close()); err != nil {
 			os.Remove(output) //nolint:errcheck,gosec
 		}
 	}()
