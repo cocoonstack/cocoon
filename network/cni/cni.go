@@ -29,7 +29,7 @@ var (
 	deleteNetnsFn     = deleteNetns
 	ensureNetnsFn     = ensureNetns
 	setupTCRedirectFn = setupTCRedirect
-	tapPresentFn      = tapPresentInNetns
+	tapProvisionedFn  = tapProvisionedInNetns
 	statNetnsFn       = os.Stat
 	setLinkStateFn    = setLinkStateInNetns
 )
@@ -79,7 +79,7 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 
 func (c *CNI) Type() string { return typ }
 
-// Verify checks the netns and every expected TAP inside it.
+// Verify checks the netns and that every expected TAP carries its ingress redirect.
 func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
 	nsPath := c.conf.netnsPath(vmID)
 	if _, err := statNetnsFn(nsPath); err != nil {
@@ -89,7 +89,7 @@ func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkCo
 		if nc == nil || nc.TAP == "" {
 			continue
 		}
-		if err := tapPresentFn(nsPath, nc.TAP); err != nil {
+		if err := tapProvisionedFn(nsPath, nc.TAP); err != nil {
 			return err
 		}
 	}

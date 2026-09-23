@@ -71,10 +71,18 @@ func deleteNetns(ctx context.Context, name string) error {
 	return err
 }
 
-func tapPresentInNetns(nsPath, tapName string) error {
+func tapProvisionedInNetns(nsPath, tapName string) error {
 	return cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
-		if _, err := netlink.LinkByName(tapName); err != nil {
+		link, err := netlink.LinkByName(tapName)
+		if err != nil {
 			return fmt.Errorf("tap %s: %w", tapName, err)
+		}
+		filters, err := netlink.FilterList(link, netlink.HANDLE_INGRESS)
+		if err != nil {
+			return fmt.Errorf("list ingress filters on %s: %w", tapName, err)
+		}
+		if len(filters) == 0 {
+			return fmt.Errorf("tap %s: ingress redirect missing", tapName)
 		}
 		return nil
 	})
@@ -188,21 +196,30 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 			LinkIndex: l.Attrs().Index,
 			Parent:    netlink.HANDLE_INGRESS,
 		}
-		if qdiscErr := netlink.QdiscAdd(qdisc); qdiscErr != nil {
+		if qdiscErr := netlink.QdiscAdd(qdisc); qdiscErr != nil && !errors.Is(qdiscErr, syscall.EEXIST) {
 			return "", 0, fmt.Errorf("add ingress qdisc on %s: %w", l.Attrs().Name, qdiscErr)
 		}
 	}
 
-	if err := addTCRedirect(link, tapLink); err != nil {
+	if err := replaceTCRedirect(link, tapLink); err != nil {
 		return "", 0, fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
 	}
-	if err := addTCRedirect(tapLink, link); err != nil {
+	if err := replaceTCRedirect(tapLink, link); err != nil {
 		return "", 0, fmt.Errorf("redirect %s -> %s: %w", tapName, ifName, err)
 	}
 	return mac, link.Attrs().MTU, nil
 }
 
-func addTCRedirect(from, to netlink.Link) error {
+func replaceTCRedirect(from, to netlink.Link) error {
+	stale, err := netlink.FilterList(from, netlink.HANDLE_INGRESS)
+	if err != nil {
+		return fmt.Errorf("list ingress filters on %s: %w", from.Attrs().Name, err)
+	}
+	for _, f := range stale {
+		if err := netlink.FilterDel(f); err != nil {
+			return fmt.Errorf("delete stale ingress filter on %s: %w", from.Attrs().Name, err)
+		}
+	}
 	filter := &netlink.U32{
 		LinkIndex: from.Attrs().Index,
 		Parent:    netlink.HANDLE_INGRESS,
