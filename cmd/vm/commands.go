@@ -17,6 +17,8 @@ func Command(h Handler) *cobra.Command {
 	vmCmd := &cobra.Command{
 		Use:   "vm",
 		Short: "Manage virtual machines",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 
 	createCmd := &cobra.Command{
@@ -223,6 +225,8 @@ func buildDiskCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "disk",
 		Short: "Attach/detach an extra raw data disk to a running VM (CH, or FC created with --pci)",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 
 	attach := &cobra.Command{
@@ -257,6 +261,8 @@ func buildFsCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "fs",
 		Short: "Attach/detach a vhost-user-fs share to a running VM (CH only)",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 
 	attach := &cobra.Command{
@@ -291,6 +297,8 @@ func buildDeviceCommand(h Handler) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "device",
 		Short: "Attach/detach a VFIO PCI passthrough device to a running VM (CH only)",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 
 	attach := &cobra.Command{

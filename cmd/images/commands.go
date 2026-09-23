@@ -10,6 +10,8 @@ func Command(h Handler) *cobra.Command {
 	imageCmd := &cobra.Command{
 		Use:   "image",
 		Short: "Manage images",
+		Args:  cobra.NoArgs,
+		RunE:  cliutil.ShowHelp,
 	}
 	listCmd := &cobra.Command{
 		Use:     "list",
