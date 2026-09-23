@@ -219,7 +219,7 @@ jobs:
       # globbed as secrets, and after QEMU/Buildx so the arm64 bake can emulate.
       - name: Free disk space
         if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
         with:
           tool-cache: true
           android: true
