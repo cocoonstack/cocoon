@@ -585,6 +585,37 @@ func TestGCSweepsALeaseWithNoRecordOrDataDir(t *testing.T) {
 	}
 }
 
+func TestGCCollectsACrashedBuildAndItsLeaseInOnePass(t *testing.T) {
+	lf := newTestLF(t)
+	ctx := t.Context()
+	id := testID(t)
+	dataDir := lf.conf.SnapshotDataDir(id)
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "cow.raw"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lf.conf.LeasePath(id), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dataDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("orphan data dir survived GC: stat err = %v", err)
+	}
+	if _, err := os.Stat(lf.conf.LeasePath(id)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("crashed build's lease survived GC: stat err = %v", err)
+	}
+}
+
 func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
