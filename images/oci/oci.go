@@ -48,9 +48,8 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 		conf:  cfg,
 		store: store,
 		Ops: images.Ops[imageEntry]{
-			Store:       store,
-			Type:        typ,
-			Normalizers: []func(string) (string, bool){normalizeRef},
+			Store: store,
+			Type:  typ,
 		},
 	}
 	return o, nil
@@ -74,7 +73,7 @@ func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progres
 
 func (o *OCI) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.StorageConfig, boot *types.BootConfig, err error) {
 	err = o.store.View(ctx, func(idx *imageIndex) error {
-		_, entry, ok := images.LookupOne(idx.Images, vm.Image, normalizeRef)
+		_, entry, ok := images.LookupOne(idx.Images, vm.Image)
 		if !ok {
 			return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)
 		}

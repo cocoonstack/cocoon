@@ -3,8 +3,6 @@ package oci
 import (
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/name"
-
 	"github.com/cocoonstack/cocoon/images"
 )
 
@@ -36,13 +34,4 @@ func (e imageEntry) DigestHexes() []string {
 		hexes[i] = l.Digest.Hex()
 	}
 	return hexes
-}
-
-// normalizeRef expands a short OCI ref (e.g. "ubuntu:24.04" → "docker.io/library/ubuntu:24.04").
-func normalizeRef(s string) (string, bool) {
-	parsed, err := name.ParseReference(s)
-	if err != nil {
-		return "", false
-	}
-	return parsed.String(), true
 }
