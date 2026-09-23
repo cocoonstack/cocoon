@@ -138,7 +138,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error 
 		return mapErr(err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	return fn(&txHandle{ctx: ctx, tx: tx, sm: s.stmtsReaders, scope: scopeSet(nss)})
+	return fn(&txHandle{tx: tx, sm: s.stmtsReaders, scope: scopeSet(nss)})
 }
 
 func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
@@ -159,7 +159,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		return err
 	}
 	wait := time.Since(start)
-	h := &txHandle{ctx: ctx, tx: tx, sm: sm, scope: scopeSet(nss), write: sc.Write, mode: mode}
+	h := &txHandle{tx: tx, sm: sm, scope: scopeSet(nss), write: sc.Write, mode: mode}
 	if err := fn(h); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -214,8 +214,8 @@ func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !isBusy(err) {
-			return nil, mapErr(err)
+		if err = mapErr(err); !errors.Is(err, meta.ErrBusy) {
+			return nil, err
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("writer contended past retry ceiling: %w", meta.ErrBusy)
@@ -276,7 +276,6 @@ var (
 
 // txHandle implements Reader/Writer over one transaction; values are detached by construction (every read allocates from row scans).
 type txHandle struct {
-	ctx   context.Context
 	tx    *sql.Tx
 	sm    map[string]tableStmts
 	scope map[string]struct{}
@@ -461,14 +460,6 @@ func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 			logger.Debugf(ctx, "passive checkpoint: %d/%d frames, wal %dB, %s", moved, frames, walBytes, time.Since(start))
 		}
 	}
-}
-
-func isBusy(err error) bool {
-	if se, ok := errors.AsType[*sqlite3.Error](err); ok {
-		code := se.Code() & 0xff
-		return code == sqlite3lib.SQLITE_BUSY || code == sqlite3lib.SQLITE_LOCKED
-	}
-	return false
 }
 
 func mapErr(err error) error {

@@ -72,10 +72,7 @@ func (b *Backend) placeVM(ctx context.Context, r meta.Reader, rec *VMRecord, cfg
 	if err != nil {
 		return err
 	}
-	domain, queueCPUs, err := topo.Place(cfg.CPU, load)
-	if err != nil {
-		return fmt.Errorf("place queue threads: %w", err)
-	}
+	domain, queueCPUs := topo.Place(cfg.CPU, load)
 	if pins {
 		rec.QueueCPUs = cgroup.FormatCPUList(queueCPUs)
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -448,7 +447,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	vmID := utils.GenerateID()
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 	// Digest locks span resolve → reserve commit, so image GC cannot collect a blob inside the window.
-	releasePins, err := pinResolvedBlobs(ctx, owner, blobIDs)
+	releasePins, err := owner.PinBlobs(ctx, blobIDs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -523,14 +522,6 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 		return fmt.Errorf("--fc requires OCI images (direct kernel boot): Firecracker does not support UEFI/cloudimg boot")
 	}
 	return nil
-}
-
-// pinResolvedBlobs holds the resolved image's digest locks until the reserve commits; the empty set (bridge/dataless) pins nothing.
-func pinResolvedBlobs(ctx context.Context, owner imagebackend.Images, blobIDs map[string]struct{}) (func(), error) {
-	if len(blobIDs) == 0 {
-		return func() {}, nil
-	}
-	return owner.PinBlobs(ctx, blobIDs)
 }
 
 // prereserveVM reserves before network provisioning, so GC never sees ownerless TAP/netns.

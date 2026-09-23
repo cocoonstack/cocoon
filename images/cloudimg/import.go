@@ -29,7 +29,11 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 	defer srcFile.Close() //nolint:errcheck
 
 	// ReadAt-based sniffing preserves the current file offset.
-	if err = sniffImageSource(srcFile); err != nil {
+	head, err := utils.FileHead(srcFile, sniffLen)
+	if err != nil {
+		return fmt.Errorf("import %s: read source: %w", filePath, err)
+	}
+	if err = sniffHead(head); err != nil {
 		return fmt.Errorf("import %s: %w", filePath, err)
 	}
 

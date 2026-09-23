@@ -76,9 +76,6 @@ func validateEscapeByte(b byte) (byte, error) {
 }
 
 func isCleanExit(err error) bool {
-	if err == nil {
-		return true
-	}
 	_, isEsc := errors.AsType[term.EscapeError](err)
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || isEsc
+	return err == nil || isEsc || errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO)
 }
