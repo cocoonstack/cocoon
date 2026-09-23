@@ -38,7 +38,7 @@ Import preserves the input files. A cached cloud-image import reuses the blob wi
 
 ```bash
 cocoon image list
-cocoon image inspect ubuntu:24.04
+cocoon image inspect ghcr.io/cocoonstack/cocoon/ubuntu:24.04
 cocoon image rm sha256:abc123def456
 ```
 
@@ -54,6 +54,6 @@ cocoon image pull ghcr.io/cocoonstack/cocoon/debian:13
 cocoon image pull ghcr.io/cocoonstack/cocoon/android:15.0
 ```
 
-These images include kernel, initramfs, and a systemd-based rootfs with an overlayfs boot script. Every official OS image (Ubuntu, Debian, Android) bakes `cocoon-agent` (vsock exec) with auto-start; the Ubuntu and Debian images, including the Ubuntu-based `android:16.0-gms-h264`, additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
+Every image carries a kernel and initramfs; the Ubuntu and Debian images add a systemd-based rootfs with an overlayfs boot script, while the Android 14.0, 15.0 and 15.0-gms images boot Android init directly. Every official OS image (Ubuntu, Debian, Android) bakes `cocoon-agent` (vsock exec) with auto-start; the Ubuntu and Debian images, including the Ubuntu-based `android:16.0-gms-h264`, additionally enable `sshd` with `PermitRootLogin yes` so `ssh root@<vm>` works out of the box (default `root:cocoon`).
 
 Build scripts, image contents, and the local `start.sh` harness are documented in [OS Images](os-image.md).

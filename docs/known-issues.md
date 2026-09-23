@@ -121,13 +121,13 @@ Note: the OCI initramfs uses `IP=off` to prevent the initramfs from running its 
 
 Cloud Hypervisor v51.x had a regression ([#7849](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7849)) that caused Windows to BSOD (`DRIVER_IRQL_NOT_LESS_OR_EQUAL` in `viostor.sys`) when DISCARD/WRITE_ZEROES features were advertised with default-zero config values, violating virtio spec v1.2.
 
-**Fix**: the DISCARD fix is included in our Cloud Hypervisor fork ([cocoonstack/cloud-hypervisor `dev` branch](https://github.com/cocoonstack/cloud-hypervisor/tree/dev)). Upstream has also merged it ([PR #7936](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7936)). Cloud Hypervisor **v51** now works correctly with Windows VMs.
+**Fix**: the DISCARD fix is included in our Cloud Hypervisor fork ([cocoonstack/cloud-hypervisor `dev` branch](https://github.com/cocoonstack/cloud-hypervisor/tree/dev)). Upstream has also merged it ([PR #7936](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7936)). Cloud Hypervisor **v52** and newer work correctly with Windows VMs.
 
 **Previous recommendation** (no longer needed): use Cloud Hypervisor v50.2 for Windows VMs.
 
 ## Windows VM requires virtio-win 0.1.240
 
-**Status: FIXED** in our fork.
+**Status: FIXED** upstream since Cloud Hypervisor v52.
 
 virtio-win 0.1.271+ network drivers were incompatible with Cloud Hypervisor due to incomplete virtio-net control queue implementation ([#7925](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7925)). CH only handled `CTRL_MQ` and `CTRL_GUEST_OFFLOADS`; all other commands (`CTRL_RX`, `CTRL_MAC`, `CTRL_VLAN`, `CTRL_ANNOUNCE`) returned `VIRTIO_NET_ERR`.
 
@@ -139,7 +139,7 @@ virtio-win 0.1.271+ network drivers were incompatible with Cloud Hypervisor due 
 
 0.1.285 introduced commit `50e7db9` ("indicate driver error on unexpected CX behavior") with zero-tolerance on control queue errors. Root cause was a CH bug — the correct fix is to return `VIRTIO_NET_OK` for unsupported commands and to report the correct `used_len`.
 
-**Fix**: our Cloud Hypervisor fork includes ctrl_queue command tolerance (from [@liuw](https://github.com/liuw)) plus the `used_len` fix. See [cocoonstack/cloud-hypervisor `fix/virtio-net-ctrl-queue` branch](https://github.com/cocoonstack/cloud-hypervisor/tree/fix/virtio-net-ctrl-queue) (also merged into the [`dev` branch](https://github.com/cocoonstack/cloud-hypervisor/tree/dev)). virtio-win **0.1.285** now works. No upstream PR exists yet.
+**Fix**: the ctrl_queue command tolerance (from [@liuw](https://github.com/liuw)) plus the `used_len` fix merged upstream in [PR #7953](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7953) and ship in Cloud Hypervisor v52 and newer, including the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) build. virtio-win **0.1.285** now works.
 
 **Previous recommendation** (no longer needed): use virtio-win 0.1.240 for Windows VMs on Cloud Hypervisor.
 
@@ -151,7 +151,7 @@ Cloud Hypervisor uses a GED (Generic Event Device, `ACPI0013`) to deliver power-
 
 **Root cause**: the EFI `ResetSystem` runtime service in [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) was a no-op. When Windows attempted a graceful shutdown via the UEFI reset path, nothing happened. Tracked in [cloud-hypervisor/rust-hypervisor-firmware#422](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/422) and [cloud-hypervisor/cloud-hypervisor#7929](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7929).
 
-**Fix**: our firmware fork ([cocoonstack/rust-hypervisor-firmware `dev` branch](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev), also [`fix/reset-system` branch](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/fix/reset-system)) implements `ResetSystem` properly. Upstream PR: [cloud-hypervisor/rust-hypervisor-firmware#423](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/pull/423). With this fix, the ACPI power-button works for Windows guests, and `cocoon vm stop` completes in ~8-13 seconds on a fully booted VM.
+**Fix**: our firmware fork ([cocoonstack/rust-hypervisor-firmware `dev` branch](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev)) implements `ResetSystem` properly. Upstream merged the same fix in [cloud-hypervisor/rust-hypervisor-firmware#424](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/pull/424) (replacing #423); no firmware release carries it yet, the latest being 0.5.0. With this fix, the ACPI power-button works for Windows guests, and `cocoon vm stop` completes in ~8-13 seconds on a fully booted VM.
 
 **Timing caveat**: the Windows ACPI shutdown handler needs ~60 seconds from cold boot to fully initialize (SAC appears at ~30s, handler ready ~30s later). Stopping a Windows VM before the handler is ready triggers the 30s `stop_timeout_seconds` fallback and escalates to force-kill. Clone-restored VMs inherit the ready ACPI state and shut down in ~8-13s immediately.
 
@@ -234,9 +234,9 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the live `vm.info` before pausing the guest and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`) before anything is captured or recorded. `cocoon vm fs detach` / `cocoon vm device detach` first to clear runtime devices, then snapshot.
 
-## Snapshot lease files are never reclaimed (fixed after v0.6.7)
+## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 
-Fixed on master by #253: `snapshot rm` unlinks the snapshot's `<root>/snapshot/localfile/<id>.lease` when it releases the exclusive lease, and `gc` reclaims the leases of snapshots that no longer have a record or a data dir, so a host upgraded from an older binary converges on its first `gc` run (133 leftover files on one testbed went to the four live snapshots' leases).
+Fixed in v0.6.8 by #253: `snapshot rm` unlinks the snapshot's `<root>/snapshot/localfile/<id>.lease` when it releases the exclusive lease, and `gc` reclaims the leases of snapshots that no longer have a record or a data dir, so a host upgraded from an older binary converges on its first `gc` run (133 leftover files on one testbed went to the four live snapshots' leases).
 
 On v0.6.7 and older every `snapshot save` leaves that zero-byte file behind and `snapshot rm` and `gc` remove only the data dir, so the files accumulate one inode per snapshot ever created; delete them by hand while no snapshot verb runs.
 

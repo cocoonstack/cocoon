@@ -37,7 +37,7 @@ The three bare `android/` tags run Android via [Redroid](https://github.com/remo
 | Android 14 | `14.0` | `ghcr.io/cocoonstack/cocoon/android:14.0` |
 | Android 15 | `15.0` | `ghcr.io/cocoonstack/cocoon/android:15.0` |
 | Android 15 + GMS + ARM translation | `15.0-gms` | `ghcr.io/cocoonstack/cocoon/android:15.0-gms` |
-| Android 16 + GMS + H.264 ([README](../os-image/ubuntu/22.04-redroid-16.0-gms-h264/README.md)) | `16.0-gms-h264` | `ghcr.io/cocoonstack/cocoon/android:16.0-gms-h264` |
+| Android 16 + GMS + H.264 ([README](https://github.com/cocoonstack/cocoon/blob/master/os-image/ubuntu/22.04-redroid-16.0-gms-h264/README.md)) | `16.0-gms-h264` | `ghcr.io/cocoonstack/cocoon/android:16.0-gms-h264` |
 
 Access via `adb connect <vm-ip>:5555` or `scrcpy -s <vm-ip>:5555 --no-audio`.
 
@@ -50,7 +50,7 @@ native layer hooks JNI or self-checks for tampering (WeChat, QQ, Alipay,
 banking, most anti-cheat games): the translator's proxied JNIEnv breaks those
 assumptions and they crash at startup — an x86 binary-translation limit, not a
 config gap. Hardened arm64 apps need an arm64 host running the plain `15.0`
-image (no translation). See [`os-image/android/15.0-gms/README.md`](../os-image/android/15.0-gms/README.md).
+image (no translation). See [`os-image/android/15.0-gms/README.md`](https://github.com/cocoonstack/cocoon/blob/master/os-image/android/15.0-gms/README.md).
 
 ### Windows
 

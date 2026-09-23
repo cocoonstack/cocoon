@@ -6,7 +6,7 @@ Requirements, install paths, the doctor script, and a first VM.
 
 - Linux with KVM (x86_64 or aarch64)
 - Root access (sudo)
-- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v54 or newer. `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) `dev` release build (upstream main plus diff snapshots, the virtio-net ctrl_queue tolerance and a QCOW cluster-leak fix), verified against the release checksums; v53.0 and older have no CopyOnWrite memory restore, so the default clone/restore mode (`mmap`) is rejected and `cocoon-check` reports it
+- [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v54 or newer. `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) `dev` release build (upstream main plus diff snapshots, direct-boot ACPI on aarch64 via a synthesized EFI handoff, and guest shadow-stack save/restore), verified against the release checksums; v53.0 and older have no CopyOnWrite memory restore, so the default clone/restore mode (`mmap`) is rejected and `cocoon-check` reports it
 - [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16.1 or newer (optional, for the `--fc` backend). `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/firecracker/tree/dev) `dev` release build (upstream main plus release CI), verified against the release checksums — the build the `--pci` hot-plug and NIC MTU paths are validated on. `vm clone` needs >= v1.16 for the vsock override, and v1.16.0 permanently breaks guest vsock after any restore, so v1.16.1 is the effective floor (see [known issues](known-issues.md))
 - `qemu-img` (from qemu-utils, for cloud images)
 - `mkfs.erofs` from erofs-utils **>= 1.8** (for OCI images; 1.7.x tar mode
@@ -14,7 +14,6 @@ Requirements, install paths, the doctor script, and a first VM.
 - UEFI firmware (`CLOUDHV.fd`, for cloud images, not needed with `--fc`); on x86_64 `cocoon-check --upgrade` installs the [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) `dev` build (EFI ResetSystem for ACPI power-button shutdown and the IA32_FEATURE_CONTROL/VMXON lock, both needed by Windows guests — see [known issues](known-issues.md))
 - CNI plugins (`bridge`, `host-local`, `loopback`)
 - `mkfs.ext4` (from e2fsprogs, for the per-VM COW disk)
-- `zstd` (optional: Firecracker kernel decompression on distros that ship a compressed kernel)
 - Go 1.27+ (build only)
 
 ## Installation
@@ -25,10 +24,10 @@ Download pre-built binaries from [GitHub Releases](https://github.com/cocoonstac
 
 ```bash
 # Linux amd64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.7/cocoon_0.6.7_Linux_x86_64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.8/cocoon_0.6.8_Linux_x86_64.tar.gz
 
 # Linux arm64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.7/cocoon_0.6.7_Linux_arm64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.8/cocoon_0.6.8_Linux_arm64.tar.gz
 
 tar -xzf cocoon.tar.gz
 install -m 0755 cocoon /usr/local/bin/
@@ -55,7 +54,7 @@ Cocoon ships a diagnostic script that checks your environment and can auto-insta
 
 ```bash
 # Get script
-curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.6.7/doctor/check.sh
+curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.6.8/doctor/check.sh
 install -m 0755 cocoon-check /usr/local/bin/
 
 # Check only — reports PASS/FAIL for each requirement
@@ -76,7 +75,6 @@ The `--upgrade` flag downloads and installs:
 - Firecracker from the cocoonstack fork `dev` release (checksum-verified)
 - CLOUDHV.fd firmware: the cocoonstack firmware fork `dev` build on x86_64 (checksum-verified), upstream rust-hypervisor-firmware on aarch64
 - CNI plugins (bridge, host-local, loopback, etc.)
-- `zstd` via apt-get or yum when it is absent (Firecracker kernel decompression)
 
 Release tags and versions are overridable through `CH_REF`, `CH_REMOTE_VERSION`, `FC_REF`, `FW_REF`, `FW_VERSION` and `CNI_VERSION` (see `cocoon-check --help`).
 
