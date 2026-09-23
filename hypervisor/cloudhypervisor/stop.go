@@ -28,15 +28,15 @@ func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			hc := utils.NewSocketHTTPClient(sockPath)
-			if hypervisor.IsDirectBoot(rec.BootConfig) || ch.conf.ForceStop() {
+			if ch.conf.ForceStop() {
 				return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid)
 			}
-			return ch.shutdownUEFI(ctx, hc, rec.ID, sockPath, pid, ch.conf.StopTimeout())
+			return ch.shutdownACPI(ctx, hc, rec.ID, sockPath, pid, ch.conf.StopTimeout())
 		},
 	}
 }
 
-func (ch *CloudHypervisor) shutdownUEFI(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int, timeout time.Duration) error {
+func (ch *CloudHypervisor) shutdownACPI(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int, timeout time.Duration) error {
 	return ch.GracefulStop(
 		ctx, vmID, pid, timeout,
 		func() error { return powerButton(ctx, hc) },

@@ -15,9 +15,8 @@ States, shutdown behavior, cloud-init first boot, data disks, performance tuning
 
 ### Shutdown Behavior
 
-- **UEFI VMs (cloudimg)**: ACPI power-button → poll for graceful exit → timeout (default 30s, configurable via `stop_timeout_seconds` in config or `--timeout` flag) → SIGTERM → 5s → SIGKILL
+- **Cloud Hypervisor VMs, UEFI (cloudimg) and direct boot (OCI) alike**: ACPI power-button → poll for graceful exit → timeout (default 30s, configurable via `stop_timeout_seconds` in config or `--timeout` flag) → `vm.shutdown` → SIGTERM → 5s → SIGKILL. Cloud Hypervisor delivers the button through its GED device on both boot paths; a direct-boot guest with systemd (the sandbox images) powers off in well under a second, one whose init ignores the button waits out the timeout
 - **Windows VMs**: ACPI power-button works with our [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) (~8-13s shutdown once fully booted). The guest ACPI handler needs ~60s from cold boot to initialize; stopping before that triggers the 30s timeout fallback. Clone-restored VMs inherit the ready ACPI state and shut down immediately. With upstream firmware, use `ssh shutdown /s /t 0` before stopping, or `--force` to skip the ACPI timeout (see [known issues](known-issues.md))
-- **Direct-boot VMs (CH, OCI)**: `vm.shutdown` API → SIGTERM → 5s → SIGKILL (no ACPI support)
 - **Firecracker VMs**: `SendCtrlAltDel` → up to `stop_timeout_seconds` (30s) for the guest to halt → SIGTERM → 5s → SIGKILL
 - **Force stop** (`--force`): skip the ACPI window — Cloud Hypervisor still issues `vm.shutdown` to flush disks, then SIGTERM → 5s → SIGKILL; Firecracker goes straight to SIGTERM
 - **Force delete** (`vm rm --force`): same immediate path as force stop, then delete — no graceful window
