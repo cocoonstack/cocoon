@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -328,8 +329,5 @@ func vmIPs(vm *types.VM) string {
 			ips = append(ips, nc.Network.IP)
 		}
 	}
-	if len(ips) == 0 {
-		return "-"
-	}
-	return strings.Join(ips, ",")
+	return cmp.Or(strings.Join(ips, ","), "-")
 }

@@ -18,11 +18,11 @@ func procStartTime(pid int) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	end := strings.LastIndexByte(string(data), ')')
-	if end < 0 {
+	_, afterComm, ok := strings.CutLast(string(data), ")")
+	if !ok {
 		return 0, fmt.Errorf("parse /proc/%d/stat: no comm terminator", pid)
 	}
-	fields := strings.Fields(string(data)[end+1:])
+	fields := strings.Fields(afterComm)
 	if len(fields) <= startTimeField {
 		return 0, fmt.Errorf("parse /proc/%d/stat: got %d fields after comm", pid, len(fields))
 	}

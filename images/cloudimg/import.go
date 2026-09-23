@@ -87,7 +87,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
-	head, full, err := utils.PeekReader(r, 8)
+	head, full, err := utils.PeekReader(r, sniffLen)
 	if err != nil {
 		return fmt.Errorf("import %s: read stream: %w", name, err)
 	}

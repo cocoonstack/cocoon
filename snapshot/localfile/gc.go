@@ -156,7 +156,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logWouldEvict(ctx, lruReasons, snap.records)
 				} else {
 					maps.Copy(snap.reasons, lruReasons)
-					candidates = append(candidates, slices.Collect(maps.Keys(lruReasons))...)
+					candidates = slices.AppendSeq(candidates, maps.Keys(lruReasons))
 				}
 			}
 
