@@ -1,3 +1,4 @@
+// Package cmd builds the cocoon root command and loads the global configuration.
 package cmd
 
 import (

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Package bridge attaches VM TAP devices to an existing host bridge.
 package bridge
 
 import (

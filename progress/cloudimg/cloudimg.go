@@ -1,3 +1,4 @@
+// Package cloudimg defines the progress events of a cloud image pull.
 package cloudimg
 
 const (

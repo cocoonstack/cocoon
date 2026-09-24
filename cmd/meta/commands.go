@@ -1,3 +1,4 @@
+// Package meta defines the cocoon meta commands.
 package meta
 
 import (

@@ -1,3 +1,4 @@
+// Package types defines the VM, image, snapshot, network, and storage records that cocoon packages share.
 package types
 
 import (

@@ -1,3 +1,4 @@
+// Package oci implements the OCI image backend, which converts container layers to EROFS.
 package oci
 
 import (

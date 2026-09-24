@@ -1,3 +1,4 @@
+// Package others defines the top-level gc, version, and completion commands.
 package others
 
 import (

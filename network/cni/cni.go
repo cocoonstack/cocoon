@@ -1,3 +1,4 @@
+// Package cni implements network.Network with CNI plugins and one netns per VM.
 package cni
 
 import (

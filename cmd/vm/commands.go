@@ -1,3 +1,4 @@
+// Package vm defines the cocoon vm commands.
 package vm
 
 import (

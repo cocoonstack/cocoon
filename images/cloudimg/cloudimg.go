@@ -1,3 +1,4 @@
+// Package cloudimg implements the cloud image backend for UEFI boot.
 package cloudimg
 
 import (

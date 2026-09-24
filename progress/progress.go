@@ -1,3 +1,4 @@
+// Package progress defines the tracker that receives image operation events.
 package progress
 
 // Nop is a no-op tracker for callers that don't need progress reporting.

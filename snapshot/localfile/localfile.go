@@ -1,3 +1,4 @@
+// Package localfile implements the snapshot backend on the local filesystem.
 package localfile
 
 import (

@@ -1,3 +1,4 @@
+// Package flock provides file locks that exclude both goroutines and processes.
 package flock
 
 import (

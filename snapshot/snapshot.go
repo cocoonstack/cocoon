@@ -1,3 +1,4 @@
+// Package snapshot defines the snapshot backend interfaces, records, and export envelope.
 package snapshot
 
 import (

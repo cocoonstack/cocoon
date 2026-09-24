@@ -1,6 +1,6 @@
 //go:build !linux
 
-// Package bridge: non-Linux stubs.
+// Package bridge stubs the bridge provider on non-Linux hosts.
 package bridge
 
 import (

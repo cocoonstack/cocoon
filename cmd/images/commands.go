@@ -1,3 +1,4 @@
+// Package images defines the cocoon image commands.
 package images
 
 import (

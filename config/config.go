@@ -1,3 +1,4 @@
+// Package config defines the global cocoon configuration.
 package config
 
 import (

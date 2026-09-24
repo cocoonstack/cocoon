@@ -1,3 +1,4 @@
+// Package cloudhypervisor implements hypervisor.Hypervisor on the Cloud Hypervisor VMM.
 package cloudhypervisor
 
 import (

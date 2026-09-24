@@ -1,3 +1,4 @@
+// Package utils holds shared file, process, HTTP, and archive helpers.
 package utils
 
 import (
