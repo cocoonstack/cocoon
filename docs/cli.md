@@ -92,7 +92,7 @@ Config-file / env-only keys (no CLI flag):
 | `log.maxbackups` | `COCOON_LOG_MAXBACKUPS` | `3` | Rotation: max number of retained rotated files; applies only when `log.filename` is set |
 | `use_firecracker` | `COCOON_USE_FIRECRACKER` | `false` | Make Firecracker the default backend, as if every VM command carried `--fc` |
 | `log.filename` | `COCOON_LOG_FILENAME` | empty (stderr) | Log file path; setting it is what switches logging from stderr to a file and enables the `log.maxsize` / `log.maxage` / `log.maxbackups` rotation knobs |
-| `log.usejson` | `COCOON_LOG_USEJSON` | `false` | Emit JSON-structured log records instead of plain text |
+| `log.usejson` | `COCOON_LOG_USEJSON` | `true` unless stderr is a terminal | Emit JSON-structured log records instead of plain text |
 | `socket_wait_timeout_seconds` | `COCOON_SOCKET_WAIT_TIMEOUT_SECONDS` | `5` | Per-phase launch timeout (API socket up, then VM running, then the vsock UDS on CH); exceeding it aborts the launch and kills the VMM — raise on slow storage |
 | `terminate_grace_period_seconds` | `COCOON_TERMINATE_GRACE_PERIOD_SECONDS` | `5` | SIGTERM→SIGKILL window when force-killing a VMM |
 | `metering.backend` | `COCOON_METERING_BACKEND` | `file` | Lifecycle-event recorder: `file`, `meta`, `stderr`, or `nop` |

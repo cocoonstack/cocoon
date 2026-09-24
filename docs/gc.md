@@ -15,23 +15,23 @@ This ensures blobs referenced by running VMs or saved snapshots are never delete
 
 ### Log Output
 
-Every collected item is logged at INFO level with a structured `key=value` payload under `gc.<module>`, and a summary line ends the cycle; the summary counts candidates identified, not deletions confirmed. Sample:
+Every collected item is logged at INFO level with a structured `key=value` payload in its message under `func` `gc.<module>`, and a summary line ends the cycle; the summary counts candidates identified, not deletions confirmed. When stderr is not a terminal (the systemd unit below, a pipe, a file), each record is one JSON line. Sample:
 
 ```
-INFO gc.snapshot          collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=3221225472 last_accessed=2026-04-12T10:30:00Z reason=lru-age
-INFO gc.snapshot          collected id=2GQVEA... name= bytes=0 last_accessed=never reason=orphan
-INFO gc.cloud-hypervisor  collected id=ABC123 reason=orphan-runDir
-INFO gc.oci               collected blob=b40150c1c2717d... reason=unreferenced
-INFO gc.cni               collected id=JKLMN netns=cocoon-JKLMN reason=orphan
-INFO gc.bridge            collected id=MNOPQ iface=btMNOPQ-0 reason=orphan-tap
-INFO gc.Run               completed: cloud-hypervisor=1 cni=1 oci=4 snapshot=3 (failures: 0, duration: 230ms)
+{"level":"info","func":"gc.snapshot","time":"2026-04-19T03:00:12Z","message":"collected id=XEOU... name=ubuntu-hot-testing:v1 bytes=3221225472 last_accessed=2026-04-12T10:30:00Z reason=lru-age"}
+{"level":"info","func":"gc.snapshot","time":"2026-04-19T03:00:12Z","message":"collected id=2GQVEA... name= bytes=0 last_accessed=never reason=orphan"}
+{"level":"info","func":"gc.cloud-hypervisor","time":"2026-04-19T03:00:12Z","message":"collected id=ABC123 reason=orphan-runDir"}
+{"level":"info","func":"gc.oci","time":"2026-04-19T03:00:12Z","message":"collected blob=b40150c1c2717d... reason=unreferenced"}
+{"level":"info","func":"gc.cni","time":"2026-04-19T03:00:12Z","message":"collected id=JKLMN netns=cocoon-JKLMN reason=orphan"}
+{"level":"info","func":"gc.bridge","time":"2026-04-19T03:00:12Z","message":"collected id=MNOPQ iface=btMNOPQ-0 reason=orphan-tap"}
+{"level":"info","func":"gc.Run","time":"2026-04-19T03:00:12Z","message":"completed: cloud-hypervisor=1 cni=1 oci=4 snapshot=3 (failures: 0, duration: 230ms)"}
 ```
 
 Filter with `awk` / `grep`:
 
 ```bash
-journalctl -u cocoon-gc.service --since today | grep "gc.snapshot.*reason=lru-"
-journalctl -u cocoon-gc.service --since today | awk '/gc.Run completed/'
+journalctl -u cocoon-gc.service --since today | grep '"func":"gc.snapshot".*reason=lru-'
+journalctl -u cocoon-gc.service --since today | awk '/"func":"gc.Run"/'
 ```
 
 Reasons:

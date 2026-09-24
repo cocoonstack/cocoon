@@ -83,7 +83,7 @@ func newRootCmd() *cobra.Command {
 	viper.SetDefault("terminate_grace_period_seconds", 5)
 	viper.SetDefault("use_firecracker", false)
 	viper.SetDefault("log.filename", "")
-	viper.SetDefault("log.usejson", false)
+	viper.SetDefault("log.usejson", !stderrIsTerminal())
 	viper.SetDefault("pool_size", runtime.NumCPU())
 	viper.SetDefault("pull_conns", 8)
 	// Empty default keeps the key registered — AutomaticEnv only binds registered keys.
@@ -131,10 +131,10 @@ func initConfig(ctx context.Context) error {
 		return fmt.Errorf("config: %w", err)
 	}
 
-	// core/log.SetupLog captures os.Stdout; swap stderr in for the call so -o json output stays on stdout.
-	origStdout := os.Stdout
-	os.Stdout = os.Stderr
-	setupErr := log.SetupLog(ctx, conf.Log, "")
-	os.Stdout = origStdout
-	return setupErr
+	return log.SetupLog(ctx, conf.Log, "")
+}
+
+func stderrIsTerminal() bool {
+	fi, err := os.Stderr.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
