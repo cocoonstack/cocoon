@@ -1,0 +1,14 @@
+# /system/etc/init/cocoon-power.rc
+#
+# Graceful stop: `cocoon vm stop` presses the ACPI power button, but redroid's
+# early-init removes /dev/input, so no process reads it. cocoon-power.sh
+# recreates the button's node and shuts Android down on KEY_POWER.
+
+service cocoon-power /system/bin/sh /system/bin/cocoon-power.sh
+    class core
+    user root
+    group root
+    oneshot
+
+on boot
+    start cocoon-power

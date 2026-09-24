@@ -29,6 +29,8 @@ RUN --mount=type=secret,id=cocoon_overlay \
     --mount=type=secret,id=cocoon_disable_bt_rc \
     --mount=type=secret,id=cocoon_disable_vending_rc \
     --mount=type=secret,id=cocoon_agent_rc \
+    --mount=type=secret,id=cocoon_power_rc \
+    --mount=type=secret,id=cocoon_power \
     # --- Install kernel + initramfs tooling ---
     apt-get update && apt-get install -y --no-install-recommends \
     linux-image-generic \
@@ -77,6 +79,9 @@ RUN --mount=type=secret,id=cocoon_overlay \
     cp /run/secrets/cocoon_network_rc /output/system/etc/init/cocoon-network.rc && \
     cp /run/secrets/cocoon_omx_fix_rc /output/system/etc/init/cocoon-omx-fix.rc && \
     cp /run/secrets/cocoon_disable_bt_rc /output/system/etc/init/cocoon-disable-bt.rc && \
+    cp /run/secrets/cocoon_power_rc /output/system/etc/init/cocoon-power.rc && \
+    cp /run/secrets/cocoon_power /output/system/bin/cocoon-power.sh && \
+    chmod 0755             /output/system/bin/cocoon-power.sh && \
     cp /run/secrets/cocoon_disable_vending_rc /output/system/etc/init/cocoon-disable-vending.rc && \
     # --- cocoon-agent (vsock exec) — Android amd64 only ---
     cp /run/secrets/cocoon_agent_rc /output/system/etc/init/cocoon-agent.rc && \
