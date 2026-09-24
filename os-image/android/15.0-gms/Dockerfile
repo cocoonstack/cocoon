@@ -24,8 +24,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Bumping COCOON_AGENT_VERSION must also update COCOON_AGENT_SHA256 — the
 # sha256sum -c step below fails the build when they drift.
-ARG COCOON_AGENT_VERSION=0.2.4
-ARG COCOON_AGENT_SHA256=d7a51ac9caa3a4d382e9f65a7bc77137f88690a63f493ccfb836398b1b7a1f88
+ARG COCOON_AGENT_VERSION=0.2.5
+ARG COCOON_AGENT_SHA256=4507e0348b017f12f477444ac5022ce175980d31f538ba0e0d1f2d3d33441734
 
 RUN --mount=type=secret,id=cocoon_overlay \
     --mount=type=secret,id=cocoon_network \
