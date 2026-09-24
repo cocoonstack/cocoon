@@ -102,6 +102,7 @@ IMAGE_NAME="ghcr.io/cocoonstack/cocoon/android:14.0" bash start.sh   # run from 
 Every official OS image bakes the following on top of its base distro:
 
 - **cocoon-agent** (vsock exec) — pinned binary from [cocoonstack/cocoon-agent](https://github.com/cocoonstack/cocoon-agent), auto-started on boot. Backs `cocoon vm exec` (kubectl-style stdin/stdout/stderr/exit, no SSH/network dependency). Ubuntu and Debian (and the Ubuntu-based `android:16.0-gms-h264`) use a systemd unit; the three bare `android/` tags use `/system/etc/init/cocoon-agent.rc`.
+- **cocoon-power** *(the three bare `android/` tags)* — `/system/etc/init/cocoon-power.rc`. redroid's early-init removes `/dev/input`, so nothing would read the ACPI power button; the service recreates the button's node and turns a press into an Android shutdown, so `cocoon vm stop` powers the guest off cleanly instead of waiting out `stop_timeout_seconds`.
 - **sshd** *(Ubuntu and Debian, including `android:16.0-gms-h264`)* — `openssh-server` enabled with `PermitRootLogin yes`. Default credentials are `root:cocoon`. SSH covers the human-on-keyboard case while cocoon-agent handles control-plane traffic.
 
 Default credentials apply to fresh VMs. If you fork an image you should rotate the root password and (if you keep sshd) flip `PermitRootLogin` back to `no` once you have a non-root sudoer.
