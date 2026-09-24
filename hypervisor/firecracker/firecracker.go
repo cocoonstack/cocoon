@@ -1,3 +1,4 @@
+// Package firecracker implements hypervisor.Hypervisor on the Firecracker VMM.
 package firecracker
 
 import (

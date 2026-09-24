@@ -1,3 +1,4 @@
+// Package daemon defines the cocoon daemon command, which runs the resident VM supervisor.
 package daemon
 
 import (

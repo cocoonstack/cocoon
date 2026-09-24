@@ -1,3 +1,4 @@
+// Package network defines the host-side networking provider interface for VMs.
 package network
 
 import (

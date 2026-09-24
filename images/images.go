@@ -1,3 +1,4 @@
+// Package images defines the image backend interface and the index and blob store that the backends share.
 package images
 
 import (

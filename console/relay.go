@@ -1,3 +1,4 @@
+// Package console relays an interactive terminal to a VM console.
 package console
 
 import (

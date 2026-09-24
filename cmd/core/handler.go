@@ -1,3 +1,4 @@
+// Package core holds the backend wiring and flag parsing that the cocoon subcommands share.
 package core
 
 import (

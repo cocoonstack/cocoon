@@ -1,3 +1,4 @@
+// Package main is the cocoon CLI entry point.
 package main
 
 import (

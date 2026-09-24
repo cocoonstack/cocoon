@@ -1,3 +1,4 @@
+// Package snapshot defines the cocoon snapshot commands.
 package snapshot
 
 import (

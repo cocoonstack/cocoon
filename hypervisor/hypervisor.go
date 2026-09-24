@@ -1,3 +1,4 @@
+// Package hypervisor defines the VM lifecycle interface and the backend logic that Cloud Hypervisor and Firecracker share.
 package hypervisor
 
 import (

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Package bridge attaches VM TAP devices to an existing host bridge.
 package bridge
 
 import (
@@ -48,7 +49,7 @@ func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 
 func (b *Bridge) Type() string { return typ }
 
-func (b *Bridge) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
+func (b *Bridge) Verify(_ context.Context, _ string, expected []*types.NetworkConfig) error {
 	for _, nc := range expected {
 		if nc == nil || nc.TAP == "" {
 			continue

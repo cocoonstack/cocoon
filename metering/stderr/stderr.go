@@ -1,3 +1,4 @@
+// Package stderr writes metering entries to stderr for development and debugging.
 package stderr
 
 import (

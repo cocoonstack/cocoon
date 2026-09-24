@@ -1,3 +1,4 @@
+// Package metadata generates the cloud-init NoCloud cidata disk.
 package metadata
 
 import (

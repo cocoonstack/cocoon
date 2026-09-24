@@ -1,3 +1,4 @@
+// Package oci defines the progress events of an OCI image pull.
 package oci
 
 const (

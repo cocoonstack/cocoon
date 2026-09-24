@@ -306,10 +306,10 @@ func TestArmSetsQuotaThenBurst(t *testing.T) {
 	if err := Arm(parent, "A", Knobs{QuotaUs: 150000, PeriodUs: 100000, BurstUs: 50000}); err != nil {
 		t.Fatalf("Arm: %v", err)
 	}
-	max, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
+	cpuMax, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
 	burst, _ := os.ReadFile(filepath.Join(dir, "cpu.max.burst"))
-	if string(max) != "150000 100000" || string(burst) != "50000" {
-		t.Errorf("max=%q burst=%q", max, burst)
+	if string(cpuMax) != "150000 100000" || string(burst) != "50000" {
+		t.Errorf("max=%q burst=%q", cpuMax, burst)
 	}
 }
 
@@ -320,9 +320,9 @@ func TestArmDefaultedBurstDegradesWhenKernelLacksBurst(t *testing.T) {
 	if err := Arm(parent, "A", Knobs{QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true}); err != nil {
 		t.Fatalf("Arm: %v", err)
 	}
-	max, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
-	if string(max) != "200000 100000" {
-		t.Errorf("max=%q, want quota still armed", max)
+	cpuMax, _ := os.ReadFile(filepath.Join(dir, "cpu.max"))
+	if string(cpuMax) != "200000 100000" {
+		t.Errorf("max=%q, want quota still armed", cpuMax)
 	}
 }
 

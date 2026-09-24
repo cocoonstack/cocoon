@@ -1,3 +1,4 @@
+// Package file records metering entries in an append-only ledger file.
 package file
 
 import (
