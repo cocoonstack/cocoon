@@ -134,7 +134,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 	held := make(chan struct{})
 	release := make(chan struct{})
 	go func() {
-		_ = s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+		_ = s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(meta.Writer) error {
 			close(held)
 			<-release
 			return nil
@@ -146,7 +146,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	err := s2.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error { return nil })
+	err := s2.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(meta.Writer) error { return nil })
 	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want deadline exceeded, got %v", err)

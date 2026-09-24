@@ -204,7 +204,7 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 		return nil
 	}})
 
-	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error {
+	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 		return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
 	}})
 	if err != nil {
@@ -274,7 +274,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 	stopLocked := func(ctx context.Context, id string) error {
 		return b.StopOneLocked(ctx, id, StopSpec{
 			RuntimeFiles: []string{APISocketName},
-			Shutdown: func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error {
+			Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 				return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
 			},
 		})
