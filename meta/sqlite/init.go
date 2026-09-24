@@ -26,14 +26,14 @@ func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 
 // InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
 func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) error {
-	if need, err := initNeeded(dbPath); err == nil && !need {
+	if need, err := initNeeded(ctx, dbPath); err == nil && !need {
 		return nil
 	}
 	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
 		return merr
 	}
 	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
-		need, err := initNeeded(dbPath)
+		need, err := initNeeded(ctx, dbPath)
 		if err != nil || !need {
 			return err
 		}
@@ -43,7 +43,7 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 
 // InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard — the conversion tool creates its target while the manifest is necessarily present (§6) — and passes a completed one through.
 func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
-	need, err := initNeeded(dbPath)
+	need, err := initNeeded(ctx, dbPath)
 	if err != nil || !need {
 		return err
 	}
@@ -58,7 +58,7 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 		return ferr
 	}
 	if utils.FileExists(dbPath) {
-		partial, perr := failedInit(dbPath)
+		partial, perr := failedInit(ctx, dbPath)
 		if perr != nil {
 			return perr
 		}
@@ -110,29 +110,29 @@ func createSchema(ctx context.Context, tx *sql.Tx, namespaces []Namespace) error
 	return nil
 }
 
-func initNeeded(dbPath string) (bool, error) {
+func initNeeded(ctx context.Context, dbPath string) (bool, error) {
 	if !utils.FileExists(dbPath) {
 		return true, nil
 	}
-	return failedInit(dbPath)
+	return failedInit(ctx, dbPath)
 }
 
 // failedInit reports a crashed init: Init is atomic, so the only restartable state is an empty database; anything populated is refused, never deleted.
-func failedInit(dbPath string) (bool, error) {
+func failedInit(ctx context.Context, dbPath string) (bool, error) {
 	db, err := open(dbPath, "FULL", false)
 	if err != nil {
 		return false, err
 	}
 	defer db.Close() //nolint:errcheck
 	var appID int64
-	if serr := db.QueryRow("PRAGMA application_id").Scan(&appID); serr != nil {
+	if serr := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); serr != nil {
 		if strings.Contains(serr.Error(), "not a database") {
 			return false, fmt.Errorf("%s is not a sqlite database: %w", dbPath, meta.ErrCorrupt)
 		}
 		return false, mapErr(serr)
 	}
 	var tables int
-	if serr := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables); serr != nil {
+	if serr := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables); serr != nil {
 		return false, mapErr(serr)
 	}
 	if tables == 0 {

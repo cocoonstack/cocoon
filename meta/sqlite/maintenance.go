@@ -39,7 +39,7 @@ func Backup(ctx context.Context, dbPath, destPath string) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
 	}
-	if partial, err := failedInit(dbPath); err != nil {
+	if partial, err := failedInit(ctx, dbPath); err != nil {
 		return err
 	} else if partial {
 		return fmt.Errorf("%s is an uninitialized store; nothing to back up", dbPath)

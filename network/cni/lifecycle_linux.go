@@ -21,10 +21,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// netnsDeleteRetryInterval polls for async kernel cleanup of a named netns.
 const netnsDeleteRetryInterval = 100 * time.Millisecond
 
-// createNetns creates a named netns at /var/run/netns/{name}.
 func createNetns(name string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

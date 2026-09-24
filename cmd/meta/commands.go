@@ -7,12 +7,7 @@ import (
 )
 
 func Command(h Handler) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "meta",
-		Short: "Meta store operations",
-		Args:  cobra.NoArgs,
-		RunE:  cliutil.ShowHelp,
-	}
+	cmd := cliutil.GroupCommand("meta", "Meta store operations")
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "init",

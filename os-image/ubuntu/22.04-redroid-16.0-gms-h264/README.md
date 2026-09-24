@@ -206,7 +206,7 @@ cocoon image import redroid16-gms:16.0-final \
 
 ## Architecture boundary
 
-Both amd64 and arm64 are supported and built separately into single-arch images.
+Both amd64 and arm64 are supported: each arch bakes its own ReDroid, and both land in the one multi-arch image.
 amd64 bakes an x86_64 ReDroid plus `libndk_translation` so ARM-only apps run
 under x86. arm64 bakes a native arm64 ReDroid with no translator: ARM apps run
 natively, and the libndk download and `ro.dalvik.vm.native.bridge` build.prop

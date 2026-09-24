@@ -20,6 +20,7 @@ COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 
 COCOON_BIN="${COCOON_BIN:-cocoon}"
 CH_RUN_DIR="${COCOON_RUN_DIR}/cloudhypervisor"
+FC_RUN_DIR="${COCOON_RUN_DIR}/firecracker"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,8 +74,12 @@ VM_NAME=$(echo "$VM_REC" | jq -r '.config.name // "<unnamed>"')
 VM_NETWORK=$(echo "$VM_REC" | jq -r '.config.network // empty')
 VM_STATE=$(echo "$VM_REC" | jq -r '.state // "unknown"')
 VM_PID=$(echo "$VM_REC" | jq -r '.pid // 0')
+VM_STALE=$(echo "$VM_REC" | jq -r '.stale // false')
 CONSOLE_PATH=$(echo "$VM_REC" | jq -r '.console_path // empty')
-RUN_DIR="${CH_RUN_DIR}/${VM_ID}"
+case "$(echo "$VM_REC" | jq -r '.hypervisor // empty')" in
+    firecracker) RUN_DIR="${FC_RUN_DIR}/${VM_ID}" ;;
+    *)           RUN_DIR="${CH_RUN_DIR}/${VM_ID}" ;;
+esac
 SOCK_PATH=$(echo "$VM_REC" | jq -r ".socket_path // \"${RUN_DIR}/api.sock\"")
 
 kv "ID" "$VM_ID"
@@ -92,12 +97,10 @@ header "Process"
 if [ "$VM_PID" -gt 0 ] 2>/dev/null && kill -0 "$VM_PID" 2>/dev/null; then
     PROC_EXE=$(readlink -f "/proc/$VM_PID/exe" 2>/dev/null || echo "unknown")
     pass "PID $VM_PID alive ($PROC_EXE)"
+elif [ "$VM_STALE" = "true" ]; then
+    fail "VMM gone but the record says 'running' (stale record)"
 else
-    if [ "$VM_STATE" = "running" ]; then
-        fail "PID $VM_PID not alive but state is 'running' (stale record)"
-    else
-        info "PID $VM_PID not alive (state: $VM_STATE)"
-    fi
+    info "PID $VM_PID not alive (state: $VM_STATE)"
 fi
 
 # ---------------------------------------------------------------------------

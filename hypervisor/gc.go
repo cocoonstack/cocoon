@@ -139,7 +139,7 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	return errs
 }
 
-// gcCollect sweeps orphan dirs/locks and removes candidate IDs; every candidate revalidates under its VM lock.
+// gcCollect sweeps orphan dirs/locks and removes candidate IDs.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
@@ -186,7 +186,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 
 // sweepStaleCaptureDirs locks per dir: the staging name is fixed, so a fresh restore could otherwise recreate the dir between the age check and the removal.
 func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) []error {
-	cutoff := timeNow().Add(-CreatingStateGCGrace)
+	cutoff := timeNow().Add(-StaleArtifactGCGrace)
 	var errs []error
 	for _, dir := range runDirs {
 		// The run dir's basename is its VM ID — the lock domain of everything inside it.
@@ -211,7 +211,7 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 		return nil
 	}
 	logger := log.WithFunc("gc." + b.Typ)
-	cutoff := timeNow().Add(-CreatingStateGCGrace)
+	cutoff := timeNow().Add(-StaleArtifactGCGrace)
 	var errs []error
 	for _, e := range entries {
 		info, infoErr := e.Info()

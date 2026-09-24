@@ -156,7 +156,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logWouldEvict(ctx, lruReasons, snap.records)
 				} else {
 					maps.Copy(snap.reasons, lruReasons)
-					candidates = append(candidates, slices.Collect(maps.Keys(lruReasons))...)
+					candidates = slices.AppendSeq(candidates, maps.Keys(lruReasons))
 				}
 			}
 
@@ -230,12 +230,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 // sweepLeases reclaims lease files left by hosts that predate the transient lease, and by any crash between acquire and release.
 func sweepLeases(ctx context.Context, conf *Config, snap snapshotGCSnapshot) {
 	logger := log.WithFunc("gc.snapshot")
-	live := make(map[string]struct{}, len(snap.snapshotIDs)+len(snap.dataDirs))
-	maps.Copy(live, snap.snapshotIDs)
-	for _, dir := range snap.dataDirs {
-		live[dir] = struct{}{}
-	}
-	for _, id := range utils.FilterUnreferenced(snap.leaseIDs, live) {
+	for _, id := range utils.FilterUnreferenced(snap.leaseIDs, snap.snapshotIDs) {
 		ok, err := flock.ReclaimTransient(ctx, conf.LeasePath(id))
 		if err != nil {
 			logger.Warnf(ctx, "sweep lease %s: %v", id, err)

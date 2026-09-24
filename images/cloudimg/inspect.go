@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 
 	"github.com/projecteru2/core/log"
@@ -35,14 +34,6 @@ type sourceImageInfo struct {
 	Format         string
 	Compat         string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
 	HasBackingFile bool
-}
-
-func sniffImageSource(f *os.File) error {
-	head, err := utils.FileHead(f, 8)
-	if err != nil {
-		return fmt.Errorf("read source: %w", err)
-	}
-	return sniffHead(head)
 }
 
 func sniffHead(head []byte) error {

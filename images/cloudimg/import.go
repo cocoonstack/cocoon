@@ -29,7 +29,11 @@ func importQcow2File(ctx context.Context, conf *Config, store *images.Store[imag
 	defer srcFile.Close() //nolint:errcheck
 
 	// ReadAt-based sniffing preserves the current file offset.
-	if err = sniffImageSource(srcFile); err != nil {
+	head, err := utils.FileHead(srcFile, sniffLen)
+	if err != nil {
+		return fmt.Errorf("import %s: read source: %w", filePath, err)
+	}
+	if err = sniffHead(head); err != nil {
 		return fmt.Errorf("import %s: %w", filePath, err)
 	}
 
@@ -87,7 +91,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload})
 
-	head, full, err := utils.PeekReader(r, 8)
+	head, full, err := utils.PeekReader(r, sniffLen)
 	if err != nil {
 		return fmt.Errorf("import %s: read stream: %w", name, err)
 	}
@@ -111,7 +115,7 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 	return finishQcow2Import(ctx, conf, store, name, tracker, tmpPath, digestHex)
 }
 
-func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) (err error) {
+func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 0 {
 		return errors.New("no qcow2 files provided")
 	}

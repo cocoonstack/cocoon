@@ -102,7 +102,7 @@ func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenM
 	c.Env = append(os.Environ(), "COCOON_META_BACKEND="+cmdcore.ResolveMetaBackend(conf))
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := c.Start(); err != nil {
-		log.WithFunc("cmd.vm.reseed").Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
+		log.WithFunc("cmd.vm.detachReseed").Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
 		return false
 	}
 	go c.Wait() //nolint:errcheck
@@ -110,7 +110,7 @@ func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenM
 }
 
 func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {
-	logger := log.WithFunc("cmd.vm.reseed")
+	logger := log.WithFunc("cmd.vm.signalReseed")
 	if vm.Config.Windows {
 		logger.Debug(ctx, "skip reseed signal: Windows guest")
 		return false

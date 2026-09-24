@@ -137,7 +137,6 @@ func (b *Bridge) Delete(_ context.Context, vmID string) error {
 	return nil
 }
 
-// RegisterGC reclaims orphan bridge TAP devices.
 func (b *Bridge) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
 	gc.Register(orch, GCModule(b.tapPrefix, vmInUse))
 }

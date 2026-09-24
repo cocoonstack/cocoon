@@ -144,7 +144,6 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	return nil
 }
 
-// guardSnapTombstone is the shared-lease escalation: release shared, recover exclusively, report ErrTombstoned — an in-place upgrade deadlocks.
 func (lf *LocalFile) guardSnapTombstone(ctx context.Context, id string, releaseShared func()) error {
 	var present bool
 	if err := lf.view(ctx, func(t *snapTx) error {

@@ -71,7 +71,7 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	return nil
 }
 
-// StopAll mirrors StartAll: stopOne per ref, each flipping its own state under its VM's ops lock.
+// StopAll runs stopOne per ref, each flipping its own state under its VM's ops lock.
 func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne VMOp) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
@@ -86,7 +86,6 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 	if err != nil {
 		return nil, err
 	}
-	// one /proc scan serves every VM's orphan check
 	procScan, scanErr := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if scanErr != nil {
 		return nil, fmt.Errorf("refuse delete: /proc scan errored: %w (resolve the host issue and retry)", scanErr)

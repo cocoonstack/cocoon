@@ -45,7 +45,7 @@ func TarDir(tw *tar.Writer, dir string) error {
 	return nil
 }
 
-// ListRegularFiles returns the names of dir's regular files in directory order, the set TarDir archives.
+// ListRegularFiles returns the names of dir's regular files, the set TarDir archives.
 func ListRegularFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -97,24 +97,6 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 			}
 		}
 	}
-}
-
-// tarFileFrom writes an already-opened file as a regular (non-sparse) tar entry.
-func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) error {
-	hdr, err := tar.FileInfoHeader(fi, "")
-	if err != nil {
-		return fmt.Errorf("tar header for %s: %w", f.Name(), err)
-	}
-	hdr.Name = nameInTar
-
-	if err := tw.WriteHeader(hdr); err != nil {
-		return fmt.Errorf("write header %s: %w", nameInTar, err)
-	}
-
-	if _, err := io.Copy(tw, f); err != nil {
-		return fmt.Errorf("write data %s: %w", nameInTar, err)
-	}
-	return nil
 }
 
 // extractFileSparse restores a sparse file from its segment map.
@@ -291,4 +273,22 @@ func rewindAndTarFull(tw *tar.Writer, f *os.File, fi os.FileInfo, path, nameInTa
 		return fmt.Errorf("seek %s: %w", path, err)
 	}
 	return tarFileFrom(tw, f, fi, nameInTar)
+}
+
+// tarFileFrom writes an already-opened file as a regular (non-sparse) tar entry.
+func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) error {
+	hdr, err := tar.FileInfoHeader(fi, "")
+	if err != nil {
+		return fmt.Errorf("tar header for %s: %w", f.Name(), err)
+	}
+	hdr.Name = nameInTar
+
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("write header %s: %w", nameInTar, err)
+	}
+
+	if _, err := io.Copy(tw, f); err != nil {
+		return fmt.Errorf("write data %s: %w", nameInTar, err)
+	}
+	return nil
 }

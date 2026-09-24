@@ -17,7 +17,6 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
-	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -277,7 +276,6 @@ func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *
 	})
 }
 
-// runClone emits its progress lines only when --output json is off; the JSON envelope replaces them.
 func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
@@ -362,7 +360,6 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	return cloneSetup{vmCfg: vmCfg, vmID: vmID, rollback: rollbackReserve, unlock: unlock, netProvider: netProvider, netSetup: netSetup, resizeTo: resizeTo}, nil
 }
 
-// finishClone is deferred because the resize needs the ops lock the clone still holds.
 func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, vm *types.VM, cs cloneSetup) (*types.VM, []string, error) {
 	var hints []string
 	if vm.Config.PCI && len(vm.Config.DataDisks) > 0 {
@@ -450,7 +447,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	vmID := utils.GenerateID()
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 	// Digest locks span resolve → reserve commit, so image GC cannot collect a blob inside the window.
-	releasePins, err := pinResolvedBlobs(ctx, owner, blobIDs)
+	releasePins, err := owner.PinBlobs(ctx, blobIDs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -494,7 +491,6 @@ func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target in
 	return cfg.NICs, target, nil
 }
 
-// validateBackendFlags is shared by create and debug so the capability gate list cannot drift.
 func validateBackendFlags(conf *config.Config, vmCfg *types.VMConfig) error {
 	if !conf.UseFirecracker {
 		if vmCfg.PCI {
@@ -526,14 +522,6 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 		return fmt.Errorf("--fc requires OCI images (direct kernel boot): Firecracker does not support UEFI/cloudimg boot")
 	}
 	return nil
-}
-
-// pinResolvedBlobs holds the resolved image's digest locks until the reserve commits; the empty set (bridge/dataless) pins nothing.
-func pinResolvedBlobs(ctx context.Context, owner imagebackend.Images, blobIDs map[string]struct{}) (func(), error) {
-	if len(blobIDs) == 0 {
-		return func() {}, nil
-	}
-	return owner.PinBlobs(ctx, blobIDs)
 }
 
 // prereserveVM reserves before network provisioning, so GC never sees ownerless TAP/netns.

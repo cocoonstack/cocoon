@@ -204,7 +204,6 @@ check_binary() {
             ch-remote)        ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             firecracker)      ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             qemu-img)         ver=$("$name" --version 2>/dev/null | head -1) || true ;;
-            zstd)             ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             mkfs.ext4)        ver=$("$name" -V 2>&1 | head -1) || true ;;
             mkfs.erofs)       ver=$("$name" --version 2>&1 | head -1) || true ;;
         esac
@@ -242,12 +241,6 @@ else
     warn "firecracker not found (optional, needed for --fc backend)"
 fi
 check_binary qemu-img
-# zstd is optional — only needed for FC kernel decompression on some distros.
-if command -v zstd &>/dev/null; then
-    check_binary zstd
-else
-    warn "zstd not found (optional, needed for --fc kernel decompression)"
-fi
 check_binary mkfs.ext4
 check_binary mkfs.erofs
 
@@ -552,18 +545,6 @@ if $UPGRADE; then
             fixed "hypervisor-fw ${FW_VERSION} -> ${FIRMWARE_PATH}"
         else
             fail "failed to download firmware from ${fw_url}"
-        fi
-    fi
-
-    # -- zstd (for FC kernel decompression) -----------------------------------
-    if ! command -v zstd &>/dev/null; then
-        header "Install zstd"
-        if command -v apt-get &>/dev/null; then
-            apt-get install -y -qq zstd &>/dev/null && fixed "zstd installed via apt-get" || warn "failed to install zstd"
-        elif command -v yum &>/dev/null; then
-            yum install -y -q zstd &>/dev/null && fixed "zstd installed via yum" || warn "failed to install zstd"
-        else
-            warn "zstd not installed (install manually for --fc kernel decompression)"
         fi
     fi
 

@@ -350,7 +350,6 @@ func extractNetworkInfo(ctx context.Context, result cnitypes.Result) (*types.Net
 			return info, nil
 		}
 	}
-	// IPv6-only plugin results are not persisted; log the drop instead of silently recording nil.
 	log.WithFunc("cni.extractNetworkInfo").Warnf(ctx,
 		"CNI result has %d IPs but no IPv4; skipping network info (IPv6-only is unsupported)", len(newResult.IPs))
 	return nil, nil

@@ -25,10 +25,7 @@ var validScope = regexp.MustCompile(`^[A-Za-z0-9]{2}$`)
 
 // NetNumQueues returns the virtio-net queue count for cpu; CH uses TX+RX pairs, so the result is always even (>= 2).
 func NetNumQueues(cpu int) int {
-	if cpu <= 1 {
-		return 2
-	}
-	return cpu * 2
+	return 2 * max(cpu, 1)
 }
 
 func ResolveQueueSize(qs int) int {
@@ -67,10 +64,7 @@ func ValidateScope(scope string) error {
 }
 
 func VMIDPrefix(vmID string) string {
-	if len(vmID) > vmIDPrefixLen {
-		return vmID[:vmIDPrefixLen]
-	}
-	return vmID
+	return vmID[:min(len(vmID), vmIDPrefixLen)]
 }
 
 func TAPName(prefix, vmID string, nic int) string {

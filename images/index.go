@@ -49,25 +49,18 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 }
 
 // LookupOne resolves id to a single entry via LookupRefs' rules; multiple refs must all name one digest (tag aliases) — a prefix spanning distinct digests resolves to nothing rather than map-iteration luck.
-func LookupOne[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) (string, *E, bool) {
-	refs := LookupRefs(images, id, normalizers...)
+func LookupOne[E Entry](images map[string]*E, id string) (string, *E, bool) {
+	refs := LookupRefs(images, id)
 	if len(refs) == 0 || !refsShareDigest(images, refs) {
 		return "", nil, false
 	}
 	return refs[0], images[refs[0]], true
 }
 
-// LookupRefs returns all ref keys matching id by exact key, normalizer, or digest prefix.
-func LookupRefs[E Entry](images map[string]*E, id string, normalizers ...func(string) (string, bool)) []string {
+// LookupRefs returns all ref keys matching id by exact key or digest prefix.
+func LookupRefs[E Entry](images map[string]*E, id string) []string {
 	if entry, ok := images[id]; ok && entry != nil {
 		return []string{id}
-	}
-	for _, norm := range normalizers {
-		if normalized, ok := norm(id); ok {
-			if entry, ok := images[normalized]; ok && entry != nil {
-				return []string{normalized}
-			}
-		}
 	}
 	// Digest match (exact or prefix); minHexLen guards against over-broad prefixes like "sha256:a".
 	idHex := strings.TrimPrefix(id, "sha256:")

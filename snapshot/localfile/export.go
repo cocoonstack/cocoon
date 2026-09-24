@@ -41,15 +41,9 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	if len(dstEntries) > 0 {
 		return fmt.Errorf("target dir %s is not empty", dir)
 	}
-	entries, err := os.ReadDir(dataDir)
+	names, err := utils.ListRegularFiles(dataDir)
 	if err != nil {
-		return fmt.Errorf("read snapshot dir: %w", err)
-	}
-	var names []string
-	for _, entry := range entries {
-		if entry.Type().IsRegular() {
-			names = append(names, entry.Name())
-		}
+		return err
 	}
 	// a partial tree would make the retry refuse the non-empty target
 	defer func() {

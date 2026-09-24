@@ -30,6 +30,10 @@ func CommandContext(cmd *cobra.Command) context.Context {
 
 func ShowHelp(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 
+func GroupCommand(use, short string) *cobra.Command {
+	return &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: ShowHelp}
+}
+
 func AddFormatFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("format", "o", FormatTable, `output format: "table" or "json"`)
 }

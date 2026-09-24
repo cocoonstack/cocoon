@@ -31,8 +31,8 @@ const (
 	// CowSerial is the well-known virtio serial for the COW disk attached to OCI VMs.
 	CowSerial = "cocoon-cow"
 
-	// CreatingStateGCGrace ages leftover capture/staging dirs and clone locks, where no held lock proves the owner died; creating records need no age — their ops lock is the proof.
-	CreatingStateGCGrace = 24 * time.Hour
+	// StaleArtifactGCGrace ages leftover capture/staging dirs and clone locks.
+	StaleArtifactGCGrace = 24 * time.Hour
 
 	// VMMemTransferTimeout is the single-shot timeout for snapshot/restore API calls.
 	VMMemTransferTimeout = 10 * time.Minute

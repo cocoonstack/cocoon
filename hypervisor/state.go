@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"slices"
 	"syscall"
 	"time"
 
@@ -208,7 +209,9 @@ func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.
 
 func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) {
 	if scan != nil {
-		return scan.Find(sockPath), nil
+		return slices.DeleteFunc(scan.Find(sockPath), func(pid int) bool {
+			return !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath)
+		}), nil
 	}
 	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
 }

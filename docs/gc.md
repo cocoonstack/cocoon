@@ -35,7 +35,7 @@ journalctl -u cocoon-gc.service --since today | awk '/gc.Run completed/'
 ```
 
 Reasons:
-- **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (a dead save's pending record — its build lease is free), `missing-dir` (a record whose dataDir is gone), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
+- **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (a dead save's pending record — its build lease is free), `missing-dir` (a record whose dataDir is gone), `orphan-lease` (a lease file whose snapshot has neither a record nor a data dir), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
 - **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating` (a dead create/clone's placeholder — its ops lock is free, no age wait), `stale-clone-lock` (a clone lock past the grace whose holder died)
 - **images (oci, cloudimg)**: `unreferenced`
 - **cni**: `orphan` (netns in this installation's `net_scope` family without active VM)

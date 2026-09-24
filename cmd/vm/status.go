@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -95,7 +96,6 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// statusOnce propagates the ListAllVMs error, unlike the loop callers.
 func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, format, scopeDir string) error {
 	vms, err := cmdcore.ListAllVMs(ctx, hypers)
 	if err != nil {
@@ -329,8 +329,5 @@ func vmIPs(vm *types.VM) string {
 			ips = append(ips, nc.Network.IP)
 		}
 	}
-	if len(ips) == 0 {
-		return "-"
-	}
-	return strings.Join(ips, ",")
+	return cmp.Or(strings.Join(ips, ","), "-")
 }

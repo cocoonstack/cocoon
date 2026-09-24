@@ -204,27 +204,17 @@ func BuildBaseCmdline(prefix, layers, cow string, networkConfigs []*types.Networ
 func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var params strings.Builder
 	fmt.Fprintf(&params, " cocoon.hostname=%s", vmName)
-	var dns0, dns1 string
-	if len(dnsServers) > 0 {
-		dns0 = dnsServers[0]
-	}
-	if len(dnsServers) > 1 {
-		dns1 = dnsServers[1]
-	}
+	dns := strings.Join(dnsServers[:min(len(dnsServers), 2)], ":")
 	for i, n := range networkConfigs {
 		if n.Network == nil || n.Network.IP == "" {
 			continue
 		}
-		param := fmt.Sprintf(" ip=%s::%s:%s:%s:eth%d:off",
+		fmt.Fprintf(&params, " ip=%s::%s:%s:%s:eth%d:off",
 			n.Network.IP, n.Network.Gateway,
 			PrefixToNetmask(n.Network.Prefix), vmName, i)
-		if dns0 != "" {
-			param += ":" + dns0
-			if dns1 != "" {
-				param += ":" + dns1
-			}
+		if dns != "" {
+			params.WriteString(":" + dns)
 		}
-		params.WriteString(param)
 	}
 	return params.String()
 }

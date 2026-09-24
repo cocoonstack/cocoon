@@ -10,15 +10,14 @@ import (
 
 // Ops bundles the store and callbacks shared by Inspect/List/Delete; one per backend.
 type Ops[E Entry] struct {
-	Store       *Store[E]
-	Type        string
-	Normalizers []func(string) (string, bool)
+	Store *Store[E]
+	Type  string
 }
 
 // Inspect returns (nil, nil) when no entry matches id or the id is an ambiguous prefix spanning distinct digests (LookupOne semantics).
 func (ops Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {
 	err = ops.Store.View(ctx, func(idx *Index[E]) error {
-		if _, entry, ok := LookupOne(idx.Images, id, ops.Normalizers...); ok {
+		if _, entry, ok := LookupOne(idx.Images, id); ok {
 			result = entryToImage(entry, ops.Type)
 		}
 		return nil
@@ -39,7 +38,7 @@ func (ops Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, e
 	err = ops.Store.Update(ctx, func(idx *Index[E]) error {
 		var delErr error
 		deleted, delErr = deleteByID(ctx, ops.Type+".Delete", idx.Images, func(id string) []string {
-			return LookupRefs(idx.Images, id, ops.Normalizers...)
+			return LookupRefs(idx.Images, id)
 		}, ids)
 		return delErr
 	})

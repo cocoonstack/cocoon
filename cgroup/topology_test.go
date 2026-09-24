@@ -46,10 +46,7 @@ func TestReadTopologyWithoutCacheSysfs(t *testing.T) {
 	if want := [][]int{{0, 1, 2, 3}}; !slices.EqualFunc(topo.domains, want, slices.Equal) {
 		t.Errorf("domains = %v, want %v", topo.domains, want)
 	}
-	_, pins, err := topo.Place(3, nil)
-	if err != nil {
-		t.Fatalf("Place: %v", err)
-	}
+	_, pins := topo.Place(3, nil)
 	if want := []int{0, 1, 2}; !slices.Equal(pins, want) {
 		t.Errorf("pins = %v, want %v", pins, want)
 	}
@@ -77,10 +74,7 @@ func TestPlace(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			domain, pins, err := topo.Place(tt.queues, tt.load)
-			if err != nil {
-				t.Fatalf("Place: %v", err)
-			}
+			domain, pins := topo.Place(tt.queues, tt.load)
 			if !slices.Equal(domain, tt.wantDomain) || !slices.Equal(pins, tt.wantPins) {
 				t.Errorf("got domain %v pins %v, want domain %v pins %v", domain, pins, tt.wantDomain, tt.wantPins)
 			}

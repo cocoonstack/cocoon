@@ -59,7 +59,7 @@ cocoon
 
 `daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
-The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the effective backend (default sqlite). Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
+The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the configured `meta_backend` (unset = sqlite). Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
 
 ## Global Flags
 
@@ -152,7 +152,7 @@ Applies to `cocoon vm clone`:
 | `--bridge`  | empty                    | TAP-on-bridge mode (value is bridge device); mutually exclusive with `--network` |
 | `--no-direct-io` | `false` (inherit)  | Disable O_DIRECT on writable disks (inherit from snapshot if not set) |
 | `--cpu-weight` / `--cpu-quota-us` / `--cpu-period-us` / `--cpu-burst-us` / `--cpuset-cpus` | `0` / empty (defaults, **not** inherited) | The clone's cgroup CPU policy; a snapshot's knobs record its source VM and are never applied — omit for Guaranteed-at-N defaults; `--cpuset-cpus` also accepts `auto`, resolved at the clone's launch |
-| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
+| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map, shares page cache across clones); CH only, `mmap` needs Cloud Hypervisor v54 or newer (`cocoon-check --upgrade` installs the cocoonstack fork build) and `ondemand` v52 or newer: v52–v53 reject a mode they lack, and builds before v52 ignore the field and restore by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--pull`  | `false`              | Auto-pull base image if not found locally (for cross-node clone)      |
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH, or FC `--pci` snapshots; names must not collide with disks inherited from the snapshot) |
@@ -182,7 +182,7 @@ Applies to `cocoon vm restore`:
 
 | Flag          | Default | Description                                                                                            |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, non-copy modes require a CH build with matching support — an older CH silently ignores the field and restores by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
+| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, `mmap` needs Cloud Hypervisor v54 or newer (`cocoon-check --upgrade` installs the cocoonstack fork build) and `ondemand` v52 or newer: v52–v53 reject a mode they lack, and builds before v52 ignore the field and restore by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--force`     | `false` | Skip the snapshot-belongs-to-VM check. Valid only with `--from-dir`; used on its own it is rejected with `--force only applies with --from-dir` |
 
