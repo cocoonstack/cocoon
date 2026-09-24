@@ -42,6 +42,8 @@ linters:
       rules:
         - name: exported
           disabled: true
+    nolintlint:
+      allow-unused: false
     misspell:
       locale: US
     goconst:
