@@ -6,6 +6,7 @@ on:
     paths:
       - "os-image/**"
       - "!os-image/windows/**"
+      - "!os-image/**/*.md"
   workflow_dispatch:
     inputs:
       no-cache:
@@ -60,7 +61,7 @@ jobs:
               done <<< "$(find os-image -name Dockerfile -type f)"
               all_changed=""
             else
-              all_changed=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'os-image/' | sort -u)
+              all_changed=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'os-image/' ':!*.md' | sort -u)
               declare -A names
               for f in $all_changed; do
                 tag_dir=$(echo "$f" | cut -d'/' -f1-3)
