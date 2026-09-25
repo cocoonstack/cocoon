@@ -54,8 +54,12 @@ func (b *Bridge) Verify(_ context.Context, _ string, expected []*types.NetworkCo
 		if nc == nil || nc.TAP == "" {
 			continue
 		}
-		if _, err := netlink.LinkByName(nc.TAP); err != nil {
+		link, err := netlink.LinkByName(nc.TAP)
+		if err != nil {
 			return fmt.Errorf("tap %s: %w", nc.TAP, err)
+		}
+		if link.Attrs().MasterIndex != b.bridgeIdx {
+			return fmt.Errorf("tap %s not attached to bridge %s", nc.TAP, b.bridgeDev)
 		}
 	}
 	return nil
