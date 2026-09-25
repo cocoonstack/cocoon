@@ -99,7 +99,7 @@ func (o *OCI) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.
 		if !utils.ValidFile(initrdPath) {
 			return fmt.Errorf("initrd invalid for VM %s (%s)", vm.Name, entry.InitrdLayer)
 		}
-		// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+		// Stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM.
 		vm.ImageDigest = entry.EntryID()
 		vm.ImageType = o.Type()
 		boot = &types.BootConfig{
