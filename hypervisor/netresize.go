@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ func (b *Backend) netResizeAdd(ctx context.Context, vmID string, rec *VMRecord, 
 			cancel()
 			return res, fmt.Errorf("add nic %d: %w", i, err)
 		}
-		if err := b.appendNetworkConfig(ctx, vmID, nc); err != nil {
+		if err := b.appendNetworkConfig(ctx, vmID, rec.Config.Network, nc); err != nil {
 			committed, verifyErr := b.resolveFailedPersist(ctx, dev, plumbing, vmID, nc, devID, i)
 			if verifyErr != nil {
 				return res, fmt.Errorf("persist nic %d: %w; commit state inconclusive: %w (device kept, rerun vm net to reconcile)", i, err, verifyErr)
@@ -153,8 +154,9 @@ func (b *Backend) netResizeRemove(ctx context.Context, vmID string, rec *VMRecor
 	return res, nil
 }
 
-func (b *Backend) appendNetworkConfig(ctx context.Context, vmID string, nc *types.NetworkConfig) error {
+func (b *Backend) appendNetworkConfig(ctx context.Context, vmID, netName string, nc *types.NetworkConfig) error {
 	return b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
+		r.Config.Network = cmp.Or(r.Config.Network, netName)
 		r.NetworkConfigs = append(r.NetworkConfigs, nc)
 		return nil
 	})

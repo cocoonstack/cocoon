@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -179,6 +180,43 @@ func TestNetResizeAddRollsBackHostSlotOnDeviceFailure(t *testing.T) {
 	}
 }
 
+func TestNetResizeWithPersistsTheNetworkOfTheFirstNIC(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		persisted string
+		want      string
+	}{
+		{name: "created without NICs", want: "cni-a"},
+		{name: "network already recorded", persisted: "cni-b", want: "cni-b"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			b := newNetTestBackend(t)
+			ctx := t.Context()
+			seedNetVM(t, b, "vm4")
+			if err := b.UpdateRecord(ctx, "vm4", func(r *VMRecord) error {
+				r.Config.Network = tt.persisted
+				return nil
+			}); err != nil {
+				t.Fatalf("seed network: %v", err)
+			}
+			rec, err := b.LoadRecord(ctx, "vm4")
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if _, err := b.NetResizeWith(ctx, "vm4", &rec, &fakeNICDevices{}, &stubPlumbing{defaultNetwork: "cni-a"}, 1); err != nil {
+				t.Fatalf("NetResizeWith: %v", err)
+			}
+			fresh, err := b.PeekRecord(ctx, "vm4")
+			if err != nil {
+				t.Fatalf("read record: %v", err)
+			}
+			if fresh.Config.Network != tt.want {
+				t.Fatalf("record network = %q, want %q", fresh.Config.Network, tt.want)
+			}
+		})
+	}
+}
+
 func TestNICPersisted(t *testing.T) {
 	rec := &VMRecord{}
 	rec.NetworkConfigs = []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
@@ -221,12 +259,14 @@ func (f *fakeNICDevices) RemoveNIC(_ context.Context, id string) error {
 func (f *fakeNICDevices) TAPQueues(int) int { return 4 }
 
 type stubPlumbing struct {
-	macs    []string
-	removed []int
-	queues  []int
+	defaultNetwork string
+	macs           []string
+	removed        []int
+	queues         []int
 }
 
-func (p *stubPlumbing) Add(_ context.Context, vmID string, _ *types.VMConfig, specs ...network.AddSpec) ([]*types.NetworkConfig, error) {
+func (p *stubPlumbing) Add(_ context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) ([]*types.NetworkConfig, error) {
+	vmCfg.Network = cmp.Or(vmCfg.Network, p.defaultNetwork)
 	out := make([]*types.NetworkConfig, 0, len(specs))
 	for _, spec := range specs {
 		p.queues = append(p.queues, spec.Queues)
