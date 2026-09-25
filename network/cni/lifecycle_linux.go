@@ -64,7 +64,7 @@ func deleteNetns(ctx context.Context, name string) error {
 		return false, nil
 	})
 	if err != nil && last != nil {
-		return fmt.Errorf("%w: %w", err, last)
+		return fmt.Errorf("delete netns %s: %w: %w", name, err, last)
 	}
 	return err
 }

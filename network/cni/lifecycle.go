@@ -76,7 +76,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		if retErr == nil {
 			return
 		}
-		// Survives caller cancellation, bounded so a hung plugin can't wedge the caller; a failed DEL keeps its intent record so GC can release the lease later.
+		// Survives caller cancellation, bounded so a hung plugin can't wedge the caller; a failed DEL keeps its intent record so a later re-add, vm rm or GC releases the lease.
 		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer rcancel()
 		var releasedIDs []string
@@ -93,12 +93,12 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		for _, spec := range specs[:attempted] {
 			ifn := ifName(spec.Index)
 			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
-				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept for GC)", vmID, ifn, delErr)
+				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept)", vmID, ifn, delErr)
 				continue
 			}
 			// setupTCRedirect creates the TAP; it would leak in the persisting netns.
 			if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, spec.Index)); delErr != nil {
-				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept for GC)", tapNameForVM(vmID, spec.Index), delErr)
+				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept)", tapNameForVM(vmID, spec.Index), delErr)
 				continue
 			}
 			if recID := recIDs[spec.Index]; recID != "" {
@@ -172,7 +172,6 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	for _, i := range indices {
 		wanted[ifName(i)] = true
 	}
-	// Pick every matching record, not one per ifname: a failed reclaim can leave duplicates, and DEL is idempotent — skipping one would strand a phantom.
 	picked := make([]networkRecord, 0, len(indices))
 	found := make(map[string]bool, len(indices))
 	for _, r := range records {
