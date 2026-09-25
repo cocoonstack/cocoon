@@ -524,6 +524,22 @@ func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
 	}
 }
 
+func TestAddRecoveryFailsClosedOnAFailedPreDEL(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	seedRecords(t, c, "vm1", "eth0")
+	exec.failIf = "eth0"
+
+	_, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover([]*types.NetworkConfig{{MAC: "02:00:00:00:00:01"}})...)
+	if err == nil || !strings.Contains(err.Error(), "before recovery") {
+		t.Fatalf("recover Add err = %v, want the pre-recovery DEL failure", err)
+	}
+	if len(exec.addArgs) != 0 {
+		t.Fatalf("ADD calls = %d, want none after a failed pre-recovery DEL", len(exec.addArgs))
+	}
+	assertRecordIDs(t, c, []string{"n-eth0"})
+}
+
 func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	var gotNS string

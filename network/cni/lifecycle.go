@@ -117,9 +117,12 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 
 	configs = make([]*types.NetworkConfig, 0, len(specs))
 	for _, spec := range specs {
-		rt := c.nicRuntime(ctx, confList, vmID, nsPath, spec)
 		// Counted before ADD so a mid-ADD failure still gets a cleanup DEL.
 		attempted++
+		rt, rtErr := c.prepareNICRuntime(ctx, confList, vmID, nsPath, spec)
+		if rtErr != nil {
+			return nil, rtErr
+		}
 
 		cfg, addErr := c.provisionNIC(ctx, confList, rt, vmID, nsPath, vmCfg, spec)
 		if addErr != nil {
@@ -239,12 +242,12 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 	return recIDs, nil
 }
 
-func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) *libcni.RuntimeConf {
+func (c *CNI) prepareNICRuntime(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, spec network.AddSpec) (*libcni.RuntimeConf, error) {
 	ifn := ifName(spec.Index)
 	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifn}
 	if spec.Existing != nil {
 		if delErr := c.cniDel(ctx, confList, vmID, nsPath, ifn); delErr != nil {
-			log.WithFunc("cni.nicRuntime").Warnf(ctx, "pre-recovery CNI DEL %s/%s: %v (continuing)", vmID, ifn, delErr)
+			return nil, fmt.Errorf("release %s/%s before recovery: %w", vmID, ifn, delErr)
 		}
 		rt.Args = [][2]string{{"IgnoreUnknown", "1"}}
 		if spec.Existing.MAC != "" {
@@ -254,7 +257,7 @@ func (c *CNI) nicRuntime(ctx context.Context, confList *libcni.NetworkConfigList
 			rt.Args = append(rt.Args, [2]string{"IP", spec.Existing.Network.IP})
 		}
 	}
-	return rt
+	return rt, nil
 }
 
 func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigList, rt *libcni.RuntimeConf, vmID, nsPath string, vmCfg *types.VMConfig, spec network.AddSpec) (*types.NetworkConfig, error) {
