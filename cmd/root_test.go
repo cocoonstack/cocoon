@@ -11,10 +11,31 @@ import (
 	"testing"
 
 	coretypes "github.com/projecteru2/core/types"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/cocoonstack/cocoon/config"
 )
+
+func TestZeroArgCommandsRejectPositionalArgs(t *testing.T) {
+	viper.Reset()
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+		if !c.Runnable() || c.HasSubCommands() {
+			return
+		}
+		if slices.ContainsFunc(strings.Fields(c.Use)[1:], func(tok string) bool { return tok != "[flags]" }) {
+			return
+		}
+		if err := c.ValidateArgs([]string{"stray"}); err == nil {
+			t.Errorf("%s accepts a positional argument", c.CommandPath())
+		}
+	}
+	walk(newRootCmd())
+}
 
 func TestEnvOverridesDottedLogLevel(t *testing.T) {
 	t.Setenv("COCOON_LOG_LEVEL", "debug")

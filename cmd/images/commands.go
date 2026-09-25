@@ -13,6 +13,7 @@ func Command(h Handler) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List locally stored images (all backends)",
+		Args:    cobra.NoArgs,
 		RunE:    h.List,
 	}
 	cliutil.AddFormatFlag(listCmd)

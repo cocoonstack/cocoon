@@ -12,6 +12,7 @@ func Commands(h Handler) []*cobra.Command {
 	gcCmd := &cobra.Command{
 		Use:   "gc",
 		Short: "Remove unreferenced blobs, boot files, VM dirs, and optionally evict snapshots",
+		Args:  cobra.NoArgs,
 		RunE:  h.GC,
 	}
 	gcCmd.Flags().Bool("snapshot", false, "evict snapshots by LRU; bare flag = all non-pending, refine with --snapshot-keep/age/size")
@@ -24,6 +25,7 @@ func Commands(h Handler) []*cobra.Command {
 		{
 			Use:   "version",
 			Short: "Show version, git revision, and build timestamp",
+			Args:  cobra.NoArgs,
 			RunE:  h.Version,
 		},
 		{

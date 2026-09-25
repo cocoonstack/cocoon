@@ -12,6 +12,7 @@ func Command(h Handler) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Supervise cocoon-managed VMs: adopt live VMMs, converge exits, retry pending network quiesce",
+		Args:  cobra.NoArgs,
 		RunE:  h.Run,
 	}
 	cmd.Flags().Duration("reconcile-interval", cocoond.DefaultReconcileInterval, "full reconcile pass cadence")
