@@ -83,6 +83,9 @@ ethernets:
   id{{$i}}:
     match:
       macaddress: "{{$n.MAC}}"
+{{- if gt $i 0}}
+    optional: true
+{{- end}}
 {{- if $n.IP}}
     addresses:
       - {{$n.IP}}/{{$n.Prefix}}

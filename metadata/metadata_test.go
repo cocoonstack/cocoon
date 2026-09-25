@@ -158,6 +158,9 @@ func TestNetworkConfig_MultiNIC(t *testing.T) {
 	if !strings.Contains(out, "via: 10.0.0.1") {
 		t.Errorf("gateway missing: %s", out)
 	}
+	if strings.Count(out, "optional: true") != 2 || !strings.Contains(out, "id1:\n    match:\n      macaddress: \"11:22:33:44:55:66\"\n    optional: true") {
+		t.Errorf("only the secondary NIC and the fallback may be optional: %s", out)
+	}
 }
 
 func TestNetworkConfig_GatewayOptional(t *testing.T) {
