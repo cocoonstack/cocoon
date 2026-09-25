@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
@@ -157,36 +158,38 @@ func TestBusyCtxDeadline(t *testing.T) {
 }
 
 func TestBackupConcurrentSameDest(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-	s := newStore(t, dir, "vms")
-	err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"v":1}`), false)
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	dest := filepath.Join(dir, "backup", "meta.db")
-	done := make(chan error, 1)
-	launched := false
-	testBackupStep = func(at string) error {
-		if at == "vacuumed" && !launched {
-			launched = true
-			go func() { done <- Backup(ctx, filepath.Join(dir, DBFileName), dest) }()
-			time.Sleep(150 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		dir := t.TempDir()
+		s := newStore(t, dir, "vms")
+		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+			return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"v":1}`), false)
+		})
+		if err != nil {
+			t.Fatalf("seed: %v", err)
 		}
-		return nil
-	}
-	defer func() { testBackupStep = nil }()
-	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
-		t.Fatalf("first backup: %v", err)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("second backup: %v", err)
-	}
-	if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
-		t.Fatalf("published backup invalid after concurrent runs: %q ok=%v", raw, ok)
-	}
+		dest := filepath.Join(dir, "backup", "meta.db")
+		done := make(chan error, 1)
+		launched := false
+		testBackupStep = func(at string) error {
+			if at == "vacuumed" && !launched {
+				launched = true
+				go func() { done <- Backup(ctx, filepath.Join(dir, DBFileName), dest) }()
+				synctest.Wait()
+			}
+			return nil
+		}
+		defer func() { testBackupStep = nil }()
+		if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
+			t.Fatalf("first backup: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Fatalf("second backup: %v", err)
+		}
+		if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
+			t.Fatalf("published backup invalid after concurrent runs: %q ok=%v", raw, ok)
+		}
+	})
 }
 
 func backupGet(t *testing.T, dest, id string) (string, bool) {
