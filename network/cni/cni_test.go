@@ -47,10 +47,7 @@ const (
 	}`
 )
 
-var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "networks", Table: TableRecords},
-	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
-}}
+var testNetTables = NewConfig(&config.Config{}).JSONNamespace().Codec
 
 func TestNetnsNameHonorsScope(t *testing.T) {
 	for _, tt := range []struct {
@@ -592,6 +589,40 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 	}
 }
 
+type recordingExec struct {
+	attempted []string
+	addArgs   []string
+	failIf    string
+}
+
+func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
+	var ifName, args string
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
+			ifName = v
+		}
+		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
+			args = v
+		}
+	}
+	if slices.Contains(environ, "CNI_COMMAND=ADD") {
+		e.addArgs = append(e.addArgs, args)
+	}
+	e.attempted = append(e.attempted, ifName)
+	if ifName == e.failIf {
+		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
+	}
+	return []byte(`{"cniVersion":"1.0.0"}`), nil
+}
+
+func (e *recordingExec) FindInPath(plugin string, _ []string) (string, error) {
+	return "/fake/" + plugin, nil
+}
+
+func (e *recordingExec) Decode([]byte) (version.PluginInfo, error) {
+	return version.PluginSupports("0.3.1", "0.4.0", "1.0.0"), nil
+}
+
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	t.Helper()
 	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
@@ -670,40 +701,6 @@ func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("records = %v, want %v", got, want)
 	}
-}
-
-type recordingExec struct {
-	attempted []string
-	addArgs   []string
-	failIf    string
-}
-
-func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
-	var ifName, args string
-	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
-			ifName = v
-		}
-		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
-			args = v
-		}
-	}
-	if slices.Contains(environ, "CNI_COMMAND=ADD") {
-		e.addArgs = append(e.addArgs, args)
-	}
-	e.attempted = append(e.attempted, ifName)
-	if ifName == e.failIf {
-		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
-	}
-	return []byte(`{"cniVersion":"1.0.0"}`), nil
-}
-
-func (e *recordingExec) FindInPath(plugin string, _ []string) (string, error) {
-	return "/fake/" + plugin, nil
-}
-
-func (e *recordingExec) Decode([]byte) (version.PluginInfo, error) {
-	return version.PluginSupports("0.3.1", "0.4.0", "1.0.0"), nil
 }
 
 func writeFile(t *testing.T, path, content string) {
