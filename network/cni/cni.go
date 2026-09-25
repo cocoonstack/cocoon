@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,7 +30,7 @@ var (
 	ensureNetnsFn     = ensureNetns
 	setupTCRedirectFn = setupTCRedirect
 	tapProvisionedFn  = tapProvisionedInNetns
-	statNetnsFn       = os.Stat
+	statNetnsFn       = statNetns
 	setLinkStateFn    = setLinkStateInNetns
 )
 

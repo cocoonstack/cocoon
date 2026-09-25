@@ -319,9 +319,12 @@ func tapNameForVM(vmID string, nic int) string {
 }
 
 func ensureNetns(name, nsPath string) error {
-	if _, err := os.Stat(nsPath); err == nil {
+	if _, err := statNetns(nsPath); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(nsPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return createNetns(name)
