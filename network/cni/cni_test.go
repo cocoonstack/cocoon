@@ -477,6 +477,31 @@ func TestAddRecoveryPassesIdentityToPlugin(t *testing.T) {
 	}
 }
 
+func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	seedRecords(t, c, "vm1", "eth0")
+	existing := []*types.NetworkConfig{{MAC: "02:00:00:00:00:01"}, {MAC: "02:00:00:00:00:02"}}
+
+	for range 2 {
+		if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover(existing)...); err != nil {
+			t.Fatalf("recover Add: %v", err)
+		}
+		var got []networkRecord
+		if err := c.view(t.Context(), func(t *netTx) error {
+			var err error
+			got, err = t.byVMID("vm1")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		slices.SortFunc(got, func(a, b networkRecord) int { return strings.Compare(a.IfName, b.IfName) })
+		if len(got) != 2 || got[0].ID != "n-eth0" || got[1].IfName != "eth1" || got[1].Type != "cni-bridge" {
+			t.Fatalf("records = %+v, want n-eth0 plus one cni-bridge eth1 record", got)
+		}
+	}
+}
+
 func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	var gotNS string

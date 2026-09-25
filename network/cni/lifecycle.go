@@ -130,10 +130,10 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 
 	return configs, c.update(ctx, func(t *netTx) error {
 		for i, spec := range specs {
-			if spec.Existing != nil {
+			recID, staged := recIDs[spec.Index]
+			if !staged {
 				continue
 			}
-			recID := recIDs[spec.Index]
 			rec, err := t.Get(recID)
 			if err != nil {
 				return err
@@ -203,16 +203,17 @@ func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
 	return nil
 }
 
-// stageNICIntents reclaims stale slots and lands every fresh NIC's intent record before any plugin ADD, so GC has per-NIC release context.
+// stageNICIntents reclaims stale slots and lands every unrecorded NIC's intent record before any plugin ADD, so GC has per-NIC release context.
 func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath string, specs []network.AddSpec, stale map[string]networkRecord) (map[int]string, error) {
 	recIDs := make(map[int]string, len(specs))
 	var intents []*networkRecord
 	for _, spec := range specs {
-		if spec.Existing != nil {
+		ifn := ifName(spec.Index)
+		rec, recorded := stale[ifn]
+		if spec.Existing != nil && recorded {
 			continue
 		}
-		ifn := ifName(spec.Index)
-		if rec, ok := stale[ifn]; ok {
+		if recorded {
 			// The index is reusable only after a full reclaim: proceeding would double-allocate on lenient IPAM plugins or bury the root cause on strict ones.
 			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
 				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifn, rcErr)
