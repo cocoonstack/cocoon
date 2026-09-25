@@ -42,7 +42,7 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecra
 	return &Firecracker{Backend: backend, conf: cfg}, nil
 }
 
-// Delete requires force=true for running VMs and fails whole while a live clone holds a shared lease.
+// Delete requires force=true for running VMs and blocks while a live clone holds a shared lease on the VM.
 func (fc *Firecracker) Delete(ctx context.Context, refs []string, force bool) ([]string, error) {
 	return fc.DeleteAll(ctx, refs, force, fc.stopOneLocked)
 }
