@@ -300,6 +300,28 @@ func TestVerifyDetectsMissingTAP(t *testing.T) {
 	}
 }
 
+func TestVerifyFailsWhileATeardownIsPending(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	origTap := tapProvisionedFn
+	tapProvisionedFn = func(_, _ string) error { return nil }
+	t.Cleanup(func() { tapProvisionedFn = origTap })
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+	markDeleting(t, c, "vm1", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
+	expected := []*types.NetworkConfig{{TAP: tapNameForVM("vm1", 0)}, {TAP: tapNameForVM("vm1", 1)}}
+
+	if err := c.Verify(ctx, "vm1", expected); err == nil {
+		t.Fatal("Verify passed while the eth1 teardown is pending, so a start would attach the NIC GC then releases")
+	}
+	if _, err := c.recoverTombstone(ctx, "vm1"); err != nil {
+		t.Fatalf("roll forward: %v", err)
+	}
+	if err := c.Verify(ctx, "vm1", expected); err != nil {
+		t.Fatalf("Verify after the roll-forward: %v", err)
+	}
+}
+
 func TestReclaimStaleNIC(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

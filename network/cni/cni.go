@@ -17,6 +17,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -79,8 +80,19 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 
 func (c *CNI) Type() string { return typ }
 
-// Verify checks the netns and that every expected TAP carries its ingress redirect.
-func (c *CNI) Verify(_ context.Context, vmID string, expected []*types.NetworkConfig) error {
+// Verify checks that no teardown is pending, the netns exists, and every expected TAP carries its ingress redirect.
+func (c *CNI) Verify(ctx context.Context, vmID string, expected []*types.NetworkConfig) error {
+	var pending *tombstone.Record
+	if err := c.view(ctx, func(t *netTx) error {
+		var err error
+		pending, err = c.tombstones().Get(ctx, t.Reader(), vmID)
+		return err
+	}); err != nil {
+		return fmt.Errorf("read network tombstone: %w", err)
+	}
+	if pending != nil {
+		return fmt.Errorf("network teardown pending (%s)", pending.Phase)
+	}
 	nsPath := c.conf.netnsPath(vmID)
 	if _, err := statNetnsFn(nsPath); err != nil {
 		return fmt.Errorf("netns %s: %w", nsPath, err)

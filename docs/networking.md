@@ -69,7 +69,7 @@ cocoon vm net my-vm --nics 1
 
 On NIC removal, cocoon waits for the guest to ACK B0EJ (CH polls `device_tree` until the device disappears) before tearing down the host TAP / veth / CNI lease. If the guest never ACKs within the 30s eject timeout, the command fails and leaves the cocoon record + host plumbing intact so the operator can quiesce the guest (driver unbind, NetworkManager removal, Windows NDIS halt) and retry.
 
-A removal or `vm rm` interrupted mid-teardown (crash, SIGKILL) leaves a recovery marker on the VM. The next `vm rm` or `vm net` on that VM first finishes the interrupted teardown exactly as recorded; rerunning the same command resumes it and completes, while a different intent is refused with a conflict error instead of guessed at — rerun the command in that case.
+A removal or `vm rm` interrupted mid-teardown (crash, SIGKILL) leaves a recovery marker on the VM. The next `vm rm` or `vm net` on that VM first finishes the interrupted teardown exactly as recorded; rerunning the same command resumes it and completes, while a different intent is refused with a conflict error instead of guessed at — rerun the command in that case. `vm start` and `vm restore` finish it too, then rebuild every NIC the VM record still lists, so a removal interrupted before its record update comes back with the NIC; rerun `vm net` to remove it.
 
 On Firecracker `--pci` VMs the VMM adds and drops devices without telling the guest: after an add the guest runs `echo 1 > /sys/bus/pci/rescan`, after a remove it drops the stale node with `echo 1 > /sys/class/net/ethN/device/../remove`. `cocoon vm net` prints both (and returns them as `hints` with `--output json`); down the NIC inside the guest before reducing the count. MMIO Firecracker VMs are rejected.
 
