@@ -35,6 +35,6 @@ func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 		return aerr
 	})
 	if err != nil {
-		log.WithFunc("metering.metalog.Recorder.Emit").Warnf(ctx, "append entry: %v", err)
+		log.WithFunc("metering.metalog.Emit").Warnf(ctx, "append entry: %v", err)
 	}
 }
