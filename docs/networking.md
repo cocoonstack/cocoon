@@ -44,7 +44,7 @@ All `.conflist` files in `--cni-conf-dir` (default `/etc/cni/net.d`) are loaded 
       "type": "bridge",
       "bridge": "cni0",
       "isGateway": true,
-      "ipMasq": true,
+      "ipMasq": false,
       "ipam": {
         "type": "host-local",
         "subnet": "10.22.0.0/16",
@@ -54,6 +54,8 @@ All `.conflist` files in `--cni-conf-dir` (default `/etc/cni/net.d`) are loaded 
   ]
 }
 ```
+
+Leave `ipMasq` off and masquerade the bridge subnet on the host once, for example `iptables -t nat -A POSTROUTING -s 10.22.0.0/16 ! -o cni0 -j MASQUERADE` (see [known issues](known-issues.md#bridge-plugin-ipmasq-leaks-a-masquerade-rule-per-vm)).
 
 ## NIC Hot-Resize (Cloud Hypervisor, or Firecracker with `--pci`)
 
