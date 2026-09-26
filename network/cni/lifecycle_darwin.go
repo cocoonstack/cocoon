@@ -3,6 +3,7 @@ package cni
 import (
 	"context"
 	"errors"
+	"os"
 )
 
 var errNotSupported = errors.New("network namespace operations are not supported on darwin")
@@ -13,6 +14,10 @@ func createNetns(_ string) error {
 
 func deleteNetns(_ context.Context, _ string) error {
 	return errNotSupported
+}
+
+func statNetns(nsPath string) (os.FileInfo, error) {
+	return os.Stat(nsPath)
 }
 
 func setupTCRedirect(_, _, _ string, _ int, _ string) (string, int, error) {

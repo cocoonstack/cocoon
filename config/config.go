@@ -63,7 +63,7 @@ type Config struct {
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
 	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, then VM Running); exceeding it kills the VMM. Default: 5.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
-	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing CH. Default: 5.
+	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing the VMM. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
 	// CgroupParent: cgroup v2 slice under /sys/fs/cgroup holding per-VM CPU scopes. Default: cocoon.slice.
 	CgroupParent string `json:"cgroup_parent" mapstructure:"cgroup_parent"`

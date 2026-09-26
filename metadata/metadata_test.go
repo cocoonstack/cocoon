@@ -84,11 +84,9 @@ func TestUserData_MultiNICWriteFiles(t *testing.T) {
 	if !strings.Contains(out, "DNS=8.8.8.8") || !strings.Contains(out, "DNS=1.1.1.1") {
 		t.Errorf("DNS missing in fallback .network: %s", out)
 	}
-	if !strings.Contains(out, "RequiredForOnline=yes") {
-		t.Errorf("primary NIC online requirement missing: %s", out)
-	}
-	if !strings.Contains(out, "RequiredForOnline=no") {
-		t.Errorf("secondary NIC online requirement missing: %s", out)
+	if strings.Count(out, "RequiredForOnline=") != 2 ||
+		!strings.Contains(out, "[Link]\n      RequiredForOnline=yes") || !strings.Contains(out, "[Link]\n      RequiredForOnline=no") {
+		t.Errorf("RequiredForOnline must sit directly under [Link], once per NIC: %s", out)
 	}
 }
 
@@ -159,6 +157,9 @@ func TestNetworkConfig_MultiNIC(t *testing.T) {
 
 	if !strings.Contains(out, "via: 10.0.0.1") {
 		t.Errorf("gateway missing: %s", out)
+	}
+	if strings.Count(out, "optional: true") != 2 || !strings.Contains(out, "id1:\n    match:\n      macaddress: \"11:22:33:44:55:66\"\n    optional: true") {
+		t.Errorf("only the secondary NIC and the fallback may be optional: %s", out)
 	}
 }
 

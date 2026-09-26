@@ -64,9 +64,20 @@ func deleteNetns(ctx context.Context, name string) error {
 		return false, nil
 	})
 	if err != nil && last != nil {
-		return fmt.Errorf("%w: %w", err, last)
+		return fmt.Errorf("delete netns %s: %w: %w", name, err, last)
 	}
 	return err
+}
+
+func statNetns(nsPath string) (os.FileInfo, error) {
+	fi, err := os.Stat(nsPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := errors.AsType[cns.NSPathNotNSErr](cns.IsNSorErr(nsPath)); ok {
+		return nil, fmt.Errorf("%s is not a mounted netns: %w", nsPath, fs.ErrNotExist)
+	}
+	return fi, nil
 }
 
 func tapProvisionedInNetns(nsPath, tapName string) error {

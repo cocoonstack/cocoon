@@ -47,10 +47,7 @@ const (
 	}`
 )
 
-var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
-	{Key: "networks", Table: TableRecords},
-	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
-}}
+var testNetTables = NewConfig(&config.Config{}).JSONNamespace().Codec
 
 func TestNetnsNameHonorsScope(t *testing.T) {
 	for _, tt := range []struct {
@@ -300,6 +297,28 @@ func TestVerifyDetectsMissingTAP(t *testing.T) {
 	}
 }
 
+func TestVerifyFailsWhileATeardownIsPending(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	origTap := tapProvisionedFn
+	tapProvisionedFn = func(_, _ string) error { return nil }
+	t.Cleanup(func() { tapProvisionedFn = origTap })
+	ctx := t.Context()
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+	markDeleting(t, c, "vm1", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
+	expected := []*types.NetworkConfig{{TAP: tapNameForVM("vm1", 0)}, {TAP: tapNameForVM("vm1", 1)}}
+
+	if err := c.Verify(ctx, "vm1", expected); err == nil {
+		t.Fatal("Verify passed while the eth1 teardown is pending, so a start would attach the NIC GC then releases")
+	}
+	if _, err := c.recoverTombstone(ctx, "vm1"); err != nil {
+		t.Fatalf("roll forward: %v", err)
+	}
+	if err := c.Verify(ctx, "vm1", expected); err != nil {
+		t.Fatalf("Verify after the roll-forward: %v", err)
+	}
+}
+
 func TestReclaimStaleNIC(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
@@ -477,6 +496,47 @@ func TestAddRecoveryPassesIdentityToPlugin(t *testing.T) {
 	}
 }
 
+func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
+	c, _ := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	seedRecords(t, c, "vm1", "eth0")
+	existing := []*types.NetworkConfig{{MAC: "02:00:00:00:00:01"}, {MAC: "02:00:00:00:00:02"}}
+
+	for range 2 {
+		if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover(existing)...); err != nil {
+			t.Fatalf("recover Add: %v", err)
+		}
+		var got []networkRecord
+		if err := c.view(t.Context(), func(t *netTx) error {
+			var err error
+			got, err = t.byVMID("vm1")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		slices.SortFunc(got, func(a, b networkRecord) int { return strings.Compare(a.IfName, b.IfName) })
+		if len(got) != 2 || got[0].ID != "n-eth0" || got[1].IfName != "eth1" || got[1].Type != "cni-bridge" {
+			t.Fatalf("records = %+v, want n-eth0 plus one cni-bridge eth1 record", got)
+		}
+	}
+}
+
+func TestAddRecoveryFailsClosedOnAFailedPreDEL(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	seedRecords(t, c, "vm1", "eth0")
+	exec.failIf = "eth0"
+
+	_, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover([]*types.NetworkConfig{{MAC: "02:00:00:00:00:01"}})...)
+	if err == nil || !strings.Contains(err.Error(), "before recovery") {
+		t.Fatalf("recover Add err = %v, want the pre-recovery DEL failure", err)
+	}
+	if len(exec.addArgs) != 0 {
+		t.Fatalf("ADD calls = %d, want none after a failed pre-recovery DEL", len(exec.addArgs))
+	}
+	assertRecordIDs(t, c, []string{"n-eth0"})
+}
+
 func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	var gotNS string
@@ -527,6 +587,40 @@ func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 	if called {
 		t.Fatal("setLinkStateFn called for a VM with no records")
 	}
+}
+
+type recordingExec struct {
+	attempted []string
+	addArgs   []string
+	failIf    string
+}
+
+func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
+	var ifName, args string
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
+			ifName = v
+		}
+		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
+			args = v
+		}
+	}
+	if slices.Contains(environ, "CNI_COMMAND=ADD") {
+		e.addArgs = append(e.addArgs, args)
+	}
+	e.attempted = append(e.attempted, ifName)
+	if ifName == e.failIf {
+		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
+	}
+	return []byte(`{"cniVersion":"1.0.0"}`), nil
+}
+
+func (e *recordingExec) FindInPath(plugin string, _ []string) (string, error) {
+	return "/fake/" + plugin, nil
+}
+
+func (e *recordingExec) Decode([]byte) (version.PluginInfo, error) {
+	return version.PluginSupports("0.3.1", "0.4.0", "1.0.0"), nil
 }
 
 func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
@@ -607,40 +701,6 @@ func assertRecordIDs(t *testing.T, c *CNI, want []string) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("records = %v, want %v", got, want)
 	}
-}
-
-type recordingExec struct {
-	attempted []string
-	addArgs   []string
-	failIf    string
-}
-
-func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
-	var ifName, args string
-	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
-			ifName = v
-		}
-		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
-			args = v
-		}
-	}
-	if slices.Contains(environ, "CNI_COMMAND=ADD") {
-		e.addArgs = append(e.addArgs, args)
-	}
-	e.attempted = append(e.attempted, ifName)
-	if ifName == e.failIf {
-		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
-	}
-	return []byte(`{"cniVersion":"1.0.0"}`), nil
-}
-
-func (e *recordingExec) FindInPath(plugin string, _ []string) (string, error) {
-	return "/fake/" + plugin, nil
-}
-
-func (e *recordingExec) Decode([]byte) (version.PluginInfo, error) {
-	return version.PluginSupports("0.3.1", "0.4.0", "1.0.0"), nil
 }
 
 func writeFile(t *testing.T, path, content string) {

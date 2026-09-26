@@ -54,8 +54,12 @@ func (b *Bridge) Verify(_ context.Context, _ string, expected []*types.NetworkCo
 		if nc == nil || nc.TAP == "" {
 			continue
 		}
-		if _, err := netlink.LinkByName(nc.TAP); err != nil {
+		link, err := netlink.LinkByName(nc.TAP)
+		if err != nil {
 			return fmt.Errorf("tap %s: %w", nc.TAP, err)
+		}
+		if link.Attrs().MasterIndex != b.bridgeIdx {
+			return fmt.Errorf("tap %s not attached to bridge %s", nc.TAP, b.bridgeDev)
 		}
 	}
 	return nil
@@ -92,7 +96,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
 		}
-		// Fresh adds only: a same-name TAP is an interrupted-resize leftover that would wedge every retry; recovery specs keep the EEXIST failure (their slot may hold a live VMM's TAP).
+		// Fresh adds only: a same-name TAP is an interrupted-resize leftover that would wedge every retry; recovery specs re-attach the existing TAP (their slot may hold a live VMM's TAP).
 		if spec.Existing == nil {
 			if old, lErr := netlink.LinkByName(name); lErr == nil {
 				if delErr := netlink.LinkDel(old); delErr != nil {

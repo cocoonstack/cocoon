@@ -57,6 +57,9 @@ write_files:
       [Match]
       MACAddress={{$n.MAC}}
 
+      [Link]
+      RequiredForOnline={{if eq $i 0}}yes{{else}}no{{end}}
+
       [Network]
 {{- if $n.IP}}
       Address={{$n.IP}}/{{$n.Prefix}}
@@ -69,11 +72,6 @@ write_files:
 {{- else}}
       DHCP=ipv4
 {{- end}}
-{{- if eq $i 0}}
-      RequiredForOnline=yes
-{{- else}}
-      RequiredForOnline=no
-{{- end}}
 {{- end}}
 {{- end}}
 `))
@@ -85,6 +83,9 @@ ethernets:
   id{{$i}}:
     match:
       macaddress: "{{$n.MAC}}"
+{{- if gt $i 0}}
+    optional: true
+{{- end}}
 {{- if $n.IP}}
     addresses:
       - {{$n.IP}}/{{$n.Prefix}}

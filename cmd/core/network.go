@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	bridgenet "github.com/cocoonstack/cocoon/network/bridge"
 	"github.com/cocoonstack/cocoon/types"
@@ -76,7 +78,7 @@ func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 	if verifyErr == nil {
 		return p.Unquiesce(ctx, vm.ID)
 	}
-	log.WithFunc("core.NetProviders.Recover").Warnf(ctx, "network incomplete for VM %s, recovering: %v", vm.ID, verifyErr)
+	log.WithFunc("core.Recover").Warnf(ctx, "network incomplete for VM %s, recovering: %v", vm.ID, verifyErr)
 	if _, prepErr := p.Prepare(ctx, vm.ID, &vm.Config); prepErr != nil {
 		return fmt.Errorf("prepare netns: %w", prepErr)
 	}
@@ -84,6 +86,9 @@ func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
 		return nil
 	}
 	_, err = p.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...)
+	if errors.Is(err, meta.ErrConflict) {
+		_, err = p.Add(ctx, vm.ID, &vm.Config, network.AddRecover(vm.NetworkConfigs)...)
+	}
 	return err
 }
 

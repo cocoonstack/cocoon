@@ -13,11 +13,13 @@ func Command(h Handler) *cobra.Command {
 		&cobra.Command{
 			Use:   "init",
 			Short: "Initialize a fresh sqlite meta store",
+			Args:  cobra.NoArgs,
 			RunE:  h.InitStore,
 		},
 		&cobra.Command{
 			Use:   "convert",
 			Short: "Convert existing metadata to the configured meta_backend",
+			Args:  cobra.NoArgs,
 			RunE:  h.Convert,
 		},
 		&cobra.Command{

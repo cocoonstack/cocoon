@@ -89,7 +89,7 @@ func (c *CloudImg) Config(ctx context.Context, vm *types.VMConfig) (configs []*t
 		if !utils.ValidFile(blobPath) {
 			return fmt.Errorf("blob invalid for VM %s (%s)", vm.Name, entry.ContentSum)
 		}
-		// stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM
+		// Stamped last: ResolveImage probes every backend, and a loser must not leave its identity on the VM.
 		vm.ImageDigest = entry.EntryID()
 		vm.ImageType = c.Type()
 

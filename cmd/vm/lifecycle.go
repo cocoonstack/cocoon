@@ -82,6 +82,8 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("console: %w", err)
 	}
 	defer conn.Close() //nolint:errcheck
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 
 	escapeStr, _ := cmd.Flags().GetString("escape-char")
 	escapeChar, err := console.ParseEscapeChar(escapeStr)
@@ -112,7 +114,7 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	}
 
 	escapeKeys := []byte{escapeChar, '.'}
-	if err := console.Relay(conn, escapeKeys); err != nil {
+	if err := console.Relay(conn, escapeKeys); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("relay: %w", err)
 	}
 	return nil

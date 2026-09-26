@@ -105,10 +105,11 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 		records = append(records, networkRecord{ID: r.ID, Type: r.Type, VMID: vmID, IfName: r.IfName})
 	}
 	// A retry after the netns already went (crash between netns removal and the sweep) skips TAP deletion — the TAPs died with the ns; CNI DEL still runs, releasing IPAM by container ID without entering the ns.
-	if _, err := statNetnsFn(c.conf.netnsPath(vmID)); errors.Is(err, fs.ErrNotExist) {
-		deleteTAP = false
+	nsPath := c.conf.netnsPath(vmID)
+	if _, err := statNetnsFn(nsPath); errors.Is(err, fs.ErrNotExist) {
+		deleteTAP, nsPath = false, ""
 	}
-	downIDs, tdErr := c.tearDownNICs(ctx, vmID, c.conf.netnsPath(vmID), records, deleteTAP)
+	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, deleteTAP)
 	// Slow cleanup stays outside the transaction (clause 1): the netns goes before the commit so a pure retryable closure never carries side effects.
 	if tdErr == nil && mode == tombstone.ModeAggregate && cl.Netns != "" {
 		if err := deleteNetnsFn(ctx, c.conf.netnsName(vmID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
