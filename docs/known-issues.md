@@ -23,7 +23,7 @@ OCI VMs use the kernel `ip=` boot parameter for network configuration. While mul
 
 **Consequence**: on every boot of an OCI VM with multiple NICs, the first `vm run` included, only the last NIC receives its IP from the kernel `ip=` parameter (each `ip=` overrides the previous one). The other NICs come up without an IPv4 address until the guest init system configures them (e.g., systemd-networkd `.network` files written by the post-clone hints).
 
-**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot regardless of the kernel `ip=` limitation. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has none, so write one `.network` file per NIC in the guest, matching the MAC and address `cocoon vm inspect` reports.
+**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot regardless of the kernel `ip=` limitation. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has only the one the initramfs writes for the NIC its `ip=` configured, so write one `.network` file per other NIC in the guest, matching the MAC and address `cocoon vm inspect` reports.
 
 ## Non-root user creation requires cloud-init final stage
 
