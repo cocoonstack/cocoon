@@ -115,6 +115,22 @@ Cocoon detects when CNI returns no IP allocation and automatically configures th
 
 Note: the OCI initramfs uses `IP=off` to prevent the initramfs from running its own DHCP client during boot. DHCP is handled entirely by systemd-networkd after switch_root. The `configure_networking` function is only called when a kernel `ip=` parameter is present (static IP from CNI).
 
+## Bridge plugin `ipMasq` leaks a masquerade rule per VM
+
+With `"ipMasq": true`, the CNI bridge plugin adds a POSTROUTING rule for each VM address and a `CNI-…` chain for each VM on ADD. On DEL it removes them only for the addresses it reads off the VM's interface in the netns. Cocoon gives that address to the guest and removes it from the netns interface when it sets up the TC redirect, so the plugin finds none, and every removed VM keeps its rule and chain. The plugin's iptables backend also shares one chain across all NICs of a VM on one network, so a teardown of one NIC would clear it under the others.
+
+Leave `ipMasq` off and masquerade the bridge subnet on the host once:
+
+```bash
+iptables -t nat -A POSTROUTING -s 10.22.0.0/16 ! -o cni0 -j MASQUERADE
+```
+
+The rules an earlier `ipMasq` network left carry its name in their comment, for a network named `cocoon`:
+
+```bash
+iptables-save -t nat | grep -F 'name: \"cocoon\"'
+```
+
 ## Windows VM requires Cloud Hypervisor v50.2
 
 **Status: FIXED** in our fork and upstream.
