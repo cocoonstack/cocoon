@@ -2,6 +2,10 @@
 
 Cocoon boots two image families: OCI VM images (kernel + rootfs layers, direct boot) and cloud images (qcow2, UEFI boot). A registry image without `vmlinuz` and `initrd.img` is rejected after download, so ordinary container images cannot be booted.
 
+## arm64 boot
+
+On arm64, Cloud Hypervisor gives a guest ACPI only through firmware, so cocoon starts an OCI image with `--firmware CLOUDHV.fd` next to `--kernel`, `--initramfs` and `--cmdline`, plus `--fw-cfg-config kernel=on,cmdline=on,initramfs=on,acpi_table=on`. EDK2 receives the kernel over fw_cfg and starts it through its EFI stub, so PCI hot-plug (`vm net` NIC resize, device detach) and the `rtc-efi` clock work. This needs the EDK2 firmware and a Cloud Hypervisor built with `fw_cfg`, both installed by `cocoon-check --upgrade`; `vm create` and `vm run` fail with `firmware not found` when the firmware is missing. VMs and snapshots created by an older cocoon keep their kernel-only boot. The Firecracker backend still boots the kernel directly.
+
 ## Pulling
 
 ```bash

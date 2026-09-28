@@ -1,10 +1,15 @@
 package core
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -144,5 +149,68 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 				t.Errorf("PCI/NoBalloon not inherited from the snapshot: %v/%v", got.PCI, got.NoBalloon)
 			}
 		})
+	}
+}
+
+func TestEnsureFirmwarePath(t *testing.T) {
+	tests := []struct {
+		name         string
+		arm64        bool
+		firecracker  bool
+		haveFirmware bool
+		boot         types.BootConfig
+		wantFirmware bool
+		wantErr      bool
+	}{
+		{name: "arm64 oci gets the node firmware", arm64: true, haveFirmware: true, boot: types.BootConfig{KernelPath: "/boot/Image"}, wantFirmware: true},
+		{name: "arm64 oci without firmware fails", arm64: true, boot: types.BootConfig{KernelPath: "/boot/Image"}, wantErr: true},
+		{name: "arm64 firecracker oci stays kernel only", arm64: true, firecracker: true, boot: types.BootConfig{KernelPath: "/boot/Image"}},
+		{name: "arm64 cloud image keeps its firmware", arm64: true, boot: types.BootConfig{FirmwarePath: "/fw/other.fd"}},
+		{name: "x86 oci stays kernel only", haveFirmware: true, boot: types.BootConfig{KernelPath: "/boot/vmlinuz"}},
+		{name: "x86 bootless config gets the node firmware", wantFirmware: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := kernelViaFirmware
+			kernelViaFirmware = tt.arm64
+			t.Cleanup(func() { kernelViaFirmware = orig })
+
+			conf := &config.Config{RootDir: t.TempDir(), UseFirecracker: tt.firecracker}
+			firmwarePath := images.FirmwarePath(conf.RootDir)
+			if tt.haveFirmware {
+				writeFirmware(t, firmwarePath)
+			}
+			boot := tt.boot
+			err := EnsureFirmwarePath(conf, &boot)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), firmwarePath) {
+					t.Fatalf("err = %v, want one naming %s", err, firmwarePath)
+				}
+				if boot != tt.boot {
+					t.Errorf("boot = %+v, want it untouched on error", boot)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureFirmwarePath: %v", err)
+			}
+			want := tt.boot
+			if tt.wantFirmware {
+				want.FirmwarePath = firmwarePath
+			}
+			if boot != want {
+				t.Errorf("boot = %+v, want %+v", boot, want)
+			}
+		})
+	}
+}
+
+func writeFirmware(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("fw"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
 }

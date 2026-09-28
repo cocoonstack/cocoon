@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -13,7 +14,11 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
+
+// Only a firmware boot gives an arm64 guest ACPI.
+var kernelViaFirmware = runtime.GOARCH == "arm64"
 
 func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error) {
 	memStr, storStr := cliutil.FlagStr(cmd, "memory"), cliutil.FlagStr(cmd, "storage")
@@ -139,10 +144,21 @@ func RestoreVMConfigFromFlags(cmd *cobra.Command, vm *types.VM, snapCfg types.Sn
 	return result, nil
 }
 
-func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) {
-	if bootCfg != nil && bootCfg.KernelPath == "" && bootCfg.FirmwarePath == "" {
-		bootCfg.FirmwarePath = images.FirmwarePath(conf.RootDir)
+func EnsureFirmwarePath(conf *config.Config, bootCfg *types.BootConfig) error {
+	if bootCfg == nil || bootCfg.FirmwarePath != "" {
+		return nil
 	}
+	firmwarePath := images.FirmwarePath(conf.RootDir)
+	switch {
+	case bootCfg.KernelPath == "":
+		bootCfg.FirmwarePath = firmwarePath
+	case kernelViaFirmware && !conf.UseFirecracker:
+		if !utils.ValidFile(firmwarePath) {
+			return fmt.Errorf("firmware not found: %s", firmwarePath)
+		}
+		bootCfg.FirmwarePath = firmwarePath
+	}
+	return nil
 }
 
 func sanitizeVMName(image string) string {

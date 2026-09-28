@@ -140,3 +140,69 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 		t.Errorf("cmdline = %q, still replays the address the VM was created with", cfg.Payload.Cmdline)
 	}
 }
+
+func TestPayloadFollowsBootShape(t *testing.T) {
+	storageConfigs := []*types.StorageConfig{
+		{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},
+		{Path: "/run/cow.raw", Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial},
+	}
+	cmdline := buildCmdline(storageConfigs, nil, "vm1", nil)
+	tests := []struct {
+		name        string
+		boot        types.BootConfig
+		wantPayload chPayload
+		wantArgs    []string
+	}{
+		{
+			name:        "kernel and firmware boot through fw_cfg",
+			boot:        types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", FirmwarePath: "/fw/CLOUDHV.fd"},
+			wantPayload: chPayload{Firmware: "/fw/CLOUDHV.fd", Kernel: "/boot/Image", Initramfs: "/boot/initrd.img", Cmdline: cmdline},
+			wantArgs: []string{
+				"--kernel", "/boot/Image",
+				"--firmware", "/fw/CLOUDHV.fd",
+				"--initramfs", "/boot/initrd.img",
+				"--cmdline", cmdline,
+				"--fw-cfg-config", "kernel=on,cmdline=on,initramfs=on,acpi_table=on",
+			},
+		},
+		{
+			name:        "kernel only boots directly",
+			boot:        types.BootConfig{KernelPath: "/boot/vmlinuz", InitrdPath: "/boot/initrd.img"},
+			wantPayload: chPayload{Kernel: "/boot/vmlinuz", Initramfs: "/boot/initrd.img", Cmdline: cmdline},
+			wantArgs:    []string{"--kernel", "/boot/vmlinuz", "--initramfs", "/boot/initrd.img", "--cmdline", cmdline},
+		},
+		{
+			name:        "firmware only boots UEFI",
+			boot:        types.BootConfig{FirmwarePath: "/fw/CLOUDHV.fd"},
+			wantPayload: chPayload{Firmware: "/fw/CLOUDHV.fd"},
+			wantArgs:    []string{"--firmware", "/fw/CLOUDHV.fd"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &hypervisor.VMRecord{
+				Config:         types.VMConfig{Name: "vm1", Config: types.Config{CPU: 1, Memory: 1 << 30}},
+				StorageConfigs: storageConfigs,
+				BootConfig:     &tt.boot,
+			}
+			cfg := buildVMConfig(rec, "", nil)
+			if cfg.Payload == nil || *cfg.Payload != tt.wantPayload {
+				t.Fatalf("payload = %+v, want %+v", cfg.Payload, tt.wantPayload)
+			}
+			if got := payloadArgs(buildCLIArgs(cfg, "api.sock")); !slices.Equal(got, tt.wantArgs) {
+				t.Errorf("payload args = %q, want %q", got, tt.wantArgs)
+			}
+		})
+	}
+}
+
+func payloadArgs(args []string) []string {
+	var out []string
+	for i, a := range args {
+		switch a {
+		case "--firmware", "--kernel", "--initramfs", "--cmdline", "--fw-cfg-config":
+			out = append(out, a, args[i+1])
+		}
+	}
+	return out
+}

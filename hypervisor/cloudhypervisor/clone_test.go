@@ -321,6 +321,24 @@ func TestRebuildBootConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("firmware_kernel", func(t *testing.T) {
+		path := writeCHConfig(t, t.TempDir(), map[string]any{"payload": map[string]any{
+			"firmware":      "/fw/CLOUDHV.fd",
+			"kernel":        "/boot/Image",
+			"initramfs":     "/boot/initrd.img",
+			"cmdline":       "console=hvc0",
+			"fw_cfg_config": map[string]any{"e820": true, "kernel": true, "cmdline": true, "initramfs": true, "acpi_tables": true},
+		}})
+		cfg, err := parseCHConfig(path)
+		if err != nil {
+			t.Fatalf("parseCHConfig: %v", err)
+		}
+		want := types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", Cmdline: "console=hvc0", FirmwarePath: "/fw/CLOUDHV.fd"}
+		if boot := rebuildBootConfig(cfg); boot == nil || *boot != want {
+			t.Errorf("got %+v, want %+v", boot, want)
+		}
+	})
+
 	t.Run("empty_payload", func(t *testing.T) {
 		cfg := &chVMConfig{Payload: &chPayload{}}
 		if boot := rebuildBootConfig(cfg); boot != nil {

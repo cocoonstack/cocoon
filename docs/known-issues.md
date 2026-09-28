@@ -60,7 +60,7 @@ Race window: `cocoon vm run X && cocoon vm exec X -- cmd` may fail with `read CO
 
 ## Cloud image UEFI boot compatibility
 
-Cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions.
+On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions. aarch64 hosts boot through EDK2 (`CLOUDHV_EFI.fd`, installed by `cocoon-check --upgrade`), which is not affected.
 
 **Affected images** (kernel panic on boot — GRUB loads kernel but not initrd):
 

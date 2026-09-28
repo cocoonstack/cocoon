@@ -60,6 +60,9 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	if err = validateBootCompat(conf, vmCfg, boot); err != nil {
 		return err
 	}
+	if err = cmdcore.EnsureFirmwarePath(conf, boot); err != nil {
+		return err
+	}
 
 	if conf.UseFirecracker {
 		if set := changedFlags(cmd, "max-cpu", "balloon", "cow", "ch"); len(set) > 0 {
@@ -171,6 +174,10 @@ func printCHDebug(s chDebugSpec) {
 		printPrepareCOWDisk(s.VMCfg.Storage>>30, s.CowPath)
 		fmt.Printf("# Launch VM: %s (image: %s, boot: direct kernel)\n", s.VMCfg.Name, s.VMCfg.Image)
 		fmt.Printf("%s \\\n", s.CHBin)
+		if s.Boot.FirmwarePath != "" {
+			fmt.Printf("  --firmware %s \\\n", s.Boot.FirmwarePath)
+			fmt.Printf("  --fw-cfg-config %s \\\n", cloudhypervisor.FwCfgKernelBootArg)
+		}
 		fmt.Printf("  --kernel %s \\\n", s.Boot.KernelPath)
 		fmt.Printf("  --initramfs %s \\\n", s.Boot.InitrdPath)
 		fmt.Print("  --disk")
