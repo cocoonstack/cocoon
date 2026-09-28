@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	// FwCfgKernelBootArg names every payload explicitly: with --firmware, CH hands the initramfs over only through fw_cfg.
+	FwCfgKernelBootArg = "kernel=on,cmdline=on,initramfs=on,acpi_table=on"
+
 	defaultDiskQueueSize = 512
 	cidataFile           = "cidata.img"
 
@@ -82,6 +85,7 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, dnsServers 
 		switch {
 		case boot.KernelPath != "":
 			cfg.Payload = &chPayload{
+				Firmware:  boot.FirmwarePath,
 				Kernel:    boot.KernelPath,
 				Initramfs: boot.InitrdPath,
 				Cmdline:   buildCmdline(rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name, dnsServers),
@@ -113,18 +117,7 @@ func buildCLIArgs(cfg *chVMConfig, socketPath string) []string {
 	}
 
 	if p := cfg.Payload; p != nil {
-		if p.Kernel != "" {
-			args = append(args, "--kernel", p.Kernel)
-		}
-		if p.Firmware != "" {
-			args = append(args, "--firmware", p.Firmware)
-		}
-		if p.Initramfs != "" {
-			args = append(args, "--initramfs", p.Initramfs)
-		}
-		if p.Cmdline != "" {
-			args = append(args, "--cmdline", p.Cmdline)
-		}
+		args = append(args, payloadToCLIArgs(p)...)
 	}
 
 	if len(cfg.Nets) > 0 {
@@ -260,6 +253,26 @@ func diskToCLIArg(d chDisk) string {
 	}
 	b.addIf(d.Serial != "", "serial="+d.Serial)
 	return b.String()
+}
+
+func payloadToCLIArgs(p *chPayload) []string {
+	var args []string
+	if p.Kernel != "" {
+		args = append(args, "--kernel", p.Kernel)
+	}
+	if p.Firmware != "" {
+		args = append(args, "--firmware", p.Firmware)
+	}
+	if p.Initramfs != "" {
+		args = append(args, "--initramfs", p.Initramfs)
+	}
+	if p.Cmdline != "" {
+		args = append(args, "--cmdline", p.Cmdline)
+	}
+	if p.Kernel != "" && p.Firmware != "" {
+		args = append(args, "--fw-cfg-config", FwCfgKernelBootArg)
+	}
+	return args
 }
 
 func netToCLIArg(n chNet) string {

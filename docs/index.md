@@ -46,7 +46,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - **OCI VM images** — pull OCI images with kernel + rootfs layers, content-addressed blob cache with SHA-256 deduplication
 - **Cloud image support** — pull from HTTP/HTTPS URLs (e.g. Ubuntu cloud images), automatic qcow2 conversion
 - **Image import** — import local qcow2 or tar files (also from stdin or gzip-wrapped streams), auto-detected by magic bytes
-- **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected)
+- **UEFI boot** — CLOUDHV.fd firmware by default; direct kernel boot for OCI images (auto-detected), on arm64 handed to the EDK2 firmware over fw_cfg so the guest gets ACPI
 - **COW overlays** — copy-on-write disks backed by shared base images (raw for OCI, qcow2 for cloud images)
 - **CNI networking** — automatic NIC creation via CNI plugins, multi-NIC support, per-VM IP allocation; bridge mode and NIC hot-resize; `net_scope` keys host device names per installation so co-hosted cocoon roots never GC each other's guests
 - **CPU isolation** — every VM runs in its own cgroup v2 scope with Guaranteed-at-N defaults (`--cpu` caps the long-run average); raw weight/quota/burst knobs, an optional host-core fence (`cgroup_cpus`), per-VM pinning (`--cpuset-cpus`, or `auto` for one cache domain), and disk queue threads pinned inside the least-loaded cache domain; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)

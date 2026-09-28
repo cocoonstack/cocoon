@@ -442,7 +442,9 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	if err = validateBootCompat(conf, vmCfg, bootCfg); err != nil {
 		return nil, nil, nil, err
 	}
-	cmdcore.EnsureFirmwarePath(conf, bootCfg)
+	if err = cmdcore.EnsureFirmwarePath(conf, bootCfg); err != nil {
+		return nil, nil, nil, err
+	}
 
 	vmID := utils.GenerateID()
 	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)

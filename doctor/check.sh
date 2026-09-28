@@ -22,12 +22,14 @@ COCOON_META_BACKEND="${COCOON_META_BACKEND:-}"
 # Dependency versions. cloud-hypervisor, Firecracker and the x86_64 firmware come from the
 # cocoonstack fork release tags (rolling dev builds verified against their SHA256SUMS);
 # ch-remote, the aarch64 firmware and the CNI plugins come from upstream releases.
+# The edk2 release publishes no SHA256SUMS, so EDK2_SHA256 pins the aarch64 firmware digest.
 CH_REF="${CH_REF:-dev}"
 CH_REMOTE_VERSION="${CH_REMOTE_VERSION:-v53.0}"
 CH_MIN_MAJOR=54
 FC_REF="${FC_REF:-dev}"
 FW_REF="${FW_REF:-dev}"
-FW_VERSION="${FW_VERSION:-0.5.0}"
+EDK2_REF="${EDK2_REF:-ch-97eeb7b09}"
+EDK2_SHA256="${EDK2_SHA256:-13cf4eddc44f3fac4e223b54bcf958de99539297fee8b61cca2605ab5b5009fb}"
 CNI_VERSION="${CNI_VERSION:-v1.9.1}"
 CH_RELEASE_BASE="https://github.com/cocoonstack/cloud-hypervisor/releases/download/${CH_REF}"
 FC_RELEASE_BASE="https://github.com/cocoonstack/firecracker/releases/download/${FC_REF}"
@@ -36,8 +38,8 @@ FW_RELEASE_BASE="https://github.com/cocoonstack/rust-hypervisor-firmware/release
 # Architecture detection
 ARCH=$(uname -m)
 case "$ARCH" in
-    x86_64)  GO_ARCH="amd64"; CH_SUFFIX=""; FW_SUFFIX="" ;;
-    aarch64) GO_ARCH="arm64";  CH_SUFFIX="-aarch64"; FW_SUFFIX="-aarch64" ;;
+    x86_64)  GO_ARCH="amd64"; CH_SUFFIX="" ;;
+    aarch64) GO_ARCH="arm64";  CH_SUFFIX="-aarch64" ;;
     *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
@@ -65,7 +67,7 @@ Options:
                      cloud-hypervisor cocoonstack fork release ${CH_REF}
                      ch-remote        ${CH_REMOTE_VERSION}
                      firecracker      cocoonstack fork release ${FC_REF}
-                     hypervisor-fw    cocoonstack fork release ${FW_REF} (x86_64), ${FW_VERSION} (aarch64)
+                     firmware         hypervisor-fw cocoonstack fork release ${FW_REF} (x86_64), EDK2 ${EDK2_REF} (aarch64)
                      CNI plugins      ${CNI_VERSION}
   --subnet=CIDR    Subnet for generated CNI bridge config (default: 10.88.0.0/16)
 
@@ -74,7 +76,8 @@ Environment variables:
   CH_REMOTE_VERSION upstream ch-remote version                 (default: ${CH_REMOTE_VERSION})
   FC_REF            cocoonstack/firecracker release tag        (default: ${FC_REF})
   FW_REF            cocoonstack/rust-hypervisor-firmware tag   (default: ${FW_REF})
-  FW_VERSION        upstream firmware version, aarch64 only    (default: ${FW_VERSION})
+  EDK2_REF          cloud-hypervisor/edk2 tag, aarch64 only    (default: ${EDK2_REF})
+  EDK2_SHA256       CLOUDHV_EFI.fd digest for EDK2_REF         (default: pinned for the default EDK2_REF)
   CNI_VERSION       CNI plugins version                        (default: ${CNI_VERSION})
   COCOON_ROOT_DIR / COCOON_RUN_DIR / COCOON_LOG_DIR
   COCOON_BIN        cocoon binary used for store inspection (default: cocoon)
@@ -190,6 +193,11 @@ verify_sha256() {
     [ -n "$want" ] && [ "$want" = "$got" ]
 }
 
+# edk2_ok FILE: FILE is the pinned EDK2 build.
+edk2_ok() {
+    [ "$(sha256sum "$1" | awk '{print $1}')" = "$EDK2_SHA256" ]
+}
+
 # release_commit BASE_URL: short commit of a cocoonstack fork release, from its build-info.json.
 release_commit() {
     curl -fsSL "$1/build-info.json" 2>/dev/null | grep -oE '"commit": *"[0-9a-f]+"' | grep -oE '[0-9a-f]{40}' | cut -c1-8
@@ -233,6 +241,13 @@ check_binary() {
 }
 
 check_binary cloud-hypervisor
+if [ "$ARCH" = "aarch64" ] && ch_features=$(cloud-hypervisor -v --version 2>/dev/null); then
+    if echo "$ch_features" | grep -q '^Enabled features:.*"fw_cfg"'; then
+        pass "cloud-hypervisor has fw_cfg"
+    else
+        fail "cloud-hypervisor lacks fw_cfg — arm64 OCI boot hands the kernel to EDK2 over fw_cfg; run --upgrade"
+    fi
+fi
 check_binary ch-remote
 # Firecracker is optional — only needed for --fc backend.
 if command -v firecracker &>/dev/null; then
@@ -251,7 +266,11 @@ header "Firmware"
 
 if [ -f "$FIRMWARE_PATH" ]; then
     local_size=$(stat -c%s "$FIRMWARE_PATH" 2>/dev/null || stat -f%z "$FIRMWARE_PATH" 2>/dev/null || echo 0)
-    pass "CLOUDHV.fd (${local_size} bytes) at $FIRMWARE_PATH"
+    if [ "$ARCH" = "aarch64" ] && ! edk2_ok "$FIRMWARE_PATH"; then
+        fail "CLOUDHV.fd (${local_size} bytes) at $FIRMWARE_PATH is not EDK2 ${EDK2_REF} — arm64 OCI boot needs its fw_cfg kernel loading; run --upgrade"
+    else
+        pass "CLOUDHV.fd (${local_size} bytes) at $FIRMWARE_PATH"
+    fi
 else
     fail "CLOUDHV.fd not found at $FIRMWARE_PATH"
 fi
@@ -536,15 +555,16 @@ if $UPGRADE; then
             fail "failed to download or verify firmware from ${fw_url}"
         fi
     else
-        header "Install hypervisor-fw ${FW_VERSION}"
+        header "Install EDK2 firmware ${EDK2_REF}"
 
-        fw_url="https://github.com/cloud-hypervisor/rust-hypervisor-firmware/releases/download/${FW_VERSION}/hypervisor-fw${FW_SUFFIX}"
+        fw_url="https://github.com/cloud-hypervisor/edk2/releases/download/${EDK2_REF}/CLOUDHV_EFI.fd"
         info "downloading ${fw_url}"
-        if curl -fsSL -o "${tmpdir}/hypervisor-fw" "$fw_url"; then
-            install -m 0644 "${tmpdir}/hypervisor-fw" "${FIRMWARE_PATH}"
-            fixed "hypervisor-fw ${FW_VERSION} -> ${FIRMWARE_PATH}"
+        if curl -fsSL -o "${tmpdir}/CLOUDHV_EFI.fd" "$fw_url" \
+            && edk2_ok "${tmpdir}/CLOUDHV_EFI.fd"; then
+            install -m 0644 "${tmpdir}/CLOUDHV_EFI.fd" "${FIRMWARE_PATH}"
+            fixed "EDK2 ${EDK2_REF} CLOUDHV_EFI.fd -> ${FIRMWARE_PATH}"
         else
-            fail "failed to download firmware from ${fw_url}"
+            fail "failed to download or verify firmware from ${fw_url}"
         fi
     fi
 
