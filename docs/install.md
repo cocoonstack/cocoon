@@ -24,10 +24,10 @@ Download pre-built binaries from [GitHub Releases](https://github.com/cocoonstac
 
 ```bash
 # Linux amd64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.8/cocoon_0.6.8_Linux_x86_64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.7.0/cocoon_0.7.0_Linux_x86_64.tar.gz
 
 # Linux arm64
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.6.8/cocoon_0.6.8_Linux_arm64.tar.gz
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.7.0/cocoon_0.7.0_Linux_arm64.tar.gz
 
 tar -xzf cocoon.tar.gz
 install -m 0755 cocoon /usr/local/bin/
@@ -54,7 +54,7 @@ Cocoon ships a diagnostic script that checks your environment and can auto-insta
 
 ```bash
 # Get script
-curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.6.8/doctor/check.sh
+curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.7.0/doctor/check.sh
 install -m 0755 cocoon-check /usr/local/bin/
 
 # Check only — reports PASS/FAIL for each requirement

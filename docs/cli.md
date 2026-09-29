@@ -354,6 +354,8 @@ Applies to `cocoon vm list`, `cocoon image list`, and `cocoon snapshot list`:
 | ----------------- | -------- | ---------------------------------------- |
 | `--format`, `-o`  | `table`  | Output format: `table` or `json`         |
 
+With `json`, an empty list prints `[]`; `table` prints a one-line "No ... found." message.
+
 Additionally, `cocoon snapshot list` supports:
 
 | Flag   | Default | Description                              |
