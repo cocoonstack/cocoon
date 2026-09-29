@@ -15,7 +15,8 @@ import (
 )
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
-	if _, err := cliutil.Format(cmd); err != nil {
+	format, err := cliutil.Format(cmd)
+	if err != nil {
 		return err
 	}
 	ctx, conf := h.Init(cmd)
@@ -32,7 +33,10 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		}
 		all = append(all, imgs...)
 	}
-	if format, _ := cmd.Flags().GetString("format"); len(all) == 0 && format != cliutil.FormatJSON {
+	if len(all) == 0 {
+		if format == cliutil.FormatJSON {
+			return cliutil.OutputJSON([]*types.Image{})
+		}
 		fmt.Println("No images found.")
 		return nil
 	}
