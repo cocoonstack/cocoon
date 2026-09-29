@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil/clitest"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -23,7 +24,7 @@ func TestPostCloneHintsGateBalloonRelease(t *testing.T) {
 				Name:   "c",
 				Config: types.Config{Memory: tt.memory, NoBalloon: tt.noBalloon, ImageType: types.ImageTypeOCI},
 			}}
-			out := captureStdout(t, func() { printPostCloneHints(vm) })
+			out := clitest.CaptureStdout(t, func() { printPostCloneHints(vm) })
 			if got := strings.Contains(out, "drop_caches"); got != tt.want {
 				t.Errorf("drop_caches hint = %v, want %v (output: %q)", got, tt.want, out)
 			}
