@@ -216,6 +216,28 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 	}
 }
 
+func TestParseContentRangeSize(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int64
+		ok   bool
+	}{
+		{"bytes 0-7/12345", 12345, true},
+		{"bytes 0-7/*", 0, false},
+		{"bytes 0-7/", 0, false},
+		{"bytes 0-7", 0, false},
+		{"bytes 0-7/0", 0, false},
+		{"bytes 0-7/-5", 0, false},
+		{"", 0, false},
+	}
+	for _, tt := range tests {
+		got, ok := parseContentRangeSize(tt.in)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("parseContentRangeSize(%q) = %d, %v; want %d, %v", tt.in, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func rangeHandler(data []byte, fail func(start, end int64) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")

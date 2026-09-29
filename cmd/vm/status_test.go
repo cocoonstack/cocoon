@@ -3,7 +3,6 @@ package vm
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/cmd/cliutil/clitest"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -51,24 +51,20 @@ func TestVMIPsAndSort(t *testing.T) {
 		{
 			ID: "2",
 			Config: types.VMConfig{
-				Name: "later",
-				Config: types.Config{
-					CPU:    2,
-					Memory: 2 << 30,
-					Image:  "img-b",
-				},
+				Name:   "later",
+				CPU:    2,
+				Memory: 2 << 30,
+				Image:  "img-b",
 			},
 			CreatedAt: now,
 		},
 		{
 			ID: "1",
 			Config: types.VMConfig{
-				Name: "earlier",
-				Config: types.Config{
-					CPU:    1,
-					Memory: 1 << 30,
-					Image:  "img-a",
-				},
+				Name:   "earlier",
+				CPU:    1,
+				Memory: 1 << 30,
+				Image:  "img-a",
 			},
 			CreatedAt: now.Add(-time.Minute),
 			NetworkConfigs: []*types.NetworkConfig{
@@ -96,7 +92,7 @@ func TestVMIPsAndSort(t *testing.T) {
 func TestRenderVMList(t *testing.T) {
 	vm := &types.VM{
 		ID:        "abc",
-		Config:    types.VMConfig{Name: "demo", Config: types.Config{CPU: 1, Memory: 1 << 30, Image: "img"}},
+		Config:    types.VMConfig{Name: "demo", CPU: 1, Memory: 1 << 30, Image: "img"},
 		CreatedAt: time.Now(),
 	}
 
@@ -116,7 +112,7 @@ func TestRenderVMList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := captureStdout(t, func() {
+			out := clitest.CaptureStdout(t, func() {
 				if err := renderVMList(tt.vms, tt.format, t.TempDir(), nil); err != nil {
 					t.Fatalf("renderVMList: %v", err)
 				}
@@ -218,7 +214,7 @@ func TestStatusWatchRefreshesThrottlingWithoutVMChanges(t *testing.T) {
 	}
 	tick := make(chan time.Time, 1)
 	tick <- time.Now()
-	out := captureStdout(t, func() {
+	out := clitest.CaptureStdout(t, func() {
 		statusRefreshLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, tick, true, scopeDir)
 	})
 	if writeErr != nil {
@@ -232,31 +228,6 @@ func TestStatusWatchRefreshesThrottlingWithoutVMChanges(t *testing.T) {
 	if got := strings.Count(out, "\033[H\033[2J"); got != 2 {
 		t.Errorf("screen redraws = %d, want 2", got)
 	}
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	defer r.Close()
-	defer w.Close()
-	orig := os.Stdout
-	defer func() { os.Stdout = orig }()
-	os.Stdout = w
-
-	var buf []byte
-	done := make(chan struct{})
-	go func() {
-		buf, _ = io.ReadAll(r)
-		close(done)
-	}()
-
-	fn()
-	_ = w.Close()
-	<-done
-	return string(buf)
 }
 
 type statusWatchHypervisor struct {

@@ -17,7 +17,7 @@ import (
 )
 
 func TestSignalReseed_SkipsWindows(t *testing.T) {
-	vm := &types.VM{ID: "vm1", Config: types.VMConfig{Config: types.Config{Windows: true}}, VsockSocket: "/tmp/whatever.sock"}
+	vm := &types.VM{ID: "vm1", Config: types.VMConfig{Windows: true}, VsockSocket: "/tmp/whatever.sock"}
 	if signalReseed(t.Context(), vm, true) {
 		t.Error("attempted reseed on a Windows guest, want skip")
 	}

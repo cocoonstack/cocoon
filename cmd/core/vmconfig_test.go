@@ -48,8 +48,8 @@ func TestRestoreModeFromFlags(t *testing.T) {
 
 func TestRestoreVMConfigKeepsHostCPUPolicy(t *testing.T) {
 	vm := &types.VM{Config: types.VMConfig{
-		Name:   "v",
-		Config: types.Config{CPU: 1, CPUWeight: 25, CPUQuotaUs: 150000, CPUPeriodUs: 50000, CPUBurstUs: 10000, Network: "keepnet"},
+		Name: "v",
+		CPU:  1, CPUWeight: 25, CPUQuotaUs: 150000, CPUPeriodUs: 50000, CPUBurstUs: 10000, Network: "keepnet",
 	}}
 	snapCfg := types.SnapshotConfig{
 		CPU: 2, Memory: 1 << 30, Storage: 10 << 30,
@@ -79,8 +79,8 @@ func TestRestoreVMConfigKeepsHostCPUPolicy(t *testing.T) {
 
 func TestRestoreVMConfigRejectsKnobsUnfitForSnapshotCPU(t *testing.T) {
 	vm := &types.VM{Config: types.VMConfig{
-		Name:   "v",
-		Config: types.Config{CPU: 2, CPUBurstUs: 150000},
+		Name: "v",
+		CPU:  2, CPUBurstUs: 150000,
 	}}
 	snapCfg := types.SnapshotConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30}
 

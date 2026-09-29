@@ -990,10 +990,8 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		Config: types.SnapshotConfig{
 			Name:        "stream-snap",
 			Description: "from reader",
-			Config: types.Config{
-				CPU:    2,
-				Memory: 512 << 20,
-			},
+			CPU:         2,
+			Memory:      512 << 20,
 		},
 	}
 	jsonData, err := json.Marshal(wantCfg)
@@ -1058,7 +1056,7 @@ func TestImport_CorruptGzipTrailerRejected(t *testing.T) {
 
 	jsonData, err := json.Marshal(types.SnapshotExport{
 		Version: 1,
-		Config:  types.SnapshotConfig{Name: "corrupt-snap", Config: types.Config{CPU: 1, Memory: 256 << 20}},
+		Config:  types.SnapshotConfig{Name: "corrupt-snap", CPU: 1, Memory: 256 << 20},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1092,8 +1090,8 @@ func TestImport_FromRawTarReader(t *testing.T) {
 	wantCfg := types.SnapshotExport{
 		Version: 1,
 		Config: types.SnapshotConfig{
-			Name:   "raw-snap",
-			Config: types.Config{CPU: 8},
+			Name: "raw-snap",
+			CPU:  8,
 		},
 	}
 	jsonData, err := json.Marshal(wantCfg)
@@ -1152,7 +1150,7 @@ func TestImport_FromRawTarReader(t *testing.T) {
 
 func TestImport_RefusesAShortCOW(t *testing.T) {
 	lf := newTestLF(t)
-	envelope, err := json.Marshal(types.SnapshotExport{Version: 1, Config: types.SnapshotConfig{Name: "repacked", Config: types.Config{Storage: 8 << 20}}})
+	envelope, err := json.Marshal(types.SnapshotExport{Version: 1, Config: types.SnapshotConfig{Name: "repacked", Storage: 8 << 20}})
 	if err != nil {
 		t.Fatal(err)
 	}

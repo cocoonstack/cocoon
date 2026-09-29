@@ -222,7 +222,7 @@ func TestFinalizeCloneEmitsCloneEntries(t *testing.T) {
 		ID:         "vm1",
 		Hypervisor: b.Typ,
 		State:      types.VMStateRunning,
-		Config:     types.VMConfig{Config: types.Config{CPU: 2, Memory: 2 << 30, Storage: 20 << 30}},
+		Config:     types.VMConfig{CPU: 2, Memory: 2 << 30, Storage: 20 << 30},
 	}
 	if err := b.FinalizeClone(ctx, "vm1", info, nil, nil, "snap-source"); err != nil {
 		t.Fatalf("FinalizeClone: %v", err)
@@ -387,7 +387,7 @@ func TestFinalizeCreateEmitsStorageStart(t *testing.T) {
 	info := &types.VM{
 		ID:         "vm1",
 		Hypervisor: b.Typ,
-		Config:     types.VMConfig{Config: types.Config{CPU: 2, Memory: 2 << 30, Storage: 20 << 30}},
+		Config:     types.VMConfig{CPU: 2, Memory: 2 << 30, Storage: 20 << 30},
 	}
 	if err := b.FinalizeCreate(ctx, "vm1", info, nil, nil); err != nil {
 		t.Fatalf("FinalizeCreate: %v", err)
@@ -677,7 +677,7 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 		idx.VMs[id] = &VMRecord{
 			ID:          id,
 			Hypervisor:  b.Typ,
-			Config:      types.VMConfig{Config: types.Config{CPU: cpu, Memory: mem, Storage: storage}},
+			Config:      types.VMConfig{CPU: cpu, Memory: mem, Storage: storage},
 			FirstBooted: firstBooted,
 
 			RunDir: t.TempDir(),

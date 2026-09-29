@@ -264,14 +264,7 @@ func hashDigest(dst *os.File) (string, error) {
 
 // parseContentRangeSize extracts the total size from a "Content-Range: bytes 0-0/12345" header value.
 func parseContentRangeSize(v string) (int64, bool) {
-	i := strings.LastIndexByte(v, '/')
-	if i < 0 || i+1 >= len(v) {
-		return 0, false
-	}
-	total := v[i+1:]
-	if total == "*" {
-		return 0, false
-	}
+	_, total, _ := strings.CutLast(v, "/")
 	size, err := strconv.ParseInt(total, 10, 64)
 	if err != nil || size <= 0 {
 		return 0, false
