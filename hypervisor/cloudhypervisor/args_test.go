@@ -64,7 +64,7 @@ func TestWatchdogPolicy(t *testing.T) {
 		{name: "explicitly disabled", noWatchdog: true, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{Config: types.VMConfig{Config: types.Config{NoWatchdog: tt.noWatchdog}}}
+			rec := &hypervisor.VMRecord{Config: types.VMConfig{NoWatchdog: tt.noWatchdog}}
 			if got := buildVMConfig(rec, "", nil).Watchdog; got != tt.want {
 				t.Fatalf("Watchdog = %v, want %v", got, tt.want)
 			}
@@ -93,7 +93,7 @@ func TestBalloonPolicy(t *testing.T) {
 		{name: "explicitly disabled", noBalloon: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := &hypervisor.VMRecord{Config: types.VMConfig{Config: types.Config{Memory: 1 << 30, NoBalloon: tt.noBalloon}}}
+			rec := &hypervisor.VMRecord{Config: types.VMConfig{Memory: 1 << 30, NoBalloon: tt.noBalloon}}
 			got := buildVMConfig(rec, "", nil).Balloon
 			if tt.wantSize == 0 {
 				if got != nil {
@@ -113,7 +113,7 @@ func TestBalloonPolicy(t *testing.T) {
 
 func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 	rec := &hypervisor.VMRecord{
-		Config: types.VMConfig{Name: "vm1", Config: types.Config{CPU: 2, Memory: 1 << 30}},
+		Config: types.VMConfig{Name: "vm1", CPU: 2, Memory: 1 << 30},
 		StorageConfigs: []*types.StorageConfig{
 			{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},
 			{Path: "/run/cow.raw", Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial},
@@ -181,7 +181,7 @@ func TestPayloadFollowsBootShape(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{
-				Config:         types.VMConfig{Name: "vm1", Config: types.Config{CPU: 1, Memory: 1 << 30}},
+				Config:         types.VMConfig{Name: "vm1", CPU: 1, Memory: 1 << 30},
 				StorageConfigs: storageConfigs,
 				BootConfig:     &tt.boot,
 			}

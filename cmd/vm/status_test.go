@@ -51,24 +51,20 @@ func TestVMIPsAndSort(t *testing.T) {
 		{
 			ID: "2",
 			Config: types.VMConfig{
-				Name: "later",
-				Config: types.Config{
-					CPU:    2,
-					Memory: 2 << 30,
-					Image:  "img-b",
-				},
+				Name:   "later",
+				CPU:    2,
+				Memory: 2 << 30,
+				Image:  "img-b",
 			},
 			CreatedAt: now,
 		},
 		{
 			ID: "1",
 			Config: types.VMConfig{
-				Name: "earlier",
-				Config: types.Config{
-					CPU:    1,
-					Memory: 1 << 30,
-					Image:  "img-a",
-				},
+				Name:   "earlier",
+				CPU:    1,
+				Memory: 1 << 30,
+				Image:  "img-a",
 			},
 			CreatedAt: now.Add(-time.Minute),
 			NetworkConfigs: []*types.NetworkConfig{
@@ -96,7 +92,7 @@ func TestVMIPsAndSort(t *testing.T) {
 func TestRenderVMList(t *testing.T) {
 	vm := &types.VM{
 		ID:        "abc",
-		Config:    types.VMConfig{Name: "demo", Config: types.Config{CPU: 1, Memory: 1 << 30, Image: "img"}},
+		Config:    types.VMConfig{Name: "demo", CPU: 1, Memory: 1 << 30, Image: "img"},
 		CreatedAt: time.Now(),
 	}
 

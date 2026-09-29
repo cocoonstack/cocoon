@@ -22,7 +22,7 @@ func TestPostCloneHintsGateBalloonRelease(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			vm := &types.VM{Hypervisor: "cloud-hypervisor", Config: types.VMConfig{
 				Name:   "c",
-				Config: types.Config{Memory: tt.memory, NoBalloon: tt.noBalloon, ImageType: types.ImageTypeOCI},
+				Memory: tt.memory, NoBalloon: tt.noBalloon, ImageType: types.ImageTypeOCI,
 			}}
 			out := clitest.CaptureStdout(t, func() { printPostCloneHints(vm) })
 			if got := strings.Contains(out, "drop_caches"); got != tt.want {
