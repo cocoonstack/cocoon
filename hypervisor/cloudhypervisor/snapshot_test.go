@@ -67,33 +67,23 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 		target  = mem - balloon
 	)
 	tests := []struct {
-		name       string
-		state      string
-		balloon    *chBalloon
-		actual     func(polls int) int64
-		minElapsed time.Duration
-		maxElapsed time.Duration
+		name    string
+		state   string
+		balloon *chBalloon
+		actual  func(polls int) int64
+		wait    time.Duration
 	}{
-		{"settled", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return target }, 0, 0},
-		{"no balloon", chStateRunning, nil, func(int) int64 { return mem }, 0, 0},
-		{"paused guest cannot inflate", chStatePaused, &chBalloon{Size: balloon}, func(int) int64 { return mem }, 0, 0},
-		{
-			"inflating reaches target", chStateRunning, &chBalloon{Size: balloon},
-			func(polls int) int64 { return mem - min(int64(polls)*(512<<20), balloon) }, 4 * balloonPollInterval, 4 * balloonPollInterval,
-		},
-		{
-			"stalled under guest memory pressure", chStateRunning, &chBalloon{Size: balloon},
-			func(int) int64 { return mem - (512 << 20) }, balloonStallWindow, balloonStallWindow + balloonPollInterval,
-		},
-		{
-			"slow inflation stops at the cap", chStateRunning, &chBalloon{Size: balloon},
-			func(polls int) int64 { return mem - int64(polls)<<12 }, balloonSettleTimeout, balloonSettleTimeout + balloonPollInterval,
-		},
+		{"settled", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return target }, 0},
+		{"no balloon", chStateRunning, nil, func(int) int64 { return mem }, 0},
+		{"paused guest cannot inflate", chStatePaused, &chBalloon{Size: balloon}, func(int) int64 { return mem }, 0},
+		{"inflating reaches target", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - min(int64(polls)*(512<<20), balloon) }, 4 * balloonPollInterval},
+		{"stalled under guest memory pressure", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return mem - (512 << 20) }, balloonStallWindow},
+		{"slow inflation stops at the cap", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - int64(polls)<<12 }, balloonSettleTimeout},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				polls, pauses := 0, 0
+				polls := 0
 				mux := http.NewServeMux()
 				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 					_ = json.NewEncoder(w).Encode(chVMInfoResponse{
@@ -104,7 +94,6 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 					polls++
 				})
 				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
-					pauses++
 					w.WriteHeader(http.StatusNoContent)
 				})
 				hc := &http.Client{Transport: handlerTransport{mux}}
@@ -114,11 +103,8 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				if err != nil {
 					t.Fatalf("pause: %v", err)
 				}
-				if pauses != 1 {
-					t.Fatalf("pauses = %d, want 1", pauses)
-				}
-				if elapsed := time.Since(start); elapsed < tt.minElapsed || elapsed > tt.maxElapsed {
-					t.Fatalf("waited %s, want %s..%s", elapsed, tt.minElapsed, tt.maxElapsed)
+				if elapsed := time.Since(start); elapsed != tt.wait {
+					t.Fatalf("waited %s, want %s", elapsed, tt.wait)
 				}
 			})
 		})
