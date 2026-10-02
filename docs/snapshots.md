@@ -35,6 +35,8 @@ A snapshot contains the full VM state:
 
 `snapshot save` and `vm hibernate` are refused while a vhost-user-fs share, a VFIO device or a hot-attached disk is present; see [Devices](devices.md).
 
+On Cloud Hypervisor, `snapshot save` and `vm hibernate` first let a running guest finish inflating its balloon, waiting up to a minute and moving on once inflation stalls for 2 s, so clones restore with a settled balloon instead of inflating it again at a high CPU cost.
+
 ### Clone Constraints
 
 CPU, memory, and storage are fixed at snapshot time on both backends: the guest is reconstructed from the snapshot's binary device state, so `vm clone` and `vm restore` do not accept `--cpu`, `--memory` or `--storage` at all. NIC count inherits by default; Cloud Hypervisor clones can override it via `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set right after restore). Firecracker clones inherit the virtio transport with the snapshot: an MMIO clone must keep the snapshot's NIC topology (`network_overrides` only retargets existing interfaces) and rejects `--data-disk`, while a `--pci` clone restores the snapshot's NICs, then hot-plugs the `--nics` delta and any `--data-disk` after restore and prints the guest-side rescan. On Firecracker, the target network's MTU must equal the snapshot's, because the guest keeps the MTU the snapshot advertised (snapshots taken before `nic_mtus` was recorded skip this check); Cloud Hypervisor clones swap in fresh NICs after restore. Fresh data disks can be added to a Cloud Hypervisor clone via `--data-disk` (hot-added after restore). Create a fresh VM with `cocoon vm run` if a different CPU/memory/storage shape is needed.

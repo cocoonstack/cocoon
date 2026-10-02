@@ -110,14 +110,16 @@ type chPciDeviceInfo struct {
 }
 
 type chVMInfoResponse struct {
-	State      string                     `json:"state,omitempty"`
-	Config     chVMInfoConfig             `json:"config"`
-	DeviceTree map[string]json.RawMessage `json:"device_tree,omitempty"`
+	State            string                     `json:"state,omitempty"`
+	Config           chVMInfoConfig             `json:"config"`
+	MemoryActualSize int64                      `json:"memory_actual_size,omitempty"`
+	DeviceTree       map[string]json.RawMessage `json:"device_tree,omitempty"`
 }
 
 type chVMInfoConfig struct {
 	Console chRuntimeFile `json:"console"`
 	Memory  chMemory      `json:"memory"`
+	Balloon *chBalloon    `json:"balloon,omitempty"`
 	Disks   []chDisk      `json:"disks,omitempty"`
 	Fs      []chFs        `json:"fs,omitempty"`
 	Devices []chDevice    `json:"devices,omitempty"`
