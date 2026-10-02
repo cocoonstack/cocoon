@@ -2,7 +2,7 @@ package hypervisor
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"maps"
 	"os"
 	"path/filepath"
@@ -183,7 +183,7 @@ func materialize(ctx context.Context, ns string, t *vmTx) (*VMIndex, *VMIndex, e
 	if idx.VMs, err = t.All(); err != nil {
 		return nil, nil, err
 	}
-	if err := t.r.ScanRaw(ctx, ns, TableNames, func(name string, _ json.RawMessage) error {
+	if err := t.r.ScanRaw(ctx, ns, TableNames, func(name string, _ jsontext.Value) error {
 		id, ok, err := t.NameGet(name)
 		if err != nil || !ok {
 			return err

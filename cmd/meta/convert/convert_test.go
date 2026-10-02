@@ -2,7 +2,7 @@ package convert
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"os"
@@ -40,7 +40,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("sqlite content: %v", got)
 	}
 	err = sq.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "id3", json.RawMessage(`{"v":3}`), false)
+		return w.PutRaw(ctx, "vms", "records", "id3", jsontext.Value(`{"v":3}`), false)
 	})
 	if err != nil {
 		t.Fatalf("write in sqlite: %v", err)
@@ -73,7 +73,7 @@ func TestDanglingNameRefused(t *testing.T) {
 		t.Fatalf("open json: %v", err)
 	}
 	err = s.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(t.Context(), "vms", "names", "ghost", json.RawMessage(`"missing"`), false)
+		return w.PutRaw(t.Context(), "vms", "names", "ghost", jsontext.Value(`"missing"`), false)
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -141,7 +141,7 @@ func TestSourceChangedRefused(t *testing.T) {
 		t.Fatalf("save manifest: %v", err)
 	}
 	err = src.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "late", json.RawMessage(`{}`), false)
+		return w.PutRaw(ctx, "vms", "records", "late", jsontext.Value(`{}`), false)
 	})
 	if err != nil {
 		t.Fatalf("mutate source: %v", err)
@@ -181,7 +181,7 @@ func TestTargetNotFreshRefused(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	err = sq.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "foreign", json.RawMessage(`{}`), false)
+		return w.PutRaw(ctx, "vms", "records", "foreign", jsontext.Value(`{}`), false)
 	})
 	if err != nil {
 		t.Fatalf("pollute target: %v", err)
@@ -283,7 +283,7 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	}
 	for gen := 1; gen <= 2; gen++ {
 		err = js.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"gen":`+strconv.Itoa(gen)+`}`), false)
+			return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"gen":`+strconv.Itoa(gen)+`}`), false)
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -384,7 +384,7 @@ func TestWALWriterWorker(t *testing.T) {
 	}
 	ctx := t.Context()
 	err = s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "walrec", json.RawMessage(`{"wal":1}`), false)
+		return w.PutRaw(ctx, "vms", "records", "walrec", jsontext.Value(`{"wal":1}`), false)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -480,14 +480,14 @@ func seedJSON(t *testing.T, spec Spec, ns string) {
 	defer s.Close()
 	err = s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
 		for id, raw := range map[string]string{"id1": `{"v":1}`, "id2": `{"v":2}`} {
-			if err := w.PutRaw(t.Context(), ns, "records", id, json.RawMessage(raw), false); err != nil {
+			if err := w.PutRaw(t.Context(), ns, "records", id, jsontext.Value(raw), false); err != nil {
 				return err
 			}
 		}
-		if err := w.PutRaw(t.Context(), ns, "names", "alpha", json.RawMessage(`"id1"`), false); err != nil {
+		if err := w.PutRaw(t.Context(), ns, "names", "alpha", jsontext.Value(`"id1"`), false); err != nil {
 			return err
 		}
-		return w.PutRaw(t.Context(), ns, "tombstones", "id9", json.RawMessage(`{"dead":true}`), false)
+		return w.PutRaw(t.Context(), ns, "tombstones", "id9", jsontext.Value(`{"dead":true}`), false)
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -499,7 +499,7 @@ func scanAll(t *testing.T, s meta.Store, ns string) map[string]string {
 	got := map[string]string{}
 	err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
 		for _, tbl := range testTables {
-			if err := r.ScanRaw(t.Context(), ns, tbl, func(id string, raw json.RawMessage) error {
+			if err := r.ScanRaw(t.Context(), ns, tbl, func(id string, raw jsontext.Value) error {
 				got[tbl+"/"+id] = string(raw)
 				return nil
 			}); err != nil {

@@ -3,7 +3,8 @@ package daemon
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -132,7 +133,7 @@ func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, payload any) error {
-	data, err := json.Marshal(payload)
+	data, err := json.Marshal(payload, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -145,5 +146,5 @@ func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	_ = json.MarshalEncode(jsontext.NewEncoder(w), payload, json.Deterministic(true))
 }

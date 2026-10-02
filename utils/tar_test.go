@@ -3,7 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"os"
@@ -118,7 +118,7 @@ func TestTarDir(t *testing.T) {
 	found := make(map[string][]byte)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

@@ -1,7 +1,7 @@
 package hypervisor
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"os"
 	"path/filepath"
@@ -29,7 +29,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	b := &Backend{
 		Typ:      typ,
 		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Conf:     meteringStubConfig{rootDir: dir, vmRunRoot: dir},
 		Meta:     testNamespace(t, typ, dir),
 		Metering: rec,
 	}
@@ -65,7 +65,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		if err != nil {
 			return "load-err:" + err.Error()
 		}
-		buf, _ := json.Marshal(r)
+		buf, _ := json.Marshal(r, json.Deterministic(true))
 		return string(buf)
 	}
 	recordLoad := func(op, id string, err error) {

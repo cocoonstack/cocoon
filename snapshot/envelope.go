@@ -1,7 +1,8 @@
 package snapshot
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -38,7 +39,7 @@ func ReadSnapshotEnvelope(dir string) (types.SnapshotExport, error) {
 
 // MarshalEnvelope returns the indented snapshot.json bytes for cfg and the files exported beside it.
 func MarshalEnvelope(cfg types.SnapshotConfig, files []string) ([]byte, error) {
-	data, err := json.MarshalIndent(types.SnapshotExport{Version: EnvelopeVersion, Config: cfg, Files: files}, "", "  ")
+	data, err := json.Marshal(types.SnapshotExport{Version: EnvelopeVersion, Config: cfg, Files: files}, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("marshal snapshot envelope: %w", err)
 	}

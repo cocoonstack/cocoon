@@ -33,8 +33,8 @@ type attachedDevices struct {
 // vmOutput is the JSON shape of one VM; Stale marks a record still reading running whose VMM is gone.
 type vmOutput struct {
 	*types.VM
-	Stale           bool             `json:"stale,omitempty"`
-	AttachedDevices *attachedDevices `json:"attached_devices,omitempty"`
+	Stale           bool             `json:"stale,omitzero"`
+	AttachedDevices *attachedDevices `json:"attached_devices,omitzero"`
 }
 
 func (h Handler) Start(cmd *cobra.Command, args []string) error {

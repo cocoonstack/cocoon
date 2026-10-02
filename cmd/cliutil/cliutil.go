@@ -3,7 +3,8 @@ package cliutil
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"strings"
@@ -60,9 +61,7 @@ func WantJSON(cmd *cobra.Command) bool {
 }
 
 func OutputJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+	return json.MarshalEncode(jsontext.NewEncoder(os.Stdout, jsontext.WithIndent("  ")), v, json.Deterministic(true))
 }
 
 // MaybeOutputJSON emits JSON iff --output=json; (true, _) means caller should stop logging.

@@ -35,14 +35,11 @@ func (b *Broadcaster) Subscribe() (chan struct{}, func()) {
 	b.nextID++
 	ch := make(chan struct{}, 1)
 	b.subs[id] = ch
-	var once sync.Once
-	return ch, func() {
-		once.Do(func() {
-			b.mu.Lock()
-			defer b.mu.Unlock()
-			delete(b.subs, id)
-		})
-	}
+	return ch, sync.OnceFunc(func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		delete(b.subs, id)
+	})
 }
 
 // Broadcast signals every subscriber without blocking.

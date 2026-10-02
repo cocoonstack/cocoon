@@ -5,7 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -284,12 +285,12 @@ func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace) error {
 	type row struct {
 		table, id string
-		raw       json.RawMessage
+		raw       jsontext.Value
 	}
 	var rows []row
 	if err := src.View(ctx, []string{ns.Name}, func(r meta.Reader) error {
 		for _, tbl := range ns.Tables {
-			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw json.RawMessage) error {
+			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw jsontext.Value) error {
 				rows = append(rows, row{tbl, id, raw})
 				return nil
 			}); err != nil {
@@ -317,7 +318,7 @@ func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) err
 		return nil
 	}
 	return s.View(ctx, []string{ns.Name}, func(r meta.Reader) error {
-		return r.ScanRaw(ctx, ns.Name, "names", func(name string, raw json.RawMessage) error {
+		return r.ScanRaw(ctx, ns.Name, "names", func(name string, raw jsontext.Value) error {
 			var id string
 			if err := json.Unmarshal(raw, &id); err != nil {
 				return fmt.Errorf("name %q: %w", name, err)
@@ -338,8 +339,8 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 	count := 0
 	err := s.View(ctx, []string{ns.Name}, func(r meta.Reader) error {
 		for _, tbl := range ns.Tables {
-			collected := map[string]json.RawMessage{}
-			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw json.RawMessage) error {
+			collected := map[string]jsontext.Value{}
+			if err := r.ScanRaw(ctx, ns.Name, tbl, func(id string, raw jsontext.Value) error {
 				collected[id] = raw
 				return nil
 			}); err != nil {
@@ -430,7 +431,7 @@ func loadManifest(root string) (*Manifest, error) {
 }
 
 func saveManifest(root string, m *Manifest) error {
-	raw, err := json.MarshalIndent(m, "", "  ")
+	raw, err := json.Marshal(m, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

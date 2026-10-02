@@ -2,7 +2,8 @@ package sqlite
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -41,13 +42,13 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	records := map[string]struct{}{}
 	names := map[string]string{}
 	err := s.View(t.Context(), []string{"alpha"}, func(r meta.Reader) error {
-		if err := r.ScanRaw(t.Context(), "alpha", "records", func(id string, _ json.RawMessage) error {
+		if err := r.ScanRaw(t.Context(), "alpha", "records", func(id string, _ jsontext.Value) error {
 			records[id] = struct{}{}
 			return nil
 		}); err != nil {
 			return err
 		}
-		return r.ScanRaw(t.Context(), "alpha", "names", func(name string, raw json.RawMessage) error {
+		return r.ScanRaw(t.Context(), "alpha", "names", func(name string, raw jsontext.Value) error {
 			var id string
 			if err := json.Unmarshal(raw, &id); err != nil {
 				return err
@@ -85,10 +86,10 @@ func TestMultiProcessWorker(t *testing.T) {
 	for i := range ops {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
 		updateRetry(t, s, meta.Scope{Write: "alpha"}, func(w meta.Writer) error {
-			if err := w.PutRaw(ctx, "alpha", "records", id, json.RawMessage(`{"n":`+strconv.Itoa(i)+`}`), false); err != nil {
+			if err := w.PutRaw(ctx, "alpha", "records", id, jsontext.Value(`{"n":`+strconv.Itoa(i)+`}`), false); err != nil {
 				return err
 			}
-			return w.PutRaw(ctx, "alpha", "names", "name-"+id, json.RawMessage(`"`+id+`"`), false)
+			return w.PutRaw(ctx, "alpha", "names", "name-"+id, jsontext.Value(`"`+id+`"`), false)
 		})
 	}
 }
@@ -108,7 +109,7 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	for _, ns := range []string{"alpha", "beta"} {
 		total := 0
 		if err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
-			return r.ScanRaw(t.Context(), ns, "records", func(string, json.RawMessage) error {
+			return r.ScanRaw(t.Context(), ns, "records", func(string, jsontext.Value) error {
 				total++
 				return nil
 			})
@@ -134,13 +135,13 @@ func TestInverseScopeWorker(t *testing.T) {
 		id := fmt.Sprintf("w%s-op%d", worker, i)
 		updateRetry(t, s, meta.Scope{Write: write, Read: []string{read}}, func(w meta.Writer) error {
 			seen := 0
-			if err := w.ScanRaw(ctx, read, "records", func(string, json.RawMessage) error {
+			if err := w.ScanRaw(ctx, read, "records", func(string, jsontext.Value) error {
 				seen++
 				return nil
 			}); err != nil {
 				return err
 			}
-			return w.PutRaw(ctx, write, "records", id, json.RawMessage(`{"peer":`+strconv.Itoa(seen)+`}`), false)
+			return w.PutRaw(ctx, write, "records", id, jsontext.Value(`{"peer":`+strconv.Itoa(seen)+`}`), false)
 		})
 	}
 }
@@ -183,7 +184,7 @@ func TestKillStormAtomicity(t *testing.T) {
 	s := newStore(t, dir, "alpha")
 	byTxn := map[string]int{}
 	err := s.View(t.Context(), []string{"alpha"}, func(r meta.Reader) error {
-		return r.ScanRaw(t.Context(), "alpha", "records", func(id string, _ json.RawMessage) error {
+		return r.ScanRaw(t.Context(), "alpha", "records", func(id string, _ jsontext.Value) error {
 			txn, _, ok := strings.Cut(id, "/")
 			if !ok {
 				return fmt.Errorf("malformed id %s", id)
@@ -221,7 +222,7 @@ func TestKillStormWorker(t *testing.T) {
 		updateRetry(t, s, meta.Scope{Write: "alpha"}, func(w meta.Writer) error {
 			for k := range killTxnLen {
 				id := fmt.Sprintf("%s/%d", txn, k)
-				if err := w.PutRaw(ctx, "alpha", "records", id, json.RawMessage(`{"k":`+strconv.Itoa(k)+`}`), false); err != nil {
+				if err := w.PutRaw(ctx, "alpha", "records", id, jsontext.Value(`{"k":`+strconv.Itoa(k)+`}`), false); err != nil {
 					return err
 				}
 			}

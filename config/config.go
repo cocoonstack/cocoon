@@ -44,7 +44,7 @@ type Config struct {
 	// FCBinary: path or name of the firecracker executable. Default: "firecracker".
 	FCBinary string `json:"fc_binary" mapstructure:"fc_binary"`
 	// UseFirecracker selects the Firecracker backend (--fc flag). Default: false (Cloud Hypervisor).
-	UseFirecracker bool `json:"use_firecracker,omitempty" mapstructure:"use_firecracker"`
+	UseFirecracker bool `json:"use_firecracker,omitzero" mapstructure:"use_firecracker"`
 	// StopTimeoutSeconds: guest ACPI grace before SIGTERM/SIGKILL escalation. Default: 30.
 	StopTimeoutSeconds int `json:"stop_timeout_seconds" mapstructure:"stop_timeout_seconds"`
 	// PoolSize: goroutine pool size for concurrent operations; 0 = runtime.NumCPU().

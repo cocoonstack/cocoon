@@ -25,7 +25,7 @@ func (c *CloudImg) GCModule() gc.Module[images.ImageGCSnapshot] {
 }
 
 func (c *CloudImg) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, c.GCModule())
+	orch.Register(c.GCModule())
 }
 
 // SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.

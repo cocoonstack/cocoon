@@ -1,7 +1,8 @@
 package json
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"slices"
@@ -15,7 +16,7 @@ type Codec interface {
 }
 
 type genericFile struct {
-	Tables map[string]map[string]json.RawMessage `json:"tables"`
+	Tables map[string]map[string]jsontext.Value `json:"tables"`
 }
 
 var _ Codec = GenericCodec{}
@@ -42,10 +43,10 @@ func (GenericCodec) Decode(data []byte) (*Model, error) {
 }
 
 func (GenericCodec) Encode(m *Model) ([]byte, error) {
-	file := genericFile{Tables: map[string]map[string]json.RawMessage{}}
+	file := genericFile{Tables: map[string]map[string]jsontext.Value{}}
 	for _, tbl := range m.TableNames() {
-		recs := map[string]json.RawMessage{}
-		if err := m.Scan(tbl, func(id string, raw json.RawMessage) error {
+		recs := map[string]jsontext.Value{}
+		if err := m.Scan(tbl, func(id string, raw jsontext.Value) error {
 			recs[id] = raw
 			return nil
 		}); err != nil {
@@ -53,7 +54,7 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 		}
 		file.Tables[tbl] = recs
 	}
-	data, err := json.Marshal(file)
+	data, err := json.Marshal(file, json.Deterministic(true))
 	if err != nil {
 		return nil, fmt.Errorf("encode generic namespace: %w", err)
 	}

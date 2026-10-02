@@ -3,7 +3,7 @@ package meta
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"slices"
@@ -57,13 +57,13 @@ type Store interface {
 
 // Reader is the raw read SPI transactions hand to Collection; values returned are detached from engine state.
 type Reader interface {
-	GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error)
+	GetRaw(ctx context.Context, ns, table, id string) (jsontext.Value, bool, error)
 	// ScanRaw yields records in the engine's stable order (json: insertion).
 	ScanRaw(ctx context.Context, ns, table string, fn RawScanFunc) error
 }
 
 // RawScanFunc receives one raw record per ScanRaw visit.
-type RawScanFunc func(id string, raw json.RawMessage) error
+type RawScanFunc func(id string, raw jsontext.Value) error
 
 type ViewFunc func(Reader) error
 
@@ -72,7 +72,7 @@ type UpdateFunc func(Writer) error
 // Writer is the raw write SPI; relaxedOK mirrors the per-op RelaxedOK opt-in.
 type Writer interface {
 	Reader
-	PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error
+	PutRaw(ctx context.Context, ns, table, id string, raw jsontext.Value, relaxedOK bool) error
 	DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error
 }
 

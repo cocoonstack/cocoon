@@ -16,7 +16,7 @@ type diskResult struct {
 }
 
 func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
-	ctx, _, hyper, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk attach", disk.ErrUnsupportedBackend)
+	ctx, _, hyper, a, err := h.resolveAttacher[disk.Attacher](cmd, args, "disk attach", disk.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
-	ctx, _, hyper, a, err := resolveAttacher[disk.Attacher](h, cmd, args, "disk detach", disk.ErrUnsupportedBackend)
+	ctx, _, hyper, a, err := h.resolveAttacher[disk.Attacher](cmd, args, "disk detach", disk.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}

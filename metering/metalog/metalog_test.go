@@ -1,7 +1,8 @@
 package metalog
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -30,7 +31,7 @@ func TestEmitAppendsInOrder(t *testing.T) {
 
 	var kinds []metering.Kind
 	err = s.View(t.Context(), []string{NamespaceName}, func(rd meta.Reader) error {
-		return rd.ScanRaw(t.Context(), NamespaceName, TableEntries, func(id string, raw json.RawMessage) error {
+		return rd.ScanRaw(t.Context(), NamespaceName, TableEntries, func(id string, raw jsontext.Value) error {
 			if _, err := strconv.ParseUint(id, 10, 64); err != nil {
 				return nil
 			}

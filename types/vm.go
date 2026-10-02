@@ -122,14 +122,14 @@ type VM struct {
 	SnapshotIDs map[string]struct{} `json:"snapshot_ids,omitempty"`
 
 	// TransitionGeneration increments once per committed transition, letting a consumer spot transitions it missed.
-	TransitionGeneration uint64           `json:"transition_generation,omitempty"`
+	TransitionGeneration uint64           `json:"transition_generation,omitzero"`
 	LastTransitionReason TransitionReason `json:"last_transition_reason,omitempty"`
-	LastTransitionAt     *time.Time       `json:"last_transition_at,omitempty"`
+	LastTransitionAt     *time.Time       `json:"last_transition_at,omitzero"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+	StartedAt *time.Time `json:"started_at,omitzero"`
+	StoppedAt *time.Time `json:"stopped_at,omitzero"`
 }
 
 func (v *VM) ResolvedNetnsPath() string {

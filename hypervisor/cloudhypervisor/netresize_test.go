@@ -2,7 +2,8 @@ package cloudhypervisor
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net"
 	"net/http"
@@ -64,7 +65,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
-		_ = json.NewEncoder(w).Encode(chVMInfoResponse{State: state})
+		_ = json.MarshalWrite(w, chVMInfoResponse{State: state})
 	})
 	hc := newStubHTTPClient(t, mux)
 
@@ -112,7 +113,7 @@ func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Cli
 		var req struct {
 			ID string `json:"id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.UnmarshalRead(r.Body, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -125,18 +126,18 @@ func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Cli
 		mu.Lock()
 		defer mu.Unlock()
 		live := make([]chNet, 0, len(nets))
-		tree := map[string]json.RawMessage{}
+		tree := map[string]jsontext.Value{}
 		for _, n := range nets {
 			if slices.Contains(removed, n.ID) {
 				if slices.Contains(stickyIDs, n.ID) {
-					tree[n.ID] = json.RawMessage("{}")
+					tree[n.ID] = jsontext.Value("{}")
 				}
 				continue
 			}
 			live = append(live, n)
-			tree[n.ID] = json.RawMessage("{}")
+			tree[n.ID] = jsontext.Value("{}")
 		}
-		_ = json.NewEncoder(w).Encode(chVMInfoResponse{Config: chVMInfoConfig{Nets: live}, DeviceTree: tree})
+		_ = json.MarshalWrite(w, chVMInfoResponse{Config: chVMInfoConfig{Nets: live}, DeviceTree: tree})
 	})
 	hc := newStubHTTPClient(t, mux)
 	return hc, func() []string {

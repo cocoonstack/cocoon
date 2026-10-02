@@ -2,7 +2,7 @@ package firecracker
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net"
 	"net/http"
@@ -192,18 +192,18 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(fcInstanceInfo{State: s.state})
+		_ = json.MarshalWrite(w, fcInstanceInfo{State: s.state})
 	})
 	mux.HandleFunc("/vm/config", func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(s.cfg)
+		_ = json.MarshalWrite(w, s.cfg)
 	})
 	mux.HandleFunc("/vm", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		var req map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.UnmarshalRead(r.Body, &req)
 		if req["state"] == vmStateResumed {
 			s.resume++
 			s.state = "Running"

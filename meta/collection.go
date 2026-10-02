@@ -2,7 +2,8 @@ package meta
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -64,7 +65,7 @@ func (c *Collection[R]) Delete(ctx context.Context, w Writer, id string, opts ..
 
 // Scan yields detached records in the engine's stable order; fn errors abort and propagate.
 func (c *Collection[R]) Scan(ctx context.Context, r Reader, fn ScanFunc[R]) error {
-	return r.ScanRaw(ctx, c.ns, c.table, func(id string, raw json.RawMessage) error {
+	return r.ScanRaw(ctx, c.ns, c.table, func(id string, raw jsontext.Value) error {
 		rec, err := c.decode(id, raw)
 		if err != nil {
 			return err
@@ -86,14 +87,14 @@ func (c *Collection[R]) List(ctx context.Context, r Reader) (map[string]*R, erro
 }
 
 func (c *Collection[R]) put(ctx context.Context, w Writer, id string, rec *R, opts []WriteOpt) error {
-	raw, err := json.Marshal(rec)
+	raw, err := json.Marshal(rec, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("encode %s/%s %q: %w", c.ns, c.table, id, err)
 	}
 	return w.PutRaw(ctx, c.ns, c.table, id, raw, relaxedOK(opts))
 }
 
-func (c *Collection[R]) decode(id string, raw json.RawMessage) (*R, error) {
+func (c *Collection[R]) decode(id string, raw jsontext.Value) (*R, error) {
 	rec := new(R)
 	if err := json.Unmarshal(raw, rec); err != nil {
 		return nil, fmt.Errorf("decode %s/%s %q: %w", c.ns, c.table, id, err)

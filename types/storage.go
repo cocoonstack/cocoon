@@ -40,7 +40,7 @@ type StorageConfig struct {
 	// MountPoint, FSType and DirectIO apply to Role==Data only; a nil DirectIO inherits the VM-level NoDirectIO.
 	MountPoint string `json:"mount_point,omitempty"`
 	FSType     string `json:"fstype,omitempty"`
-	DirectIO   *bool  `json:"direct_io,omitempty"`
+	DirectIO   *bool  `json:"direct_io,omitzero"`
 }
 
 // DataDiskSpec is the user-facing description of an extra data disk parsed from --data-disk. Transient — never persisted.
@@ -159,11 +159,9 @@ func ParseDataDiskSpec(s string) (DataDiskSpec, error) {
 func ParseDirectIO(val string) (*bool, error) {
 	switch val {
 	case "on":
-		t := true
-		return &t, nil
+		return new(true), nil
 	case "off":
-		f := false
-		return &f, nil
+		return new(false), nil
 	case "auto":
 		return nil, nil
 	}

@@ -30,7 +30,6 @@ func TestValidDataDiskName(t *testing.T) {
 }
 
 func TestValidateStorageConfigs(t *testing.T) {
-	tBool := func(b bool) *bool { return &b }
 	tests := []struct {
 		name    string
 		configs []*StorageConfig
@@ -82,7 +81,7 @@ func TestValidateStorageConfigs(t *testing.T) {
 		},
 		{
 			name:    "DirectIO only on data",
-			configs: []*StorageConfig{{Path: "/a", RO: false, Role: StorageRoleCOW, DirectIO: tBool(true)}},
+			configs: []*StorageConfig{{Path: "/a", RO: false, Role: StorageRoleCOW, DirectIO: new(true)}},
 			wantErr: "direct_io",
 		},
 		{

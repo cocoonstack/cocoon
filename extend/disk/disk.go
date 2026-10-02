@@ -46,7 +46,7 @@ type Attached struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Path     string `json:"path"`
-	ReadOnly bool   `json:"readonly,omitempty"`
+	ReadOnly bool   `json:"readonly,omitzero"`
 }
 
 // Attacher hot-plugs and removes virtio-blk data disks on a running VM.

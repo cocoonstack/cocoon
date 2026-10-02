@@ -3,7 +3,8 @@ package tombstone
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -40,9 +41,9 @@ type Mode string
 
 // Payload is written whole at lease time and immutable after: recovery reads it and nothing else.
 type Payload struct {
-	Kind    Kind            `json:"kind"`
-	Mode    Mode            `json:"mode"`
-	Cleanup json.RawMessage `json:"cleanup"`
+	Kind    Kind           `json:"kind"`
+	Mode    Mode           `json:"mode"`
+	Cleanup jsontext.Value `json:"cleanup"`
 }
 
 // Record is one tombstone row.
@@ -182,8 +183,8 @@ func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (
 }
 
 // MarshalCleanup encodes a namespace-defined cleanup payload.
-func MarshalCleanup(v any) (json.RawMessage, error) {
-	raw, err := json.Marshal(v)
+func MarshalCleanup(v any) (jsontext.Value, error) {
+	raw, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		return nil, fmt.Errorf("encode cleanup payload: %w", err)
 	}

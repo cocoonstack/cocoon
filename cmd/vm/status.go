@@ -3,7 +3,8 @@ package vm
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"slices"
@@ -187,10 +188,10 @@ func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filter
 }
 
 func statusEventLoopJSON(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time) {
-	enc := json.NewEncoder(os.Stdout)
+	enc := jsontext.NewEncoder(os.Stdout)
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{
 		emit: func(event string, _ vmSnapshot, vm vmOutput) {
-			_ = enc.Encode(vmEvent{Event: event, VM: vm})
+			_ = json.MarshalEncode(enc, vmEvent{Event: event, VM: vm}, json.Deterministic(true))
 		},
 	})
 }

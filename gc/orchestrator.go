@@ -57,8 +57,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// Register is package-level because Go methods can't have type params.
-func Register[S any](o *Orchestrator, m Module[S]) {
+func (o *Orchestrator) Register[S any](m Module[S]) {
 	o.modules = append(o.modules, m)
 }
 

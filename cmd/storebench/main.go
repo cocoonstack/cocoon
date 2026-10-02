@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,7 +21,7 @@ import (
 
 const opGet = "get"
 
-var benchPayload = json.RawMessage(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
+var benchPayload = jsontext.Value(`{"name":"bench","state":"running","config":{"cpu":2,"memory":1073741824}}`)
 
 type benchConfig struct{ dir string }
 
@@ -291,6 +291,6 @@ func argDir(i int) string {
 }
 
 // uniquePayload defeats any identical-bytes write elision so replace ops measure a REAL durable commit.
-func uniquePayload(i int) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
+func uniquePayload(i int) jsontext.Value {
+	return jsontext.Value(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
 }

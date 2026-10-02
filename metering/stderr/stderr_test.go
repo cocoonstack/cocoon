@@ -2,7 +2,7 @@ package stderr
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"strings"
 	"sync"
 	"testing"

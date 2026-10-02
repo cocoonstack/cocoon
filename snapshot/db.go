@@ -14,7 +14,7 @@ var ErrNotFound = errors.New("snapshot not found")
 type SnapshotRecord struct {
 	types.Snapshot
 	DataDir        string    `json:"data_dir,omitempty"`
-	SizeBytes      int64     `json:"size_bytes,omitempty"`
-	Pending        bool      `json:"pending,omitempty"` // true while Create is in progress
+	SizeBytes      int64     `json:"size_bytes,omitzero"`
+	Pending        bool      `json:"pending,omitzero"` // true while Create is in progress
 	LastAccessedAt time.Time `json:"last_accessed_at,omitzero"`
 }

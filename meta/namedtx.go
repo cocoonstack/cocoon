@@ -2,7 +2,7 @@ package meta
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"strings"
@@ -121,7 +121,7 @@ func (x *NamedTx[R]) Resolve(ref string, notFound error) (string, error) {
 	if len(ref) >= resolvePrefixMin {
 		match := ""
 		ambiguous := false
-		if err := x.r.ScanRaw(x.ctx, x.recs.ns, x.recs.table, func(id string, _ json.RawMessage) error {
+		if err := x.r.ScanRaw(x.ctx, x.recs.ns, x.recs.table, func(id string, _ jsontext.Value) error {
 			if strings.HasPrefix(id, ref) {
 				if match != "" {
 					ambiguous = true

@@ -2,7 +2,7 @@ package cloudhypervisor
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -81,7 +81,7 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 }
 
 func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
-	return listWith(ctx, ch, vmRef, func(info *chVMInfoResponse) []disk.Attached {
+	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []disk.Attached {
 		var out []disk.Attached
 		for _, d := range info.Config.Disks {
 			if name := disk.NameFromID(d.ID); name != "" {
@@ -137,7 +137,7 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 }
 
 func (ch *CloudHypervisor) FsList(ctx context.Context, vmRef string) ([]fs.Attached, error) {
-	return listWith(ctx, ch, vmRef, func(info *chVMInfoResponse) []fs.Attached {
+	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []fs.Attached {
 		out := make([]fs.Attached, 0, len(info.Config.Fs))
 		for _, f := range info.Config.Fs {
 			out = append(out, fs.Attached{ID: f.ID, Tag: f.Tag, Socket: f.Socket})
@@ -188,7 +188,7 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 }
 
 func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio.Attached, error) {
-	return listWith(ctx, ch, vmRef, func(info *chVMInfoResponse) []vfio.Attached {
+	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []vfio.Attached {
 		out := make([]vfio.Attached, 0, len(info.Config.Devices))
 		for _, d := range info.Config.Devices {
 			out = append(out, vfio.Attached{ID: d.ID, BDF: bdfFromSysfsPath(d.Path)})
@@ -265,21 +265,8 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	return nil
 }
 
-// the ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
-func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
-	if info.State != chStatePaused {
-		return info, nil
-	}
-	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
-		Warnf(ctx, "vm %s is paused with no capture in flight (interrupted snapshot or hibernate), resuming", vmID)
-	if err := resumeVM(ctx, hc); err != nil {
-		return nil, fmt.Errorf("resume orphaned pause: %w", err)
-	}
-	return getVMInfo(ctx, hc)
-}
-
 // listWith returns nil (not error) for stopped VMs so inspect can omit the field.
-func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
+func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
 	hc, _, err := ch.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
@@ -292,6 +279,19 @@ func listWith[A any](ctx context.Context, ch *CloudHypervisor, vmRef string, ext
 		return nil, err
 	}
 	return extract(info), nil
+}
+
+// the ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
+	if info.State != chStatePaused {
+		return info, nil
+	}
+	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
+		Warnf(ctx, "vm %s is paused with no capture in flight (interrupted snapshot or hibernate), resuming", vmID)
+	if err := resumeVM(ctx, hc); err != nil {
+		return nil, fmt.Errorf("resume orphaned pause: %w", err)
+	}
+	return getVMInfo(ctx, hc)
 }
 
 // CH may report a non-PCI host path, which has no BDF.

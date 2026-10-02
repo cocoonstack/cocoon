@@ -39,5 +39,5 @@ func (o *OCI) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), 
 func (o *OCI) OwnsBlob(hex string) bool { return o.conf.OwnsBlob(hex) }
 
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, o.GCModule())
+	orch.Register(o.GCModule())
 }

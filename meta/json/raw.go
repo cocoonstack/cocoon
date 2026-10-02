@@ -1,7 +1,7 @@
 package json
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"maps"
 	"slices"
 )

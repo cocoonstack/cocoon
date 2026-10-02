@@ -19,7 +19,7 @@ type netResult struct {
 }
 
 func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
-	ctx, conf, hyper, resizer, err := resolveAttacher[netresize.Resizer](h, cmd, args, "vm net", netresize.ErrUnsupportedBackend)
+	ctx, conf, hyper, resizer, err := h.resolveAttacher[netresize.Resizer](cmd, args, "vm net", netresize.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}

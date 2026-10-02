@@ -121,14 +121,11 @@ func RunRelay(ctx context.Context) {
 	for i := range leaseCount {
 		leases = append(leases, os.NewFile(uintptr(relayLeaseFD+i), "source-vm-lease"))
 	}
-	var releaseLeasesOnce sync.Once
-	releaseLeases := func() {
-		releaseLeasesOnce.Do(func() {
-			for _, lease := range leases {
-				_ = lease.Close()
-			}
-		})
-	}
+	releaseLeases := sync.OnceFunc(func() {
+		for _, lease := range leases {
+			_ = lease.Close()
+		}
+	})
 	defer releaseLeases()
 
 	pidStr := os.Getenv(relayPIDEnvKey)

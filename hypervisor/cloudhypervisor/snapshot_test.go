@@ -1,7 +1,7 @@
 package cloudhypervisor
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -33,7 +33,7 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 			pauses := 0
 			mux := http.NewServeMux()
 			mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-				_ = json.NewEncoder(w).Encode(chVMInfoResponse{State: chStateRunning, Config: tt.config})
+				_ = json.MarshalWrite(w, chVMInfoResponse{State: chStateRunning, Config: tt.config})
 			})
 			mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
 				mu.Lock()
@@ -86,7 +86,7 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				polls := 0
 				mux := http.NewServeMux()
 				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-					_ = json.NewEncoder(w).Encode(chVMInfoResponse{
+					_ = json.MarshalWrite(w, chVMInfoResponse{
 						State:            tt.state,
 						Config:           chVMInfoConfig{Memory: chMemory{Size: mem}, Balloon: tt.balloon},
 						MemoryActualSize: tt.actual(polls),

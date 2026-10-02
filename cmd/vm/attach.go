@@ -16,7 +16,7 @@ import (
 )
 
 func (h Handler) FsAttach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[fs.Attacher](h, cmd, args, "fs attach", fs.ErrUnsupportedBackend)
+	ctx, _, _, a, err := h.resolveAttacher[fs.Attacher](cmd, args, "fs attach", fs.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (h Handler) FsAttach(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) FsDetach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[fs.Attacher](h, cmd, args, "fs detach", fs.ErrUnsupportedBackend)
+	ctx, _, _, a, err := h.resolveAttacher[fs.Attacher](cmd, args, "fs detach", fs.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (h Handler) FsDetach(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) DeviceAttach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[vfio.Attacher](h, cmd, args, "device attach", vfio.ErrUnsupportedBackend)
+	ctx, _, _, a, err := h.resolveAttacher[vfio.Attacher](cmd, args, "device attach", vfio.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (h Handler) DeviceAttach(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) DeviceDetach(cmd *cobra.Command, args []string) error {
-	ctx, _, _, a, err := resolveAttacher[vfio.Attacher](h, cmd, args, "device detach", vfio.ErrUnsupportedBackend)
+	ctx, _, _, a, err := h.resolveAttacher[vfio.Attacher](cmd, args, "device detach", vfio.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (h Handler) DeviceDetach(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func resolveAttacher[A any](h Handler, cmd *cobra.Command, args []string, op string, errUnsupported error) (context.Context, *config.Config, hypervisor.Hypervisor, A, error) {
+func (h Handler) resolveAttacher[A any](cmd *cobra.Command, args []string, op string, errUnsupported error) (context.Context, *config.Config, hypervisor.Hypervisor, A, error) {
 	var zero A
 	ctx, conf := h.Init(cmd)
 	hyper, _, err := cmdcore.FindVM(ctx, conf, args[0])
