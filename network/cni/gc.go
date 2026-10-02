@@ -97,7 +97,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 
 // RegisterGC registers the CNI GC module with the given Orchestrator.
 func (c *CNI) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
-	gc.Register(orch, c.GCModule(vmInUse))
+	orch.Register(c.GCModule(vmInUse))
 }
 
 // gcRecover resumes existing network tombstones by phase before discovery, each under its owning VM's lock (design §5 recovery-precedes-discovery).

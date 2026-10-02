@@ -230,7 +230,7 @@ func (lf *LocalFile) Restore(ctx context.Context, ref string) (types.SnapshotCon
 }
 
 func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, gcModule(lf, lf.gcPolicy))
+	orch.Register(gcModule(lf, lf.gcPolicy))
 }
 
 // NameOwner reports the record holding name in the index, pending or not — this is the reservation insertRecord enforces, so the save preflight sees the same thing the insert will.

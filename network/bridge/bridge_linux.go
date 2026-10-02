@@ -143,7 +143,7 @@ func (b *Bridge) Delete(_ context.Context, vmID string) error {
 }
 
 func (b *Bridge) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
-	gc.Register(orch, GCModule(b.tapPrefix, vmInUse))
+	orch.Register(GCModule(b.tapPrefix, vmInUse))
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.

@@ -115,7 +115,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 }
 
 func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
-	gc.Register(orch, b.BuildGCModule())
+	orch.Register(b.BuildGCModule())
 }
 
 // gcRecover resumes tombstones by phase before discovery.
