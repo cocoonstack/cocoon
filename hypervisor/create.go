@@ -107,8 +107,7 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 
 	var bootCopy *types.BootConfig
 	if spec.BootConfig != nil {
-		bc := *spec.BootConfig
-		bootCopy = &bc
+		bootCopy = new(*spec.BootConfig)
 	}
 
 	preparedStorage, err := spec.Prepare(ctx, id, spec.VMCfg, spec.StorageConfigs, spec.Net, bootCopy)

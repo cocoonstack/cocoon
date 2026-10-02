@@ -29,7 +29,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	b := &Backend{
 		Typ:      typ,
 		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Conf:     meteringStubConfig{rootDir: dir, vmRunRoot: dir},
 		Meta:     testNamespace(t, typ, dir),
 		Metering: rec,
 	}

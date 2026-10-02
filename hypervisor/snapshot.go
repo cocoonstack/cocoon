@@ -241,8 +241,7 @@ func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.Storage
 		if sc == nil {
 			continue
 		}
-		cp := *sc
-		out = append(out, &cp)
+		out = append(out, new(*sc))
 	}
 	return out
 }

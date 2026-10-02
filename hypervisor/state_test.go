@@ -581,7 +581,7 @@ func TestForcedRetryStateOps(t *testing.T) {
 	b := &Backend{
 		Typ:      typ,
 		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Conf:     meteringStubConfig{rootDir: dir, vmRunRoot: dir},
 		Meta:     contracttest.ForcedRetry(testNamespace(t, typ, dir)),
 		Metering: rec,
 	}
@@ -665,7 +665,7 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 	return &Backend{
 		Typ:      typ,
 		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{stubBackendConfig: stubBackendConfig{rootDir: dir}, vmRunRoot: dir},
+		Conf:     meteringStubConfig{rootDir: dir, vmRunRoot: dir},
 		Meta:     store,
 		Metering: rec,
 	}, rec
@@ -693,9 +693,8 @@ func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage in
 	t.Helper()
 	seedVMRecord(t, b, id, cpu, mem, storage, true)
 	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		now := time.Now()
 		idx.VMs[id].State = types.VMStateRunning
-		idx.VMs[id].StartedAt = &now
+		idx.VMs[id].StartedAt = new(time.Now())
 		return nil
 	}); err != nil {
 		t.Fatalf("set running: %v", err)

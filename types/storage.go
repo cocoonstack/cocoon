@@ -159,11 +159,9 @@ func ParseDataDiskSpec(s string) (DataDiskSpec, error) {
 func ParseDirectIO(val string) (*bool, error) {
 	switch val {
 	case "on":
-		t := true
-		return &t, nil
+		return new(true), nil
 	case "off":
-		f := false
-		return &f, nil
+		return new(false), nil
 	case "auto":
 		return nil, nil
 	}
