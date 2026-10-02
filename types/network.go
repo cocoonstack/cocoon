@@ -17,7 +17,7 @@ type NetworkConfig struct {
 	MAC       string `json:"mac"`
 	NumQueues int    `json:"num_queues"` // virtio queue count (= CPU * 2 for multi-queue)
 	QueueSize int    `json:"queue_size"`
-	MTU       int    `json:"mtu,omitempty"`
+	MTU       int    `json:"mtu,omitzero"`
 
 	// Backend is the provider type; empty means CNI (pre-bridge records).
 	Backend string `json:"backend,omitempty"`
@@ -29,14 +29,14 @@ type NetworkConfig struct {
 	NetnsPath string `json:"netns_path,omitempty"`
 
 	// Network is nil for DHCP NICs.
-	Network *Network `json:"network,omitempty"`
+	Network *Network `json:"network,omitzero"`
 }
 
 // Network is the guest-visible IP config for a NIC; all fields omitempty so DHCP NICs serialize empty.
 type Network struct {
 	IP      string `json:"ip,omitempty"`      // dotted decimal, e.g. "10.0.0.2"
 	Gateway string `json:"gateway,omitempty"` // dotted decimal, e.g. "10.0.0.1"
-	Prefix  int    `json:"prefix,omitempty"`  // CIDR prefix length, e.g. 24
+	Prefix  int    `json:"prefix,omitzero"`   // CIDR prefix length, e.g. 24
 }
 
 // ValidateNetworkConfigs rejects nil NIC entries (null in a persisted record) at load boundaries so downstream consumers may dereference freely.

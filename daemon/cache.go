@@ -29,10 +29,10 @@ type VMStatus struct {
 	State                types.VMState          `json:"state"`
 	TransitionGeneration uint64                 `json:"transition_generation"`
 	LastTransitionReason types.TransitionReason `json:"last_transition_reason,omitempty"`
-	LastTransitionAt     *time.Time             `json:"last_transition_at,omitempty"`
+	LastTransitionAt     *time.Time             `json:"last_transition_at,omitzero"`
 	Live                 bool                   `json:"live"`
-	WatchedPID           int                    `json:"watched_pid,omitempty"`
-	QuiescePending       bool                   `json:"quiesce_pending,omitempty"`
+	WatchedPID           int                    `json:"watched_pid,omitzero"`
+	QuiescePending       bool                   `json:"quiesce_pending,omitzero"`
 	VerifiedAt           time.Time              `json:"verified_at"`
 }
 

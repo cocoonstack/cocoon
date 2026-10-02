@@ -2,7 +2,7 @@ package meta
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -36,7 +36,7 @@ func (l *Log[R]) Append(ctx context.Context, w Writer, rec *R, opts ...WriteOpt)
 		}
 	}
 	next := cur + 1
-	data, err := json.Marshal(rec)
+	data, err := json.Marshal(rec, json.Deterministic(true))
 	if err != nil {
 		return 0, fmt.Errorf("encode %s/%s seq %d: %w", l.ns, l.table, next, err)
 	}

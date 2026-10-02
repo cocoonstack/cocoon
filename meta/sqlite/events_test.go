@@ -1,7 +1,7 @@
 package sqlite
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,7 +39,7 @@ func TestEventsWriterWorker(t *testing.T) {
 	s := newStore(t, dir, "alpha")
 	ctx := t.Context()
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "alpha", "records", "ext", json.RawMessage(`{}`), false)
+		return w.PutRaw(ctx, "alpha", "records", "ext", jsontext.Value(`{}`), false)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestEventsPoolChurn(t *testing.T) {
 			}
 		}
 		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "alpha", "records", fmt.Sprintf("churn%d", i), json.RawMessage(`{}`), false)
+			return w.PutRaw(ctx, "alpha", "records", fmt.Sprintf("churn%d", i), jsontext.Value(`{}`), false)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +85,7 @@ func TestEventsSeveredWatchPollFallback(t *testing.T) {
 	}
 	ctx := t.Context()
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "alpha", "records", "silent", json.RawMessage(`{}`), false)
+		return w.PutRaw(ctx, "alpha", "records", "silent", jsontext.Value(`{}`), false)
 	}); err != nil {
 		t.Fatal(err)
 	}

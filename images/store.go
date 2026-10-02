@@ -2,7 +2,8 @@ package images
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"slices"
@@ -64,7 +65,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 		if entry == nil {
 			continue
 		}
-		raw, err := json.Marshal(entry)
+		raw, err := json.Marshal(entry, json.Deterministic(true))
 		if err != nil {
 			return fmt.Errorf("encode image entry %q: %w", id, err)
 		}
@@ -78,11 +79,11 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 	return nil
 }
 
-func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], map[string]json.RawMessage, error) {
+func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], map[string]jsontext.Value, error) {
 	idx := &Index[E]{}
 	idx.Init()
-	before := map[string]json.RawMessage{}
-	if err := r.ScanRaw(ctx, s.ns, TableRecords, func(id string, raw json.RawMessage) error {
+	before := map[string]jsontext.Value{}
+	if err := r.ScanRaw(ctx, s.ns, TableRecords, func(id string, raw jsontext.Value) error {
 		var e E
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return fmt.Errorf("decode image entry %q: %w", id, err)

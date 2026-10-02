@@ -2,7 +2,7 @@ package json
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -192,7 +192,7 @@ type txReader struct {
 	models map[string]*loaded
 }
 
-func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (json.RawMessage, bool, error) {
+func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (jsontext.Value, bool, error) {
 	l, ok := r.models[ns]
 	if !ok {
 		return nil, false, fmt.Errorf("read %s: %w", ns, meta.ErrScope)
@@ -207,7 +207,7 @@ func (r *txReader) ScanRaw(_ context.Context, ns, table string, fn meta.RawScanF
 	if !ok {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
-	return l.model.Scan(table, func(id string, raw json.RawMessage) error {
+	return l.model.Scan(table, func(id string, raw jsontext.Value) error {
 		return fn(id, slices.Clone(raw))
 	})
 }
@@ -221,7 +221,7 @@ type txWriter struct {
 	mode  meta.CommitMode
 }
 
-func (w *txWriter) PutRaw(_ context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
+func (w *txWriter) PutRaw(_ context.Context, ns, table, id string, raw jsontext.Value, relaxedOK bool) error {
 	if err := meta.CheckWriteScope(ns, w.write, w.mode, relaxedOK); err != nil {
 		return err
 	}

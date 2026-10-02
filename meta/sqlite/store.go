@@ -4,7 +4,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -283,7 +283,7 @@ type txHandle struct {
 	mode  meta.CommitMode
 }
 
-func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (json.RawMessage, bool, error) {
+func (h *txHandle) GetRaw(ctx context.Context, ns, table, id string) (jsontext.Value, bool, error) {
 	if err := h.checkRead(ns); err != nil {
 		return nil, false, err
 	}
@@ -328,7 +328,7 @@ func (h *txHandle) ScanRaw(ctx context.Context, ns, table string, fn meta.RawSca
 	return mapErr(rows.Err())
 }
 
-func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw json.RawMessage, relaxedOK bool) error {
+func (h *txHandle) PutRaw(ctx context.Context, ns, table, id string, raw jsontext.Value, relaxedOK bool) error {
 	if err := meta.CheckWriteScope(ns, h.write, h.mode, relaxedOK); err != nil {
 		return err
 	}

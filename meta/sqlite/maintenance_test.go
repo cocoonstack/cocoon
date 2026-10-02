@@ -2,7 +2,7 @@ package sqlite
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,7 +21,7 @@ func TestBackupFidelity(t *testing.T) {
 	s := newStore(t, dir, "vms")
 	put := func(id, val string) {
 		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", id, json.RawMessage(val), false)
+			return w.PutRaw(ctx, "vms", "records", id, jsontext.Value(val), false)
 		})
 		if err != nil {
 			t.Fatalf("put %s: %v", id, err)
@@ -63,7 +63,7 @@ func TestBackupCrashSteps(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
 	err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"v":1}`), false)
+		return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"v":1}`), false)
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -163,7 +163,7 @@ func TestBackupConcurrentSameDest(t *testing.T) {
 		dir := t.TempDir()
 		s := newStore(t, dir, "vms")
 		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", "id1", json.RawMessage(`{"v":1}`), false)
+			return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"v":1}`), false)
 		})
 		if err != nil {
 			t.Fatalf("seed: %v", err)
@@ -199,7 +199,7 @@ func backupGet(t *testing.T, dest, id string) (string, bool) {
 		t.Fatalf("open backup %s: %v", dest, err)
 	}
 	defer b.Close()
-	var raw json.RawMessage
+	var raw jsontext.Value
 	var ok bool
 	err = b.View(t.Context(), []string{"vms"}, func(r meta.Reader) error {
 		raw, ok, err = r.GetRaw(t.Context(), "vms", "records", id)

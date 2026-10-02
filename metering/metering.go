@@ -3,7 +3,7 @@ package metering
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"time"
 )
@@ -34,9 +34,9 @@ type Reason string
 
 // Shape is the resource snapshot at the moment an Entry is emitted.
 type Shape struct {
-	CPU          int   `json:"cpu,omitempty"`
-	MemBytes     int64 `json:"mem_bytes,omitempty"`
-	StorageBytes int64 `json:"storage_bytes,omitempty"`
+	CPU          int   `json:"cpu,omitzero"`
+	MemBytes     int64 `json:"mem_bytes,omitzero"`
+	StorageBytes int64 `json:"storage_bytes,omitzero"`
 }
 
 var _ io.WriterTo = Entry{}

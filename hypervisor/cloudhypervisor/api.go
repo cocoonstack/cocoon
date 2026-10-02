@@ -1,13 +1,13 @@
 package cloudhypervisor
 
-import "encoding/json"
+import "encoding/json/jsontext"
 
 type chVMConfig struct {
-	Payload *chPayload     `json:"payload,omitempty"`
-	Balloon *chBalloon     `json:"balloon,omitempty"`
-	Serial  *chRuntimeFile `json:"serial,omitempty"`
-	Console *chRuntimeFile `json:"console,omitempty"`
-	Vsock   *chVsock       `json:"vsock,omitempty"`
+	Payload *chPayload     `json:"payload,omitzero"`
+	Balloon *chBalloon     `json:"balloon,omitzero"`
+	Serial  *chRuntimeFile `json:"serial,omitzero"`
+	Console *chRuntimeFile `json:"console,omitzero"`
+	Vsock   *chVsock       `json:"vsock,omitzero"`
 
 	CPUs     chCPUs     `json:"cpus"`
 	Memory   chMemory   `json:"memory"`
@@ -23,12 +23,12 @@ type chNet struct {
 	ID        string `json:"id,omitempty"`
 	TAP       string `json:"tap"`
 	MAC       string `json:"mac,omitempty"`
-	NumQueues int    `json:"num_queues,omitempty"`
-	QueueSize int    `json:"queue_size,omitempty"`
+	NumQueues int    `json:"num_queues,omitzero"`
+	QueueSize int    `json:"queue_size,omitzero"`
 
-	OffloadTSO  bool `json:"offload_tso,omitempty"`
-	OffloadUFO  bool `json:"offload_ufo,omitempty"`
-	OffloadCsum bool `json:"offload_csum,omitempty"`
+	OffloadTSO  bool `json:"offload_tso,omitzero"`
+	OffloadUFO  bool `json:"offload_ufo,omitzero"`
+	OffloadCsum bool `json:"offload_csum,omitzero"`
 }
 
 type chPayload struct {
@@ -41,26 +41,26 @@ type chPayload struct {
 type chCPUs struct {
 	BootVCPUs int  `json:"boot_vcpus"`
 	MaxVCPUs  int  `json:"max_vcpus"`
-	KVMHyperV bool `json:"kvm_hyperv,omitempty"`
+	KVMHyperV bool `json:"kvm_hyperv,omitzero"`
 }
 
 type chMemory struct {
 	Size      int64 `json:"size"`
-	HugePages bool  `json:"hugepages,omitempty"`
-	Shared    bool  `json:"shared,omitempty"`
-	Mergeable bool  `json:"mergeable,omitempty"`
+	HugePages bool  `json:"hugepages,omitzero"`
+	Shared    bool  `json:"shared,omitzero"`
+	Mergeable bool  `json:"mergeable,omitzero"`
 }
 
 type chDisk struct {
 	ID            string            `json:"id,omitempty"`
 	Path          string            `json:"path"`
-	ReadOnly      bool              `json:"readonly,omitempty"`
-	DirectIO      bool              `json:"direct,omitempty"`
-	Sparse        bool              `json:"sparse,omitempty"`
+	ReadOnly      bool              `json:"readonly,omitzero"`
+	DirectIO      bool              `json:"direct,omitzero"`
+	Sparse        bool              `json:"sparse,omitzero"`
 	ImageType     string            `json:"image_type,omitempty"`
-	BackingFiles  bool              `json:"backing_files,omitempty"`
-	NumQueues     int               `json:"num_queues,omitempty"`
-	QueueSize     int               `json:"queue_size,omitempty"`
+	BackingFiles  bool              `json:"backing_files,omitzero"`
+	NumQueues     int               `json:"num_queues,omitzero"`
+	QueueSize     int               `json:"queue_size,omitzero"`
 	QueueAffinity []chQueueAffinity `json:"queue_affinity,omitempty"`
 	Serial        string            `json:"serial,omitempty"`
 }
@@ -72,8 +72,8 @@ type chQueueAffinity struct {
 
 type chBalloon struct {
 	Size              int64 `json:"size"`
-	DeflateOnOOM      bool  `json:"deflate_on_oom,omitempty"`
-	FreePageReporting bool  `json:"free_page_reporting,omitempty"`
+	DeflateOnOOM      bool  `json:"deflate_on_oom,omitzero"`
+	FreePageReporting bool  `json:"free_page_reporting,omitzero"`
 }
 
 type chRNG struct {
@@ -95,8 +95,8 @@ type chFs struct {
 	ID        string `json:"id,omitempty"`
 	Tag       string `json:"tag"`
 	Socket    string `json:"socket"`
-	NumQueues int    `json:"num_queues,omitempty"`
-	QueueSize int    `json:"queue_size,omitempty"`
+	NumQueues int    `json:"num_queues,omitzero"`
+	QueueSize int    `json:"queue_size,omitzero"`
 }
 
 type chDevice struct {
@@ -110,16 +110,16 @@ type chPciDeviceInfo struct {
 }
 
 type chVMInfoResponse struct {
-	State            string                     `json:"state,omitempty"`
-	Config           chVMInfoConfig             `json:"config"`
-	MemoryActualSize int64                      `json:"memory_actual_size,omitempty"`
-	DeviceTree       map[string]json.RawMessage `json:"device_tree,omitempty"`
+	State            string                    `json:"state,omitempty"`
+	Config           chVMInfoConfig            `json:"config"`
+	MemoryActualSize int64                     `json:"memory_actual_size,omitzero"`
+	DeviceTree       map[string]jsontext.Value `json:"device_tree,omitempty"`
 }
 
 type chVMInfoConfig struct {
 	Console chRuntimeFile `json:"console"`
 	Memory  chMemory      `json:"memory"`
-	Balloon *chBalloon    `json:"balloon,omitempty"`
+	Balloon *chBalloon    `json:"balloon,omitzero"`
 	Disks   []chDisk      `json:"disks,omitempty"`
 	Fs      []chFs        `json:"fs,omitempty"`
 	Devices []chDevice    `json:"devices,omitempty"`

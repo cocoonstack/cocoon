@@ -3,7 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"

@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -118,7 +118,7 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode, mode SyncMode) 
 
 // AtomicWriteJSON marshals v to JSON and writes it atomically (see AtomicWriteFile).
 func AtomicWriteJSON(path string, v any, mode SyncMode) error {
-	data, err := json.Marshal(v)
+	data, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}

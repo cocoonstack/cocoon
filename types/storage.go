@@ -40,7 +40,7 @@ type StorageConfig struct {
 	// MountPoint, FSType and DirectIO apply to Role==Data only; a nil DirectIO inherits the VM-level NoDirectIO.
 	MountPoint string `json:"mount_point,omitempty"`
 	FSType     string `json:"fstype,omitempty"`
-	DirectIO   *bool  `json:"direct_io,omitempty"`
+	DirectIO   *bool  `json:"direct_io,omitzero"`
 }
 
 // DataDiskSpec is the user-facing description of an extra data disk parsed from --data-disk. Transient — never persisted.

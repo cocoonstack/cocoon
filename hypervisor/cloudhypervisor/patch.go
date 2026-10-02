@@ -2,7 +2,8 @@ package cloudhypervisor
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 
 	"github.com/cocoonstack/cocoon/types"
@@ -23,7 +24,7 @@ type patchOptions struct {
 
 // patchCHConfig patches specific fields in config.json while preserving all unknown fields that CH adds internally (platform, cpus.topology, etc.).
 func patchCHConfig(path string, opts *patchOptions) error {
-	var raw map[string]json.RawMessage
+	var raw map[string]jsontext.Value
 	if err := utils.ReadJSONFile(path, &raw); err != nil {
 		return err
 	}
@@ -52,7 +53,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 	if opts.vsockSock != "" {
 		if vsockRaw, ok := raw["vsock"]; ok && rawObjectPresent(vsockRaw) {
 			// Preserve id so CH reuses the snapshot's PCI slot instead of allocating a colliding new one.
-			patched, patchErr := patchRawObject(vsockRaw, func(obj map[string]json.RawMessage) error {
+			patched, patchErr := patchRawObject(vsockRaw, func(obj map[string]jsontext.Value) error {
 				return setField(obj, "socket", opts.vsockSock)
 			})
 			if patchErr != nil {
@@ -64,7 +65,7 @@ func patchCHConfig(path string, opts *patchOptions) error {
 
 	if len(opts.netTAPs) > 0 {
 		if netRaw, ok := raw["net"]; ok && rawObjectPresent(netRaw) {
-			patched, patchErr := patchRawArray(netRaw, len(opts.netTAPs), func(i int, elem map[string]json.RawMessage) error {
+			patched, patchErr := patchRawArray(netRaw, len(opts.netTAPs), func(i int, elem map[string]jsontext.Value) error {
 				return setField(elem, "tap", opts.netTAPs[i])
 			})
 			if patchErr != nil {
@@ -77,10 +78,10 @@ func patchCHConfig(path string, opts *patchOptions) error {
 	return utils.AtomicWriteJSON(path, raw, utils.NoSync)
 }
 
-func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, error) {
+func patchDisks(diskRaw jsontext.Value, opts *patchOptions) (jsontext.Value, error) {
 	diskQueueSize := utils.OrDefault(opts.diskQueueSize, defaultDiskQueueSize)
 	affinity := queueAffinity(opts.cpu, opts.queueCPUs)
-	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]json.RawMessage) error {
+	return patchRawArray(diskRaw, len(opts.storageConfigs), func(i int, elem map[string]jsontext.Value) error {
 		sc := opts.storageConfigs[i]
 		if e := setField(elem, "path", sc.Path); e != nil {
 			return e
@@ -99,20 +100,20 @@ func patchDisks(diskRaw json.RawMessage, opts *patchOptions) (json.RawMessage, e
 	})
 }
 
-func rawObjectPresent(raw json.RawMessage) bool {
+func rawObjectPresent(raw jsontext.Value) bool {
 	raw = bytes.TrimSpace(raw)
 	return len(raw) > 0 && !bytes.Equal(raw, []byte("null"))
 }
 
-func rawArrayLen(raw json.RawMessage) int {
-	var arr []json.RawMessage
+func rawArrayLen(raw jsontext.Value) int {
+	var arr []jsontext.Value
 	if json.Unmarshal(raw, &arr) != nil {
 		return 0
 	}
 	return len(arr)
 }
 
-func setField(obj map[string]json.RawMessage, key string, value any) error {
+func setField(obj map[string]jsontext.Value, key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("marshal field %q: %w", key, err)
@@ -121,8 +122,8 @@ func setField(obj map[string]json.RawMessage, key string, value any) error {
 	return nil
 }
 
-func patchRawArray(raw json.RawMessage, count int, fn func(int, map[string]json.RawMessage) error) (json.RawMessage, error) {
-	var arr []json.RawMessage
+func patchRawArray(raw jsontext.Value, count int, fn func(int, map[string]jsontext.Value) error) (jsontext.Value, error) {
+	var arr []jsontext.Value
 	if err := json.Unmarshal(raw, &arr); err != nil {
 		return nil, fmt.Errorf("decode array: %w", err)
 	}
@@ -130,14 +131,14 @@ func patchRawArray(raw json.RawMessage, count int, fn func(int, map[string]json.
 		return nil, fmt.Errorf("array length mismatch: got %d, want %d", len(arr), count)
 	}
 	for i := range arr {
-		var elem map[string]json.RawMessage
+		var elem map[string]jsontext.Value
 		if err := json.Unmarshal(arr[i], &elem); err != nil {
 			return nil, fmt.Errorf("decode element %d: %w", i, err)
 		}
 		if err := fn(i, elem); err != nil {
 			return nil, err
 		}
-		patched, err := json.Marshal(elem)
+		patched, err := json.Marshal(elem, json.Deterministic(true))
 		if err != nil {
 			return nil, fmt.Errorf("marshal element %d: %w", i, err)
 		}
@@ -146,13 +147,13 @@ func patchRawArray(raw json.RawMessage, count int, fn func(int, map[string]json.
 	return json.Marshal(arr)
 }
 
-func patchRawObject(raw json.RawMessage, fn func(map[string]json.RawMessage) error) (json.RawMessage, error) {
-	var obj map[string]json.RawMessage
+func patchRawObject(raw jsontext.Value, fn func(map[string]jsontext.Value) error) (jsontext.Value, error) {
+	var obj map[string]jsontext.Value
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("decode object: %w", err)
 	}
 	if err := fn(obj); err != nil {
 		return nil, err
 	}
-	return json.Marshal(obj)
+	return json.Marshal(obj, json.Deterministic(true))
 }

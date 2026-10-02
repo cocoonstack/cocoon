@@ -1,7 +1,7 @@
 package vm
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/types"

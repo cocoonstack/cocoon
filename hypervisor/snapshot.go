@@ -20,7 +20,7 @@ const SnapshotMetaFile = "cocoon.json"
 // SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
 type SnapshotMeta struct {
 	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
-	BootConfig     *types.BootConfig      `json:"boot_config,omitempty"`
+	BootConfig     *types.BootConfig      `json:"boot_config,omitzero"`
 }
 
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.

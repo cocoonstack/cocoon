@@ -1,7 +1,7 @@
 package cloudhypervisor
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net"
@@ -122,7 +122,7 @@ func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := json.MarshalWrite(w, resp); err != nil {
 			t.Errorf("encode vm.info: %v", err)
 		}
 	})

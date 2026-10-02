@@ -2,7 +2,8 @@ package json
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -33,21 +34,20 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 	for _, sp := range c.Specs {
 		byKey[sp.Key] = sp
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if tok, err := dec.Token(); err != nil {
+	dec := jsontext.NewDecoder(bytes.NewReader(data))
+	if tok, err := dec.ReadToken(); err != nil {
 		return nil, err
-	} else if tok != json.Delim('{') {
+	} else if tok.Kind() != '{' {
 		return nil, fmt.Errorf("namespace file: want object, got %v", tok)
 	}
-	for dec.More() {
-		keyTok, err := dec.Token()
+	for dec.PeekKind() != '}' {
+		keyTok, err := dec.ReadToken()
 		if err != nil {
 			return nil, err
 		}
-		key, _ := keyTok.(string)
-		if sp, ok := byKey[key]; ok {
-			var tbl map[string]json.RawMessage
-			if err := dec.Decode(&tbl); err != nil {
+		if sp, ok := byKey[keyTok.String()]; ok {
+			var tbl map[string]jsontext.Value
+			if err := json.UnmarshalDecode(dec, &tbl); err != nil {
 				return nil, err
 			}
 			for _, id := range slices.Sorted(maps.Keys(tbl)) {
@@ -55,16 +55,15 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 			}
 			continue
 		}
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
+		if err := dec.SkipValue(); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := dec.Token(); err != nil {
+	if _, err := dec.ReadToken(); err != nil {
 		return nil, err
 	}
 	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended main must fall back to .prev, not decode (§9 format fidelity).
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("namespace file: trailing data after document")
 	}
 	return m, nil

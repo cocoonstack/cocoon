@@ -3,7 +3,7 @@ package contracttest
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"sync"
@@ -142,7 +142,7 @@ func testDetached(t *testing.T, factory Factory) {
 		for i := range raw {
 			raw[i] = 'X'
 		}
-		return w.ScanRaw(ctx, nsAlpha, "records", func(_ string, raw json.RawMessage) error {
+		return w.ScanRaw(ctx, nsAlpha, "records", func(_ string, raw jsontext.Value) error {
 			for i := range raw {
 				raw[i] = 'Y'
 			}

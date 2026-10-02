@@ -2,14 +2,14 @@
 package json
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"maps"
 	"slices"
 )
 
 type table struct {
 	ids  []string
-	recs map[string]json.RawMessage
+	recs map[string]jsontext.Value
 }
 
 // Model is one namespace's decoded state: named tables preserving insertion order (file order first, new ids appended).
@@ -22,7 +22,7 @@ func NewModel() *Model {
 	return &Model{tables: map[string]*table{}}
 }
 
-func (m *Model) Get(tbl, id string) (json.RawMessage, bool) {
+func (m *Model) Get(tbl, id string) (jsontext.Value, bool) {
 	t := m.tables[tbl]
 	if t == nil {
 		return nil, false
@@ -32,10 +32,10 @@ func (m *Model) Get(tbl, id string) (json.RawMessage, bool) {
 }
 
 // Put inserts or overwrites (tbl, id); new ids append to the table's order.
-func (m *Model) Put(tbl, id string, raw json.RawMessage) {
+func (m *Model) Put(tbl, id string, raw jsontext.Value) {
 	t := m.tables[tbl]
 	if t == nil {
-		t = &table{recs: map[string]json.RawMessage{}}
+		t = &table{recs: map[string]jsontext.Value{}}
 		m.tables[tbl] = t
 	}
 	if _, ok := t.recs[id]; !ok {
@@ -62,7 +62,7 @@ func (m *Model) Delete(tbl, id string) {
 func (m *Model) Dirty() bool { return m.dirty }
 
 // Scan yields (tbl, id) pairs in insertion order; fn errors abort and propagate.
-func (m *Model) Scan(tbl string, fn func(id string, raw json.RawMessage) error) error {
+func (m *Model) Scan(tbl string, fn func(id string, raw jsontext.Value) error) error {
 	t := m.tables[tbl]
 	if t == nil {
 		return nil

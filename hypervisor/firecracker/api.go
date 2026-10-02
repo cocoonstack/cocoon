@@ -2,7 +2,7 @@ package firecracker
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -51,7 +51,7 @@ type fcNetworkInterface struct {
 	IfaceID     string `json:"iface_id"`
 	HostDevName string `json:"host_dev_name"`
 	GuestMAC    string `json:"guest_mac,omitempty"`
-	MTU         int    `json:"mtu,omitempty"`
+	MTU         int    `json:"mtu,omitzero"`
 }
 
 type fcAction struct {
@@ -60,8 +60,8 @@ type fcAction struct {
 
 type fcBalloon struct {
 	AmountMiB         int  `json:"amount_mib"`
-	DeflateOnOOM      bool `json:"deflate_on_oom,omitempty"`
-	FreePageReporting bool `json:"free_page_reporting,omitempty"`
+	DeflateOnOOM      bool `json:"deflate_on_oom,omitzero"`
+	FreePageReporting bool `json:"free_page_reporting,omitzero"`
 }
 
 type fcVsock struct {
@@ -83,7 +83,7 @@ type fcSnapshotLoad struct {
 	SnapshotPath     string              `json:"snapshot_path"`
 	MemBackend       fcSnapshotMemBE     `json:"mem_backend"`
 	NetworkOverrides []fcNetworkOverride `json:"network_overrides,omitempty"`
-	VsockOverride    *fcVsockOverride    `json:"vsock_override,omitempty"`
+	VsockOverride    *fcVsockOverride    `json:"vsock_override,omitzero"`
 }
 
 // fcNetworkOverride overrides a network interface from the snapshot with a new TAP device (FC v1.14+, PR #4731).

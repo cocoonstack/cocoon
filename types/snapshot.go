@@ -14,7 +14,7 @@ type SnapshotConfig struct {
 	Description  string              `json:"description,omitempty"`
 	ImageBlobIDs map[string]struct{} `json:"image_blob_ids,omitempty"` // blob hex set for GC pinning
 	Hypervisor   string              `json:"hypervisor,omitempty"`     // originating backend type
-	NICs         int                 `json:"nics,omitempty"`
+	NICs         int                 `json:"nics,omitzero"`
 	NICMTUs      []int               `json:"nic_mtus,omitempty"`
 }
 

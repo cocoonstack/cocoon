@@ -1,7 +1,7 @@
 package cloudhypervisor
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -394,7 +394,7 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 	sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "vm.add-disk") {
 			var d chDisk
-			if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
+			if err := json.UnmarshalRead(r.Body, &d); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
