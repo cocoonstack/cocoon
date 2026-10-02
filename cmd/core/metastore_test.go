@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -34,6 +36,23 @@ func TestMetaStoreBootstrapsFreshRoot(t *testing.T) {
 	}
 	if !utils.FileExists(MetaDBPath(conf)) {
 		t.Fatal("meta.db not created")
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+}
+
+func TestMetaStoreJSONFreshRootLocksPeerNamespace(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	conf.MetaBackend = config.MetaBackendJSON
+	s, err := MetaStore(conf)
+	if err != nil {
+		t.Fatalf("open fresh json root: %v", err)
+	}
+	ch := hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor))
+	fc := hypervisor.VMNamespaceName(string(config.HypervisorFirecracker))
+	if err := s.Update(t.Context(), meta.Scope{Write: ch, Read: []string{fc}}, meta.CommitDurable, func(meta.Writer) error { return nil }); err != nil {
+		t.Fatalf("placement-shaped update on a fresh json root: %v", err)
 	}
 	CloseMetaStore(t.Context())
 	resetMetaStore()
