@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
@@ -53,6 +56,57 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 			if !tt.wantErr && pauses != 1 {
 				t.Fatalf("pauses = %d, want one pause for a clean device set", pauses)
 			}
+		})
+	}
+}
+
+func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
+	const (
+		mem     = int64(8 << 30)
+		balloon = mem / 4
+		target  = mem - balloon
+	)
+	tests := []struct {
+		name    string
+		state   string
+		balloon *chBalloon
+		actual  func(polls int) int64
+		wait    time.Duration
+	}{
+		{"settled", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return target }, 0},
+		{"no balloon", chStateRunning, nil, func(int) int64 { return mem }, 0},
+		{"paused guest cannot inflate", chStatePaused, &chBalloon{Size: balloon}, func(int) int64 { return mem }, 0},
+		{"inflating reaches target", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - min(int64(polls)*(512<<20), balloon) }, 4 * balloonPollInterval},
+		{"stalled under guest memory pressure", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return mem - (512 << 20) }, balloonStallWindow},
+		{"slow inflation stops at the cap", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - int64(polls)<<12 }, balloonSettleTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				polls := 0
+				mux := http.NewServeMux()
+				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+					_ = json.NewEncoder(w).Encode(chVMInfoResponse{
+						State:            tt.state,
+						Config:           chVMInfoConfig{Memory: chMemory{Size: mem}, Balloon: tt.balloon},
+						MemoryActualSize: tt.actual(polls),
+					})
+					polls++
+				})
+				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				})
+				hc := &http.Client{Transport: handlerTransport{mux}}
+				start := time.Now()
+
+				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc)
+				if err != nil {
+					t.Fatalf("pause: %v", err)
+				}
+				if elapsed := time.Since(start); elapsed != tt.wait {
+					t.Fatalf("waited %s, want %s", elapsed, tt.wait)
+				}
+			})
 		})
 	}
 }
@@ -108,4 +162,12 @@ func TestBuildSnapshotMetaRefusesHotAttachedDevices(t *testing.T) {
 			}
 		})
 	}
+}
+
+type handlerTransport struct{ h http.Handler }
+
+func (ht handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	ht.h.ServeHTTP(rec, r)
+	return rec.Result(), nil
 }
