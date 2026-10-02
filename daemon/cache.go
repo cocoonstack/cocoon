@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"sync"
@@ -81,13 +82,14 @@ type cache struct {
 	healthy  bool
 	degraded int
 	lastPass time.Time
+	ready    chan struct{}
 
 	nextSub int
 	subs    map[int]chan changeEvent
 }
 
 func newCache() *cache {
-	return &cache{byKey: map[watchKey]VMStatus{}, subs: map[int]chan changeEvent{}}
+	return &cache{byKey: map[watchKey]VMStatus{}, ready: make(chan struct{}), subs: map[int]chan changeEvent{}}
 }
 
 // publish replaces the snapshot and emits the diff against the previous pass.
@@ -115,6 +117,11 @@ func (c *cache) publish(all []VMStatus, healthy bool, degraded int, at time.Time
 	}
 	c.byKey, c.order = next, all
 	c.healthy, c.degraded, c.lastPass = healthy, degraded, at
+	select {
+	case <-c.ready:
+	default:
+		close(c.ready)
+	}
 	subs := slices.Collect(maps.Values(c.subs))
 	c.mu.Unlock()
 
@@ -138,6 +145,15 @@ func (c *cache) byBackend(backend string) []VMStatus {
 		}
 	}
 	return out
+}
+
+func (c *cache) waitReady(ctx context.Context) error {
+	select {
+	case <-c.ready:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (c *cache) snapshot() ([]VMStatus, health) {
