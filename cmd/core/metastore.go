@@ -135,7 +135,14 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		if conf.MetaBackend == "" {
 			log.WithFunc("core.MetaStore").Info(ctx, "legacy json meta store in use; `cocoon meta convert` upgrades it to sqlite")
 		}
-		if s, err := metajson.Open(MetaJSONNamespaces(conf)...); err != nil {
+		nss := MetaJSONNamespaces(conf)
+		for _, ns := range nss {
+			if err := utils.EnsureDirs(filepath.Dir(ns.LockPath)); err != nil {
+				metaErr = err
+				return
+			}
+		}
+		if s, err := metajson.Open(nss...); err != nil {
 			metaErr = err
 		} else {
 			metaStore = s

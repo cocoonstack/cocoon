@@ -155,11 +155,7 @@ func (s *Store) resolve(nss []string) ([]*nsState, error) {
 // withLocked holds every namespace flock in sorted order; unlock errors log only, since joining them would make callers roll back an already-durable commit.
 func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() error) error {
 	for i, st := range states {
-		err := utils.EnsureDirs(filepath.Dir(st.def.LockPath))
-		if err == nil {
-			err = st.locker.Lock(ctx)
-		}
-		if err != nil {
+		if err := st.locker.Lock(ctx); err != nil {
 			for _, held := range slices.Backward(states[:i]) {
 				if uerr := held.locker.Unlock(ctx); uerr != nil {
 					log.WithFunc("meta.json.withLocked").Errorf(ctx, uerr, "unlock %s", held.def.Name)

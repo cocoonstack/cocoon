@@ -352,30 +352,6 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 	}
 }
 
-func TestPeerNamespaceWithoutDirectory(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-	s, err := Open(
-		Namespace{Name: "alpha", FilePath: filepath.Join(dir, "alpha.json"), LockPath: filepath.Join(dir, "alpha.lock"), Codec: GenericCodec{}},
-		Namespace{Name: "beta", FilePath: filepath.Join(dir, "beta", "db", "beta.json"), LockPath: filepath.Join(dir, "beta", "db", "beta.lock"), Codec: GenericCodec{}},
-	)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	c := meta.NewCollection[map[string]int]("alpha", "records")
-	v := map[string]int{"n": 1}
-
-	if err := s.Update(ctx, meta.Scope{Write: "alpha", Read: []string{"beta"}}, meta.CommitDurable, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "a", &v)
-	}); err != nil {
-		t.Fatalf("update reading a peer namespace whose directory does not exist yet: %v", err)
-	}
-	if rec, err := mustGet(t, s, "alpha", "a"); err != nil || rec == nil || (*rec)["n"] != 1 {
-		t.Fatalf("got %v, %v; want the inserted record", rec, err)
-	}
-}
-
 type crashPoint struct {
 	step string
 	err  error
