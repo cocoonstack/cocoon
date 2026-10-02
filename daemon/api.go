@@ -102,13 +102,19 @@ func (d *Daemon) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, status, healthResponse{OK: ok, Degraded: h.degraded, LastPass: h.lastPass, VMs: len(all)})
 }
 
-func (d *Daemon) handleVMs(w http.ResponseWriter, _ *http.Request) {
+func (d *Daemon) handleVMs(w http.ResponseWriter, r *http.Request) {
+	if d.state.waitReady(r.Context()) != nil {
+		return
+	}
 	all, _ := d.state.snapshot()
 	writeJSON(w, http.StatusOK, vmsResponse{VMs: all})
 }
 
 // handleEvents streams changes after an opening snapshot; it replays nothing, so a reconnecting client diffs per-VM generations against the fresh snapshot.
 func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if d.state.waitReady(r.Context()) != nil {
+		return
+	}
 	events, release := d.state.subscribe()
 	defer release()
 
