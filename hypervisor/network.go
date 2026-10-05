@@ -27,10 +27,10 @@ func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
 }
 
 // Under the caller's ops lock the committed generation is rec's, plus one exactly when the stop just landed its transition.
-func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord, transitioned bool) {
-	gen, pending := rec.TransitionGeneration, rec.QuiescePending
+func (b *Backend) quiesceAfterStop(ctx context.Context, id string, rec *VMRecord, wentDown, transitioned bool) {
+	gen, pending := rec.TransitionGeneration, rec.QuiescePending || (wentDown && needsQuiesce(rec))
 	if transitioned {
-		gen, pending = gen+1, needsQuiesce(rec)
+		gen++
 	}
 	if !pending {
 		return

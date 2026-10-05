@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -110,6 +112,41 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 	}
 }
 
+func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+	store := b.Meta
+	spec := hibernateStubSpec(&hibernateCalls{})
+	spec.Terminate = func(*VMRecord, *http.Client, int) error {
+		b.Meta = busyStore{store}
+		return nil
+	}
+
+	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, srcDir string) error {
+		return os.RemoveAll(srcDir)
+	})
+	b.Meta = store
+	if err != nil {
+		t.Fatalf("HibernateSequence: %v", err)
+	}
+	if quiesced != 1 {
+		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)
+	}
+}
+
 type hibernateCalls struct {
 	resumed    bool
 	terminated bool
@@ -171,4 +208,10 @@ func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {
 		BuildMeta: func(*VMRecord, string) (*SnapshotMeta, error) { return &SnapshotMeta{}, nil },
 		Terminate: func(*VMRecord, *http.Client, int) error { calls.terminated = true; return nil },
 	}
+}
+
+type busyStore struct{ meta.Store }
+
+func (busyStore) Update(context.Context, meta.Scope, meta.CommitMode, meta.UpdateFunc) error {
+	return meta.ErrBusy
 }
