@@ -151,7 +151,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	if uErr != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
 	}
-	b.quiesceAfterStop(ctx, vmID, &rec, uErr == nil)
+	b.quiesceAfterStop(ctx, vmID, &rec, true, uErr == nil)
 	return nil
 }
 

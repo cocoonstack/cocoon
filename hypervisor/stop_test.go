@@ -219,6 +219,38 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	}
 }
 
+func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	ctx := t.Context()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	quiesced := 0
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		quiesced++
+		return nil
+	}})
+	store := b.Meta
+
+	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+		b.Meta = busyStore{store}
+		return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
+	}})
+	b.Meta = store
+	if err != nil {
+		t.Fatalf("StopOneLocked: %v", err)
+	}
+	if quiesced != 1 {
+		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)
+	}
+}
+
 func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()

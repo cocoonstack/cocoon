@@ -67,7 +67,7 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 		}
 	}
 	// Still under the caller's ops lock: an idle TAP's TC redirect storms softirqs until its host NICs go down (#130).
-	b.quiesceAfterStop(ctx, id, &rec, transitioned)
+	b.quiesceAfterStop(ctx, id, &rec, !settled, transitioned)
 	return nil
 }
 
