@@ -27,8 +27,8 @@ const (
 // makeBodyFn builds a device endpoint's request body from the record reloaded under the ops lock.
 type makeBodyFn func(rec *hypervisor.VMRecord) any
 
-// preCheckFn vets the under-lock vm.info snapshot before a device mutation; a non-empty id means the same device is already attached.
-type preCheckFn func(*chVMInfoResponse) (string, error)
+// preCheckFn vets the under-lock vm.info snapshot before a device mutation.
+type preCheckFn func(*chVMInfoResponse) (existingID string, err error)
 
 // findIDFn resolves the device id to detach from the under-lock vm.info snapshot.
 type findIDFn func(*chVMInfoResponse) (string, error)
@@ -271,7 +271,6 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 	return extract(info), nil
 }
 
-// diskAttached returns the id of an identical disk already attached, or refuses a conflicting one.
 func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
 	for _, ex := range info.Config.Disks {
 		if ex.ID == id {

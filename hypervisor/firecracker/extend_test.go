@@ -64,20 +64,19 @@ func TestDriveAttached(t *testing.T) {
 	tests := []struct {
 		name, id, path string
 		readOnly       bool
-		want           bool
-		wantErr        string
+		want, wantErr  string
 	}{
-		{"free", hotDiskIDPrefix + "cache", "/vols/cache.raw", false, false, ""},
-		{"identical", hotDiskIDPrefix + "db", "/vols/db.raw", true, true, ""},
-		{"same name other path", hotDiskIDPrefix + "db", "/vols/other.raw", true, false, "different path or mode"},
-		{"same name other mode", hotDiskIDPrefix + "db", "/vols/db.raw", false, false, "different path or mode"},
-		{"same path other name", hotDiskIDPrefix + "db2", "/vols/db.raw", true, false, "already attached as"},
+		{"free", hotDiskIDPrefix + "cache", "/vols/cache.raw", false, "", ""},
+		{"identical", hotDiskIDPrefix + "db", "/vols/db.raw", true, hotDiskIDPrefix + "db", ""},
+		{"same name other path", hotDiskIDPrefix + "db", "/vols/other.raw", true, "", "different path or mode"},
+		{"same name other mode", hotDiskIDPrefix + "db", "/vols/db.raw", false, "", "different path or mode"},
+		{"same path other name", hotDiskIDPrefix + "db2", "/vols/db.raw", true, "", "already attached as"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := driveAttached(cfg, tt.id, tt.path, tt.readOnly)
 			if got != tt.want {
-				t.Errorf("attached = %v, want %v", got, tt.want)
+				t.Errorf("existing id = %q, want %q", got, tt.want)
 			}
 			if tt.wantErr == "" && err != nil {
 				t.Fatalf("unexpected error: %v", err)

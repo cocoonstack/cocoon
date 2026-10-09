@@ -83,12 +83,8 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 	if err != nil {
 		return "", err
 	}
-	attached, err := driveAttached(cfg, id, path, spec.ReadOnly)
-	if err != nil {
-		return "", err
-	}
-	if attached {
-		return id, nil
+	if existing, err := driveAttached(cfg, id, path, spec.ReadOnly); err != nil || existing != "" {
+		return existing, err
 	}
 	if spec.DirectIO != nil {
 		log.WithFunc("firecracker.DiskAttach").Warnf(ctx, directIOIgnoredMsg, spec.Name)
@@ -203,19 +199,19 @@ func hotDiskName(id string) string {
 	return ""
 }
 
-func driveAttached(cfg *fcVMConfig, id, path string, readOnly bool) (bool, error) {
+func driveAttached(cfg *fcVMConfig, id, path string, readOnly bool) (string, error) {
 	for _, d := range cfg.Drives {
 		if d.DriveID == id {
 			if d.PathOnHost == path && d.IsReadOnly == readOnly {
-				return true, nil
+				return id, nil
 			}
-			return false, fmt.Errorf("disk %q already attached with a different path or mode", hotDiskName(id))
+			return "", fmt.Errorf("disk %q already attached with a different path or mode", hotDiskName(id))
 		}
 		if d.PathOnHost == path {
-			return false, fmt.Errorf("disk path %q already attached as %q", path, d.DriveID)
+			return "", fmt.Errorf("disk path %q already attached as %q", path, d.DriveID)
 		}
 	}
-	return false, nil
+	return "", nil
 }
 
 func hotAttachedDisks(cfg *fcVMConfig) []disk.Attached {
