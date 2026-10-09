@@ -56,21 +56,29 @@ func TestRequirePCI(t *testing.T) {
 	}
 }
 
-func TestCheckDriveFree(t *testing.T) {
+func TestDriveAttached(t *testing.T) {
 	cfg := &fcVMConfig{Drives: []fcDrive{
 		{DriveID: "drive_0", PathOnHost: "/layer.erofs"},
-		{DriveID: hotDiskIDPrefix + "db", PathOnHost: "/vols/db.raw"},
+		{DriveID: hotDiskIDPrefix + "db", PathOnHost: "/vols/db.raw", IsReadOnly: true},
 	}}
 	tests := []struct {
-		name, id, path, wantErr string
+		name, id, path string
+		readOnly       bool
+		want           bool
+		wantErr        string
 	}{
-		{"free", hotDiskIDPrefix + "cache", "/vols/cache.raw", ""},
-		{"same name", hotDiskIDPrefix + "db", "/vols/other.raw", "already attached"},
-		{"same path", hotDiskIDPrefix + "db2", "/vols/db.raw", "already attached as"},
+		{"free", hotDiskIDPrefix + "cache", "/vols/cache.raw", false, false, ""},
+		{"identical", hotDiskIDPrefix + "db", "/vols/db.raw", true, true, ""},
+		{"same name other path", hotDiskIDPrefix + "db", "/vols/other.raw", true, false, "different path or mode"},
+		{"same name other mode", hotDiskIDPrefix + "db", "/vols/db.raw", false, false, "different path or mode"},
+		{"same path other name", hotDiskIDPrefix + "db2", "/vols/db.raw", true, false, "already attached as"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkDriveFree(cfg, tt.id, tt.path)
+			got, err := driveAttached(cfg, tt.id, tt.path, tt.readOnly)
+			if got != tt.want {
+				t.Errorf("attached = %v, want %v", got, tt.want)
+			}
 			if tt.wantErr == "" && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
