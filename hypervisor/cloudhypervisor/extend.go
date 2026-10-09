@@ -31,7 +31,7 @@ type makeBodyFn func(rec *hypervisor.VMRecord) any
 type preCheckFn func(*chVMInfoResponse) (existingID string, err error)
 
 // findIDFn resolves the device id to detach from the under-lock vm.info snapshot.
-type findIDFn func(*chVMInfoResponse) (string, error)
+type findIDFn func(*chVMInfoResponse) (id string, remove bool, err error)
 
 func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
 	if err := spec.Normalize(); err != nil {
@@ -60,12 +60,15 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 		return fmt.Errorf("name is required")
 	}
 	id := disk.DeriveID(name)
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		if slices.ContainsFunc(info.Config.Disks, func(d chDisk) bool { return d.ID == id }) {
-			return id, nil
+			return id, true, nil
+		}
+		if _, pending := info.DeviceTree[id]; pending {
+			return id, false, nil
 		}
 		log.WithFunc("cloudhypervisor.DiskDetach").Warnf(ctx, "disk %q is not attached to vm %s, nothing to detach", name, vmRef)
-		return "", nil
+		return "", false, nil
 	})
 }
 
@@ -115,13 +118,13 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 	if tag == "" {
 		return fmt.Errorf("tag is required")
 	}
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		for _, ex := range info.Config.Fs {
 			if ex.Tag == tag {
-				return ex.ID, nil
+				return ex.ID, true, nil
 			}
 		}
-		return "", fmt.Errorf("fs tag %q not attached", tag)
+		return "", false, fmt.Errorf("fs tag %q not attached", tag)
 	})
 }
 
@@ -168,11 +171,11 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 	if id == "" {
 		return fmt.Errorf("id is required")
 	}
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
-			return id, nil
+			return id, true, nil
 		}
-		return "", fmt.Errorf("device id %q not attached", id)
+		return "", false, fmt.Errorf("device id %q not attached", id)
 	})
 }
 
@@ -241,12 +244,14 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 		return err
 	}
 	defer unlock()
-	deviceID, err := findID(info)
+	deviceID, remove, err := findID(info)
 	if err != nil || deviceID == "" {
 		return err
 	}
-	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
-		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+	if remove {
+		if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
+			return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+		}
 	}
 	// CH frees the slot, id and backing file only after the guest's eject ack.
 	if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
