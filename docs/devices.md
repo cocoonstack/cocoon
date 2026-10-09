@@ -62,6 +62,12 @@ The backing file may live anywhere outside cocoon's managed directories;
 attach resolves symlinks and refuses a path under the root/run/log dirs
 because `vm rm` would delete it along with them.
 
+Both calls are idempotent. Attaching a disk that is already attached under
+the same name, path and mode succeeds and returns its existing id; the same
+name with a different path or mode is refused. Detaching a name that is not
+attached succeeds and logs a warning; on Cloud Hypervisor, a retry while the
+guest has not yet ejected an earlier removal waits for that eject.
+
 Flags:
 
 | Flag | Default | Description |

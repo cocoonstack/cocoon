@@ -28,10 +28,10 @@ const (
 type makeBodyFn func(rec *hypervisor.VMRecord) any
 
 // preCheckFn vets the under-lock vm.info snapshot before a device mutation.
-type preCheckFn func(*chVMInfoResponse) error
+type preCheckFn func(*chVMInfoResponse) (existingID string, err error)
 
 // findIDFn resolves the device id to detach from the under-lock vm.info snapshot.
-type findIDFn func(*chVMInfoResponse) (string, error)
+type findIDFn func(*chVMInfoResponse) (id string, remove bool, err error)
 
 func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
 	if err := spec.Normalize(); err != nil {
@@ -50,20 +50,8 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 		d.ID = id
 		return d
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, id, func(info *chVMInfoResponse) error {
-		for _, ex := range info.Config.Disks {
-			if ex.ID == id {
-				return fmt.Errorf("disk name %q already attached", spec.Name)
-			}
-			// Record data disks carry CH auto ids — match serials too, else two devices race for one /dev/disk/by-id/virtio-<name>.
-			if ex.Serial == spec.Name {
-				return fmt.Errorf("disk serial %q already used by disk %q", spec.Name, ex.ID)
-			}
-			if ex.Path == path {
-				return fmt.Errorf("disk path %q already attached as %q", path, ex.ID)
-			}
-		}
-		return nil
+	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, id, func(info *chVMInfoResponse) (string, error) {
+		return diskAttached(info, id, spec.Name, path, spec.ReadOnly)
 	})
 }
 
@@ -72,11 +60,15 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 		return fmt.Errorf("name is required")
 	}
 	id := disk.DeriveID(name)
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		if slices.ContainsFunc(info.Config.Disks, func(d chDisk) bool { return d.ID == id }) {
-			return id, nil
+			return id, true, nil
 		}
-		return "", fmt.Errorf("disk %q not attached", name)
+		if _, pending := info.DeviceTree[id]; pending {
+			return id, false, nil
+		}
+		log.WithFunc("cloudhypervisor.DiskDetach").Warnf(ctx, "disk %q is not attached to vm %s, nothing to detach", name, vmRef)
+		return "", false, nil
 	})
 }
 
@@ -106,19 +98,19 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 			QueueSize: spec.QueueSize,
 		}
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-fs", makeBody, id, func(info *chVMInfoResponse) error {
+	return ch.attachWith(ctx, vmRef, "vm.add-fs", makeBody, id, func(info *chVMInfoResponse) (string, error) {
 		if !info.Config.Memory.Shared {
-			return fmt.Errorf("fs attach requires the VM to be created with --shared-memory (current memory shared=off; cannot be flipped on a running VM)")
+			return "", fmt.Errorf("fs attach requires the VM to be created with --shared-memory (current memory shared=off; cannot be flipped on a running VM)")
 		}
 		for _, ex := range info.Config.Fs {
 			if ex.Tag == spec.Tag {
-				return fmt.Errorf("fs tag %q already attached", spec.Tag)
+				return "", fmt.Errorf("fs tag %q already attached", spec.Tag)
 			}
 			if ex.ID == id {
-				return fmt.Errorf("fs id %q already attached", id)
+				return "", fmt.Errorf("fs id %q already attached", id)
 			}
 		}
-		return nil
+		return "", nil
 	})
 }
 
@@ -126,13 +118,13 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 	if tag == "" {
 		return fmt.Errorf("tag is required")
 	}
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		for _, ex := range info.Config.Fs {
 			if ex.Tag == tag {
-				return ex.ID, nil
+				return ex.ID, true, nil
 			}
 		}
-		return "", fmt.Errorf("fs tag %q not attached", tag)
+		return "", false, fmt.Errorf("fs tag %q not attached", tag)
 	})
 }
 
@@ -154,24 +146,24 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 	makeBody := func(*hypervisor.VMRecord) any {
 		return chDevice{ID: spec.ID, Path: path}
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, spec.ID, func(info *chVMInfoResponse) error {
+	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, spec.ID, func(info *chVMInfoResponse) (string, error) {
 		// stat is gated behind the running-VM check so stopped VMs surface the state error, not a host-path one.
 		st, statErr := os.Stat(path)
 		if statErr != nil {
-			return fmt.Errorf("pci path %s: %w", path, statErr)
+			return "", fmt.Errorf("pci path %s: %w", path, statErr)
 		}
 		if !st.IsDir() {
-			return fmt.Errorf("pci path %s: not a directory", path)
+			return "", fmt.Errorf("pci path %s: not a directory", path)
 		}
 		for _, ex := range info.Config.Devices {
 			if ex.Path == path {
-				return fmt.Errorf("device %s already attached (id=%s)", path, ex.ID)
+				return "", fmt.Errorf("device %s already attached (id=%s)", path, ex.ID)
 			}
 			if spec.ID != "" && ex.ID == spec.ID {
-				return fmt.Errorf("device id %q already in use", spec.ID)
+				return "", fmt.Errorf("device id %q already in use", spec.ID)
 			}
 		}
-		return nil
+		return "", nil
 	})
 }
 
@@ -179,11 +171,11 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 	if id == "" {
 		return fmt.Errorf("id is required")
 	}
-	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
+	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
-			return id, nil
+			return id, true, nil
 		}
-		return "", fmt.Errorf("device id %q not attached", id)
+		return "", false, fmt.Errorf("device id %q not attached", id)
 	})
 }
 
@@ -220,8 +212,9 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 		return "", err
 	}
 	defer unlock()
-	if checkErr := preCheck(info); checkErr != nil {
-		return "", checkErr
+	existing, checkErr := preCheck(info)
+	if checkErr != nil || existing != "" {
+		return existing, checkErr
 	}
 	bodyBytes, err := json.Marshal(makeBody(&rec))
 	if err != nil {
@@ -251,12 +244,14 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 		return err
 	}
 	defer unlock()
-	deviceID, err := findID(info)
-	if err != nil {
+	deviceID, remove, err := findID(info)
+	if err != nil || deviceID == "" {
 		return err
 	}
-	if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
-		return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+	if remove {
+		if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
+			return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+		}
 	}
 	// CH frees the slot, id and backing file only after the guest's eject ack.
 	if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
@@ -279,6 +274,25 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 		return nil, err
 	}
 	return extract(info), nil
+}
+
+func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
+	for _, ex := range info.Config.Disks {
+		if ex.ID == id {
+			if ex.Path == path && ex.ReadOnly == readOnly {
+				return id, nil
+			}
+			return "", fmt.Errorf("disk name %q already attached with a different path or mode", name)
+		}
+		// Record data disks carry CH auto ids — match serials too, else two devices race for one /dev/disk/by-id/virtio-<name>.
+		if ex.Serial == name {
+			return "", fmt.Errorf("disk serial %q already used by disk %q", name, ex.ID)
+		}
+		if ex.Path == path {
+			return "", fmt.Errorf("disk path %q already attached as %q", path, ex.ID)
+		}
+	}
+	return "", nil
 }
 
 // the ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.

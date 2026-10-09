@@ -49,7 +49,7 @@ type Attached struct {
 	ReadOnly bool   `json:"readonly,omitzero"`
 }
 
-// Attacher hot-plugs and removes virtio-blk data disks on a running VM.
+// Attacher hot-plugs and removes virtio-blk data disks on a running VM; both calls are idempotent.
 type Attacher interface {
 	DiskAttach(ctx context.Context, vmRef string, spec Spec) (deviceID string, err error)
 	DiskDetach(ctx context.Context, vmRef, name string) error
