@@ -38,7 +38,7 @@ jobs:
 
       - name: Upload coverage artifact
         continue-on-error: true
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage
           path: coverage.out

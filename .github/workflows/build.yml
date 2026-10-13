@@ -43,7 +43,7 @@ jobs:
           go build -ldflags "${LDFLAGS}" -o cocoon-${{ matrix.goos }}-${{ matrix.goarch }} .
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: cocoon-${{ matrix.goos }}-${{ matrix.goarch }}
           path: cocoon-${{ matrix.goos }}-${{ matrix.goarch }}
