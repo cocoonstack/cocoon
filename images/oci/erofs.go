@@ -3,6 +3,8 @@ package oci
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 const (
 	erofsBlockSize   = 4096
 	erofsCompression = "lz4hc"
+	erofsBlobFormat  = "aufs"
 
 	// erofs-utils < 1.8 tar mode writes corrupt compressed clusters yet exits 0, surfacing only as EUCLEAN at read time (#94).
 	erofsMinMajor = 1
@@ -38,6 +41,7 @@ func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix,
 	cmd := exec.CommandContext( //nolint:gosec
 		ctx, "mkfs.erofs",
 		"--tar=f",
+		"--aufs",
 		fmt.Sprintf("-z%s", erofsCompression),
 		fmt.Sprintf("-C%d", erofsBlockSize),
 		"-T0",
@@ -104,4 +108,9 @@ func erofsVersionAtLeast(output string) error {
 	}
 	return fmt.Errorf("mkfs.erofs %s.%s is older than %d.%d: its tar mode silently corrupts layers (EUCLEAN at read time) — upgrade erofs-utils",
 		m[1], m[2], erofsMinMajor, erofsMinMinor)
+}
+
+func blobHex(layerHex string) string {
+	sum := sha256.Sum256([]byte(erofsBlobFormat + ":" + layerHex))
+	return hex.EncodeToString(sum[:])
 }

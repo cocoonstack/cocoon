@@ -85,7 +85,10 @@ func TestMoveBootFileAndIsUpToDate(t *testing.T) {
 		},
 	}
 
-	if !isUpToDate(conf, idx, "demo", digestHex) {
+	if !isUpToDate(conf, idx, "demo", digestHex, []string{digestHex}) {
 		t.Fatalf("isUpToDate() = false, want true")
+	}
+	if isUpToDate(conf, idx, "demo", digestHex, []string{blobHex(digestHex)}) {
+		t.Fatalf("isUpToDate() for an entry keyed by raw layer digests = true, want false")
 	}
 }

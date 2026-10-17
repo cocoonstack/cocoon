@@ -59,9 +59,21 @@ func fetchImage(ctx context.Context, imageRef string) (ref, digestHex string, la
 	return ref, digestHex, layers, nil
 }
 
-func isUpToDate(conf *Config, idx *imageIndex, ref, digestHex string) bool {
+func layerBlobHexes(layers []v1.Layer) ([]string, error) {
+	hexes := make([]string, len(layers))
+	for i, layer := range layers {
+		d, err := layer.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("get layer %d digest: %w", i, err)
+		}
+		hexes[i] = blobHex(d.Hex)
+	}
+	return hexes, nil
+}
+
+func isUpToDate(conf *Config, idx *imageIndex, ref, digestHex string, blobHexes []string) bool {
 	entry, ok := idx.Images[ref]
-	if !ok || entry == nil || entry.ManifestDigest != images.NewDigest(digestHex) {
+	if !ok || entry == nil || entry.ManifestDigest != images.NewDigest(digestHex) || !slices.Equal(entry.DigestHexes(), blobHexes) {
 		return false
 	}
 	if !utils.ValidFile(conf.KernelPath(entry.KernelLayer.Hex())) ||

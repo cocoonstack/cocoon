@@ -26,6 +26,7 @@ type layerJob struct {
 	conf           *Config
 	idx, total     int
 	layer          v1.Layer
+	digestHex      string
 	workDir        string
 	knownBootHexes map[string]struct{}
 	tracker        progress.Tracker
@@ -35,11 +36,7 @@ type layerJob struct {
 func processLayer(ctx context.Context, j layerJob) error {
 	logger := log.WithFunc("oci.processLayer")
 
-	layerDigest, err := j.layer.Digest()
-	if err != nil {
-		return fmt.Errorf("get digest: %w", err)
-	}
-	digestHex := layerDigest.Hex
+	digestHex := j.digestHex
 
 	j.result.index = j.idx
 	j.result.digest = images.NewDigest(digestHex)
@@ -52,7 +49,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 	logger.Debugf(ctx, "Layer %d: sha256:%s -> erofs (single-pass)", j.idx, digestHex[:12])
 
 	// Hoisted out of the retried region: a too-old mkfs.erofs is permanent — retrying burns attempts, backoff sleeps, and aborted blob GETs.
-	if err = checkErofsVersion(ctx); err != nil {
+	if err := checkErofsVersion(ctx); err != nil {
 		return err
 	}
 
@@ -61,7 +58,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 	layerUUID := utils.UUIDv5(digestHex)
 
 	var kernelPath, initrdPath string
-	err = retryLayer(ctx, pullLayerAttempts, pullLayerBackoff, func() error {
+	err := retryLayer(ctx, pullLayerAttempts, pullLayerBackoff, func() error {
 		var convErr error
 		kernelPath, initrdPath, convErr = convertLayer(ctx, j, layerDir, digestHex, layerUUID, erofsPath)
 		if convErr != nil {

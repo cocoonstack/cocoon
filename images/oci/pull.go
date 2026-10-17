@@ -28,12 +28,16 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 	if err != nil {
 		return err
 	}
+	blobHexes, err := layerBlobHexes(layers)
+	if err != nil {
+		return err
+	}
 
 	// Heavy work (downloads, EROFS conversion, blob renames) runs outside any transaction under finishImport's per-digest locks; the up-to-date pre-check is racy but benign since the whole flow is idempotent per digest.
 	var upToDate bool
 	var knownBootHexes map[string]struct{}
 	if err := store.View(ctx, func(idx *imageIndex) error {
-		upToDate = isUpToDate(conf, idx, ref, digestHex)
+		upToDate = isUpToDate(conf, idx, ref, digestHex, blobHexes)
 		knownBootHexes = collectBootHexes(idx)
 		return nil
 	}); err != nil {
@@ -55,7 +59,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 	results, waitErr := utils.Map(ctx, layers, func(ctx context.Context, i int, layer v1.Layer) (pullLayerResult, error) {
 		var r pullLayerResult
 		err := processLayer(ctx, layerJob{
-			conf: conf, idx: i, total: len(layers), layer: layer,
+			conf: conf, idx: i, total: len(layers), layer: layer, digestHex: blobHexes[i],
 			workDir: workDir, knownBootHexes: knownBootHexes,
 			tracker: tracker, result: &r,
 		})
