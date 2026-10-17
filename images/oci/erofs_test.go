@@ -40,19 +40,9 @@ func TestErofsVersionAtLeast(t *testing.T) {
 }
 
 func TestBlobHex(t *testing.T) {
-	layerHex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	got := blobHex(layerHex)
-	if got == layerHex {
-		t.Fatalf("blobHex(%s) reuses the layer digest as the blob key", layerHex)
-	}
-	if len(got) != len(layerHex) || strings.Trim(got, "0123456789abcdef") != "" {
-		t.Fatalf("blobHex(%s) = %q, want 64 lowercase hex chars", layerHex, got)
-	}
-	if again := blobHex(layerHex); again != got {
-		t.Fatalf("blobHex not deterministic: %s != %s", again, got)
-	}
-	if other := blobHex(strings.Repeat("f", 64)); other == got {
-		t.Fatalf("blobHex collides for distinct layers: %s", other)
+	const want = "b1910ad92b38c2711e188378a0c3e41bc91a32e857795511a1d06b2a1581375c"
+	if got := blobHex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"); got != want {
+		t.Fatalf("blobHex() = %s, want %s", got, want)
 	}
 }
 
