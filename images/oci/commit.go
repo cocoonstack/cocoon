@@ -65,7 +65,7 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 		r := &results[i]
 		layerDigestHex := r.digest.Hex()
 
-		if r.erofsPath != conf.BlobPath(layerDigestHex) {
+		if r.erofsPath != conf.BlobPath(layerDigestHex) && !utils.ValidFile(conf.BlobPath(layerDigestHex)) {
 			if err := os.Rename(r.erofsPath, conf.BlobPath(layerDigestHex)); err != nil {
 				return fmt.Errorf("move layer %d erofs: %w", r.index, err)
 			}

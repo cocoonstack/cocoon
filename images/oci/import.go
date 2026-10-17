@@ -114,7 +114,7 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 		return err
 	}
 
-	digestHex := hex.EncodeToString(hasher.Sum(nil))
+	digestHex := blobHex(hex.EncodeToString(hasher.Sum(nil)))
 	j.result.digest = images.NewDigest(digestHex)
 
 	if utils.ValidFile(j.conf.BlobPath(digestHex)) {

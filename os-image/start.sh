@@ -70,9 +70,9 @@ if [ -n "$IMAGE_NAME" ]; then
         # content digest). Same OCI layer -> same UUID. Pure bash + sha1sum, no Python.
         LAYER_UUID=$(uuid_v5 "$L")
         if gzip -t "image_temp/$L" 2>/dev/null; then
-            gzip -dc "image_temp/$L" | mkfs.erofs --tar=f -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs"
+            gzip -dc "image_temp/$L" | mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs"
         else
-            mkfs.erofs --tar=f -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs" "image_temp/$L"
+            mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs" "image_temp/$L"
         fi
         IDX=$((IDX+1))
     done
