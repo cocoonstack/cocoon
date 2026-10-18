@@ -90,11 +90,11 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 		os.Remove(path) //nolint:errcheck,gosec
 		return "", "", err
 	}
+	// a lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it
 	deviceID, err := addDevice(ctx, hc, "vm.add-disk", hotDisk(&rec, id, &types.StorageConfig{
 		Role: types.StorageRoleData, Path: path, Serial: src.Name,
 	}), id)
 	if err != nil {
-		os.Remove(path) //nolint:errcheck,gosec
 		return "", "", err
 	}
 	return deviceID, format, nil
@@ -273,18 +273,21 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	}
 	defer unlock()
 	deviceID, remove, err := findID(info)
-	if err != nil || deviceID == "" {
+	if err != nil {
 		return err
 	}
-	if remove {
-		if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
-			return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+	if deviceID != "" {
+		if remove {
+			if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
+				return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
+			}
+		}
+		// CH frees the slot, id and backing file only after the guest's eject ack.
+		if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
+			return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 		}
 	}
-	// CH frees the slot, id and backing file only after the guest's eject ack.
-	if err := waitDeviceEjected(ctx, hc, deviceID); err != nil {
-		return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
-	}
+	// a detach whose remove-device response was lost finds no device, so the copy is reclaimed here too
 	if afterEject == nil {
 		return nil
 	}
