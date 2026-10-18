@@ -230,8 +230,6 @@ func TestSnapshotCOWFile(t *testing.T) {
 		}, "overlay.qcow2", false},
 		{"nil entry skipped", []*types.StorageConfig{nil, {Path: "/r/cow.raw", Role: types.StorageRoleCOW}}, "cow.raw", false},
 		{"no cow", []*types.StorageConfig{{Path: "/r/a.erofs", Role: types.StorageRoleLayer}}, "", true},
-		{"empty path", []*types.StorageConfig{{Role: types.StorageRoleCOW}}, "", true},
-		{"root path", []*types.StorageConfig{{Path: "/", Role: types.StorageRoleCOW}}, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

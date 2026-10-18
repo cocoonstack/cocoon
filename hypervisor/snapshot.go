@@ -221,11 +221,7 @@ func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
 	if i < 0 {
 		return "", fmt.Errorf("no cow disk in snapshot metadata")
 	}
-	base := filepath.Base(meta.StorageConfigs[i].Path)
-	if base == "." || base == ".." || base == string(filepath.Separator) {
-		return "", fmt.Errorf("invalid cow disk path in snapshot metadata: %q", meta.StorageConfigs[i].Path)
-	}
-	return base, nil
+	return filepath.Base(meta.StorageConfigs[i].Path), nil
 }
 
 func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {

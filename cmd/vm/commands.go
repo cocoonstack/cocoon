@@ -234,10 +234,8 @@ func buildDiskCommand(h Handler) *cobra.Command {
 	attach.Flags().String("directio", "auto", "O_DIRECT for the disk: on|off|auto (off for files on tmpfs)")
 	attach.MarkFlagsOneRequired("path", "from-snapshot", "from-dir")
 	attach.MarkFlagsMutuallyExclusive("path", "from-snapshot", "from-dir")
-	attach.MarkFlagsMutuallyExclusive("readonly", "from-snapshot")
-	attach.MarkFlagsMutuallyExclusive("readonly", "from-dir")
-	attach.MarkFlagsMutuallyExclusive("directio", "from-snapshot")
-	attach.MarkFlagsMutuallyExclusive("directio", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("readonly", "from-snapshot", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("directio", "from-snapshot", "from-dir")
 	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
