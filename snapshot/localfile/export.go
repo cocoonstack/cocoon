@@ -4,12 +4,15 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -45,6 +48,10 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	if err != nil {
 		return err
 	}
+	attachFiles, err := diskAttachFiles(dataDir)
+	if err != nil {
+		return err
+	}
 	// a partial tree would make the retry refuse the non-empty target
 	defer func() {
 		if err != nil {
@@ -62,7 +69,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	}); err != nil {
 		return err
 	}
-	if err = snapshot.WriteSnapshotEnvelope(dir, cfg, names); err != nil {
+	if err = snapshot.WriteSnapshotEnvelope(dir, cfg, names, attachFiles); err != nil {
 		return fmt.Errorf("write envelope: %w", err)
 	}
 	return nil
@@ -79,7 +86,12 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		release()
 		return nil, err
 	}
-	jsonData, err := snapshot.MarshalEnvelope(cfg, files)
+	attachFiles, err := diskAttachFiles(dataDir)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	jsonData, err := snapshot.MarshalEnvelope(cfg, files, attachFiles)
 	if err != nil {
 		release()
 		return nil, err
@@ -117,4 +129,19 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 		}
 		return nil
 	}), nil
+}
+
+func diskAttachFiles(dataDir string) ([]string, error) {
+	meta, err := hypervisor.LoadSnapshotMeta(dataDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot metadata: %w", err)
+	}
+	cowFile, err := hypervisor.SnapshotCOWFile(meta)
+	if err != nil {
+		return nil, err
+	}
+	return []string{hypervisor.SnapshotMetaFile, cowFile}, nil
 }

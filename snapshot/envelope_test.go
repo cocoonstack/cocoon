@@ -61,7 +61,7 @@ func TestReadSnapshotEnvelope_RoundTrip(t *testing.T) {
 		Hypervisor: "cloud-hypervisor",
 		NICs:       1,
 	}
-	if err := WriteSnapshotEnvelope(dir, cfg, []string{"cow.raw", "vmstate"}); err != nil {
+	if err := WriteSnapshotEnvelope(dir, cfg, []string{"cow.raw", "vmstate"}, nil); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	got, err := ReadSnapshotEnvelope(dir)

@@ -37,9 +37,9 @@ func ReadSnapshotEnvelope(dir string) (types.SnapshotExport, error) {
 	return envelope, nil
 }
 
-// MarshalEnvelope returns the indented snapshot.json bytes for cfg and the files exported beside it.
-func MarshalEnvelope(cfg types.SnapshotConfig, files []string) ([]byte, error) {
-	data, err := json.Marshal(types.SnapshotExport{Version: EnvelopeVersion, Config: cfg, Files: files}, json.Deterministic(true), jsontext.WithIndent("  "))
+// MarshalEnvelope returns the indented snapshot.json bytes for cfg, the files exported beside it, and the subset a disk attach reads.
+func MarshalEnvelope(cfg types.SnapshotConfig, files, diskAttachFiles []string) ([]byte, error) {
+	data, err := json.Marshal(types.SnapshotExport{Version: EnvelopeVersion, Config: cfg, Files: files, DiskAttachFiles: diskAttachFiles}, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("marshal snapshot envelope: %w", err)
 	}
@@ -47,8 +47,8 @@ func MarshalEnvelope(cfg types.SnapshotConfig, files []string) ([]byte, error) {
 }
 
 // WriteSnapshotEnvelope writes <dir>/snapshot.json atomically so a concurrent reader can't see a partial write.
-func WriteSnapshotEnvelope(dir string, cfg types.SnapshotConfig, files []string) error {
-	data, err := MarshalEnvelope(cfg, files)
+func WriteSnapshotEnvelope(dir string, cfg types.SnapshotConfig, files, diskAttachFiles []string) error {
+	data, err := MarshalEnvelope(cfg, files, diskAttachFiles)
 	if err != nil {
 		return err
 	}
