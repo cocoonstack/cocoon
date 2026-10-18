@@ -44,7 +44,7 @@ const (
 	chMemoryRestoreMmap chMemoryRestoreMode = "CopyOnWrite"
 )
 
-var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.ConsolePTYName, cmdlineFileName, hypervisor.VsockSockName}
+var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.ConsolePTYName, cmdlineFileName, hypervisor.VsockSockName, snapDiskPrefix + "*"}
 
 type chMemoryRestoreMode string
 
