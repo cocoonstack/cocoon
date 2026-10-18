@@ -1,6 +1,6 @@
 # Runtime Device Attach
 
-Hot-plug vhost-user-fs shares, VFIO PCI devices, and external raw disks on a running VM (Cloud Hypervisor; raw disks also on Firecracker VMs created with `--pci`).
+Hot-plug vhost-user-fs shares, VFIO PCI devices, external raw disks, and copies of a snapshot's COW disk on a running VM (Cloud Hypervisor; raw disks also on Firecracker VMs created with `--pci`).
 
 ## Overview
 
@@ -8,7 +8,7 @@ Cocoon can hot-plug three classes of external resources onto a running VM:
 
 - **Vhost-user-fs** — a file share served by an external `virtiofsd` (or compatible backend) over a Unix socket. Attach surfaces a virtio-fs device in the guest, accessible via `mount -t virtiofs <tag> /mnt/...`.
 - **VFIO PCI passthrough** — a host PCI device bound to `vfio-pci` (GPU, NIC, NVMe). Attach hands the device to the guest with IOMMU isolation.
-- **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume).
+- **Data disks** — an existing raw disk file, surfaced as `/dev/disk/by-id/virtio-<name>`. Cocoon never creates or deletes the backing file: it can outlive any VM and be re-attached elsewhere (a persistent volume). On Cloud Hypervisor the disk can instead be a private read-write copy of a snapshot's COW disk (`--from-snapshot` / `--from-dir`), which cocoon creates in the VM's run dir and removes on detach, stop, or `vm rm`.
 
 All three attaches are **runtime-only**: the device lives only for the current VM process and is gone after stop/restart — re-attach after the next start. cocoon refuses `snapshot save` and `vm hibernate` while any of the three is attached — umount an external disk in-guest, detach, capture, then re-attach after the wake/restore; on both backends the refusal arrives before the guest is paused. Cloud Hypervisor does not enforce this itself: it captures a snapshot that names the vhost-user socket, and restoring that snapshot either fails once the backend is gone or hangs against a fresh one. External volumes are host state cocoon does not own: it never creates, copies, or deletes the backing file, and snapshot, restore, and clone carry no trace of them. All mutating verbs on one VM (attach/detach, net resize, snapshot, hibernate, restore, stop) serialize on a per-VM lock, so concurrent invocations cannot interleave with a capture window. While the VM runs, `vm inspect` reports the live attach set under `.attached_devices` (`fs`, `devices`, `disks`).
 
