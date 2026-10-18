@@ -115,7 +115,6 @@ func TestCloneVMConfigKnobFlagsOverrideSnapshot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.Flags().String("name", "c", "")
-			cmd.Flags().Int("nics", 0, "")
 			cmd.Flags().Int("queue-size", 0, "")
 			cmd.Flags().Int("disk-queue-size", 0, "")
 			cmd.Flags().Int("cpu-weight", 0, "")

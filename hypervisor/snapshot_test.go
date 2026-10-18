@@ -134,14 +134,8 @@ func TestReverseLayers_Order(t *testing.T) {
 		{Role: types.StorageRoleLayer, Serial: "L2"},
 	}
 	got := ReverseLayers(configs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
-	want := []string{"L2", "L1", "L0"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
-		}
+	if want := []string{"L2", "L1", "L0"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
@@ -152,11 +146,8 @@ func TestReverseLayers_IndexCallback(t *testing.T) {
 		{Role: types.StorageRoleLayer},
 	}
 	got := ReverseLayers(configs, func(idx int, _ *types.StorageConfig) int { return idx })
-	want := []int{2, 1, 0}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d] = %d, want %d", i, got[i], want[i])
-		}
+	if want := []int{2, 1, 0}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
