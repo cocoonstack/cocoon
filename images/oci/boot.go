@@ -3,6 +3,7 @@ package oci
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"cmp"
 	"compress/gzip"
 	"context"
@@ -17,6 +18,8 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/projecteru2/core/log"
+
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // maxKernelBytes bounds arm64 gzip decompression against a bomb; real kernels are under 100 MiB.
@@ -108,7 +111,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 			return "", "", fmt.Errorf("read tar entry: %w", readErr)
 		}
 
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA { //nolint:staticcheck // tar.TypeRegA is deprecated but still present in real archives
+		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
 
@@ -147,7 +150,7 @@ func scanBootFiles(ctx context.Context, r io.Reader, workDir, namePrefix string)
 		if isKernel && runtime.GOARCH == "arm64" {
 			br := bufio.NewReader(tr)
 			src = br
-			if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+			if magic, _ := br.Peek(len(utils.GzipMagic)); bytes.Equal(magic, utils.GzipMagic) {
 				var gzErr error
 				if gz, gzErr = gzip.NewReader(br); gzErr != nil {
 					_ = f.Close()

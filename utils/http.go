@@ -90,7 +90,7 @@ func CheckSocket(socketPath string) error {
 func DoWithRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 	var zero T
 	var lastErr error
-	for i := 0; i <= MaxRetries; i++ {
+	for i := range MaxRetries + 1 {
 		result, err := fn()
 		if err == nil {
 			return result, nil

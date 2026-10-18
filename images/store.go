@@ -72,7 +72,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 		if prev, ok := before[id]; ok && string(prev) == string(raw) {
 			continue
 		}
-		if err := c.Upsert(ctx, w, id, entry); err != nil {
+		if err := w.PutRaw(ctx, s.ns, TableRecords, id, raw, false); err != nil {
 			return err
 		}
 	}
