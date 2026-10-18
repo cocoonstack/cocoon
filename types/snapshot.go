@@ -34,9 +34,8 @@ type Snapshot struct {
 
 // SnapshotExport is the envelope written as snapshot.json inside an export archive.
 type SnapshotExport struct {
-	Config  SnapshotConfig `json:"config"`
-	Version int            `json:"version"`
-	Files   []string       `json:"files,omitempty"` // data-dir files the export carries; absent on exports older than the manifest
-
-	DiskAttachFiles []string `json:"disk_attach_files,omitempty"` // the subset `vm disk attach --from-dir` reads
+	Config          SnapshotConfig `json:"config"`
+	Version         int            `json:"version"`
+	Files           []string       `json:"files,omitempty"`             // data-dir files the export carries; absent on exports older than the manifest
+	DiskAttachFiles []string       `json:"disk_attach_files,omitempty"` // the subset `vm disk attach --from-dir` reads
 }
