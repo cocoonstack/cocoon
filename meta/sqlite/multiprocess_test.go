@@ -169,7 +169,6 @@ func TestKillStormAtomicity(t *testing.T) {
 			if id, ok := strings.CutPrefix(sc.Text(), "ACK "); ok {
 				acked[id] = struct{}{}
 				got++
-
 				if got >= 3+round*2 {
 					break
 				}

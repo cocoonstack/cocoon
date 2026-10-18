@@ -100,8 +100,12 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 }
 
 func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error {
-	if name == "" {
-		return fmt.Errorf("name is required")
+	if err := disk.ValidateName(name); err != nil {
+		return err
+	}
+	id, err := hotDiskID(name)
+	if err != nil {
+		return err
 	}
 	hc, _, _, unlock, err := fc.lockedDeviceOp(ctx, vmRef, disk.ErrUnsupportedBackend)
 	if err != nil {
@@ -109,10 +113,6 @@ func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error
 	}
 	defer unlock()
 	cfg, err := getVMConfig(ctx, hc)
-	if err != nil {
-		return err
-	}
-	id, err := hotDiskID(name)
 	if err != nil {
 		return err
 	}

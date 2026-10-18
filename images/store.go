@@ -53,10 +53,9 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 	if err := fn(idx); err != nil {
 		return err
 	}
-	c := meta.NewCollection[E](s.ns, TableRecords)
 	for id := range before {
 		if idx.Images[id] == nil {
-			if err := c.Delete(ctx, w, id); err != nil {
+			if err := w.DeleteRaw(ctx, s.ns, TableRecords, id, false); err != nil {
 				return err
 			}
 		}
@@ -72,7 +71,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 		if prev, ok := before[id]; ok && string(prev) == string(raw) {
 			continue
 		}
-		if err := c.Upsert(ctx, w, id, entry); err != nil {
+		if err := w.PutRaw(ctx, s.ns, TableRecords, id, raw, false); err != nil {
 			return err
 		}
 	}

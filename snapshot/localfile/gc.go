@@ -318,14 +318,13 @@ func logEvictRow(ctx context.Context, logger *log.Fields, verb, id string, m sna
 
 // backfillSizeBytes computes + persists SizeBytes for records missing it so future GC skips du.
 func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]snapshotMeta) {
-	conf := lf.conf
 	logger := log.WithFunc("gc.snapshot")
 	var changed bool
 	for id, m := range records {
 		if m.sizeBytes > 0 {
 			continue
 		}
-		actual, err := utils.DirSize(conf.SnapshotDataDir(id))
+		actual, err := utils.DirSize(m.dataDir)
 		if err != nil {
 			logger.Warnf(ctx, "DirSize for %s: %v", id, err)
 			continue

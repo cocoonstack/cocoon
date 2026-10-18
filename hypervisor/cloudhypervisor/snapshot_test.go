@@ -41,7 +41,7 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 				mu.Unlock()
 				w.WriteHeader(http.StatusNoContent)
 			})
-			hc := newStubHTTPClient(t, mux)
+			hc := &http.Client{Transport: handlerTransport{mux}}
 
 			err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc)
 

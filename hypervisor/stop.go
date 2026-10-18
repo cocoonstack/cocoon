@@ -141,7 +141,7 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	}
 	for _, pid := range procScan.Find(sockPath) {
 		// procScan predates the stop: only a still-live match is a real orphan worth killing.
-		if !utils.IsProcessAlive(pid) {
+		if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
 			continue
 		}
 		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {

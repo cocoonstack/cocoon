@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseSnapshotPolicy_Defaults(t *testing.T) {
-	cmd := buildGCCmd()
+	cmd := gcCommand()
 	if err := cmd.ParseFlags(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestParseSnapshotPolicy_NegativeRejected(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := buildGCCmd()
+			cmd := gcCommand()
 			if err := cmd.ParseFlags(tt.args); err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +57,7 @@ func TestParseSnapshotPolicy_SubFlagRequiresSnapshot(t *testing.T) {
 	}
 	for _, args := range cases {
 		t.Run(args[0], func(t *testing.T) {
-			cmd := buildGCCmd()
+			cmd := gcCommand()
 			if err := cmd.ParseFlags(args); err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +70,7 @@ func TestParseSnapshotPolicy_SubFlagRequiresSnapshot(t *testing.T) {
 }
 
 func TestParseSnapshotPolicy_HappyPath(t *testing.T) {
-	cmd := buildGCCmd()
+	cmd := gcCommand()
 	if err := cmd.ParseFlags([]string{
 		"--snapshot",
 		"--snapshot-keep=10",
@@ -89,12 +89,6 @@ func TestParseSnapshotPolicy_HappyPath(t *testing.T) {
 	}
 }
 
-func buildGCCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "gc"}
-	cmd.Flags().Bool("snapshot", false, "")
-	cmd.Flags().Int("snapshot-keep", 0, "")
-	cmd.Flags().Duration("snapshot-age", 0, "")
-	cmd.Flags().String("snapshot-size", "", "")
-	cmd.Flags().Bool("snapshot-dry-run", false, "")
-	return cmd
+func gcCommand() *cobra.Command {
+	return Commands(Handler{})[0]
 }

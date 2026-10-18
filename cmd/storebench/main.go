@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/pprof"
+	"slices"
 	"strconv"
 	"time"
 
@@ -182,10 +183,9 @@ func runMicro(ctx context.Context, engine, op string, n, ops int, dir string) er
 	for i := range n {
 		seed = append(seed, fmt.Sprintf("S%023d", i))
 	}
-	for base := 0; base < n; base += 1000 {
-		hi := min(base+1000, n)
+	for chunk := range slices.Chunk(seed, 1000) {
 		if err := store.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
-			for _, id := range seed[base:hi] {
+			for _, id := range chunk {
 				if err := w.PutRaw(ctx, ns, hypervisor.TableRecords, id, benchPayload, false); err != nil {
 					return err
 				}

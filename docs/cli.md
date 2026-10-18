@@ -36,8 +36,8 @@ cocoon
 │   │   ├── attach [flags] VM     Attach a VFIO PCI device (CH only)
 │   │   └── detach [flags] VM     Detach a VFIO PCI device by --id
 │   ├── disk
-│   │   ├── attach [flags] VM     Hot-attach an existing raw disk file (CH, or FC with --pci)
-│   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps the file)
+│   │   ├── attach [flags] VM     Hot-attach a raw disk file (CH, or FC with --pci) or a snapshot's COW disk copy (CH)
+│   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps a --path file, removes a snapshot copy)
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH, or FC with --pci)
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
@@ -294,8 +294,9 @@ Applies to `cocoon vm debug`:
 
 `vm debug` prints the VMM launch command only. It does not prepare a netns or a
 TAP, so it emits no `--net` and no `ip=`, and `--nics`, `--queue-size`,
-`--network` and `--bridge` are ignored — setting any of them warns on stderr,
-like `--data-disk`. `--max-cpu`, `--balloon`, `--cow` and `--ch` shape the Cloud
+`--network`, `--bridge` and the cgroup CPU knobs (`--cpu-weight`,
+`--cpu-quota-us`, `--cpu-period-us`, `--cpu-burst-us`, `--cpuset-cpus`) are
+ignored — setting any of them warns on stderr, like `--data-disk`. `--max-cpu`, `--balloon`, `--cow` and `--ch` shape the Cloud
 Hypervisor command only; `vm debug --fc` prints the Firecracker REST sequence
 and ignores all four. Queue placement happens at launch against the store, so
 the printed command carries no `queue_affinity` whatever `--cpuset-cpus` says.

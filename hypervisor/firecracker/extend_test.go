@@ -101,6 +101,14 @@ func TestHotDiskID(t *testing.T) {
 	}
 }
 
+func TestDiskDetachRejectsAnInvalidNameBeforeLocking(t *testing.T) {
+	for _, name := range []string{"", "Bad/Name", "my-disk"} {
+		if err := (&Firecracker{}).DiskDetach(t.Context(), "vm1", name); err == nil {
+			t.Errorf("DiskDetach(%q) = nil, want a name rejection", name)
+		}
+	}
+}
+
 func TestRefuseHotAttachedDisks(t *testing.T) {
 	srv := newFCStub(t, fcVMConfig{Drives: []fcDrive{{DriveID: "drive_0"}, {DriveID: hotDiskIDPrefix + "scratch", PathOnHost: "/vols/s.raw"}}})
 	err := refuseHotAttachedDisks(t.Context(), srv.client)

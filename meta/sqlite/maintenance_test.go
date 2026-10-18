@@ -83,7 +83,6 @@ func TestBackupCrashSteps(t *testing.T) {
 		}
 		err := Backup(ctx, filepath.Join(dir, DBFileName), dest)
 		if step != "renamed" {
-
 			if !errors.Is(err, errCrash) {
 				t.Fatalf("step %s: want injected crash, got %v", step, err)
 			}

@@ -409,8 +409,7 @@ func newFake() *fakeSupervisor {
 
 func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {
 	t.Helper()
-	d := New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
-	return d
+	return New(Config{RootDir: t.TempDir()}, nil, []Supervisor{f})
 }
 
 func runningRec(id string, gen uint64) *hypervisor.VMRecord {

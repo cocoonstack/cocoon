@@ -5,11 +5,8 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +64,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 		defer mu.Unlock()
 		_ = json.MarshalWrite(w, chVMInfoResponse{State: state})
 	})
-	hc := newStubHTTPClient(t, mux)
+	hc := &http.Client{Transport: handlerTransport{mux}}
 
 	info, err := getVMInfo(t.Context(), hc)
 	if err != nil {
@@ -90,18 +87,6 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	if resumes != 1 {
 		t.Errorf("resumes = %d, want a running VM left untouched", resumes)
 	}
-}
-
-func newStubHTTPClient(t *testing.T, mux *http.ServeMux) *http.Client {
-	t.Helper()
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	addr := strings.TrimPrefix(srv.URL, "http://")
-	return &http.Client{Transport: &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("tcp", addr)
-		},
-	}}
 }
 
 func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Client, func() []string) {
@@ -139,7 +124,7 @@ func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Cli
 		}
 		_ = json.MarshalWrite(w, chVMInfoResponse{Config: chVMInfoConfig{Nets: live}, DeviceTree: tree})
 	})
-	hc := newStubHTTPClient(t, mux)
+	hc := &http.Client{Transport: handlerTransport{mux}}
 	return hc, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
