@@ -364,6 +364,32 @@ func TestDiskPathByRole(t *testing.T) {
 	}
 }
 
+func TestCleanupRuntimeFilesExpandsPatterns(t *testing.T) {
+	runDir := t.TempDir()
+	for _, name := range []string{"api.sock", "snapdisk-a.raw", "snapdisk-b.qcow2", "cow.raw"} {
+		if err := os.WriteFile(filepath.Join(runDir, name), nil, 0o600); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+	if err := os.Symlink("/nonexistent/pts/9", filepath.Join(runDir, "console.pty")); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	CleanupRuntimeFiles(t.Context(), runDir, []string{"api.sock", "console.pty", "missing.pid", "snapdisk-*"})
+
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		t.Fatalf("read run dir: %v", err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if !slices.Equal(left, []string{"cow.raw"}) {
+		t.Errorf("left in run dir = %v, want [cow.raw]", left)
+	}
+}
+
 func TestBalloonSize(t *testing.T) {
 	tests := []struct {
 		name     string
