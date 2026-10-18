@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 
@@ -88,8 +87,7 @@ func (h Handler) diskAttachSnapshot(cmd *cobra.Command, args []string, fromSnaps
 	if err != nil {
 		return err
 	}
-	name, _ := cmd.Flags().GetString("name")
-	name = cmp.Or(name, disk.SnapshotName(cfg.ID))
+	name := disk.SnapshotName(cfg.ID)
 	id, format, err := a.DiskAttachSnapshot(ctx, args[0], disk.SnapshotSource{Dir: dir, Name: name, BlobIDs: cfg.ImageBlobIDs, BasePath: basePath})
 	if err != nil {
 		return classifyAttachErr(err)

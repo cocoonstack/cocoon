@@ -15,7 +15,8 @@ func TestDiskAttachFlagGroups(t *testing.T) {
 	}{
 		{"path", []string{"--path", "/vols/d.raw", "--name", "d", "--readonly", "--directio", "off"}, false},
 		{"from snapshot", []string{"--from-snapshot", "snap"}, false},
-		{"from dir with name", []string{"--from-dir", "/exports/snap", "--name", "reader"}, false},
+		{"from dir", []string{"--from-dir", "/exports/snap"}, false},
+		{"name with dir", []string{"--from-dir", "/exports/snap", "--name", "reader"}, true},
 		{"no source", []string{"--name", "d"}, true},
 		{"path and snapshot", []string{"--path", "/vols/d.raw", "--from-snapshot", "snap"}, true},
 		{"snapshot and dir", []string{"--from-snapshot", "snap", "--from-dir", "/exports/snap"}, true},

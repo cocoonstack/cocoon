@@ -89,7 +89,7 @@ func ValidateName(name string) error {
 	return nil
 }
 
-// SnapshotName is the default disk name for a snapshot-sourced attach.
+// SnapshotName is the disk name of a snapshot-sourced attach; derived from the snapshot so two snapshots never collide on one name.
 func SnapshotName(snapID string) string {
 	return snapshotNamePrefix + strings.ToLower(snapID[:min(len(snapID), snapshotNameIDLen)])
 }

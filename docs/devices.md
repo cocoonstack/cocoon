@@ -75,7 +75,7 @@ Flags:
 | `--path` | empty | Absolute path to an existing raw disk file; exactly one of `--path`, `--from-snapshot`, `--from-dir` is required |
 | `--from-snapshot` | empty | Cloud Hypervisor only: attach a private read-write copy of this local snapshot's COW disk (`raw` for OCI, `qcow2` for cloudimg, reported as `format`); the VM must run the snapshot's image, layers in the same order; detach, stop and `vm rm` remove the copy |
 | `--from-dir` | empty | As `--from-snapshot`, from an export dir that holds `snapshot.json` and the files its `disk_attach_files` lists, possibly exported on another node |
-| `--name` | required with `--path` | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`; the `cocoon-` prefix is reserved); defaults to `snap-` plus the first 8 characters of the snapshot id with `--from-snapshot`/`--from-dir` |
+| `--name` | required with `--path` | Guest serial and detach key (`^[a-z][a-z0-9_-]{0,19}$`; the `cocoon-` prefix is reserved); not with `--from-snapshot`/`--from-dir`, whose copy is always named `snap-` plus the first 8 characters of the snapshot id, so two snapshots never share a name and a repeat of the same snapshot is a no-op |
 | `--readonly` | `false` | Attach read-only; not with `--from-snapshot`/`--from-dir` |
 | `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs); Cloud Hypervisor only, Firecracker ignores it with a warning; not with `--from-snapshot`/`--from-dir` |
 
