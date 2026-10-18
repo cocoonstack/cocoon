@@ -43,12 +43,10 @@ func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 		t.Fatalf("scan misses the live fake VMM child %d", child.Process.Pid)
 	}
 	_ = child.Process.Kill()
-	deadline := time.Now().Add(2 * time.Second)
-	for utils.VerifyProcessCmdline(child.Process.Pid, b.Conf.BinaryName(), sockPath) {
-		if time.Now().After(deadline) {
-			t.Fatal("killed child kept its cmdline")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := utils.WaitFor(ctx, 2*time.Second, 10*time.Millisecond, func() (bool, error) {
+		return !utils.VerifyProcessCmdline(child.Process.Pid, b.Conf.BinaryName(), sockPath), nil
+	}); err != nil {
+		t.Fatalf("killed child kept its cmdline: %v", err)
 	}
 	if !utils.IsProcessAlive(child.Process.Pid) {
 		t.Fatal("precondition: the unreaped child must linger as a zombie")

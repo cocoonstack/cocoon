@@ -53,10 +53,9 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 	if err := fn(idx); err != nil {
 		return err
 	}
-	c := meta.NewCollection[E](s.ns, TableRecords)
 	for id := range before {
 		if idx.Images[id] == nil {
-			if err := c.Delete(ctx, w, id); err != nil {
+			if err := w.DeleteRaw(ctx, s.ns, TableRecords, id, false); err != nil {
 				return err
 			}
 		}
