@@ -212,3 +212,31 @@ func TestPrepareSnapshotRejectsNilNIC(t *testing.T) {
 		t.Fatalf("err = %v, want network invariants violation", err)
 	}
 }
+
+func TestSnapshotCOWFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		configs []*types.StorageConfig
+		want    string
+		wantErr bool
+	}{
+		{"oci raw cow", []*types.StorageConfig{
+			{Path: "/other/root/blobs/a.erofs", Role: types.StorageRoleLayer},
+			{Path: "/other/run/vm/cow.raw", Role: types.StorageRoleCOW},
+		}, "cow.raw", false},
+		{"cloudimg overlay", []*types.StorageConfig{
+			{Path: "/other/run/vm/overlay.qcow2", Role: types.StorageRoleCOW},
+			{Path: "/other/run/vm/cidata.img", RO: true, Role: types.StorageRoleCidata},
+		}, "overlay.qcow2", false},
+		{"nil entry skipped", []*types.StorageConfig{nil, {Path: "/r/cow.raw", Role: types.StorageRoleCOW}}, "cow.raw", false},
+		{"no cow", []*types.StorageConfig{{Path: "/r/a.erofs", Role: types.StorageRoleLayer}}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SnapshotCOWFile(&SnapshotMeta{StorageConfigs: tt.configs})
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Errorf("SnapshotCOWFile = (%q, %v), want (%q, wantErr %v)", got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}

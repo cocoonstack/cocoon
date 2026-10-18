@@ -25,6 +25,45 @@ func TestSpecNormalize(t *testing.T) {
 	}
 }
 
+func TestSnapshotSourceNormalize(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     SnapshotSource
+		wantErr bool
+	}{
+		{"valid", SnapshotSource{Dir: "/snap", Name: "snap-abcd"}, false},
+		{"missing dir", SnapshotSource{Name: "snap-abcd"}, true},
+		{"missing name", SnapshotSource{Dir: "/snap"}, true},
+		{"path in name", SnapshotSource{Dir: "/snap", Name: "a/../b"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.src.Normalize()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Normalize() = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSnapshotName(t *testing.T) {
+	tests := []struct {
+		snapID, want string
+	}{
+		{"7QXKZ2MVB4N5LTRWYHC3DAEFGJ", "snap-7qxkz2mv"},
+		{"ABC", "snap-abc"},
+	}
+	for _, tt := range tests {
+		got := SnapshotName(tt.snapID)
+		if got != tt.want {
+			t.Errorf("SnapshotName(%q) = %q, want %q", tt.snapID, got, tt.want)
+		}
+		if err := ValidateName(got); err != nil {
+			t.Errorf("SnapshotName(%q) = %q is not a valid disk name: %v", tt.snapID, got, err)
+		}
+	}
+}
+
 func TestDeriveIDRoundTrip(t *testing.T) {
 	id := DeriveID("vol1")
 	if id != "cocoon-disk-vol1" {

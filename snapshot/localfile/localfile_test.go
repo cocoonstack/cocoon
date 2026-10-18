@@ -217,7 +217,7 @@ func TestImportEmitsSnapStorageStart(t *testing.T) {
 		ID:         "src-snap",
 		Name:       "src-name",
 		Hypervisor: "cloud-hypervisor",
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatalf("MarshalEnvelope: %v", err)
 	}
@@ -1466,6 +1466,54 @@ func TestImportRejectsEveryTruncatedExport(t *testing.T) {
 	}
 }
 
+func TestExportEnvelopeListsDiskAttachFiles(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string][]byte
+		want  []string
+	}{
+		{"oci", map[string][]byte{
+			"cocoon.json": []byte(`{"storage_configs":[{"path":"/other/root/blobs/a.erofs","role":"layer"},{"path":"/other/run/vm/cow.raw","role":"cow"}]}`),
+			"cow.raw":     []byte("disk"),
+			"memory":      []byte("mem"),
+		}, []string{"cocoon.json", "cow.raw"}},
+		{"cloudimg", map[string][]byte{
+			"cocoon.json":   []byte(`{"storage_configs":[{"path":"/other/run/vm/overlay.qcow2","role":"cow"}]}`),
+			"overlay.qcow2": []byte("qcow"),
+		}, []string{"cocoon.json", "overlay.qcow2"}},
+		{"no sidecar", map[string][]byte{"cow.raw": []byte("disk")}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := newTestLF(t)
+			ctx := t.Context()
+			id := makeExportableSnapshot(t, lf, "attach-src", tt.files)
+
+			dst := filepath.Join(t.TempDir(), "exported")
+			if err := lf.ExportToDir(ctx, id, dst); err != nil {
+				t.Fatalf("ExportToDir: %v", err)
+			}
+			dirEnvelope, err := snapshot.ReadSnapshotEnvelope(dst)
+			if err != nil {
+				t.Fatalf("ReadSnapshotEnvelope: %v", err)
+			}
+			stream, err := lf.Export(ctx, id)
+			if err != nil {
+				t.Fatalf("Export: %v", err)
+			}
+			defer stream.Close()
+			tarEnvelope := readTarEnvelope(t, stream)
+
+			if !slices.Equal(dirEnvelope.DiskAttachFiles, tt.want) {
+				t.Errorf("to-dir disk_attach_files = %v, want %v", dirEnvelope.DiskAttachFiles, tt.want)
+			}
+			if !slices.Equal(tarEnvelope.DiskAttachFiles, tt.want) {
+				t.Errorf("tar disk_attach_files = %v, want %v", tarEnvelope.DiskAttachFiles, tt.want)
+			}
+		})
+	}
+}
+
 func testID(t *testing.T) string {
 	t.Helper()
 	return utils.GenerateID()
@@ -1588,4 +1636,21 @@ func newTestMetaStore(t *testing.T, conf *config.Config) *metajson.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
+}
+
+func readTarEnvelope(t *testing.T, r io.Reader) types.SnapshotExport {
+	t.Helper()
+	tr := tar.NewReader(r)
+	hdr, err := tr.Next()
+	if err != nil {
+		t.Fatalf("read tar: %v", err)
+	}
+	if hdr.Name != snapshot.SnapshotJSONName {
+		t.Fatalf("first tar entry = %q, want %s", hdr.Name, snapshot.SnapshotJSONName)
+	}
+	var envelope types.SnapshotExport
+	if err := json.UnmarshalRead(tr, &envelope); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	return envelope
 }

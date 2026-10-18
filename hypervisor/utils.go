@@ -151,11 +151,18 @@ func RemoveVMDirs(runDir, logDir string) error {
 	)
 }
 
+// CleanupRuntimeFiles removes runDir entries by name; a name with glob metacharacters matches entries of runDir only.
 func CleanupRuntimeFiles(ctx context.Context, runDir string, files []string) {
-	for _, name := range files {
-		p := filepath.Join(runDir, name)
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			log.WithFunc("hypervisor.CleanupRuntimeFiles").Warnf(ctx, "cleanup %s: %v", p, err)
+	for _, pattern := range files {
+		names := []string{pattern}
+		if strings.ContainsAny(pattern, "*?[") {
+			names, _ = fs.Glob(os.DirFS(runDir), pattern)
+		}
+		for _, name := range names {
+			p := filepath.Join(runDir, name)
+			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				log.WithFunc("hypervisor.CleanupRuntimeFiles").Warnf(ctx, "cleanup %s: %v", p, err)
+			}
 		}
 	}
 }

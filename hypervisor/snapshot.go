@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/projecteru2/core/log"
@@ -212,6 +213,15 @@ func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
 		return nil, err
 	}
 	return &meta, nil
+}
+
+// SnapshotCOWFile returns the basename of the sidecar's COW disk; only the basename is trusted, so another node's sidecar works.
+func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
+	i := slices.IndexFunc(meta.StorageConfigs, func(sc *types.StorageConfig) bool { return sc != nil && sc.Role == types.StorageRoleCOW })
+	if i < 0 {
+		return "", fmt.Errorf("no cow disk in snapshot metadata")
+	}
+	return filepath.Base(meta.StorageConfigs[i].Path), nil
 }
 
 func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {

@@ -222,21 +222,26 @@ func buildDiskCommand(h Handler) *cobra.Command {
 
 	attach := &cobra.Command{
 		Use:   useAttachVM,
-		Short: "Hot-attach an existing raw disk file to a running VM",
+		Short: "Hot-attach an existing raw disk file, or a private copy of a snapshot's COW disk (CH only), to a running VM",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DiskAttach,
 	}
-	attach.Flags().String("path", "", "absolute path to an existing raw disk file (required; never deleted by cocoon)")
-	attach.Flags().String("name", "", "disk name: guest /dev/disk/by-id/virtio-<name> and the detach key (required)")
+	attach.Flags().String("path", "", "absolute path to an existing raw disk file (never deleted by cocoon)")
+	attach.Flags().String("from-snapshot", "", "attach a read-write copy of this local snapshot's COW disk; the VM must run the snapshot's image")
+	attach.Flags().String("from-dir", "", "attach a read-write copy of the COW disk in this export dir (snapshot.json + its disk_attach_files)")
+	attach.Flags().String("name", "", "disk name: guest /dev/disk/by-id/virtio-<name> and the detach key (required with --path; a snapshot copy is named snap-<snapshot id prefix>)")
 	attach.Flags().Bool("readonly", false, "attach read-only")
 	attach.Flags().String("directio", "auto", "O_DIRECT for the disk: on|off|auto (off for files on tmpfs)")
-	_ = attach.MarkFlagRequired("path")
-	_ = attach.MarkFlagRequired("name")
+	attach.MarkFlagsOneRequired("path", "from-snapshot", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("path", "from-snapshot", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("name", "from-snapshot", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("readonly", "from-snapshot", "from-dir")
+	attach.MarkFlagsMutuallyExclusive("directio", "from-snapshot", "from-dir")
 	cliutil.AddOutputFlag(attach)
 
 	detach := &cobra.Command{
 		Use:   useDetachVM,
-		Short: "Detach a hot-attached disk from a running VM (keeps the backing file)",
+		Short: "Detach a hot-attached disk from a running VM (keeps a --path backing file, removes a snapshot copy)",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.DiskDetach,
 	}
