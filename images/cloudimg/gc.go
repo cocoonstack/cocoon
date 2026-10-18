@@ -38,3 +38,5 @@ func (c *CloudImg) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (fun
 }
 
 func (c *CloudImg) OwnsBlob(hex string) bool { return c.conf.OwnsBlob(hex) }
+
+func (c *CloudImg) BlobPath(hex string) string { return c.conf.BlobPath(hex) }
