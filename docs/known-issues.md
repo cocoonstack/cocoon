@@ -262,7 +262,7 @@ On v0.6.7 and older every `snapshot save` leaves that zero-byte file behind and 
 
 ## Runtime attached devices do not survive VM stop / clone / restore
 
-Attaches via `cocoon vm fs attach`, `cocoon vm device attach` and `cocoon vm disk attach` are runtime-only — they live in the CH process state and are never written into the VM record, sidecar, or snapshot. After `vm stop`, `vm clone`, or `vm restore`, the user must re-run the attach commands. `vm inspect` reflects the live CH `vm.info` for running VMs and omits `attached_devices` for stopped VMs. This is by design: cocoon does not own the backend (virtiofsd / vfio-pci binding) and cannot guarantee the resource still exists across host events.
+Attaches via `cocoon vm fs attach`, `cocoon vm device attach` and `cocoon vm disk attach` are runtime-only — they live in the VMM process state and are never written into the VM record, sidecar, or snapshot. After `vm stop`, `vm clone`, or `vm restore`, the user must re-run the attach commands. `vm inspect` reflects the live VMM state for running VMs and omits `attached_devices` for stopped VMs. This is by design: cocoon does not own the backend (virtiofsd, the vfio-pci binding, an external disk file) and cannot guarantee the resource still exists across host events.
 
 ## virtiofsd is a single-shot daemon
 
