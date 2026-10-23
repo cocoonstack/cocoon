@@ -5,8 +5,8 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
-ARG SCRCPY_RFB_TAG=master
-ARG SCRCPY_RFB_COMMIT=9bdf6ed2b50953589ef153c18f087bcaafc429d9
+ARG SCRCPY_RFB_TAG=master-827baf531
+ARG SCRCPY_RFB_COMMIT=827baf531715d6b86482c7ac6c63fd31030c58aa
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     adb curl ca-certificates libjpeg-turbo8 zlib1g && \

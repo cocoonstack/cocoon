@@ -107,10 +107,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     Tight/JPEG/ZRLE/Hextile/Raw framebuffer on the same port. There is no X
 #     server or framebuffer scraping hop. ---
 ARG SCRCPY_RFB_REPO=cocoonstack/scrcpy-rfb
-ARG SCRCPY_RFB_TAG=master
+ARG SCRCPY_RFB_TAG=master-827baf531
 # Bump to adopt a new scrcpy-rfb release; kept out of the top ARG block because an
 # in-scope ARG joins every later cache key, so a bump there rebuilds the whole image.
-ARG SCRCPY_RFB_COMMIT=9bdf6ed2b50953589ef153c18f087bcaafc429d9
+ARG SCRCPY_RFB_COMMIT=827baf531715d6b86482c7ac6c63fd31030c58aa
 RUN APT_OPTS='-o Acquire::Retries=10 -o Acquire::http::Timeout=120' && \
     if [ "$TARGETARCH" = arm64 ]; then sed 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.mit.edu/ubuntu-ports|g' /etc/apt/sources.list > /etc/apt/sources.list.d/mit-ports.list; fi && \
     apt_ensure() { for i in 1 2 3 4 5 6 7 8; do apt-get $APT_OPTS update && apt-get $APT_OPTS install -y --no-install-recommends "$@" && return 0; echo "apt retry $i for: $*" >&2; sleep 15; done; return 1; } && \
