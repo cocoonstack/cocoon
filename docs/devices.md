@@ -82,8 +82,9 @@ Flags:
 On Cloud Hypervisor, detach blocks until the guest acks the ACPI eject (up to
 30s — Windows can take 10–20s), so when it returns the slot, the name, and the
 backing file are free for immediate reuse; a guest that never acks fails the
-detach with an error naming the device. Firecracker detach returns as soon as
-the DELETE lands; run the printed hint so the guest drops the stale node.
+detach with an error naming the device. Firecracker detach also waits, with
+the same 30s bound, until the device leaves the VM config: behind a PCIe root
+port Firecracker removes the device only after the guest releases it.
 
 The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
 usable immediately after attach. The `/dev/disk/by-id/virtio-<name>` symlink
@@ -112,7 +113,7 @@ cocoon vm device detach my-vm --id mygpu
 
 ## Firecracker (`--pci`)
 
-Firecracker VMs created with `--pci` accept `vm disk attach`/`detach` (vhost-user-fs and VFIO stay Cloud Hypervisor only); MMIO VMs are rejected. Firecracker does not notify the guest, so cocoon prints the guest-side step after each call, and `--output json` carries it as `hints`:
+Firecracker VMs created with `--pci` accept `vm disk attach`/`detach` (vhost-user-fs and VFIO stay Cloud Hypervisor only); MMIO VMs are rejected. Cocoon gives each `--pci` VM 8 PCIe root ports. A Firecracker build that places hot-plugged devices behind them notifies the guest, which then finds and releases the devices itself. An older build plugs devices onto the root bus and does not notify the guest, so cocoon prints the guest-side step after each call, and `--output json` carries it as `hints`:
 
 ```bash
 cocoon vm disk attach my-vm --path /vols/scratch.raw --name scratch

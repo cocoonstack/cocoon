@@ -42,11 +42,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
-	memMiB := int(rec.Config.Memory >> 20)
-	if err := putMachineConfig(ctx, hc, fcMachineConfig{
-		VCPUCount:  rec.Config.CPU,
-		MemSizeMiB: memMiB,
-	}); err != nil {
+	if err := putMachineConfig(ctx, hc, buildMachineConfig(rec)); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 
@@ -142,7 +138,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	}
 	defer slave.Close() //nolint:errcheck
 
-	// shell out: the firecracker binary is the authoritative VMM.
+	// Shell out: the firecracker binary is the authoritative VMM.
 	fcCmd := exec.Command(fc.conf.FCBinary, launchArgs(rec, sockPath, fcLog)...) //nolint:gosec
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
@@ -170,14 +166,9 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		<-exited
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
 	default:
-		// the socket file outlives a failed relay and would make inspect report a console nobody serves
+		// The socket file outlives a failed relay and would make inspect report a console nobody serves.
 		_ = os.Remove(hypervisor.ConsoleSockPath(rec.RunDir))
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
-		// A failed relay kept master open to preserve ttyS0; close it once FC exits or the fd leaks forever.
-		go func() {
-			<-exited
-			_ = master.Close()
-		}()
 	}
 	return pid, leaseControl, nil
 }
@@ -217,7 +208,7 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 		}
 	}
 
-	// shell out because self-exec spawns a detached console-relay process that survives the parent.
+	// Shell out because self-exec spawns a detached console-relay process that survives the parent.
 	relayCmd := exec.Command(self) //nolint:gosec
 	relayCmd.Env = []string{
 		relayEnvKey + "=1",
@@ -298,4 +289,13 @@ func launchArgs(rec *hypervisor.VMRecord, sockPath, fcLog string) []string {
 		args = append(args, "--enable-pci")
 	}
 	return args
+}
+
+// Firecracker rejects pcie_hotplug_ports above 0 on an MMIO VM.
+func buildMachineConfig(rec *hypervisor.VMRecord) fcMachineConfig {
+	cfg := fcMachineConfig{VCPUCount: rec.Config.CPU, MemSizeMiB: int(rec.Config.Memory >> 20)}
+	if rec.Config.PCI {
+		cfg.PCIeHotplugPorts = pcieHotplugPorts
+	}
+	return cfg
 }

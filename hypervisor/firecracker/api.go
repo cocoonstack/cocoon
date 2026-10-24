@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/utils"
@@ -25,12 +27,17 @@ const (
 
 	// hotDiskIDPrefix: Firecracker resource ids allow only [A-Za-z0-9_], so hot-attached disks cannot reuse the cocoon-disk- scheme.
 	hotDiskIDPrefix = "cocoon_disk_"
+
+	// pcieHotplugPorts: each root port holds one hot-plugged device and takes one of the 32 root-bus slots.
+	pcieHotplugPorts = 8
+	// deviceRemovalTimeout bounds the guest release of a device behind a root port; Linux pciehp waits 5 s before it acts.
+	deviceRemovalTimeout = 30 * time.Second
 )
 
-// fcMachineConfig is the /machine-config payload.
 type fcMachineConfig struct {
-	VCPUCount  int `json:"vcpu_count"`
-	MemSizeMiB int `json:"mem_size_mib"`
+	VCPUCount        int `json:"vcpu_count"`
+	MemSizeMiB       int `json:"mem_size_mib"`
+	PCIeHotplugPorts int `json:"pcie_hotplug_ports,omitzero"`
 }
 
 type fcBootSource struct {
@@ -97,7 +104,6 @@ type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
 }
 
-// fcInstanceInfo is the GET / view.
 type fcInstanceInfo struct {
 	State string `json:"state"`
 }
@@ -105,6 +111,14 @@ type fcInstanceInfo struct {
 type fcVMConfig struct {
 	Drives            []fcDrive            `json:"drives"`
 	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
+}
+
+func (c *fcVMConfig) hasDrive(id string) bool {
+	return slices.ContainsFunc(c.Drives, func(d fcDrive) bool { return d.DriveID == id })
+}
+
+func (c *fcVMConfig) hasNIC(id string) bool {
+	return slices.ContainsFunc(c.NetworkInterfaces, func(n fcNetworkInterface) bool { return n.IfaceID == id })
 }
 
 func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
@@ -148,10 +162,7 @@ func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkIn
 }
 
 func putEntropy(ctx context.Context, hc *http.Client) error {
-	_, err := utils.DoWithRetry(ctx, func() ([]byte, error) {
-		return utils.DoAPIOnce(ctx, hc, http.MethodPut, "http://localhost/entropy", []byte("{}"))
-	})
-	return err
+	return putJSON(ctx, hc, "/entropy", struct{}{}, "entropy")
 }
 
 func putVsock(ctx context.Context, hc *http.Client, vsock fcVsock) error {
@@ -179,17 +190,11 @@ func resumeVM(ctx context.Context, hc *http.Client) error {
 
 // createSnapshotFC does not retry: a resend re-transfers multi-GiB and clobbers a partial state.json.
 func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
-	body, err := json.Marshal(fcSnapshotCreate{
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/snapshot/create", fcSnapshotCreate{
 		SnapshotPath: filepath.Join(destDir, snapshotVMStateFile),
 		MemFilePath:  filepath.Join(destDir, snapshotMemFile),
-	})
-	if err != nil {
-		return fmt.Errorf("marshal snapshot/create request: %w", err)
-	}
-	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		"http://localhost/snapshot/create", body, http.StatusNoContent)
-	return err
+	}, "snapshot/create request")
 }
 
 // an empty vsockUDSOverride inherits the snapshot's path (FC < v1.16).
@@ -205,14 +210,8 @@ func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOver
 	if vsockUDSOverride != "" {
 		req.VsockOverride = &fcVsockOverride{UDSPath: vsockUDSOverride}
 	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("marshal snapshot/load request: %w", err)
-	}
 	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		"http://localhost/snapshot/load", body, http.StatusNoContent)
-	return err
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/snapshot/load", req, "snapshot/load request")
 }
 
 func getInstanceInfo(ctx context.Context, hc *http.Client) (*fcInstanceInfo, error) {
@@ -244,4 +243,15 @@ func hotplugDevice[T any](ctx context.Context, hc *http.Client, endpoint string,
 func deleteDevice(ctx context.Context, hc *http.Client, endpoint string) error {
 	_, err := utils.DoAPIOnce(ctx, hc, http.MethodDelete, "http://localhost"+endpoint, nil, http.StatusNoContent)
 	return err
+}
+
+// Behind a root port Firecracker drops a device only after the guest releases it.
+func waitDeviceRemoved(ctx context.Context, hc *http.Client, present func(*fcVMConfig) bool) error {
+	return utils.WaitFor(ctx, deviceRemovalTimeout, 100*time.Millisecond, func() (bool, error) {
+		cfg, err := getVMConfig(ctx, hc)
+		if err != nil {
+			return false, err
+		}
+		return !present(cfg), nil
+	})
 }
