@@ -28,13 +28,12 @@ const (
 	// hotDiskIDPrefix: Firecracker resource ids allow only [A-Za-z0-9_], so hot-attached disks cannot reuse the cocoon-disk- scheme.
 	hotDiskIDPrefix = "cocoon_disk_"
 
-	// pcieHotplugPorts bounds the devices a PCI VM can hot-plug; each root port takes one root-bus slot of 32.
+	// pcieHotplugPorts: each root port holds one hot-plugged device and takes one of the 32 root-bus slots.
 	pcieHotplugPorts = 8
 	// deviceRemovalTimeout bounds the guest release of a device behind a root port; Linux pciehp waits 5 s before it acts.
 	deviceRemovalTimeout = 30 * time.Second
 )
 
-// fcMachineConfig is the /machine-config payload.
 type fcMachineConfig struct {
 	VCPUCount        int `json:"vcpu_count"`
 	MemSizeMiB       int `json:"mem_size_mib"`
@@ -105,7 +104,6 @@ type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
 }
 
-// fcInstanceInfo is the GET / view.
 type fcInstanceInfo struct {
 	State string `json:"state"`
 }
@@ -262,7 +260,7 @@ func deleteDevice(ctx context.Context, hc *http.Client, endpoint string) error {
 	return err
 }
 
-// waitDeviceRemoved polls until present is false: behind a root port Firecracker drops a device only after the guest releases it.
+// Behind a root port Firecracker drops a device only after the guest releases it.
 func waitDeviceRemoved(ctx context.Context, hc *http.Client, present func(*fcVMConfig) bool) error {
 	return utils.WaitFor(ctx, deviceRemovalTimeout, 100*time.Millisecond, func() (bool, error) {
 		cfg, err := getVMConfig(ctx, hc)

@@ -161,9 +161,9 @@ func TestRemoveNICReportsAnUnreleasedDevice(t *testing.T) {
 	}
 }
 
-func TestMachineConfigFor(t *testing.T) {
+func TestBuildMachineConfig(t *testing.T) {
 	rec := &hypervisor.VMRecord{Config: types.VMConfig{CPU: 2, Memory: 1 << 30}}
-	mmio, err := json.Marshal(machineConfigFor(rec))
+	mmio, err := json.Marshal(buildMachineConfig(rec))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestMachineConfigFor(t *testing.T) {
 		t.Fatalf("mmio machine-config = %s, want no root ports", mmio)
 	}
 	rec.Config.PCI = true
-	if got := machineConfigFor(rec).PCIeHotplugPorts; got != pcieHotplugPorts {
+	if got := buildMachineConfig(rec).PCIeHotplugPorts; got != pcieHotplugPorts {
 		t.Fatalf("pci root ports = %d, want %d", got, pcieHotplugPorts)
 	}
 }
@@ -283,7 +283,7 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		defer s.mu.Unlock()
 		_ = json.MarshalWrite(w, fcInstanceInfo{State: s.state})
 	})
-	mux.HandleFunc("/vm/config", s.serveConfig)
+	mux.HandleFunc("GET /vm/config", s.serveConfig)
 	mux.HandleFunc("/vm", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()

@@ -45,7 +45,7 @@ func (o fcNICOps) RemoveNIC(ctx context.Context, id string) error {
 	if err := deleteDevice(ctx, o.hc, "/network-interfaces/"+id); err != nil {
 		return err
 	}
-	if err := waitDeviceRemoved(ctx, o.hc, func(cfg *fcVMConfig) bool { return cfg.hasNIC(id) }); err != nil {
+	if err := waitDeviceRemoved(ctx, o.hc, func(c *fcVMConfig) bool { return c.hasNIC(id) }); err != nil {
 		return fmt.Errorf("%w: %w", hypervisor.ErrEjectPending, err)
 	}
 	return nil
@@ -127,7 +127,7 @@ func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error
 	if err := deleteDevice(ctx, hc, "/drives/"+id); err != nil {
 		return err
 	}
-	if err := waitDeviceRemoved(ctx, hc, func(cfg *fcVMConfig) bool { return cfg.hasDrive(id) }); err != nil {
+	if err := waitDeviceRemoved(ctx, hc, func(c *fcVMConfig) bool { return c.hasDrive(id) }); err != nil {
 		return fmt.Errorf("drive %s removal initiated but the guest has not released it: %w", id, err)
 	}
 	return nil
