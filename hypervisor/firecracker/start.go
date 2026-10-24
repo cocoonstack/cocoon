@@ -42,11 +42,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
-	memMiB := int(rec.Config.Memory >> 20)
-	if err := putMachineConfig(ctx, hc, fcMachineConfig{
-		VCPUCount:  rec.Config.CPU,
-		MemSizeMiB: memMiB,
-	}); err != nil {
+	if err := putMachineConfig(ctx, hc, machineConfigFor(rec)); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 
@@ -298,4 +294,13 @@ func launchArgs(rec *hypervisor.VMRecord, sockPath, fcLog string) []string {
 		args = append(args, "--enable-pci")
 	}
 	return args
+}
+
+// Firecracker rejects pcie_hotplug_ports above 0 on an MMIO VM.
+func machineConfigFor(rec *hypervisor.VMRecord) fcMachineConfig {
+	cfg := fcMachineConfig{VCPUCount: rec.Config.CPU, MemSizeMiB: int(rec.Config.Memory >> 20)}
+	if rec.Config.PCI {
+		cfg.PCIeHotplugPorts = pcieHotplugPorts
+	}
+	return cfg
 }

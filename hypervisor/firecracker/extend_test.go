@@ -3,6 +3,7 @@ package firecracker
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -134,6 +136,46 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	}
 }
 
+func TestRemoveNICWaitsForGuestRelease(t *testing.T) {
+	srv := newFCStub(t, fcVMConfig{NetworkInterfaces: []fcNetworkInterface{{IfaceID: "eth0"}, {IfaceID: "eth1"}}})
+	srv.releaseAfter(2)
+	if err := (fcNICOps{hc: srv.client}).RemoveNIC(t.Context(), "eth1"); err != nil {
+		t.Fatalf("RemoveNIC: %v", err)
+	}
+	cfg, err := getVMConfig(t.Context(), srv.client)
+	if err != nil {
+		t.Fatalf("getVMConfig: %v", err)
+	}
+	if cfg.hasNIC("eth1") || !cfg.hasNIC("eth0") {
+		t.Fatalf("nics = %+v, want RemoveNIC to return only after eth1 left the config", cfg.NetworkInterfaces)
+	}
+}
+
+func TestRemoveNICReportsAnUnreleasedDevice(t *testing.T) {
+	srv := newFCStub(t, fcVMConfig{NetworkInterfaces: []fcNetworkInterface{{IfaceID: "eth1"}}})
+	srv.releaseAfter(-1)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	if err := (fcNICOps{hc: srv.client}).RemoveNIC(ctx, "eth1"); !errors.Is(err, hypervisor.ErrEjectPending) {
+		t.Fatalf("err = %v, want ErrEjectPending", err)
+	}
+}
+
+func TestMachineConfigFor(t *testing.T) {
+	rec := &hypervisor.VMRecord{Config: types.VMConfig{CPU: 2, Memory: 1 << 30}}
+	mmio, err := json.Marshal(machineConfigFor(rec))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(mmio), "pcie_hotplug_ports") || !strings.Contains(string(mmio), `"mem_size_mib":1024`) {
+		t.Fatalf("mmio machine-config = %s, want no root ports", mmio)
+	}
+	rec.Config.PCI = true
+	if got := machineConfigFor(rec).PCIeHotplugPorts; got != pcieHotplugPorts {
+		t.Fatalf("pci root ports = %d, want %d", got, pcieHotplugPorts)
+	}
+}
+
 type fcStub struct {
 	client *http.Client
 	mu     sync.Mutex
@@ -142,6 +184,9 @@ type fcStub struct {
 	puts   map[string]string
 	dels   []string
 	resume int
+
+	release int
+	pending []string
 }
 
 func (s *fcStub) put(path string) string {
@@ -160,6 +205,12 @@ func (s *fcStub) resumes() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.resume
+}
+
+func (s *fcStub) releaseAfter(reads int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.release = reads
 }
 
 func (s *fcStub) setState(state string) {
@@ -187,13 +238,36 @@ func (s *fcStub) handleDevice(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		s.dels = append(s.dels, r.URL.Path)
 		id := path.Base(r.URL.Path)
-		s.cfg.NetworkInterfaces = slices.DeleteFunc(s.cfg.NetworkInterfaces, func(n fcNetworkInterface) bool { return n.IfaceID == id })
-		s.cfg.Drives = slices.DeleteFunc(s.cfg.Drives, func(d fcDrive) bool { return d.DriveID == id })
+		if s.release == 0 {
+			s.drop(id)
+		} else {
+			s.pending = append(s.pending, id)
+		}
 	default:
 		http.Error(w, r.Method, http.StatusMethodNotAllowed)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *fcStub) drop(id string) {
+	s.cfg.NetworkInterfaces = slices.DeleteFunc(s.cfg.NetworkInterfaces, func(n fcNetworkInterface) bool { return n.IfaceID == id })
+	s.cfg.Drives = slices.DeleteFunc(s.cfg.Drives, func(d fcDrive) bool { return d.DriveID == id })
+}
+
+func (s *fcStub) serveConfig(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pending) > 0 && s.release > 0 {
+		s.release--
+		if s.release == 0 {
+			for _, id := range s.pending {
+				s.drop(id)
+			}
+			s.pending = nil
+		}
+	}
+	_ = json.MarshalWrite(w, s.cfg)
 }
 
 func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
@@ -209,11 +283,7 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		defer s.mu.Unlock()
 		_ = json.MarshalWrite(w, fcInstanceInfo{State: s.state})
 	})
-	mux.HandleFunc("/vm/config", func(w http.ResponseWriter, _ *http.Request) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		_ = json.MarshalWrite(w, s.cfg)
-	})
+	mux.HandleFunc("/vm/config", s.serveConfig)
 	mux.HandleFunc("/vm", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()

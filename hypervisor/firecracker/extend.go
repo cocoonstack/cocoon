@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/projecteru2/core/log"
@@ -17,7 +16,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// removal returns when the VMM drops the device; the guest releases the stale PCI node itself.
 type fcNICOps struct {
 	hc *http.Client
 }
@@ -44,7 +42,13 @@ func (o fcNICOps) AddNIC(ctx context.Context, index int, nc *types.NetworkConfig
 }
 
 func (o fcNICOps) RemoveNIC(ctx context.Context, id string) error {
-	return deleteDevice(ctx, o.hc, "/network-interfaces/"+id)
+	if err := deleteDevice(ctx, o.hc, "/network-interfaces/"+id); err != nil {
+		return err
+	}
+	if err := waitDeviceRemoved(ctx, o.hc, func(cfg *fcVMConfig) bool { return cfg.hasNIC(id) }); err != nil {
+		return fmt.Errorf("%w: %w", hypervisor.ErrEjectPending, err)
+	}
+	return nil
 }
 
 // TAPQueues is one queue pair: Firecracker opens every TAP single-queue.
@@ -116,11 +120,17 @@ func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error
 	if err != nil {
 		return err
 	}
-	if !slices.ContainsFunc(cfg.Drives, func(d fcDrive) bool { return d.DriveID == id }) {
+	if !cfg.hasDrive(id) {
 		log.WithFunc("firecracker.DiskDetach").Warnf(ctx, "disk %q is not attached to vm %s, nothing to detach", name, vmRef)
 		return nil
 	}
-	return deleteDevice(ctx, hc, "/drives/"+id)
+	if err := deleteDevice(ctx, hc, "/drives/"+id); err != nil {
+		return err
+	}
+	if err := waitDeviceRemoved(ctx, hc, func(cfg *fcVMConfig) bool { return cfg.hasDrive(id) }); err != nil {
+		return fmt.Errorf("drive %s removal initiated but the guest has not released it: %w", id, err)
+	}
+	return nil
 }
 
 // DiskList returns nil (not error) for stopped and MMIO VMs so inspect can omit the field.
