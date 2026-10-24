@@ -34,7 +34,7 @@ func printGuestHints(hints []string) {
 		return
 	}
 	fmt.Println()
-	fmt.Println("Run inside the guest (PCI transport: the guest discovers and releases devices itself):")
+	fmt.Println("Run inside the guest if Firecracker plugs devices onto the root bus (a root-port build needs no step):")
 	fmt.Println()
 	for _, h := range hints {
 		fmt.Printf("  %s\n", h)

@@ -42,7 +42,7 @@ cocoon vm clone my-snap --name clone-vm
 
 - **OCI images only**: `--fc` is mutually exclusive with `--windows`, `--shared-memory`, `--hugepages`, `--mergeable` and `--no-watchdog`, and rejects cloudimg (UEFI boot) images
 - **MMIO by default**: without `--pci` (fixed for the VM lifetime, inherited by snapshots) disk attach/detach, NIC resize and clone-time `--data-disk`/`--nics` are refused
-- **8 hot-plugged devices per VM**: a `--pci` VM gets 8 PCIe root ports, and a Firecracker build that places hot-plugged devices behind root ports refuses a 9th device. A snapshot keeps the root ports of its VM, so clones of a snapshot made before cocoon set root ports cannot hot-plug on such a build; create the base again
+- **8 hot-plugged devices per VM**: a `--pci` VM gets 8 PCIe root ports, and a Firecracker build that places hot-plugged devices behind root ports refuses a 9th device. The guest kernel needs PCIe hot-plug (`CONFIG_HOTPLUG_PCI_PCIE`), or every detach waits 30s and fails. A snapshot keeps the root ports of its VM, so clones of a snapshot made before cocoon set root ports cannot hot-plug on such a build; create the base again
 - **Hot-plug is ahead of the published spec**: the Firecracker swagger still lists `PUT /drives/{id}` as pre-boot only and omits the `DELETE` verbs, while the router implements post-boot PUT and DELETE for drives and network interfaces; `--pci` hot-plug relies on the router, not the spec
 - **io_uring required**: writable disks use the `Async` engine with no opt-out, so a restrictive seccomp profile (Docker's default) breaks them; `--no-direct-io` is ignored
 - **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before SIGKILL
