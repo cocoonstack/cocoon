@@ -162,10 +162,7 @@ func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkIn
 }
 
 func putEntropy(ctx context.Context, hc *http.Client) error {
-	_, err := utils.DoWithRetry(ctx, func() ([]byte, error) {
-		return utils.DoAPIOnce(ctx, hc, http.MethodPut, "http://localhost/entropy", []byte("{}"))
-	})
-	return err
+	return putJSON(ctx, hc, "/entropy", struct{}{}, "entropy")
 }
 
 func putVsock(ctx context.Context, hc *http.Client, vsock fcVsock) error {
@@ -193,17 +190,11 @@ func resumeVM(ctx context.Context, hc *http.Client) error {
 
 // createSnapshotFC does not retry: a resend re-transfers multi-GiB and clobbers a partial state.json.
 func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
-	body, err := json.Marshal(fcSnapshotCreate{
+	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/snapshot/create", fcSnapshotCreate{
 		SnapshotPath: filepath.Join(destDir, snapshotVMStateFile),
 		MemFilePath:  filepath.Join(destDir, snapshotMemFile),
-	})
-	if err != nil {
-		return fmt.Errorf("marshal snapshot/create request: %w", err)
-	}
-	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		"http://localhost/snapshot/create", body, http.StatusNoContent)
-	return err
+	}, "snapshot/create request")
 }
 
 // an empty vsockUDSOverride inherits the snapshot's path (FC < v1.16).
@@ -219,14 +210,8 @@ func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOver
 	if vsockUDSOverride != "" {
 		req.VsockOverride = &fcVsockOverride{UDSPath: vsockUDSOverride}
 	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("marshal snapshot/load request: %w", err)
-	}
 	hc := utils.NewSocketHTTPClientWithTimeout(sockPath, hypervisor.VMMemTransferTimeout)
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		"http://localhost/snapshot/load", body, http.StatusNoContent)
-	return err
+	return sendJSONOnce(ctx, hc, http.MethodPut, "/snapshot/load", req, "snapshot/load request")
 }
 
 func getInstanceInfo(ctx context.Context, hc *http.Client) (*fcInstanceInfo, error) {

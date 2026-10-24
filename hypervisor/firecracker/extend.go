@@ -28,9 +28,7 @@ func (o fcNICOps) LiveNICs(ctx context.Context) ([]hypervisor.LiveNIC, error) {
 	live := make([]hypervisor.LiveNIC, 0, len(cfg.NetworkInterfaces))
 	for _, n := range cfg.NetworkInterfaces {
 		idx := -1
-		if _, err := fmt.Sscanf(n.IfaceID, ifaceIDFmt, &idx); err != nil {
-			idx = -1
-		}
+		_, _ = fmt.Sscanf(n.IfaceID, ifaceIDFmt, &idx)
 		live = append(live, hypervisor.LiveNIC{ID: n.IfaceID, Index: idx})
 	}
 	return live, nil

@@ -169,11 +169,6 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 		// The socket file outlives a failed relay and would make inspect report a console nobody serves.
 		_ = os.Remove(hypervisor.ConsoleSockPath(rec.RunDir))
 		logger.Warnf(ctx, "console relay failed (console unavailable): %v", relayErr)
-		// A failed relay kept master open to preserve ttyS0; close it once FC exits or the fd leaks forever.
-		go func() {
-			<-exited
-			_ = master.Close()
-		}()
 	}
 	return pid, leaseControl, nil
 }
