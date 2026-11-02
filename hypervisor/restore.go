@@ -16,6 +16,16 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+type restoreRun struct {
+	vmID             string
+	rec              *VMRecord
+	vmCfg            *types.VMConfig
+	sourceSnapshotID string
+	kill             KillHook
+	apply            func(*VMRecord) error
+	afterExtract     AfterExtractHook
+}
+
 func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
@@ -116,16 +126,6 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 		return
 	}
 	b.MarkError(ctx, vmID)
-}
-
-type restoreRun struct {
-	vmID             string
-	rec              *VMRecord
-	vmCfg            *types.VMConfig
-	sourceSnapshotID string
-	kill             KillHook
-	apply            func(*VMRecord) error
-	afterExtract     AfterExtractHook
 }
 
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.

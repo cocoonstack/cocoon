@@ -13,6 +13,19 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// PrepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
+func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
+	if len(vmCfg.DataDisks) == 0 {
+		return nil, nil
+	}
+	for _, spec := range vmCfg.DataDisks {
+		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
+			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
+		}
+	}
+	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
+}
+
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec
@@ -111,19 +124,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 		return nil, err
 	}
 	return out, nil
-}
-
-// PrepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
-func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
-	if len(vmCfg.DataDisks) == 0 {
-		return nil, nil
-	}
-	for _, spec := range vmCfg.DataDisks {
-		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
-			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
-		}
-	}
-	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
 // PrepareOCICOW creates an ext4-formatted sparse COW at cowPath and returns storageConfigs with the CowSerial entry appended.

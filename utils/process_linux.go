@@ -17,17 +17,6 @@ const (
 	statFlagsField = 6 // index after the ")" that closes comm
 )
 
-type aliveFn func(int) bool
-
-type readFileFn func(string) ([]byte, error)
-
-type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
-
-type procEntry struct {
-	pid     int
-	cmdline string
-}
-
 // ProcScan caches /proc cmdlines for one binaryName.
 type ProcScan []procEntry
 
@@ -56,6 +45,17 @@ func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 		return nil, err
 	}
 	return scan.Find(expectArg), nil
+}
+
+type aliveFn func(int) bool
+
+type readFileFn func(string) ([]byte, error)
+
+type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
+
+type procEntry struct {
+	pid     int
+	cmdline string
 }
 
 func scanProcsByBinary(binaryName string, readFile readFileFn, alive aliveFn) (ProcScan, error) {

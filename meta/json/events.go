@@ -34,18 +34,6 @@ type fileToken struct {
 	mtime int64
 }
 
-func statToken(path string) fileToken {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fileToken{}
-	}
-	tok := fileToken{size: info.Size(), mtime: info.ModTime().UnixNano()}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		tok.ino = st.Ino
-	}
-	return tok
-}
-
 // tokens are touched only by newNotifier and the Run goroutine, never concurrently.
 type notifier struct {
 	b       *meta.Broadcaster
@@ -89,4 +77,16 @@ func (n *notifier) check() {
 	if changed {
 		n.b.Broadcast()
 	}
+}
+
+func statToken(path string) fileToken {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileToken{}
+	}
+	tok := fileToken{size: info.Size(), mtime: info.ModTime().UnixNano()}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		tok.ino = st.Ino
+	}
+	return tok
 }

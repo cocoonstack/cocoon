@@ -20,8 +20,6 @@ const (
 	subQueue = 128
 )
 
-type changeKind string
-
 // VMStatus is one supervised VM as of the last reconcile pass.
 type VMStatus struct {
 	Backend              string                 `json:"backend"`
@@ -61,6 +59,8 @@ func (s VMStatus) changed(other VMStatus) bool {
 		s.Live != other.Live ||
 		s.QuiescePending != other.QuiescePending
 }
+
+type changeKind string
 
 type changeEvent struct {
 	Kind   changeKind `json:"type"`
