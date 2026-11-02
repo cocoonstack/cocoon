@@ -53,7 +53,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot meta: %w", err)
 	}
-	if vErr := validateSnapshotIntegrityParsed(runDir, meta.StorageConfigs, chCfg); vErr != nil {
+	if vErr := validateSnapshotIntegrity(runDir, meta.StorageConfigs, chCfg); vErr != nil {
 		return nil, fmt.Errorf("snapshot integrity: %w", vErr)
 	}
 
@@ -110,7 +110,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
 
-	if directBoot && bootCfg != nil {
+	if directBoot {
 		dns, dnsErr := ch.conf.DNSServers()
 		if dnsErr != nil {
 			return nil, fmt.Errorf("parse DNS servers: %w", dnsErr)

@@ -158,7 +158,7 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for disk count mismatch")
 	}
-	if !strings.Contains(err.Error(), "disk count mismatch") {
+	if !strings.Contains(err.Error(), "array length mismatch") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

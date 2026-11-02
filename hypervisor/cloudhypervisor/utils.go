@@ -72,7 +72,7 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	return hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
 }
 
-func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
+func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err
 	}
@@ -149,15 +149,7 @@ func isAlreadyInStateError(err error, state string) bool {
 func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
-	body, err := json.Marshal(map[string]string{
-		"destination_url": "file://" + destDir,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal snapshot request: %w", err)
-	}
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		chAPIBase+"vm.snapshot", body, http.StatusNoContent)
-	return err
+	return vmPutJSON(ctx, hc, "vm.snapshot", "snapshot request", map[string]string{"destination_url": "file://" + destDir}, http.StatusNoContent)
 }
 
 func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string) error {
@@ -175,13 +167,7 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 	default:
 		return fmt.Errorf("unknown restore mode %q", restoreMode)
 	}
-	body, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal restore request: %w", err)
-	}
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		chAPIBase+"vm.restore", body, http.StatusNoContent)
-	return err
+	return vmPutJSON(ctx, hc, "vm.restore", "restore request", cfg, http.StatusNoContent)
 }
 
 // addDiskVM is non-idempotent — a retry after a successful attach would surface as "duplicate id".
@@ -205,14 +191,10 @@ func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) er
 	})
 }
 
-func addNetVM(ctx context.Context, hc *http.Client, net chNet) error {
-	return vmPutJSON(ctx, hc, "vm.add-net", "add-net request", net, http.StatusOK, http.StatusNoContent)
-}
-
 func addCocoonNIC(ctx context.Context, hc *http.Client, nc *types.NetworkConfig) (string, error) {
 	chN := networkConfigToNet(nc)
 	chN.ID = cocoonNetID(nc.MAC)
-	if err := addNetVM(ctx, hc, chN); err != nil {
+	if err := vmPutJSON(ctx, hc, "vm.add-net", "add-net request", chN, http.StatusOK, http.StatusNoContent); err != nil {
 		return "", err
 	}
 	return chN.ID, nil

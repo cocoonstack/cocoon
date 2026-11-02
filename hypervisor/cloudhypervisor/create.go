@@ -18,7 +18,7 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 		Net:            net,
 		BootConfig:     bootCfg,
 		Prepare: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, sc []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error) {
-			if boot != nil && boot.KernelPath != "" {
+			if hypervisor.IsDirectBoot(boot) {
 				return ch.prepareOCI(ctx, vmID, vmCfg, sc, net.NetworkConfigs, boot)
 			}
 			return ch.prepareCloudimg(ctx, vmID, vmCfg, sc, net.NetworkConfigs)

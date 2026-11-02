@@ -150,8 +150,8 @@ func extractFile(path string, r io.Reader, perm os.FileMode, size int64) (err er
 	for {
 		n, readErr := io.ReadFull(r, buf)
 		for chunk := buf[:n]; len(chunk) > 0; {
-			hole := isAllZero(chunk[:min(sparseBlockSize, len(chunk))])
 			run := min(sparseBlockSize, len(chunk))
+			hole := isAllZero(chunk[:run])
 			for run < len(chunk) && isAllZero(chunk[run:min(run+sparseBlockSize, len(chunk))]) == hole {
 				run += sparseBlockSize
 			}

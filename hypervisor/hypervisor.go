@@ -50,7 +50,9 @@ type Direct interface {
 	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 }
 
+type PersistFunc func(cfg *types.SnapshotConfig, srcDir string) error
+
 // Hibernator captures, persists and terminates in one pause window; persist consumes srcDir and returns only once the snapshot is durable.
 type Hibernator interface {
-	Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error
+	Hibernate(ctx context.Context, ref string, persist PersistFunc) error
 }

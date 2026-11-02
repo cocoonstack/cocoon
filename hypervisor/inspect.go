@@ -12,19 +12,11 @@ import (
 )
 
 func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
-	var result *types.VM
-	return result, b.view(ctx, func(t *vmTx) error {
-		id, err := t.resolve(ref)
-		if err != nil {
-			return err
-		}
-		rec, err := t.getRecord(id)
-		if err != nil {
-			return err
-		}
-		result = b.ToVM(rec)
-		return nil
-	})
+	_, rec, err := b.ResolveAndLoad(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return b.ToVM(&rec), nil
 }
 
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {

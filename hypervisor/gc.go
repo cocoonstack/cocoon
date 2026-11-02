@@ -107,9 +107,7 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 			slices.Sort(candidates)
 			return slices.Compact(candidates)
 		},
-		Collect: func(ctx context.Context, ids []string, snap VMGCSnapshot) error {
-			return b.gcCollect(ctx, ids, snap)
-		},
+		Collect: b.gcCollect,
 	}
 }
 

@@ -63,7 +63,7 @@ func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*t
 			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
 		}
 	}
-	return copyPairs(ctx, pairs, utils.NoSync)
+	return copyPairs(ctx, pairs)
 }
 
 // PrepareDataDisks requires unique, ValidDataDiskName-passing names.
@@ -142,9 +142,9 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 	}), nil
 }
 
-func copyPairs(ctx context.Context, pairs [][2]string, sync utils.SyncMode) error {
+func copyPairs(ctx context.Context, pairs [][2]string) error {
 	_, err := utils.Map(ctx, pairs, func(ctx context.Context, _ int, p [2]string) (struct{}, error) {
-		if err := utils.ReflinkCopy(ctx, p[0], p[1], sync); err != nil {
+		if err := utils.ReflinkCopy(ctx, p[0], p[1], utils.NoSync); err != nil {
 			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
 		}
 		return struct{}{}, nil

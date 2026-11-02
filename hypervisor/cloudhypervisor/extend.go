@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -308,11 +307,7 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 }
 
 func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any, fallbackID string) (string, error) {
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return "", fmt.Errorf("marshal %s: %w", endpoint, err)
-	}
-	resp, err := vmAPIOnce(ctx, hc, endpoint, bodyBytes, http.StatusOK, http.StatusNoContent)
+	resp, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, endpoint, body, http.StatusOK, http.StatusNoContent)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}

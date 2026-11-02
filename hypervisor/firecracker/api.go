@@ -134,39 +134,11 @@ func sendJSONOnce[T any](ctx context.Context, hc *http.Client, method, endpoint 
 	return err
 }
 
-func putMachineConfig(ctx context.Context, hc *http.Client, cfg fcMachineConfig) error {
-	return putJSON(ctx, hc, "/machine-config", cfg, "machine-config")
-}
-
 func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost string) error {
 	return sendJSONOnce(ctx, hc, http.MethodPatch, "/drives/"+driveID, struct {
 		DriveID    string `json:"drive_id"`
 		PathOnHost string `json:"path_on_host"`
 	}{DriveID: driveID, PathOnHost: pathOnHost}, "drive patch")
-}
-
-func putBootSource(ctx context.Context, hc *http.Client, boot fcBootSource) error {
-	return putJSON(ctx, hc, "/boot-source", boot, "boot-source")
-}
-
-func putDrive(ctx context.Context, hc *http.Client, drive fcDrive) error {
-	return putJSON(ctx, hc, "/drives/"+drive.DriveID, drive, "drive")
-}
-
-func putBalloon(ctx context.Context, hc *http.Client, balloon fcBalloon) error {
-	return putJSON(ctx, hc, "/balloon", balloon, "balloon")
-}
-
-func putNetworkInterface(ctx context.Context, hc *http.Client, iface fcNetworkInterface) error {
-	return putJSON(ctx, hc, "/network-interfaces/"+iface.IfaceID, iface, "network-interface")
-}
-
-func putEntropy(ctx context.Context, hc *http.Client) error {
-	return putJSON(ctx, hc, "/entropy", struct{}{}, "entropy")
-}
-
-func putVsock(ctx context.Context, hc *http.Client, vsock fcVsock) error {
-	return putJSON(ctx, hc, "/vsock", vsock, "vsock")
 }
 
 func instanceStart(ctx context.Context, hc *http.Client) error {

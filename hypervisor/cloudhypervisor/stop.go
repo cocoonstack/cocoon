@@ -3,7 +3,6 @@ package cloudhypervisor
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -31,17 +30,12 @@ func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 			if ch.conf.ForceStop() {
 				return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid)
 			}
-			return ch.shutdownACPI(ctx, hc, rec.ID, sockPath, pid, ch.conf.StopTimeout())
+			return ch.GracefulStop(ctx, rec.ID, pid, ch.conf.StopTimeout(),
+				func() error { return powerButton(ctx, hc) },
+				func() error { return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid) },
+			)
 		},
 	}
-}
-
-func (ch *CloudHypervisor) shutdownACPI(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int, timeout time.Duration) error {
-	return ch.GracefulStop(
-		ctx, vmID, pid, timeout,
-		func() error { return powerButton(ctx, hc) },
-		func() error { return ch.forceTerminate(ctx, hc, vmID, socketPath, pid) },
-	)
 }
 
 // forceTerminate swallows the vm.shutdown failure: SIGTERM follows regardless.

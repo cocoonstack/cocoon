@@ -42,7 +42,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	logger := log.WithFunc("firecracker.configureVM")
 
-	if err := putMachineConfig(ctx, hc, buildMachineConfig(rec)); err != nil {
+	if err := putJSON(ctx, hc, "/machine-config", buildMachineConfig(rec), "machine-config"); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 
@@ -50,11 +50,11 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		if err := fc.setBootCmdline(boot, rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name); err != nil {
 			return err
 		}
-		if err := putBootSource(ctx, hc, fcBootSource{
+		if err := putJSON(ctx, hc, "/boot-source", fcBootSource{
 			KernelImagePath: boot.KernelPath,
 			InitrdPath:      boot.InitrdPath,
 			BootArgs:        boot.Cmdline,
-		}); err != nil {
+		}, "boot-source"); err != nil {
 			return fmt.Errorf("boot-source: %w", err)
 		}
 	}
@@ -65,49 +65,48 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 			logger.Warnf(ctx, directIOIgnoredMsg, sc.Serial)
 		}
 		d := fcDrive{
-			DriveID:      driveID,
-			PathOnHost:   sc.Path,
-			IsRootDevice: false,
-			IsReadOnly:   sc.RO,
+			DriveID:    driveID,
+			PathOnHost: sc.Path,
+			IsReadOnly: sc.RO,
 		}
 		if !sc.RO {
 			d.IoEngine = ioEngineAsync
 		}
-		if err := putDrive(ctx, hc, d); err != nil {
+		if err := putJSON(ctx, hc, "/drives/"+driveID, d, "drive"); err != nil {
 			return fmt.Errorf("drive %s: %w", driveID, err)
 		}
 	}
 
 	for i, nc := range rec.NetworkConfigs {
 		ifaceID := fmt.Sprintf(ifaceIDFmt, i)
-		if err := putNetworkInterface(ctx, hc, fcNetworkInterface{
+		if err := putJSON(ctx, hc, "/network-interfaces/"+ifaceID, fcNetworkInterface{
 			IfaceID:     ifaceID,
 			HostDevName: nc.TAP,
 			GuestMAC:    nc.MAC,
 			MTU:         nc.MTU,
-		}); err != nil {
+		}, "network-interface"); err != nil {
 			return fmt.Errorf("network-interface %s: %w", ifaceID, err)
 		}
 	}
 
 	if size, ok := hypervisor.BalloonSize(rec.Config.Config); ok {
-		if err := putBalloon(ctx, hc, fcBalloon{
+		if err := putJSON(ctx, hc, "/balloon", fcBalloon{
 			AmountMiB:         int(size >> 20),
 			DeflateOnOOM:      true,
 			FreePageReporting: true,
-		}); err != nil {
+		}, "balloon"); err != nil {
 			return fmt.Errorf("balloon: %w", err)
 		}
 	}
 
-	if err := putEntropy(ctx, hc); err != nil {
+	if err := putJSON(ctx, hc, "/entropy", struct{}{}, "entropy"); err != nil {
 		return fmt.Errorf("entropy: %w", err)
 	}
 
-	if err := putVsock(ctx, hc, fcVsock{
+	if err := putJSON(ctx, hc, "/vsock", fcVsock{
 		GuestCID: hypervisor.VsockGuestCID,
 		UDSPath:  hypervisor.VsockSockPath(rec.RunDir),
-	}); err != nil {
+	}, "vsock"); err != nil {
 		return fmt.Errorf("vsock: %w", err)
 	}
 
@@ -201,8 +200,8 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 		}
 		readyReader, readyWriter, err = os.Pipe()
 		if err != nil {
-			closeFile(controlReader)
-			closeFile(controlWriter)
+			_ = controlReader.Close()
+			_ = controlWriter.Close()
 			return nil, fmt.Errorf("source-lease ready pipe: %w", err)
 		}
 	}
@@ -227,21 +226,21 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 	relayCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if startErr := relayCmd.Start(); startErr != nil {
-		closeFile(controlReader)
-		closeFile(controlWriter)
-		closeFile(readyReader)
-		closeFile(readyWriter)
+		_ = controlReader.Close()
+		_ = controlWriter.Close()
+		_ = readyReader.Close()
+		_ = readyWriter.Close()
 		return nil, fmt.Errorf("start relay: %w", startErr)
 	}
 	if controlReader == nil {
 		go relayCmd.Wait() //nolint:errcheck
 		return nil, nil
 	}
-	closeFile(controlReader)
-	closeFile(readyWriter)
+	_ = controlReader.Close()
+	_ = readyWriter.Close()
 	if readyErr := waitRelayLeaseReady(readyReader); readyErr != nil {
-		closeFile(controlWriter)
-		closeFile(readyReader)
+		_ = controlWriter.Close()
+		_ = readyReader.Close()
 		_ = relayCmd.Process.Kill()
 		_ = relayCmd.Wait()
 		return nil, readyErr
@@ -273,12 +272,6 @@ func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
 	case <-time.After(relayResponseTimeout):
 		closeErr := response.Close()
 		return errors.Join(fmt.Errorf("source-lease relay %s timed out", phase), closeErr)
-	}
-}
-
-func closeFile(file *os.File) {
-	if file != nil {
-		_ = file.Close()
 	}
 }
 

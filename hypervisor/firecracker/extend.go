@@ -56,12 +56,12 @@ func (fc *Firecracker) NetResize(ctx context.Context, vmRef string, spec netresi
 	if err := spec.Normalize(); err != nil {
 		return netresize.Result{}, err
 	}
-	hc, vmID, rec, unlock, err := fc.lockedDeviceOp(ctx, vmRef, netresize.ErrUnsupportedBackend)
+	hc, rec, unlock, err := fc.lockedDeviceOp(ctx, vmRef, netresize.ErrUnsupportedBackend)
 	if err != nil {
 		return netresize.Result{}, err
 	}
 	defer unlock()
-	return fc.NetResizeWith(ctx, vmID, &rec, fcNICOps{hc: hc}, plumbing, spec.Target)
+	return fc.NetResizeWith(ctx, rec.ID, &rec, fcNICOps{hc: hc}, plumbing, spec.Target)
 }
 
 func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
@@ -76,7 +76,7 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 	if err != nil {
 		return "", err
 	}
-	hc, vmID, _, unlock, err := fc.lockedDeviceOp(ctx, vmRef, disk.ErrUnsupportedBackend)
+	hc, rec, unlock, err := fc.lockedDeviceOp(ctx, vmRef, disk.ErrUnsupportedBackend)
 	if err != nil {
 		return "", err
 	}
@@ -96,7 +96,7 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 		d.IoEngine = ioEngineAsync
 	}
 	if err := hotplugDevice(ctx, hc, "/drives/"+id, d, "drive"); err != nil {
-		return "", fmt.Errorf("vm %s hot-plug drive %s: %w", vmID, id, err)
+		return "", fmt.Errorf("vm %s hot-plug drive %s: %w", rec.ID, id, err)
 	}
 	return id, nil
 }
@@ -109,7 +109,7 @@ func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error
 	if err != nil {
 		return err
 	}
-	hc, _, _, unlock, err := fc.lockedDeviceOp(ctx, vmRef, disk.ErrUnsupportedBackend)
+	hc, _, unlock, err := fc.lockedDeviceOp(ctx, vmRef, disk.ErrUnsupportedBackend)
 	if err != nil {
 		return err
 	}
@@ -151,10 +151,10 @@ func (fc *Firecracker) DiskList(ctx context.Context, vmRef string) ([]disk.Attac
 }
 
 // MMIO VMs are refused: only the virtio-pci transport hot-plugs.
-func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsupported error) (*http.Client, string, hypervisor.VMRecord, func(), error) {
+func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsupported error) (*http.Client, hypervisor.VMRecord, func(), error) {
 	hc, rec, unlock, err := fc.LockedRunningOp(ctx, vmRef)
 	if err != nil {
-		return nil, "", hypervisor.VMRecord{}, nil, err
+		return nil, hypervisor.VMRecord{}, nil, err
 	}
 	err = requirePCI(&rec, errUnsupported)
 	if err == nil {
@@ -162,9 +162,9 @@ func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsu
 	}
 	if err != nil {
 		unlock()
-		return nil, "", hypervisor.VMRecord{}, nil, err
+		return nil, hypervisor.VMRecord{}, nil, err
 	}
-	return hc, rec.ID, rec, unlock, nil
+	return hc, rec, unlock, nil
 }
 
 // The pause is ownerless: callers hold the ops lock every capture window holds.

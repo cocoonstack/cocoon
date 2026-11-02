@@ -1,7 +1,6 @@
 package cloudhypervisor
 
 import (
-	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
@@ -29,11 +28,6 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		return err
 	}
 
-	diskCount := rawArrayLen(raw["disks"])
-	if len(opts.storageConfigs) != diskCount {
-		return fmt.Errorf("disk count mismatch: storageConfigs=%d, CH config=%d",
-			len(opts.storageConfigs), diskCount)
-	}
 	if diskRaw, ok := raw["disks"]; ok {
 		patched, patchErr := patchDisks(diskRaw, opts)
 		if patchErr != nil {
@@ -50,21 +44,19 @@ func patchCHConfig(path string, opts *patchOptions) error {
 		return fmt.Errorf("patch console: %w", err)
 	}
 
-	if opts.vsockSock != "" {
-		if vsockRaw, ok := raw["vsock"]; ok && rawObjectPresent(vsockRaw) {
-			// Preserve id so CH reuses the snapshot's PCI slot instead of allocating a colliding new one.
-			patched, patchErr := patchRawObject(vsockRaw, func(obj map[string]jsontext.Value) error {
-				return setField(obj, "socket", opts.vsockSock)
-			})
-			if patchErr != nil {
-				return fmt.Errorf("patch vsock: %w", patchErr)
-			}
-			raw["vsock"] = patched
+	if vsockRaw := raw["vsock"]; vsockRaw.Kind() == jsontext.KindBeginObject {
+		// Preserve id so CH reuses the snapshot's PCI slot instead of allocating a colliding new one.
+		patched, patchErr := patchRawObject(vsockRaw, func(obj map[string]jsontext.Value) error {
+			return setField(obj, "socket", opts.vsockSock)
+		})
+		if patchErr != nil {
+			return fmt.Errorf("patch vsock: %w", patchErr)
 		}
+		raw["vsock"] = patched
 	}
 
 	if len(opts.netTAPs) > 0 {
-		if netRaw, ok := raw["net"]; ok && rawObjectPresent(netRaw) {
+		if netRaw := raw["net"]; netRaw.Kind() == jsontext.KindBeginArray {
 			patched, patchErr := patchRawArray(netRaw, len(opts.netTAPs), func(i int, elem map[string]jsontext.Value) error {
 				return setField(elem, "tap", opts.netTAPs[i])
 			})
@@ -98,19 +90,6 @@ func patchDisks(diskRaw jsontext.Value, opts *patchOptions) (jsontext.Value, err
 		}
 		return setField(elem, "direct", effectiveDirectIO(sc, opts.noDirectIO))
 	})
-}
-
-func rawObjectPresent(raw jsontext.Value) bool {
-	raw = bytes.TrimSpace(raw)
-	return len(raw) > 0 && !bytes.Equal(raw, []byte("null"))
-}
-
-func rawArrayLen(raw jsontext.Value) int {
-	var arr []jsontext.Value
-	if json.Unmarshal(raw, &arr) != nil {
-		return 0
-	}
-	return len(arr)
 }
 
 func setField(obj map[string]jsontext.Value, key string, value any) error {

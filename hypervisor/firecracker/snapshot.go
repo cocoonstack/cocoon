@@ -19,7 +19,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
 }
 
-func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
+func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, _ *http.Client, pid int) error {

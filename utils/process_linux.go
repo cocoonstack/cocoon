@@ -67,7 +67,7 @@ func scanProcsByBinary(binaryName string, readFile readFileFn, alive aliveFn) (P
 	var scan ProcScan
 	for _, e := range entries {
 		pid, atoiErr := strconv.Atoi(e.Name())
-		if atoiErr != nil || pid <= 0 {
+		if atoiErr != nil {
 			continue
 		}
 		if _, skip := kthreaddChildren[pid]; skip {

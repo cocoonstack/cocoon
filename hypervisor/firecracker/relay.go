@@ -77,10 +77,8 @@ func (c *cloneLeaseControl) close() {
 	if c == nil {
 		return
 	}
-	closeFile(c.commands)
-	closeFile(c.responses)
-	c.commands = nil
-	c.responses = nil
+	_ = c.commands.Close()
+	_ = c.responses.Close()
 }
 
 func (c *cloneLeaseControl) commit() error {
@@ -116,7 +114,6 @@ func RunRelay(ctx context.Context) {
 	if !validLeaseCount {
 		return
 	}
-	controlEnabled := leaseCount > 0
 	leases := make([]*os.File, 0, leaseCount)
 	for i := range leaseCount {
 		leases = append(leases, os.NewFile(uintptr(relayLeaseFD+i), "source-vm-lease"))
@@ -144,10 +141,7 @@ func RunRelay(ctx context.Context) {
 
 	binaryName := os.Getenv(relayBinaryEnvKey)
 	sockPath := os.Getenv(relaySocketEnvKey)
-	if controlEnabled {
-		if binaryName == "" || sockPath == "" {
-			return
-		}
+	if leaseCount > 0 {
 		control := os.NewFile(relayLeaseControlFD, "source-lease-control")
 		responses := os.NewFile(relayLeaseResponseFD, "source-lease-responses")
 		if _, err := responses.Write([]byte{relayLeaseReadyCommand}); err != nil {

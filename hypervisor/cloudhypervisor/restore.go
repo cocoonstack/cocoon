@@ -33,8 +33,7 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 			return cleanSnapshotFiles(rec.RunDir)
 		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-			directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
-			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, directBoot, meta)
+			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, meta)
 		},
 	})
 }
@@ -46,7 +45,7 @@ func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, 
 	}
 	vmCfg.RestoreMode = resolveRestoreMode(ctx, vmCfg.RestoreMode, chCfg.Memory)
 	meta, err := ch.conf.PreflightRestore(srcDir, rec, func(dir string, sidecar []*types.StorageConfig) error {
-		return validateSnapshotIntegrityParsed(dir, sidecar, chCfg)
+		return validateSnapshotIntegrity(dir, sidecar, chCfg)
 	})
 	if err != nil {
 		return nil, err
@@ -64,8 +63,9 @@ func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMR
 	return ch.forceTerminate(ctx, hc, rec.ID, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
-func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, directBoot bool, meta *hypervisor.SnapshotMeta) (_ *types.VM, err error) {
+func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, meta *hypervisor.SnapshotMeta) (_ *types.VM, err error) {
 	logger := log.WithFunc("cloudhypervisor.restoreAfterExtract")
+	directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
 	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
