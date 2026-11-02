@@ -116,21 +116,13 @@ func importQcow2Reader(ctx context.Context, conf *Config, store *images.Store[im
 }
 
 func importQcow2Concat(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
-	if len(file) == 0 {
-		return errors.New("no qcow2 files provided")
-	}
 	readers := make([]io.Reader, 0, len(file))
 	for _, filePath := range file {
 		src, openErr := os.Open(filePath) //nolint:gosec
 		if openErr != nil {
 			return fmt.Errorf("open %s: %w", filePath, openErr)
 		}
-		// a part that fails to close after the blob is committed is not an import failure
-		defer func() {
-			if closeErr := src.Close(); closeErr != nil {
-				log.WithFunc("cloudimg.importQcow2Concat").Warnf(ctx, "close %s: %v", filePath, closeErr)
-			}
-		}()
+		defer src.Close() //nolint:errcheck
 		readers = append(readers, src)
 	}
 	return importQcow2Reader(ctx, conf, store, name, tracker, io.MultiReader(readers...))

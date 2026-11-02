@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"path/filepath"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -16,8 +15,8 @@ var unsupportedFS = map[uint32]string{
 }
 
 func statfsCheck(dbPath string) error {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(filepath.Dir(dbPath), &st); err != nil {
+	var st unix.Statfs_t
+	if err := unix.Statfs(filepath.Dir(dbPath), &st); err != nil {
 		return nil // no statfs answer is not a refusal reason
 	}
 	if name, ok := unsupportedFS[uint32(st.Type)]; ok { //nolint:gosec // magics fit u32

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
@@ -28,12 +29,6 @@ func (e *ExecExitError) Error() string { return fmt.Sprintf("exit code %d", e.Co
 func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 	ref, argv := args[0], args[1:]
-	if len(argv) > 0 && argv[0] == "--" {
-		argv = argv[1:]
-	}
-	if len(argv) == 0 {
-		return fmt.Errorf("exec: no command given")
-	}
 
 	info, err := h.resolveRunningVM(ctx, conf, "exec", ref)
 	if err != nil {
@@ -73,9 +68,6 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 }
 
 func parseExecEnv(pairs []string) (map[string]string, error) {
-	if len(pairs) == 0 {
-		return nil, nil
-	}
 	out := make(map[string]string, len(pairs))
 	for _, p := range pairs {
 		k, v, ok := strings.Cut(p, "=")
@@ -94,8 +86,7 @@ func dialHybridVsock(ctx context.Context, socketPath string, port uint32) (io.Re
 	if err != nil {
 		return nil, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stop()
+	defer cmdcore.CloseOnCancel(ctx, conn)()
 	if _, werr := fmt.Fprintf(conn, "CONNECT %d\n", port); werr != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("write CONNECT: %w", werr)

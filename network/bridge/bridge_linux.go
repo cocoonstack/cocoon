@@ -83,10 +83,9 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 
 	added := make([]int, 0, len(specs))
 	defer func() {
-		if retErr == nil || len(added) == 0 {
-			return
+		if retErr != nil {
+			_ = tearDownTAPs(b.tapPrefix, vmID, added, true)
 		}
-		_ = tearDownTAPs(b.tapPrefix, vmID, added, true)
 	}()
 
 	configs = make([]*types.NetworkConfig, 0, len(specs))

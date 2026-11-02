@@ -37,9 +37,8 @@ type vmSnapshot struct {
 }
 
 type eventEmitter struct {
-	begin func()
-	emit  func(event string, snap vmSnapshot, vm vmOutput)
-	end   func()
+	emit func(event string, snap vmSnapshot, vm vmOutput)
+	end  func()
 }
 
 func (h Handler) List(cmd *cobra.Command, _ []string) error {
@@ -130,11 +129,10 @@ func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
 	if err != nil {
 		return nil
 	}
-	ch, release, err := store.Events(ctx)
+	ch, _, err := store.Events(ctx)
 	if err != nil {
 		return nil
 	}
-	context.AfterFunc(ctx, release)
 	return ch
 }
 
@@ -165,24 +163,17 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 		now := time.Now()
 		fmt.Printf("Every %s — press Ctrl+C to quit (%s)\n\n",
 			now.Format(time.TimeOnly), now.Format(time.DateOnly))
-		if len(vms) == 0 {
-			fmt.Println("No VMs found.")
-			return
-		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		printVMTable(w, vms, scopeDir, stale)
-		_ = w.Flush()
+		_ = renderVMList(vms, cliutil.FormatTable, scopeDir, stale)
 	})
 }
 
 func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time) {
 	fmt.Println("EVENT\tID\tNAME\tSTATE\tCPU\tMEMORY\tIP\tIMAGE")
 
-	var w *tabwriter.Writer
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{
-		begin: func() { w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0) },
-		emit:  func(event string, snap vmSnapshot, _ vmOutput) { printEventRow(w, event, snap) },
-		end:   func() { _ = w.Flush() },
+		emit: func(event string, snap vmSnapshot, _ vmOutput) { printEventRow(w, event, snap) },
+		end:  func() { _ = w.Flush() },
 	})
 }
 
@@ -209,9 +200,6 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 			vmCopy := *vm
 			vmCopy.State = state
 			curr[vm.ID] = entry{snap: takeSnapshot(vm, stateLabel(state, isStale)), vm: vmOutput{VM: &vmCopy, Stale: isStale}}
-		}
-		if emitter.begin != nil {
-			emitter.begin()
 		}
 		for id, e := range curr {
 			old, existed := prev[id]

@@ -123,13 +123,8 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 			metaErr = err
 			return
 		}
-		// Assign the interface only on success: a typed-nil store would pass CloseMetaStore's nil check and panic.
 		if ResolveMetaBackend(conf) == config.MetaBackendSQLite {
-			if s, err := openSQLiteStore(ctx, conf, dbPath); err != nil {
-				metaErr = err
-			} else {
-				metaStore = s
-			}
+			metaStore, metaErr = openSQLiteStore(ctx, conf, dbPath)
 			return
 		}
 		if conf.MetaBackend == "" {
@@ -142,6 +137,7 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 				return
 			}
 		}
+		// Assign the interface only on success: a typed-nil store would pass CloseMetaStore's nil check and panic.
 		if s, err := metajson.Open(nss...); err != nil {
 			metaErr = err
 		} else {

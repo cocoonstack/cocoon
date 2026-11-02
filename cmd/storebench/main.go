@@ -249,10 +249,8 @@ func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 	if engine == "sqlite" {
 		decl := metasqlite.Namespace{Name: ns, Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TablePlacements}}
 		path := filepath.Join(dir, metasqlite.DBFileName)
-		if _, err := os.Stat(path); err != nil { //nolint:gosec
-			if err := metasqlite.Init(ctx, path, decl); err != nil {
-				return nil, err
-			}
+		if err := metasqlite.InitIfMissing(ctx, path, decl); err != nil {
+			return nil, err
 		}
 		return metasqlite.Open(path, decl)
 	}

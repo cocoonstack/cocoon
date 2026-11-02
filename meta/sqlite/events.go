@@ -13,17 +13,15 @@ import (
 // Events subscribes to committed-change signals; data_version is comparable only across calls on one pinned connection and never moves for that connection's own commits (§7).
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.notifier == nil {
 		n, err := newNotifier(s.path)
 		if err != nil {
-			s.mu.Unlock()
 			return nil, nil, err
 		}
 		s.notifier = n
 	}
-	n := s.notifier
-	s.mu.Unlock()
-	ch, release := n.b.Subscribe()
+	ch, release := s.notifier.b.Subscribe()
 	stop := context.AfterFunc(ctx, release)
 	return ch, func() { stop(); release() }, nil
 }
@@ -69,7 +67,7 @@ func newNotifier(dbPath string) (*notifier, error) {
 	}
 	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, pinned: conn, pinDB: db, ctx: ctx, cancel: cancel}
 	n.version, _ = n.dataVersion()
-	go n.b.Run(n.check, nil)
+	go n.b.Run(n.check)
 	return n, nil
 }
 

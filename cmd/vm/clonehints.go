@@ -29,8 +29,6 @@ func printPostCloneHints(vm *types.VM) {
 		return
 	}
 
-	isCloudimg := vm.Config.ImageType == types.ImageTypeCloudImg
-
 	fmt.Println()
 	fmt.Println("Run inside the guest to finish setup:")
 
@@ -49,7 +47,7 @@ func printPostCloneHints(vm *types.VM) {
 	fmt.Println("  # Clean old network configs from snapshot and write new ones (MAC-based)")
 	fmt.Println("  rm -f /etc/systemd/network/10-*.network")
 
-	if isCloudimg {
+	if vm.Config.ImageType == types.ImageTypeCloudImg {
 		printCloudimgNetworkHints()
 	} else {
 		printOCINetworkHints(vm)

@@ -157,18 +157,18 @@ func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build fun
 }
 
 // Recover takes over id's tombstone under the held entity lock and decodes a deleting-phase payload into cl; a leased entry rolls back in place and a nil Record means nothing to roll forward.
-func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (*Record, string, error) {
+func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (*Record, error) {
 	rec, err := t.TakeOver(ctx, w, id)
 	if err != nil || rec == nil {
-		return nil, "", err
+		return nil, err
 	}
 	if rec.Phase == PhaseLeased {
-		return nil, "", t.Rollback(ctx, w, id, rec.LeaseID)
+		return nil, t.Rollback(ctx, w, id, rec.LeaseID)
 	}
 	if err := json.Unmarshal(rec.Payload.Cleanup, cl); err != nil {
-		return nil, "", fmt.Errorf("tombstone %s payload: %w", id, err)
+		return nil, fmt.Errorf("tombstone %s payload: %w", id, err)
 	}
-	return rec, rec.LeaseID, nil
+	return rec, nil
 }
 
 func (t *Table) fenced(ctx context.Context, w meta.Writer, id, leaseID string) (*Record, error) {

@@ -76,13 +76,11 @@ type health struct {
 
 // cache holds the last published pass and fans its diff out to stream subscribers.
 type cache struct {
-	mu       sync.RWMutex
-	byKey    map[watchKey]VMStatus
-	order    []VMStatus
-	healthy  bool
-	degraded int
-	lastPass time.Time
-	ready    chan struct{}
+	mu     sync.RWMutex
+	byKey  map[watchKey]VMStatus
+	order  []VMStatus
+	health health
+	ready  chan struct{}
 
 	nextSub int
 	subs    map[int]chan changeEvent
@@ -116,7 +114,7 @@ func (c *cache) publish(all []VMStatus, healthy bool, degraded int, at time.Time
 		}
 	}
 	c.byKey, c.order = next, all
-	c.healthy, c.degraded, c.lastPass = healthy, degraded, at
+	c.health = health{ok: healthy, degraded: degraded, lastPass: at}
 	select {
 	case <-c.ready:
 	default:
@@ -159,7 +157,7 @@ func (c *cache) waitReady(ctx context.Context) error {
 func (c *cache) snapshot() ([]VMStatus, health) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.order, health{ok: c.healthy, degraded: c.degraded, lastPass: c.lastPass}
+	return c.order, c.health
 }
 
 // subscribe returns the change stream plus its release; the caller must drain it or lose events.

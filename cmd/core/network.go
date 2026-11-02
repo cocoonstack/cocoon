@@ -34,12 +34,8 @@ type NetProviders struct {
 
 // NetworkSeam returns the process-wide seam, so both backends share one provider cache.
 func NetworkSeam(conf *config.Config) *NetProviders {
-	netOnce.Do(func() { netSeam = newNetProviders(conf) })
+	netOnce.Do(func() { netSeam = &NetProviders{conf: conf, bridge: map[string]network.Network{}} })
 	return netSeam
-}
-
-func newNetProviders(conf *config.Config) *NetProviders {
-	return &NetProviders{conf: conf, bridge: map[string]network.Network{}}
 }
 
 // ForVM picks the provider from the VM's persisted network state.

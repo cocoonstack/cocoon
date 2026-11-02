@@ -29,6 +29,8 @@ type ImageGCSnapshot struct {
 // DiskScanFunc returns hex IDs present on disk.
 type DiskScanFunc func() ([]string, error)
 
+type BlobRemover func(hex string) error
+
 // GCModuleConfig configures a generic image GC module.
 type GCModuleConfig[E any] struct {
 	Name     string
@@ -38,9 +40,8 @@ type GCModuleConfig[E any] struct {
 	ScanDisk DiskScanFunc
 	// ExtraDisk returns additional hex IDs on disk (e.g., OCI boot dirs). Optional.
 	ExtraDisk       DiskScanFunc
-	Removers        []func(string) error
+	Removers        []BlobRemover
 	TempDir         string
-	DirOnly         bool
 	PinnedElsewhere PinRecheck
 }
 
@@ -76,68 +77,66 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 			return slices.Compact(candidates)
 		},
 		Collect: func(ctx context.Context, ids []string, _ ImageGCSnapshot) error {
-			errs := gcStaleTemp(ctx, cfg.TempDir, cfg.DirOnly)
+			errs := gcStaleTemp(ctx, cfg.TempDir)
 			logger := log.WithFunc("gc." + cfg.Name)
-			// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 			for _, hex := range ids {
-				fl := gofrsflock.New(cfg.LockPath(hex))
-				ok, err := fl.TryLock()
-				if err != nil || !ok {
-					_ = fl.Close()
-					if err != nil {
-						errs = append(errs, fmt.Errorf("lock blob %s: %w", hex, err))
-					} else {
-						logger.Warnf(ctx, "skip %s: blob lock busy (publish in flight)", hex)
-					}
-					continue
+				if err := collectBlob(ctx, cfg, logger, hex); err != nil {
+					errs = append(errs, err)
 				}
-				// Revalidate under the held lock: a publish that finished after the snapshot may have referenced this digest.
-				referenced := false
-				if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
-					_, referenced = cfg.ReadRefs(idx.Images)[hex]
-					return nil
-				}); err != nil {
-					_ = fl.Close()
-					errs = append(errs, fmt.Errorf("revalidate blob %s: %w", hex, err))
-					continue
-				}
-				if !referenced && cfg.PinnedElsewhere != nil {
-					pins, err := cfg.PinnedElsewhere(ctx)
-					if err != nil {
-						_ = fl.Close()
-						errs = append(errs, fmt.Errorf("recheck pins for blob %s: %w", hex, err))
-						continue
-					}
-					_, referenced = pins[hex]
-				}
-				if referenced {
-					_ = fl.Close()
-					continue
-				}
-				for _, rm := range cfg.Removers {
-					if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
-						errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
-					}
-				}
-				_ = fl.Close()
-				logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
 			}
 			return errors.Join(errs...)
 		},
 	}
 }
 
-// gcStaleTemp removes temp entries older than StaleTempAge (dirOnly=true skips files); .lock files stay — flock syncs on inode, so deleting one races a current holder.
-func gcStaleTemp(ctx context.Context, dir string, dirOnly bool) []error {
+// gcStaleTemp removes temp entries older than StaleTempAge; .lock files stay — flock syncs on inode, so deleting one races a current holder.
+func gcStaleTemp(ctx context.Context, dir string) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
-		if dirOnly && !e.IsDir() {
-			return false
-		}
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".lock") {
 			return false
 		}
 		info, err := e.Info()
 		return err == nil && info.ModTime().Before(cutoff)
 	})
+}
+
+// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
+func collectBlob[E any](ctx context.Context, cfg GCModuleConfig[E], logger *log.Fields, hex string) error {
+	fl := gofrsflock.New(cfg.LockPath(hex))
+	defer fl.Close() //nolint:errcheck
+	ok, err := fl.TryLock()
+	if err != nil {
+		return fmt.Errorf("lock blob %s: %w", hex, err)
+	}
+	if !ok {
+		logger.Warnf(ctx, "skip %s: blob lock busy (publish in flight)", hex)
+		return nil
+	}
+	// Revalidate under the held lock: a publish that finished after the snapshot may have referenced this digest.
+	referenced := false
+	if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
+		_, referenced = cfg.ReadRefs(idx.Images)[hex]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("revalidate blob %s: %w", hex, err)
+	}
+	if !referenced && cfg.PinnedElsewhere != nil {
+		pins, err := cfg.PinnedElsewhere(ctx)
+		if err != nil {
+			return fmt.Errorf("recheck pins for blob %s: %w", hex, err)
+		}
+		_, referenced = pins[hex]
+	}
+	if referenced {
+		return nil
+	}
+	var errs []error
+	for _, rm := range cfg.Removers {
+		if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
+		}
+	}
+	logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
+	return errors.Join(errs...)
 }

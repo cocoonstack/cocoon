@@ -24,10 +24,8 @@ var _ images.Images = (*CloudImg)(nil)
 type CloudImg struct {
 	images.Ops[imageEntry]
 
-	conf            *Config
-	store           *images.Store[imageEntry]
-	pullGroup       singleflight.Group
-	pinnedElsewhere images.PinRecheck
+	conf      *Config
+	pullGroup singleflight.Group
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.
@@ -39,19 +37,13 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 
 	log.WithFunc("cloudimg.New").Debugf(ctx, "cloud image backend initialized, pull conns: %d", cfg.PullConns)
 
-	store := images.NewMetaStore[imageEntry](metaStore, NamespaceName)
-	c := &CloudImg{
+	return &CloudImg{
 		conf:  cfg,
-		store: store,
-		Ops: images.Ops[imageEntry]{
-			Store: store,
-			Type:  typ,
-		},
-	}
-	return c, nil
+		Store: images.NewMetaStore[imageEntry](metaStore, NamespaceName),
+		Typ:   typ,
+		Base:  &cfg.BaseConfig,
+	}, nil
 }
-
-func (c *CloudImg) Type() string { return typ }
 
 func (c *CloudImg) Pull(ctx context.Context, url string, force bool, tracker progress.Tracker) error {
 	key := url
@@ -60,23 +52,23 @@ func (c *CloudImg) Pull(ctx context.Context, url string, force bool, tracker pro
 		key += "\x00force"
 	}
 	return images.SingleflightDo(ctx, &c.pullGroup, key, func() error {
-		return pull(ctx, c.conf, c.store, url, force, tracker)
+		return pull(ctx, c.conf, c.Store, url, force, tracker)
 	})
 }
 
 func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
 	if len(file) == 1 {
-		return importQcow2File(ctx, c.conf, c.store, name, tracker, file[0])
+		return importQcow2File(ctx, c.conf, c.Store, name, tracker, file[0])
 	}
-	return importQcow2Concat(ctx, c.conf, c.store, name, tracker, file...)
+	return importQcow2Concat(ctx, c.conf, c.Store, name, tracker, file...)
 }
 
 func (c *CloudImg) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
-	return importQcow2Reader(ctx, c.conf, c.store, name, tracker, r)
+	return importQcow2Reader(ctx, c.conf, c.Store, name, tracker, r)
 }
 
 func (c *CloudImg) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.StorageConfig, boot *types.BootConfig, err error) {
-	err = c.store.View(ctx, func(idx *imageIndex) error {
+	err = c.Store.View(ctx, func(idx *imageIndex) error {
 		firmwarePath := images.FirmwarePath(c.conf.RootDir)
 		if !utils.ValidFile(firmwarePath) {
 			return fmt.Errorf("firmware not found: %s", firmwarePath)

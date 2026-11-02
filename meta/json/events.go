@@ -16,9 +16,6 @@ import (
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil, nil, os.ErrClosed
-	}
 	if s.events == nil {
 		n, err := newNotifier(s.nss)
 		if err != nil {
@@ -76,7 +73,7 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 		}
 	}
 	n.check()
-	go n.b.Run(n.check, testWatchErrs)
+	go n.b.Run(n.check)
 	return n, nil
 }
 

@@ -22,15 +22,9 @@ type Entry interface {
 	DigestHexes() []string
 }
 
-// Index is the generic base both backends embed for Init and the Images map.
+// Index is the materialized image map both backends share.
 type Index[E any] struct {
 	Images map[string]*E `json:"images"`
-}
-
-func (idx *Index[E]) Init() {
-	if idx.Images == nil {
-		idx.Images = make(map[string]*E)
-	}
 }
 
 // ReferencedDigests collects all blob digest hex strings referenced by any (*entry).
@@ -98,12 +92,12 @@ func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
 	return true
 }
 
-// deleteByID removes every ref returned by lookup, so "delete <digest>" sweeps all refs pointing at it. A prefix spanning distinct digests is rejected — guessing on a destructive op would delete unrelated images.
-func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[string]*E, lookup func(string) []string, ids []string) ([]string, error) {
+// deleteByID removes every ref matching an id, so "delete <digest>" sweeps all refs pointing at it. A prefix spanning distinct digests is rejected — guessing on a destructive op would delete unrelated images.
+func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[string]*E, ids []string) ([]string, error) {
 	logger := log.WithFunc(logPrefix)
 	var deleted []string
 	for _, id := range ids {
-		refs := lookup(id)
+		refs := LookupRefs(images, id)
 		if len(refs) == 0 {
 			logger.Debugf(ctx, "image %q not found, skipping", id)
 			continue

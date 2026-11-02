@@ -56,11 +56,9 @@ func newFAT12Builder(label string) *fat12Builder {
 
 func (b *fat12Builder) addVolumeLabel() {
 	name := padLabel(b.label)
-	off := b.rootUsed * dirEntrySize
-	copy(b.rootDir[off:], name[:])
+	off, _ := b.writeDirEntry(name[:])
 	b.rootDir[off+11] = 0x08
 	putTimestamps(b.rootDir[off:], time.Now())
-	b.rootUsed++
 }
 
 func (b *fat12Builder) addFile(name string, content []byte) error {
@@ -84,13 +82,11 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 		b.nextCluster += uint16(numClusters) //nolint:gosec
 	}
 
-	lfn := needsLFN(name)
 	var shortName [11]byte
-	if lfn {
+	if needsLFN(name) {
 		b.shortSeq++
 		shortName = generateShortName(name, b.shortSeq)
-		lfnEntries := makeLFNEntries(name, shortName)
-		for _, entry := range lfnEntries {
+		for _, entry := range makeLFNEntries(name, shortName) {
 			if _, err := b.writeDirEntry(entry); err != nil {
 				return err
 			}
@@ -135,24 +131,18 @@ func (b *fat12Builder) writeTo(w io.Writer) error {
 	}
 
 	sector := make([]byte, sectorSize)
-	dataSectors := 0
 	for _, content := range b.data {
-		numClusters := (len(content) + sectorSize - 1) / sectorSize
-		for i := range numClusters {
+		for chunk := range slices.Chunk(content, sectorSize) {
 			clear(sector)
-			start := i * sectorSize
-			if start < len(content) {
-				copy(sector, content[start:min(start+sectorSize, len(content))])
-			}
+			copy(sector, chunk)
 			if _, err := bw.Write(sector); err != nil {
 				return err
 			}
-			dataSectors++
 		}
 	}
 
 	clear(sector)
-	for range totalSectors - firstDataSec - dataSectors {
+	for range totalSectors - firstDataSec - (int(b.nextCluster) - 2) {
 		if _, err := bw.Write(sector); err != nil {
 			return err
 		}

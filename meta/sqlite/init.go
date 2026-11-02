@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
@@ -29,7 +28,7 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 	if need, err := initNeeded(ctx, dbPath); err == nil && !need {
 		return nil
 	}
-	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil {
+	if merr := utils.EnsureDirs(filepath.Dir(dbPath)); merr != nil {
 		return merr
 	}
 	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
@@ -51,7 +50,7 @@ func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...N
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {
-	if merr := os.MkdirAll(filepath.Dir(dbPath), 0o750); merr != nil { //nolint:gosec // dbPath is root-declared, not caller input
+	if merr := utils.EnsureDirs(filepath.Dir(dbPath)); merr != nil {
 		return merr
 	}
 	if ferr := checkFS(dbPath); ferr != nil {
@@ -126,10 +125,7 @@ func failedInit(ctx context.Context, dbPath string) (bool, error) {
 	defer db.Close() //nolint:errcheck
 	var appID int64
 	if serr := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); serr != nil {
-		if strings.Contains(serr.Error(), "not a database") {
-			return false, fmt.Errorf("%s is not a sqlite database: %w", dbPath, meta.ErrCorrupt)
-		}
-		return false, mapErr(serr)
+		return false, fmt.Errorf("%s: %w", dbPath, mapErr(serr))
 	}
 	var tables int
 	if serr := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables); serr != nil {

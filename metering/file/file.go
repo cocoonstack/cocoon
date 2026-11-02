@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/projecteru2/core/log"
 
@@ -14,10 +13,9 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder appends entries under sync.Mutex; O_APPEND gives cross-process atomicity.
+// Recorder appends entries; each is one write, and O_APPEND gives cross-process atomicity.
 type Recorder struct {
-	mu sync.Mutex
-	f  *os.File
+	f *os.File
 }
 
 // New opens or creates the append-only ledger at path.
@@ -31,8 +29,6 @@ func New(path string) (*Recorder, error) {
 
 // Emit swallows write errors so callers never block.
 func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, err := e.WriteTo(r.f); err != nil {
 		log.WithFunc("metering.file.Emit").Warnf(ctx, "emit entry: %v", err)
 	}

@@ -118,7 +118,7 @@ func retryLayer(ctx context.Context, attempts int, backoff time.Duration, fn fun
 		if err = fn(); err == nil {
 			return nil
 		}
-		if attempt == attempts || ctx.Err() != nil {
+		if attempt == attempts {
 			return err
 		}
 		select {

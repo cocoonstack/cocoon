@@ -1,10 +1,10 @@
 package oci
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,9 +28,6 @@ type tarImportJob struct {
 }
 
 func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, tracker progress.Tracker, file ...string) error {
-	if len(file) == 0 {
-		return errors.New("no tar files provided")
-	}
 	for _, f := range file {
 		if _, err := os.Stat(f); err != nil {
 			return fmt.Errorf("file %s: %w", f, err)
@@ -45,11 +42,10 @@ func importTarLayers(ctx context.Context, conf *Config, store *images.Store[imag
 	}
 	defer cleanup()
 
-	totalLayers := len(file)
 	results, mapErr := utils.Map(ctx, file, func(ctx context.Context, i int, filePath string) (pullLayerResult, error) {
 		var r pullLayerResult
 		err := processLocalTar(ctx, tarImportJob{
-			conf: conf, idx: i, total: totalLayers,
+			conf: conf, idx: i, total: len(file),
 			label: filePath, workDir: workDir, tracker: tracker, result: &r,
 		}, filePath)
 		return r, err
@@ -123,30 +119,11 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 		j.result.erofsPath = tmpErofsPath
 	}
 
-	if err := renameBootFiles(layerDir, digestHex, kernelPath, initrdPath, j.result); err != nil {
-		return err
-	}
+	j.result.kernelPath = cmp.Or(j.result.kernelPath, kernelPath)
+	j.result.initrdPath = cmp.Or(j.result.initrdPath, initrdPath)
 
 	j.tracker.OnEvent(ociProgress.Event{Phase: ociProgress.PhaseLayer, Index: j.idx, Total: j.total, Digest: digestHex[:12]})
 	return nil
-}
-
-func renameBootFiles(baseDir, digestHex, kernelPath, initrdPath string, result *pullLayerResult) error {
-	move := func(src, name string, dst *string) error {
-		if src == "" || *dst != "" {
-			return nil
-		}
-		target := filepath.Join(baseDir, name)
-		if err := os.Rename(src, target); err != nil {
-			return fmt.Errorf("rename %s: %w", name, err)
-		}
-		*dst = target
-		return nil
-	}
-	if err := move(kernelPath, digestHex+".vmlinuz", &result.kernelPath); err != nil {
-		return err
-	}
-	return move(initrdPath, digestHex+".initrd.img", &result.initrdPath)
 }
 
 func computeManifestDigest(results []pullLayerResult) images.Digest {

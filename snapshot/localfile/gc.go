@@ -37,7 +37,6 @@ func (p EvictionPolicy) hasCriteria() bool {
 type snapshotMeta struct {
 	dataDir      string
 	name         string
-	hypervisor   string
 	lastAccessed time.Time
 	sizeBytes    int64
 }
@@ -109,7 +108,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
-						hypervisor:   rec.Hypervisor,
 						dataDir:      cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)),
 						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
@@ -297,9 +295,6 @@ func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]strin
 }
 
 func logWouldEvict(ctx context.Context, reasons map[string]string, records map[string]snapshotMeta) {
-	if len(reasons) == 0 {
-		return
-	}
 	logger := log.WithFunc("gc.snapshot")
 	for _, id := range slices.Sorted(maps.Keys(reasons)) {
 		logEvictRow(ctx, logger, "would-evict", id, records[id], reasons[id])

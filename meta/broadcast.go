@@ -17,28 +17,25 @@ type Broadcaster struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}
 
-	mu     sync.Mutex
-	subs   map[int]chan struct{}
-	nextID int
+	mu   sync.Mutex
+	subs map[chan struct{}]struct{}
 }
 
 // NewBroadcaster wraps an fsnotify watcher the engine has already populated.
 func NewBroadcaster(watcher *fsnotify.Watcher) *Broadcaster {
-	return &Broadcaster{watcher: watcher, done: make(chan struct{}), subs: map[int]chan struct{}{}}
+	return &Broadcaster{watcher: watcher, done: make(chan struct{}), subs: map[chan struct{}]struct{}{}}
 }
 
 // Subscribe registers a coalescing signal channel; release is idempotent.
 func (b *Broadcaster) Subscribe() (chan struct{}, func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	id := b.nextID
-	b.nextID++
 	ch := make(chan struct{}, 1)
-	b.subs[id] = ch
+	b.subs[ch] = struct{}{}
 	return ch, sync.OnceFunc(func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		delete(b.subs, id)
+		delete(b.subs, ch)
 	})
 }
 
@@ -46,7 +43,7 @@ func (b *Broadcaster) Subscribe() (chan struct{}, func()) {
 func (b *Broadcaster) Broadcast() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for _, ch := range b.subs {
+	for ch := range b.subs {
 		select {
 		case ch <- struct{}{}:
 		default:
@@ -61,7 +58,7 @@ func (b *Broadcaster) Stop() {
 }
 
 // Run is the notifier goroutine body.
-func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
+func (b *Broadcaster) Run(check func()) {
 	timer := time.NewTimer(0)
 	timer.Stop()
 	pending := false
@@ -82,8 +79,6 @@ func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
 			if !ok {
 				return
 			}
-			check()
-		case <-extra:
 			check()
 		case <-timer.C:
 			pending = false

@@ -106,8 +106,8 @@ func requireMemoryRangeFile(srcDir string) error {
 }
 
 // vmAPIOnce never retries: the CH endpoints it serves are not idempotent.
-func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string, body []byte, successCodes ...int) ([]byte, error) {
-	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, body, successCodes...)
+func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string) ([]byte, error) {
+	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, nil)
 }
 
 func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind string, payload T, successCodes ...int) error {
@@ -116,13 +116,13 @@ func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind strin
 }
 
 func shutdownVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.shutdown", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.shutdown")
 	return err
 }
 
 // pauseVM is idempotent — swallows CH's Paused→Paused 500 so a stuck-paused VM recovers.
 func pauseVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.pause", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.pause")
 	if err != nil && isAlreadyInStateError(err, "Paused") {
 		return nil
 	}
@@ -131,7 +131,7 @@ func pauseVM(ctx context.Context, hc *http.Client) error {
 
 // resumeVM is idempotent — swallows CH's Running→Running 500.
 func resumeVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.resume", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.resume")
 	if err != nil && isAlreadyInStateError(err, "Running") {
 		return nil
 	}
@@ -224,7 +224,7 @@ func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
 }
 
 func powerButton(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.power-button", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.power-button")
 	return err
 }
 

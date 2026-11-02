@@ -64,7 +64,7 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 	}
 	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended main must fall back to .prev, not decode (§9 format fidelity).
 	if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("namespace file: trailing data after document")
+		return nil, errors.New("namespace file: trailing data after document")
 	}
 	return m, nil
 }
@@ -91,4 +91,25 @@ func appendKey(buf []byte, key string) []byte {
 	buf = append(buf, '"')
 	buf = append(buf, key...)
 	return append(buf, '"', ':')
+}
+
+// appendTable appends tbl as a compact JSON object with sorted keys, values verbatim.
+func appendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
+	t := m.tables[tbl]
+	dst = append(dst, '{')
+	if t != nil {
+		for i, k := range slices.Sorted(maps.Keys(t.recs)) {
+			if i > 0 {
+				dst = append(dst, ',')
+			}
+			kb, err := json.Marshal(k)
+			if err != nil {
+				return nil, err
+			}
+			dst = append(dst, kb...)
+			dst = append(dst, ':')
+			dst = append(dst, t.recs[k]...)
+		}
+	}
+	return append(dst, '}'), nil
 }

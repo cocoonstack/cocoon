@@ -58,9 +58,8 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	}
 
 	c := &CNI{
-		conf:      cfg,
-		meta:      store,
-		confLists: make(map[string]*libcni.NetworkConfigList),
+		conf: cfg,
+		meta: store,
 	}
 
 	if lists, defaultName, loadErr := loadConfLists(cfg.CNIConfDir); loadErr == nil {
@@ -141,12 +140,9 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 		if err != nil {
 			recErr = err
 			logger.Warnf(ctx, "conflist %q not found for CNI DEL %s/%s: %v", rec.Type, vmID, rec.IfName, err)
-		}
-		if cl != nil {
-			if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
-				recErr = errors.Join(recErr, fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err))
-				logger.Warnf(ctx, "CNI DEL %s/%s: %v", vmID, rec.IfName, err)
-			}
+		} else if err := c.cniDel(ctx, cl, vmID, nsPath, rec.IfName); err != nil {
+			recErr = fmt.Errorf("cni del %s/%s: %w", vmID, rec.IfName, err)
+			logger.Warnf(ctx, "CNI DEL %s/%s: %v", vmID, rec.IfName, err)
 		}
 		if deleteTAP {
 			idx, ok := ifIndex(rec.IfName)

@@ -44,7 +44,7 @@ func Backup(ctx context.Context, dbPath, destPath string) error {
 	} else if partial {
 		return fmt.Errorf("%s is an uninitialized store; nothing to back up", dbPath)
 	}
-	if merr := os.MkdirAll(filepath.Dir(destPath), 0o750); merr != nil {
+	if merr := utils.EnsureDirs(filepath.Dir(destPath)); merr != nil {
 		return merr
 	}
 	// Concurrent backups to one destination share the tmp path; without mutual exclusion one run's cleanup yanks the other's tmp mid-verify.

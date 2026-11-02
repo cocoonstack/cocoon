@@ -114,19 +114,14 @@ func (lf *LocalFile) recoverSnapTombstone(ctx context.Context, id string) error 
 		return nil // an active holder will meet the tombstone at its own entrypoint
 	}
 	defer release()
-	return lf.recoverSnapTombstoneLocked(ctx, id)
-}
-
-func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) error {
 	ts := lf.tombstones()
 	var (
-		rec     *tombstone.Record
-		leaseID string
-		cl      snapCleanup
+		rec *tombstone.Record
+		cl  snapCleanup
 	)
 	if err := lf.update(ctx, func(t *snapTx) error {
 		var err error
-		rec, leaseID, err = ts.Recover(ctx, t.Writer(), id, &cl)
+		rec, err = ts.Recover(ctx, t.Writer(), id, &cl)
 		return err
 	}); err != nil {
 		return err
@@ -134,13 +129,13 @@ func (lf *LocalFile) recoverSnapTombstoneLocked(ctx context.Context, id string) 
 	if rec == nil {
 		return nil
 	}
-	if err := lf.finishSnapTeardown(ctx, id, leaseID, cl); err != nil {
+	if err := lf.finishSnapTeardown(ctx, id, rec.LeaseID, cl); err != nil {
 		return err
 	}
 	if !cl.Pending {
 		emitSnapStop(ctx, lf.metering, id, cl.Hypervisor)
 	}
-	log.WithFunc("localfile.recoverSnapTombstoneLocked").Warnf(ctx, "rolled forward interrupted delete of snapshot %s", id)
+	log.WithFunc("localfile.recoverSnapTombstone").Warnf(ctx, "rolled forward interrupted delete of snapshot %s", id)
 	return nil
 }
 

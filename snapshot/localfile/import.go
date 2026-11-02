@@ -84,7 +84,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	if sizeErr != nil {
 		return "", fmt.Errorf("compute data dir size: %w", sizeErr)
 	}
-	if lf.pinBlobs != nil && len(cfg.ImageBlobIDs) > 0 {
+	if lf.pinBlobs != nil {
 		releasePins, pinErr := lf.pinBlobs(ctx, cfg.ImageBlobIDs)
 		if pinErr != nil {
 			return "", fmt.Errorf("pin image blobs: %w", pinErr)

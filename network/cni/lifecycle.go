@@ -81,12 +81,8 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		defer rcancel()
 		var releasedIDs []string
 		// Intents whose ADD never started need no DEL.
-		tried := make(map[string]struct{}, attempted)
-		for _, spec := range specs[:attempted] {
-			tried[recIDs[spec.Index]] = struct{}{}
-		}
-		for _, id := range recIDs {
-			if _, ok := tried[id]; !ok {
+		for _, spec := range specs[attempted:] {
+			if id, ok := recIDs[spec.Index]; ok {
 				releasedIDs = append(releasedIDs, id)
 			}
 		}
@@ -172,11 +168,11 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	for _, i := range indices {
 		wanted[ifName(i)] = true
 	}
-	picked := make([]networkRecord, 0, len(indices))
+	subset := make([]string, 0, len(indices))
 	found := make(map[string]bool, len(indices))
 	for _, r := range records {
 		if wanted[r.IfName] {
-			picked = append(picked, r)
+			subset = append(subset, r.ID)
 			found[r.IfName] = true
 		}
 	}
@@ -186,10 +182,6 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 		}
 	}
 	// The payload names record IDs, never NIC indices, so a crash mid-teardown recovers exactly these rows and leaves the netns and the other NICs alone.
-	subset := make([]string, 0, len(picked))
-	for _, r := range picked {
-		subset = append(subset, r.ID)
-	}
 	return c.teardownProtocol(ctx, vmID, subset, true)
 }
 
@@ -282,13 +274,7 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 		return nil, fmt.Errorf("setup tc-redirect %s: %w", vmID, setupErr)
 	}
 
-	var logIP, logGW string
-	if netInfo != nil {
-		logIP = netInfo.IP
-		logGW = netInfo.Gateway
-	}
-	log.WithFunc("cni.provisionNIC").Debugf(ctx, "NIC %d: %s ip=%s gw=%s tap=%s mac=%s",
-		spec.Index, ifn, logIP, logGW, tapName, mac)
+	log.WithFunc("cni.provisionNIC").Debugf(ctx, "NIC %d: %s net=%+v tap=%s mac=%s", spec.Index, ifn, netInfo, tapName, mac)
 
 	return &types.NetworkConfig{
 		TAP:       tapName,

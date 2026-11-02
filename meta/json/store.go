@@ -21,11 +21,8 @@ import (
 
 const prevSuffix = ".prev"
 
-// testCrashStep aborts a commit right after the named write step when set; testWatchErrs injects a forced fsnotify overflow/watch error (§7 gate).
-var (
-	testCrashStep func(step string) error
-	testWatchErrs chan struct{}
-)
+// testCrashStep aborts a commit right after the named write step when set.
+var testCrashStep func(step string) error
 
 // Namespace declares one namespace's file, lock and format.
 type Namespace struct {

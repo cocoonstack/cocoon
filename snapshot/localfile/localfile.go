@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"syscall"
 	"time"
@@ -111,7 +110,7 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 			release()
 			return "", types.SnapshotConfig{}, nil, err
 		}
-		return rec.DataDir, snapshotRecordToConfig(rec), release, nil
+		return rec.DataDir, rec.SnapshotConfig, release, nil
 	}
 	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
@@ -442,11 +441,4 @@ func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (
 		return rec, lf.touch(ctx, apply)
 	}
 	return rec, lf.view(ctx, apply)
-}
-
-// snapshotRecordToConfig builds a detached SnapshotConfig from a record, deep-copying ImageBlobIDs so the caller can use it after the lock is released.
-func snapshotRecordToConfig(rec snapshot.SnapshotRecord) types.SnapshotConfig {
-	cfg := rec.SnapshotConfig
-	cfg.ImageBlobIDs = maps.Clone(rec.ImageBlobIDs)
-	return cfg
 }
