@@ -44,11 +44,6 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	case config.MeteringStderr:
 		return meteringstderr.New()
 	case config.MeteringMeta:
-		// The json engine writes the metering namespace under this dir.
-		if err := os.MkdirAll(filepath.Join(conf.RootDir, meteringSubdir), 0o750); err != nil {
-			logger.Warnf(ctx, "mkdir metering dir: %v; metering disabled", err)
-			return metering.NopRecorder{}
-		}
 		s, err := MetaStore(conf)
 		if err != nil {
 			logger.Warnf(ctx, "meta store: %v; metering disabled", err)

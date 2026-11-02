@@ -79,8 +79,7 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[
 }
 
 func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], map[string]jsontext.Value, error) {
-	idx := &Index[E]{}
-	idx.Init()
+	idx := &Index[E]{Images: map[string]*E{}}
 	before := map[string]jsontext.Value{}
 	if err := r.ScanRaw(ctx, s.ns, TableRecords, func(id string, raw jsontext.Value) error {
 		var e E

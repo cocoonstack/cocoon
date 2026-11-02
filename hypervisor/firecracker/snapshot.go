@@ -19,7 +19,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
 }
 
-func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
+func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, _ *http.Client, pid int) error {
@@ -72,7 +72,7 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.Snapshot
 	return meta, nil
 }
 
-// a runtime-only disk has no sidecar entry, so the snapshot could never restore.
+// A runtime-only disk has no sidecar entry, so the snapshot could never restore.
 func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
 	cfg, err := getVMConfig(ctx, hc)
 	if err != nil {

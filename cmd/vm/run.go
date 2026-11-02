@@ -107,7 +107,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("inspect snapshot %s: %w", snapRef, err)
 	}
 	if snapInfo.Hypervisor != "" {
-		conf.UseFirecracker = snapInfo.Hypervisor == string(config.HypervisorFirecracker)
+		conf.UseFirecracker = isFirecracker(snapInfo.Hypervisor)
 	}
 
 	hyper, err := cmdcore.InitHypervisor(ctx, conf)
@@ -253,12 +253,10 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = snapshot.VerifyCOWSize(dir, cfg); err != nil {
 		return err
 	}
-	// Local copy keeps backend flip from leaking to the caller's shared *config.Config.
-	localConf := *conf
 	if cfg.Hypervisor != "" {
-		localConf.UseFirecracker = cfg.Hypervisor == string(config.HypervisorFirecracker)
+		conf.UseFirecracker = isFirecracker(cfg.Hypervisor)
 	}
-	hyper, err := cmdcore.InitHypervisor(ctx, &localConf)
+	hyper, err := cmdcore.InitHypervisor(ctx, conf)
 	if err != nil {
 		return err
 	}
@@ -266,7 +264,7 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if !ok {
 		return errBackendUnsupported(hyper, "direct clone")
 	}
-	return h.cloneFromSrcDir(ctx, cmd, &localConf, hyper, dcr, cfg, dir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, dcr, cfg, dir,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
@@ -352,7 +350,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
 		return fail(fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend))
 	}
-	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
+	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		return fail(err)
 	}
@@ -402,11 +400,9 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf 
 		return fmt.Errorf("restore: %w", err)
 	}
 	h.reseedAfterResume(ctx, conf, hyper, result, false)
-	if wantJSON {
-		return cliutil.OutputJSON(result)
-	}
-	logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
-	return nil
+	return outputOrLog(cmd, result, func() {
+		logger.Infof(ctx, "VM %s restored (state: %s)", result.ID, result.State)
+	})
 }
 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
@@ -461,7 +457,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	defer unlock()
 
 	nics, _ := cmd.Flags().GetInt("nics")
-	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, tapQueues(vmCfg.CPU, conf.UseFirecracker), bridgeDev)
+	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		rollbackReserve()
 		return nil, nil, nil, err
@@ -566,7 +562,7 @@ func tapQueues(cpu int, useFC bool) int {
 	return network.NetNumQueues(cpu)
 }
 
-func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, queues int, bridgeDev string) (network.Network, types.NetSetup, error) {
+func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, bridgeDev string) (network.Network, types.NetSetup, error) {
 	if nics < 0 {
 		return nil, types.NetSetup{}, fmt.Errorf("--nics must be non-negative, got %d", nics)
 	}
@@ -596,7 +592,7 @@ func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int
 	}
 	specs := network.AddRange(0, nics)
 	for i := range specs {
-		specs[i].Queues = queues
+		specs[i].Queues = tapQueues(vmCfg.CPU, conf.UseFirecracker)
 	}
 	configs, err := netProvider.Add(ctx, vmID, vmCfg, specs...)
 	if err != nil {

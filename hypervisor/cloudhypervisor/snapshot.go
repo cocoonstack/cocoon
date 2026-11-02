@@ -25,7 +25,7 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
 }
 
-func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist func(cfg *types.SnapshotConfig, srcDir string) error) error {
+func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
 	return ch.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: ch.snapshotSpec(ctx),
 		Terminate: func(rec *hypervisor.VMRecord, hc *http.Client, pid int) error {
@@ -86,9 +86,6 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 	chCfg, err := parseCHConfig(filepath.Join(tmpDir, configJSONName))
 	if err != nil {
 		return nil, fmt.Errorf("parse snapshot config: %w", err)
-	}
-	if err := hotAttachedError(chCfg.Fs, chCfg.Devices, chCfg.Disks); err != nil {
-		return nil, err
 	}
 	byPath := make(map[string]*types.StorageConfig, len(rec.StorageConfigs))
 	for _, sc := range rec.StorageConfigs {

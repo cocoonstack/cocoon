@@ -34,13 +34,12 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) {
 	ts := b.tombstones()
 	var (
-		rec     *tombstone.Record
-		leaseID string
-		cl      vmCleanup
+		rec *tombstone.Record
+		cl  vmCleanup
 	)
 	if err := b.update(ctx, func(t *vmTx) error {
 		var err error
-		rec, leaseID, err = ts.Recover(ctx, t.w, id, &cl)
+		rec, err = ts.Recover(ctx, t.w, id, &cl)
 		return err
 	}); err != nil {
 		return false, err
@@ -48,7 +47,7 @@ func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, e
 	if rec == nil {
 		return false, nil
 	}
-	if err := b.finishVMTeardown(ctx, id, leaseID, cl); err != nil {
+	if err := b.finishVMTeardown(ctx, id, rec.LeaseID, cl); err != nil {
 		return false, err
 	}
 	log.WithFunc(b.Typ+".RecoverTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)

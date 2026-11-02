@@ -32,9 +32,8 @@ func TestLookupOne(t *testing.T) {
 
 func TestDeleteByIDRejectsAmbiguousPrefix(t *testing.T) {
 	images := testIndex()
-	lookup := func(id string) []string { return LookupRefs(images, id) }
 
-	deleted, err := deleteByID(t.Context(), "test.Delete", images, lookup, []string{"aabb000011112222"})
+	deleted, err := deleteByID(t.Context(), "test.Delete", images, []string{"aabb000011112222"})
 	if err == nil {
 		t.Fatal("ambiguous cross-digest prefix must be rejected, not swept")
 	}
@@ -42,7 +41,7 @@ func TestDeleteByIDRejectsAmbiguousPrefix(t *testing.T) {
 		t.Fatalf("nothing may be deleted on ambiguity: deleted=%v remaining=%d", deleted, len(images))
 	}
 
-	deleted, err = deleteByID(t.Context(), "test.Delete", images, lookup, []string{"sha256:aabb000011112222333344445555666a"})
+	deleted, err = deleteByID(t.Context(), "test.Delete", images, []string{"sha256:aabb000011112222333344445555666a"})
 	if err != nil {
 		t.Fatalf("single-digest delete: %v", err)
 	}

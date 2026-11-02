@@ -41,7 +41,7 @@ func AddFormatFlag(cmd *cobra.Command) {
 
 // Format reads --format and rejects a value outside the flag's enum.
 func Format(cmd *cobra.Command) (string, error) {
-	format, _ := cmd.Flags().GetString("format")
+	format := FlagStr(cmd, "format")
 	return format, validateFormat(format)
 }
 
@@ -56,8 +56,7 @@ func AddSnapshotNameFlags(cmd *cobra.Command) {
 }
 
 func WantJSON(cmd *cobra.Command) bool {
-	out, _ := cmd.Flags().GetString("output")
-	return out == "json"
+	return FlagStr(cmd, "output") == FormatJSON
 }
 
 func OutputJSON(v any) error {
@@ -73,8 +72,7 @@ func MaybeOutputJSON(cmd *cobra.Command, v any) (bool, error) {
 }
 
 func OutputFormatted(cmd *cobra.Command, data any, tableFn TableFunc) error {
-	format, _ := cmd.Flags().GetString("format")
-	return OutputFormattedStr(format, data, tableFn)
+	return OutputFormattedStr(FlagStr(cmd, "format"), data, tableFn)
 }
 
 func OutputFormattedStr(format string, data any, tableFn TableFunc) error {

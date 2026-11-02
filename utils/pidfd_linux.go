@@ -27,11 +27,11 @@ func CloseFD(fd int) {
 
 // terminateWithPidfd signals through a pidfd, immune to PID reuse; handled is false without pidfd support (kernel < 5.3).
 func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
-	fd, err := unix.PidfdOpen(pid, 0)
+	fd, err := OpenPidfd(pid)
 	if err != nil {
 		return false, nil
 	}
-	defer func() { _ = unix.Close(fd) }()
+	defer CloseFD(fd)
 
 	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
 	if err != nil {
@@ -57,15 +57,14 @@ func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg stri
 
 // waitExitWithPidfd blocks on pid's exit through a pidfd; handled is false without pidfd support (kernel < 5.3).
 func waitExitWithPidfd(ctx context.Context, pid int, timeout time.Duration) (handled bool, err error) {
-	fd, err := unix.PidfdOpen(pid, 0)
+	fd, err := OpenPidfd(pid)
 	if err != nil {
 		return false, nil
 	}
-	defer func() { _ = unix.Close(fd) }()
+	defer CloseFD(fd)
 	return true, waitPidfd(ctx, fd, timeout)
 }
 
-// waitPidfd blocks until the pidfd reports exit; the kernel wakes the poll instead of a kill(0) loop.
 func waitPidfd(ctx context.Context, fd int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {

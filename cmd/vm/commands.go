@@ -134,9 +134,7 @@ func Command(h Handler) *cobra.Command {
 		Short: "Restore a running or stopped VM to a previous snapshot (or a directory via --from-dir)",
 		Args:  cobra.RangeArgs(1, 2),
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			force, _ := cmd.Flags().GetBool("force")
-			fromDir, _ := cmd.Flags().GetString("from-dir")
-			if force && fromDir == "" {
+			if cliutil.FlagBool(cmd, "force") && cliutil.FlagStr(cmd, "from-dir") == "" {
 				return fmt.Errorf("--force only applies with --from-dir")
 			}
 			return nil

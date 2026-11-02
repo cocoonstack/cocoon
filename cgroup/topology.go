@@ -23,7 +23,7 @@ type Topology struct {
 
 // ReadTopology groups the online cpus inside fence by last-level cache; a host without cache sysfs forms one domain.
 func ReadTopology(root string, fence []int) (*Topology, error) {
-	online, err := readCPUList(filepath.Join(root, "online"))
+	online, err := ReadCPUList(filepath.Join(root, "online"))
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 		t.domains = [][]int{online}
 	} else {
 		for rest := online; len(rest) > 0; {
-			shared, err := readCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
+			shared, err := ReadCPUList(filepath.Join(cpuDir(root, rest[0]), "cache", llc, "shared_cpu_list"))
 			if err != nil {
 				return nil, err
 			}
@@ -87,6 +87,14 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
 	return domain, pins
 }
 
+func ReadCPUList(path string) ([]int, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // sysfs path under a fixed root
+	if err != nil {
+		return nil, err
+	}
+	return ParseCPUList(strings.TrimSpace(string(data)))
+}
+
 func coresOf(root string, domain []int) ([][]int, error) {
 	var cores [][]int
 	seen := make(map[int]bool, len(domain))
@@ -94,7 +102,7 @@ func coresOf(root string, domain []int) ([][]int, error) {
 		if seen[c] {
 			continue
 		}
-		siblings, err := readCPUList(filepath.Join(cpuDir(root, c), "topology", "thread_siblings_list"))
+		siblings, err := ReadCPUList(filepath.Join(cpuDir(root, c), "topology", "thread_siblings_list"))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			siblings = []int{c}
@@ -139,12 +147,4 @@ func lastCacheIndex(root string, cpu int) string {
 
 func cpuDir(root string, cpu int) string {
 	return filepath.Join(root, fmt.Sprintf("cpu%d", cpu))
-}
-
-func readCPUList(path string) ([]int, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // sysfs path under a fixed root
-	if err != nil {
-		return nil, err
-	}
-	return ParseCPUList(strings.TrimSpace(string(data)))
 }

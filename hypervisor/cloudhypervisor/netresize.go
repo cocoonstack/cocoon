@@ -11,7 +11,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// chNICOps drives CH's net devices for the shared resize driver.
 type chNICOps struct {
 	hc *http.Client
 }

@@ -20,33 +20,23 @@ func (r BatchResult[T]) Err() error { return errors.Join(r.Errors...) }
 
 // ForEach runs fn concurrently on each item, best-effort.
 func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) error, concurrency ...int) BatchResult[T] {
-	limit := pickLimit(concurrency)
-
-	type result struct {
-		item T
-		err  error
-	}
-
-	results := make([]result, len(items))
-	g, gctx := errgroup.WithContext(ctx)
-	if limit > 0 {
-		g.SetLimit(limit)
-	}
+	errs := make([]error, len(items))
+	g, gctx := limitedGroup(ctx, concurrency)
 
 	for i, item := range items {
 		g.Go(func() error {
-			results[i] = result{item: item, err: fn(gctx, item)}
+			errs[i] = fn(gctx, item)
 			return nil // always nil so errgroup processes all items (best-effort)
 		})
 	}
 	_ = g.Wait()
 
 	var r BatchResult[T]
-	for _, res := range results {
-		if res.err != nil {
-			r.Errors = append(r.Errors, fmt.Errorf("item %v: %w", res.item, res.err))
+	for i, err := range errs {
+		if err != nil {
+			r.Errors = append(r.Errors, fmt.Errorf("item %v: %w", items[i], err))
 		} else {
-			r.Succeeded = append(r.Succeeded, res.item)
+			r.Succeeded = append(r.Succeeded, items[i])
 		}
 	}
 	return r
@@ -58,13 +48,8 @@ func Map[T, R any](ctx context.Context, items []T, fn func(ctx context.Context, 
 		return nil, nil
 	}
 
-	limit := pickLimit(concurrency)
-
 	results := make([]R, len(items))
-	g, gctx := errgroup.WithContext(ctx)
-	if limit > 0 {
-		g.SetLimit(limit)
-	}
+	g, gctx := limitedGroup(ctx, concurrency)
 
 	for i, item := range items {
 		g.Go(func() error {
@@ -95,9 +80,10 @@ func OrDefault(n, def int) int {
 	return n
 }
 
-func pickLimit(concurrency []int) int {
-	if len(concurrency) > 0 {
-		return concurrency[0]
+func limitedGroup(ctx context.Context, concurrency []int) (*errgroup.Group, context.Context) {
+	g, gctx := errgroup.WithContext(ctx)
+	if len(concurrency) > 0 && concurrency[0] > 0 {
+		g.SetLimit(concurrency[0])
 	}
-	return 0
+	return g, gctx
 }

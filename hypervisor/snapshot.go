@@ -56,7 +56,7 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	for i, nc := range rec.NetworkConfigs {
 		nicMTUs[i] = nc.MTU
 	}
-	cfg := &types.SnapshotConfig{
+	return &types.SnapshotConfig{
 		ID:           snapID,
 		Hypervisor:   b.Typ,
 		NICs:         len(rec.NetworkConfigs),
@@ -64,7 +64,6 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
 		Config:       rec.Config.Config,
 	}
-	return cfg
 }
 
 // SnapshotSequence is the shared capture skeleton; only capture runs in the pause window.
@@ -94,7 +93,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 }
 
 // HibernateSequence persists inside the pause window and terminates instead of resuming.
-func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist func(cfg *types.SnapshotConfig, srcDir string) error) (err error) {
+func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec HibernateSpec, persist PersistFunc) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
 		return err
@@ -109,36 +108,34 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	logger := log.WithFunc(b.Typ + ".HibernateSequence")
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
 	var killFailed bool
-	window := func() error {
-		return b.WithRunningVM(ctx, &rec, func(pid int) error {
-			if pErr := spec.Pause(&rec, hc); pErr != nil {
-				return fmt.Errorf("pause: %w", pErr)
+	err = b.WithRunningVM(ctx, &rec, func(pid int) error {
+		if pErr := spec.Pause(&rec, hc); pErr != nil {
+			return fmt.Errorf("pause: %w", pErr)
+		}
+		failResume := func(e error) error {
+			if rErr := spec.Resume(&rec, hc); rErr != nil {
+				logger.Warnf(ctx, "resume VM %s after failed hibernate: %v", rec.ID, rErr)
 			}
-			failResume := func(e error) error {
-				if rErr := spec.Resume(&rec, hc); rErr != nil {
-					logger.Warnf(ctx, "resume VM %s after failed hibernate: %v", rec.ID, rErr)
-				}
-				return e
-			}
-			if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
-				return failResume(cErr)
-			}
-			cfg, sErr := b.finalizeSnapshot(ctx, vmID, &rec, spec.SnapshotSpec, tmpDir)
-			if sErr != nil {
-				return failResume(sErr)
-			}
-			if pErr := persist(cfg, tmpDir); pErr != nil {
-				b.UnrecordSnapshot(ctx, vmID, cfg.ID)
-				return failResume(fmt.Errorf("persist snapshot: %w", pErr))
-			}
-			if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
-				killFailed = true
-				return fmt.Errorf("terminate: %w", kErr)
-			}
-			return nil
-		})
-	}
-	if err = window(); err != nil {
+			return e
+		}
+		if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
+			return failResume(cErr)
+		}
+		cfg, sErr := b.finalizeSnapshot(ctx, vmID, &rec, spec.SnapshotSpec, tmpDir)
+		if sErr != nil {
+			return failResume(sErr)
+		}
+		if pErr := persist(cfg, tmpDir); pErr != nil {
+			b.UnrecordSnapshot(ctx, vmID, cfg.ID)
+			return failResume(fmt.Errorf("persist snapshot: %w", pErr))
+		}
+		if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
+			killFailed = true
+			return fmt.Errorf("terminate: %w", kErr)
+		}
+		return nil
+	})
+	if err != nil {
 		if killFailed {
 			b.MarkError(ctx, vmID)
 		}
@@ -296,15 +293,12 @@ func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
 
 // ReverseLayers projects Role==Layer entries through fn in reverse order (topmost layer first, matching overlayfs lowerdir semantics).
 func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(idx int, sc *types.StorageConfig) T) []T {
-	var layers []*types.StorageConfig
+	var out []T
 	for _, sc := range storageConfigs {
 		if sc.Role == types.StorageRoleLayer {
-			layers = append(layers, sc)
+			out = append(out, project(len(out), sc))
 		}
 	}
-	out := make([]T, len(layers))
-	for i, sc := range layers {
-		out[len(layers)-1-i] = project(i, sc)
-	}
+	slices.Reverse(out)
 	return out
 }

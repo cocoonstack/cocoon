@@ -20,13 +20,12 @@ const (
 	numFATs        = 2
 	sectorsPerFAT  = 6
 	rootEntryCount = 128
-	firstDataSec   = reservedSec + numFATs*sectorsPerFAT + rootDirSectors // 21
-	rootDirSectors = rootEntryCount * dirEntrySize / sectorSize           // 8
+	firstDataSec   = reservedSec + numFATs*sectorsPerFAT + rootDirSectors
+	rootDirSectors = rootEntryCount * dirEntrySize / sectorSize
 	dirEntrySize   = 32
 	fatEntryEOC    = 0xFFF
 	mediaDesc      = 0xF8
 
-	// writeBufSize coalesces the per-sector writes in writeTo into few write(2) calls.
 	writeBufSize = 64 << 10
 )
 
@@ -36,9 +35,9 @@ type fat12Builder struct {
 	fat         []byte // single FAT copy (written twice)
 	rootDir     []byte
 	data        [][]byte // file data in cluster-allocation order
-	nextCluster uint16   // next free cluster (starts at 2)
-	rootUsed    int      // root directory entries consumed
-	shortSeq    int      // counter for ~N short-name suffixes
+	nextCluster uint16
+	rootUsed    int
+	shortSeq    int // counter for ~N short-name suffixes
 }
 
 func newFAT12Builder(label string) *fat12Builder {
@@ -48,7 +47,7 @@ func newFAT12Builder(label string) *fat12Builder {
 		rootDir:     make([]byte, rootEntryCount*dirEntrySize),
 		nextCluster: 2,
 	}
-	// clusters 0 and 1 are reserved by the FAT spec
+	// Clusters 0 and 1 are reserved by the FAT spec
 	setFATEntry(b.fat, 0, 0xFF8)
 	setFATEntry(b.fat, 1, fatEntryEOC)
 	b.addVolumeLabel()
@@ -57,11 +56,9 @@ func newFAT12Builder(label string) *fat12Builder {
 
 func (b *fat12Builder) addVolumeLabel() {
 	name := padLabel(b.label)
-	off := b.rootUsed * dirEntrySize
-	copy(b.rootDir[off:], name[:])
+	off, _ := b.writeDirEntry(name[:])
 	b.rootDir[off+11] = 0x08
 	putTimestamps(b.rootDir[off:], time.Now())
-	b.rootUsed++
 }
 
 func (b *fat12Builder) addFile(name string, content []byte) error {
@@ -85,13 +82,11 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 		b.nextCluster += uint16(numClusters) //nolint:gosec
 	}
 
-	lfn := needsLFN(name)
 	var shortName [11]byte
-	if lfn {
+	if needsLFN(name) {
 		b.shortSeq++
 		shortName = generateShortName(name, b.shortSeq)
-		lfnEntries := makeLFNEntries(name, shortName)
-		for _, entry := range lfnEntries {
+		for _, entry := range makeLFNEntries(name, shortName) {
 			if _, err := b.writeDirEntry(entry); err != nil {
 				return err
 			}
@@ -111,7 +106,6 @@ func (b *fat12Builder) addFile(name string, content []byte) error {
 	return nil
 }
 
-// writeDirEntry copies a 32-byte directory entry into the next free root slot and returns its offset for any follow-up field writes.
 func (b *fat12Builder) writeDirEntry(entry []byte) (int, error) {
 	if b.rootUsed >= rootEntryCount {
 		return 0, fmt.Errorf("fat12: root directory full")
@@ -122,7 +116,6 @@ func (b *fat12Builder) writeDirEntry(entry []byte) (int, error) {
 	return off, nil
 }
 
-// writeTo streams: boot sector → FAT ×2 → root directory → data → zero padding.
 func (b *fat12Builder) writeTo(w io.Writer) error {
 	bw := bufio.NewWriterSize(w, writeBufSize)
 	if _, err := bw.Write(b.makeBootSector()); err != nil {
@@ -138,24 +131,18 @@ func (b *fat12Builder) writeTo(w io.Writer) error {
 	}
 
 	sector := make([]byte, sectorSize)
-	dataSectors := 0
 	for _, content := range b.data {
-		numClusters := (len(content) + sectorSize - 1) / sectorSize
-		for i := range numClusters {
+		for chunk := range slices.Chunk(content, sectorSize) {
 			clear(sector)
-			start := i * sectorSize
-			if start < len(content) {
-				copy(sector, content[start:min(start+sectorSize, len(content))])
-			}
+			copy(sector, chunk)
 			if _, err := bw.Write(sector); err != nil {
 				return err
 			}
-			dataSectors++
 		}
 	}
 
 	clear(sector)
-	for range totalSectors - firstDataSec - dataSectors {
+	for range totalSectors - firstDataSec - (int(b.nextCluster) - 2) {
 		if _, err := bw.Write(sector); err != nil {
 			return err
 		}
@@ -203,7 +190,6 @@ func CreateFAT12(w io.Writer, label string, files map[string][]byte) error {
 	return b.writeTo(w)
 }
 
-// setFATEntry writes a 12-bit value into the FAT at the given cluster index.
 func setFATEntry(fat []byte, cluster int, val uint16) {
 	off := cluster + cluster/2
 	word := uint16(fat[off]) | uint16(fat[off+1])<<8
@@ -223,12 +209,10 @@ func needsLFN(name string) bool {
 	return len(base) > 8 || len(ext) > 3 || name != upper || strings.Count(name, ".") > 1
 }
 
-// blankSFN returns an 11-byte SFN buffer space-padded per the FAT 8.3 layout.
 func blankSFN() [11]byte {
 	return [11]byte{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '}
 }
 
-// splitName splits an uppercased name into base and extension at the last dot; ext is "" when there is no dot.
 func splitName(upper string) (base, ext string) {
 	if base, ext, ok := strings.CutLast(upper, "."); ok {
 		return base, ext
@@ -254,10 +238,7 @@ func generateShortName(name string, seq int) [11]byte {
 
 	tail := fmt.Sprintf("~%d", seq)
 	maxBase := 8 - len(tail)
-	if len(base) > maxBase {
-		base = base[:maxBase]
-	}
-	copy(result[:8], base+tail)
+	copy(result[:8], base[:min(len(base), maxBase)]+tail)
 	copy(result[8:], ext)
 	return result
 }
@@ -301,7 +282,7 @@ func putLFNChars(dst []byte, runes []uint16, offset, count int) {
 		case idx < len(runes):
 			binary.LittleEndian.PutUint16(dst[pos:], runes[idx])
 		case idx == len(runes):
-			// null terminator
+			// Null terminator
 		default:
 			binary.LittleEndian.PutUint16(dst[pos:], 0xFFFF)
 		}

@@ -211,8 +211,6 @@ func TestEventsForcedOverflow(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 
-	testWatchErrs = make(chan struct{})
-	t.Cleanup(func() { testWatchErrs = nil })
 	s := newStore(t, dir, "alpha")
 
 	ch, release, err := s.Events(ctx)
@@ -237,7 +235,7 @@ func TestEventsForcedOverflow(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	testWatchErrs <- struct{}{}
+	s.events.watcher.Errors <- errors.New("forced overflow")
 	select {
 	case <-ch:
 	case <-time.After(3 * time.Second):

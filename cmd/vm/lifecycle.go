@@ -22,7 +22,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-type batchOp func(hypervisor.Hypervisor, []string) ([]string, error)
+type batchOp func(context.Context, hypervisor.Hypervisor, []string) ([]string, error)
 
 type attachedDevices struct {
 	Fs      []fs.Attached   `json:"fs,omitempty"`
@@ -82,8 +82,7 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("console: %w", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stop()
+	defer cmdcore.CloseOnCancel(ctx, conn)()
 
 	escapeStr, _ := cmd.Flags().GetString("escape-char")
 	escapeChar, err := console.ParseEscapeChar(escapeStr)
@@ -144,7 +143,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func (h Handler) runRouted(cmd *cobra.Command, args []string, name, pastTense string, fn func(context.Context, hypervisor.Hypervisor, []string) ([]string, error)) error {
+func (h Handler) runRouted(cmd *cobra.Command, args []string, name, pastTense string, fn batchOp) error {
 	ctx, conf := h.Init(cmd)
 	hypers, err := cmdcore.InitAllHypervisors(ctx, conf)
 	if err != nil {
@@ -154,9 +153,7 @@ func (h Handler) runRouted(cmd *cobra.Command, args []string, name, pastTense st
 	if err != nil {
 		return err
 	}
-	return batchRoutedCmd(ctx, cmd, name, pastTense, routed, func(hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
-		return fn(ctx, hyper, refs)
-	})
+	return batchRoutedCmd(ctx, cmd, name, pastTense, routed, fn)
 }
 
 // applyStopFlags maps --force to an immediate kill: #82 FC guests without i8042 never answer CtrlAltDel.
@@ -177,7 +174,7 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 	var allDone []string
 	var errs []error
 	for hyper, refs := range routed {
-		done, err := fn(hyper, refs)
+		done, err := fn(ctx, hyper, refs)
 		if !wantJSON {
 			for _, id := range done {
 				logger.Infof(ctx, "%s: %s", pastTense, id)

@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -31,13 +30,10 @@ const (
 	formatQcow2    = "qcow2"
 )
 
-// makeBodyFn builds a device endpoint's request body from the record reloaded under the ops lock.
 type makeBodyFn func(rec *hypervisor.VMRecord) any
 
-// preCheckFn vets the under-lock vm.info snapshot before a device mutation.
 type preCheckFn func(*chVMInfoResponse) (existingID string, err error)
 
-// findIDFn resolves the device id to detach from the under-lock vm.info snapshot.
 type findIDFn func(*chVMInfoResponse) (id string, remove bool, err error)
 
 func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec disk.Spec) (string, error) {
@@ -90,7 +86,7 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 		os.Remove(path) //nolint:errcheck,gosec
 		return "", "", err
 	}
-	// a lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it
+	// A lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it
 	deviceID, err := addDevice(ctx, hc, "vm.add-disk", hotDisk(&rec, id, &types.StorageConfig{
 		Role: types.StorageRoleData, Path: path, Serial: src.Name,
 	}), id)
@@ -194,7 +190,7 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 		return chDevice{ID: spec.ID, Path: path}
 	}
 	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, spec.ID, func(info *chVMInfoResponse) (string, error) {
-		// stat is gated behind the running-VM check so stopped VMs surface the state error, not a host-path one.
+		// Stat is gated behind the running-VM check so stopped VMs surface the state error, not a host-path one.
 		st, statErr := os.Stat(path)
 		if statErr != nil {
 			return "", fmt.Errorf("pci path %s: %w", path, statErr)
@@ -287,7 +283,7 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 			return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 		}
 	}
-	// a detach whose remove-device response was lost finds no device, so the copy is reclaimed here too
+	// A detach whose remove-device response was lost finds no device, so the copy is reclaimed here too
 	if afterEject == nil {
 		return nil
 	}
@@ -311,11 +307,7 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 }
 
 func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any, fallbackID string) (string, error) {
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return "", fmt.Errorf("marshal %s: %w", endpoint, err)
-	}
-	resp, err := vmAPIOnce(ctx, hc, endpoint, bodyBytes, http.StatusOK, http.StatusNoContent)
+	resp, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, endpoint, body, http.StatusOK, http.StatusNoContent)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}
@@ -359,7 +351,7 @@ func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) 
 	return "", nil
 }
 
-// the ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
+// The ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
 	if info.State != chStatePaused {
 		return info, nil

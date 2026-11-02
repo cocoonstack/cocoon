@@ -16,10 +16,19 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+type restoreRun struct {
+	vmID             string
+	rec              *VMRecord
+	vmCfg            *types.VMConfig
+	sourceSnapshotID string
+	kill             KillHook
+	apply            func(*VMRecord) error
+	afterExtract     AfterExtractHook
+}
+
 func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
-		// A stopped origin has no live VMM: a transient liveness-scan error must not brick the wake — nothing was mutated, retry converges.
 		b.failRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
@@ -119,17 +128,6 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 	b.MarkError(ctx, vmID)
 }
 
-// restoreRun is restoreCore's locked input set, common to both restore sequences.
-type restoreRun struct {
-	vmID             string
-	rec              *VMRecord
-	vmCfg            *types.VMConfig
-	sourceSnapshotID string
-	kill             KillHook
-	apply            func(*VMRecord) error
-	afterExtract     AfterExtractHook
-}
-
 // restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
 func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, error) {
 	oldShape := shapeFromConfig(run.rec.Config)
@@ -140,7 +138,6 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 
 	var result *types.VM
 	inner := func() error {
-		// Tombstone before the destructive phase: it survives lost quarantine writes and process death; only FinalizeRestore clears it.
 		if err := markRestoreDirty(run.rec.RunDir); err != nil {
 			return err
 		}

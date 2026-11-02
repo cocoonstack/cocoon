@@ -36,7 +36,6 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 	var (
 		leaseID   string
 		cl        netCleanup
-		mode      tombstone.Mode
 		recovered bool
 	)
 	if err := c.update(ctx, func(t *netTx) error {
@@ -45,7 +44,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		if err != nil {
 			return err
 		}
-		mode = tombstone.ModeAggregate
+		mode := tombstone.ModeAggregate
 		if subset != nil {
 			mode = tombstone.ModeSubset
 			records = filterRecords(records, subset)
@@ -78,7 +77,6 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		}
 		// A retry of the interrupted operation resumes it; any other intent is finished first and refused, since its outcome is not this call's.
 		recovered = resumed.Payload.Mode != mode || (mode == tombstone.ModeSubset && !subsetOf(recordIDs(want), recordIDs(cl)))
-		mode = resumed.Payload.Mode
 		return nil
 	}); err != nil {
 		return err
@@ -88,7 +86,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 	}); err != nil {
 		return err
 	}
-	if err := c.finishTeardown(ctx, vmID, leaseID, mode, cl, deleteTAP); err != nil {
+	if err := c.finishTeardown(ctx, vmID, leaseID, cl, deleteTAP); err != nil {
 		return err
 	}
 	if recovered {
@@ -98,7 +96,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 }
 
 // finishTeardown runs the slow CNI DEL / netns work outside any transaction, driven by the payload, then the fenced finalize.
-func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tombstone.Mode, cl netCleanup, deleteTAP bool) error {
+func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, cl netCleanup, deleteTAP bool) error {
 	ts := c.tombstones()
 	records := make([]networkRecord, 0, len(cl.Records))
 	for _, r := range cl.Records {
@@ -111,7 +109,7 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 	}
 	downIDs, tdErr := c.tearDownNICs(ctx, vmID, nsPath, records, deleteTAP)
 	// Slow cleanup stays outside the transaction (clause 1): the netns goes before the commit so a pure retryable closure never carries side effects.
-	if tdErr == nil && mode == tombstone.ModeAggregate && cl.Netns != "" {
+	if tdErr == nil && cl.Netns != "" {
 		if err := deleteNetnsFn(ctx, c.conf.netnsName(vmID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove netns %s (tombstone kept, retry resumes): %w", cl.Netns, err)
 		}
@@ -144,13 +142,12 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, mode tom
 func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward bool, err error) {
 	ts := c.tombstones()
 	var (
-		rec     *tombstone.Record
-		leaseID string
-		cl      netCleanup
+		rec *tombstone.Record
+		cl  netCleanup
 	)
 	if err := c.update(ctx, func(t *netTx) error {
 		var err error
-		rec, leaseID, err = ts.Recover(ctx, t.Writer(), vmID, &cl)
+		rec, err = ts.Recover(ctx, t.Writer(), vmID, &cl)
 		return err
 	}); err != nil {
 		return false, err
@@ -160,7 +157,7 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	}
 	// Subset teardown (vm net remove) creates its TAPs independently of the netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's TAPs die with the netns.
 	deleteTAP := rec.Payload.Mode == tombstone.ModeSubset
-	if err := c.finishTeardown(ctx, vmID, leaseID, rec.Payload.Mode, cl, deleteTAP); err != nil {
+	if err := c.finishTeardown(ctx, vmID, rec.LeaseID, cl, deleteTAP); err != nil {
 		return false, err
 	}
 	log.WithFunc("cni.recoverTombstone").Warnf(ctx, "rolled forward interrupted teardown for VM %s", vmID)

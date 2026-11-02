@@ -8,10 +8,8 @@ import (
 	"time"
 )
 
-var errPidfdUnsupported = errors.New("pidfd is unsupported on this OS")
-
 // OpenPidfd has no counterpart outside Linux.
-func OpenPidfd(int) (int, error) { return 0, errPidfdUnsupported }
+func OpenPidfd(int) (int, error) { return 0, errors.New("pidfd is unsupported on this OS") }
 
 // CloseFD is a no-op where no descriptor is ever opened.
 func CloseFD(int) {}

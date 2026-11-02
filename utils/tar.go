@@ -17,7 +17,6 @@ const (
 	paxSparseMap  = "COCOON.sparse.map"
 	paxSparseSize = "COCOON.sparse.size"
 
-	// sparseBlockSize is the zero-detection block size during extraction.
 	sparseBlockSize = 4096
 	extractReadBuf  = 1 << 20
 )
@@ -25,7 +24,6 @@ const (
 // maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
 var maxSparseMapJSONSize = 800 * 1024
 
-// sparseSegment describes one contiguous data region in a sparse file.
 type sparseSegment struct {
 	Offset int64 `json:"o"`
 	Length int64 `json:"l"`
@@ -99,7 +97,6 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 	}
 }
 
-// extractFileSparse restores a sparse file from its segment map.
 func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dataSize int64, mapJSON string) (err error) {
 	var segments []sparseSegment
 	if err = json.Unmarshal([]byte(mapJSON), &segments); err != nil {
@@ -123,7 +120,7 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dat
 		}
 		sum += seg.Length
 	}
-	// a tar rewritten by a third-party tool keeps the map but not the data it describes
+	// A tar rewritten by a third-party tool keeps the map but not the data it describes
 	if sum != dataSize {
 		return fmt.Errorf("sparse map describes %d data bytes, entry holds %d", sum, dataSize)
 	}
@@ -153,8 +150,8 @@ func extractFile(path string, r io.Reader, perm os.FileMode, size int64) (err er
 	for {
 		n, readErr := io.ReadFull(r, buf)
 		for chunk := buf[:n]; len(chunk) > 0; {
-			hole := isAllZero(chunk[:min(sparseBlockSize, len(chunk))])
 			run := min(sparseBlockSize, len(chunk))
+			hole := isAllZero(chunk[:run])
 			for run < len(chunk) && isAllZero(chunk[run:min(run+sparseBlockSize, len(chunk))]) == hole {
 				run += sparseBlockSize
 			}
@@ -220,7 +217,6 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 
 	segments, err := scanDataSegments(int(f.Fd()), size)
 	if err != nil {
-		// SEEK_HOLE/SEEK_DATA unsupported (e.g. tmpfs, NFS).
 		return rewindAndTarFull(tw, f, fi, path, nameInTar)
 	}
 
@@ -275,7 +271,6 @@ func rewindAndTarFull(tw *tar.Writer, f *os.File, fi os.FileInfo, path, nameInTa
 	return tarFileFrom(tw, f, fi, nameInTar)
 }
 
-// tarFileFrom writes an already-opened file as a regular (non-sparse) tar entry.
 func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) error {
 	hdr, err := tar.FileInfoHeader(fi, "")
 	if err != nil {

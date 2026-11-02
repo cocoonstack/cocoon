@@ -120,14 +120,14 @@ type Config struct {
 	Password   string
 	Networks   []NetworkInfo
 	Mounts     []MountSpec // optional fstab entries written by cloud-init
-	DNS        []string    // e.g. ["8.8.8.8", "8.8.4.4"]
+	DNS        []string
 }
 
 // NetworkInfo describes a single guest network interface for cloud-init.
 type NetworkInfo struct {
-	IP      string // e.g. "10.0.0.2"
-	Prefix  int    // CIDR prefix length, e.g. 24
-	Gateway string // e.g. "10.0.0.1"
+	IP      string
+	Prefix  int
+	Gateway string
 	MAC     string // matched by macaddress in network-config
 }
 
@@ -143,13 +143,12 @@ type MountSpec struct {
 func Generate(w io.Writer, cfg *Config) error {
 	files := make(map[string][]byte, 3)
 
-	var buf bytes.Buffer
 	render := func(name string, tmpl *template.Template) error {
-		buf.Reset()
+		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, cfg); err != nil {
 			return fmt.Errorf("render %s: %w", name, err)
 		}
-		files[name] = bytes.Clone(buf.Bytes())
+		files[name] = buf.Bytes()
 		return nil
 	}
 

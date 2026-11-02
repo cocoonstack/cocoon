@@ -80,10 +80,8 @@ func ValidFileSize(path string) (int64, error) {
 // ScanFileStems returns the name-without-suffix of every file in dir whose name ends with suffix.
 func ScanFileStems(dir, suffix string) ([]string, error) {
 	return scanDir(dir, func(e os.DirEntry) (string, bool) {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), suffix) {
-			return strings.TrimSuffix(e.Name(), suffix), true
-		}
-		return "", false
+		stem, ok := strings.CutSuffix(e.Name(), suffix)
+		return stem, ok && !e.IsDir()
 	})
 }
 
@@ -175,11 +173,11 @@ func CopyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) 
 	}
 	defer func() {
 		closeErr := dstFile.Close()
-		if err != nil { // fn failed: drop the partial dst, keep fn's error
+		if err != nil {
 			_ = os.Remove(dst)
 			return
 		}
-		err = closeErr // fn succeeded: surface a close failure but keep dst
+		err = closeErr
 	}()
 
 	return fn(srcFile, dstFile)

@@ -49,6 +49,7 @@ func TestDiskAttached(t *testing.T) {
 
 func TestCheckSnapshotImage(t *testing.T) {
 	rec := &hypervisor.VMRecord{
+		ID: "target-vm",
 		StorageConfigs: []*types.StorageConfig{
 			{Path: "/local/blobs/aaa.erofs", RO: true, Role: types.StorageRoleLayer},
 			{Path: "/local/blobs/bbb.erofs", RO: true, Role: types.StorageRoleLayer},
@@ -56,7 +57,6 @@ func TestCheckSnapshotImage(t *testing.T) {
 		},
 		ImageBlobIDs: map[string]struct{}{"aaa": {}, "bbb": {}, "kkk": {}},
 	}
-	rec.ID = "target-vm"
 	tests := []struct {
 		name    string
 		layers  []string

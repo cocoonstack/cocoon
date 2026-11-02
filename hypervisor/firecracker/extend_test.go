@@ -274,11 +274,7 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 	t.Helper()
 	s := &fcStub{cfg: cfg, state: "Running", puts: map[string]string{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		_ = json.MarshalWrite(w, fcInstanceInfo{State: s.state})
@@ -301,8 +297,8 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 	t.Cleanup(srv.Close)
 	addr := strings.TrimPrefix(srv.URL, "http://")
 	s.client = &http.Client{Transport: &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("tcp", addr)
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 		},
 	}}
 	return s

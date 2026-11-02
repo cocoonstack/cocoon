@@ -36,10 +36,8 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	}
 
 	assertRecordIDs(t, c, []string{"n-eth0"})
-	for _, name := range exec.attempted {
-		if name == "eth0" {
-			t.Fatal("subset recovery must not touch the other NIC")
-		}
+	if slices.Contains(exec.attempted, "eth0") {
+		t.Fatal("subset recovery must not touch the other NIC")
 	}
 	if netnsRemoved != 0 {
 		t.Fatalf("subset recovery removed the netns (%d removals)", netnsRemoved)

@@ -24,7 +24,6 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 	blobPath := conf.BlobPath(digestHex)
 	var tmpBlobPath string
 
-	// Best-effort cleanup if commit aborts before the final rename.
 	defer func() {
 		if tmpBlobPath != "" {
 			os.Remove(tmpBlobPath) //nolint:errcheck,gosec
@@ -112,7 +111,7 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	}
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseConvert})
-	// a process-unique target: two importers of one digest can both be past the lock while the other's convert is mid-write
+	// A process-unique target: the lock drops at return, before the output is published.
 	target, err := os.CreateTemp(conf.TempDir(), ".tmp-"+digestHex+"-*.qcow2")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)

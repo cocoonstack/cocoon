@@ -51,7 +51,7 @@ func TestCloneNICPlan(t *testing.T) {
 }
 
 func TestInitNetworkRejectsNegativeNICs(t *testing.T) {
-	_, _, err := initNetwork(t.Context(), &config.Config{}, "vm1", -1, &types.VMConfig{}, 2, "")
+	_, _, err := initNetwork(t.Context(), &config.Config{}, "vm1", -1, &types.VMConfig{}, "")
 
 	if err == nil {
 		t.Fatal("initNetwork accepted a negative --nics instead of rejecting it")

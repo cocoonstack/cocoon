@@ -17,18 +17,6 @@ const (
 	statFlagsField = 6 // index after the ")" that closes comm
 )
 
-type aliveFn func(int) bool
-
-type readFileFn func(string) ([]byte, error)
-
-// cmdlineVerifier reports whether pid's /proc cmdline still matches the expected binary and arg.
-type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
-
-type procEntry struct {
-	pid     int
-	cmdline string
-}
-
 // ProcScan caches /proc cmdlines for one binaryName.
 type ProcScan []procEntry
 
@@ -59,6 +47,17 @@ func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 	return scan.Find(expectArg), nil
 }
 
+type aliveFn func(int) bool
+
+type readFileFn func(string) ([]byte, error)
+
+type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
+
+type procEntry struct {
+	pid     int
+	cmdline string
+}
+
 func scanProcsByBinary(binaryName string, readFile readFileFn, alive aliveFn) (ProcScan, error) {
 	kthreaddChildren := readKthreaddChildren(readFile)
 	entries, err := os.ReadDir("/proc")
@@ -68,7 +67,7 @@ func scanProcsByBinary(binaryName string, readFile readFileFn, alive aliveFn) (P
 	var scan ProcScan
 	for _, e := range entries {
 		pid, atoiErr := strconv.Atoi(e.Name())
-		if atoiErr != nil || pid <= 0 {
+		if atoiErr != nil {
 			continue
 		}
 		if _, skip := kthreaddChildren[pid]; skip {

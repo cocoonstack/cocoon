@@ -169,7 +169,7 @@ func CleanupRuntimeFiles(ctx context.Context, runDir string, files []string) {
 
 func ExtractBlobIDs(storageConfigs []*types.StorageConfig, boot *types.BootConfig) map[string]struct{} {
 	ids := make(map[string]struct{})
-	if boot != nil && boot.KernelPath != "" {
+	if IsDirectBoot(boot) {
 		for _, s := range storageConfigs {
 			if s.Role == types.StorageRoleLayer {
 				ids[BlobHexFromPath(s.Path)] = struct{}{}
@@ -387,7 +387,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 			}
 		}
 	}
-	return copyPairs(ctx, cowPairs, utils.NoSync)
+	return copyPairs(ctx, cowPairs)
 }
 
 // CleanSnapshotFiles removes snapshot-specific files from runDir.
@@ -475,11 +475,7 @@ func snapshotResidentBasename(sc *types.StorageConfig) string {
 }
 
 func readHostCPUCount() int {
-	data, err := os.ReadFile(onlineCPUsPath)
-	if err != nil {
-		return runtime.NumCPU()
-	}
-	cpus, err := cgroup.ParseCPUList(strings.TrimSpace(string(data)))
+	cpus, err := cgroup.ReadCPUList(onlineCPUsPath)
 	if err != nil || len(cpus) == 0 {
 		return runtime.NumCPU()
 	}

@@ -45,19 +45,16 @@ func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 // recordExistsFn reports whether the source VM's record survives; absent means the drive can be replaced with a placeholder.
 type recordExistsFn func(string) (bool, error)
 
-type launchCloneFn func([]*os.File) (int, *cloneLeaseControl, error)
-
 type vmmLaunchFn func() (int, error)
 
 // src and dst are index-aligned: the snapshot's recorded drives against the clone's rebuilt ones.
 type cloneLaunch struct {
-	launch           launchCloneFn
-	sockPath, runDir string
-	vmID             string
-	vmCfg            *types.VMConfig
-	networkConfigs   []*types.NetworkConfig
-	src, dst         []*types.StorageConfig
-	dataDisks        []*types.StorageConfig
+	rec                 *hypervisor.VMRecord
+	sockPath, netnsPath string
+	vmCfg               *types.VMConfig
+	networkConfigs      []*types.NetworkConfig
+	src, dst            []*types.StorageConfig
+	dataDisks           []*types.StorageConfig
 }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -107,11 +104,8 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
-	launch := func(leaseFiles []*os.File) (int, *cloneLeaseControl, error) {
-		return fc.launchProcessWithLeases(ctx, rec, sockPath, net.NetnsPath, leaseFiles, true)
-	}
 	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{
-		launch: launch, sockPath: sockPath, runDir: runDir, vmID: vmID, vmCfg: vmCfg,
+		rec: rec, sockPath: sockPath, netnsPath: net.NetnsPath, vmCfg: vmCfg,
 		networkConfigs: networkConfigs, src: meta.StorageConfigs, dst: storageConfigs, dataDisks: dataDisks,
 	})
 	if cloneErr != nil {
@@ -150,7 +144,7 @@ func (fc *Firecracker) startCloneVM(ctx context.Context, cl cloneLaunch) (int, *
 
 func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 	netOverrides := buildNetworkOverrides(cl.networkConfigs)
-	vsockPath := hypervisor.VsockSockPath(cl.runDir)
+	vsockPath := hypervisor.VsockSockPath(cl.rec.RunDir)
 
 	plan, err := holdBindableRedirects(ctx, fc.Conf.RootDirPath(), fc.Conf.RunDir(), cl.src, cl.dst, func(id string) (bool, error) {
 		rec, peekErr := fc.PeekRecord(ctx, id)
@@ -165,26 +159,25 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 		leaseControl *cloneLeaseControl
 	)
 	if len(plan.binds) == 0 {
-		pid, leaseControl, err = cl.launch(nil)
+		pid, leaseControl, err = fc.launchProcessWithLeases(ctx, cl.rec, cl.sockPath, cl.netnsPath, nil, true)
 	} else {
 		pid, err = launchWithBinds(plan.binds, func() (int, error) {
 			var launchErr error
-			pid, leaseControl, launchErr = cl.launch(plan.files())
+			pid, leaseControl, launchErr = fc.launchProcessWithLeases(ctx, cl.rec, cl.sockPath, cl.netnsPath, plan.files(), true)
 			return pid, launchErr
 		})
 	}
 	if err != nil {
-		leaseControl.close()
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("launch FC: %w", err)
 	}
 	fail := func(err error) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir, runtimeFiles)
 		plan.close()
 		return 0, nil, nil, err
 	}
-	if err := loadSnapshotFC(ctx, cl.sockPath, cl.runDir, netOverrides, vsockPath); err != nil {
+	if err := loadSnapshotFC(ctx, cl.sockPath, cl.rec.RunDir, netOverrides, vsockPath); err != nil {
 		return fail(fmt.Errorf("snapshot/load: %w", err))
 	}
 	if err := verifyDriveFDs(pid, plan.binds); err != nil {
@@ -196,11 +189,11 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl cloneLaunch) (err error) {
 	defer func() {
 		if err != nil {
-			fc.AbortLaunch(ctx, pid, cl.sockPath, cl.runDir, runtimeFiles)
+			fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir, runtimeFiles)
 		}
 	}()
 
-	if err = fc.ArmCPUQuota(cl.vmID, &cl.vmCfg.Config); err != nil {
+	if err = fc.ArmCPUQuota(cl.rec.ID, &cl.vmCfg.Config); err != nil {
 		return err
 	}
 	hc := utils.NewSocketHTTPClient(cl.sockPath)
@@ -281,13 +274,10 @@ func holdBindableRedirects(ctx context.Context, rootDir, runRoot string, srcConf
 		return nil, err
 	}
 	plan := &bindRedirectPlan{binds: binds, leases: leases}
-	fail := func(err error) (*bindRedirectPlan, error) {
-		plan.close()
-		return nil, err
-	}
 	for _, bind := range binds {
 		if sourceErr := ensureBindableSource(ctx, runRoot, bind[0], sourceRecordExists); sourceErr != nil {
-			return fail(sourceErr)
+			plan.close()
+			return nil, sourceErr
 		}
 	}
 	return plan, nil
@@ -378,21 +368,7 @@ func createBindPlaceholder(path string) error {
 	if err := os.Mkdir(dir, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("create bind placeholder dir: %w", err)
 	}
-	fi, err := os.Lstat(dir)
-	if err != nil {
-		return fmt.Errorf("inspect bind placeholder dir: %w", err)
-	}
-	if !fi.IsDir() {
-		return fmt.Errorf("bind placeholder parent %s is not a directory", dir)
-	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // direct child of the configured managed run root
-	if errors.Is(err, fs.ErrExist) {
-		fi, statErr := os.Lstat(path)
-		if statErr == nil && fi.Mode().IsRegular() {
-			return nil
-		}
-		return fmt.Errorf("bind placeholder %s changed concurrently", path)
-	}
 	if err != nil {
 		return fmt.Errorf("create bind placeholder: %w", err)
 	}

@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// the thread is never unlocked: it dies with the goroutine, taking the private mount namespace along.
+// The thread is never unlocked: it dies with the goroutine, taking the private mount namespace along.
 func launchWithBinds(binds [][2]string, launch vmmLaunchFn) (int, error) {
 	type result struct {
 		pid int
@@ -43,7 +43,7 @@ func launchWithBinds(binds [][2]string, launch vmmLaunchFn) (int, error) {
 	return r.pid, r.err
 }
 
-// unlinking a mountpoint path from another namespace detaches the bind (mount_namespaces(7)).
+// Unlinking a mountpoint path from another namespace detaches the bind (mount_namespaces(7)).
 func verifyDriveFDs(pid int, binds [][2]string) error {
 	fdDir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
 	entries, err := os.ReadDir(fdDir)

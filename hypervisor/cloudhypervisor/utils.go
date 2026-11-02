@@ -72,8 +72,7 @@ func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
 	return hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
 }
 
-// callers pass their parsed config.json so clone and restore decode it once.
-func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
+func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err
 	}
@@ -95,7 +94,6 @@ func validateSnapshotIntegrityParsed(srcDir string, sidecar []*types.StorageConf
 	return requireMemoryRangeFile(srcDir)
 }
 
-// a missing memory-range-* prefix alone is enough to fail vm.restore.
 func requireMemoryRangeFile(srcDir string) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
@@ -108,8 +106,8 @@ func requireMemoryRangeFile(srcDir string) error {
 }
 
 // vmAPIOnce never retries: the CH endpoints it serves are not idempotent.
-func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string, body []byte, successCodes ...int) ([]byte, error) {
-	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, body, successCodes...)
+func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string) ([]byte, error) {
+	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, nil)
 }
 
 func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind string, payload T, successCodes ...int) error {
@@ -118,13 +116,13 @@ func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind strin
 }
 
 func shutdownVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.shutdown", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.shutdown")
 	return err
 }
 
 // pauseVM is idempotent — swallows CH's Paused→Paused 500 so a stuck-paused VM recovers.
 func pauseVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.pause", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.pause")
 	if err != nil && isAlreadyInStateError(err, "Paused") {
 		return nil
 	}
@@ -133,14 +131,13 @@ func pauseVM(ctx context.Context, hc *http.Client) error {
 
 // resumeVM is idempotent — swallows CH's Running→Running 500.
 func resumeVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.resume", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.resume")
 	if err != nil && isAlreadyInStateError(err, "Running") {
 		return nil
 	}
 	return err
 }
 
-// isAlreadyInStateError matches CH's exact `Invalid transition: InvalidStateTransition(<state>, <state>)` in a 500 body.
 func isAlreadyInStateError(err error, state string) bool {
 	ae, ok := errors.AsType[*utils.APIError](err)
 	if !ok || ae.Code != http.StatusInternalServerError {
@@ -149,19 +146,10 @@ func isAlreadyInStateError(err error, state string) bool {
 	return strings.Contains(ae.Message, fmt.Sprintf("Invalid transition: InvalidStateTransition(%s, %s)", state, state))
 }
 
-// the memory transfer needs a longer timeout than the shared client default.
 func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
-	body, err := json.Marshal(map[string]string{
-		"destination_url": "file://" + destDir,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal snapshot request: %w", err)
-	}
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		chAPIBase+"vm.snapshot", body, http.StatusNoContent)
-	return err
+	return vmPutJSON(ctx, hc, "vm.snapshot", "snapshot request", map[string]string{"destination_url": "file://" + destDir}, http.StatusNoContent)
 }
 
 func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string) error {
@@ -177,16 +165,9 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 	case restoreModeMmap:
 		cfg.MemoryRestoreMode = chMemoryRestoreMmap
 	default:
-		// Fail loud: a misspelled mode silently falling back to eager copy is a ~6x restore-latency regression.
 		return fmt.Errorf("unknown restore mode %q", restoreMode)
 	}
-	body, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal restore request: %w", err)
-	}
-	_, err = utils.DoAPIOnce(ctx, hc, http.MethodPut,
-		chAPIBase+"vm.restore", body, http.StatusNoContent)
-	return err
+	return vmPutJSON(ctx, hc, "vm.restore", "restore request", cfg, http.StatusNoContent)
 }
 
 // addDiskVM is non-idempotent — a retry after a successful attach would surface as "duplicate id".
@@ -210,15 +191,10 @@ func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) er
 	})
 }
 
-func addNetVM(ctx context.Context, hc *http.Client, net chNet) error {
-	return vmPutJSON(ctx, hc, "vm.add-net", "add-net request", net, http.StatusOK, http.StatusNoContent)
-}
-
-// addCocoonNIC posts vm.add-net with the deterministic cocoon-net-<mac> id; returns id for rollback.
 func addCocoonNIC(ctx context.Context, hc *http.Client, nc *types.NetworkConfig) (string, error) {
 	chN := networkConfigToNet(nc)
 	chN.ID = cocoonNetID(nc.MAC)
-	if err := addNetVM(ctx, hc, chN); err != nil {
+	if err := vmPutJSON(ctx, hc, "vm.add-net", "add-net request", chN, http.StatusOK, http.StatusNoContent); err != nil {
 		return "", err
 	}
 	return chN.ID, nil
@@ -248,7 +224,7 @@ func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
 }
 
 func powerButton(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.power-button", nil)
+	_, err := vmAPIOnce(ctx, hc, "vm.power-button")
 	return err
 }
 
@@ -319,7 +295,6 @@ func qemuExpandImage(ctx context.Context, path string, targetSize int64) error {
 	if targetSize <= hdr.VirtualSize {
 		return nil
 	}
-	// shell out: qemu-img is the authoritative qcow2 tool (see utils/qemuimg.go).
 	if err := utils.RunQemuImg(ctx, "resize", path, strconv.FormatInt(targetSize, 10)); err != nil {
 		return fmt.Errorf("resize %s: %w", path, err)
 	}

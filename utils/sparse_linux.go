@@ -20,10 +20,8 @@ func SparseCopy(dst, src string, sync SyncMode) error {
 			return fmt.Errorf("stat src: %w", err)
 		}
 		size := fi.Size()
-		if size > 0 {
-			if truncErr := dstFile.Truncate(size); truncErr != nil {
-				return fmt.Errorf("truncate dst: %w", truncErr)
-			}
+		if truncErr := dstFile.Truncate(size); truncErr != nil {
+			return fmt.Errorf("truncate dst: %w", truncErr)
 		}
 
 		segments, err := scanDataSegments(int(srcFile.Fd()), size)
@@ -68,11 +66,7 @@ func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 
 		holeStart, err := syscall.Seek(fd, dataStart, unix.SEEK_HOLE)
 		if err != nil {
-			if errors.Is(err, syscall.ENXIO) {
-				holeStart = size
-			} else {
-				return nil, fmt.Errorf("seek_hole at %d: %w", dataStart, err)
-			}
+			return nil, fmt.Errorf("seek_hole at %d: %w", dataStart, err)
 		}
 
 		segments = append(segments, sparseSegment{

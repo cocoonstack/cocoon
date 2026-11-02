@@ -4,8 +4,6 @@ package utils
 
 import "errors"
 
-var errVerifyUnsupported = errors.New("verifyProcessCmdline: unsupported on this OS")
-
 type ProcScan struct{}
 
 func ScanProcsByBinary(_ string) (ProcScan, error) { return ProcScan{}, nil }
@@ -17,7 +15,7 @@ func FindVMMByCmdline(_, _ string) ([]int, error) {
 }
 
 func verifyProcessCmdline(_ int, _, _ string) (bool, error) {
-	return false, errVerifyUnsupported
+	return false, errors.New("verifyProcessCmdline: unsupported on this OS")
 }
 
 func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, error) {

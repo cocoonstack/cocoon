@@ -121,7 +121,6 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int, exited <-chan struct{}, err error) {
 	reaped := make(chan struct{})
 	started := false
-	pidWritten := false
 	binaryName := b.Conf.BinaryName()
 	pidPath := b.PIDFilePath(spec.Rec.RunDir)
 	sockPath := SocketPath(spec.Rec.RunDir)
@@ -132,8 +131,6 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 		if started {
 			_ = spec.Cmd.Process.Kill()
 			<-reaped
-		}
-		if pidWritten {
 			_ = os.Remove(pidPath)
 		}
 		if spec.OnFail != nil {
@@ -170,7 +167,6 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	if err = utils.WritePIDFile(pidPath, pid); err != nil {
 		return 0, nil, fmt.Errorf("write PID file: %w", err)
 	}
-	pidWritten = true
 
 	if err = WaitForSocket(ctx, sockPath, pid, b.Conf.SocketWaitTimeout(), binaryName); err != nil {
 		return 0, nil, err

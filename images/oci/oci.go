@@ -27,10 +27,8 @@ var _ images.Images = (*OCI)(nil)
 type OCI struct {
 	images.Ops[imageEntry]
 
-	conf            *Config
-	store           *images.Store[imageEntry]
-	pullGroup       singleflight.Group
-	pinnedElsewhere images.PinRecheck
+	conf      *Config
+	pullGroup singleflight.Group
 }
 
 // New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.
@@ -44,36 +42,30 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 
 	logger.Debugf(ctx, "OCI image backend initialized, pool size: %d", cfg.PoolSize)
 
-	store := images.NewMetaStore[imageEntry](metaStore, NamespaceName)
-	o := &OCI{
+	return &OCI{
 		conf:  cfg,
-		store: store,
-		Ops: images.Ops[imageEntry]{
-			Store: store,
-			Type:  typ,
-		},
-	}
-	return o, nil
+		Store: images.NewMetaStore[imageEntry](metaStore, NamespaceName),
+		Typ:   typ,
+		Base:  &cfg.BaseConfig,
+	}, nil
 }
-
-func (o *OCI) Type() string { return typ }
 
 func (o *OCI) Pull(ctx context.Context, image string, _ bool, tracker progress.Tracker) error {
 	return images.SingleflightDo(ctx, &o.pullGroup, image, func() error {
-		return pull(ctx, o.conf, o.store, image, tracker)
+		return pull(ctx, o.conf, o.Store, image, tracker)
 	})
 }
 
 func (o *OCI) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {
-	return importTarLayers(ctx, o.conf, o.store, name, tracker, file...)
+	return importTarLayers(ctx, o.conf, o.Store, name, tracker, file...)
 }
 
 func (o *OCI) ImportFromReader(ctx context.Context, name string, tracker progress.Tracker, r io.Reader) error {
-	return importTarFromReader(ctx, o.conf, o.store, name, tracker, r)
+	return importTarFromReader(ctx, o.conf, o.Store, name, tracker, r)
 }
 
 func (o *OCI) Config(ctx context.Context, vm *types.VMConfig) (configs []*types.StorageConfig, boot *types.BootConfig, err error) {
-	err = o.store.View(ctx, func(idx *imageIndex) error {
+	err = o.Store.View(ctx, func(idx *imageIndex) error {
 		_, entry, ok := images.LookupOne(idx.Images, vm.Image)
 		if !ok {
 			return fmt.Errorf("image %q not found for VM %s", vm.Image, vm.Name)

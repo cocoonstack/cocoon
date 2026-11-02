@@ -105,9 +105,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(cmdsnapshot.Command(cmdsnapshot.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmdmeta.Command(cmdmeta.Handler{BaseHandler: base}))
 	cmd.AddCommand(cmddaemon.Command(cmddaemon.Handler{BaseHandler: base}))
-	for _, c := range cmdothers.Commands(cmdothers.Handler{BaseHandler: base}) {
-		cmd.AddCommand(c)
-	}
+	cmd.AddCommand(cmdothers.Commands(cmdothers.Handler{BaseHandler: base})...)
 
 	return cmd
 }

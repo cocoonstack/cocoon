@@ -15,7 +15,7 @@ type VMNetwork interface {
 	Cleanup(ctx context.Context, vmID string) error
 }
 
-// SetNetwork injects the host-networking seam; a nil seam leaves every VM's plumbing untouched, as a library or test embedding wants.
+// SetNetwork injects the host-networking seam.
 func (b *Backend) SetNetwork(n VMNetwork) { b.Net = n }
 
 // RecoverNetwork rebuilds and un-quiesces a VM's plumbing before launch; the caller holds the VM ops lock.

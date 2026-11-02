@@ -44,7 +44,7 @@ func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 			return refs
 		},
 		ScanDisk: func() ([]string, error) { return []string{"deadbeef"}, nil },
-		Removers: []func(string) error{func(hex string) error { removed = append(removed, hex); return nil }},
+		Removers: []BlobRemover{func(hex string) error { removed = append(removed, hex); return nil }},
 		TempDir:  dir,
 	})
 
@@ -145,7 +145,7 @@ func TestGCCollectRespectsExternalPins(t *testing.T) {
 		LockPath: func(hex string) string { return filepath.Join(dir, hex+".lock") },
 		ReadRefs: func(map[string]*gcTestEntry) map[string]struct{} { return map[string]struct{}{} },
 		ScanDisk: func() ([]string, error) { return []string{"deadbeef"}, nil },
-		Removers: []func(string) error{func(hex string) error { removed = append(removed, hex); return nil }},
+		Removers: []BlobRemover{func(hex string) error { removed = append(removed, hex); return nil }},
 		TempDir:  dir,
 		PinnedElsewhere: func(context.Context) (map[string]struct{}, error) {
 			return pins, nil
@@ -217,7 +217,7 @@ func TestGCCollectLogsUnreferencedReason(t *testing.T) {
 		LockPath: func(hex string) string { return filepath.Join(dir, hex+".lock") },
 		ReadRefs: func(map[string]*gcTestEntry) map[string]struct{} { return map[string]struct{}{} },
 		ScanDisk: func() ([]string, error) { return []string{"deadbeef"}, nil },
-		Removers: []func(string) error{func(string) error { return nil }},
+		Removers: []BlobRemover{func(string) error { return nil }},
 		TempDir:  dir,
 	})
 	if err := mod.Collect(ctx, []string{"deadbeef"}, ImageGCSnapshot{}); err != nil {

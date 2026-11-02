@@ -64,7 +64,7 @@ func sharedBound(ctx context.Context, f *os.File, path string) (*SharedLease, er
 				return &SharedLease{file: f}, nil
 			}
 			return nil, nil
-		case !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN):
+		case !errors.Is(err, unix.EWOULDBLOCK):
 			return nil, err
 		}
 		select {

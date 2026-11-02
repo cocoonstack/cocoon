@@ -200,9 +200,6 @@ func Arm(parentDir, vmID string, k Knobs) error {
 // Remove kills everything left in an owned scope and removes it; the VMM must already be confirmed dead. ENOENT counts as success.
 func Remove(ctx context.Context, parentDir, vmID string) error {
 	dir := ScopeDir(parentDir, vmID)
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
 	// Best-effort: catches the CH pty child and stray forks; an empty scope has nothing to kill.
 	_ = writeControl(dir, killName, "1")
 	// EBUSY polls: killed members need a moment to exit before rmdir succeeds.
@@ -281,8 +278,15 @@ func ensureParent(parentDir, fence string, placed bool) error {
 	if fence != "" || placed {
 		ctrls = append(ctrls, "cpuset")
 	}
-	if err := forEachLevel(rel, func(dir string) error { return enableControllers(dir, ctrls) }); err != nil {
+	if err := enableControllers(Root, ctrls); err != nil {
 		return err
+	}
+	dir := Root
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		dir = filepath.Join(dir, part)
+		if err := enableControllers(dir, ctrls); err != nil {
+			return err
+		}
 	}
 	return reconcileFence(parentDir, fence)
 }
@@ -297,10 +301,8 @@ func reconcileFence(parentDir, fence string) error {
 		return nil
 	}
 	// The kernel echoes cpu lists canonicalized ("0-3,4-7" reads back "0-7"): compare parsed sets, or a non-canonical config string re-runs the scan and the serialized cpuset write on every launch.
-	if cur, curErr := ParseCPUList(current); curErr == nil {
-		if want, wantErr := ParseCPUList(fence); wantErr == nil && slices.Equal(cur, want) {
-			return nil
-		}
+	if sameCPUList(current, fence) {
+		return nil
 	}
 	if err := checkSubset(fence, filepath.Dir(parentDir), "cgroup_cpus fence"); err != nil {
 		return err
@@ -316,12 +318,8 @@ func placeScope(parentDir, dir, cpuset string) error {
 	if cpuset == "" {
 		return nil
 	}
-	if current, err := readControl(dir, cpusetName); err == nil {
-		if cur, curErr := ParseCPUList(current); curErr == nil {
-			if want, wantErr := ParseCPUList(cpuset); wantErr == nil && slices.Equal(cur, want) {
-				return nil
-			}
-		}
+	if current, err := readControl(dir, cpusetName); err == nil && sameCPUList(current, cpuset) {
+		return nil
 	}
 	if err := checkSubset(cpuset, parentDir, "cpuset_cpus placement"); err != nil {
 		return err
@@ -387,20 +385,6 @@ func explainFenceWrite(parentDir, current, fence string, err error) error {
 	return fmt.Errorf("cgroup_cpus %q -> %q rejected with %d VM(s) running; the fence is machine-wide, drain them first: %w", current, fence, len(ids), err)
 }
 
-func forEachLevel(rel string, fn func(dir string) error) error {
-	if err := fn(Root); err != nil {
-		return err
-	}
-	dir := Root
-	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
-		dir = filepath.Join(dir, part)
-		if err := fn(dir); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write. Missing controllers go in one combined write.
 func enableControllers(dir string, ctrls []string) error {
 	have, _ := readControl(dir, subtreeControlName)
@@ -447,4 +431,10 @@ func writeControl(dir, name, value string) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+func sameCPUList(a, b string) bool {
+	as, aErr := ParseCPUList(a)
+	bs, bErr := ParseCPUList(b)
+	return aErr == nil && bErr == nil && slices.Equal(as, bs)
 }

@@ -301,7 +301,6 @@ func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 	}); err != nil {
 		return err
 	}
-	// One durable transaction per namespace (§6).
 	return dst.Update(ctx, meta.Scope{Write: ns.Name}, meta.CommitDurable, func(w meta.Writer) error {
 		for _, r := range rows {
 			if err := w.PutRaw(ctx, ns.Name, r.table, r.id, r.raw, false); err != nil {

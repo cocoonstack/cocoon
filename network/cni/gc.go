@@ -30,8 +30,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 		Name:    typ,
 		Recover: c.gcRecover,
 		ReadDB: func(ctx context.Context) (cniSnapshot, error) {
-			var snap cniSnapshot
-			snap.dbVMIDs = make(map[string]struct{})
+			snap := cniSnapshot{dbVMIDs: make(map[string]struct{})}
 			if err := c.view(ctx, func(t *netTx) error {
 				return t.Scan(func(_ string, rec *networkRecord) error {
 					snap.dbVMIDs[rec.VMID] = struct{}{}

@@ -60,7 +60,6 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 			}
 		}
 	}()
-	// Fan out: snapshot dirs hold a few large files (memory, COW, data disks), so wall time is the longest copy, not the sum.
 	if _, err = utils.Map(ctx, names, func(ctx context.Context, _ int, name string) (struct{}, error) {
 		if copyErr := utils.ReflinkCopy(ctx, filepath.Join(dir, name), filepath.Join(dataDir, name), utils.Sync); copyErr != nil {
 			return struct{}{}, fmt.Errorf("copy %s: %w", name, copyErr)

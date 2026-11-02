@@ -142,9 +142,6 @@ func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg fu
 }
 
 func planLocalImport(files []string) (importLocalPlan, error) {
-	if len(files) == 0 {
-		return importLocalPlan{}, fmt.Errorf("no local files provided")
-	}
 	kind, err := detectLocalImportSource(files[0])
 	if err != nil {
 		return importLocalPlan{}, err
@@ -189,7 +186,7 @@ func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
 		return nil, 0, nil, fmt.Errorf("peek: %w", err)
 	}
 
-	var inner *bufio.Reader
+	inner := br
 	if bytes.HasPrefix(peek, utils.GzipMagic) {
 		gr, gzErr := gzip.NewReader(br)
 		if gzErr != nil {
@@ -197,8 +194,6 @@ func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
 		}
 		cleanup = func() { _ = gr.Close() }
 		inner = bufio.NewReaderSize(gr, 8192)
-	} else {
-		inner = br
 	}
 
 	cpeek, err := inner.Peek(4)

@@ -13,8 +13,21 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+// PrepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
+func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
+	if len(vmCfg.DataDisks) == 0 {
+		return nil, nil
+	}
+	for _, spec := range vmCfg.DataDisks {
+		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
+			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
+		}
+	}
+	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
+}
+
 func InitCOWFilesystem(ctx context.Context, path string) error {
-	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
+	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec
 		ctx,
 		"mkfs.ext4", "-F", "-m", "0", "-q",
@@ -55,7 +68,7 @@ func RecordedCOWPath(rec *VMRecord) (string, error) {
 	return cowPath, nil
 }
 
-// CopyWritableDisks copies concurrently so pause-window wall time is the longest single copy, not the sum; durability is paid at persist.
+// CopyWritableDisks copies concurrently; durability is paid at persist.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {
@@ -63,7 +76,7 @@ func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*t
 			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
 		}
 	}
-	return copyPairs(ctx, pairs, utils.NoSync)
+	return copyPairs(ctx, pairs)
 }
 
 // PrepareDataDisks requires unique, ValidDataDiskName-passing names.
@@ -97,7 +110,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			DirectIO:   spec.DirectIO,
 		})
 	}
-	// Wall time is the slowest disk, not the sum.
 	if _, err := utils.Map(ctx, specs, func(ctx context.Context, i int, spec types.DataDiskSpec) (struct{}, error) {
 		if err := createSparseFile(out[i].Path, spec.Size); err != nil {
 			return struct{}{}, fmt.Errorf("data disk %s: %w", spec.Name, err)
@@ -112,19 +124,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 		return nil, err
 	}
 	return out, nil
-}
-
-// PrepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
-func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
-	if len(vmCfg.DataDisks) == 0 {
-		return nil, nil
-	}
-	for _, spec := range vmCfg.DataDisks {
-		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
-			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
-		}
-	}
-	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
 // PrepareOCICOW creates an ext4-formatted sparse COW at cowPath and returns storageConfigs with the CowSerial entry appended.
@@ -143,9 +142,9 @@ func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageCo
 	}), nil
 }
 
-func copyPairs(ctx context.Context, pairs [][2]string, sync utils.SyncMode) error {
+func copyPairs(ctx context.Context, pairs [][2]string) error {
 	_, err := utils.Map(ctx, pairs, func(ctx context.Context, _ int, p [2]string) (struct{}, error) {
-		if err := utils.ReflinkCopy(ctx, p[0], p[1], sync); err != nil {
+		if err := utils.ReflinkCopy(ctx, p[0], p[1], utils.NoSync); err != nil {
 			return struct{}{}, fmt.Errorf("copy %s: %w", filepath.Base(p[1]), err)
 		}
 		return struct{}{}, nil

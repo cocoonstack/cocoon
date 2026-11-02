@@ -165,14 +165,13 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 		r.StoppedAt = nil
 		r.QuiescePending = false
 		gen = r.TransitionGeneration
-		if open {
-			return t.Put(id, r)
+		if !open {
+			emit = true
+			shape = shapeFromConfig(r.Config)
+			reason = emitReason
+			r.StartedAt = &now
+			r.FirstBooted = true
 		}
-		emit = true
-		shape = shapeFromConfig(r.Config)
-		reason = emitReason
-		r.StartedAt = &now
-		r.FirstBooted = true
 		return t.Put(id, r)
 	}); err != nil {
 		log.WithFunc(b.Typ+".ReconcileToRunning").Warnf(ctx, "flip %s to running: %v", id, err)
@@ -220,7 +219,7 @@ func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) 
 func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
 	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
-		staged := []metering.Entry{}
+		emits = nil
 		for _, id := range ids {
 			r, err := t.Get(id)
 			if err != nil {
@@ -229,12 +228,11 @@ func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(
 			if r == nil {
 				continue
 			}
-			staged = append(staged, mutate(r, id)...)
+			emits = append(emits, mutate(r, id)...)
 			if err := t.Put(id, r); err != nil {
 				return err
 			}
 		}
-		emits = staged
 		return nil
 	}); err != nil {
 		return err
@@ -280,7 +278,7 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
-	// a recorded placement means the VMM may hold those cpus; only Stopped proves it is gone, an Error-state VMM may still be pinned
+	// A recorded placement means the VMM may hold those cpus; only Stopped proves it is gone, an Error-state VMM may still be pinned
 	if state == types.VMStateStopped {
 		r.CPUSet, r.QueueCPUs = "", ""
 	}

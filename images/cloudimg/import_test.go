@@ -122,7 +122,7 @@ func TestCommitRepublishesABlobCollectedAfterTheEntryCheck(t *testing.T) {
 		}
 	})
 
-	if err := commit(ctx, c.conf, c.store, "pulled", tracker, source, digest); err != nil {
+	if err := commit(ctx, c.conf, c.Store, "pulled", tracker, source, digest); err != nil {
 		t.Fatalf("commit after the cached blob was collected: %v", err)
 	}
 	got, err := os.ReadFile(c.conf.BlobPath(digest))

@@ -16,9 +16,6 @@ import (
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil, nil, os.ErrClosed
-	}
 	if s.events == nil {
 		n, err := newNotifier(s.nss)
 		if err != nil {
@@ -35,18 +32,6 @@ type fileToken struct {
 	ino   uint64
 	size  int64
 	mtime int64
-}
-
-func statToken(path string) fileToken {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fileToken{}
-	}
-	tok := fileToken{size: info.Size(), mtime: info.ModTime().UnixNano()}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		tok.ino = st.Ino
-	}
-	return tok
 }
 
 // tokens are touched only by newNotifier and the Run goroutine, never concurrently.
@@ -76,7 +61,7 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 		}
 	}
 	n.check()
-	go n.b.Run(n.check, testWatchErrs)
+	go n.b.Run(n.check)
 	return n, nil
 }
 
@@ -92,4 +77,16 @@ func (n *notifier) check() {
 	if changed {
 		n.b.Broadcast()
 	}
+}
+
+func statToken(path string) fileToken {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileToken{}
+	}
+	tok := fileToken{size: info.Size(), mtime: info.ModTime().UnixNano()}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		tok.ino = st.Ino
+	}
+	return tok
 }
