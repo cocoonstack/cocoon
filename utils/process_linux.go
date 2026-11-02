@@ -11,7 +11,15 @@ import (
 	"strings"
 )
 
+const (
+	pfKthread = 0x00200000
+
+	statFlagsField = 6 // index after the ")" that closes comm
+)
+
 type aliveFn func(int) bool
+
+type readFileFn func(string) ([]byte, error)
 
 // cmdlineVerifier reports whether pid's /proc cmdline still matches the expected binary and arg.
 type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
@@ -51,7 +59,8 @@ func FindVMMByCmdline(binaryName, expectArg string) ([]int, error) {
 	return scan.Find(expectArg), nil
 }
 
-func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error), alive aliveFn) (ProcScan, error) {
+func scanProcsByBinary(binaryName string, readFile readFileFn, alive aliveFn) (ProcScan, error) {
+	kthreaddChildren := readKthreaddChildren(readFile)
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, err
@@ -60,6 +69,9 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 	for _, e := range entries {
 		pid, atoiErr := strconv.Atoi(e.Name())
 		if atoiErr != nil || pid <= 0 {
+			continue
+		}
+		if _, skip := kthreaddChildren[pid]; skip {
 			continue
 		}
 		data, readErr := readFile(fmt.Sprintf("/proc/%d/cmdline", pid))
@@ -76,6 +88,35 @@ func scanProcsByBinary(binaryName string, readFile func(string) ([]byte, error),
 		scan = append(scan, procEntry{pid: pid, cmdline: string(data)})
 	}
 	return scan, nil
+}
+
+// Kernel threads and usermode helpers are the only children, and neither is a VMM.
+func readKthreaddChildren(readFile readFileFn) map[int]struct{} {
+	stat, err := readFile("/proc/2/stat")
+	if err != nil {
+		return nil
+	}
+	_, afterComm, _ := strings.CutLast(string(stat), ")")
+	fields := strings.Fields(afterComm)
+	if len(fields) <= statFlagsField {
+		return nil
+	}
+	flags, err := strconv.ParseUint(fields[statFlagsField], 10, 64)
+	// PID 2 is an ordinary process inside a PID namespace.
+	if err != nil || flags&pfKthread == 0 {
+		return nil
+	}
+	children, err := readFile("/proc/2/task/2/children")
+	if err != nil {
+		return nil
+	}
+	pids := map[int]struct{}{}
+	for field := range strings.FieldsSeq(string(children)) {
+		if pid, atoiErr := strconv.Atoi(field); atoiErr == nil {
+			pids[pid] = struct{}{}
+		}
+	}
+	return pids
 }
 
 // Match argv[0] basename strictly + expectArg substring so "bash -c 'cloud-hypervisor ...'" can't impersonate the VMM.

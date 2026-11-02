@@ -5,6 +5,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"testing"
@@ -54,6 +55,69 @@ func TestScanProcsByBinaryReadErrors(t *testing.T) {
 	})
 }
 
+func TestScanProcsByBinarySkipsKthreaddChildren(t *testing.T) {
+	self := os.Getpid()
+	selfPath := fmt.Sprintf("/proc/%d/cmdline", self)
+	const kthreadd = "2 (kthreadd) S 0 0 0 0 -1 2129984 0 0"
+
+	tests := []struct {
+		name     string
+		children string
+		want     []int
+	}{
+		{"listed pid is not opened", fmt.Sprintf("%d ", self), nil},
+		{"unlisted pid is matched", fmt.Sprintf("%d ", self+1), []int{self}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			readFile := fakeProc(map[string]string{
+				"/proc/2/stat":            kthreadd,
+				"/proc/2/task/2/children": tt.children,
+				selfPath:                  "/bin/testvmm\x00--api-socket\x00/run/x.sock",
+			})
+			scan, err := scanProcsByBinary("testvmm", readFile, func(int) bool { return false })
+			if err != nil {
+				t.Fatalf("scanProcsByBinary: %v", err)
+			}
+			if got := scan.Find("/run/x.sock"); !slices.Equal(got, tt.want) {
+				t.Errorf("Find: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadKthreaddChildren(t *testing.T) {
+	const children = "3 4 x 5 \n"
+
+	tests := []struct {
+		name string
+		proc map[string]string
+		want []int
+	}{
+		{"kthreadd children", map[string]string{"/proc/2/stat": "2 (kthreadd) S 0 0 0 0 -1 2129984 0", "/proc/2/task/2/children": children}, []int{3, 4, 5}},
+		{"comm with a paren", map[string]string{"/proc/2/stat": "2 (a) b) S 0 0 0 0 -1 2129984 0", "/proc/2/task/2/children": children}, []int{3, 4, 5}},
+		{"pid namespace process", map[string]string{"/proc/2/stat": "2 (sh) S 1 1 1 0 -1 4194560 0", "/proc/2/task/2/children": children}, nil},
+		{"no stat", map[string]string{"/proc/2/task/2/children": children}, nil},
+		{"truncated stat", map[string]string{"/proc/2/stat": "2 (kthreadd) S 0", "/proc/2/task/2/children": children}, nil},
+		{"bad flags", map[string]string{"/proc/2/stat": "2 (kthreadd) S 0 0 0 0 -1 x 0", "/proc/2/task/2/children": children}, nil},
+		{"no children file", map[string]string{"/proc/2/stat": "2 (kthreadd) S 0 0 0 0 -1 2129984 0"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := slices.Sorted(maps.Keys(readKthreaddChildren(fakeProc(tt.proc))))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadKthreaddChildrenExcludesSelf(t *testing.T) {
+	if _, listed := readKthreaddChildren(os.ReadFile)[os.Getpid()]; listed {
+		t.Errorf("own pid %d listed as a kthreadd child", os.Getpid())
+	}
+}
+
 func TestVerifyForTerminationFailsClosed(t *testing.T) {
 	injected := errors.New("injected cmdline read failure")
 	failing := func(int, string, string) (bool, error) { return false, injected }
@@ -79,5 +143,14 @@ func TestVerifyForTerminationFailsClosed(t *testing.T) {
 				t.Errorf("got (%v, %v), want (%v, %v)", got, err, tt.want, tt.wantErr)
 			}
 		})
+	}
+}
+
+func fakeProc(files map[string]string) readFileFn {
+	return func(path string) ([]byte, error) {
+		if data, ok := files[path]; ok {
+			return []byte(data), nil
+		}
+		return nil, os.ErrNotExist
 	}
 }
