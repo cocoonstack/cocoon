@@ -66,8 +66,8 @@ func InitImageBackendsForPull(ctx context.Context, conf *config.Config) (*oci.OC
 		return nil, nil, fmt.Errorf("init cloudimg backend: %w", err)
 	}
 	recheck := pinnedElsewhere(conf)
-	ociStore.SetPinnedElsewhere(recheck)
-	cloudimgStore.SetPinnedElsewhere(recheck)
+	ociStore.PinnedElsewhere = recheck
+	cloudimgStore.PinnedElsewhere = recheck
 	return ociStore, cloudimgStore, nil
 }
 

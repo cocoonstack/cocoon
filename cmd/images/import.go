@@ -39,28 +39,28 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
 	logger := log.WithFunc("cmd.images.importLocalFiles")
 
-	plan, err := planLocalImport(files)
+	kind, err := planLocalImport(files)
 	if err != nil {
 		return err
 	}
 
-	switch plan.kind {
+	switch kind {
 	case importSourceQcow2:
-		if len(plan.files) == 1 {
-			logger.Infof(ctx, "importing qcow2 file %s ...", plan.files[0])
+		if len(files) == 1 {
+			logger.Infof(ctx, "importing qcow2 file %s ...", files[0])
 		} else {
-			logger.Infof(ctx, "importing split qcow2 parts (%d files) ...", len(plan.files))
+			logger.Infof(ctx, "importing split qcow2 parts (%d files) ...", len(files))
 		}
-		return h.importCloudimgFiles(ctx, conf, name, plan.files...)
+		return h.importCloudimgFiles(ctx, conf, name, files...)
 	case importSourceTar:
-		if len(plan.files) == 1 {
-			logger.Infof(ctx, "importing tar file %s ...", plan.files[0])
+		if len(files) == 1 {
+			logger.Infof(ctx, "importing tar file %s ...", files[0])
 		} else {
-			logger.Infof(ctx, "importing tar layers (%d files) ...", len(plan.files))
+			logger.Infof(ctx, "importing tar layers (%d files) ...", len(files))
 		}
-		return h.importOCIFiles(ctx, conf, name, plan.files...)
+		return h.importOCIFiles(ctx, conf, name, files...)
 	}
-	return h.importLocalStream(ctx, conf, name, plan.files[0])
+	return h.importLocalStream(ctx, conf, name, files[0])
 }
 
 func (h Handler) importLocalStream(ctx context.Context, conf *config.Config, name, filePath string) error {
@@ -82,7 +82,7 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 	}
 	defer cleanup()
 
-	if typ == imageTypeQcow2 {
+	if typ == importSourceQcow2 {
 		return h.importCloudimgReader(ctx, conf, name, reader)
 	}
 	return h.importOCIReader(ctx, conf, name, reader)
@@ -141,15 +141,15 @@ func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg fu
 	return nil
 }
 
-func planLocalImport(files []string) (importLocalPlan, error) {
+func planLocalImport(files []string) (importSourceKind, error) {
 	kind, err := detectLocalImportSource(files[0])
 	if err != nil {
-		return importLocalPlan{}, err
+		return 0, err
 	}
 	if kind == importSourceStream && len(files) > 1 {
-		return importLocalPlan{}, fmt.Errorf("stream imports accept exactly one file, got %d", len(files))
+		return 0, fmt.Errorf("stream imports accept exactly one file, got %d", len(files))
 	}
-	return importLocalPlan{kind: kind, files: files}, nil
+	return kind, nil
 }
 
 func detectLocalImportSource(filePath string) (importSourceKind, error) {
@@ -176,7 +176,7 @@ func detectLocalImportSource(filePath string) (importSourceKind, error) {
 	return importSourceTar, nil
 }
 
-func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
+func detectReader(r io.Reader) (io.Reader, importSourceKind, func(), error) {
 	br := bufio.NewReaderSize(r, 8192)
 
 	cleanup := func() {}
@@ -203,8 +203,8 @@ func detectReader(r io.Reader) (io.Reader, imageType, func(), error) {
 	}
 
 	if bytes.HasPrefix(cpeek, utils.Qcow2Magic) {
-		return inner, imageTypeQcow2, cleanup, nil
+		return inner, importSourceQcow2, cleanup, nil
 	}
 
-	return inner, imageTypeTar, cleanup, nil
+	return inner, importSourceTar, cleanup, nil
 }

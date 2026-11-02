@@ -21,7 +21,6 @@ import (
 	"github.com/vishvananda/netns"
 
 	"github.com/cocoonstack/cocoon/cgroup"
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -56,7 +55,7 @@ type SnapshotFileKind int
 
 // LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
-	l, err := opsLock(b.Conf, vmID)
+	l, err := vmlock.New(b.Conf.RootDirPath(), vmID)
 	if err != nil {
 		return nil, err
 	}
@@ -444,11 +443,6 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 		_ = orig.Close()
 		runtime.UnlockOSThread()
 	}, nil
-}
-
-// opsLock unlinks on release, so every acquirer rebinds on a stale inode.
-func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
-	return vmlock.New(conf.RootDirPath(), vmID)
 }
 
 // snapshotResidentBasename returns the basename for sidecar entries inside srcDir; "" for shared base layers (not in tar).

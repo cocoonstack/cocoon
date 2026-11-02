@@ -9,6 +9,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
@@ -87,7 +88,7 @@ func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.Pr
 
 // TryLockVMOps takes the VM ops lock without blocking; ok=false with a nil error means another operation owns it.
 func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(), ok bool, err error) {
-	l, err := opsLock(b.Conf, vmID)
+	l, err := vmlock.New(b.Conf.RootDirPath(), vmID)
 	if err != nil {
 		return nil, false, err
 	}
