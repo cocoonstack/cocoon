@@ -175,11 +175,11 @@ func CopyWithCleanup(dst, src string, fn func(srcFile, dstFile *os.File) error) 
 	}
 	defer func() {
 		closeErr := dstFile.Close()
-		if err != nil { // fn failed: drop the partial dst, keep fn's error
+		if err != nil {
 			_ = os.Remove(dst)
 			return
 		}
-		err = closeErr // fn succeeded: surface a close failure but keep dst
+		err = closeErr
 	}()
 
 	return fn(srcFile, dstFile)

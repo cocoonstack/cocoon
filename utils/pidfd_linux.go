@@ -65,7 +65,6 @@ func waitExitWithPidfd(ctx context.Context, pid int, timeout time.Duration) (han
 	return true, waitPidfd(ctx, fd, timeout)
 }
 
-// waitPidfd blocks until the pidfd reports exit; the kernel wakes the poll instead of a kill(0) loop.
 func waitPidfd(ctx context.Context, fd int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {

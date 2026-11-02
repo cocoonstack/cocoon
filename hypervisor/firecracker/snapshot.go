@@ -72,7 +72,7 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.Snapshot
 	return meta, nil
 }
 
-// a runtime-only disk has no sidecar entry, so the snapshot could never restore.
+// A runtime-only disk has no sidecar entry, so the snapshot could never restore.
 func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
 	cfg, err := getVMConfig(ctx, hc)
 	if err != nil {

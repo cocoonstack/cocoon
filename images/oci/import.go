@@ -18,7 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// tarImportJob carries the per-tar context for raw-tar layer import.
 type tarImportJob struct {
 	conf       *Config
 	idx, total int

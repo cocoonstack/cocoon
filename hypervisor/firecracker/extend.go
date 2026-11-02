@@ -167,7 +167,7 @@ func (fc *Firecracker) lockedDeviceOp(ctx context.Context, vmRef string, errUnsu
 	return hc, rec.ID, rec, unlock, nil
 }
 
-// the pause is ownerless: callers hold the ops lock every capture window holds.
+// The pause is ownerless: callers hold the ops lock every capture window holds.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) error {
 	info, err := getInstanceInfo(ctx, hc)
 	if err != nil {

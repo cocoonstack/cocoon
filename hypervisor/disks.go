@@ -14,7 +14,7 @@ import (
 )
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
-	// shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
+	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec
 		ctx,
 		"mkfs.ext4", "-F", "-m", "0", "-q",
@@ -55,7 +55,7 @@ func RecordedCOWPath(rec *VMRecord) (string, error) {
 	return cowPath, nil
 }
 
-// CopyWritableDisks copies concurrently so pause-window wall time is the longest single copy, not the sum; durability is paid at persist.
+// CopyWritableDisks copies concurrently; durability is paid at persist.
 func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range configs {
@@ -97,7 +97,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			DirectIO:   spec.DirectIO,
 		})
 	}
-	// Wall time is the slowest disk, not the sum.
 	if _, err := utils.Map(ctx, specs, func(ctx context.Context, i int, spec types.DataDiskSpec) (struct{}, error) {
 		if err := createSparseFile(out[i].Path, spec.Size); err != nil {
 			return struct{}{}, fmt.Errorf("data disk %s: %w", spec.Name, err)

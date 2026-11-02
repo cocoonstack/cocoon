@@ -381,7 +381,6 @@ func testEvents(t *testing.T, factory Factory) {
 	}
 }
 
-// testLogCursor asserts committed Seq unique and strictly increasing across a rolled-back append (§9).
 func testLogCursor(t *testing.T, factory Factory) {
 	ctx := t.Context()
 	s := factory(t, []string{nsAlpha})

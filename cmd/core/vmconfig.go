@@ -181,7 +181,6 @@ func sanitizeVMName(image string) string {
 	return n[:min(len(n), 63)]
 }
 
-// parseDataDiskFlags parses --data-disk values, normalizes defaults, and returns the spec list ready for hypervisor.PrepareDataDisks.
 func parseDataDiskFlags(raw []string) ([]types.DataDiskSpec, error) {
 	specs := make([]types.DataDiskSpec, 0, len(raw))
 	for _, s := range raw {

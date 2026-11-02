@@ -119,7 +119,6 @@ func (cw countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// pull commits url as a blob; the URL→blob mapping is idempotent (no-op when the blob already exists).
 func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], url string, force bool, tracker progress.Tracker) error {
 	logger := log.WithFunc("cloudimg.pull")
 
@@ -180,7 +179,6 @@ func downloadSerial(ctx context.Context, client Doer, url string, dst *os.File, 
 	return streamBody(resp, dst, tracker)
 }
 
-// streamBody copies one full response into dst, hashing as it goes; the head is sniffed before the first write.
 func streamBody(resp *http.Response, dst *os.File, tracker progress.Tracker) (string, error) {
 	url := resp.Request.URL.String()
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: resp.ContentLength})
@@ -208,7 +206,6 @@ func streamBody(resp *http.Response, dst *os.File, tracker progress.Tracker) (st
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// downloadRangesParallel splits [0,size) into pullConns contiguous ranges downloaded concurrently into disjoint offsets of dst.
 func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *os.File, size int64, pullConns int, tracker progress.Tracker) error {
 	if err := dst.Truncate(size); err != nil {
 		return fmt.Errorf("truncate temp file: %w", err)

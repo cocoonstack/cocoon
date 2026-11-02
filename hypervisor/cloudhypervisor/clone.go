@@ -41,7 +41,6 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, rec *hyperviso
 	return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, chCfg)
 }
 
-// cloneAfterExtractParsed is cloneAfterExtract minus the config.json parse; DirectClone passes the copy step's parse of the verbatim-copied source.
 func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
 	vmID, runDir := rec.ID, rec.RunDir
 	networkConfigs := net.NetworkConfigs
@@ -171,7 +170,6 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 	}
 
 	if !opts.directBoot && !opts.vmCfg.Windows && !opts.hadCidataInSnapshot {
-		// Select by role, not position: new --data-disk configs land after the cidata entry, so the last element is not necessarily cidata.
 		i := slices.IndexFunc(opts.storageConfigs, hasCidataRole)
 		if i < 0 {
 			return fmt.Errorf("vm.add-disk (cidata): missing storage config")
@@ -264,7 +262,7 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 	return slices.DeleteFunc(slices.Clone(storageConfigs), hasCidataRole)
 }
 
-// the sidecar carries the source's paths, so Role==Data needs retargeting.
+// The sidecar carries the source's paths, so Role==Data needs retargeting.
 func updateDataDiskPaths(configs []*types.StorageConfig, newRunDir string) {
 	for _, sc := range configs {
 		if sc.Role == types.StorageRoleData {

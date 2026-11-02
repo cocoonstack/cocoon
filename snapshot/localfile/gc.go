@@ -242,7 +242,6 @@ func sweepLeases(ctx context.Context, conf *Config, snap snapshotGCSnapshot) {
 	}
 }
 
-// pickLRU maps each evict ID to its reason.
 func pickLRU(records map[string]snapshotMeta, p EvictionPolicy) map[string]string {
 	sorted := slices.SortedFunc(maps.Keys(records), func(a, b string) int {
 		return records[a].lastAccessed.Compare(records[b].lastAccessed)

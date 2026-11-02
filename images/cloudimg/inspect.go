@@ -59,7 +59,7 @@ func inspectImage(ctx context.Context, path string) (*sourceImageInfo, error) {
 	if isQcow2 {
 		return info, nil
 	}
-	// Not qcow2: shell out to qemu-img to distinguish raw from unsupported (vmdk/vdi/vhd/etc.) — treating non-qcow2 as raw would corrupt convertToQcow2 output.
+	// Not qcow2: shell out to qemu-img to distinguish raw from unsupported (vmdk/vdi/vhd/etc.) — treating non-qcow2 as raw would corrupt the converted blob.
 	log.WithFunc("cloudimg.inspectImage").Debugf(ctx, "exec qemu-img info %s", path)
 	cmd := exec.CommandContext(ctx, "qemu-img", "info", "--output=json", path) //nolint:gosec // path is controlled
 	out, err := cmd.Output()

@@ -21,7 +21,6 @@ const (
 	pullLayerBackoff  = 2 * time.Second
 )
 
-// layerJob carries the per-layer processing context (one struct per worker).
 type layerJob struct {
 	conf           *Config
 	idx, total     int

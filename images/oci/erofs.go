@@ -37,7 +37,7 @@ func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix,
 	if err = checkErofsVersion(ctx); err != nil {
 		return "", "", err
 	}
-	// shell out because no Go EROFS writer library; mkfs.erofs is authoritative.
+	// Shell out because no Go EROFS writer library; mkfs.erofs is authoritative.
 	cmd := exec.CommandContext( //nolint:gosec
 		ctx, "mkfs.erofs",
 		"--tar=f",
@@ -95,7 +95,6 @@ func checkErofsVersion(ctx context.Context) error {
 	return nil
 }
 
-// erofsVersionAtLeast parses the leading "X.Y" from `mkfs.erofs --version` output and compares it to the floor.
 func erofsVersionAtLeast(output string) error {
 	m := erofsVersionRe.FindStringSubmatch(output)
 	if m == nil {

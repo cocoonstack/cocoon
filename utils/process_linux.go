@@ -21,7 +21,6 @@ type aliveFn func(int) bool
 
 type readFileFn func(string) ([]byte, error)
 
-// cmdlineVerifier reports whether pid's /proc cmdline still matches the expected binary and arg.
 type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
 
 type procEntry struct {

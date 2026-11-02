@@ -62,7 +62,7 @@ func (b *broadcaster) readLoop() {
 			b.mu.Unlock()
 		}
 		if err != nil {
-			return // PTY closed (FC exited)
+			return
 		}
 	}
 }
@@ -244,7 +244,7 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 	}()
 
 	select {
-	case <-done: // client disconnected
+	case <-done:
 	case <-ctx.Done(): // FC died
 	}
 	// Closing conn unblocks the io.Copy(master, conn) goroutine.

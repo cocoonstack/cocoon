@@ -6,7 +6,6 @@ import (
 	"fmt"
 )
 
-// seqCursorID is the reserved in-table row holding the last assigned Seq.
 const seqCursorID = "cursor"
 
 // Seq numbers committed log entries: unique and strictly increasing. Rolled-back numbers may be reused, and engines may leave gaps.

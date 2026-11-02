@@ -110,7 +110,6 @@ func (n *NetProviders) Cleanup(ctx context.Context, vmID string) error {
 	return p.Delete(ctx, vmID)
 }
 
-// cniOnly resolves the CNI provider without a VM record, for the ID-only teardown path.
 func (n *NetProviders) cniOnly() (network.Network, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

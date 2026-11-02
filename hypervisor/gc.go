@@ -18,7 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// gcReservedDirNames are run-root subdirs that are infrastructure, not VM dirs.
 var gcReservedDirNames = map[string]struct{}{"db": {}, CloneLocksDirName: {}}
 
 // VMGCSnapshot is the ReadDB-phase data for any hypervisor GC module (CH + FC share the shape).
@@ -118,7 +117,6 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 	orch.Register(b.BuildGCModule())
 }
 
-// gcRecover resumes tombstones by phase before discovery.
 func (b *Backend) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -139,7 +137,6 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	return errs
 }
 
-// gcCollect sweeps orphan dirs/locks and removes candidate IDs.
 func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot) error {
 	logger := log.WithFunc("gc." + b.Typ)
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))

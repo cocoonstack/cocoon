@@ -3,8 +3,7 @@ package images
 import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 
 const (
-	// digestDisplayLen = len("sha256:") + 12 hex digits for compact display.
-	digestDisplayLen = 19
+	digestDisplayLen = len("sha256:") + 12
 
 	imageTypeQcow2 imageType = 0
 	imageTypeTar   imageType = 1

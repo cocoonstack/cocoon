@@ -124,7 +124,7 @@ func entryToImage[E Entry](entry *E, typ string) *types.Image {
 	if entry == nil {
 		return nil
 	}
-	e := *entry // value copy — detached from the index map
+	e := *entry
 	return &types.Image{
 		ID:        e.EntryID(),
 		Name:      e.EntryRef(),

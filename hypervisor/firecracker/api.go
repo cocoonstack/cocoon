@@ -99,7 +99,7 @@ type fcNetworkOverride struct {
 	HostDevName string `json:"host_dev_name"`
 }
 
-// a nil override keeps the field off the wire for FC < v1.16.
+// A nil override keeps the field off the wire for FC < v1.16.
 type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
 }
@@ -197,7 +197,7 @@ func createSnapshotFC(ctx context.Context, sockPath, destDir string) error {
 	}, "snapshot/create request")
 }
 
-// an empty vsockUDSOverride inherits the snapshot's path (FC < v1.16).
+// An empty vsockUDSOverride inherits the snapshot's path (FC < v1.16).
 func loadSnapshotFC(ctx context.Context, sockPath, sourceDir string, networkOverrides []fcNetworkOverride, vsockUDSOverride string) error {
 	req := fcSnapshotLoad{
 		SnapshotPath: filepath.Join(sourceDir, snapshotVMStateFile),

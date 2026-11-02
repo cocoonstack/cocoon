@@ -39,7 +39,6 @@ type blobPinner interface {
 	PinnedBlobIDs(context.Context) (map[string]struct{}, error)
 }
 
-// networkedHypervisor is the constructor contract wireHypervisor adapts: a backend that accepts the network seam.
 type networkedHypervisor interface {
 	hypervisor.Hypervisor
 	SetNetwork(hypervisor.VMNetwork)

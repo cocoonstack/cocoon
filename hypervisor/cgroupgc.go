@@ -34,7 +34,7 @@ func CgroupGCModule(parentDir string, vmInUse network.VMInUse) gc.Module[[]strin
 				} else if inUse {
 					continue
 				}
-				// a scope populated since the VM snapshot was read belongs to a launch in flight, not to an orphan
+				// A scope populated since the VM snapshot was read belongs to a launch in flight, not to an orphan
 				err := cgroup.RemoveEmpty(parentDir, id)
 				if errors.Is(err, syscall.EBUSY) {
 					logger.Infof(ctx, "skipped scope vm-%s reason=populated", id)

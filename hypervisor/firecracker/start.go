@@ -157,7 +157,6 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	leaseControl, relayErr := fc.startConsoleRelay(rec.RunDir, master, pid, leaseFiles)
 	switch {
 	case relayErr == nil:
-		// Master fd ownership transferred to relay; close parent's copy.
 		_ = master.Close()
 	case len(leaseFiles) > 0:
 		_ = master.Close()

@@ -8,7 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// Ops bundles the store and callbacks shared by Inspect/List/Delete; one per backend.
+// Ops bundles the store and type shared by Inspect/List/Delete; one per backend.
 type Ops[E Entry] struct {
 	Store *Store[E]
 	Type  string

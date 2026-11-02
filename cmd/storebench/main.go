@@ -172,7 +172,6 @@ func runWorker(ctx context.Context, engine, prefix string, per int, dir string) 
 	return nil
 }
 
-// runMicro times one engine primitive per durable (or relaxed) transaction.
 func runMicro(ctx context.Context, engine, op string, n, ops int, dir string) error {
 	store, err := openStore(ctx, engine, dir)
 	if err != nil {

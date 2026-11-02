@@ -22,8 +22,8 @@ type PinRecheck func(ctx context.Context) (map[string]struct{}, error)
 
 // ImageGCSnapshot is the unified GC snapshot for image backends.
 type ImageGCSnapshot struct {
-	refs    map[string]struct{} // digest hexes referenced by the index
-	diskIDs []string            // digest hexes found on disk (blobs + optional extras)
+	refs    map[string]struct{}
+	diskIDs []string
 }
 
 // DiskScanFunc returns hex IDs present on disk.

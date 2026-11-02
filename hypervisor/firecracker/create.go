@@ -66,7 +66,6 @@ func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types
 	return storageConfigs, nil
 }
 
-// setBootCmdline rebuilds boot.Cmdline from the final disk/NIC layout.
 func (fc *Firecracker) setBootCmdline(boot *types.BootConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string) error {
 	if boot == nil {
 		return nil

@@ -42,7 +42,7 @@ type CNI struct {
 	conf        *Config
 	meta        meta.Store
 	confLists   map[string]*libcni.NetworkConfigList
-	defaultName string // first conflist name (backward compat)
+	defaultName string
 	cniConf     *libcni.CNIConfig
 	loadErr     error
 }
