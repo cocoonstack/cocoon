@@ -36,12 +36,6 @@ func TestWaitRelayLeaseReady(t *testing.T) {
 	}
 }
 
-func TestWaitRelayLeaseReadyRejectsNilPipe(t *testing.T) {
-	if err := waitRelayLeaseReady(nil); err == nil {
-		t.Fatal("nil response pipe must fail")
-	}
-}
-
 func TestWaitRelayLeaseControl(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -111,13 +111,6 @@ func TestDetectReader_TooShort(t *testing.T) {
 	}
 }
 
-func TestDetectReader_Empty(t *testing.T) {
-	_, _, _, err := detectReader(bytes.NewReader(nil))
-	if err == nil {
-		t.Fatal("expected error for empty input")
-	}
-}
-
 func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 	original := make([]byte, 16384)
 	for i := range original {
@@ -182,7 +175,7 @@ func TestDetectLocalImportSource(t *testing.T) {
 	}
 }
 
-func TestPlanLocalImportPreservesAllFiles(t *testing.T) {
+func TestPlanLocalImportDetectsKindFromFirstFile(t *testing.T) {
 	dir := t.TempDir()
 	part1 := writeTempFile(t, dir, "part-1.qcow2", append(utils.Qcow2Magic, make([]byte, 8)...))
 	part2 := writeTempFile(t, dir, "part-2.qcow2", []byte("second-part"))

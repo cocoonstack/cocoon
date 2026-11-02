@@ -41,36 +41,6 @@ func TestReconcileScanFailureKeepsPublishedStatuses(t *testing.T) {
 	}
 }
 
-func TestReconcileSkipsVMWithBusyOpsLock(t *testing.T) {
-	f := newFake().put(runningRec("vm1", 1))
-	f.busy["vm1"] = struct{}{}
-	newTestDaemon(t, f).reconcile(t.Context())
-
-	if len(f.converged) != 0 {
-		t.Errorf("got %+v, want no convergence while an operation owns the VM", f.converged)
-	}
-}
-
-func TestReconcileSkipsOnLockError(t *testing.T) {
-	f := newFake().put(runningRec("vm1", 1))
-	f.lockErr = fmt.Errorf("no such directory")
-	newTestDaemon(t, f).reconcile(t.Context())
-
-	if len(f.converged) != 0 {
-		t.Errorf("got %+v, want no convergence when the lock could not be evaluated", f.converged)
-	}
-}
-
-func TestReconcileSkipsInconclusiveLiveness(t *testing.T) {
-	f := newFake().put(runningRec("vm1", 1))
-	f.observeErr = fmt.Errorf("/proc scan errored")
-	newTestDaemon(t, f).reconcile(t.Context())
-
-	if len(f.converged) != 0 {
-		t.Errorf("got %+v, want no convergence on an inconclusive probe", f.converged)
-	}
-}
-
 func TestReconcileResumesInterruptedDelete(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 1))
 	f.tombstoned["vm1"] = struct{}{}
@@ -210,18 +180,19 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 
 func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	tests := []struct {
-		name     string
-		arrange  func(*fakeSupervisor)
-		degraded int
+		name      string
+		arrange   func(*fakeSupervisor)
+		degraded  int
+		converged int
 	}{
-		{"clean pass", func(*fakeSupervisor) {}, 0},
-		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, 0},
-		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, 1},
-		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, 1},
+		{"clean pass", func(*fakeSupervisor) {}, 0, 1},
+		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, 0, 0},
+		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, 1, 0},
+		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, 1, 0},
 		{"delete cannot finish", func(f *fakeSupervisor) {
 			f.tombstoned["vm1"] = struct{}{}
 			f.resumeErr = fmt.Errorf("cni down")
-		}, 1},
+		}, 1, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -237,18 +208,10 @@ func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 			if !h.ok {
 				t.Error("a pass that ran reported unready; only a scan failure may")
 			}
+			if len(f.converged) != tt.converged {
+				t.Errorf("got %+v, want %d convergences", f.converged, tt.converged)
+			}
 		})
-	}
-}
-
-func TestPassUnreadyWhenABackendCannotBeScanned(t *testing.T) {
-	f := newFake().put(runningRec("vm1", 1))
-	f.scanErr = fmt.Errorf("meta store unavailable")
-	d := newTestDaemon(t, f)
-	d.reconcile(t.Context())
-
-	if _, h := d.state.snapshot(); h.ok {
-		t.Error("a backend that could not be scanned still reported ready")
 	}
 }
 

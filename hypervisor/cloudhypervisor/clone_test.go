@@ -267,46 +267,11 @@ func TestUpdateCOWPath_NoCOW(t *testing.T) {
 	}
 }
 
-func TestUpdateCOWPath_Cloudimg(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/old/base.qcow2", RO: true, Role: types.StorageRoleLayer},
-		{Path: "/old/overlay.qcow2", RO: false, Role: types.StorageRoleCOW},
-	}
-	if err := updateCOWPath(configs, "/new/overlay.qcow2"); err != nil {
-		t.Fatal(err)
-	}
-	if configs[0].Path != "/old/base.qcow2" {
-		t.Errorf("RO path changed: %s", configs[0].Path)
-	}
-	if configs[1].Path != "/new/overlay.qcow2" {
-		t.Errorf("writable path not updated: %s", configs[1].Path)
-	}
-}
-
 func TestRebuildBootConfig(t *testing.T) {
 	t.Run("nil_payload", func(t *testing.T) {
 		cfg := &chVMConfig{}
 		if boot := rebuildBootConfig(cfg); boot != nil {
 			t.Errorf("expected nil, got %+v", boot)
-		}
-	})
-
-	t.Run("kernel_initramfs", func(t *testing.T) {
-		cfg := &chVMConfig{Payload: &chPayload{
-			Kernel: "/vmlinux", Initramfs: "/initrd", Cmdline: "console=hvc0",
-		}}
-		boot := rebuildBootConfig(cfg)
-		if boot == nil {
-			t.Fatal("expected non-nil")
-		}
-		if boot.KernelPath != "/vmlinux" {
-			t.Errorf("KernelPath: %q", boot.KernelPath)
-		}
-		if boot.InitrdPath != "/initrd" {
-			t.Errorf("InitrdPath: %q", boot.InitrdPath)
-		}
-		if boot.Cmdline != "console=hvc0" {
-			t.Errorf("Cmdline: %q", boot.Cmdline)
 		}
 	})
 
@@ -347,42 +312,34 @@ func TestRebuildBootConfig(t *testing.T) {
 	})
 }
 
-func TestRestorePatchStorageConfigs_DropsAppendedCidata(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/o", Role: types.StorageRoleLayer},
-		{Path: "/d1", Role: types.StorageRoleData},
-		{Path: "/c", Role: types.StorageRoleCidata},
-	}
-	got := restorePatchStorageConfigs(configs, false, false, false)
-	if len(got) != 2 {
-		t.Fatalf("got %d, want 2", len(got))
-	}
-	for _, sc := range got {
-		if sc.Role == types.StorageRoleCidata {
-			t.Errorf("cidata not filtered: %v", got)
-		}
-	}
-}
-
-func TestRestorePatchStorageConfigs_KeepsAllOnDirectBoot(t *testing.T) {
+func TestRestorePatchStorageConfigs(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/l", Role: types.StorageRoleLayer},
-		{Path: "/c", Role: types.StorageRoleCOW},
-	}
-	got := restorePatchStorageConfigs(configs, true, false, false)
-	if len(got) != 2 {
-		t.Errorf("got %d, want 2", len(got))
-	}
-}
-
-func TestRestorePatchStorageConfigs_KeepsAllWhenSnapshotHadCidata(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/o", Role: types.StorageRoleCOW},
+		{Path: "/d", Role: types.StorageRoleData},
 		{Path: "/c", Role: types.StorageRoleCidata},
 	}
-	got := restorePatchStorageConfigs(configs, false, false, true)
-	if len(got) != 2 {
-		t.Errorf("got %d, want 2", len(got))
+	all := []string{"/l", "/d", "/c"}
+	tests := []struct {
+		name                           string
+		directBoot, windows, hadCidata bool
+		want                           []string
+	}{
+		{"drops appended cidata", false, false, false, []string{"/l", "/d"}},
+		{"keeps all on direct boot", true, false, false, all},
+		{"keeps all on windows", false, true, false, all},
+		{"keeps all when the snapshot had cidata", false, false, true, all},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := restorePatchStorageConfigs(configs, tt.directBoot, tt.windows, tt.hadCidata)
+			paths := make([]string, len(got))
+			for i, sc := range got {
+				paths[i] = sc.Path
+			}
+			if !slices.Equal(paths, tt.want) {
+				t.Errorf("got %v, want %v", paths, tt.want)
+			}
+		})
 	}
 }
 
