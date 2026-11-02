@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 )
 
@@ -58,8 +57,8 @@ func ListRegularFiles(dir string) ([]string, error) {
 	return names, nil
 }
 
-// ExtractTar extracts flat tar entries into dir; entries matching any skip predicate are dropped. It never fsyncs — callers needing durability follow with SyncTree.
-func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
+// ExtractTar extracts flat tar entries into dir. It never fsyncs — callers needing durability follow with SyncTree.
+func ExtractTar(dir string, r io.Reader) error {
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
@@ -75,7 +74,7 @@ func ExtractTar(dir string, r io.Reader, skip ...func(name string) bool) error {
 		}
 
 		name := filepath.Base(hdr.Name)
-		if name == "." || name == ".." || slices.ContainsFunc(skip, func(fn func(string) bool) bool { return fn(name) }) {
+		if name == "." || name == ".." {
 			continue
 		}
 

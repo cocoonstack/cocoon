@@ -81,7 +81,7 @@ func TestQuarantineVMSurvivesCanceledContext(t *testing.T) {
 	}
 }
 
-func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
+func TestSweepStaleCaptureDirsReclaimsAgedStaging(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	oldRunDir := t.TempDir()
 	stale := filepath.Join(oldRunDir, restoreStagingName)
@@ -93,12 +93,11 @@ func TestSweepStaleCaptureDirsCoversPersistedRunDir(t *testing.T) {
 		t.Fatalf("age staging: %v", err)
 	}
 
-	snap := VMGCSnapshot{recRunDirs: []string{oldRunDir}}
-	for _, err := range b.sweepStaleCaptureDirs(t.Context(), snap.sweepDirs(b.Conf.RunDir())) {
+	for _, err := range b.sweepStaleCaptureDirs(t.Context(), []string{oldRunDir}) {
 		t.Fatalf("sweep: %v", err)
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatal("stale staging in a migrated run dir must be reclaimed")
+		t.Fatal("aged staging must be reclaimed")
 	}
 }
 

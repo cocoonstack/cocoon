@@ -27,7 +27,6 @@ type VMGCSnapshot struct {
 	staleCreate []string
 	runDirs     []string
 	logDirs     []string
-	recRunDirs  []string
 	reasons     map[string]string
 }
 
@@ -35,25 +34,12 @@ func (s VMGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
 
 func (s VMGCSnapshot) ActiveVMIDs() map[string]struct{} { return s.vmIDs }
 
-// sweepDirs joins the scanned run-dir names with every persisted record RunDir (a --run-dir migration leaves crash leftovers in old roots the config no longer names), deduplicated.
 func (s VMGCSnapshot) sweepDirs(runRoot string) []string {
-	dirs := make([]string, 0, len(s.runDirs)+len(s.recRunDirs))
-	seen := make(map[string]struct{}, cap(dirs))
-	add := func(dir string) {
-		dir = filepath.Clean(dir)
-		if _, ok := seen[dir]; !ok {
-			seen[dir] = struct{}{}
-			dirs = append(dirs, dir)
-		}
-	}
+	dirs := make([]string, 0, len(s.runDirs))
 	for _, name := range s.runDirs {
-		if _, ok := gcReservedDirNames[name]; ok {
-			continue
+		if _, ok := gcReservedDirNames[name]; !ok {
+			dirs = append(dirs, filepath.Join(runRoot, name))
 		}
-		add(filepath.Join(runRoot, name))
-	}
-	for _, dir := range s.recRunDirs {
-		add(dir)
 	}
 	return dirs
 }
@@ -69,9 +55,6 @@ func (b *Backend) BuildGCModule() gc.Module[VMGCSnapshot] {
 				snap.vmIDs = make(map[string]struct{})
 				return t.Scan(func(id string, rec *VMRecord) error {
 					snap.vmIDs[id] = struct{}{}
-					if rec.RunDir != "" {
-						snap.recRunDirs = append(snap.recRunDirs, rec.RunDir)
-					}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.State == types.VMStateCreating {
 						snap.staleCreate = append(snap.staleCreate, id)

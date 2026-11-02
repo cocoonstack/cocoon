@@ -10,7 +10,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/images"
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
 	"github.com/cocoonstack/cocoon/utils"
@@ -98,20 +97,8 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 		return tmpBlobPath, nil
 	}
 
-	lockPath := conf.tmpBlobPath(digestHex) + ".lock"
-	convertLock := flock.New(lockPath)
-	if err = convertLock.Lock(ctx); err != nil {
-		return "", fmt.Errorf("acquire convert lock: %w", err)
-	}
-	defer convertLock.Unlock(ctx) //nolint:errcheck
-
-	if utils.ValidFile(conf.BlobPath(digestHex)) {
-		logger.Debugf(ctx, "blob %s committed while waiting for convert lock, skipping convert", digestHex[:12])
-		return "", nil
-	}
-
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseConvert})
-	// A process-unique target: the lock drops at return, before the output is published.
+	// A process-unique target: concurrent importers of one digest each convert, and the blob lock publishes one.
 	target, err := os.CreateTemp(conf.TempDir(), ".tmp-"+digestHex+"-*.qcow2")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)

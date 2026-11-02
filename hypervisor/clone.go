@@ -37,7 +37,7 @@ func (b *Backend) DirectCloneBase(ctx context.Context, vmID string, spec CloneSp
 // CloneFromStream clones from a tar stream into a fresh runDir.
 func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSpec, snapshot io.Reader) (*types.VM, error) {
 	return b.cloneBase(ctx, vmID, spec, func(runDir string) error {
-		if err := utils.ExtractTar(runDir, snapshot, isLockFile); err != nil {
+		if err := utils.ExtractTar(runDir, snapshot); err != nil {
 			return fmt.Errorf("extract snapshot: %w", err)
 		}
 		return nil
