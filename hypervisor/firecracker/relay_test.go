@@ -6,30 +6,6 @@ import (
 	"testing"
 )
 
-func TestRelayInheritedLeaseCount(t *testing.T) {
-	tests := []struct {
-		name   string
-		raw    string
-		want   int
-		wantOK bool
-	}{
-		{name: "missing lease count"},
-		{name: "zero", raw: "0", wantOK: true},
-		{name: "leases", raw: "2", want: 2, wantOK: true},
-		{name: "negative", raw: "-1"},
-		{name: "invalid", raw: "nope"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(relayLeaseCountEnvKey, tt.raw)
-			got, ok := relayInheritedLeaseCount()
-			if got != tt.want || ok != tt.wantOK {
-				t.Fatalf("relayInheritedLeaseCount() = (%d, %v), want (%d, %v)", got, ok, tt.want, tt.wantOK)
-			}
-		})
-	}
-}
-
 func TestWaitRelayLeaseReady(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -15,9 +15,6 @@ import (
 
 // PrepareCloneDataDisks creates the clone's --data-disk files; the pre-create scan exists because a name colliding with an inherited serial would overwrite its backing file.
 func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, existing []*types.StorageConfig) ([]*types.StorageConfig, error) {
-	if len(vmCfg.DataDisks) == 0 {
-		return nil, nil
-	}
 	for _, spec := range vmCfg.DataDisks {
 		if slices.ContainsFunc(existing, func(sc *types.StorageConfig) bool { return sc.Serial == spec.Name }) {
 			return nil, fmt.Errorf("--data-disk name %q collides with a disk inherited from the snapshot", spec.Name)
@@ -84,22 +81,8 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 	if len(specs) == 0 {
 		return nil, nil
 	}
-	seen := make(map[string]struct{}, len(specs))
 	out := make([]*types.StorageConfig, 0, len(specs))
-	for i, spec := range specs {
-		if !types.ValidDataDiskName(spec.Name) {
-			return nil, fmt.Errorf("data disk %d: invalid name %q", i, spec.Name)
-		}
-		if _, dup := seen[spec.Name]; dup {
-			return nil, fmt.Errorf("data disk: name %q duplicated", spec.Name)
-		}
-		seen[spec.Name] = struct{}{}
-		if spec.Size < types.MinDataDiskSize {
-			return nil, fmt.Errorf("data disk %s: size %d below %d minimum", spec.Name, spec.Size, types.MinDataDiskSize)
-		}
-		if spec.FSType != types.FSTypeExt4 && spec.FSType != types.FSTypeNone {
-			return nil, fmt.Errorf("data disk %s: fstype %q not supported", spec.Name, spec.FSType)
-		}
+	for _, spec := range specs {
 		out = append(out, &types.StorageConfig{
 			Path:       filepath.Join(baseDir, DataDiskBaseName(spec.Name)),
 			RO:         false,

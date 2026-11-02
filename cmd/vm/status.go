@@ -142,10 +142,7 @@ func runLoop(ctx context.Context, watchCh <-chan struct{}, tick <-chan time.Time
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-watchCh:
-			if !ok {
-				return
-			}
+		case <-watchCh:
 			fn()
 		case <-tick:
 			fn()
