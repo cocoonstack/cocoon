@@ -120,7 +120,6 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 
 	sockPath := hypervisor.SocketPath(runDir)
 	args := []string{apiSocketFlag, sockPath}
-	ch.saveCmdline(ctx, rec, args)
 
 	pid, err := ch.launchProcess(ctx, rec, args, net.NetnsPath, true)
 	if err != nil {

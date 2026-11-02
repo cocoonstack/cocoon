@@ -86,7 +86,6 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	sockPath := hypervisor.SocketPath(rec.RunDir)
 	args := []string{apiSocketFlag, sockPath}
-	ch.saveCmdline(ctx, rec, args)
 
 	// Launch under the target config: a --force cross-config restore changes the vCPU count the scope derives from.
 	rec.Config = *vmCfg
