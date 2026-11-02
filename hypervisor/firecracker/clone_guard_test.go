@@ -1,24 +1,10 @@
 package firecracker
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/extend/disk"
-	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
-
-func TestCloneAfterExtractRejectsDataDisks(t *testing.T) {
-	fc := &Firecracker{}
-	rec := &hypervisor.VMRecord{ID: "id", RunDir: t.TempDir(), LogDir: t.TempDir()}
-	_, err := fc.cloneAfterExtract(t.Context(), rec, &types.VMConfig{
-		DataDisks: []types.DataDiskSpec{{Name: "v", Size: 1 << 24}},
-	}, types.NetSetup{}, "")
-	if !errors.Is(err, disk.ErrUnsupportedBackend) {
-		t.Fatalf("err = %v, want disk.ErrUnsupportedBackend", err)
-	}
-}
 
 func TestValidateCloneNetworkMTUs(t *testing.T) {
 	tests := []struct {

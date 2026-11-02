@@ -18,6 +18,37 @@ func TestValidateBackendFlagsRejectsPCIOnCloudHypervisor(t *testing.T) {
 	}
 }
 
+func TestValidateBackendFlagsRejectsFirecrackerIncompatibleConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  types.Config
+		want string
+	}{
+		{"windows", types.Config{Windows: true}, "--windows"},
+		{"shared memory", types.Config{SharedMemory: true}, "--shared-memory"},
+		{"hugepages", types.Config{HugePages: true}, "--hugepages"},
+		{"mergeable", types.Config{Mergeable: true}, "--mergeable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBackendFlags(&config.Config{UseFirecracker: true}, &types.VMConfig{Config: tt.cfg})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want a %q rejection", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateBootCompatRequiresDirectBootOnFirecracker(t *testing.T) {
+	conf := &config.Config{UseFirecracker: true}
+	if err := validateBootCompat(conf, &types.VMConfig{}, &types.BootConfig{}); err == nil || !strings.Contains(err.Error(), "--fc") {
+		t.Fatalf("err = %v, want an --fc rejection", err)
+	}
+	if err := validateBootCompat(conf, &types.VMConfig{}, &types.BootConfig{KernelPath: "/k"}); err != nil {
+		t.Fatalf("direct boot rejected: %v", err)
+	}
+}
+
 func TestCloneNICPlan(t *testing.T) {
 	pci := types.SnapshotConfig{PCI: true, NICs: 1}
 	mmio := types.SnapshotConfig{NICs: 1}

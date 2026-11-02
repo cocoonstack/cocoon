@@ -112,26 +112,14 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 }
 
 func TestBuildSnapshotMetaRefusesUnrecordedDisk(t *testing.T) {
-	tests := []struct {
-		name    string
-		diskID  string
-		wantErr string
-	}{
-		{"foreign unknown disk keeps the record error", "other-id", "not present in VM record"},
+	dir := t.TempDir()
+	cfg := `{"disks":[{"path":"/vols/a.raw","id":"other-id"}]}`
+	if err := os.WriteFile(filepath.Join(dir, configJSONName), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			cfg := `{"disks":[{"path":"/vols/a.raw","id":"` + tt.diskID + `"}]}`
-			if err := os.WriteFile(filepath.Join(dir, configJSONName), []byte(cfg), 0o600); err != nil {
-				t.Fatalf("write config: %v", err)
-			}
-			rec := &hypervisor.VMRecord{}
-			_, err := buildSnapshotMeta(rec, dir)
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("err = %v, want %q", err, tt.wantErr)
-			}
-		})
+	_, err := buildSnapshotMeta(&hypervisor.VMRecord{}, dir)
+	if err == nil || !strings.Contains(err.Error(), "not present in VM record") {
+		t.Fatalf("err = %v, want a record error", err)
 	}
 }
 

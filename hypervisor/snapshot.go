@@ -221,17 +221,6 @@ func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
 	return filepath.Base(meta.StorageConfigs[i].Path), nil
 }
 
-func LoadAndValidateMeta(dir, rootDir, runDir string) (*SnapshotMeta, error) {
-	meta, err := LoadSnapshotMeta(dir)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
-		return nil, err
-	}
-	return meta, nil
-}
-
 func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone CloneFilesFunc) error {
 	if err := clean(runDir); err != nil {
 		return fmt.Errorf("clean old snapshot files: %w", err)

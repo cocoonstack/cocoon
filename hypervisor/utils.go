@@ -21,7 +21,6 @@ import (
 	"github.com/vishvananda/netns"
 
 	"github.com/cocoonstack/cocoon/cgroup"
-	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -34,9 +33,6 @@ const (
 	SnapshotFileCOW
 	// SnapshotFileMeta is small metadata that is plain-copied.
 	SnapshotFileMeta
-
-	// OpsLockName is the legacy in-runDir lock file name, still guarded in snapshot payloads so old exports can't overwrite a held lock.
-	OpsLockName = "ops.lock"
 
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
 	CloneLocksDirName = "clone-locks"
@@ -59,7 +55,7 @@ type SnapshotFileKind int
 
 // LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
-	l, err := opsLock(b.Conf, vmID)
+	l, err := vmlock.New(b.Conf.RootDirPath(), vmID)
 	if err != nil {
 		return nil, err
 	}
@@ -240,16 +236,13 @@ func CopyFile(dst, src string) error {
 	})
 }
 
-// MergeDirInto renames entries from src to dst, overwriting existing files; lock files never move (see isLockFile).
+// MergeDirInto renames entries from src to dst, overwriting existing files.
 func MergeDirInto(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("read staging dir: %w", err)
 	}
 	for _, e := range entries {
-		if isLockFile(e.Name()) {
-			continue
-		}
 		srcPath := filepath.Join(src, e.Name())
 		dstPath := filepath.Join(dst, e.Name())
 		if err := os.Rename(srcPath, dstPath); err != nil {
@@ -361,7 +354,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 	}
 	var cowPairs [][2]string
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() || isLockFile(entry.Name()) {
+		if !entry.Type().IsRegular() {
 			continue
 		}
 		name := entry.Name()
@@ -450,16 +443,6 @@ func EnterNetns(nsPath string) (restore func(), err error) {
 		_ = orig.Close()
 		runtime.UnlockOSThread()
 	}, nil
-}
-
-// opsLock unlinks on release, so every acquirer rebinds on a stale inode.
-func opsLock(conf BackendConfig, vmID string) (*flock.Lock, error) {
-	return vmlock.New(conf.RootDirPath(), vmID)
-}
-
-// isLockFile guards merge/extract/clone against snapshot payloads that would overwrite a held flock's inode — the next locker would then lock a fresh inode and mutual exclusion silently breaks.
-func isLockFile(name string) bool {
-	return name == OpsLockName || strings.HasSuffix(name, ".clone.lock")
 }
 
 // snapshotResidentBasename returns the basename for sidecar entries inside srcDir; "" for shared base layers (not in tar).

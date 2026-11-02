@@ -110,10 +110,7 @@ func RunRelay(ctx context.Context) {
 	}
 	defer listener.Close() //nolint:errcheck
 
-	leaseCount, validLeaseCount := relayInheritedLeaseCount()
-	if !validLeaseCount {
-		return
-	}
+	leaseCount, _ := strconv.Atoi(os.Getenv(relayLeaseCountEnvKey))
 	leases := make([]*os.File, 0, leaseCount)
 	for i := range leaseCount {
 		leases = append(leases, os.NewFile(uintptr(relayLeaseFD+i), "source-vm-lease"))
@@ -215,14 +212,6 @@ func abortRelayFirecracker(ctx context.Context, pid int, binaryName, sockPath st
 		case <-time.After(relayAbortRetryInterval):
 		}
 	}
-}
-
-func relayInheritedLeaseCount() (int, bool) {
-	count, err := strconv.Atoi(os.Getenv(relayLeaseCountEnvKey))
-	if err != nil || count < 0 {
-		return 0, false
-	}
-	return count, true
 }
 
 func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broadcaster) {

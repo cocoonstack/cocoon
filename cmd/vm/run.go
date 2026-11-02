@@ -346,7 +346,6 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return fail(err)
 	}
-	// Pre-extract fast-fail; fc's clone-extract guard stays as the library backstop.
 	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
 		return fail(fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend))
 	}

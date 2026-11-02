@@ -130,9 +130,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 			if snap.leaseIDs, err = utils.ScanFileStems(conf.DataDir(), leaseSuffix); err != nil {
 				return snap, err
 			}
-			if policy.MaxSize > 0 {
-				backfillSizeBytes(ctx, lf, snap.records)
-			}
 			return snap, nil
 		},
 		Resolve: func(ctx context.Context, snap snapshotGCSnapshot, _ map[string]any) []string {
@@ -308,44 +305,4 @@ func logEvictRow(ctx context.Context, logger *log.Fields, verb, id string, m sna
 	}
 	logger.Infof(ctx, "%s id=%s name=%s bytes=%d last_accessed=%s reason=%s",
 		verb, id, m.name, m.sizeBytes, accessed, reason)
-}
-
-// backfillSizeBytes computes + persists SizeBytes for records missing it so future GC skips du.
-func backfillSizeBytes(ctx context.Context, lf *LocalFile, records map[string]snapshotMeta) {
-	logger := log.WithFunc("gc.snapshot")
-	var changed bool
-	for id, m := range records {
-		if m.sizeBytes > 0 {
-			continue
-		}
-		actual, err := utils.DirSize(m.dataDir)
-		if err != nil {
-			logger.Warnf(ctx, "DirSize for %s: %v", id, err)
-			continue
-		}
-		m.sizeBytes = actual
-		records[id] = m
-		changed = true
-	}
-	if !changed {
-		return
-	}
-	if err := lf.update(ctx, func(t *snapTx) error {
-		for id, m := range records {
-			r, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if r == nil || r.SizeBytes == m.sizeBytes {
-				continue
-			}
-			r.SizeBytes = m.sizeBytes
-			if err := t.Put(id, r); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		logger.Warnf(ctx, "persist backfilled SizeBytes: %v", err)
-	}
 }

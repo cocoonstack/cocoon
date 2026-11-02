@@ -18,9 +18,6 @@ type Ops[E Entry] struct {
 
 func (ops *Ops[E]) Type() string { return ops.Typ }
 
-// SetPinnedElsewhere injects the cross-subsystem pin recheck used by GC.
-func (ops *Ops[E]) SetPinnedElsewhere(fn PinRecheck) { ops.PinnedElsewhere = fn }
-
 func (ops *Ops[E]) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
 	return PinBlobs(ops.Base, blobIDs)
 }

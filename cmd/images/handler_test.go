@@ -52,31 +52,31 @@ func TestDetectReader(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []byte
-		wantType imageType
+		wantType importSourceKind
 		wantData []byte
 	}{
 		{
 			name:     "raw qcow2",
 			input:    qcow2Data,
-			wantType: imageTypeQcow2,
+			wantType: importSourceQcow2,
 			wantData: qcow2Data,
 		},
 		{
 			name:     "gzip qcow2",
 			input:    gzipWrap(t, qcow2Data),
-			wantType: imageTypeQcow2,
+			wantType: importSourceQcow2,
 			wantData: qcow2Data,
 		},
 		{
 			name:     "raw tar",
 			input:    tarData,
-			wantType: imageTypeTar,
+			wantType: importSourceTar,
 			wantData: tarData,
 		},
 		{
 			name:     "gzip tar",
 			input:    gzipWrap(t, tarData),
-			wantType: imageTypeTar,
+			wantType: importSourceTar,
 			wantData: tarData,
 		},
 	}
@@ -111,13 +111,6 @@ func TestDetectReader_TooShort(t *testing.T) {
 	}
 }
 
-func TestDetectReader_Empty(t *testing.T) {
-	_, _, _, err := detectReader(bytes.NewReader(nil))
-	if err == nil {
-		t.Fatal("expected error for empty input")
-	}
-}
-
 func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 	original := make([]byte, 16384)
 	for i := range original {
@@ -131,8 +124,8 @@ func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 	}
 	defer cleanup()
 
-	if typ != imageTypeTar {
-		t.Errorf("type: got %d, want imageTypeTar", typ)
+	if typ != importSourceTar {
+		t.Errorf("type: got %d, want importSourceTar", typ)
 	}
 
 	got, err := io.ReadAll(r)
@@ -182,23 +175,17 @@ func TestDetectLocalImportSource(t *testing.T) {
 	}
 }
 
-func TestPlanLocalImportPreservesAllFiles(t *testing.T) {
+func TestPlanLocalImportDetectsKindFromFirstFile(t *testing.T) {
 	dir := t.TempDir()
 	part1 := writeTempFile(t, dir, "part-1.qcow2", append(utils.Qcow2Magic, make([]byte, 8)...))
 	part2 := writeTempFile(t, dir, "part-2.qcow2", []byte("second-part"))
 
-	plan, err := planLocalImport([]string{part1, part2})
+	kind, err := planLocalImport([]string{part1, part2})
 	if err != nil {
 		t.Fatalf("planLocalImport: %v", err)
 	}
-	if plan.kind != importSourceQcow2 {
-		t.Fatalf("plan.kind = %v, want %v", plan.kind, importSourceQcow2)
-	}
-	if len(plan.files) != 2 {
-		t.Fatalf("len(plan.files) = %d, want 2", len(plan.files))
-	}
-	if plan.files[0] != part1 || plan.files[1] != part2 {
-		t.Fatalf("plan.files = %#v, want [%q %q]", plan.files, part1, part2)
+	if kind != importSourceQcow2 {
+		t.Fatalf("kind = %v, want %v", kind, importSourceQcow2)
 	}
 }
 

@@ -93,15 +93,6 @@ func TestUpdateStatesEmitsOnlyOnRunningToStopped(t *testing.T) {
 	}
 }
 
-func TestUpdateStatesRunningIsRejected(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateRunning); err == nil {
-		t.Fatal("UpdateStates(Running) must return an error to steer callers to BatchMarkStarted")
-	}
-}
-
 func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()

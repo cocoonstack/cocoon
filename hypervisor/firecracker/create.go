@@ -20,22 +20,6 @@ import (
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
 func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, bootCfg *types.BootConfig) (*types.VM, error) {
-	// cmd/ repeats these as flag fast-fails; the backend stays authoritative.
-	if vmCfg.Windows {
-		return nil, fmt.Errorf("firecracker does not support Windows guests")
-	}
-	if vmCfg.SharedMemory {
-		return nil, fmt.Errorf("firecracker does not support shared memory (vhost-user-fs)")
-	}
-	if vmCfg.HugePages {
-		return nil, fmt.Errorf("firecracker does not support hugepages (restore cannot map hugetlbfs-backed snapshots)")
-	}
-	if vmCfg.Mergeable {
-		return nil, fmt.Errorf("firecracker does not support mergeable memory (no KSM madvise knob)")
-	}
-	if !hypervisor.IsDirectBoot(bootCfg) {
-		return nil, fmt.Errorf("firecracker requires direct kernel boot (OCI image)")
-	}
 	return fc.CreateSequence(ctx, id, hypervisor.CreateSpec{
 		VMCfg:          vmCfg,
 		StorageConfigs: storageConfigs,

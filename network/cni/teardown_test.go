@@ -58,14 +58,7 @@ func TestAggregateTeardownRecovery(t *testing.T) {
 		t.Fatalf("aggregate teardown: %v", err)
 	}
 	assertRecordIDs(t, c, nil)
-	var left *tombstone.Record
-	if err := c.view(ctx, func(tx *netTx) error {
-		var err error
-		left, err = c.tombstones().Get(ctx, tx.Reader(), "vm2")
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
+	left := tombstoneOf(t, c, "vm2")
 	if left != nil {
 		t.Fatalf("tombstone survived finalize: %+v", left)
 	}
@@ -91,14 +84,7 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	if tapDeletes != 0 {
 		t.Fatalf("TAP delete attempted against a removed netns (%d)", tapDeletes)
 	}
-	var left *tombstone.Record
-	if err := c.view(ctx, func(tx *netTx) error {
-		var err error
-		left, err = c.tombstones().Get(ctx, tx.Reader(), "vm5")
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
+	left := tombstoneOf(t, c, "vm5")
 	if left != nil {
 		t.Fatalf("tombstone survived converged recovery: %+v", left)
 	}
@@ -116,14 +102,7 @@ func TestSubsetFailureKeepsTombstone(t *testing.T) {
 		t.Fatalf("want eth1 failure, got %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth0", "n-eth1"})
-	var left *tombstone.Record
-	if err := c.view(ctx, func(tx *netTx) error {
-		var lerr error
-		left, lerr = c.tombstones().Get(ctx, tx.Reader(), "vm3")
-		return lerr
-	}); err != nil {
-		t.Fatal(err)
-	}
+	left := tombstoneOf(t, c, "vm3")
 	if left == nil || left.Phase != tombstone.PhaseDeleting {
 		t.Fatalf("tombstone must stay in deleting: %+v", left)
 	}
@@ -263,6 +242,20 @@ func TestRemoveRefusesAfterDifferentSubsetRollForward(t *testing.T) {
 		t.Fatalf("retry after recovery: %v", err)
 	}
 	assertRecordIDs(t, c, nil)
+}
+
+func tombstoneOf(t *testing.T, c *CNI, vmID string) *tombstone.Record {
+	t.Helper()
+	ctx := t.Context()
+	var rec *tombstone.Record
+	if err := c.view(ctx, func(tx *netTx) error {
+		var err error
+		rec, err = c.tombstones().Get(ctx, tx.Reader(), vmID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return rec
 }
 
 func markDeleting(t *testing.T, c *CNI, vmID string, mode tombstone.Mode, cl netCleanup) {

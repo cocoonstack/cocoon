@@ -74,7 +74,14 @@ func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 }
 
 func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
-	return LoadAndValidateMeta(dir, c.RootDir, c.Config.RunDir)
+	meta, err := LoadSnapshotMeta(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateMetaPaths(meta, c.RootDir, c.Config.RunDir); err != nil {
+		return nil, err
+	}
+	return meta, nil
 }
 
 // PreflightRestore returns the validated meta so later phases skip re-reading it.

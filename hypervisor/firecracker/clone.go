@@ -15,7 +15,6 @@ import (
 
 	"github.com/projecteru2/core/log"
 
-	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
@@ -66,9 +65,6 @@ func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMCo
 
 func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
 	vmID, runDir := rec.ID, rec.RunDir
-	if len(vmCfg.DataDisks) > 0 && !vmCfg.PCI {
-		return nil, fmt.Errorf("--data-disk on a Firecracker clone needs a --pci snapshot (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend)
-	}
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("firecracker.cloneAfterExtract")
 

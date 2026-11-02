@@ -5,9 +5,6 @@ import cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 const (
 	digestDisplayLen = len("sha256:") + 12
 
-	imageTypeQcow2 imageType = 0
-	imageTypeTar   imageType = 1
-
 	importSourceQcow2  importSourceKind = 0
 	importSourceTar    importSourceKind = 1
 	importSourceStream importSourceKind = 2
@@ -17,11 +14,4 @@ type Handler struct {
 	cmdcore.BaseHandler
 }
 
-type imageType int
-
 type importSourceKind int
-
-type importLocalPlan struct {
-	kind  importSourceKind
-	files []string
-}
