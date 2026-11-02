@@ -101,10 +101,10 @@ func gcStaleTemp(ctx context.Context, dir string) []error {
 	})
 }
 
-// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 func collectBlob[E any](ctx context.Context, cfg GCModuleConfig[E], logger *log.Fields, hex string) error {
 	fl := gofrsflock.New(cfg.LockPath(hex))
 	defer fl.Close() //nolint:errcheck
+	// TryLock: a publish holding it is mid rename-to-index and must not lose its blob; the lock file is kept since unlinking it would split exclusion for a live waiter.
 	ok, err := fl.TryLock()
 	if err != nil {
 		return fmt.Errorf("lock blob %s: %w", hex, err)

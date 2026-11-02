@@ -51,7 +51,6 @@ type Store struct {
 
 	mu     sync.Mutex
 	events *notifier
-	closed bool
 }
 
 // Open validates the namespace set and returns a Store; it touches no files.
@@ -128,7 +127,6 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.closed = true
 	if s.events != nil {
 		s.events.b.Stop()
 		s.events = nil
