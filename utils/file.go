@@ -80,10 +80,8 @@ func ValidFileSize(path string) (int64, error) {
 // ScanFileStems returns the name-without-suffix of every file in dir whose name ends with suffix.
 func ScanFileStems(dir, suffix string) ([]string, error) {
 	return scanDir(dir, func(e os.DirEntry) (string, bool) {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), suffix) {
-			return strings.TrimSuffix(e.Name(), suffix), true
-		}
-		return "", false
+		stem, ok := strings.CutSuffix(e.Name(), suffix)
+		return stem, ok && !e.IsDir()
 	})
 }
 

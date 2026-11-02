@@ -106,10 +106,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}()
 
-	ticker := time.NewTicker(d.conf.ReconcileInterval)
-	defer ticker.Stop()
-	gcTick, stopGC := d.gcTick()
-	defer stopGC()
+	ticker := time.Tick(d.conf.ReconcileInterval)
+	gcTick := d.gcTick()
 
 	logger.Infof(ctx, "supervising %d backend(s), reconcile every %s", len(d.order), d.conf.ReconcileInterval)
 	d.reconcile(ctx)
@@ -117,7 +115,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-ticker:
 			// A failed first subscribe leaves events nil; the ticker retries it.
 			if events == nil {
 				if ch, rel, retryErr := d.store.Events(ctx); retryErr == nil {
@@ -160,23 +158,20 @@ func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
 
 // settle waits out the debounce window; false means the daemon is shutting down.
 func (d *Daemon) settle(ctx context.Context) bool {
-	timer := time.NewTimer(wakeDebounce)
-	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return false
-	case <-timer.C:
+	case <-time.After(wakeDebounce):
 		return true
 	}
 }
 
-// gcTick returns the periodic-GC channel and its stop; with GC off (the default) the nil channel keeps the select arm inert.
-func (d *Daemon) gcTick() (<-chan time.Time, func()) {
+// gcTick returns the periodic-GC channel; with GC off (the default) the nil channel keeps the select arm inert.
+func (d *Daemon) gcTick() <-chan time.Time {
 	if d.conf.GCInterval <= 0 || d.conf.GC == nil {
-		return nil, func() {}
+		return nil
 	}
-	t := time.NewTicker(d.conf.GCInterval)
-	return t.C, t.Stop
+	return time.Tick(d.conf.GCInterval)
 }
 
 // runGC starts a collection off the supervision loop, unless one is still in flight.

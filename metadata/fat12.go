@@ -248,10 +248,7 @@ func generateShortName(name string, seq int) [11]byte {
 
 	tail := fmt.Sprintf("~%d", seq)
 	maxBase := 8 - len(tail)
-	if len(base) > maxBase {
-		base = base[:maxBase]
-	}
-	copy(result[:8], base+tail)
+	copy(result[:8], base[:min(len(base), maxBase)]+tail)
 	copy(result[8:], ext)
 	return result
 }

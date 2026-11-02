@@ -441,16 +441,15 @@ func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 	// Detached engine goroutine: it outlives every caller ctx by design.
 	ctx := context.Background()
 	logger := log.WithFunc("meta.sqlite.checkpointLoop")
-	t := time.NewTicker(checkpointInterval)
-	defer t.Stop()
+	tick := time.Tick(checkpointInterval)
 	for {
 		select {
 		case <-done:
 			return
-		case <-t.C:
+		case <-tick:
 			start := time.Now()
 			var busy, frames, moved int
-			if err := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &frames, &moved); err != nil || frames == 0 {
+			if err := db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &frames, &moved); err != nil || frames == 0 {
 				continue
 			}
 			var walBytes int64

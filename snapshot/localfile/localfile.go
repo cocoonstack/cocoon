@@ -184,8 +184,7 @@ func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 			if rec.Pending {
 				return nil
 			}
-			s := rec.Snapshot
-			result = append(result, &s)
+			result = append(result, new(rec.Snapshot))
 			return nil
 		})
 	})
@@ -196,8 +195,7 @@ func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, 
 	if err != nil {
 		return nil, err
 	}
-	s := rec.Snapshot
-	return &s, nil
+	return new(rec.Snapshot), nil
 }
 
 // Delete removes each ref (rm dir → DB update); a mid-loop rm-OK-then-DB-fail leaves a stale DB record for GC.

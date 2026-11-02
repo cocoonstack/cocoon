@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -282,11 +284,7 @@ func (f *fakeSupervisor) ScanSupervision(context.Context) (hypervisor.Supervisio
 	if f.scanErr != nil {
 		return hypervisor.SupervisionScan{}, f.scanErr
 	}
-	scan := hypervisor.SupervisionScan{Tombstoned: f.tombstoned}
-	for _, rec := range f.records {
-		scan.Records = append(scan.Records, rec)
-	}
-	return scan, nil
+	return hypervisor.SupervisionScan{Tombstoned: f.tombstoned, Records: slices.Collect(maps.Values(f.records))}, nil
 }
 
 func (f *fakeSupervisor) ObserveVMMIn(ctx context.Context, rec *hypervisor.VMRecord, _ utils.ProcScan) (utils.ProcRef, error) {

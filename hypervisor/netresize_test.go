@@ -218,8 +218,7 @@ func TestNetResizeWithPersistsTheNetworkOfTheFirstNIC(t *testing.T) {
 }
 
 func TestNICPersisted(t *testing.T) {
-	rec := &VMRecord{}
-	rec.NetworkConfigs = []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
+	rec := &VMRecord{NetworkConfigs: []*types.NetworkConfig{{TAP: "tap-vm1-0"}}}
 	if !nicPersisted(rec, "tap-vm1-0") {
 		t.Fatal("committed NIC must be detected (keep device, do not tear down)")
 	}

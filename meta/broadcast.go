@@ -65,8 +65,7 @@ func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
 	timer := time.NewTimer(0)
 	timer.Stop()
 	pending := false
-	poll := time.NewTicker(eventsSafetyPoll)
-	defer poll.Stop()
+	poll := time.Tick(eventsSafetyPoll)
 	for {
 		select {
 		case <-b.done:
@@ -89,7 +88,7 @@ func (b *Broadcaster) Run(check func(), extra <-chan struct{}) {
 		case <-timer.C:
 			pending = false
 			check()
-		case <-poll.C:
+		case <-poll:
 			check()
 		}
 	}

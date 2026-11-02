@@ -81,18 +81,17 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	}
 
 	watchCh := metaEvents(ctx, conf)
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
-	defer ticker.Stop()
+	ticker := time.Tick(time.Duration(interval) * time.Second)
 
 	if eventMode {
 		if format == cliutil.FormatJSON {
-			statusEventLoopJSON(ctx, hypers, args, watchCh, ticker.C)
+			statusEventLoopJSON(ctx, hypers, args, watchCh, ticker)
 		} else {
-			statusEventLoop(ctx, hypers, args, watchCh, ticker.C)
+			statusEventLoop(ctx, hypers, args, watchCh, ticker)
 		}
 	} else {
 		isTTY := term.IsTerminal(os.Stdout.Fd())
-		statusRefreshLoop(ctx, hypers, args, watchCh, ticker.C, isTTY, conf.CgroupParentDir())
+		statusRefreshLoop(ctx, hypers, args, watchCh, ticker, isTTY, conf.CgroupParentDir())
 	}
 	return nil
 }
