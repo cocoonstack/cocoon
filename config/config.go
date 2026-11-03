@@ -61,7 +61,7 @@ type Config struct {
 	DNS string `json:"dns" mapstructure:"dns"`
 	// NetScope: two-alphanumeric prefix on this installation's TAP and netns names so co-hosted installations never GC each other's; empty keeps the legacy names.
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
-	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, then VM Running); exceeding it kills the VMM. Default: 5.
+	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, VM Running, vsock socket up); exceeding it kills the VMM. Default: 5.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing the VMM. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`

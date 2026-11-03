@@ -60,7 +60,7 @@ Race window: `cocoon vm run X && cocoon vm exec X -- cmd` may fail with `read CO
 
 ## Cloud image UEFI boot compatibility
 
-On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions. aarch64 hosts boot through EDK2 (`CLOUDHV_EFI.fd`, installed by `cocoon-check --upgrade`), which is not affected.
+On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions. aarch64 hosts boot through EDK2 (the `CLOUDHV_EFI.fd` release asset, which `cocoon-check --upgrade` installs as `CLOUDHV.fd`), which is not affected.
 
 **Affected images** (kernel panic on boot — GRUB loads kernel but not initrd):
 
@@ -299,7 +299,7 @@ If the host plumbing teardown itself fails after a successful eject, cocoon trun
 
 Quiesce the guest NIC (ip link set down + NetworkManager remove on Linux; Disable-PnpDevice + driver unbind on Windows) before reducing the count.
 
-Firecracker VMs created with `--pci` resize through the same command; the guest receives no eject notification, so cocoon prints the rescan/remove steps instead of waiting (see [networking](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci)). MMIO Firecracker VMs are rejected.
+Firecracker VMs created with `--pci` resize through the same command. After removing a NIC, cocoon polls `/vm/config` for up to 30 s for the VMM to drop it and returns the same eject-pending error if it does not; it also prints rescan/remove steps for builds that plug devices onto the root bus (see [networking](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci)). MMIO Firecracker VMs are rejected.
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 

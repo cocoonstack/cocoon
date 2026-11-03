@@ -247,7 +247,7 @@ The dir is read-only across the call, so multiple clones of the same dir (golden
 
 ### Reconcile Stale Create
 
-`cocoon vm reconcile-stale-create VM` reclaims a `creating` placeholder whose owning create or clone died mid-flight, freeing the record and its name. A free VM ops lock is the proof of ownerlessness — create and clone hold it from prereserve through the final record commit — so the verb never races an in-flight operation and needs no age heuristics (contrast `vm rm --force`, which queues behind a live clone and then deletes the freshly created VM). With `--output json` it prints `{"id": "...", "outcome": "..."}`:
+`cocoon vm reconcile-stale-create VM` reclaims a `creating` placeholder whose owning create or clone died mid-flight, freeing the record and its name. A free VM ops lock is the proof of ownerlessness — create and clone hold it from prereserve through the final record commit — so the verb never races an in-flight operation and needs no age heuristics (contrast `vm rm --force`, which queues behind a live clone and then deletes the freshly created VM). With `--output json` it prints `{"id": "...", "outcome": "..."}`, omitting `id` for `not-found`:
 
 | Outcome | Meaning |
 |------|-------------|
