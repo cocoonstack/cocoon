@@ -147,6 +147,50 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	}
 }
 
+func TestCaptureSequencesResumeWithTheDumpTimeoutAndReportFailure(t *testing.T) {
+	captureErr, resumeErr := errors.New("dump canceled"), errors.New("api gone")
+	failedCapture := func(*VMRecord, *http.Client, string) error { return captureErr }
+	var resumeTimeout time.Duration
+	failedResume := func(_ *VMRecord, hc *http.Client) error {
+		resumeTimeout = hc.Timeout
+		return resumeErr
+	}
+
+	t.Run("hibernate", func(t *testing.T) {
+		b, id := newHibernateTestVM(t)
+		spec := hibernateStubSpec(&hibernateCalls{})
+		spec.Capture, spec.Resume = failedCapture, failedResume
+		err := b.HibernateSequence(t.Context(), id, spec, func(*types.SnapshotConfig, string) error { return nil })
+		if !errors.Is(err, captureErr) || !errors.Is(err, resumeErr) {
+			t.Errorf("err = %v, want both the capture and the resume failure", err)
+		}
+		if resumeTimeout != VMMemTransferTimeout {
+			t.Errorf("resume timeout = %v, want %v", resumeTimeout, VMMemTransferTimeout)
+		}
+	})
+	t.Run("snapshot capture failed", func(t *testing.T) {
+		b, id := newHibernateTestVM(t)
+		spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
+		spec.Capture, spec.Resume = failedCapture, failedResume
+		_, _, err := b.SnapshotSequence(t.Context(), id, spec)
+		if !errors.Is(err, captureErr) || !errors.Is(err, resumeErr) {
+			t.Errorf("err = %v, want both the capture and the resume failure", err)
+		}
+		if resumeTimeout != VMMemTransferTimeout {
+			t.Errorf("resume timeout = %v, want %v", resumeTimeout, VMMemTransferTimeout)
+		}
+	})
+	t.Run("snapshot captured", func(t *testing.T) {
+		b, id := newHibernateTestVM(t)
+		spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
+		spec.Resume = failedResume
+		_, _, err := b.SnapshotSequence(t.Context(), id, spec)
+		if !errors.Is(err, resumeErr) {
+			t.Errorf("err = %v, want the resume failure", err)
+		}
+	})
+}
+
 type hibernateCalls struct {
 	resumed    bool
 	terminated bool
