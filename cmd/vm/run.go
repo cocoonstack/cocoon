@@ -61,16 +61,13 @@ func (h Handler) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logger := log.WithFunc("cmd.vm.run")
-	wantJSON := cliutil.WantJSON(cmd)
-	if !wantJSON {
-		logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
-	}
+	logger.Infof(ctx, "VM created: %s (name: %s)", vm.ID, vm.Config.Name)
 
 	started, err := hyper.Start(ctx, []string{vm.ID})
 	if err != nil {
 		return fmt.Errorf("start VM %s: %w", vm.ID, err)
 	}
-	if wantJSON {
+	if cliutil.WantJSON(cmd) {
 		info, inspectErr := hyper.Inspect(ctx, vm.ID)
 		switch {
 		case inspectErr != nil:
@@ -271,10 +268,7 @@ func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.
 	unlock := sync.OnceFunc(cs.unlock)
 	defer unlock()
 
-	wantJSON := cliutil.WantJSON(cmd)
-	if !wantJSON {
-		logger.Infof(ctx, "cloning VM from %s ...", sourceLabel)
-	}
+	logger.Infof(ctx, "cloning VM from %s ...", sourceLabel)
 	vm, cloneErr := do(cs.vmID, cs.vmCfg, cs.netSetup)
 	if cloneErr != nil {
 		rollbackNetwork(ctx, cs.netProvider, cs.vmID)
@@ -286,7 +280,7 @@ func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.
 	unlock()
 	vm, hints, finishErr := h.finishClone(ctx, hyper, vm, cs)
 
-	if wantJSON {
+	if cliutil.WantJSON(cmd) {
 		return cmp.Or(cliutil.OutputJSON(cloneResult{VM: vm, Hints: hints}), finishErr)
 	}
 	logger.Infof(ctx, "VM cloned: %s (name: %s)", vm.ID, vm.Config.Name)
@@ -379,10 +373,7 @@ func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *co
 }
 
 func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
-	wantJSON := cliutil.WantJSON(cmd)
-	if !wantJSON {
-		logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
-	}
+	logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
 	result, err := hyper.DirectRestore(ctx, vmRef, vmCfg, srcDir, sourceSnapshotID)
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)

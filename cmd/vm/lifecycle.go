@@ -170,15 +170,12 @@ func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
 
 func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense string, routed map[hypervisor.Hypervisor][]string, fn batchOp) error {
 	logger := log.WithFunc("cmd.vm." + name)
-	wantJSON := cliutil.WantJSON(cmd)
 	var allDone []string
 	var errs []error
 	for hyper, refs := range routed {
 		done, err := fn(ctx, hyper, refs)
-		if !wantJSON {
-			for _, id := range done {
-				logger.Infof(ctx, "%s: %s", pastTense, id)
-			}
+		for _, id := range done {
+			logger.Infof(ctx, "%s: %s", pastTense, id)
 		}
 		allDone = append(allDone, done...)
 		errs = append(errs, err)
