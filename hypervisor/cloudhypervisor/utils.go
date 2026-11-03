@@ -213,9 +213,6 @@ func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) 
 }
 
 func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
-	if len(resp) == 0 {
-		return chPciDeviceInfo{}, nil
-	}
 	var info chPciDeviceInfo
 	if err := json.Unmarshal(resp, &info); err != nil {
 		return chPciDeviceInfo{}, fmt.Errorf("decode PciDeviceInfo: %w", err)
