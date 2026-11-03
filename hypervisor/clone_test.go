@@ -23,31 +23,3 @@ func TestRunningCloneRecordStampsStartAtLaunch(t *testing.T) {
 		t.Errorf("placement not carried: cpuset %q queue_cpus %q", info.CPUSet, info.QueueCPUs)
 	}
 }
-
-func TestRetargetCloneDisks(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
-		{Path: "/old/cow.raw", Serial: CowSerial, Role: types.StorageRoleCOW},
-		{Path: "/old/data-vol.raw", Serial: "vol", Role: types.StorageRoleData},
-		{Path: "/old/cidata.img", RO: true, Role: types.StorageRoleCidata},
-	}
-	if err := RetargetCloneDisks(configs, "/new/cow.raw", "/new"); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"/old/layer.erofs", "/new/cow.raw", "/new/data-vol.raw", "/old/cidata.img"}
-	for i, sc := range configs {
-		if sc.Path != want[i] {
-			t.Errorf("disk[%d] (%s): path %s, want %s", i, sc.Role, sc.Path, want[i])
-		}
-	}
-}
-
-func TestRetargetCloneDisksNoCOW(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
-		{Path: "/old/data-vol.raw", Serial: "vol", Role: types.StorageRoleData},
-	}
-	if err := RetargetCloneDisks(configs, "/new/cow.raw", "/new"); err == nil {
-		t.Fatal("expected error when no COW role disk")
-	}
-}

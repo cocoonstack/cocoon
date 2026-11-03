@@ -271,7 +271,7 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 
 	err := c.teardownProtocol(ctx, "vm1", nil, false)
 	if err == nil || !strings.Contains(err.Error(), "netns kept") {
-		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
+		t.Fatalf("teardownProtocol should surface the incomplete release, got: %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 }
@@ -282,7 +282,7 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	if err := c.teardownProtocol(t.Context(), "vm1", nil, false); err != nil {
-		t.Fatalf("deleteVM with zero records: %v", err)
+		t.Fatalf("teardownProtocol with zero records: %v", err)
 	}
 }
 
@@ -656,7 +656,6 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	}, exec
 }
 
-// stubLifecycleSeams replaces the linux-only netns/TAP seams with success stubs, matching the real absent-is-success semantics; t.Cleanup restores them.
 func stubLifecycleSeams(t *testing.T) {
 	t.Helper()
 	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn
