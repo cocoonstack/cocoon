@@ -11,6 +11,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -92,7 +93,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	// vm.restore attaches the snapshot's TAP names and vm.remove-device releases a TAP only after the guest's eject ACK, so every restored NIC gets a clone-unique throwaway TAP that CH creates and drops itself.
 	netTAPs := make([]string, len(chCfg.Nets))
 	for i := range netTAPs {
-		netTAPs[i] = network.TAPName(network.RestoreTAPPrefix, vmID, i)
+		netTAPs[i] = network.TAPName(config.RestoreTAPPrefix, vmID, i)
 	}
 
 	queueCPUs := hypervisor.QueueCPUs(rec)

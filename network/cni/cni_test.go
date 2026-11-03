@@ -47,7 +47,10 @@ const (
 	}`
 )
 
-var testNetTables = NewConfig(&config.Config{}).JSONNamespace().Codec
+var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: TableRecords},
+	{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
+}}
 
 func TestNetnsNameHonorsScope(t *testing.T) {
 	for _, tt := range []struct {
