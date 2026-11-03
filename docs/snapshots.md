@@ -150,6 +150,8 @@ cocoon vm restore my-vm nap
 
 Pause, capture, persist, and VMM termination share one pause window: the snapshot point and the stop coincide (nothing the guest does can be lost in between), and the VMM dies only after the snapshot is durably saved — if saving fails (disk full, snapshot DB error), the VM simply resumes running and the command fails. Restore of the hibernated VM preserves machine identity (entropy-only reseed): running processes, sessions, and tmpfs contents continue where they stopped.
 
+A canceled or timed-out `vm hibernate` or `snapshot save` waits for the hypervisor to end its memory dump, up to 10 minutes, then resumes the guest, so SIGTERM can take that long to end the command. SIGKILL skips the resume; see [known issues](known-issues.md#a-killed-capture-leaves-the-guest-paused).
+
 ### Restore Constraints
 
 - **VM must be running, stopped, or error.** Restore cold-spawns a fresh hypervisor process from the snapshot; a stopped target (e.g. hibernated) gets the `vm start` network self-heal first. Error-state VMs are admitted because restore rebuilds the run dir — it is the recovery path for a crashed or interrupted restore (which `vm start` refuses).

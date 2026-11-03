@@ -16,7 +16,7 @@ cocoon
 │   ├── create [flags] IMAGE       Create a VM from an image
 │   ├── run [flags] IMAGE          Create and start a VM
 │   ├── clone [flags] [SNAPSHOT]   Clone a new VM from a snapshot (or --from-dir)
-│   ├── start VM [VM...]           Start created/stopped VM(s)
+│   ├── start VM [VM...]           Start created/stopped VM(s); resume a VM a killed capture left paused
 │   ├── stop VM [VM...]            Stop running VM(s)
 │   ├── list (alias: ls)           List VMs with status
 │   ├── inspect VM                 Show detailed VM info (JSON)
