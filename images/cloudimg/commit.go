@@ -88,7 +88,11 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	logger.Debugf(ctx, "detected source format: %s (compat=%q, backing=%t)",
 		info.Format, info.Compat, info.HasBackingFile)
 
-	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
+	if info.HasBackingFile {
+		return "", errors.New("qcow2 image has a backing file, which would pull a path it names on this host into the blob; flatten it with qemu-img convert first")
+	}
+
+	if info.Format == "qcow2" && info.Compat == "1.1" {
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
 		if err = os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)
