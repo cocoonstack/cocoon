@@ -8,7 +8,7 @@ import (
 type VMRecord struct {
 	types.VM
 
-	BootConfig   *types.BootConfig   `json:"boot_config,omitzero"`     // nil for UEFI boot (cloudimg)
+	BootConfig   *types.BootConfig   `json:"boot_config,omitzero"`
 	ImageBlobIDs map[string]struct{} `json:"image_blob_ids,omitempty"` // blob hex set for GC pinning
 
 	// RunDir/LogDir are persisted absolute paths so cleanup still finds them if --run-dir / --log-dir change later.

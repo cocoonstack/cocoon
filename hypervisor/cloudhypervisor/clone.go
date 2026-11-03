@@ -59,7 +59,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	}
 
 	storageConfigs := meta.StorageConfigs
-	bootCfg := rebuildBootConfig(chCfg)
+	bootCfg := meta.BootConfig
 	directBoot := hypervisor.IsDirectBoot(bootCfg)
 
 	cowPath := ch.cowPath(vmID, directBoot)
@@ -210,21 +210,6 @@ func parseCHConfig(path string) (*chVMConfig, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {
-	if cfg.Payload == nil {
-		return nil
-	}
-	p := cfg.Payload
-	if p.Kernel == "" && p.Firmware == "" {
-		return nil
-	}
-	return &types.BootConfig{
-		KernelPath:   p.Kernel,
-		InitrdPath:   p.Initramfs,
-		FirmwarePath: p.Firmware,
-	}
 }
 
 func updateCloneCidataPath(storageConfigs []*types.StorageConfig, directBoot bool, cidataPath string) bool {

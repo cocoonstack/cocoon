@@ -267,51 +267,6 @@ func TestUpdateCOWPath_NoCOW(t *testing.T) {
 	}
 }
 
-func TestRebuildBootConfig(t *testing.T) {
-	t.Run("nil_payload", func(t *testing.T) {
-		cfg := &chVMConfig{}
-		if boot := rebuildBootConfig(cfg); boot != nil {
-			t.Errorf("expected nil, got %+v", boot)
-		}
-	})
-
-	t.Run("firmware", func(t *testing.T) {
-		cfg := &chVMConfig{Payload: &chPayload{Firmware: "/OVMF.fd"}}
-		boot := rebuildBootConfig(cfg)
-		if boot == nil {
-			t.Fatal("expected non-nil")
-		}
-		if boot.FirmwarePath != "/OVMF.fd" {
-			t.Errorf("FirmwarePath: %q", boot.FirmwarePath)
-		}
-	})
-
-	t.Run("firmware_kernel", func(t *testing.T) {
-		path := writeCHConfig(t, t.TempDir(), map[string]any{"payload": map[string]any{
-			"firmware":      "/fw/CLOUDHV.fd",
-			"kernel":        "/boot/Image",
-			"initramfs":     "/boot/initrd.img",
-			"cmdline":       "console=hvc0",
-			"fw_cfg_config": map[string]any{"e820": true, "kernel": true, "cmdline": true, "initramfs": true, "acpi_tables": true},
-		}})
-		cfg, err := parseCHConfig(path)
-		if err != nil {
-			t.Fatalf("parseCHConfig: %v", err)
-		}
-		want := types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", FirmwarePath: "/fw/CLOUDHV.fd"}
-		if boot := rebuildBootConfig(cfg); boot == nil || *boot != want {
-			t.Errorf("got %+v, want %+v", boot, want)
-		}
-	})
-
-	t.Run("empty_payload", func(t *testing.T) {
-		cfg := &chVMConfig{Payload: &chPayload{}}
-		if boot := rebuildBootConfig(cfg); boot != nil {
-			t.Errorf("expected nil for empty payload, got %+v", boot)
-		}
-	})
-}
-
 func TestRestorePatchStorageConfigs(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/l", Role: types.StorageRoleLayer},
