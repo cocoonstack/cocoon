@@ -118,7 +118,7 @@ func newCHStubClient(t *testing.T, nets []chNet, stickyIDs ...string) (*http.Cli
 			live = append(live, n)
 			tree[n.ID] = jsontext.Value("{}")
 		}
-		_ = json.MarshalWrite(w, chVMInfoResponse{Config: chVMInfoConfig{Nets: live}, DeviceTree: tree})
+		_ = json.MarshalWrite(w, chVMInfoResponse{Config: chVMConfig{Nets: live}, DeviceTree: tree})
 	})
 	hc := &http.Client{Transport: handlerTransport{mux}}
 	return hc, func() []string {

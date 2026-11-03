@@ -115,7 +115,7 @@ func serveVMState(t *testing.T, state string) string {
 
 func serveVMInfo(t *testing.T, ptyPath string) string {
 	t.Helper()
-	return serveCHAPI(t, chVMInfoResponse{Config: chVMInfoConfig{Console: chRuntimeFile{Mode: "Pty", File: ptyPath}}})
+	return serveCHAPI(t, chVMInfoResponse{Config: chVMConfig{Console: &chRuntimeFile{Mode: "Pty", File: ptyPath}}})
 }
 
 func serveCHAPI(t *testing.T, resp chVMInfoResponse) string {

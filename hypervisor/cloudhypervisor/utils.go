@@ -251,10 +251,11 @@ func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if info.Config.Console.File == "" {
-		return "", fmt.Errorf("console PTY not available (mode=%s)", info.Config.Console.Mode)
+	console := info.Config.Console
+	if console == nil || console.File == "" {
+		return "", fmt.Errorf("console PTY not available (console=%+v)", console)
 	}
-	return info.Config.Console.File, nil
+	return console.File, nil
 }
 
 func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, directBoot bool) string {
