@@ -28,10 +28,8 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 			meta, err = ch.preflightRestore(ctx, srcDir, rec, vmCfg)
 			return err
 		},
-		Kill: ch.killForRestore,
-		BeforeMerge: func(rec *hypervisor.VMRecord) error {
-			return cleanSnapshotFiles(rec.RunDir)
-		},
+		Kill:  ch.killForRestore,
+		Clean: cleanSnapshotFiles,
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, meta)
 		},

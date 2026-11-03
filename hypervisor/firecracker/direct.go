@@ -30,7 +30,7 @@ func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *t
 				return cloneSnapshotFiles(ctx, dstDir, srcDir)
 			})
 		},
-		AfterExtract: fc.restoreAfterExtractCOW,
+		AfterExtract: fc.restoreAfterExtract,
 	})
 }
 

@@ -105,7 +105,7 @@ type RestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
-	BeforeMerge      func(rec *VMRecord) error
+	Clean            func(runDir string) error
 	AfterExtract     AfterExtractHook
 }
 
