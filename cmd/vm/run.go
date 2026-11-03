@@ -17,6 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -395,37 +396,12 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
 	ctx, conf := h.Init(cmd)
 
-	if fc, _ := cmd.Flags().GetBool("fc"); fc {
-		conf.UseFirecracker = true
-	}
-
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	if err = validateBackendFlags(conf, vmCfg); err != nil {
-		return nil, nil, nil, err
-	}
-	bridgeDev, _ := cmd.Flags().GetString("bridge")
-
-	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	owner, vmCfg, storageConfigs, bootCfg, err := resolveCreateImage(ctx, cmd, conf, image)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	hyper, err := cmdcore.InitHypervisor(ctx, conf)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	owner, storageConfigs, bootCfg, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if err = validateBootCompat(conf, vmCfg, bootCfg); err != nil {
-		return nil, nil, nil, err
-	}
-	if err = cmdcore.EnsureFirmwarePath(conf, bootCfg); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -444,6 +420,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	defer unlock()
 
 	nics, _ := cmd.Flags().GetInt("nics")
+	bridgeDev, _ := cmd.Flags().GetString("bridge")
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		rollbackReserve()
@@ -458,6 +435,34 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
 	}
 	return ctx, info, hyper, nil
+}
+
+func resolveCreateImage(ctx context.Context, cmd *cobra.Command, conf *config.Config, image string) (imagebackend.Images, *types.VMConfig, []*types.StorageConfig, *types.BootConfig, error) {
+	if fc, _ := cmd.Flags().GetBool("fc"); fc {
+		conf.UseFirecracker = true
+	}
+	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err = validateBackendFlags(conf, vmCfg); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	owner, storageConfigs, bootCfg, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err = validateBootCompat(conf, vmCfg, bootCfg); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err = cmdcore.EnsureFirmwarePath(conf, bootCfg); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return owner, vmCfg, storageConfigs, bootCfg, nil
 }
 
 func cloneNICPlan(useFC bool, cfg types.SnapshotConfig, override bool, target int) (restoreNICs, holdNICs int, err error) {
