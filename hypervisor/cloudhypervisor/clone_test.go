@@ -240,33 +240,6 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 	}
 }
 
-func TestUpdateCOWPath_OCI(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
-		{Path: "/old/cow.raw", RO: false, Serial: hypervisor.CowSerial, Role: types.StorageRoleCOW},
-	}
-	if err := updateCOWPath(configs, "/new/cow.raw"); err != nil {
-		t.Fatal(err)
-	}
-	if configs[0].Path != "/old/layer.erofs" {
-		t.Errorf("RO layer path changed: %s", configs[0].Path)
-	}
-	if configs[1].Path != "/new/cow.raw" {
-		t.Errorf("COW path not updated: %s", configs[1].Path)
-	}
-}
-
-func TestUpdateCOWPath_NoCOW(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/old/layer.erofs", RO: true, Serial: "layer0", Role: types.StorageRoleLayer},
-		{Path: "/old/data.raw", RO: false, Serial: "data1", Role: types.StorageRoleData},
-	}
-	err := updateCOWPath(configs, "/new/cow.raw")
-	if err == nil {
-		t.Fatal("expected error when no COW role disk")
-	}
-}
-
 func TestRestorePatchStorageConfigs(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/l", Role: types.StorageRoleLayer},

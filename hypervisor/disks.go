@@ -41,6 +41,24 @@ func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types
 	return append(storageConfigs, dataDisks...), nil
 }
 
+// RetargetCloneDisks repoints the source's COW and data paths at the clone in place; a snapshot with no COW cannot clone.
+func RetargetCloneDisks(configs []*types.StorageConfig, cowPath, runDir string) error {
+	foundCOW := false
+	for _, sc := range configs {
+		switch sc.Role {
+		case types.StorageRoleCOW:
+			sc.Path = cowPath
+			foundCOW = true
+		case types.StorageRoleData:
+			sc.Path = filepath.Join(runDir, DataDiskBaseName(sc.Serial))
+		}
+	}
+	if !foundCOW {
+		return fmt.Errorf("no COW disk found in storage configs")
+	}
+	return nil
+}
+
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec

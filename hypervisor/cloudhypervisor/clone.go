@@ -62,12 +62,9 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	bootCfg := meta.BootConfig
 	directBoot := hypervisor.IsDirectBoot(bootCfg)
 
-	cowPath := ch.cowPath(vmID, directBoot)
-	if err = updateCOWPath(storageConfigs, cowPath); err != nil {
-		return nil, fmt.Errorf("update COW path: %w", err)
+	if err = hypervisor.RetargetCloneDisks(storageConfigs, ch.cowPath(vmID, directBoot), runDir); err != nil {
+		return nil, err
 	}
-	updateDataDiskPaths(storageConfigs, runDir)
-
 	// Snapshot may omit cidata if taken post-restart.
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
 
@@ -236,29 +233,6 @@ func restorePatchStorageConfigs(storageConfigs []*types.StorageConfig, directBoo
 		return storageConfigs
 	}
 	return slices.DeleteFunc(slices.Clone(storageConfigs), hasCidataRole)
-}
-
-// The sidecar carries the source's paths, so Role==Data needs retargeting.
-func updateDataDiskPaths(configs []*types.StorageConfig, newRunDir string) {
-	for _, sc := range configs {
-		if sc.Role == types.StorageRoleData {
-			sc.Path = filepath.Join(newRunDir, hypervisor.DataDiskBaseName(sc.Serial))
-		}
-	}
-}
-
-func updateCOWPath(configs []*types.StorageConfig, newCOWPath string) error {
-	found := false
-	for _, sc := range configs {
-		if sc.Role == types.StorageRoleCOW {
-			sc.Path = newCOWPath
-			found = true
-		}
-	}
-	if !found {
-		return fmt.Errorf("no COW disk found in storage configs")
-	}
-	return nil
 }
 
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
