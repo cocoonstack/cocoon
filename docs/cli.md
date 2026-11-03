@@ -188,7 +188,7 @@ Applies to `cocoon vm restore`:
 
 CPU, memory, and storage come from the snapshot (the hypervisor
 reconstructs the guest from snapshot state, so the persisted record is
-realigned to match). NIC count must match the target VM — restore reuses
+realigned to match). NIC count and MACs must match the target VM — restore reuses
 its existing network namespace, TAP devices, and IP allocation. `--force`
 only skips snapshot ownership validation; it does not switch the target's
 base image, and an incompatible base image is rejected before the VM stops.

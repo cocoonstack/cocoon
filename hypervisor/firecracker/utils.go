@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -22,7 +23,22 @@ func (fc *Firecracker) preflightRestore(srcDir string, rec *hypervisor.VMRecord)
 	if err != nil {
 		return err
 	}
-	return hypervisor.ValidateResidentPaths(meta.StorageConfigs, rec.StorageConfigs)
+	if err := hypervisor.ValidateResidentPaths(meta.StorageConfigs, rec.StorageConfigs); err != nil {
+		return err
+	}
+	return validateRestoreNICs(meta.NICMACs, rec)
+}
+
+func validateRestoreNICs(snapMACs []string, rec *hypervisor.VMRecord) error {
+	if len(snapMACs) > len(rec.NetworkConfigs) {
+		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(snapMACs), len(rec.NetworkConfigs))
+	}
+	for i, mac := range snapMACs {
+		if !strings.EqualFold(mac, rec.NetworkConfigs[i].MAC) {
+			return fmt.Errorf("nic %d MAC drifted since snapshot (%s -> %s, net resize?); recreate via clone instead", i, mac, rec.NetworkConfigs[i].MAC)
+		}
+	}
+	return nil
 }
 
 // snapshotIntegrity adds the vmstate and memory file checks: the sidecar is FC's only disk-shape source.
