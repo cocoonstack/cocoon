@@ -91,7 +91,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if err := EnsureVmlinuxBoot(bootCfg); err != nil {
 		return nil, err
 	}
-	blobIDs := hypervisor.ExtractBlobIDs(storageConfigs, bootCfg)
 
 	if verifyErr := hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
 		return nil, fmt.Errorf("verify base files: %w", verifyErr)
@@ -109,7 +108,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	storageConfigs = append(storageConfigs, dataDisks...)
 
 	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
-	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
+	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, sourceSnapshotID); err != nil {
 		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)

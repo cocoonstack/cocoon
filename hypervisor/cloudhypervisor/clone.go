@@ -132,7 +132,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
 	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
-	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
+	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
