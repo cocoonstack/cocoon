@@ -31,9 +31,8 @@ var nonImageSignatures = []struct {
 }
 
 type sourceImageInfo struct {
-	Format         string
-	Compat         string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
-	HasBackingFile bool
+	Format string
+	Compat string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
 }
 
 func sniffHead(head []byte) error {
@@ -87,6 +86,9 @@ func inspectQcow2Header(path string) (*sourceImageInfo, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+	if hdr.HasBackingFile {
+		return nil, true, errors.New("qcow2 image has a backing file, which would pull a path it names on this host into the blob; flatten it with qemu-img convert first")
+	}
 	var compat string
 	switch hdr.Version {
 	case 2:
@@ -96,9 +98,5 @@ func inspectQcow2Header(path string) (*sourceImageInfo, bool, error) {
 	default:
 		return nil, true, fmt.Errorf("unsupported qcow2 version %d", hdr.Version)
 	}
-	return &sourceImageInfo{
-		Format:         "qcow2",
-		Compat:         compat,
-		HasBackingFile: hdr.HasBackingFile,
-	}, true, nil
+	return &sourceImageInfo{Format: "qcow2", Compat: compat}, true, nil
 }
