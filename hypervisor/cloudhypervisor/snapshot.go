@@ -11,6 +11,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -78,7 +79,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 }
 
 // buildSnapshotMeta mirrors config.json's disk shape (not activeDisks — diverges for cloudimg post-FirstBooted pre-restart where CH still holds cidata).
-func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.SnapshotMeta, error) {
+func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error) {
 	chCfg, err := parseCHConfig(filepath.Join(tmpDir, configJSONName))
 	if err != nil {
 		return nil, fmt.Errorf("parse snapshot config: %w", err)
@@ -95,7 +96,7 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, tmpDir string) (*hypervisor.Sna
 		}
 		ordered = append(ordered, sc)
 	}
-	return &hypervisor.SnapshotMeta{
+	return &snapshot.SnapshotMeta{
 		StorageConfigs: hypervisor.CloneStorageConfigs(ordered),
 		BootConfig:     rec.BootConfig,
 	}, nil

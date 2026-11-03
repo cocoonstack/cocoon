@@ -13,6 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -149,7 +150,7 @@ type SnapshotSpec struct {
 	Resume       TransitionHook
 	Capture      func(rec *VMRecord, hc *http.Client, tmpDir string) error
 	AfterCapture func(rec *VMRecord, tmpDir string) error
-	BuildMeta    func(rec *VMRecord, tmpDir string) (*SnapshotMeta, error)
+	BuildMeta    func(rec *VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error)
 }
 
 // HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.

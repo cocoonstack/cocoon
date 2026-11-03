@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -249,7 +250,7 @@ func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {
 		Capture: func(_ *VMRecord, _ *http.Client, tmpDir string) error {
 			return os.WriteFile(filepath.Join(tmpDir, "mem"), []byte("x"), 0o600)
 		},
-		BuildMeta: func(*VMRecord, string) (*SnapshotMeta, error) { return &SnapshotMeta{}, nil },
+		BuildMeta: func(*VMRecord, string) (*snapshot.SnapshotMeta, error) { return &snapshot.SnapshotMeta{}, nil },
 		Terminate: func(*VMRecord, *http.Client, int) error { calls.terminated = true; return nil },
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -16,10 +17,19 @@ import (
 const (
 	SnapshotJSONName = "snapshot.json"
 	EnvelopeVersion  = 1
+
+	// SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config cannot hold.
+	SnapshotMetaFile = "cocoon.json"
 )
 
 // ErrEnvelopeMissing wraps the not-found case so callers can render a dir-specific error instead of a raw open failure.
 var ErrEnvelopeMissing = errors.New("snapshot envelope missing")
+
+// SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
+type SnapshotMeta struct {
+	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
+	BootConfig     *types.BootConfig      `json:"boot_config,omitzero"`
+}
 
 // ReadSnapshotEnvelope reads <dir>/snapshot.json.
 func ReadSnapshotEnvelope(dir string) (types.SnapshotExport, error) {
@@ -75,4 +85,25 @@ func VerifyCOWSize(dir string, cfg types.SnapshotConfig) error {
 			types.COWRawFileName, dir, st.Size(), cfg.Storage)
 	}
 	return nil
+}
+
+func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
+	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta, utils.Sync)
+}
+
+func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
+	var meta SnapshotMeta
+	if err := utils.ReadJSONFile(filepath.Join(dir, SnapshotMetaFile), &meta); err != nil {
+		return nil, err
+	}
+	return &meta, nil
+}
+
+// SnapshotCOWFile returns the basename of the sidecar's COW disk; only the basename is trusted, so another node's sidecar works.
+func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
+	i := slices.IndexFunc(meta.StorageConfigs, func(sc *types.StorageConfig) bool { return sc != nil && sc.Role == types.StorageRoleCOW })
+	if i < 0 {
+		return "", fmt.Errorf("no cow disk in snapshot metadata")
+	}
+	return filepath.Base(meta.StorageConfigs[i].Path), nil
 }

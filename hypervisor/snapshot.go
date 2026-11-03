@@ -13,18 +13,10 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
-
-// SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config cannot hold.
-const SnapshotMetaFile = "cocoon.json"
-
-// SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
-type SnapshotMeta struct {
-	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
-	BootConfig     *types.BootConfig      `json:"boot_config,omitzero"`
-}
 
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
 type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
@@ -191,7 +183,7 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	if err != nil {
 		return nil, fmt.Errorf("build snapshot metadata: %w", err)
 	}
-	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
+	if err = snapshot.SaveSnapshotMeta(tmpDir, meta); err != nil {
 		return nil, fmt.Errorf("save snapshot metadata: %w", err)
 	}
 	snapID, err := b.RecordSnapshot(ctx, vmID)
@@ -199,27 +191,6 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 		return nil, err
 	}
 	return b.BuildSnapshotConfig(snapID, rec), nil
-}
-
-func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
-	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta, utils.Sync)
-}
-
-func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
-	var meta SnapshotMeta
-	if err := utils.ReadJSONFile(filepath.Join(dir, SnapshotMetaFile), &meta); err != nil {
-		return nil, err
-	}
-	return &meta, nil
-}
-
-// SnapshotCOWFile returns the basename of the sidecar's COW disk; only the basename is trusted, so another node's sidecar works.
-func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
-	i := slices.IndexFunc(meta.StorageConfigs, func(sc *types.StorageConfig) bool { return sc != nil && sc.Role == types.StorageRoleCOW })
-	if i < 0 {
-		return "", fmt.Errorf("no cow disk in snapshot metadata")
-	}
-	return filepath.Base(meta.StorageConfigs[i].Path), nil
 }
 
 func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone CloneFilesFunc) error {
@@ -254,7 +225,7 @@ func IsUnderDir(path, dir string) bool {
 }
 
 // ValidateMetaPaths treats an imported cocoon.json as untrusted; snapshot-resident paths are provenance only.
-func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
+func ValidateMetaPaths(meta *snapshot.SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)

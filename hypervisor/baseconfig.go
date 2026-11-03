@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -73,8 +74,8 @@ func (c *BaseConfig) TerminateGracePeriod() time.Duration {
 	return defaultTerminateGracePeriod
 }
 
-func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
-	meta, err := LoadSnapshotMeta(dir)
+func (c *BaseConfig) LoadAndValidateMeta(dir string) (*snapshot.SnapshotMeta, error) {
+	meta, err := snapshot.LoadSnapshotMeta(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*SnapshotMeta, error) {
 }
 
 // PreflightRestore returns the validated meta so later phases skip re-reading it.
-func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity IntegrityCheck) (*SnapshotMeta, error) {
+func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity IntegrityCheck) (*snapshot.SnapshotMeta, error) {
 	meta, err := c.LoadAndValidateMeta(srcDir)
 	if err != nil {
 		return nil, err

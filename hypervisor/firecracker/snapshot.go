@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -53,8 +54,8 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 }
 
 // buildSnapshotMeta rewrites kernel path to vmlinuz so clones get the portable artifact instead of the FC-specific vmlinux cache.
-func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.SnapshotMeta, error) {
-	meta := &hypervisor.SnapshotMeta{
+func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*snapshot.SnapshotMeta, error) {
+	meta := &snapshot.SnapshotMeta{
 		StorageConfigs: hypervisor.CloneStorageConfigs(rec.StorageConfigs),
 	}
 	if rec.BootConfig != nil {

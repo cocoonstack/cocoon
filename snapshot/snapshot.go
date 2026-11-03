@@ -1,4 +1,4 @@
-// Package snapshot defines the snapshot backend interfaces and export envelope.
+// Package snapshot defines the snapshot backend interfaces, export envelope, and cocoon.json sidecar.
 package snapshot
 
 import (

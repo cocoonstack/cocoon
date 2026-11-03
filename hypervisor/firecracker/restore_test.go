@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -16,7 +17,7 @@ func TestPreflightRestoreRefusesAnotherVMsDrives(t *testing.T) {
 		writeTestFile(t, srcDir, name)
 	}
 	sourceCOW := fc.conf.COWRawPath("vm-a")
-	if err := hypervisor.SaveSnapshotMeta(srcDir, &hypervisor.SnapshotMeta{
+	if err := snapshot.SaveSnapshotMeta(srcDir, &snapshot.SnapshotMeta{
 		StorageConfigs: []*types.StorageConfig{{Role: types.StorageRoleCOW, Serial: hypervisor.CowSerial, Path: sourceCOW}},
 	}); err != nil {
 		t.Fatalf("write sidecar: %v", err)

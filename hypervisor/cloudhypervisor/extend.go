@@ -17,6 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -59,11 +60,11 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 	if err := src.Normalize(); err != nil {
 		return "", "", err
 	}
-	meta, err := hypervisor.LoadSnapshotMeta(src.Dir)
+	meta, err := snapshot.LoadSnapshotMeta(src.Dir)
 	if err != nil {
 		return "", "", fmt.Errorf("load snapshot metadata: %w", err)
 	}
-	cowFile, err := hypervisor.SnapshotCOWFile(meta)
+	cowFile, err := snapshot.SnapshotCOWFile(meta)
 	if err != nil {
 		return "", "", err
 	}
