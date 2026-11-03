@@ -112,9 +112,7 @@ func TestWaitForSocketFailsFastOnAReapedProcess(t *testing.T) {
 		t.Fatalf("start probe: %v", err)
 	}
 	pid := cmd.Process.Pid
-	reaped := make(chan struct{})
-	reapProcess(cmd, reaped)
-	<-reaped
+	_ = cmd.Wait()
 
 	const timeout = 2 * time.Second
 	start := time.Now()

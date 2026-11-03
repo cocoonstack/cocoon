@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/projecteru2/core/log"
@@ -163,7 +162,10 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	}
 	started = true
 	// Reap before the socket wait: an unreaped zombie answers kill(0), so a VMM that died on bad args would wait out the full timeout.
-	reapProcess(spec.Cmd, reaped)
+	go func() {
+		_ = spec.Cmd.Wait()
+		close(reaped)
+	}()
 	pid = spec.Cmd.Process.Pid
 
 	if err = utils.WritePIDFile(pidPath, pid); err != nil {
@@ -187,13 +189,6 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
 	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
-}
-
-func reapProcess(cmd *exec.Cmd, done chan<- struct{}) {
-	go func() {
-		_ = cmd.Wait()
-		close(done)
-	}()
 }
 
 func raiseVMMRlimits(ctx context.Context) {
