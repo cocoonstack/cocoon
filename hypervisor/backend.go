@@ -95,6 +95,8 @@ type PrepareHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, s
 // AfterExtractHook finalizes the restored record and returns the resulting VM.
 type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 
+type RunDirHook func(runDir string) error
+
 type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
 
 type TransitionHook func(rec *VMRecord, hc *http.Client) error
@@ -106,7 +108,7 @@ type RestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
-	Clean            func(runDir string) error
+	Clean            RunDirHook
 	AfterExtract     AfterExtractHook
 }
 

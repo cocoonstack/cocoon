@@ -125,7 +125,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 	for _, spec := range specs {
 		out = append(out, &types.StorageConfig{
 			Path:       filepath.Join(baseDir, DataDiskBaseName(spec.Name)),
-			RO:         false,
 			Serial:     spec.Name,
 			Role:       types.StorageRoleData,
 			MountPoint: spec.MountPoint,

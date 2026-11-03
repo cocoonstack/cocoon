@@ -137,7 +137,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 
 	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
 	b.removeCgroupScope(ctx, vmID)
-	// Warn-and-continue like StopAll: the VMM is dead and the flip self-heals; the snapshot is already durable.
+	// Warn-and-continue like StopOneLocked: the VMM is dead and the flip self-heals; the snapshot is already durable.
 	uErr := b.UpdateState(ctx, vmID, types.VMStateStopped)
 	if uErr != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
@@ -193,7 +193,7 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	return b.BuildSnapshotConfig(snapID, rec), nil
 }
 
-func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone CloneFilesFunc) error {
+func PopulateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
 	if err := clean(runDir); err != nil {
 		return fmt.Errorf("clean old snapshot files: %w", err)
 	}

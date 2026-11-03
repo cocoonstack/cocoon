@@ -147,10 +147,8 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 		if !info.Config.Memory.Shared {
 			return "", fmt.Errorf("fs attach requires the VM to be created with --shared-memory (current memory shared=off; cannot be flipped on a running VM)")
 		}
-		for _, ex := range info.Config.Fs {
-			if ex.Tag == spec.Tag {
-				return "", fmt.Errorf("fs tag %q already attached", spec.Tag)
-			}
+		if slices.ContainsFunc(info.Config.Fs, func(f chFs) bool { return f.Tag == spec.Tag }) {
+			return "", fmt.Errorf("fs tag %q already attached", spec.Tag)
 		}
 		return "", nil
 	})
@@ -158,12 +156,11 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 
 func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) error {
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
-		for _, ex := range info.Config.Fs {
-			if ex.Tag == tag {
-				return ex.ID, true, nil
-			}
+		i := slices.IndexFunc(info.Config.Fs, func(f chFs) bool { return f.Tag == tag })
+		if i < 0 {
+			return "", false, fmt.Errorf("fs tag %q not attached", tag)
 		}
-		return "", false, fmt.Errorf("fs tag %q not attached", tag)
+		return info.Config.Fs[i].ID, true, nil
 	}, nil)
 }
 
