@@ -19,11 +19,6 @@ type DirectCreator interface {
 	CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (id string, ok bool, err error)
 }
 
-// NameHolder reports a name held by a pending record Inspect does not resolve, so a save preflight rejects a taken name before the capture.
-type NameHolder interface {
-	NameOwner(ctx context.Context, name string) (id string, held bool, err error)
-}
-
 // CompressedExporter is an optional interface for backends that support exporting with compression (e.g. gzip). The default Export produces raw tar.
 type CompressedExporter interface {
 	ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error)
@@ -41,6 +36,8 @@ type Snapshot interface {
 	Create(ctx context.Context, cfg *types.SnapshotConfig, stream io.Reader) (string, error)
 	List(ctx context.Context) ([]*types.Snapshot, error)
 	Inspect(ctx context.Context, ref string) (*types.Snapshot, error)
+	// NameOwner reports a name held by a pending record Inspect does not resolve, so a save preflight rejects a taken name before the capture.
+	NameOwner(ctx context.Context, name string) (id string, held bool, err error)
 	// Delete removes snapshots by ID or name. Returns the list of actually deleted IDs.
 	Delete(ctx context.Context, refs []string) ([]string, error)
 	Restore(ctx context.Context, ref string) (types.SnapshotConfig, io.ReadCloser, error)
