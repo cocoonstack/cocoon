@@ -1,4 +1,4 @@
-package utils
+package vm
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestWatchFile(t *testing.T) {
@@ -15,12 +17,12 @@ func TestWatchFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, err := WatchFile(t.Context(), target, 50*time.Millisecond)
+	ch, err := watchFile(t.Context(), target, 50*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := AtomicWriteFile(target, []byte(`{"v":1}`), 0o644, Sync); err != nil {
+	if err := utils.AtomicWriteFile(target, []byte(`{"v":1}`), 0o644, utils.Sync); err != nil {
 		t.Fatal(err)
 	}
 
@@ -38,13 +40,13 @@ func TestWatchFileDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, err := WatchFile(t.Context(), target, 2*time.Second)
+	ch, err := watchFile(t.Context(), target, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for i := range 5 {
-		if err := AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644, Sync); err != nil {
+		if err := utils.AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644, utils.Sync); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,7 +72,7 @@ func TestWatchFileCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
-	ch, err := WatchFile(ctx, target, 50*time.Millisecond)
+	ch, err := watchFile(ctx, target, 50*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}

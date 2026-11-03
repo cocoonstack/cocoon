@@ -216,7 +216,9 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 			return id, nil
 		}
 	}
-	stream := utils.TarDirStreamWithRemove(srcDir)
+	stream := utils.TarDirStream(srcDir, func() {
+		os.RemoveAll(srcDir) //nolint:errcheck,gosec
+	})
 	defer stream.Close() //nolint:errcheck
 	defer CloseOnCancel(ctx, stream)()
 	logger.Info(ctx, "saving snapshot data ...")

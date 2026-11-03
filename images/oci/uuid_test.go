@@ -1,4 +1,4 @@
-package utils
+package oci
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestUUIDv5_Format(t *testing.T) {
-	id := UUIDv5("test-name")
+	id := uuidV5("test-name")
 
 	parts := strings.Split(id, "-")
 	if len(parts) != 5 {
@@ -18,23 +18,23 @@ func TestUUIDv5_Format(t *testing.T) {
 }
 
 func TestUUIDv5_Deterministic(t *testing.T) {
-	id1 := UUIDv5("same-input")
-	id2 := UUIDv5("same-input")
+	id1 := uuidV5("same-input")
+	id2 := uuidV5("same-input")
 	if id1 != id2 {
 		t.Errorf("not deterministic: %q != %q", id1, id2)
 	}
 }
 
 func TestUUIDv5_DifferentInputs(t *testing.T) {
-	id1 := UUIDv5("input-a")
-	id2 := UUIDv5("input-b")
+	id1 := uuidV5("input-a")
+	id2 := uuidV5("input-b")
 	if id1 == id2 {
 		t.Errorf("different inputs produced same UUID: %q", id1)
 	}
 }
 
 func TestUUIDv5_Version5(t *testing.T) {
-	id := UUIDv5("version-check")
+	id := uuidV5("version-check")
 
 	if id[14] != '5' {
 		t.Errorf("expected version 5, got %c at position 14 in %q", id[14], id)

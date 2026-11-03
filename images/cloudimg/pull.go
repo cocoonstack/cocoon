@@ -214,7 +214,7 @@ func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *o
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: size})
 	pc := &progressCounter{total: size, tracker: tracker}
 
-	ranges := utils.SplitRanges(size, pullConns)
+	ranges := splitRanges(size, pullConns)
 	if _, err := utils.Map(ctx, ranges, func(ctx context.Context, _ int, r [2]int64) (struct{}, error) {
 		return struct{}{}, downloadRange(ctx, client, url, dst, r, pc)
 	}, pullConns); err != nil {
@@ -244,7 +244,7 @@ func downloadRange(ctx context.Context, client Doer, url string, dst *os.File, r
 	defer resp.Body.Close() //nolint:errcheck
 
 	w := countingWriter{w: io.NewOffsetWriter(dst, start), pc: pc}
-	return utils.CopyRangeBody(resp, w, start, end)
+	return copyRangeBody(resp, w, start, end)
 }
 
 // hashDigest re-reads dst from disk: scattered parallel writes can't feed a streaming hasher, and hashing the file verifies what actually landed.

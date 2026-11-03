@@ -102,7 +102,7 @@ func processTarReader(ctx context.Context, j tarImportJob, r io.Reader) error {
 	teeForHash := io.TeeReader(r, hasher)
 
 	tmpErofsPath := filepath.Join(layerDir, fmt.Sprintf("layer-%d.erofs", j.idx))
-	tmpUUID := utils.UUIDv5(fmt.Sprintf("import-%s-%d", j.label, j.idx))
+	tmpUUID := uuidV5(fmt.Sprintf("import-%s-%d", j.label, j.idx))
 
 	kernelPath, initrdPath, err := runErofsConversion(ctx, teeForHash, layerDir, fmt.Sprintf("import-%d", j.idx), tmpUUID, tmpErofsPath)
 	if err != nil {

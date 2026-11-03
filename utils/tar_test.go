@@ -792,7 +792,7 @@ func openAndTarFile(tw *tar.Writer, path, nameInTar string) error {
 	if err != nil {
 		return err
 	}
-	return tarFileFrom(tw, f, fi, nameInTar)
+	return rewindAndTarFull(tw, f, fi, path, nameInTar)
 }
 
 func makeTar(t *testing.T, files map[string][]byte) *bytes.Buffer {

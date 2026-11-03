@@ -267,13 +267,9 @@ func rewindAndTarFull(tw *tar.Writer, f *os.File, fi os.FileInfo, path, nameInTa
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("seek %s: %w", path, err)
 	}
-	return tarFileFrom(tw, f, fi, nameInTar)
-}
-
-func tarFileFrom(tw *tar.Writer, f *os.File, fi os.FileInfo, nameInTar string) error {
 	hdr, err := tar.FileInfoHeader(fi, "")
 	if err != nil {
-		return fmt.Errorf("tar header for %s: %w", f.Name(), err)
+		return fmt.Errorf("tar header for %s: %w", path, err)
 	}
 	hdr.Name = nameInTar
 
