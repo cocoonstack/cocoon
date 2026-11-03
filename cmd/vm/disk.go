@@ -42,7 +42,7 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	}
 	id, err := a.DiskAttach(ctx, args[0], disk.Spec{Path: path, Name: name, ReadOnly: readonly, DirectIO: directIO})
 	if err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	out := diskResult{VM: args[0], Name: name, ID: id}
 	if isFirecracker(hyper.Type()) {
@@ -61,7 +61,7 @@ func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
 	}
 	name, _ := cmd.Flags().GetString("name")
 	if err := a.DiskDetach(ctx, args[0], name); err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	out := diskResult{VM: args[0], Name: name}
 	if isFirecracker(hyper.Type()) {
@@ -90,7 +90,7 @@ func (h Handler) diskAttachSnapshot(cmd *cobra.Command, args []string, fromSnaps
 	name := disk.SnapshotName(cfg.ID)
 	id, format, err := a.DiskAttachSnapshot(ctx, args[0], disk.SnapshotSource{Dir: dir, Name: name, BlobIDs: cfg.ImageBlobIDs, BasePath: basePath})
 	if err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	return outputOrLog(cmd, diskResult{VM: args[0], Name: name, ID: id, Format: format}, func() {
 		log.WithFunc("cmd.vm.disk.attach").Infof(ctx, "attached snapshot disk name=%s id=%s format=%s vm=%s", name, id, format, args[0])
