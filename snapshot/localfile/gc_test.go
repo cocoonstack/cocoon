@@ -13,7 +13,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
-	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -460,7 +459,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 	stalePendingID := testID(t)
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
+		idx.Snapshots[stalePendingID] = &snapshotRecord{
 			ID:        stalePendingID,
 			CreatedAt: time.Now().Add(-48 * time.Hour),
 			Pending:   true,

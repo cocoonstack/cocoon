@@ -2,9 +2,10 @@ package localfile
 
 import (
 	"context"
+	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
-	"github.com/cocoonstack/cocoon/snapshot"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 const (
@@ -14,7 +15,16 @@ const (
 	TableNames    = "names"
 )
 
-type snapTx = meta.NamedTx[snapshot.SnapshotRecord]
+// snapshotRecord is the persisted record for a single snapshot.
+type snapshotRecord struct {
+	types.Snapshot
+	DataDir        string    `json:"data_dir,omitempty"`
+	SizeBytes      int64     `json:"size_bytes,omitzero"`
+	Pending        bool      `json:"pending,omitzero"` // true while Create is in progress
+	LastAccessedAt time.Time `json:"last_accessed_at,omitzero"`
+}
+
+type snapTx = meta.NamedTx[snapshotRecord]
 
 func (lf *LocalFile) view(ctx context.Context, fn func(*snapTx) error) error {
 	return lf.meta.View(ctx, []string{NamespaceName}, func(r meta.Reader) error {
@@ -36,5 +46,5 @@ func (lf *LocalFile) touch(ctx context.Context, fn func(*snapTx) error) error {
 }
 
 func (lf *LocalFile) tx(ctx context.Context, r meta.Reader, w meta.Writer) *snapTx {
-	return meta.NewNamedTx[snapshot.SnapshotRecord](ctx, NamespaceName, TableRecords, TableNames, r, w)
+	return meta.NewNamedTx[snapshotRecord](ctx, NamespaceName, TableRecords, TableNames, r, w)
 }

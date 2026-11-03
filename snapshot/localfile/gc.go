@@ -15,7 +15,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/flock"
-	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -59,7 +58,7 @@ func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs
 func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
 	pins := map[string]struct{}{}
 	if err := lf.view(ctx, func(t *snapTx) error {
-		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			maps.Copy(pins, rec.ImageBlobIDs)
 			return nil
 		})
@@ -99,7 +98,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
-				return t.Scan(func(id string, rec *snapshot.SnapshotRecord) error {
+				return t.Scan(func(id string, rec *snapshotRecord) error {
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.Pending {
@@ -178,7 +177,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				}
 				// the reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
 				var sawRecord bool
-				revalidate := func(rec *snapshot.SnapshotRecord) bool {
+				revalidate := func(rec *snapshotRecord) bool {
 					sawRecord = true
 					switch snap.reasons[id] {
 					case "stale-pending":

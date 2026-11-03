@@ -1,13 +1,17 @@
-// Package snapshot defines the snapshot backend interfaces, records, and export envelope.
+// Package snapshot defines the snapshot backend interfaces and export envelope.
 package snapshot
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/types"
 )
+
+// ErrNotFound is returned when a snapshot ref matches no record.
+var ErrNotFound = errors.New("snapshot not found")
 
 // Direct exposes the local data directory; the returned release ends the read lease that keeps delete/GC from reaping it and must be called exactly once.
 type Direct interface {

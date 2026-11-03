@@ -11,7 +11,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
-	"github.com/cocoonstack/cocoon/snapshot"
 )
 
 // ErrTombstoned reports an entrypoint that met a deleting-phase snapshot.
@@ -29,7 +28,7 @@ func (lf *LocalFile) tombstones() *tombstone.Table {
 }
 
 // deleteSnapshotProtocol runs the phase protocol for one snapshot under its held exclusive lease; revalidate, when set, re-checks candidacy inside the lease transaction and a false return skips without error.
-func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshot.SnapshotRecord) bool) (deleted bool, cl snapCleanup, err error) {
+func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshotRecord) bool) (deleted bool, cl snapCleanup, err error) {
 	ts := lf.tombstones()
 	var (
 		leaseID string
