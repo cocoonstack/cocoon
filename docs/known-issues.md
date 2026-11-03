@@ -252,7 +252,7 @@ Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or
 
 ## A killed capture leaves the guest paused
 
-`snapshot save` and `vm hibernate` pause the guest for the capture. If the cocoon process gets SIGKILL, or the memory dump outlasts cocoon's 10 minute wait, nothing resumes the guest: the VM record reads `running`, the guest is frozen, and `vm exec` hangs.
+`snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process gets SIGKILL or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs.
 
 `cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it.
 
