@@ -174,7 +174,7 @@ func Command(h Handler) *cobra.Command {
 	statusCmd.Flags().IntP("interval", "n", 5, "poll interval in seconds (only with --watch or --event)")
 	statusCmd.Flags().BoolP("watch", "w", false, "refresh-loop mode (full-screen redraw each tick); omit for one-shot snapshot")
 	statusCmd.Flags().Bool("event", false, "event stream mode (append changes instead of refreshing); implies polling")
-	statusCmd.Flags().String("format", "", "output format: json (one-shot + event modes; --watch always renders a table)")
+	cliutil.AddFormatFlag(statusCmd)
 
 	vmCmd.AddCommand(
 		createCmd,
