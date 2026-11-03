@@ -43,7 +43,7 @@ func (h Handler) reseedAfterResume(ctx context.Context, conf *config.Config, hyp
 	if vm.VsockSocket == "" {
 		vm = refreshVM(ctx, hyper, vm)
 	}
-	if vm.VsockSocket == "" || vm.Config.Windows || !detachReseed(ctx, conf, vm, regenMachineID) {
+	if vm.VsockSocket == "" || vm.Config.Windows || !detachReseed(ctx, conf, hyper, vm, regenMachineID) {
 		signalReseed(ctx, vm, regenMachineID)
 	}
 }
@@ -89,7 +89,8 @@ func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 }
 
 // detachReseed passes the resolved dirs and meta engine to the child, which has no config file.
-func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenMachineID bool) bool {
+func detachReseed(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) bool {
+	logger := log.WithFunc("cmd.vm.detachReseed")
 	exe, err := os.Executable()
 	if err != nil {
 		return false
@@ -101,12 +102,26 @@ func detachReseed(ctx context.Context, conf *config.Config, vm *types.VM, regenM
 	c := exec.Command(exe, append(args, vm.ID)...) //nolint:gosec // self re-exec: path from os.Executable, args are internal flags/IDs
 	c.Env = append(os.Environ(), "COCOON_META_BACKEND="+cmdcore.ResolveMetaBackend(conf))
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if logFile, openErr := openVMLog(ctx, hyper, vm.ID); openErr != nil {
+		logger.Warnf(ctx, "open log of %s for detached reseed: %v", vm.ID, openErr)
+	} else {
+		defer logFile.Close() //nolint:errcheck
+		c.Stderr = logFile
+	}
 	if err := c.Start(); err != nil {
-		log.WithFunc("cmd.vm.detachReseed").Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
+		logger.Warnf(ctx, "detached reseed spawn failed, reseeding inline: %v", err)
 		return false
 	}
 	go c.Wait() //nolint:errcheck
 	return true
+}
+
+func openVMLog(ctx context.Context, hyper hypervisor.Hypervisor, vmID string) (*os.File, error) {
+	path, err := hyper.LogPath(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec
 }
 
 func signalReseed(ctx context.Context, vm *types.VM, regenMachineID bool) bool {

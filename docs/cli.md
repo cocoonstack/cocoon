@@ -260,7 +260,7 @@ All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orpha
 
 ### Reseed Flags
 
-Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed):
+Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed, which reports to `cocoon vm logs`):
 
 | Flag | Default | Description |
 |------|---------|-------------|
