@@ -21,6 +21,7 @@ var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
 	_ disk.Attacher         = (*CloudHypervisor)(nil)
 	_ disk.Lister           = (*CloudHypervisor)(nil)
+	_ disk.SnapshotAttacher = (*CloudHypervisor)(nil)
 	_ fs.Attacher           = (*CloudHypervisor)(nil)
 	_ fs.Lister             = (*CloudHypervisor)(nil)
 	_ vfio.Attacher         = (*CloudHypervisor)(nil)
