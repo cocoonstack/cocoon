@@ -42,10 +42,10 @@ func NetworkSeam(conf *config.Config) *NetProviders {
 func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if vm.ResolvedNetBackend() != types.BackendBridge {
+	if vm.NetBackend != types.BackendBridge {
 		return n.cniLocked()
 	}
-	dev := vm.ResolvedNetBridgeDev()
+	dev := vm.NetBridgeDev
 	if dev == "" {
 		return nil, fmt.Errorf("bridge backend but no bridge device persisted")
 	}
@@ -62,7 +62,7 @@ func (n *NetProviders) ForVM(vm *types.VM) (network.Network, error) {
 
 // Recover fails the launch on error: half-built networking strands the guest.
 func (n *NetProviders) Recover(ctx context.Context, vm *types.VM) error {
-	backend := vm.ResolvedNetBackend()
+	backend := vm.NetBackend
 	if backend == "" || (backend == types.BackendBridge && len(vm.NetworkConfigs) == 0) {
 		return nil
 	}

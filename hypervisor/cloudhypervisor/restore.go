@@ -87,7 +87,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	// Launch under the target config: a --force cross-config restore changes the vCPU count the scope derives from.
 	rec.Config = *vmCfg
-	pid, launchErr := ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), true)
+	pid, launchErr := ch.launchProcess(ctx, rec, args, rec.NetnsPath, true)
 	if launchErr != nil {
 		return nil, fmt.Errorf("launch CH: %w", launchErr)
 	}

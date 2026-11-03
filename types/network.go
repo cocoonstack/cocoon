@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Network backend identifiers stored in NetworkConfig.Backend.
+// Network backend identifiers stored in NetSetup.NetBackend.
 const (
 	BackendCNI    = "cni"
 	BackendBridge = "bridge"
@@ -18,15 +18,6 @@ type NetworkConfig struct {
 	NumQueues int    `json:"num_queues"` // virtio queue count (= CPU * 2 for multi-queue)
 	QueueSize int    `json:"queue_size"`
 	MTU       int    `json:"mtu,omitzero"`
-
-	// Backend is the provider type; empty means CNI (pre-bridge records).
-	Backend string `json:"backend,omitempty"`
-
-	// BridgeDev is the Linux bridge device name; set only when Backend=="bridge".
-	BridgeDev string `json:"bridge_dev,omitempty"`
-
-	// NetnsPath is the netns where the TAP lives; empty for backends without netns (e.g. macOS vmnet).
-	NetnsPath string `json:"netns_path,omitempty"`
 
 	// Network is nil for DHCP NICs.
 	Network *Network `json:"network,omitzero"`

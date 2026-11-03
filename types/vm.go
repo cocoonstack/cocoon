@@ -2,7 +2,6 @@
 package types
 
 import (
-	"cmp"
 	"fmt"
 	"regexp"
 	"time"
@@ -130,43 +129,6 @@ type VM struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 	StartedAt *time.Time `json:"started_at,omitzero"`
 	StoppedAt *time.Time `json:"stopped_at,omitzero"`
-}
-
-func (v *VM) ResolvedNetnsPath() string {
-	if v == nil {
-		return ""
-	}
-	if nic := v.firstNIC(); nic != nil {
-		return cmp.Or(v.NetnsPath, nic.NetnsPath)
-	}
-	return v.NetnsPath
-}
-
-func (v *VM) ResolvedNetBackend() string {
-	if v == nil {
-		return ""
-	}
-	if nic := v.firstNIC(); nic != nil {
-		return cmp.Or(v.NetBackend, nic.Backend, BackendCNI)
-	}
-	return v.NetBackend
-}
-
-func (v *VM) ResolvedNetBridgeDev() string {
-	if v == nil {
-		return ""
-	}
-	if nic := v.firstNIC(); nic != nil {
-		return cmp.Or(v.NetBridgeDev, nic.BridgeDev)
-	}
-	return v.NetBridgeDev
-}
-
-func (v *VM) firstNIC() *NetworkConfig {
-	if v == nil || len(v.NetworkConfigs) == 0 {
-		return nil
-	}
-	return v.NetworkConfigs[0]
 }
 
 func validateQueueSize(flag string, size int) error {

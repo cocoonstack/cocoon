@@ -53,11 +53,11 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 
 // plumbingForVM works at 0 NICs because NetBackend persists.
 func plumbingForVM(conf *config.Config, vm *types.VM) (network.Network, error) {
-	backend := vm.ResolvedNetBackend()
+	backend := vm.NetBackend
 	if backend == "" {
 		return nil, fmt.Errorf("no network backend on VM; cannot resize")
 	}
-	if backend == types.BackendCNI && vm.ResolvedNetnsPath() == "" {
+	if backend == types.BackendCNI && vm.NetnsPath == "" {
 		return nil, fmt.Errorf("cni backend but no netns; resize would target host netns")
 	}
 	return cmdcore.NetworkSeam(conf).ForVM(vm)
