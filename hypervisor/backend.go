@@ -122,9 +122,10 @@ type DirectRestoreSpec struct {
 
 // StartSpec carries StartSequence inputs.
 type StartSpec struct {
-	RuntimeFiles []string
-	Launch       func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
-	PostLaunch   ProcessHook
+	RuntimeFiles    []string
+	Launch          func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
+	PostLaunch      ProcessHook
+	ConvergeRunning ProcessHook
 }
 
 // StopSpec carries StopOneSequence inputs.

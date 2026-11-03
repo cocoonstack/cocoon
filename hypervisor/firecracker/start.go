@@ -36,6 +36,9 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
 			return fc.configureVM(ctx, utils.NewSocketHTTPClient(sockPath), rec)
 		},
+		ConvergeRunning: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
+			return convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID)
+		},
 	})
 }
 

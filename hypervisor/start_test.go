@@ -128,6 +128,27 @@ func TestWaitForSocketFailsFastOnAReapedProcess(t *testing.T) {
 	}
 }
 
+func TestStartSequenceConvergesALiveVMMInsteadOfLaunching(t *testing.T) {
+	convergeErr := errors.New("vmm busy")
+	for _, want := range []error{nil, convergeErr} {
+		b, id := newHibernateTestVM(t)
+		converged := false
+		err := b.StartSequence(t.Context(), id, nil, StartSpec{
+			Launch: func(context.Context, *VMRecord, string) (int, error) {
+				t.Fatal("a live VMM must not be launched again")
+				return 0, nil
+			},
+			ConvergeRunning: func(context.Context, *VMRecord, string, int) error {
+				converged = true
+				return want
+			},
+		})
+		if !errors.Is(err, want) || !converged {
+			t.Errorf("StartSequence: %v converged=%v, want %v and a converge", err, converged, want)
+		}
+	}
+}
+
 func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) string {
 	t.Helper()
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
