@@ -224,7 +224,10 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
+	if err := c.Remove(ctx, "vm1", 0); err != nil {
+		t.Fatalf("Remove eth0: %v", err)
+	}
+	if err := c.Remove(ctx, "vm1", 1); err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("Remove err = %v, want eth1 failure", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})

@@ -9,7 +9,6 @@ import (
 	"runtime"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -27,12 +26,11 @@ func (b *Bridge) Verify(_ context.Context, _ string, _ []*types.NetworkConfig) e
 	return errUnsupported
 }
 
-func (b *Bridge) Remove(_ context.Context, _ string, _ ...int) error {
+func (b *Bridge) Remove(_ context.Context, _ string, _ int) error {
 	return errUnsupported
 }
-func (b *Bridge) Quiesce(_ context.Context, _ string) error        { return nil }
-func (b *Bridge) Unquiesce(_ context.Context, _ string) error      { return nil }
-func (b *Bridge) RegisterGC(_ *gc.Orchestrator, _ network.VMInUse) {}
+func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
+func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
 
 func (b *Bridge) Prepare(_ context.Context, _ string, _ *types.VMConfig) (string, error) {
 	return "", errUnsupported

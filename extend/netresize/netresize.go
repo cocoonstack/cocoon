@@ -44,7 +44,7 @@ type Result struct {
 // Plumbing is the host-side network ops NetResize delegates to; network.Network satisfies it.
 type Plumbing interface {
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) ([]*types.NetworkConfig, error)
-	Remove(ctx context.Context, vmID string, indices ...int) error
+	Remove(ctx context.Context, vmID string, index int) error
 }
 
 // Resizer resizes a running VM's NIC count.

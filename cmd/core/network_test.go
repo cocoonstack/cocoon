@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -49,12 +48,10 @@ func (f *recoverNetwork) Add(context.Context, string, *types.VMConfig, ...networ
 	return nil, err
 }
 
-func (f *recoverNetwork) Remove(context.Context, string, ...int) error { return nil }
+func (f *recoverNetwork) Remove(context.Context, string, int) error { return nil }
 
 func (f *recoverNetwork) Quiesce(context.Context, string) error { return nil }
 
 func (f *recoverNetwork) Unquiesce(context.Context, string) error { return nil }
 
 func (f *recoverNetwork) Delete(context.Context, string) error { return nil }
-
-func (f *recoverNetwork) RegisterGC(*gc.Orchestrator, network.VMInUse) {}

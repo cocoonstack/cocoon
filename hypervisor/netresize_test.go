@@ -278,8 +278,8 @@ func (p *stubPlumbing) Add(_ context.Context, vmID string, vmCfg *types.VMConfig
 	return out, nil
 }
 
-func (p *stubPlumbing) Remove(_ context.Context, _ string, indices ...int) error {
-	p.removed = append(p.removed, indices...)
+func (p *stubPlumbing) Remove(_ context.Context, _ string, index int) error {
+	p.removed = append(p.removed, index)
 	return nil
 }
 

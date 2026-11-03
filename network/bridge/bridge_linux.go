@@ -15,7 +15,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -128,8 +127,8 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 	return configs, nil
 }
 
-func (b *Bridge) Remove(_ context.Context, vmID string, indices ...int) error {
-	return tearDownTAPs(b.tapPrefix, vmID, indices, false)
+func (b *Bridge) Remove(_ context.Context, vmID string, index int) error {
+	return tearDownTAPs(b.tapPrefix, vmID, []int{index}, false)
 }
 
 // Quiesce and Unquiesce are no-ops: bridge TAPs sit directly on the host bridge, with no TC redirect to storm when the VM stops.
@@ -139,10 +138,6 @@ func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
 func (b *Bridge) Delete(_ context.Context, vmID string) error {
 	CleanupTAPs(b.tapPrefix, []string{vmID})
 	return nil
-}
-
-func (b *Bridge) RegisterGC(orch *gc.Orchestrator, vmInUse network.VMInUse) {
-	orch.Register(GCModule(b.tapPrefix, vmInUse))
 }
 
 // CleanupTAPs removes bridge TAP devices per VM ID; safe without a Bridge instance.
