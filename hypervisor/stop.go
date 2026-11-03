@@ -60,7 +60,7 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	if !settled {
 		// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
 		logger := log.WithFunc(b.Typ + ".StopOneLocked")
-		if err := b.UpdateStates(ctx, []string{id}, types.VMStateStopped); err != nil {
+		if err := b.UpdateState(ctx, id, types.VMStateStopped); err != nil {
 			logger.Warnf(ctx, "mark stopped %s: %v", id, err)
 		} else {
 			transitioned = true

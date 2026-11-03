@@ -69,7 +69,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 		}
 	}
 	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
-	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
+	if err := b.MarkStarted(ctx, id); err != nil {
 		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
 	}
 	return nil

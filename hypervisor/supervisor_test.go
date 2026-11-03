@@ -143,7 +143,7 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		return b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped)
+		return b.UpdateState(ctx, "vm1", types.VMStateStopped)
 	}})
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs["vm1"].QuiescePending = true
@@ -160,7 +160,7 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	}
 }
 
-func TestBatchMarkStartedClearsQuiescePending(t *testing.T) {
+func TestMarkStartedClearsQuiescePending(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
@@ -171,21 +171,21 @@ func TestBatchMarkStartedClearsQuiescePending(t *testing.T) {
 		t.Fatalf("seed pending: %v", err)
 	}
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
 	if recordOf(t, b, "vm1").QuiescePending {
 		t.Error("a start left stale pending quiesce work that would down its own plumbing")
 	}
 }
 
-func TestUpdateStatesStoppedSchedulesQuiesce(t *testing.T) {
+func TestUpdateStateStoppedSchedulesQuiesce(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	got := recordOf(t, b, "vm1")
 	if !got.QuiescePending {
@@ -196,13 +196,13 @@ func TestUpdateStatesStoppedSchedulesQuiesce(t *testing.T) {
 	}
 }
 
-func TestUpdateStatesStoppedSkipsQuiesceWithoutPlumbing(t *testing.T) {
+func TestUpdateStateStoppedSkipsQuiesceWithoutPlumbing(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 1, 1<<30, 10<<30)
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	if recordOf(t, b, "vm1").QuiescePending {
 		t.Error("scheduled a quiesce for a VM with no host plumbing")
@@ -341,7 +341,7 @@ func TestConvergeDeadDatesARecordWithNoOpenInterval(t *testing.T) {
 	}
 }
 
-func TestUpdateStatesDatesAStoppedRecordThatWasRunning(t *testing.T) {
+func TestUpdateStateDatesAStoppedRecordThatWasRunning(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
@@ -352,21 +352,21 @@ func TestUpdateStatesDatesAStoppedRecordThatWasRunning(t *testing.T) {
 		t.Fatalf("seed legacy running: %v", err)
 	}
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	if recordOf(t, b, "vm1").StoppedAt == nil {
 		t.Error("a running record stopped by the user got no stop time")
 	}
 }
 
-func TestUpdateStatesLeavesACreatedRecordUndated(t *testing.T) {
+func TestUpdateStateLeavesACreatedRecordUndated(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	if got := recordOf(t, b, "vm1"); got.StoppedAt != nil {
 		t.Errorf("got StoppedAt %v for a VM that never ran, want nil", got.StoppedAt)

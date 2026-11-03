@@ -15,13 +15,13 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func TestBatchMarkStartedEmitsComputeStart(t *testing.T) {
+func TestMarkStartedEmitsComputeStart(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 4<<30, 10<<30, false)
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 {
@@ -42,13 +42,13 @@ func TestBatchMarkStartedEmitsComputeStart(t *testing.T) {
 	}
 }
 
-func TestBatchMarkStartedReasonRestartWhenAlreadyBooted(t *testing.T) {
+func TestMarkStartedReasonRestartWhenAlreadyBooted(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Reason != metering.ReasonRestart {
@@ -56,37 +56,37 @@ func TestBatchMarkStartedReasonRestartWhenAlreadyBooted(t *testing.T) {
 	}
 }
 
-func TestUpdateStatesEmitsOnlyOnRunningToStopped(t *testing.T) {
+func TestUpdateStateEmitsOnlyOnRunningToStopped(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates(stopped from created): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState(stopped from created): %v", err)
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("Created→Stopped emitted %d; want 0", len(got))
 	}
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
 	rec.Reset()
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates(stopped): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState(stopped): %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopUser {
 		t.Fatalf("Running→Stopped: got %+v, want one compute.stop reason=user", entries)
 	}
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted (relaunch): %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted (relaunch): %v", err)
 	}
 	rec.Reset()
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateError); err != nil {
-		t.Fatalf("UpdateStates(error): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateError); err != nil {
+		t.Fatalf("UpdateState(error): %v", err)
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("Running→Error must not emit; got %d entries", len(got))
@@ -135,8 +135,8 @@ func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
 	b.MarkError(ctx, "vm1")
 	rec.Reset()
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates(stopped): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState(stopped): %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopUser {
@@ -328,7 +328,7 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 	startOne := func(ctx context.Context, id string, _ *utils.ProcScan) error {
 		switch id {
 		case "vm-stopped", "vm-stale":
-			return b.BatchMarkStarted(ctx, []string{id})
+			return b.MarkStarted(ctx, id)
 		case "vm-running":
 			return nil
 		}
@@ -400,14 +400,14 @@ func TestDeleteAfterErrorEmitsOnlyStorageStop(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 2<<30, 20<<30, true)
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates(stopped): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState(stopped): %v", err)
 	}
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateError); err != nil {
-		t.Fatalf("UpdateStates(error): %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateError); err != nil {
+		t.Fatalf("UpdateState(error): %v", err)
 	}
 	rec.Reset()
 
@@ -509,8 +509,8 @@ func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 	}
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Errorf("BatchMarkStarted with NopRecorder: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Errorf("MarkStarted with NopRecorder: %v", err)
 	}
 }
 
@@ -524,8 +524,8 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 		t.Fatal("PrepareStart must refuse a quarantined VM")
 	}
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
@@ -579,16 +579,16 @@ func TestForcedRetryStateOps(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 1<<30, 10<<30, false)
 
-	if err := b.BatchMarkStarted(ctx, []string{"vm1"}); err != nil {
-		t.Fatalf("BatchMarkStarted under forced retry: %v", err)
+	if err := b.MarkStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("MarkStarted under forced retry: %v", err)
 	}
 	if starts := rec.Entries(); len(starts) != 1 || starts[0].Kind != metering.KindVMComputeStart {
 		t.Fatalf("want exactly one compute.start, got %+v", starts)
 	}
 	rec.Reset()
 
-	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates under forced retry: %v", err)
+	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState under forced retry: %v", err)
 	}
 	if stops := rec.Entries(); len(stops) != 1 || stops[0].Kind != metering.KindVMComputeStop {
 		t.Fatalf("want exactly one compute.stop, got %+v", stops)
