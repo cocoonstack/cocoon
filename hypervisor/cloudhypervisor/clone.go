@@ -111,14 +111,6 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		return nil, fmt.Errorf("patch CH config: %w", err)
 	}
 
-	if directBoot {
-		dns, dnsErr := ch.conf.DNSServers()
-		if dnsErr != nil {
-			return nil, fmt.Errorf("parse DNS servers: %w", dnsErr)
-		}
-		bootCfg.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
-	}
-
 	sockPath := hypervisor.SocketPath(runDir)
 	args := []string{apiSocketFlag, sockPath}
 
@@ -231,7 +223,6 @@ func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {
 	return &types.BootConfig{
 		KernelPath:   p.Kernel,
 		InitrdPath:   p.Initramfs,
-		Cmdline:      p.Cmdline,
 		FirmwarePath: p.Firmware,
 	}
 }

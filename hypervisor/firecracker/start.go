@@ -50,13 +50,14 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 	}
 
 	if boot := rec.BootConfig; boot != nil {
-		if err := fc.setBootCmdline(boot, rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name); err != nil {
-			return err
+		dns, err := fc.conf.DNSServers()
+		if err != nil {
+			return fmt.Errorf("parse DNS servers: %w", err)
 		}
 		if err := putJSON(ctx, hc, "/boot-source", fcBootSource{
 			KernelImagePath: boot.KernelPath,
 			InitrdPath:      boot.InitrdPath,
-			BootArgs:        boot.Cmdline,
+			BootArgs:        buildCmdline(rec.StorageConfigs, rec.NetworkConfigs, rec.Config.Name, dns),
 		}, "boot-source"); err != nil {
 			return fmt.Errorf("boot-source: %w", err)
 		}

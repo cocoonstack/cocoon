@@ -95,9 +95,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if verifyErr := hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
 		return nil, fmt.Errorf("verify base files: %w", verifyErr)
 	}
-	if err := fc.setBootCmdline(bootCfg, storageConfigs, networkConfigs, vmCfg.Name); err != nil {
-		return nil, err
-	}
 
 	sockPath := hypervisor.SocketPath(runDir)
 	pid, leaseControl, plan, cloneErr := fc.startCloneVM(ctx, cloneLaunch{

@@ -298,7 +298,7 @@ func TestRebuildBootConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseCHConfig: %v", err)
 		}
-		want := types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", Cmdline: "console=hvc0", FirmwarePath: "/fw/CLOUDHV.fd"}
+		want := types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", FirmwarePath: "/fw/CLOUDHV.fd"}
 		if boot := rebuildBootConfig(cfg); boot == nil || *boot != want {
 			t.Errorf("got %+v, want %+v", boot, want)
 		}

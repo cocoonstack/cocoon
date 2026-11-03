@@ -23,6 +23,24 @@ func (b *Backend) PrepareCloneDataDisks(ctx context.Context, vmID string, vmCfg 
 	return PrepareDataDisks(ctx, b.Conf.VMRunDir(vmID), vmCfg.DataDisks)
 }
 
+// PrepareOCIDisks creates the ext4-formatted sparse COW and the data disks, and returns storageConfigs with both appended.
+func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig) ([]*types.StorageConfig, error) {
+	runDir := b.Conf.VMRunDir(vmID)
+	cowPath := filepath.Join(runDir, types.COWRawFileName)
+	if err := createSparseFile(cowPath, vmCfg.Storage); err != nil {
+		return nil, err
+	}
+	if err := InitCOWFilesystem(ctx, cowPath); err != nil {
+		return nil, err
+	}
+	dataDisks, err := PrepareDataDisks(ctx, runDir, vmCfg.DataDisks)
+	if err != nil {
+		return nil, err
+	}
+	storageConfigs = append(storageConfigs, &types.StorageConfig{Path: cowPath, Serial: CowSerial, Role: types.StorageRoleCOW})
+	return append(storageConfigs, dataDisks...), nil
+}
+
 func InitCOWFilesystem(ctx context.Context, path string) error {
 	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec
@@ -111,22 +129,6 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 		return nil, err
 	}
 	return out, nil
-}
-
-// PrepareOCICOW creates an ext4-formatted sparse COW at cowPath and returns storageConfigs with the CowSerial entry appended.
-func PrepareOCICOW(ctx context.Context, cowPath string, storage int64, storageConfigs []*types.StorageConfig) ([]*types.StorageConfig, error) {
-	if err := createSparseFile(cowPath, storage); err != nil {
-		return nil, err
-	}
-	if err := InitCOWFilesystem(ctx, cowPath); err != nil {
-		return nil, err
-	}
-	return append(storageConfigs, &types.StorageConfig{
-		Path:   cowPath,
-		RO:     false,
-		Serial: CowSerial,
-		Role:   types.StorageRoleCOW,
-	}), nil
 }
 
 func copyPairs(ctx context.Context, pairs [][2]string) error {

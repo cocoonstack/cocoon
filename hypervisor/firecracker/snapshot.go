@@ -62,7 +62,6 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.Snapshot
 		if filepath.Base(b.KernelPath) == "vmlinux" {
 			b.KernelPath = filepath.Join(filepath.Dir(b.KernelPath), "vmlinuz")
 		}
-		b.Cmdline = "" // cmdline is rebuilt on clone with new VM name/IP
 		meta.BootConfig = &b
 	}
 	return meta, nil
