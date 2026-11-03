@@ -100,14 +100,11 @@ func (h Handler) diskAttachSnapshot(cmd *cobra.Command, args []string, fromSnaps
 // openSnapshotSource holds a --from-snapshot read lease until release, so delete/GC cannot reap the dir mid-copy.
 func openSnapshotSource(ctx context.Context, conf *config.Config, fromSnapshot, fromDir string) (string, types.SnapshotConfig, func(), error) {
 	if fromDir != "" {
-		envelope, err := snapshot.ReadSnapshotEnvelope(fromDir)
+		cfg, err := readVerifiedEnvelope(fromDir)
 		if err != nil {
-			return "", types.SnapshotConfig{}, nil, fmt.Errorf("load envelope: %w", err)
-		}
-		if err = snapshot.VerifyCOWSize(fromDir, envelope.Config); err != nil {
 			return "", types.SnapshotConfig{}, nil, err
 		}
-		return fromDir, envelope.Config, func() {}, nil
+		return fromDir, cfg, func() {}, nil
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {

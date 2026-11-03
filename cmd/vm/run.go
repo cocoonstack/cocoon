@@ -191,12 +191,8 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, vmRef, dir string, logger *log.Fields) error {
-	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
+	cfg, err := readVerifiedEnvelope(dir)
 	if err != nil {
-		return fmt.Errorf("load envelope: %w", err)
-	}
-	cfg := envelope.Config
-	if err = snapshot.VerifyCOWSize(dir, cfg); err != nil {
 		return err
 	}
 	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
@@ -235,12 +231,8 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 
 // cloneFromDir keeps the dir read-only, so concurrent clones of a golden image are safe.
 func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, dir string, logger *log.Fields) error {
-	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
+	cfg, err := readVerifiedEnvelope(dir)
 	if err != nil {
-		return fmt.Errorf("load envelope: %w", err)
-	}
-	cfg := envelope.Config
-	if err = snapshot.VerifyCOWSize(dir, cfg); err != nil {
 		return err
 	}
 	if cfg.Hypervisor != "" {
@@ -531,6 +523,14 @@ func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, s
 		return "", "", fmt.Errorf("snapshot is required (or use --from-dir)")
 	}
 	return "", args[baseArgs], nil
+}
+
+func readVerifiedEnvelope(dir string) (types.SnapshotConfig, error) {
+	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
+	if err != nil {
+		return types.SnapshotConfig{}, fmt.Errorf("load envelope: %w", err)
+	}
+	return envelope.Config, snapshot.VerifyCOWSize(dir, envelope.Config)
 }
 
 // tapQueues follows the transport: FC opens the TAP single-queue, CH per-vCPU.
