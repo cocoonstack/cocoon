@@ -66,9 +66,13 @@ func RecordedCOWPath(rec *VMRecord) (string, error) {
 }
 
 // CopyWritableDisks copies concurrently; durability is paid at persist.
-func CopyWritableDisks(ctx context.Context, dstDir, cowPath string, configs []*types.StorageConfig) error {
+func CopyWritableDisks(ctx context.Context, dstDir string, rec *VMRecord) error {
+	cowPath, err := RecordedCOWPath(rec)
+	if err != nil {
+		return err
+	}
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
-	for _, sc := range configs {
+	for _, sc := range rec.StorageConfigs {
 		if sc.Role == types.StorageRoleData {
 			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
 		}

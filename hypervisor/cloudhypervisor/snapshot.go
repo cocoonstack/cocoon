@@ -55,11 +55,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			cowPath, err := hypervisor.RecordedCOWPath(rec)
-			if err != nil {
-				return err
-			}
-			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, rec)
 		},
 		AfterCapture: func(rec *hypervisor.VMRecord, tmpDir string) error {
 			if hypervisor.IsDirectBoot(rec.BootConfig) || rec.Config.Windows {

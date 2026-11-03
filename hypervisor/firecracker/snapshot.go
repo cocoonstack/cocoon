@@ -46,11 +46,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			cowPath, err := hypervisor.RecordedCOWPath(rec)
-			if err != nil {
-				return err
-			}
-			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, rec)
 		},
 		BuildMeta: buildSnapshotMeta,
 	}
