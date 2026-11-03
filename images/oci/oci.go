@@ -7,7 +7,6 @@ import (
 	"io"
 
 	"github.com/projecteru2/core/log"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/meta"
@@ -27,8 +26,7 @@ var _ images.Images = (*OCI)(nil)
 type OCI struct {
 	images.Ops[imageEntry]
 
-	conf      *Config
-	pullGroup singleflight.Group
+	conf *Config
 }
 
 // New builds the OCI backend under rootDir; poolSize <= 0 means NumCPU.
@@ -51,9 +49,7 @@ func New(ctx context.Context, rootDir string, poolSize int, metaStore meta.Store
 }
 
 func (o *OCI) Pull(ctx context.Context, image string, _ bool, tracker progress.Tracker) error {
-	return images.SingleflightDo(ctx, &o.pullGroup, image, func() error {
-		return pull(ctx, o.conf, o.Store, image, tracker)
-	})
+	return pull(ctx, o.conf, o.Store, image, tracker)
 }
 
 func (o *OCI) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {

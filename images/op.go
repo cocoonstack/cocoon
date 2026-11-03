@@ -3,8 +3,6 @@ package images
 import (
 	"context"
 
-	"golang.org/x/sync/singleflight"
-
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -51,15 +49,4 @@ func (ops *Ops[E]) Delete(ctx context.Context, ids []string) (deleted []string, 
 		return delErr
 	})
 	return deleted, err
-}
-
-// SingleflightDo collapses concurrent same-key operations (e.g. pulls) into one execution. A waiter's ctx cancellation detaches that waiter only; the shared work keeps running under the winner's ctx.
-func SingleflightDo(ctx context.Context, g *singleflight.Group, key string, fn func() error) error {
-	ch := g.DoChan(key, func() (any, error) { return nil, fn() })
-	select {
-	case res := <-ch:
-		return res.Err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
