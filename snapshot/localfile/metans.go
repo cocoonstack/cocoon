@@ -18,7 +18,6 @@ const (
 // snapshotRecord is the persisted record for a single snapshot.
 type snapshotRecord struct {
 	types.Snapshot
-	DataDir        string    `json:"data_dir,omitempty"`
 	SizeBytes      int64     `json:"size_bytes,omitzero"`
 	Pending        bool      `json:"pending,omitzero"` // true while Create is in progress
 	LastAccessedAt time.Time `json:"last_accessed_at,omitzero"`

@@ -1364,7 +1364,7 @@ func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
 	if err != nil || rec.Name != "orig" {
 		t.Fatalf("original record must survive the retry: rec=%+v err=%v", rec, err)
 	}
-	if _, err := os.Stat(filepath.Join(rec.DataDir, "x")); err != nil {
+	if _, err := os.Stat(filepath.Join(lf.conf.SnapshotDataDir(id), "x")); err != nil {
 		t.Fatalf("original data dir must survive the retry: %v", err)
 	}
 }

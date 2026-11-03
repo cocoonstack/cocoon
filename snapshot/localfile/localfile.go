@@ -110,7 +110,7 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 			release()
 			return "", types.SnapshotConfig{}, nil, err
 		}
-		return rec.DataDir, rec.SnapshotConfig, release, nil
+		return lf.conf.SnapshotDataDir(rec.ID), rec.SnapshotConfig, release, nil
 	}
 	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
@@ -338,15 +338,13 @@ func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig)
 	if err := cfg.Validate(); err != nil {
 		return "", err
 	}
-	dataDir := lf.conf.SnapshotDataDir(cfg.ID)
 	if err := lf.insertRecord(ctx, cfg.ID, cfg.Name, &snapshotRecord{
 		SnapshotConfig: *cfg, CreatedAt: time.Now(),
 		Pending: true,
-		DataDir: dataDir,
 	}); err != nil {
 		return "", err
 	}
-	return dataDir, nil
+	return lf.conf.SnapshotDataDir(cfg.ID), nil
 }
 
 func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConfig, dataDir string) error {

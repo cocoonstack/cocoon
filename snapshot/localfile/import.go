@@ -94,7 +94,6 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	now := time.Now()
 	if err = lf.insertRecord(ctx, id, cfg.Name, &snapshotRecord{
 		SnapshotConfig: cfg, CreatedAt: now,
-		DataDir:        dataDir,
 		SizeBytes:      size,
 		LastAccessedAt: now,
 	}); err != nil {

@@ -34,7 +34,6 @@ func (p EvictionPolicy) hasCriteria() bool {
 }
 
 type snapshotMeta struct {
-	dataDir      string
 	name         string
 	lastAccessed time.Time
 	sizeBytes    int64
@@ -107,7 +106,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
-						dataDir:      cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)),
 						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
 					}
@@ -117,8 +115,8 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				return snap, err
 			}
 			// the stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
-			for id, m := range snap.records {
-				if _, statErr := os.Stat(m.dataDir); errors.Is(statErr, fs.ErrNotExist) {
+			for id := range snap.records {
+				if _, statErr := os.Stat(conf.SnapshotDataDir(id)); errors.Is(statErr, fs.ErrNotExist) {
 					snap.missingDir = append(snap.missingDir, id)
 				}
 			}
@@ -183,7 +181,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					case "stale-pending":
 						return rec.Pending
 					case "missing-dir":
-						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
+						_, statErr := os.Stat(conf.SnapshotDataDir(id))
 						return errors.Is(statErr, fs.ErrNotExist)
 					case reasonOrphan:
 						return false // a record appeared for a dir orphaned at ReadDB
