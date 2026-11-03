@@ -107,7 +107,7 @@ func TestDetachReseedAppendsChildStderrToVMLog(t *testing.T) {
 	var got []byte
 	err := utils.WaitFor(t.Context(), 30*time.Second, 10*time.Millisecond, func() (bool, error) {
 		var readErr error
-		got, readErr = os.ReadFile(logPath) //nolint:gosec
+		got, readErr = os.ReadFile(logPath)
 		return strings.Contains(string(got), "root-dir"), readErr
 	})
 	if err != nil {
