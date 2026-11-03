@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strings"
 
 	"github.com/projecteru2/core/log"
 
@@ -137,10 +136,9 @@ func validateRestoreNICs(chCfg *chVMConfig, rec *hypervisor.VMRecord) error {
 	if len(chCfg.Nets) != len(rec.NetworkConfigs) {
 		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(chCfg.Nets), len(rec.NetworkConfigs))
 	}
+	macs := make([]string, len(chCfg.Nets))
 	for i, n := range chCfg.Nets {
-		if !strings.EqualFold(n.MAC, rec.NetworkConfigs[i].MAC) {
-			return fmt.Errorf("nic %d MAC drifted since snapshot (%s -> %s, net resize?); recreate via clone instead", i, n.MAC, rec.NetworkConfigs[i].MAC)
-		}
+		macs[i] = n.MAC
 	}
-	return nil
+	return hypervisor.ValidateRestoreMACs(macs, rec)
 }

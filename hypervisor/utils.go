@@ -319,6 +319,18 @@ func ValidateResidentPaths(sidecar, rec []*types.StorageConfig) error {
 	return nil
 }
 
+func ValidateRestoreMACs(snapMACs []string, rec *VMRecord) error {
+	if len(snapMACs) > len(rec.NetworkConfigs) {
+		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(snapMACs), len(rec.NetworkConfigs))
+	}
+	for i, mac := range snapMACs {
+		if !strings.EqualFold(mac, rec.NetworkConfigs[i].MAC) {
+			return fmt.Errorf("nic %d MAC drifted since snapshot (%s -> %s, net resize?); recreate via clone instead", i, mac, rec.NetworkConfigs[i].MAC)
+		}
+	}
+	return nil
+}
+
 func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConfig) error {
 	for _, sc := range storageConfigs {
 		if sc.Role != types.StorageRoleLayer {
