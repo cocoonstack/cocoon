@@ -2,6 +2,7 @@ package cloudhypervisor
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -300,9 +301,9 @@ func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any) 
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}
-	pci, err := decodePciDeviceInfo(resp)
-	if err != nil {
-		return "", err
+	var pci chPciDeviceInfo
+	if err := json.Unmarshal(resp, &pci); err != nil {
+		return "", fmt.Errorf("decode PciDeviceInfo: %w", err)
 	}
 	return pci.ID, nil
 }

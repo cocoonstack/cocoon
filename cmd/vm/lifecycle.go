@@ -214,12 +214,10 @@ func collectAttachedDevices(ctx context.Context, hyper hypervisor.Hypervisor, re
 			out.Devices = devs
 		}
 	}
-	if l, ok := hyper.(disk.Lister); ok {
-		if devs, err := l.DiskList(ctx, ref); err != nil {
-			logger.Warnf(ctx, "list hot-attached disks for %s: %v", ref, err)
-		} else {
-			out.Disks = devs
-		}
+	if devs, err := hyper.DiskList(ctx, ref); err != nil {
+		logger.Warnf(ctx, "list hot-attached disks for %s: %v", ref, err)
+	} else {
+		out.Disks = devs
 	}
 	if len(out.Fs) == 0 && len(out.Devices) == 0 && len(out.Disks) == 0 {
 		return nil

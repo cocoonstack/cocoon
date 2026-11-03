@@ -249,7 +249,7 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 
 // needsQuiesce reports whether the VM owns host plumbing a stop must bring down.
 func needsQuiesce(r *VMRecord) bool {
-	return r != nil && r.NetBackend != "" && len(r.NetworkConfigs) > 0
+	return r != nil && len(r.NetworkConfigs) > 0
 }
 
 func bootReasons(firstBooted bool) (metering.Reason, types.TransitionReason) {

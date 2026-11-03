@@ -340,11 +340,7 @@ func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, v
 	if cs.resizeTo == len(vm.NetworkConfigs) {
 		return vm, hints, nil
 	}
-	resizer, ok := hyper.(netresize.Resizer)
-	if !ok {
-		return vm, hints, fmt.Errorf("backend %s: %w", hyper.Type(), netresize.ErrUnsupportedBackend)
-	}
-	res, err := resizer.NetResize(ctx, vm.ID, netresize.Spec{Target: cs.resizeTo}, cs.netProvider)
+	res, err := hyper.NetResize(ctx, vm.ID, netresize.Spec{Target: cs.resizeTo}, cs.netProvider)
 	if err != nil {
 		return vm, hints, fmt.Errorf("VM %s cloned, NIC resize to %d failed (rerun cocoon vm net): %w", vm.ID, cs.resizeTo, err)
 	}

@@ -212,14 +212,6 @@ func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) 
 	return &info, nil
 }
 
-func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
-	var info chPciDeviceInfo
-	if err := json.Unmarshal(resp, &info); err != nil {
-		return chPciDeviceInfo{}, fmt.Errorf("decode PciDeviceInfo: %w", err)
-	}
-	return info, nil
-}
-
 func powerButton(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.power-button")
 	return err

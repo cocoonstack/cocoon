@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -21,6 +23,8 @@ var (
 // Hypervisor manages VM lifecycle.
 type Hypervisor interface {
 	Supervisable
+	disk.Lister
+	netresize.Resizer
 
 	Create(ctx context.Context, vmID string, vmCfg *types.VMConfig, storage []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) (*types.VM, error)
 	Start(ctx context.Context, refs []string) ([]string, error)
