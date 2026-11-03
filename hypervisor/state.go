@@ -45,17 +45,6 @@ func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, err
 	return true, err
 }
 
-// WithPausedVM pauses, runs fn and resumes on the way out; a resume failure joins fn's error.
-func (b *Backend) WithPausedVM(ctx context.Context, rec *VMRecord, pause, resume, fn func() error) error {
-	return b.WithRunningVM(ctx, rec, func(_ int) (err error) {
-		if err = pause(); err != nil {
-			return fmt.Errorf("pause: %w", err)
-		}
-		defer func() { err = errors.Join(err, resume()) }()
-		return fn()
-	})
-}
-
 // UpdateState flips id to Stopped or Error and emits compute.stop on Running→Stopped; an Error path leaves the interval open for a confirmed-dead helper.
 func (b *Backend) UpdateState(ctx context.Context, id string, state types.VMState) error {
 	now := timeNow()

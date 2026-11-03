@@ -82,9 +82,13 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	}()
 
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
-	pause := func() error { return spec.Pause(&rec, hc) }
-	resume := func() error { return resumeAfterCapture(spec.Resume, &rec, hc) }
-	if err = b.WithPausedVM(ctx, &rec, pause, resume, func() error { return spec.Capture(&rec, hc, tmpDir) }); err != nil {
+	if err = b.WithRunningVM(ctx, &rec, func(_ int) (captureErr error) {
+		if pErr := spec.Pause(&rec, hc); pErr != nil {
+			return fmt.Errorf("pause: %w", pErr)
+		}
+		defer func() { captureErr = errors.Join(captureErr, resumeAfterCapture(spec.Resume, &rec, hc)) }()
+		return spec.Capture(&rec, hc, tmpDir)
+	}); err != nil {
 		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
