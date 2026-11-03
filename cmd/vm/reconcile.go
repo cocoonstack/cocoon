@@ -26,11 +26,7 @@ func (h Handler) ReconcileStaleCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	sup, ok := hyper.(hypervisor.Supervisable)
-	if !ok {
-		return fmt.Errorf("backend %s cannot reconcile stale creates", hyper.Type())
-	}
-	outcome, err := sup.ReconcileStaleCreate(ctx, vm.ID)
+	outcome, err := hyper.ReconcileStaleCreate(ctx, vm.ID)
 	if err != nil {
 		return fmt.Errorf("reconcile stale create: %w", err)
 	}

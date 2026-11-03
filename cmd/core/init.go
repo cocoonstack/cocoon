@@ -210,9 +210,7 @@ func blobPinners(ctx context.Context, conf *config.Config) ([]blobPinner, error)
 	}
 	sources := make([]blobPinner, 0, len(hypers)+1)
 	for _, h := range hypers {
-		if p, ok := h.(blobPinner); ok {
-			sources = append(sources, p)
-		}
+		sources = append(sources, h)
 	}
 	if p, ok := snapBackend.(blobPinner); ok {
 		sources = append(sources, p)

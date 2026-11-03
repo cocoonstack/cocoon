@@ -32,11 +32,7 @@ func (h Handler) Run(cmd *cobra.Command, _ []string) error {
 	}
 	supervisors := make([]cocoond.Supervisor, 0, len(hypers))
 	for _, hyper := range hypers {
-		s, ok := hyper.(cocoond.Supervisor)
-		if !ok {
-			return fmt.Errorf("hypervisor %s cannot be supervised", hyper.Type())
-		}
-		supervisors = append(supervisors, s)
+		supervisors = append(supervisors, hyper)
 	}
 	dconf, err := daemonConfig(cmd, conf)
 	if err != nil {

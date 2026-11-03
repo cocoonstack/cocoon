@@ -118,9 +118,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	// Pin the inspected ID: names are mutable, and a delete+reuse between Inspect and open would swap the source.
 	snapID := snapInfo.ID
 	if da, ok := snapBackend.(snapshot.Direct); ok {
-		if dcr, ok := hyper.(hypervisor.Direct); ok {
-			return h.cloneDirect(ctx, cmd, conf, hyper, dcr, da, snapID, logger)
-		}
+		return h.cloneDirect(ctx, cmd, conf, hyper, da, snapID, logger)
 	}
 
 	cfg, stream, err := snapBackend.Restore(ctx, snapID)
@@ -171,9 +169,7 @@ func (h Handler) Restore(cmd *cobra.Command, args []string) error {
 
 	// Pin the inspected IDs: re-resolving mutable names here would let a delete+reuse bypass the ownership check above.
 	if da, ok := snapBackend.(snapshot.Direct); ok {
-		if dcr, ok := hyper.(hypervisor.Direct); ok {
-			return h.restoreDirect(ctx, cmd, conf, hyper, dcr, da, snapInfo.ID, vm.ID, vmCfg, logger)
-		}
+		return h.restoreDirect(ctx, cmd, conf, hyper, da, snapInfo.ID, vm.ID, vmCfg, logger)
 	}
 
 	_, stream, err := snapBackend.Restore(ctx, snapInfo.ID)
@@ -209,10 +205,6 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
-	dcr, ok := hyper.(hypervisor.Direct)
-	if !ok {
-		return errBackendUnsupported(hyper, "direct restore")
-	}
 	if _, owned := vm.SnapshotIDs[cfg.ID]; !owned {
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
@@ -229,17 +221,17 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 		return err
 	}
 	defer releasePins()
-	return h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vm.ID, vmCfg, dir, cfg.ID,
+	return h.runDirectRestore(ctx, cmd, conf, hyper, vm.ID, vmCfg, dir, cfg.ID,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
-func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, da snapshot.Direct, snapRef string, logger *log.Fields) error {
+func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, da snapshot.Direct, snapRef string, logger *log.Fields) error {
 	dataDir, cfg, release, err := da.DataDir(ctx, snapRef)
 	if err != nil {
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
 	defer release()
-	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, dcr, cfg, dataDir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, dataDir,
 		fmt.Sprintf("snapshot %s (direct)", snapRef), logger)
 }
 
@@ -260,17 +252,13 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return err
 	}
-	dcr, ok := hyper.(hypervisor.Direct)
-	if !ok {
-		return errBackendUnsupported(hyper, "direct clone")
-	}
-	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, dcr, cfg, dir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, dir,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
-func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
+func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
 	return h.runClone(ctx, cmd, conf, hyper, cfg, sourceLabel, logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
-		return dcr.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
+		return hyper.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
 	})
 }
 
@@ -379,22 +367,22 @@ func (h Handler) finishClone(ctx context.Context, hyper hypervisor.Hypervisor, v
 	return refreshVM(ctx, hyper, vm), hints, nil
 }
 
-func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, da snapshot.Direct, snapRef, vmRef string, vmCfg *types.VMConfig, logger *log.Fields) error {
+func (h Handler) restoreDirect(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, da snapshot.Direct, snapRef, vmRef string, vmCfg *types.VMConfig, logger *log.Fields) error {
 	dataDir, snapCfg, release, err := da.DataDir(ctx, snapRef)
 	if err != nil {
 		return fmt.Errorf("open snapshot: %w", err)
 	}
 	defer release()
-	return h.runDirectRestore(ctx, cmd, conf, hyper, dcr, vmRef, vmCfg, dataDir, snapCfg.ID,
+	return h.runDirectRestore(ctx, cmd, conf, hyper, vmRef, vmCfg, dataDir, snapCfg.ID,
 		fmt.Sprintf("snapshot %s", snapRef), logger)
 }
 
-func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, dcr hypervisor.Direct, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
+func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID, sourceLabel string, logger *log.Fields) error {
 	wantJSON := cliutil.WantJSON(cmd)
 	if !wantJSON {
 		logger.Infof(ctx, "restoring VM %s from %s (direct) ...", vmRef, sourceLabel)
 	}
-	result, err := dcr.DirectRestore(ctx, vmRef, vmCfg, srcDir, sourceSnapshotID)
+	result, err := hyper.DirectRestore(ctx, vmRef, vmCfg, srcDir, sourceSnapshotID)
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
@@ -523,20 +511,16 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 
 // prereserveVM reserves before network provisioning, so GC never sees ownerless TAP/netns.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
-	r, ok := hyper.(hypervisor.Reserver)
-	if !ok {
-		return nil, nil, fmt.Errorf("hypervisor %s cannot reserve VM ids", hyper.Type())
-	}
-	unlock, err = r.LockVMOps(ctx, vmID)
+	unlock, err = hyper.LockVMOps(ctx, vmID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := r.PrereserveVM(ctx, vmID, vmCfg, blobIDs); err != nil {
-		r.RollbackCreate(ctx, vmID, vmCfg.Name)
+	if err := hyper.PrereserveVM(ctx, vmID, vmCfg, blobIDs); err != nil {
+		hyper.RollbackCreate(ctx, vmID, vmCfg.Name)
 		unlock()
 		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
 	}
-	return func() { r.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
+	return func() { hyper.RollbackCreate(ctx, vmID, vmCfg.Name) }, unlock, nil
 }
 
 func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, snapRef string, err error) {

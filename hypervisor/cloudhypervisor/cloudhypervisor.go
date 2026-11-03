@@ -19,7 +19,6 @@ const typ = "cloud-hypervisor"
 
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
-	_ hypervisor.Direct     = (*CloudHypervisor)(nil)
 	_ disk.Attacher         = (*CloudHypervisor)(nil)
 	_ disk.Lister           = (*CloudHypervisor)(nil)
 	_ fs.Attacher           = (*CloudHypervisor)(nil)

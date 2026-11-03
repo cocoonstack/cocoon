@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
-	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -20,10 +19,6 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	hyper, vm, err := cmdcore.FindVM(ctx, conf, vmRef)
 	if err != nil {
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
-	}
-	hib, ok := hyper.(hypervisor.Hibernator)
-	if !ok {
-		return errBackendUnsupported(hyper, "hibernate")
 	}
 	snapBackend, err := cmdcore.InitSnapshot(ctx, conf)
 	if err != nil {
@@ -38,7 +33,7 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	logger.Infof(ctx, "hibernating VM %s ...", vmRef)
 	// persist runs inside the pause window; the VMM dies only after it succeeds.
 	var snapID string
-	if err := hib.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
+	if err := hyper.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
 		id, pErr := cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 		snapID = id
 		return pErr

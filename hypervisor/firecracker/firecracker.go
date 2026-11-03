@@ -17,7 +17,6 @@ const typ = "firecracker"
 
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
-	_ hypervisor.Direct     = (*Firecracker)(nil)
 	_ netresize.Resizer     = (*Firecracker)(nil)
 	_ disk.Attacher         = (*Firecracker)(nil)
 	_ disk.Lister           = (*Firecracker)(nil)

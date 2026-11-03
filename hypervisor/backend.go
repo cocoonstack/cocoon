@@ -159,8 +159,6 @@ type HibernateSpec struct {
 	RuntimeFiles []string
 }
 
-var _ Supervisable = (*Backend)(nil)
-
 // Backend provides shared store operations for hypervisor backends.
 type Backend struct {
 	Typ      string
