@@ -94,7 +94,7 @@ func diffExtents(ref, cur []utils.Extent, size int64) []deltaRange {
 		curAt, curEnd := extentAt(&cur, pos)
 		end := min(refEnd, curEnd, size)
 		if refAt != curAt {
-			zero := curAt == (mapping{}) || curAt.unwritten
+			zero := !curAt.mapped || curAt.unwritten
 			if n := len(out) - 1; n >= 0 && out[n].Zero == zero && out[n].Offset+out[n].Length == pos {
 				out[n].Length += end - pos
 			} else {

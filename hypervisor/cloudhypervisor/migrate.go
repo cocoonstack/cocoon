@@ -19,8 +19,6 @@ const (
 	memoryDiffPrefix = "memory-ranges.diff."
 )
 
-var _ hypervisor.Migrator = (*CloudHypervisor)(nil)
-
 func (ch *CloudHypervisor) MigrateCapture(ctx context.Context, ref string, req hypervisor.MigrateRequest) (*hypervisor.MigrateRound, error) {
 	return ch.MigrateCaptureSequence(ctx, ref, req, ch.migrateSpec(ctx))
 }
@@ -30,18 +28,7 @@ func (ch *CloudHypervisor) MigrateAbort(ctx context.Context, ref, series string)
 }
 
 func (ch *CloudHypervisor) MigrateReceive(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
-	var srcCfg *chVMConfig
-	spec := hypervisor.CloneSpec{
-		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,
-		AfterExtract: func(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
-			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg, true)
-		},
-	}
-	return ch.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
-		var err error
-		srcCfg, err = cloneSeriesFiles(ctx, dstDir, srcDir)
-		return err
-	})
+	return ch.directClone(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, true)
 }
 
 func (ch *CloudHypervisor) migrateSpec(ctx context.Context) hypervisor.MigrateSpec {
@@ -57,6 +44,7 @@ func (ch *CloudHypervisor) migrateSpec(ctx context.Context) hypervisor.MigrateSp
 		EndSeries: func(_ *hypervisor.VMRecord, hc *http.Client) error {
 			return endSnapshotSeries(context.WithoutCancel(ctx), hc)
 		},
+		Rounds: countMemoryDiffs,
 	}
 }
 

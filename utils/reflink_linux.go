@@ -42,18 +42,11 @@ func CheckReflink(dir string) error {
 	if err != nil {
 		return fmt.Errorf("create reflink probe: %w", err)
 	}
+	_ = src.Close()
 	defer os.Remove(src.Name()) //nolint:errcheck
-	defer src.Close()           //nolint:errcheck
-	dst, err := os.CreateTemp(dir, ".reflink-probe-*")
-	if err != nil {
-		return fmt.Errorf("create reflink probe: %w", err)
-	}
-	defer os.Remove(dst.Name()) //nolint:errcheck
-	defer dst.Close()           //nolint:errcheck
-	if err := unix.IoctlFileClone(int(dst.Fd()), int(src.Fd())); err != nil {
-		return fmt.Errorf("ficlone in %s: %w", dir, err)
-	}
-	return nil
+	dst := src.Name() + ".clone"
+	defer os.Remove(dst) //nolint:errcheck
+	return tryFiclone(dst, src.Name(), NoSync)
 }
 
 func tryFiclone(dst, src string, sync SyncMode) error {

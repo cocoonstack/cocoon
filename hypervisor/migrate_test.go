@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestMigrateMiddleRoundResumesAndHidesTheReference(t *testing.T) {
 	if round.Round != 1 || round.Paused || calls.resumed != 1 {
 		t.Errorf("round %d paused %t resumed %d, want 1 false 1", round.Round, round.Paused, calls.resumed)
 	}
-	if want := []string{"cow.raw.delta.1", "mem.1"}; !slices.Equal(fileNames(round), want) {
+	if want := []string{"cow.raw.delta.1", "mem.1", snapshot.SnapshotJSONName}; !slices.Equal(fileNames(round), want) {
 		t.Errorf("files = %v, want %v", fileNames(round), want)
 	}
 	if !utils.FileExists(filepath.Join(dir, "cow.raw.ref")) {
@@ -103,7 +104,7 @@ func TestMigrateUnknownSeriesKeepsTheGuestRunning(t *testing.T) {
 	}
 }
 
-func TestMigrateAbortIsIdempotent(t *testing.T) {
+func TestMigrateAbortRepeatLeavesTheGuestAlone(t *testing.T) {
 	b, id, rec := newMigrateTestVM(t)
 	dir := seedSeries(t, rec)
 	calls := &migrateCalls{}
@@ -112,25 +113,136 @@ func TestMigrateAbortIsIdempotent(t *testing.T) {
 			t.Fatalf("abort: %v", err)
 		}
 	}
-	if calls.ended != 2 || calls.resumed != 2 {
-		t.Errorf("ended %d resumed %d, want 2 2", calls.ended, calls.resumed)
+	if calls.ended != 1 || calls.resumed != 1 {
+		t.Errorf("ended %d resumed %d, want 1 1", calls.ended, calls.resumed)
 	}
 	if utils.FileExists(dir) {
 		t.Error("the series survived the abort")
 	}
 }
 
-func TestMigrateAbortResumesWhenEndingTheSeriesFails(t *testing.T) {
+func TestMigrateAbortOfAnOldSeriesLeavesTheGuestAlone(t *testing.T) {
 	b, id, rec := newMigrateTestVM(t)
 	dir := seedSeries(t, rec)
+	calls := &migrateCalls{}
+	if err := b.MigrateAbortSequence(t.Context(), id, "old", migrateStubSpec(calls)); err != nil {
+		t.Fatalf("abort: %v", err)
+	}
+	if calls.ended != 0 || calls.resumed != 0 || !utils.FileExists(dir) {
+		t.Errorf("ended %d resumed %d kept %t, want 0 0 true", calls.ended, calls.resumed, utils.FileExists(dir))
+	}
+}
+
+func TestMigrateAbortKeepsTheSeriesUntilTheGuestResumes(t *testing.T) {
+	b, id, rec := newMigrateTestVM(t)
+	dir := seedSeries(t, rec)
+	calls := &migrateCalls{}
+	spec := migrateStubSpec(calls)
+	spec.Resume = func(*VMRecord, *http.Client) error { return errors.New("vmm busy") }
+	if err := b.MigrateAbortSequence(t.Context(), id, "s1", spec); err == nil {
+		t.Fatal("abort hid the failure")
+	}
+	if !utils.FileExists(dir) {
+		t.Fatal("the series went with the guest still paused, so a retry could not resume it")
+	}
+	if err := b.MigrateAbortSequence(t.Context(), id, "s1", migrateStubSpec(calls)); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if calls.resumed != 1 || utils.FileExists(dir) {
+		t.Errorf("resumed %d kept %t, want 1 false", calls.resumed, utils.FileExists(dir))
+	}
+}
+
+func TestMigrateAbortResumesWhenEndingTheSeriesFails(t *testing.T) {
+	b, id, rec := newMigrateTestVM(t)
+	seedSeries(t, rec)
 	calls := &migrateCalls{}
 	spec := migrateStubSpec(calls)
 	spec.EndSeries = func(*VMRecord, *http.Client) error { return errors.New("stop dirty log") }
 	if err := b.MigrateAbortSequence(t.Context(), id, "s1", spec); err == nil {
 		t.Fatal("abort hid the failure")
 	}
-	if calls.resumed != 1 || utils.FileExists(dir) {
-		t.Errorf("resumed %d series kept %t, want 1 false", calls.resumed, utils.FileExists(dir))
+	if calls.resumed != 1 {
+		t.Errorf("resumed %d, want 1", calls.resumed)
+	}
+}
+
+func TestMigrateRoundOutOfStepDiscardsTheSeries(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string, spec *MigrateSpec)
+	}{
+		{
+			name: "guest round without a disk round",
+			setup: func(_ *testing.T, _ string, spec *MigrateSpec) {
+				spec.Rounds = func(string) (int, error) { return 1, nil }
+			},
+		},
+		{
+			name: "disk round without a guest round",
+			setup: func(t *testing.T, dir string, _ *MigrateSpec) {
+				writeSparse(t, filepath.Join(dir, diskDeltaName(types.COWRawFileName, 1)), 8, nil)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, id, rec := newMigrateTestVM(t)
+			dir := seedSeries(t, rec)
+			calls := &migrateCalls{}
+			spec := migrateStubSpec(calls)
+			tt.setup(t, dir, &spec)
+			_, err := b.MigrateCaptureSequence(t.Context(), id, MigrateRequest{Series: "s1"}, spec)
+			if err == nil || !strings.Contains(err.Error(), "start a new series") {
+				t.Fatalf("capture: %v, want out of step", err)
+			}
+			if calls.paused != 0 || calls.ended != 1 || utils.FileExists(dir) {
+				t.Errorf("paused %d ended %d kept %t, want 0 1 false", calls.paused, calls.ended, utils.FileExists(dir))
+			}
+		})
+	}
+}
+
+func TestMigrateRoundRewritesTheEnvelope(t *testing.T) {
+	b, id, rec := newMigrateTestVM(t)
+	dir := seedSeries(t, rec)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{{MTU: 1500}, {MTU: 1500}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed nics: %v", err)
+	}
+	if _, err := b.MigrateCaptureSequence(t.Context(), id, MigrateRequest{Series: "s1"}, migrateStubSpec(&migrateCalls{})); err != nil {
+		skipWithoutFiemap(t, err)
+		t.Fatalf("capture: %v", err)
+	}
+	envelope, err := snapshot.ReadSnapshotEnvelope(dir)
+	if err != nil {
+		t.Fatalf("read envelope: %v", err)
+	}
+	if envelope.Config.NICs != 2 || envelope.Config.ID != "s1" {
+		t.Errorf("envelope nics %d id %q, want 2 s1", envelope.Config.NICs, envelope.Config.ID)
+	}
+}
+
+func TestIsCaptureDirMatchesSeriesDirsOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, captureDirPrefix+"s1"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, restoreStagingName), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeSparse(t, filepath.Join(dir, captureDirPrefix+"file"), 1, nil)
+	if errs := utils.RemoveMatching(t.Context(), dir, isCaptureDir); len(errs) != 0 {
+		t.Fatalf("remove: %v", errs)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(entries) != 2 || utils.FileExists(filepath.Join(dir, captureDirPrefix+"s1")) {
+		t.Errorf("left %v", entries)
 	}
 }
 
@@ -193,10 +305,11 @@ func migrateStubSpec(calls *migrateCalls) MigrateSpec {
 		Resume: func(*VMRecord, *http.Client) error { calls.resumed++; return nil },
 		Capture: func(_ *VMRecord, _ *http.Client, dir string) error {
 			calls.rounds++
-			return os.WriteFile(filepath.Join(dir, "mem."+string(rune('0'+calls.rounds))), []byte("x"), 0o600)
+			return os.WriteFile(filepath.Join(dir, "mem."+strconv.Itoa(calls.rounds)), []byte("x"), 0o600)
 		},
 		BuildMeta: func(*VMRecord, string) (*snapshot.SnapshotMeta, error) { return &snapshot.SnapshotMeta{}, nil },
 		EndSeries: func(*VMRecord, *http.Client) error { calls.ended++; return nil },
+		Rounds:    func(string) (int, error) { return calls.rounds, nil },
 	}
 }
 

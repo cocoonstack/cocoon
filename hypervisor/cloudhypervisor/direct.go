@@ -12,19 +12,7 @@ import (
 )
 
 func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error) {
-	// config.json is copied verbatim, so re-parsing the runDir copy would decode identical bytes.
-	var srcCfg *chVMConfig
-	spec := hypervisor.CloneSpec{
-		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,
-		AfterExtract: func(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
-			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg, false)
-		},
-	}
-	return ch.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
-		var err error
-		srcCfg, err = cloneSnapshotFiles(ctx, dstDir, srcDir)
-		return err
-	})
+	return ch.directClone(ctx, vmID, vmCfg, net, snapshotConfig, srcDir, false)
 }
 
 func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
@@ -51,6 +39,26 @@ func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCf
 	})
 }
 
+func (ch *CloudHypervisor) directClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string, migrate bool) (*types.VM, error) {
+	// config.json is copied verbatim, so re-parsing the runDir copy would decode identical bytes.
+	var srcCfg *chVMConfig
+	spec := hypervisor.CloneSpec{
+		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,
+		AfterExtract: func(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
+			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg, migrate)
+		},
+	}
+	return ch.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
+		var err error
+		if migrate {
+			srcCfg, err = cloneSeriesFiles(ctx, dstDir, srcDir)
+		} else {
+			srcCfg, err = cloneSnapshotFiles(ctx, dstDir, srcDir)
+		}
+		return err
+	})
+}
+
 func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig, error) {
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
@@ -59,7 +67,7 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 	return chCfg, hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, classifySnapshotFile(chCfg))
 }
 
-func classifySnapshotFile(chCfg *chVMConfig) func(name string) hypervisor.SnapshotFileKind {
+func classifySnapshotFile(chCfg *chVMConfig) hypervisor.SnapshotClassifier {
 	cowFiles := identifyCOWFiles(chCfg)
 	return func(name string) hypervisor.SnapshotFileKind {
 		switch {

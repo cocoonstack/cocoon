@@ -260,7 +260,7 @@ See [Live Migration](snapshots.md#live-migration).
 | `--series` | empty | Series to add a delta to; empty starts a new series |
 | `--final` | `false` | Leave the guest paused after this delta; needs `--series` |
 
-`cocoon vm migrate receive` takes `--from-dir` (required), `--id` (default: generated, must have the shape of a generated ID) and the [clone flags](#clone-flags) except `--nics` and `--data-disk`, which would resume the guest. With `--output json`, `capture` prints `{"series", "dir", "round", "paused", "files": [{"name", "size"}]}`; round 0 is the baseline.
+`cocoon vm migrate receive` takes `--from-dir` (required), `--id` (default: generated, must have the shape of a generated ID) and the [clone flags](#clone-flags) except `--nics` and `--data-disk`: a device op after restore would resume the guest. With `--output json`, `capture` prints `{"series", "dir", "round", "paused", "files": [{"name", "size"}]}`; round 0 is the baseline.
 
 `cocoon vm migrate abort` requires `--series`.
 

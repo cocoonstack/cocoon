@@ -171,7 +171,7 @@ cocoon vm start my-vm                                                # resumes t
 cocoon vm rm --force my-vm
 ```
 
-To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. It can run again safely.
+To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. Once the directory is gone, a repeat or an old series ID does nothing, so it cannot resume a guest paused for a newer series.
 
 Requirements:
 
@@ -182,8 +182,8 @@ Requirements:
 Rules for the caller:
 
 - Copy every file a round lists, in the listed round order. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
-- A VM has one live series. A new baseline ends the previous one, whose directory stays until `abort` or a `gc` 24 hours later.
-- A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. This includes a call with an old series ID, which also ends the live series. `snapshot save`, a NIC resize, a device detach, a reboot or a stop ends the series too, and the next delta fails.
+- A VM has one series. A new baseline ends the previous one and deletes its directory, along with any `snapshot-*` directory a killed capture left; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
+- A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A round after a killed capture fails the same way. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
 - A VM cloned or received seconds ago may still eject its old NICs. If that happens during a series, the next delta fails; start again.
 - Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
 

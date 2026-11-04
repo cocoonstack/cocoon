@@ -231,14 +231,7 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 
 // cloneFromDir keeps the dir read-only, so concurrent clones of a golden image are safe.
 func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, dir string, logger *log.Fields) error {
-	cfg, err := readVerifiedEnvelope(dir)
-	if err != nil {
-		return err
-	}
-	if cfg.Hypervisor != "" {
-		conf.UseFirecracker = isFirecracker(cfg.Hypervisor)
-	}
-	hyper, err := cmdcore.InitHypervisor(ctx, conf)
+	cfg, hyper, err := openSnapshotDir(ctx, conf, dir)
 	if err != nil {
 		return err
 	}
@@ -286,12 +279,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return cloneSetup{}, err
 	}
-	vmID := cliutil.FlagStr(cmd, "id")
-	if vmID == "" {
-		vmID = utils.GenerateID()
-	} else if !utils.ValidID(vmID) {
-		return cloneSetup{}, fmt.Errorf("--id must have the shape of a generated VM ID, got %q", vmID)
-	}
+	vmID := cmp.Or(cliutil.FlagStr(cmd, "id"), utils.GenerateID())
 	vmCfg.Name = cmp.Or(vmCfg.Name, "cocoon-clone-"+network.VMIDPrefix(vmID))
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
@@ -523,6 +511,21 @@ func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, s
 		return "", "", fmt.Errorf("snapshot is required (or use --from-dir)")
 	}
 	return "", args[baseArgs], nil
+}
+
+func openSnapshotDir(ctx context.Context, conf *config.Config, dir string) (types.SnapshotConfig, hypervisor.Hypervisor, error) {
+	cfg, err := readVerifiedEnvelope(dir)
+	if err != nil {
+		return types.SnapshotConfig{}, nil, err
+	}
+	if cfg.Hypervisor != "" {
+		conf.UseFirecracker = isFirecracker(cfg.Hypervisor)
+	}
+	hyper, err := cmdcore.InitHypervisor(ctx, conf)
+	if err != nil {
+		return types.SnapshotConfig{}, nil, err
+	}
+	return cfg, hyper, nil
 }
 
 func readVerifiedEnvelope(dir string) (types.SnapshotConfig, error) {

@@ -235,7 +235,8 @@ func buildMigrateCommand(h Handler) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  h.MigrateReceive,
 	}
-	addReceiveFlags(receive)
+	addCloneBaseFlags(receive)
+	receive.Flags().String("from-dir", "", "directory holding the transferred series (required)")
 	receive.Flags().String("id", "", "VM ID (default: generated)")
 	_ = receive.MarkFlagRequired("from-dir")
 	cliutil.AddOutputFlag(receive)
@@ -377,13 +378,14 @@ func addVMFlags(cmd *cobra.Command) {
 }
 
 func addCloneFlags(cmd *cobra.Command) {
-	addReceiveFlags(cmd)
+	addCloneBaseFlags(cmd)
+	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot; on Firecracker only for --pci snapshots)")
 	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
 }
 
-// addReceiveFlags holds the clone flags that need no device op after restore: a device op resumes a paused guest.
-func addReceiveFlags(cmd *cobra.Command) {
+// addCloneBaseFlags holds the clone flags that need no device op after restore: a device op resumes a received guest.
+func addCloneBaseFlags(cmd *cobra.Command) {
 	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)")
@@ -396,7 +398,6 @@ func addReceiveFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	addRestoreModeFlag(cmd)
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
-	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }
 
 func addCPUBandwidthFlags(cmd *cobra.Command) {
