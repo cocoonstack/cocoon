@@ -51,14 +51,23 @@ func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name
 		} else {
 			logger.Infof(ctx, "importing split qcow2 parts (%d files) ...", len(files))
 		}
-		return h.importCloudimgFiles(ctx, conf, name, files...)
+		msg := "hashing " + files[0]
+		if len(files) > 1 {
+			msg = fmt.Sprintf("hashing split qcow2 parts (%d files)", len(files))
+		}
+		return importCloudimg(ctx, conf, name, msg, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
+			return store.Import(ctx, name, tracker, files...)
+		})
 	case importSourceTar:
 		if len(files) == 1 {
 			logger.Infof(ctx, "importing tar file %s ...", files[0])
 		} else {
 			logger.Infof(ctx, "importing tar layers (%d files) ...", len(files))
 		}
-		return h.importOCIFiles(ctx, conf, name, files...)
+		pullMsg := func(total int) string { return fmt.Sprintf("importing %s (%d layer(s))", name, total) }
+		return importOCI(ctx, conf, name, pullMsg, func(store *oci.OCI, tracker progress.Tracker) error {
+			return store.Import(ctx, name, tracker, files...)
+		})
 	}
 	return h.importLocalStream(ctx, conf, name, files[0])
 }
@@ -83,43 +92,17 @@ func (h Handler) importFromReader(ctx context.Context, conf *config.Config, name
 	defer cleanup()
 
 	if typ == importSourceQcow2 {
-		return h.importCloudimgReader(ctx, conf, name, reader)
+		return importCloudimg(ctx, conf, name, "reading stream for "+name, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
+			return store.ImportFromReader(ctx, name, tracker, reader)
+		})
 	}
-	return h.importOCIReader(ctx, conf, name, reader)
-}
-
-func (h Handler) importCloudimgFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	return importCloudimg(ctx, conf, name, func() string {
-		if len(files) == 1 {
-			return "hashing " + files[0]
-		}
-		return fmt.Sprintf("hashing split qcow2 parts (%d files)", len(files))
-	}, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
-		return store.Import(ctx, name, tracker, files...)
+	pullMsg := func(int) string { return fmt.Sprintf("importing %s (1 layer from stream)", name) }
+	return importOCI(ctx, conf, name, pullMsg, func(store *oci.OCI, tracker progress.Tracker) error {
+		return store.ImportFromReader(ctx, name, tracker, reader)
 	})
 }
 
-func (h Handler) importOCIFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	return importOCI(ctx, conf, name, func(total int) string {
-		return fmt.Sprintf("importing %s (%d layer(s))", name, total)
-	}, func(store *oci.OCI, tracker progress.Tracker) error {
-		return store.Import(ctx, name, tracker, files...)
-	})
-}
-
-func (h Handler) importCloudimgReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	return importCloudimg(ctx, conf, name, func() string { return "reading stream for " + name }, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {
-		return store.ImportFromReader(ctx, name, tracker, r)
-	})
-}
-
-func (h Handler) importOCIReader(ctx context.Context, conf *config.Config, name string, r io.Reader) error {
-	return importOCI(ctx, conf, name, func(int) string { return fmt.Sprintf("importing %s (1 layer from stream)", name) }, func(store *oci.OCI, tracker progress.Tracker) error {
-		return store.ImportFromReader(ctx, name, tracker, r)
-	})
-}
-
-func importCloudimg(ctx context.Context, conf *config.Config, name string, downloadMsg func() string, do func(*cloudimg.CloudImg, progress.Tracker) error) error {
+func importCloudimg(ctx context.Context, conf *config.Config, name, downloadMsg string, do func(*cloudimg.CloudImg, progress.Tracker) error) error {
 	_, store, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
 		return err

@@ -33,10 +33,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		}
 		all = append(all, imgs...)
 	}
-	if len(all) == 0 {
-		if format == cliutil.FormatJSON {
-			return cliutil.OutputJSON([]*types.Image{})
-		}
+	if len(all) == 0 && format != cliutil.FormatJSON {
 		fmt.Println("No images found.")
 		return nil
 	}
