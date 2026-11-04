@@ -2,6 +2,7 @@ package localfile
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -52,6 +53,9 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		if p == nil {
+			return errors.New("fixture record SNAP333333333333 missing")
+		}
 		p.Pending = false
 		p.SizeBytes = 8192
 		p.LastAccessedAt = t2
@@ -61,6 +65,9 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		n, err := tx.Get("SNAP111111111111")
 		if err != nil {
 			return err
+		}
+		if n == nil {
+			return errors.New("fixture record SNAP111111111111 missing")
 		}
 		n.LastAccessedAt = t2
 		if err := tx.Put("SNAP111111111111", n); err != nil {

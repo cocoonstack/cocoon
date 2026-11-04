@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# UUID v5 (RFC 4122, SHA-1 based): deterministic UUID from NAMESPACE_URL + name.
+# UUID v5 (RFC 4122, SHA-1 based): deterministic UUID from NAMESPACE_DNS + name.
 # Pure bash + sha1sum — no Python required.
 uuid_v5() {
     local hash

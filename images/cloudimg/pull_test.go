@@ -70,8 +70,12 @@ func TestDownloadToFileRejectsNonImageBeforeWriting(t *testing.T) {
 			if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil || !strings.Contains(err.Error(), "HTML") {
 				t.Fatalf("downloadToFile() = %v, want the HTML rejection", err)
 			}
-			if st, err := dst.Stat(); err != nil || st.Size() != 0 {
-				t.Errorf("rejected download wrote %d bytes (err %v), want 0", st.Size(), err)
+			st, err := dst.Stat()
+			if err != nil {
+				t.Fatalf("Stat(): %v", err)
+			}
+			if st.Size() != 0 {
+				t.Errorf("rejected download wrote %d bytes, want 0", st.Size())
 			}
 		})
 	}
