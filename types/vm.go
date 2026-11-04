@@ -10,9 +10,9 @@ import (
 
 const (
 	VMStateCreating VMState = "creating" // DB placeholder written, dirs/disks being prepared
-	VMStateCreated  VMState = "created"  // registered, CH process not yet started
-	VMStateRunning  VMState = "running"  // CH process alive, guest is up
-	VMStateStopped  VMState = "stopped"  // CH process has exited cleanly
+	VMStateCreated  VMState = "created"  // registered, VMM process not yet started
+	VMStateRunning  VMState = "running"  // VMM process alive, guest is up
+	VMStateStopped  VMState = "stopped"  // VMM process has exited cleanly
 	VMStateError    VMState = "error"    // start, stop, or restore failed
 
 	TransitionCreate         TransitionReason = "create"
@@ -104,7 +104,7 @@ type VM struct {
 
 	// Runtime — populated only while State == VMStateRunning.
 	PID         int    `json:"pid"`
-	SocketPath  string `json:"socket_path,omitempty"`  // CH API Unix socket
+	SocketPath  string `json:"socket_path,omitempty"`  // VMM API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 	ConsolePath string `json:"console_path,omitempty"` // guest console: console.sock UDS or CH-allocated PTY (direct boot)
 
