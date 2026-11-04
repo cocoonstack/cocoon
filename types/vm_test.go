@@ -212,6 +212,74 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestVMResolvedNetFields(t *testing.T) {
+	tests := []struct {
+		name             string
+		vm               VM
+		wantNetnsPath    string
+		wantNetBackend   string
+		wantNetBridgeDev string
+	}{
+		{
+			name:           "VM-level fields populated",
+			vm:             VM{NetBackend: "cni", NetnsPath: "/var/run/netns/cocoon-x"},
+			wantNetnsPath:  "/var/run/netns/cocoon-x",
+			wantNetBackend: "cni",
+		},
+		{
+			name: "fallback to NIC[0] when VM-level empty",
+			vm: VM{NetworkConfigs: []*NetworkConfig{
+				{Backend: BackendBridge, NetnsPath: "", BridgeDev: "br0"},
+			}},
+			wantNetBackend:   BackendBridge,
+			wantNetBridgeDev: "br0",
+		},
+		{
+			name: "pre-bridge record (empty Backend) maps to CNI",
+			vm: VM{NetworkConfigs: []*NetworkConfig{
+				{NetnsPath: "/var/run/netns/cocoon-y"},
+			}},
+			wantNetnsPath:  "/var/run/netns/cocoon-y",
+			wantNetBackend: BackendCNI,
+		},
+		{
+			name:           "VM-level wins over NIC[0]",
+			vm:             VM{NetBackend: "cni", NetworkConfigs: []*NetworkConfig{{Backend: BackendBridge}}},
+			wantNetBackend: "cni",
+		},
+		{
+			name: "empty everywhere",
+			vm:   VM{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.vm.ResolvedNetnsPath(); got != tt.wantNetnsPath {
+				t.Errorf("ResolvedNetnsPath = %q, want %q", got, tt.wantNetnsPath)
+			}
+			if got := tt.vm.ResolvedNetBackend(); got != tt.wantNetBackend {
+				t.Errorf("ResolvedNetBackend = %q, want %q", got, tt.wantNetBackend)
+			}
+			if got := tt.vm.ResolvedNetBridgeDev(); got != tt.wantNetBridgeDev {
+				t.Errorf("ResolvedNetBridgeDev = %q, want %q", got, tt.wantNetBridgeDev)
+			}
+		})
+	}
+}
+
+func TestVMResolvedNetNilReceiver(t *testing.T) {
+	var v *VM
+	if got := v.ResolvedNetnsPath(); got != "" {
+		t.Errorf("nil ResolvedNetnsPath = %q, want \"\"", got)
+	}
+	if got := v.ResolvedNetBackend(); got != "" {
+		t.Errorf("nil ResolvedNetBackend = %q, want \"\"", got)
+	}
+	if got := v.ResolvedNetBridgeDev(); got != "" {
+		t.Errorf("nil ResolvedNetBridgeDev = %q, want \"\"", got)
+	}
+}
+
 func validConfig() VMConfig {
 	return VMConfig{
 		Name:    "test-vm",

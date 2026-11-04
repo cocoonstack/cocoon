@@ -31,7 +31,7 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
-			return fc.launchProcess(ctx, rec, sockPath, rec.NetnsPath, false)
+			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)
 		},
 		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
 			return fc.configureVM(ctx, utils.NewSocketHTTPClient(sockPath), rec)

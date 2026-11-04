@@ -272,6 +272,8 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 		NumQueues: queues,
 		QueueSize: network.ResolveQueueSize(vmCfg.QueueSize),
 		MTU:       mtu,
+		Backend:   types.BackendCNI,
+		NetnsPath: nsPath,
 		Network:   netInfo,
 	}, nil
 }

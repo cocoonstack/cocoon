@@ -13,7 +13,7 @@ import (
 func TestRecoverRetriesAnAddThatFinishedAnInterruptedTeardown(t *testing.T) {
 	fake := &recoverNetwork{addErrs: []error{fmt.Errorf("teardown interrupted, retry: %w", meta.ErrConflict)}}
 	n := &NetProviders{cni: fake, bridge: map[string]network.Network{}}
-	vm := &types.VM{ID: "vm1", NetBackend: types.BackendCNI, NetworkConfigs: []*types.NetworkConfig{{TAP: "tap0", MAC: "02:00:00:00:00:01"}}}
+	vm := &types.VM{ID: "vm1", NetworkConfigs: []*types.NetworkConfig{{TAP: "tap0", MAC: "02:00:00:00:00:01"}}}
 
 	if err := n.Recover(t.Context(), vm); err != nil {
 		t.Fatalf("Recover = %v, want the start to converge in one attempt", err)

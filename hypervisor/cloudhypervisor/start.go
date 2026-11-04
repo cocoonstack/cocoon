@@ -28,7 +28,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.
 			vmCfg := buildVMConfig(rec, hypervisor.ConsoleSockPath(rec.RunDir), dns)
 			args := buildCLIArgs(vmCfg, sockPath)
 			ch.saveCmdline(ctx, rec, args)
-			return ch.launchProcess(ctx, rec, args, rec.NetnsPath, false)
+			return ch.launchProcess(ctx, rec, args, rec.ResolvedNetnsPath(), false)
 		},
 		PostLaunch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			if err := confirmVMBooted(ctx, utils.NewSocketHTTPClientWithTimeout(sockPath, ch.conf.SocketWaitTimeout()), pid, ch.conf.SocketWaitTimeout()); err != nil {
