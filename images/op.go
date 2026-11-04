@@ -2,8 +2,10 @@ package images
 
 import (
 	"context"
+	"os"
 
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 // Ops bundles the store and type shared by Inspect/List/Delete; one per backend.
@@ -21,6 +23,21 @@ func (ops *Ops[E]) PinBlobs(_ context.Context, blobIDs map[string]struct{}) (fun
 }
 
 func (ops *Ops[E]) OwnsBlob(hex string) bool { return ops.Base.OwnsBlob(hex) }
+
+func (ops *Ops[E]) GCConfig() GCModuleConfig[E] {
+	return GCModuleConfig[E]{
+		Name:     ops.Typ,
+		Store:    ops.Store,
+		LockPath: ops.Base.BlobLockPath,
+		ReadRefs: ReferencedDigests[E],
+		ScanDisk: func() ([]string, error) { return utils.ScanFileStems(ops.Base.BlobsDir(), ops.Base.BlobExt) },
+		Removers: []BlobRemover{
+			func(hex string) error { return os.Remove(ops.Base.BlobPath(hex)) },
+		},
+		TempDir:         ops.Base.TempDir(),
+		PinnedElsewhere: ops.PinnedElsewhere,
+	}
+}
 
 // Inspect returns (nil, nil) when no entry matches id or the id is an ambiguous prefix spanning distinct digests (LookupOne semantics).
 func (ops *Ops[E]) Inspect(ctx context.Context, id string) (result *types.Image, err error) {

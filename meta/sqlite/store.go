@@ -186,15 +186,6 @@ func (s *Store) Close() error {
 		close(s.cpDone)
 		s.cpDone = nil
 	}
-	for _, sm := range []map[string]tableStmts{s.stmtsDurable, s.stmtsRelaxed, s.stmtsReaders} {
-		for _, ts := range sm {
-			for _, st := range []*sql.Stmt{ts.get, ts.scan, ts.put, ts.del} {
-				if st != nil {
-					_ = st.Close()
-				}
-			}
-		}
-	}
 	for _, db := range []*sql.DB{s.writerDurable, s.writerRelaxed, s.readers} {
 		if db != nil {
 			errs = append(errs, db.Close())
@@ -220,7 +211,7 @@ func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error)
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("writer contended past retry ceiling: %w", meta.ErrBusy)
 		}
-		pause := time.Duration(rand.Int64N(int64(busyRetryPause))) //nolint:gosec // retry jitter, not cryptographic
+		pause := rand.N(busyRetryPause) //nolint:gosec // retry jitter, not cryptographic
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

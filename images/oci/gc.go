@@ -9,20 +9,10 @@ import (
 )
 
 func (o *OCI) GCModule() gc.Module[images.ImageGCSnapshot] {
-	return images.BuildGCModule(images.GCModuleConfig[imageEntry]{
-		Name:      typ,
-		Store:     o.Store,
-		LockPath:  o.conf.BlobLockPath,
-		ReadRefs:  images.ReferencedDigests[imageEntry],
-		ScanDisk:  func() ([]string, error) { return utils.ScanFileStems(o.conf.BlobsDir(), o.conf.BlobExt) },
-		ExtraDisk: func() ([]string, error) { return utils.ScanSubdirs(o.conf.BootBaseDir()) },
-		Removers: []images.BlobRemover{
-			func(hex string) error { return os.Remove(o.conf.BlobPath(hex)) },
-			func(hex string) error { return os.RemoveAll(o.conf.BootDir(hex)) },
-		},
-		TempDir:         o.conf.TempDir(),
-		PinnedElsewhere: o.PinnedElsewhere,
-	})
+	cfg := o.GCConfig()
+	cfg.ExtraDisk = func() ([]string, error) { return utils.ScanSubdirs(o.conf.BootBaseDir()) }
+	cfg.Removers = append(cfg.Removers, func(hex string) error { return os.RemoveAll(o.conf.BootDir(hex)) })
+	return images.BuildGCModule(cfg)
 }
 
 func (o *OCI) RegisterGC(orch *gc.Orchestrator) {
