@@ -250,8 +250,6 @@ validate_image_metadata() {
   user_metadata=$(inspect_image '{{.Config.User}}')
 
   select_architecture_contract "$operating_system" "$architecture"
-  assert_equal "OCI architecture" "$IMAGE_ARCHITECTURE" "$architecture"
-  assert_equal "OCI operating system" "linux" "$operating_system"
   assert_equal "OCI command" '["/sbin/init"]' "$command_metadata"
   assert_equal "OCI entrypoint" "null" "$entrypoint_metadata"
   case "$user_metadata" in

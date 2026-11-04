@@ -47,11 +47,14 @@ RUN --mount=type=secret,id=cocoon_overlay \
     # PicoClaw: install pre-built binary
     ARCH=${TARGETARCH:-$(dpkg --print-architecture)}; \
     case "$ARCH" in \
-        amd64) PC_ARCH="x86_64" ;; \
-        arm64) PC_ARCH="arm64" ;; \
+        amd64) PC_ARCH="x86_64"; PC_SHA256="86f0fe84aa55279352edbe13adfca484a03bcf189e2030b25e34628089069c3f" ;; \
+        arm64) PC_ARCH="arm64"; PC_SHA256="e78ab0de05d000698ff8b32458e71cb3134e52e9eaf540e3323a72e9914de060" ;; \
         *) echo "unsupported arch: $ARCH" && exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_${PC_ARCH}.tar.gz" | tar xz -C /usr/local/bin/ picoclaw && \
+    curl -fsSLo /tmp/picoclaw.tar.gz "https://github.com/sipeed/picoclaw/releases/download/v0.3.1/picoclaw_Linux_${PC_ARCH}.tar.gz" && \
+    echo "$PC_SHA256  /tmp/picoclaw.tar.gz" | sha256sum -c - && \
+    tar xzf /tmp/picoclaw.tar.gz -C /usr/local/bin/ picoclaw && \
+    rm -f /tmp/picoclaw.tar.gz && \
     chmod 0755 /usr/local/bin/picoclaw && \
     # Cocoon initramfs overlay + network
     cp /run/secrets/cocoon_overlay /etc/initramfs-tools/scripts/cocoon-overlay && \

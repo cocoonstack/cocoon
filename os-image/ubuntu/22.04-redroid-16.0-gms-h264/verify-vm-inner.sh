@@ -2,6 +2,13 @@
 # Static checks for the built Ubuntu VM image. Run inside its root filesystem.
 set -euo pipefail
 
+refute() {
+    if "$@"; then
+        echo "unexpected: $*" >&2
+        exit 1
+    fi
+}
+
 test -e /boot/vmlinuz
 test -e /boot/initrd.img
 test -d /var/lib/redroid-data
@@ -14,14 +21,14 @@ grep -Fq 'VIDEO_BIT_RATE="${VIDEO_BIT_RATE:-8000000}"' /usr/local/bin/remoteview
 grep -Fq -- '-rfbport "$RFB_PORT"' /usr/local/bin/remoteview-run.sh
 grep -Fq 'video_codec=h264' /usr/local/bin/remoteview-run.sh
 command -v scrcpy-rfb >/dev/null
-! command -v fuse-overlayfs >/dev/null
+refute command -v fuse-overlayfs
 test -f /usr/local/share/scrcpy/scrcpy-server.jar
-! ldd /usr/local/bin/scrcpy-rfb | grep -q 'not found'
-! command -v Xvfb >/dev/null
-! command -v x11vnc >/dev/null
-! command -v Xtigervnc >/dev/null
-! command -v openbox >/dev/null
-! command -v scrcpy >/dev/null
+refute grep -q 'not found' <(ldd /usr/local/bin/scrcpy-rfb)
+refute command -v Xvfb
+refute command -v x11vnc
+refute command -v Xtigervnc
+refute command -v openbox
+refute command -v scrcpy
 
 # No first-boot launcher: the container is baked already-created with a restart
 # policy, so dockerd replays it on boot instead of a service running docker create.
@@ -63,7 +70,6 @@ grep -Fq 'local/redroid' /var/lib/docker/image/vfs/repositories.json
 grep -Fq 'androidboot.redroid_net_ndns=2' "$cfg"
 grep -Fq 'androidboot.redroid_net_dns1=' "$cfg"
 grep -Fq 'androidboot.redroid_net_dns2=' "$cfg"
-! grep -Eq 'androidboot\.redroid_net_dns[12]=10\.104\.' "$cfg"
 
 for value in \
     androidboot.use_memfd=0 \

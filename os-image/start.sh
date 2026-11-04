@@ -29,7 +29,7 @@ command -v mkfs.erofs  >/dev/null 2>&1 || _MISSING="$_MISSING erofs-utils"
 command -v mkfs.ext4   >/dev/null 2>&1 || _MISSING="$_MISSING e2fsprogs"
 command -v wget        >/dev/null 2>&1 || _MISSING="$_MISSING wget"
 if [ -n "$_MISSING" ]; then
-    echo "[1/7] Installing missing dependencies:$_MISSING"
+    echo "[1/4] Installing missing dependencies:$_MISSING"
     sudo apt-get install -y -qq $_MISSING
 fi
 
@@ -45,7 +45,7 @@ sudo setcap cap_net_admin+ep "$CH_BIN"
 
 # 4. Extract Layers via Crane
 if [ -n "$IMAGE_NAME" ]; then
-    echo "[4/7] Extracting layers for '$IMAGE_NAME'..."
+    echo "[2/4] Extracting layers for '$IMAGE_NAME'..."
     rm -f layer*.erofs boot/vmlinuz* boot/initrd.img*
     
     # Download Crane
@@ -81,7 +81,7 @@ fi
 
 # 5. Prepare COW (Optimized for performance and sparse efficiency)
 # lazy_itable_init=1 speeds up formatting on large sparse files
-echo "[5/7] Preparing optimized sparse COW disk..."
+echo "[3/4] Preparing optimized sparse COW disk..."
 truncate -s 10G cow.raw
 mkfs.ext4 -F -m 0 -q -E lazy_itable_init=1,lazy_journal_init=1,discard cow.raw
 
@@ -107,7 +107,7 @@ done
 DISK_CONFIGS+=("path=cow.raw,readonly=off,direct=on,sparse=on,image_type=raw,num_queues=2,queue_size=256,serial=cocoon-cow")
 
 # 7. Ignite
-echo "[7/7] Igniting Cloud Hypervisor..."
+echo "[4/4] Igniting Cloud Hypervisor..."
 "$CH_BIN" --kernel "$KERNEL" --initramfs "$INITRD" \
     --disk "${DISK_CONFIGS[@]}" \
     --cmdline "console=ttyS0 loglevel=3 boot=cocoon-overlay cocoon.layers=${COCOON_LAYERS} cocoon.cow=cocoon-cow clocksource=kvm-clock rw" \
