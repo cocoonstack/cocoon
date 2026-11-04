@@ -27,7 +27,7 @@ func TestMigrateBaselineRefusesWithoutReflink(t *testing.T) {
 	if calls.paused != 0 {
 		t.Error("the guest was paused before the refusal")
 	}
-	if dirs, _ := filepath.Glob(filepath.Join(rec.RunDir, captureDirPrefix+"*")); len(dirs) != 0 {
+	if dirs, _ := filepath.Glob(filepath.Join(rec.RunDir, seriesDirPrefix+"*")); len(dirs) != 0 {
 		t.Errorf("series dirs left behind: %v", dirs)
 	}
 }
@@ -225,24 +225,20 @@ func TestMigrateRoundRewritesTheEnvelope(t *testing.T) {
 	}
 }
 
-func TestIsCaptureDirMatchesSeriesDirsOnly(t *testing.T) {
+func TestIsSeriesDirLeavesASnapshotBeingPersisted(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, captureDirPrefix+"s1"), 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	series := filepath.Join(dir, seriesDirPrefix+"s1")
+	persisting := filepath.Join(dir, captureDirPrefix+"123")
+	for _, d := range []string{series, persisting} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
 	}
-	if err := os.Mkdir(filepath.Join(dir, restoreStagingName), 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	writeSparse(t, filepath.Join(dir, captureDirPrefix+"file"), 1, nil)
-	if errs := utils.RemoveMatching(t.Context(), dir, isCaptureDir); len(errs) != 0 {
+	if errs := utils.RemoveMatching(t.Context(), dir, isSeriesDir); len(errs) != 0 {
 		t.Fatalf("remove: %v", errs)
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if len(entries) != 2 || utils.FileExists(filepath.Join(dir, captureDirPrefix+"s1")) {
-		t.Errorf("left %v", entries)
+	if utils.FileExists(series) || !utils.FileExists(persisting) {
+		t.Errorf("series kept %t, persisting snapshot kept %t, want false true", utils.FileExists(series), utils.FileExists(persisting))
 	}
 }
 
@@ -271,7 +267,7 @@ func TestSeriesDirRejectsPathsOutOfTheRunDir(t *testing.T) {
 		}
 	}
 	got, err := seriesDir(rec, "123")
-	if err != nil || got != "/run/vm/snapshot-123" {
+	if err != nil || got != "/run/vm/snapshot-migrate-123" {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
@@ -333,7 +329,7 @@ func newMigrateTestVM(t *testing.T) (*Backend, string, *VMRecord) {
 
 func seedSeries(t *testing.T, rec *VMRecord) string {
 	t.Helper()
-	dir := filepath.Join(rec.RunDir, captureDirPrefix+"s1")
+	dir := filepath.Join(rec.RunDir, seriesDirPrefix+"s1")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

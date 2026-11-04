@@ -182,7 +182,7 @@ Requirements:
 Rules for the caller:
 
 - Copy every file a round lists, in the listed round order. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
-- A VM has one series. A new baseline ends the previous one and deletes its directory, along with any `snapshot-*` directory a killed capture left; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
+- A VM has one series. A new baseline ends the previous one and deletes its directory; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
 - A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A round after a killed capture fails the same way. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
 - A VM cloned or received seconds ago may still eject its old NICs. If that happens during a series, the next delta fails; start again.
 - Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.

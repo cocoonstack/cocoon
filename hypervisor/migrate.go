@@ -16,7 +16,12 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const diskRefSuffix = ".ref"
+const (
+	diskRefSuffix = ".ref"
+
+	// seriesDirPrefix extends captureDirPrefix so the GC sweep still ages out a series.
+	seriesDirPrefix = captureDirPrefix + "migrate-"
+)
 
 // Migrator captures a running VM in rounds and restores the result on another node.
 type Migrator interface {
@@ -119,15 +124,15 @@ func (b *Backend) captureBaseline(ctx context.Context, rec *VMRecord, spec Migra
 	if err := utils.CheckReflink(rec.RunDir); err != nil {
 		return nil, fmt.Errorf("live migration needs a reflink filesystem under the run dir: %w", err)
 	}
-	// The ops lock proves no capture owns these, and one directory per VM keeps an old series ID from reaching the guest.
-	if errs := utils.RemoveMatching(ctx, rec.RunDir, isCaptureDir); len(errs) > 0 {
+	// One directory per VM keeps an old series ID from reaching the guest.
+	if errs := utils.RemoveMatching(ctx, rec.RunDir, isSeriesDir); len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	dir, err := os.MkdirTemp(rec.RunDir, captureDirPrefix)
+	dir, err := os.MkdirTemp(rec.RunDir, seriesDirPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("create series dir: %w", err)
 	}
-	series := strings.TrimPrefix(filepath.Base(dir), captureDirPrefix)
+	series := strings.TrimPrefix(filepath.Base(dir), seriesDirPrefix)
 	return b.captureRound(ctx, rec, spec, dir, roundSteps{
 		series: series,
 		before: func(hc *http.Client) error { return spec.EndSeries(rec, hc) },
@@ -234,11 +239,11 @@ func seriesDir(rec *VMRecord, series string) (string, error) {
 	if !filepath.IsLocal(series) || strings.ContainsRune(series, filepath.Separator) {
 		return "", fmt.Errorf("invalid series id %q", series)
 	}
-	return filepath.Join(rec.RunDir, captureDirPrefix+series), nil
+	return filepath.Join(rec.RunDir, seriesDirPrefix+series), nil
 }
 
-func isCaptureDir(e os.DirEntry) bool {
-	return e.IsDir() && strings.HasPrefix(e.Name(), captureDirPrefix)
+func isSeriesDir(e os.DirEntry) bool {
+	return e.IsDir() && strings.HasPrefix(e.Name(), seriesDirPrefix)
 }
 
 // checkRoundsInStep catches a round a killed capture left half written, which would otherwise surface only at the receive.
