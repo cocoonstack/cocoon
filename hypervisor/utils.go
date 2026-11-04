@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -287,8 +288,9 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; trailing cidata is the only allowed extension.
+// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; cidata is the only disk rec may add.
 func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
+	rec = RecordDisksForSidecar(sidecar, rec)
 	if len(sidecar) > len(rec) {
 		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
 	}
@@ -306,6 +308,14 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 		}
 	}
 	return nil
+}
+
+func RecordDisksForSidecar(sidecar, rec []*types.StorageConfig) []*types.StorageConfig {
+	isCidata := func(sc *types.StorageConfig) bool { return sc.Role == types.StorageRoleCidata }
+	if slices.ContainsFunc(sidecar, isCidata) {
+		return rec
+	}
+	return slices.DeleteFunc(slices.Clone(rec), isCidata)
 }
 
 // ValidateResidentPaths runs after ValidateRoleSequence, which bounds sidecar by rec.

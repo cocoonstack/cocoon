@@ -66,11 +66,11 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 	directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 
 	chConfigPath := filepath.Join(rec.RunDir, configJSONName)
-	// rec may have trailing cidata absent from the snapshot (cloudimg post-first-boot); slice to sidecar length.
+	// rec may hold cidata the snapshot lacks (cloudimg post-first-boot); slice to sidecar length.
 	diskCount := len(meta.StorageConfigs)
 
 	if err = patchCHConfig(chConfigPath, &patchOptions{
-		storageConfigs: rec.StorageConfigs[:diskCount],
+		storageConfigs: hypervisor.RecordDisksForSidecar(meta.StorageConfigs, rec.StorageConfigs)[:diskCount],
 		consoleSock:    hypervisor.ConsoleSockPath(rec.RunDir),
 		vsockSock:      hypervisor.VsockSockPath(rec.RunDir),
 		directBoot:     directBoot,
