@@ -53,7 +53,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		Capture: func(rec *hypervisor.VMRecord, hc *http.Client, tmpDir string) error {
-			if err := snapshotVM(ctx, hc, tmpDir); err != nil {
+			if err := snapshotVM(ctx, hc, tmpDir, ""); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
 			return hypervisor.CopyWritableDisks(ctx, tmpDir, rec)

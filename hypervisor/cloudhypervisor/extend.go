@@ -341,7 +341,7 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*
 		return info, nil
 	}
 	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
-		Warnf(ctx, "vm %s is paused with no capture in flight (interrupted snapshot or hibernate), resuming", vmID)
+		Warnf(ctx, "vm %s is paused with no capture in flight, resuming", vmID)
 	if err := resumeVM(ctx, hc); err != nil {
 		return nil, fmt.Errorf("resume orphaned pause: %w", err)
 	}

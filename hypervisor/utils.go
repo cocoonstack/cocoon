@@ -34,6 +34,8 @@ const (
 	SnapshotFileCOW
 	// SnapshotFileMeta is small metadata that is plain-copied.
 	SnapshotFileMeta
+	// SnapshotFileSkip is left out of the clone.
+	SnapshotFileSkip
 
 	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
 	CloneLocksDirName = "clone-locks"

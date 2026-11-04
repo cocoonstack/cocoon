@@ -36,6 +36,19 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 	return SparseCopy(dst, src, sync)
 }
 
+// CheckReflink reports whether the filesystem holding dir supports FICLONE.
+func CheckReflink(dir string) error {
+	src, err := os.CreateTemp(dir, ".reflink-probe-*")
+	if err != nil {
+		return fmt.Errorf("create reflink probe: %w", err)
+	}
+	_ = src.Close()
+	defer os.Remove(src.Name()) //nolint:errcheck
+	dst := src.Name() + ".clone"
+	defer os.Remove(dst) //nolint:errcheck
+	return tryFiclone(dst, src.Name(), NoSync)
+}
+
 func tryFiclone(dst, src string, sync SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if err := unix.IoctlFileClone(int(dstFile.Fd()), int(srcFile.Fd())); err != nil {

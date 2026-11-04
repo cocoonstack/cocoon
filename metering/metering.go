@@ -20,6 +20,7 @@ const (
 	ReasonRestart    Reason = "restart"
 	ReasonClone      Reason = "clone"
 	ReasonRestore    Reason = "restore"
+	ReasonMigrate    Reason = "migrate"
 	ReasonStopUser   Reason = "stop-user"
 	ReasonStopCrash  Reason = "stop-crash"
 	ReasonVMRemove   Reason = "vm-rm"

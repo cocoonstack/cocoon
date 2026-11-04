@@ -198,6 +198,7 @@ func Command(h Handler) *cobra.Command {
 		buildDeviceCommand(h),
 		buildDiskCommand(h),
 		buildNetCommand(h),
+		buildMigrateCommand(h),
 	)
 	return vmCmd
 }
@@ -213,6 +214,44 @@ func buildNetCommand(h Handler) *cobra.Command {
 	_ = cmd.MarkFlagRequired("nics")
 	cliutil.AddOutputFlag(cmd)
 	return cmd
+}
+
+func buildMigrateCommand(h Handler) *cobra.Command {
+	parent := cliutil.GroupCommand("migrate", "Capture a running VM in rounds and restore it on another node (CH only)")
+
+	capture := &cobra.Command{
+		Use:   "capture VM",
+		Short: "Start a series with a full baseline, or add a delta to one with --series",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.MigrateCapture,
+	}
+	capture.Flags().String("series", "", "series to add a delta to (empty = start a new series)")
+	capture.Flags().Bool("final", false, "leave the guest paused after this delta; needs --series")
+	cliutil.AddOutputFlag(capture)
+
+	receive := &cobra.Command{
+		Use:   "receive --from-dir DIR",
+		Short: "Restore a transferred series into a new VM with its guest paused; vm start resumes it",
+		Args:  cobra.NoArgs,
+		RunE:  h.MigrateReceive,
+	}
+	addCloneBaseFlags(receive)
+	receive.Flags().String("from-dir", "", "directory holding the transferred series (required)")
+	receive.Flags().String("id", "", "VM ID (default: generated)")
+	_ = receive.MarkFlagRequired("from-dir")
+	cliutil.AddOutputFlag(receive)
+
+	abort := &cobra.Command{
+		Use:   "abort VM",
+		Short: "End a series, resume the guest and delete the series directory",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.MigrateAbort,
+	}
+	abort.Flags().String("series", "", "series to abort (required)")
+	_ = abort.MarkFlagRequired("series")
+
+	parent.AddCommand(capture, receive, abort)
+	return parent
 }
 
 func buildDiskCommand(h Handler) *cobra.Command {
@@ -339,8 +378,15 @@ func addVMFlags(cmd *cobra.Command) {
 }
 
 func addCloneFlags(cmd *cobra.Command) {
-	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
+	addCloneBaseFlags(cmd)
+	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 	cmd.Flags().Int("nics", 0, "override NIC count (omit to inherit from snapshot; on Firecracker only for --pci snapshots)")
+	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
+}
+
+// addCloneBaseFlags holds the clone flags that need no device op after restore: a device op resumes a received guest.
+func addCloneBaseFlags(cmd *cobra.Command) {
+	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = inherit from snapshot)")
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count; snapshot knobs are never inherited)")
@@ -352,8 +398,6 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-direct-io", false, "disable O_DIRECT on writable disks (inherit from snapshot if not set)")
 	addRestoreModeFlag(cmd)
 	cmd.Flags().Bool("pull", false, "auto-pull base image if not found locally (for cross-node clone)")
-	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
-	cmd.Flags().String("from-dir", "", "clone from a snapshot directory (must contain snapshot.json) instead of the local snapshot DB; mutually exclusive with positional SNAPSHOT")
 }
 
 func addCPUBandwidthFlags(cmd *cobra.Command) {

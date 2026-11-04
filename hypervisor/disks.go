@@ -85,15 +85,9 @@ func RecordedCOWPath(rec *VMRecord) (string, error) {
 
 // CopyWritableDisks copies concurrently; durability is paid at persist.
 func CopyWritableDisks(ctx context.Context, dstDir string, rec *VMRecord) error {
-	cowPath, err := RecordedCOWPath(rec)
+	pairs, err := writableDiskPairs(dstDir, rec)
 	if err != nil {
 		return err
-	}
-	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
-	for _, sc := range rec.StorageConfigs {
-		if sc.Role == types.StorageRoleData {
-			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
-		}
 	}
 	return copyPairs(ctx, pairs)
 }
@@ -125,6 +119,21 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 		return nil, err
 	}
 	return out, nil
+}
+
+// writableDiskPairs returns {copy under dstDir, live disk} for the COW and every data disk.
+func writableDiskPairs(dstDir string, rec *VMRecord) ([][2]string, error) {
+	cowPath, err := RecordedCOWPath(rec)
+	if err != nil {
+		return nil, err
+	}
+	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
+	for _, sc := range rec.StorageConfigs {
+		if sc.Role == types.StorageRoleData {
+			pairs = append(pairs, [2]string{filepath.Join(dstDir, DataDiskBaseName(sc.Serial)), sc.Path})
+		}
+	}
+	return pairs, nil
 }
 
 func copyPairs(ctx context.Context, pairs [][2]string) error {
