@@ -516,7 +516,10 @@ func TestDelete(t *testing.T) {
 		t.Errorf("expected ErrNotFound after delete, got %v", err)
 	}
 
-	list, _ := lf.List(ctx)
+	list, err := lf.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
 	if len(list) != 0 {
 		t.Errorf("expected 0 after delete, got %d", len(list))
 	}

@@ -2,6 +2,7 @@ package localfile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -109,6 +110,9 @@ func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone
 		rec, err := tx.Get(id)
 		if err != nil {
 			return err
+		}
+		if rec == nil {
+			return fmt.Errorf("snapshot %s missing", id)
 		}
 		cl, err := tombstone.MarshalCleanup(snapCleanup{
 			Name: rec.Name, Hypervisor: rec.Hypervisor, Pending: rec.Pending,

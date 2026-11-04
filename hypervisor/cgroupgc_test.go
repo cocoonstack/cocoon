@@ -2,9 +2,10 @@ package hypervisor
 
 import (
 	"context"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/cgroup"
@@ -66,19 +67,27 @@ func TestCgroupGCModuleLeavesScopeOfAVMCreatedAfterTheSnapshot(t *testing.T) {
 	}
 }
 
-func TestCgroupGCModuleLeavesPopulatedScope(t *testing.T) {
-	parent := t.TempDir()
-	dir := cgroup.ScopeDir(parent, "BUSY")
-	if err := os.MkdirAll(filepath.Join(dir, "child"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+func TestCgroupGCModuleCollectRemoveFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		errno   syscall.Errno
+		wantErr bool
+	}{
+		{name: "kernel refuses a populated scope", errno: syscall.EBUSY},
+		{name: "any other refusal surfaces", errno: syscall.ENOTEMPTY, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := removeScope
+			removeScope = func(string, string) error {
+				return &fs.PathError{Op: "remove", Path: "vm-BUSY.scope", Err: tt.errno}
+			}
+			t.Cleanup(func() { removeScope = orig })
 
-	m := CgroupGCModule(parent, noVMInUse)
-	if err := m.Collect(t.Context(), []string{"BUSY"}, nil); err == nil {
-		t.Error("want error for populated scope, got nil")
-	}
-	if _, err := os.Stat(dir); err != nil {
-		t.Errorf("populated scope removed: %v", err)
+			err := CgroupGCModule(t.TempDir(), noVMInUse).Collect(t.Context(), []string{"BUSY"}, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Collect = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 

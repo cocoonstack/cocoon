@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,11 +24,7 @@ func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	vmm := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
-	vmm.Args[0] = "previous-" + b.Conf.BinaryName()
-	if err := vmm.Start(); err != nil {
-		t.Fatalf("start fake VMM: %v", err)
-	}
+	vmm := startFakeVMM(t, "previous-"+b.Conf.BinaryName(), sockPath)
 	exited := make(chan struct{})
 	go func() {
 		_ = vmm.Wait()
@@ -39,11 +34,6 @@ func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
 		_ = vmm.Process.Kill()
 		<-exited
 	})
-	if err := utils.WaitFor(ctx, 5*time.Second, time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(vmm.Process.Pid, sockPath), nil
-	}); err != nil {
-		t.Fatalf("fake VMM never execed: %v", err)
-	}
 	if err := utils.WritePIDFile(b.PIDFilePath(dir), vmm.Process.Pid); err != nil {
 		t.Fatalf("write pidfile: %v", err)
 	}
@@ -90,12 +80,7 @@ func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	child := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
-	child.Args[0] = b.Conf.BinaryName()
-	if err := child.Start(); err != nil {
-		t.Fatalf("start fake VMM child: %v", err)
-	}
-	t.Cleanup(func() { _ = child.Wait() })
+	child := startFakeVMM(t, b.Conf.BinaryName(), sockPath)
 	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		t.Fatalf("scan: %v", err)

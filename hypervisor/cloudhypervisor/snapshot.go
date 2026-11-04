@@ -46,6 +46,9 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := hotAttachedError(info.Config.Fs, info.Config.Devices, info.Config.Disks); err != nil {
 				return err
 			}
+			if len(info.Config.Nets) != len(rec.NetworkConfigs) {
+				return fmt.Errorf("vm %s has %d NICs but its record has %d; rerun vm net first", rec.ID, len(info.Config.Nets), len(rec.NetworkConfigs))
+			}
 			if err := waitBalloonSettled(ctx, hc, rec.ID, info); err != nil {
 				return err
 			}

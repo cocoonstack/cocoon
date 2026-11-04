@@ -73,6 +73,9 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			if a == nil {
+				t.Fatalf("record a missing after crash at %s", step)
+			}
 			switch {
 			case (*a)["v"] == 1 && b == nil:
 			case (*a)["v"] == 2 && b != nil && (*b)["v"] == 2:
@@ -87,20 +90,9 @@ func TestPrevRecovery(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int]("alpha", "records")
 	path := filepath.Join(dir, "alpha.json")
 
-	for gen := 1; gen <= 2; gen++ {
-		v := map[string]int{"gen": gen}
-		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-			if gen == 1 {
-				return c.Insert(ctx, w, "a", &v)
-			}
-			return c.Replace(ctx, w, "a", &v)
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeTwoGenerations(t, s)
 	if err := os.WriteFile(path, []byte("{torn"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +100,7 @@ func TestPrevRecovery(t *testing.T) {
 	s2 := newStore(t, dir, "alpha")
 	c2 := meta.NewCollection[map[string]int]("alpha", "records")
 	got, err := mustGet(t, s2, "alpha", "a")
-	if err != nil || (*got)["gen"] != 1 {
+	if err != nil || got == nil || (*got)["gen"] != 1 {
 		t.Fatalf("recovered generation: %v, %v", got, err)
 	}
 
@@ -137,8 +129,11 @@ func TestCorruptBothGenerations(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
 	path := filepath.Join(dir, "alpha.json")
-	if err := os.WriteFile(path, []byte("{torn"), 0o644); err != nil {
-		t.Fatal(err)
+	writeTwoGenerations(t, s)
+	for _, p := range []string{path, path + prevSuffix} {
+		if err := os.WriteFile(p, []byte("{torn"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	err := s.View(ctx, []string{"alpha"}, func(meta.Reader) error { return nil })
 	if !errors.Is(err, meta.ErrCorrupt) {
@@ -318,23 +313,11 @@ func TestCleanUpdateSkipsCommit(t *testing.T) {
 }
 
 func TestTrailingDataFallsBackToPrev(t *testing.T) {
-	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
-	c := meta.NewCollection[map[string]int]("alpha", "records")
 	path := filepath.Join(dir, "alpha.json")
 
-	for gen := 1; gen <= 2; gen++ {
-		v := map[string]int{"gen": gen}
-		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-			if gen == 1 {
-				return c.Insert(ctx, w, "a", &v)
-			}
-			return c.Replace(ctx, w, "a", &v)
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeTwoGenerations(t, s)
 
 	main, err := os.ReadFile(path)
 	if err != nil {
@@ -345,7 +328,7 @@ func TestTrailingDataFallsBackToPrev(t *testing.T) {
 	}
 	s2 := newStore(t, dir, "alpha")
 	got, err := mustGet(t, s2, "alpha", "a")
-	if err != nil || (*got)["gen"] != 1 {
+	if err != nil || got == nil || (*got)["gen"] != 1 {
 		t.Fatalf("trailing-data main was served instead of .prev: %v, %v", got, err)
 	}
 }
@@ -360,6 +343,20 @@ func (c *crashPoint) hook(step string) error {
 		return c.err
 	}
 	return nil
+}
+
+func writeTwoGenerations(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := t.Context()
+	c := meta.NewCollection[map[string]int]("alpha", "records")
+	for gen := 1; gen <= 2; gen++ {
+		v := map[string]int{"gen": gen}
+		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
+			return c.Upsert(ctx, w, "a", &v)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func mustGet(t *testing.T, s *Store, ns, id string) (*map[string]int, error) {

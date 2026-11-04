@@ -94,10 +94,7 @@ func TestNetResizeRemoveResumesWithoutLiveDevice(t *testing.T) {
 	if res.After != 0 || len(res.Removed) != 1 {
 		t.Fatalf("res = %+v, want the NIC removed and After=0", res)
 	}
-	fresh, err := b.PeekRecord(ctx, "vm7")
-	if err != nil {
-		t.Fatalf("read record: %v", err)
-	}
+	fresh := recordOf(t, b, "vm7")
 	if len(fresh.NetworkConfigs) != 0 {
 		t.Fatalf("record still carries %d NICs, want the stale NIC truncated", len(fresh.NetworkConfigs))
 	}
@@ -146,10 +143,7 @@ func TestNetResizeWithAddsAndPersists(t *testing.T) {
 	if !slices.Equal(plumbing.queues, []int{4, 4}) {
 		t.Fatalf("tap queues = %v, want the device's queue rule applied to every new slot", plumbing.queues)
 	}
-	fresh, err := b.PeekRecord(ctx, "vm2")
-	if err != nil {
-		t.Fatalf("read record: %v", err)
-	}
+	fresh := recordOf(t, b, "vm2")
 	if len(fresh.NetworkConfigs) != 3 || fresh.NetworkConfigs[2].MAC != "aa:bb:cc:dd:ee:03" {
 		t.Fatalf("record NICs = %+v, want three with the new MACs persisted", fresh.NetworkConfigs)
 	}
@@ -171,10 +165,7 @@ func TestNetResizeAddRollsBackHostSlotOnDeviceFailure(t *testing.T) {
 	if !slices.Equal(plumbing.removed, []int{1}) {
 		t.Fatalf("plumbing.removed = %v, want the fresh host slot 1 rolled back", plumbing.removed)
 	}
-	fresh, err := b.PeekRecord(ctx, "vm3")
-	if err != nil {
-		t.Fatalf("read record: %v", err)
-	}
+	fresh := recordOf(t, b, "vm3")
 	if len(fresh.NetworkConfigs) != 1 {
 		t.Fatalf("record NICs = %d, want the failed NIC never persisted", len(fresh.NetworkConfigs))
 	}
@@ -206,10 +197,7 @@ func TestNetResizeWithPersistsTheNetworkOfTheFirstNIC(t *testing.T) {
 			if _, err := b.NetResizeWith(ctx, "vm4", &rec, &fakeNICDevices{}, &stubPlumbing{defaultNetwork: "cni-a"}, 1); err != nil {
 				t.Fatalf("NetResizeWith: %v", err)
 			}
-			fresh, err := b.PeekRecord(ctx, "vm4")
-			if err != nil {
-				t.Fatalf("read record: %v", err)
-			}
+			fresh := recordOf(t, b, "vm4")
 			if fresh.Config.Network != tt.want {
 				t.Fatalf("record network = %q, want %q", fresh.Config.Network, tt.want)
 			}

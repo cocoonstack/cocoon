@@ -40,13 +40,15 @@ func TestWatchFileDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, err := watchFile(t.Context(), target, 2*time.Second)
+	const debounce = 200 * time.Millisecond
+	ch, err := watchFile(t.Context(), target, debounce)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	start := time.Now()
 	for i := range 5 {
-		if err := utils.AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644, utils.Sync); err != nil {
+		if err := utils.AtomicWriteFile(target, []byte{byte('0' + i)}, 0o644, utils.NoSync); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,11 +58,14 @@ func TestWatchFileDebounce(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for debounced signal")
 	}
+	if elapsed := time.Since(start); elapsed < debounce {
+		t.Fatalf("signal after %s, want it held for the %s debounce", elapsed, debounce)
+	}
 
 	select {
 	case <-ch:
 		t.Fatal("unexpected second signal within debounce window")
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(debounce / 2):
 	}
 }
 

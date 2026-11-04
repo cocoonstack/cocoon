@@ -86,8 +86,7 @@ func TestRecoverDeletingClosesMetering(t *testing.T) {
 			rec := seedProtoVM(t, b, "vmproto-meter")
 			if tt.open {
 				if err := b.UpdateRecord(ctx, "vmproto-meter", func(r *VMRecord) error {
-					now := timeNow()
-					r.StartedAt = &now
+					r.StartedAt = new(timeNow())
 					return nil
 				}); err != nil {
 					t.Fatal(err)

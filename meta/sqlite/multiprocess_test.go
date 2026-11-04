@@ -164,12 +164,13 @@ func TestKillStormAtomicity(t *testing.T) {
 			t.Fatal(err)
 		}
 		sc := bufio.NewScanner(pipe)
+		want := 3 + round*2
 		got := 0
 		for sc.Scan() {
 			if id, ok := strings.CutPrefix(sc.Text(), "ACK "); ok {
 				acked[id] = struct{}{}
 				got++
-				if got >= 3+round*2 {
+				if got >= want {
 					break
 				}
 			}
@@ -178,6 +179,9 @@ func TestKillStormAtomicity(t *testing.T) {
 			t.Fatalf("kill worker: %v", err)
 		}
 		_ = cmd.Wait()
+		if got < want {
+			t.Fatalf("round %d: worker acked %d transactions, want at least %d", round, got, want)
+		}
 	}
 
 	s := newStore(t, dir, "alpha")

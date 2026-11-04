@@ -60,8 +60,8 @@ func TestWaitFor_ContextCanceled(t *testing.T) {
 	err := WaitFor(ctx, time.Second, 10*time.Millisecond, func() (bool, error) {
 		return false, nil
 	})
-	if err == nil {
-		t.Fatal("expected error for canceled context")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want context.Canceled", err)
 	}
 }
 

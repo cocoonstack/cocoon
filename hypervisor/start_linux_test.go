@@ -2,7 +2,6 @@ package hypervisor
 
 import (
 	"context"
-	"os/exec"
 	"slices"
 	"testing"
 
@@ -15,11 +14,7 @@ func TestStartSequenceRelaunchesWhenTheScannedVMMDiedBeforeTheLock(t *testing.T)
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	vmm := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
-	vmm.Args[0] = b.Conf.BinaryName()
-	if err := vmm.Start(); err != nil {
-		t.Fatalf("start fake VMM: %v", err)
-	}
+	vmm := startFakeVMM(t, b.Conf.BinaryName(), sockPath)
 	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		t.Fatalf("scan: %v", err)

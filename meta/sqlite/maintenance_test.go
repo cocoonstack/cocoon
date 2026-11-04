@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -19,32 +20,50 @@ func TestBackupFidelity(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
-	put := func(id, val string) {
-		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+	write := func(id, val string) error {
+		return s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
 			return w.PutRaw(ctx, "vms", "records", id, jsontext.Value(val), false)
 		})
-		if err != nil {
+	}
+	put := func(id, val string) {
+		if err := write(id, val); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
 
 	put("marker", `{"v":1}`)
 	stop := make(chan struct{})
-	go func() {
+	started := make(chan struct{})
+	var churnErr error
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		for i := 0; ; i++ {
 			select {
 			case <-stop:
 				return
 			default:
-				put("churn", `{"i":`+string(rune('0'+i%10))+`}`)
+			}
+			err := write("churn", `{"i":`+string(rune('0'+i%10))+`}`)
+			if i == 0 {
+				close(started)
+			}
+			if err != nil {
+				churnErr = err
+				return
 			}
 		}
-	}()
+	})
+	<-started
 	dest := filepath.Join(dir, "backup", "meta.db")
-	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
-		t.Fatalf("backup: %v", err)
-	}
+	backupErr := Backup(ctx, filepath.Join(dir, DBFileName), dest)
 	close(stop)
+	wg.Wait()
+	if churnErr != nil {
+		t.Fatalf("churn write: %v", churnErr)
+	}
+	if backupErr != nil {
+		t.Fatalf("backup: %v", backupErr)
+	}
 	if raw, ok := backupGet(t, dest, "marker"); !ok || raw != `{"v":1}` {
 		t.Fatalf("marker missing from backup: %q ok=%v", raw, ok)
 	}
@@ -72,6 +91,7 @@ func TestBackupCrashSteps(t *testing.T) {
 	if err := Backup(ctx, filepath.Join(dir, DBFileName), dest); err != nil {
 		t.Fatalf("publish first backup: %v", err)
 	}
+	t.Cleanup(func() { testBackupStep = nil })
 
 	errCrash := errors.New("injected crash")
 	for _, step := range []string{"vacuumed", "verified", "synced", "renamed"} {
@@ -133,14 +153,24 @@ func TestBusyCtxDeadline(t *testing.T) {
 
 	held := make(chan struct{})
 	release := make(chan struct{})
+	holderErr := make(chan error, 1)
 	go func() {
-		_ = s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(meta.Writer) error {
+		holderErr <- s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(meta.Writer) error {
 			close(held)
 			<-release
 			return nil
 		})
 	}()
-	<-held
+	select {
+	case <-held:
+	case err := <-holderErr:
+		t.Fatalf("holder update ended before holding the writer: %v", err)
+	}
+	defer func() {
+		if err := <-holderErr; err != nil {
+			t.Errorf("holder update: %v", err)
+		}
+	}()
 	defer close(release)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)

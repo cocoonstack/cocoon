@@ -142,12 +142,15 @@ func testDetached(t *testing.T, factory Factory) {
 		for i := range raw {
 			raw[i] = 'X'
 		}
-		return w.ScanRaw(ctx, nsAlpha, "records", func(_ string, raw jsontext.Value) error {
+		if err := w.ScanRaw(ctx, nsAlpha, "records", func(_ string, raw jsontext.Value) error {
 			for i := range raw {
 				raw[i] = 'Y'
 			}
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
+		return w.PutRaw(ctx, nsAlpha, "records", "dirty", jsontext.Value(`{}`), false)
 	})
 	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
 		t.Fatalf("raw read aliased engine state: %v %v", again, err)
@@ -214,7 +217,6 @@ func testForcedRetry(t *testing.T, factory Factory) {
 	s := ForcedRetry(factory(t, []string{nsAlpha}))
 	c := meta.NewCollection[record](nsAlpha, "records")
 
-	// The correct pattern: accumulate inside, publish only after nil return.
 	var out []string
 	runs := 0
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
@@ -258,18 +260,25 @@ func testCtxVsHeldWriter(t *testing.T, factory Factory) {
 
 	held := make(chan struct{})
 	release := make(chan struct{})
-	holderDone := make(chan struct{})
+	holderErr := make(chan error, 1)
 	var heldOnce sync.Once
 	go func() {
-		defer close(holderDone)
-		_ = s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
+		holderErr <- s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
 			heldOnce.Do(func() { close(held) })
 			<-release
 			return c.Insert(ctx, w, "holder", &record{})
 		})
 	}()
-	<-held
-	defer func() { <-holderDone }()
+	select {
+	case <-held:
+	case err := <-holderErr:
+		t.Fatalf("holder update ended before holding the writer: %v", err)
+	}
+	defer func() {
+		if err := <-holderErr; err != nil {
+			t.Errorf("holder update: %v", err)
+		}
+	}()
 	defer close(release)
 
 	dctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)

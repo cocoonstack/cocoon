@@ -130,9 +130,6 @@ func resolveRestoreMode(ctx context.Context, mode string, mem chMemory) string {
 
 // vm.restore replays the snapshot's guest MACs verbatim, so drifted NIC identity must fail first.
 func validateRestoreNICs(chCfg *chVMConfig, rec *hypervisor.VMRecord) error {
-	if len(chCfg.Nets) != len(rec.NetworkConfigs) {
-		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(chCfg.Nets), len(rec.NetworkConfigs))
-	}
 	macs := make([]string, len(chCfg.Nets))
 	for i, n := range chCfg.Nets {
 		macs[i] = n.MAC

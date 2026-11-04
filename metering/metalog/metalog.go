@@ -30,6 +30,7 @@ func New(s meta.Store) *Recorder {
 }
 
 func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
+	ctx = context.WithoutCancel(ctx)
 	err := r.store.Update(ctx, meta.Scope{Write: NamespaceName}, meta.CommitRelaxed, func(w meta.Writer) error {
 		_, aerr := r.log.Append(ctx, w, &e, meta.RelaxedOK)
 		return aerr

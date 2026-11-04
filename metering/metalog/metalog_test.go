@@ -1,6 +1,7 @@
 package metalog
 
 import (
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"path/filepath"
@@ -11,6 +12,40 @@ import (
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/metering"
 )
+
+func TestEmitSurvivesACanceledContext(t *testing.T) {
+	dir := t.TempDir()
+	s, err := metajson.Open(metajson.Namespace{
+		Name:     NamespaceName,
+		FilePath: filepath.Join(dir, "log.json"),
+		LockPath: filepath.Join(dir, "log.lock"),
+		Codec:    metajson.GenericCodec{},
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	New(s).Emit(ctx, metering.Entry{Kind: metering.KindVMStorageStop, VMID: "vm1"})
+
+	entries := 0
+	err = s.View(t.Context(), []string{NamespaceName}, func(rd meta.Reader) error {
+		return rd.ScanRaw(t.Context(), NamespaceName, TableEntries, func(id string, _ jsontext.Value) error {
+			if _, err := strconv.ParseUint(id, 10, 64); err == nil {
+				entries++
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if entries != 1 {
+		t.Fatalf("entries = %d, want the stop event kept after SIGTERM canceled the context", entries)
+	}
+}
 
 func TestEmitAppendsInOrder(t *testing.T) {
 	dir := t.TempDir()

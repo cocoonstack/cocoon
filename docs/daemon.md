@@ -74,6 +74,8 @@ a rotation, or run the `meta` metering backend instead.
 The `file` backend only ever appends: cocoon never rotates, truncates, or prunes
 the ledger, so it grows without bound until an external rotation trims it.
 
+Each entry is written after the state change it reports commits. A SIGKILL between the two loses that entry and a retry does not write it again, and a retried restore can repeat a stop, so downstream must tolerate an unpaired or repeated endpoint.
+
 `--gc-interval` runs the same sweep as a bare `cocoon gc` — orphans and stale
 records only. It never evicts healthy snapshots by access recency: the LRU policy
 — including the `--snapshot-size` storage cap — comes from the `gc --snapshot*`

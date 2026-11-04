@@ -14,6 +14,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
+var removeScope = cgroup.RemoveEmpty
+
 // removeCgroupScope reclaims id's scope after its VMM is confirmed dead; failure is left for the next converge/GC pass.
 func (b *Backend) removeCgroupScope(ctx context.Context, id string) {
 	if err := cgroup.Remove(ctx, b.Conf.CgroupParentDir(), id); err != nil {
@@ -42,7 +44,7 @@ func CgroupGCModule(parentDir string, vmInUse network.VMInUse) gc.Module[[]strin
 					continue
 				}
 				// A scope populated since the VM snapshot was read belongs to a launch in flight, not to an orphan
-				err := cgroup.RemoveEmpty(parentDir, id)
+				err := removeScope(parentDir, id)
 				if errors.Is(err, syscall.EBUSY) {
 					logger.Infof(ctx, "skipped scope vm-%s reason=populated", id)
 					continue

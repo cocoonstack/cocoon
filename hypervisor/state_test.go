@@ -110,7 +110,7 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 	if got := rec.Entries(); len(got) != 0 {
 		t.Fatalf("MarkError emitted %d; want 0", len(got))
 	}
-	loaded, _ := b.LoadRecord(ctx, "vm1")
+	loaded := recordOf(t, b, "vm1")
 	if loaded.StoppedAt != nil {
 		t.Errorf("MarkError must not write StoppedAt; got %v", loaded.StoppedAt)
 	}
@@ -142,7 +142,7 @@ func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopUser {
 		t.Fatalf("got %+v, want one compute.stop reason=user", entries)
 	}
-	loaded, _ := b.LoadRecord(ctx, "vm1")
+	loaded := recordOf(t, b, "vm1")
 	if loaded.StoppedAt == nil {
 		t.Error("StoppedAt nil after Stopped transition")
 	}
@@ -155,12 +155,12 @@ func TestDeleteForceClosesIntervalAfterMarkError(t *testing.T) {
 	b.MarkError(ctx, "vm1")
 	rec.Reset()
 
-	loaded, _ := b.LoadRecord(ctx, "vm1")
-	if !hasOpenComputeInterval(&loaded) {
+	loaded := recordOf(t, b, "vm1")
+	if !hasOpenComputeInterval(loaded) {
 		t.Fatal("interval should still be open after MarkError")
 	}
 
-	b.emitDeleteClose(ctx, "vm1", shapeFromConfig(loaded.Config), metering.ReasonStopCrash, hasOpenComputeInterval(&loaded))
+	b.emitDeleteClose(ctx, "vm1", shapeFromConfig(loaded.Config), metering.ReasonStopCrash, hasOpenComputeInterval(loaded))
 	entries := rec.Entries()
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (compute.stop + storage.stop)", len(entries))
@@ -319,23 +319,21 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 }
 
 func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
-	b, rec := newMeteringTestBackend(t)
+	b, running := newHibernateTestVM(t)
+	rec := meteringcapture.New()
+	b.Metering = rec
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm-stopped", 1, 1<<30, 10<<30, false)
-	seedRunningVM(t, b, "vm-running", 1, 1<<30, 10<<30)
 	seedRunningVM(t, b, "vm-stale", 2, 2<<30, 20<<30)
 
-	startOne := func(ctx context.Context, id string, _ *utils.ProcScan) error {
-		switch id {
-		case "vm-stopped", "vm-stale":
-			return b.MarkStarted(ctx, id)
-		case "vm-running":
-			return nil
-		}
-		return fmt.Errorf("unexpected id: %s", id)
+	startOne := func(ctx context.Context, id string, scan *utils.ProcScan) error {
+		return b.StartSequence(ctx, id, scan, StartSpec{
+			Launch:          func(context.Context, *VMRecord, string) (int, error) { return 4242, nil },
+			ConvergeRunning: func(context.Context, *VMRecord, string, int) error { return nil },
+		})
 	}
 
-	succeeded, err := b.StartAll(ctx, []string{"vm-stopped", "vm-running", "vm-stale"}, startOne)
+	succeeded, err := b.StartAll(ctx, []string{"vm-stopped", running, "vm-stale"}, startOne)
 	if err != nil {
 		t.Fatalf("StartAll: %v", err)
 	}
@@ -345,14 +343,14 @@ func TestStartAllOnlyEmitsForActuallyLaunched(t *testing.T) {
 
 	entries := rec.Entries()
 	if len(entries) != 3 {
-		t.Fatalf("got %d entries, want 3 (vm-stopped: start; vm-stale: stop-crash + start; vm-running: none)", len(entries))
+		t.Fatalf("got %d entries, want 3 (vm-stopped: start; vm-stale: stop-crash + start; live VMM: none)", len(entries))
 	}
 	byVM := map[string][]metering.Entry{}
 	for _, e := range entries {
 		byVM[e.VMID] = append(byVM[e.VMID], e)
 	}
-	if got := byVM["vm-running"]; len(got) != 0 {
-		t.Errorf("vm-running emitted %d entries; want 0", len(got))
+	if got := byVM[running]; len(got) != 0 {
+		t.Errorf("%s emitted %d entries; want 0", running, len(got))
 	}
 	if got := byVM["vm-stopped"]; len(got) != 1 || got[0].Kind != metering.KindVMComputeStart || got[0].Reason != metering.ReasonBoot {
 		t.Errorf("vm-stopped: got %+v, want 1× compute.start reason=boot", got)
@@ -452,14 +450,14 @@ func TestReconcileToRunningOrphanLaunchEmitsStart(t *testing.T) {
 
 	b.ReconcileToRunning(ctx, "vm1")
 
-	loaded, _ := b.LoadRecord(ctx, "vm1")
+	loaded := recordOf(t, b, "vm1")
 	if loaded.State != types.VMStateRunning {
 		t.Errorf("State=%s, want Running", loaded.State)
 	}
 	if !loaded.FirstBooted {
 		t.Error("FirstBooted should be true after orphan reconcile")
 	}
-	if !hasOpenComputeInterval(&loaded) {
+	if !hasOpenComputeInterval(loaded) {
 		t.Error("compute interval should be open after orphan reconcile")
 	}
 	entries := rec.Entries()
@@ -492,7 +490,7 @@ func TestReconcileToRunningIdempotent(t *testing.T) {
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("idempotent reconcile must not emit; got %d", len(got))
 	}
-	loaded, _ := b.LoadRecord(ctx, "vm1")
+	loaded := recordOf(t, b, "vm1")
 	if loaded.State != types.VMStateRunning {
 		t.Errorf("State=%s, want Running (unchanged)", loaded.State)
 	}

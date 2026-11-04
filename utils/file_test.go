@@ -95,7 +95,9 @@ func TestScanFileStems_Basic(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	os.Mkdir(filepath.Join(dir, "skip.erofs"), 0o755)
+	if err := os.Mkdir(filepath.Join(dir, "skip.erofs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	stems, err := ScanFileStems(dir, ".erofs")
 	if err != nil {

@@ -19,7 +19,7 @@ func TestReconcileConvergesDeadRunningRecord(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 7))
 	newTestDaemon(t, f).reconcile(t.Context())
 
-	if len(f.converged) != 1 || f.converged[0] != (convergeCall{vmID: "vm1", gen: 7}) {
+	if len(f.converged) != 1 || f.converged[0].vmID != "vm1" || f.converged[0].gen != 7 {
 		t.Fatalf("got %+v, want one convergence fenced on generation 7", f.converged)
 	}
 }
@@ -142,6 +142,9 @@ func TestHandleExitConvergesWatchedGeneration(t *testing.T) {
 	if len(f.converged) != 1 || f.converged[0].gen != 4 {
 		t.Fatalf("got %+v, want one convergence at generation 4", f.converged)
 	}
+	if !f.converged[0].at.Equal(at) {
+		t.Errorf("got stop dated %v, want the watcher's observation %v", f.converged[0].at, at)
+	}
 }
 
 func TestHandleExitDropsStaleGeneration(t *testing.T) {
@@ -218,6 +221,7 @@ func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 type convergeCall struct {
 	vmID string
 	gen  uint64
+	at   time.Time
 }
 
 type fakeSupervisor struct {
@@ -283,12 +287,12 @@ func (f *fakeSupervisor) PeekRecord(_ context.Context, vmID string) (*hypervisor
 	return f.records[vmID], nil
 }
 
-func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, _ time.Time) error {
+func (f *fakeSupervisor) ConvergeDead(_ context.Context, vmID string, gen uint64, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rec := f.records[vmID]
 	if rec != nil && hypervisor.NeedsDeadConvergence(rec) && rec.TransitionGeneration == gen {
-		f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen})
+		f.converged = append(f.converged, convergeCall{vmID: vmID, gen: gen, at: at})
 		rec.State = types.VMStateStopped
 		rec.TransitionGeneration++
 	}

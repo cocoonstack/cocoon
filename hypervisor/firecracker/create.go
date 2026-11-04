@@ -52,6 +52,43 @@ func EnsureVmlinuxBoot(boot *types.BootConfig) error {
 	return nil
 }
 
+// ensureVmlinux decompresses kernelPath if needed and returns the ELF path.
+func ensureVmlinux(kernelPath string) (string, error) {
+	f, err := os.Open(kernelPath) //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("open kernel: %w", err)
+	}
+	var magic [4]byte
+	_, err = io.ReadFull(f, magic[:])
+	_ = f.Close()
+	if err != nil {
+		return "", fmt.Errorf("read kernel magic: %w", err)
+	}
+	if bytes.Equal(magic[:], elfMagic) {
+		return kernelPath, nil
+	}
+
+	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
+	if utils.FileExists(vmlinuxPath) {
+		return vmlinuxPath, nil
+	}
+
+	data, err := os.ReadFile(kernelPath) //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("read kernel: %w", err)
+	}
+
+	decompressed, decompErr := decompressKernel(data)
+	if decompErr != nil {
+		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
+	}
+
+	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600, utils.Sync); err != nil {
+		return "", fmt.Errorf("write vmlinux: %w", err)
+	}
+	return vmlinuxPath, nil
+}
+
 func decompressKernel(data []byte) ([]byte, error) {
 	type kernelCodec struct {
 		name   string
@@ -121,41 +158,4 @@ func devPath(idx int) string {
 		return fmt.Sprintf("/dev/vd%c", 'a'+idx)
 	}
 	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
-}
-
-// ensureVmlinux decompresses kernelPath if needed and returns the ELF path.
-func ensureVmlinux(kernelPath string) (string, error) {
-	f, err := os.Open(kernelPath) //nolint:gosec
-	if err != nil {
-		return "", fmt.Errorf("open kernel: %w", err)
-	}
-	var magic [4]byte
-	_, err = io.ReadFull(f, magic[:])
-	_ = f.Close()
-	if err != nil {
-		return "", fmt.Errorf("read kernel magic: %w", err)
-	}
-	if bytes.Equal(magic[:], elfMagic) {
-		return kernelPath, nil
-	}
-
-	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
-	if utils.FileExists(vmlinuxPath) {
-		return vmlinuxPath, nil
-	}
-
-	data, err := os.ReadFile(kernelPath) //nolint:gosec
-	if err != nil {
-		return "", fmt.Errorf("read kernel: %w", err)
-	}
-
-	decompressed, decompErr := decompressKernel(data)
-	if decompErr != nil {
-		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
-	}
-
-	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600, utils.Sync); err != nil {
-		return "", fmt.Errorf("write vmlinux: %w", err)
-	}
-	return vmlinuxPath, nil
 }

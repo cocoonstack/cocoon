@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -139,24 +140,24 @@ func TestLockContextCancel(t *testing.T) {
 }
 
 func TestConcurrentLockUnlock(t *testing.T) {
-	l := New(lockPath(t))
+	path := lockPath(t)
 	ctx := t.Context()
 
-	var (
-		mu      sync.Mutex
-		counter int
-	)
+	var inside, overlaps atomic.Int32
 
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Go(func() {
+			l := New(path)
 			if err := l.Lock(ctx); err != nil {
 				t.Errorf("Lock: %v", err)
 				return
 			}
-			mu.Lock()
-			counter++
-			mu.Unlock()
+			if inside.Add(1) != 1 {
+				overlaps.Add(1)
+			}
+			time.Sleep(time.Millisecond)
+			inside.Add(-1)
 			if err := l.Unlock(ctx); err != nil {
 				t.Errorf("Unlock: %v", err)
 			}
@@ -164,8 +165,8 @@ func TestConcurrentLockUnlock(t *testing.T) {
 	}
 	wg.Wait()
 
-	if counter != 50 {
-		t.Fatalf("counter = %d, want 50", counter)
+	if n := overlaps.Load(); n != 0 {
+		t.Fatalf("%d holders overlapped inside the critical section", n)
 	}
 }
 

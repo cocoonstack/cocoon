@@ -73,6 +73,7 @@ func TestPreflightRestoreRefusesDriftedNICs(t *testing.T) {
 		{name: "MAC case differs", rec: recordWith(strings.ToUpper(snapMAC))},
 		{name: "drifted MAC", rec: recordWith("02:00:00:00:00:02"), wantErr: "nic 0 MAC drifted"},
 		{name: "NIC removed", rec: recordWith(), wantErr: "NIC identity must match"},
+		{name: "NIC added after the snapshot", rec: recordWith(snapMAC, "02:00:00:00:00:03"), wantErr: "NIC identity must match"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := fc.preflightRestore(srcDir, tt.rec)
@@ -86,6 +87,17 @@ func TestPreflightRestoreRefusesDriftedNICs(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
 		})
+	}
+
+	meta.NICMACs = []string{}
+	if err := snapshot.SaveSnapshotMeta(srcDir, meta); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+	if err := fc.preflightRestore(srcDir, recordWith()); err != nil {
+		t.Fatalf("preflight of a zero-NIC snapshot: %v", err)
+	}
+	if err := fc.preflightRestore(srcDir, recordWith(snapMAC)); err == nil || !strings.Contains(err.Error(), "NIC identity must match") {
+		t.Fatalf("err = %v, want the NIC added after a zero-NIC snapshot refused", err)
 	}
 
 	meta.NICMACs = nil
