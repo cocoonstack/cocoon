@@ -327,12 +327,16 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 }
 
 type stubNetwork struct {
+	recover func(context.Context, *types.VM) error
 	quiesce func(context.Context, *types.VM) error
 	cleanup func(context.Context, string) error
 }
 
-func (s stubNetwork) Recover(context.Context, *types.VM) error {
-	return nil
+func (s stubNetwork) Recover(ctx context.Context, vm *types.VM) error {
+	if s.recover == nil {
+		return nil
+	}
+	return s.recover(ctx, vm)
 }
 
 func (s stubNetwork) Quiesce(ctx context.Context, vm *types.VM) error {

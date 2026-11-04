@@ -152,6 +152,65 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 	}
 }
 
+func TestRestoreKeepsAQuiescePendingFromTheKillToTheVMM(t *testing.T) {
+	tests := []struct {
+		name           string
+		origin         types.VMState
+		pendingInApply bool
+	}{
+		{"running origin", types.VMStateRunning, true},
+		{"stopped origin", types.VMStateStopped, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := newMeteringTestBackend(t)
+			ctx := t.Context()
+			const id = "vm-restore-window"
+			seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
+			if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+				idx.VMs[id].RunDir = shortTempDir(t)
+				idx.VMs[id].NetSetup = types.NetSetup{
+					NetBackend:     types.BackendCNI,
+					NetworkConfigs: []*types.NetworkConfig{{}},
+				}
+				if tt.origin == types.VMStateStopped {
+					idx.VMs[id].State = tt.origin
+					idx.VMs[id].StoppedAt = new(timeNow())
+				}
+				return nil
+			}); err != nil {
+				t.Fatalf("seed network: %v", err)
+			}
+			pending := func() bool { return recordOf(t, b, id).QuiescePending }
+			b.SetNetwork(stubNetwork{recover: func(context.Context, *types.VM) error {
+				if !pending() {
+					t.Error("a kill during network recovery leaves no quiesce pending")
+				}
+				return nil
+			}})
+
+			_, err := b.DirectRestoreSequence(ctx, id, DirectRestoreSpec{
+				VMCfg:     &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
+				SrcDir:    t.TempDir(),
+				Preflight: func(string, *VMRecord) error { return nil },
+				Kill:      func(context.Context, string, *VMRecord) error { return nil },
+				Populate: func(*VMRecord, string) error {
+					if got := pending(); got != tt.pendingInApply {
+						t.Errorf("pending during populate = %v, want %v", got, tt.pendingInApply)
+					}
+					return nil
+				},
+				AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
+					return nil, errors.New("stop after the window")
+				},
+			})
+			if err == nil {
+				t.Fatal("expected the AfterExtract failure")
+			}
+		})
+	}
+}
+
 func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-merge-fail"

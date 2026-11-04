@@ -213,6 +213,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 		}
 		markTransition(r, types.VMStateStopped, types.TransitionRestore, now)
 		r.StoppedAt = &now
+		r.QuiescePending = needsQuiesce(r)
 		closed = true
 		return t.Put(vmID, r)
 	}); err != nil {
