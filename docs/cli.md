@@ -251,7 +251,7 @@ The dir is read-only across the call, so multiple clones of the same dir (golden
 
 ### Migrate Flags
 
-See [Live Migration](snapshots.md#live-migration).
+See [Live Migration](snapshots.md#live-migration). The source run dir needs a reflink filesystem; only XFS is tested, and ext4 is refused.
 
 `cocoon vm migrate capture`:
 

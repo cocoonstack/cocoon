@@ -176,7 +176,7 @@ To give up at any point before that, run `cocoon vm migrate abort my-vm --series
 Requirements:
 
 - **Hypervisor build**: the cocoonstack fork at `35b098c65260` or newer. An older VMM answers 404 on the first capture and nothing changes. A VM keeps the VMM it started on, so it needs a restart after an upgrade.
-- **Filesystem**: the source run dir must support reflink (XFS, btrfs); capture refuses otherwise before it pauses the guest. On the target, keep the copied directory on the filesystem of the run dir, so memory files hard-link and the directory can go after the receive.
+- **Filesystem**: the source run dir needs reflink, because disk deltas come from comparing extents the disk shares with a reflinked copy. XFS is the only filesystem tested. btrfs and bcachefs pass the capture check but are untested. ext4 and tmpfs have no reflink, so capture refuses before it pauses the guest. A target run dir without reflink falls back to a full disk copy (untested), and the VM then cannot migrate away from it. On the target, keep the copied directory on the filesystem of the run dir, so memory files hard-link and the directory can go after the receive.
 - **Devices**: a hot-attached disk, share or VFIO device refuses the capture, as it does for `snapshot save`.
 
 Rules for the caller:
