@@ -193,7 +193,7 @@ func printCommonCHArgs(s chDebugSpec) {
 	if s.VMCfg.Windows {
 		cpuExtra = ",kvm_hyperv=on"
 	}
-	fmt.Printf("  --cpus boot=%d,max=%d%s \\\n", s.VMCfg.CPU, s.MaxCPU, cpuExtra)
+	fmt.Printf("  --cpus boot=%d,max=%d%s \\\n", s.VMCfg.CPU, max(s.MaxCPU, s.VMCfg.CPU), cpuExtra)
 	fmt.Printf("  --memory %s \\\n", cloudhypervisor.DebugMemoryCLIArg(&s.VMCfg.Config))
 	fmt.Print("  --rng src=/dev/urandom \\\n")
 	if s.Balloon > 0 {
