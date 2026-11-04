@@ -1,7 +1,9 @@
 package cloudhypervisor
 
 import (
+	"encoding/binary"
 	"encoding/json/v2"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
@@ -267,6 +270,50 @@ func TestUpdateCOWPath_NoCOW(t *testing.T) {
 	}
 }
 
+func TestCloneBlobIDsDirectBoot(t *testing.T) {
+	configs := []*types.StorageConfig{
+		{Path: "/blobs/layer0.erofs", Role: types.StorageRoleLayer},
+		{Path: "/blobs/layer1.erofs", Role: types.StorageRoleLayer},
+		{Path: "/run/vm/cow.raw", Role: types.StorageRoleCOW},
+	}
+	boot := &types.BootConfig{KernelPath: "/boot/layer1/vmlinuz", InitrdPath: "/boot/layer0/initrd.img"}
+	got, err := cloneBlobIDs(configs, boot, "/run/vm/cow.raw")
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	want := map[string]struct{}{"layer0": {}, "layer1": {}}
+	if !maps.Equal(got, want) {
+		t.Fatalf("blob IDs = %v, want %v", got, want)
+	}
+}
+
+func TestCloneBlobIDsCloudimgPinsTheBackingBlob(t *testing.T) {
+	overlay := filepath.Join(t.TempDir(), "overlay.qcow2")
+	writeQcow2(t, overlay, "/blobs/basehex.qcow2")
+	configs := []*types.StorageConfig{{Path: overlay, Role: types.StorageRoleCOW}}
+	boot := &types.BootConfig{FirmwarePath: "/firmware/CLOUDHV.fd"}
+	got, err := cloneBlobIDs(configs, boot, overlay)
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	want := map[string]struct{}{"basehex": {}}
+	if !maps.Equal(got, want) {
+		t.Fatalf("blob IDs = %v, want the backing blob %v and not the overlay", got, want)
+	}
+}
+
+func TestCloneBlobIDsCloudimgWithoutBackingKeepsTheReservation(t *testing.T) {
+	overlay := filepath.Join(t.TempDir(), "overlay.qcow2")
+	writeQcow2(t, overlay, "")
+	got, err := cloneBlobIDs(nil, &types.BootConfig{FirmwarePath: "/firmware/CLOUDHV.fd"}, overlay)
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("blob IDs = %v, want nil so FinalizeClone keeps the reserved set", got)
+	}
+}
+
 func TestRestorePatchStorageConfigs(t *testing.T) {
 	configs := []*types.StorageConfig{
 		{Path: "/l", Role: types.StorageRoleLayer},
@@ -484,3 +531,17 @@ type tmpScopeConf struct {
 }
 
 func (c tmpScopeConf) CgroupParentDir() string { return c.parent }
+
+func writeQcow2(t *testing.T, path, backing string) {
+	t.Helper()
+	hdr := make([]byte, 64)
+	copy(hdr, utils.Qcow2Magic)
+	binary.BigEndian.PutUint32(hdr[4:8], 3)
+	if backing != "" {
+		binary.BigEndian.PutUint64(hdr[8:16], uint64(len(hdr)))
+		binary.BigEndian.PutUint32(hdr[16:20], uint32(len(backing))) //nolint:gosec // short test path
+	}
+	if err := os.WriteFile(path, append(hdr, backing...), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}

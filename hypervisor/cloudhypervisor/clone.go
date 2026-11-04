@@ -67,6 +67,10 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		return nil, fmt.Errorf("update COW path: %w", err)
 	}
 	updateDataDiskPaths(storageConfigs, runDir)
+	blobIDs, err := cloneBlobIDs(storageConfigs, bootCfg, cowPath)
+	if err != nil {
+		return nil, err
+	}
 
 	// Snapshot may omit cidata if taken post-restart.
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
@@ -135,7 +139,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
 	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
-	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
+	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
@@ -210,6 +214,20 @@ func parseCHConfig(path string) (*chVMConfig, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func cloneBlobIDs(storageConfigs []*types.StorageConfig, bootCfg *types.BootConfig, cowPath string) (map[string]struct{}, error) {
+	if hypervisor.IsDirectBoot(bootCfg) {
+		return hypervisor.ExtractBlobIDs(storageConfigs, bootCfg), nil
+	}
+	hdr, ok, err := utils.ReadQcow2Header(cowPath)
+	if err != nil {
+		return nil, fmt.Errorf("read overlay header: %w", err)
+	}
+	if !ok || hdr.BackingFile == "" {
+		return nil, nil
+	}
+	return map[string]struct{}{hypervisor.BlobHexFromPath(hdr.BackingFile): {}}, nil
 }
 
 func updateCloneCidataPath(storageConfigs []*types.StorageConfig, directBoot bool, cidataPath string) bool {
