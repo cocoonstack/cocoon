@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
-	"time"
 
 	"github.com/creack/pty"
 	"github.com/projecteru2/core/log"
@@ -20,8 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
-
-const relayResponseTimeout = 5 * time.Second
 
 func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, error) {
 	return fc.StartAll(ctx, refs, fc.startOne)
@@ -255,32 +251,6 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 	}
 	go relayCmd.Wait() //nolint:errcheck
 	return &cloneLeaseControl{commands: controlWriter, responses: readyReader}, nil
-}
-
-func waitRelayLeaseReady(ready *os.File) error {
-	return waitRelayLeaseResponse(ready, relayLeaseReadyCommand, "readiness")
-}
-
-func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
-	result := make(chan error, 1)
-	go func() {
-		var command [1]byte
-		_, err := io.ReadFull(response, command[:])
-		if err == nil && command[0] != want {
-			err = fmt.Errorf("unexpected response %d", command[0])
-		}
-		result <- err
-	}()
-	select {
-	case err := <-result:
-		if err != nil {
-			return fmt.Errorf("source-lease relay %s: %w", phase, err)
-		}
-		return nil
-	case <-time.After(relayResponseTimeout):
-		closeErr := response.Close()
-		return errors.Join(fmt.Errorf("source-lease relay %s timed out", phase), closeErr)
-	}
 }
 
 func launchArgs(rec *hypervisor.VMRecord, sockPath, fcLog string) []string {
