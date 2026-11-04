@@ -231,7 +231,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	})
 
 	deadline := time.Now().Add(2 * time.Second)
-	for !utils.VerifyProcessCmdline(cmd.Process.Pid, b.Conf.BinaryName(), sock) {
+	for !utils.VerifyProcessCmdline(cmd.Process.Pid, sock) {
 		if time.Now().After(deadline) {
 			t.Fatal("stub vmm did not exec in time")
 		}

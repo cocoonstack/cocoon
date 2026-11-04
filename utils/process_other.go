@@ -14,10 +14,10 @@ func FindVMMByCmdline(_, _ string) ([]int, error) {
 	return nil, nil
 }
 
-func verifyProcessCmdline(_ int, _, _ string) (bool, error) {
+func verifyProcessCmdline(_ int, _ string) (bool, error) {
 	return false, errors.New("verifyProcessCmdline: unsupported on this OS")
 }
 
-func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, error) {
-	return VerifyProcessCmdline(pid, binaryName, expectArg), nil
+func verifyProcessForTermination(pid int, expectArg string) (bool, error) {
+	return VerifyProcessCmdline(pid, expectArg), nil
 }

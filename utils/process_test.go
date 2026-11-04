@@ -133,10 +133,10 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 }
 
 func TestVerifyProcessCmdline_InvalidPID(t *testing.T) {
-	if VerifyProcessCmdline(0, "x", "y") {
+	if VerifyProcessCmdline(0, "y") {
 		t.Error("expected false for PID 0")
 	}
-	if VerifyProcessCmdline(-1, "x", "y") {
+	if VerifyProcessCmdline(-1, "y") {
 		t.Error("expected false for PID -1")
 	}
 }
@@ -147,7 +147,7 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 		t.Fatalf("start sleep: %v", err)
 	}
 	pid := cmd.Process.Pid
-	waitForExec(t, pid, "sleep", "60")
+	waitForExec(t, pid, "60")
 
 	waitDone := make(chan struct{})
 	go func() {
@@ -164,7 +164,7 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	err := TerminateProcess(ctx, pid, "sleep", "60", 2*time.Second)
+	err := TerminateProcess(ctx, pid, "60", 2*time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestTerminateProcess_AlreadyDead(t *testing.T) {
 
 	ctx := t.Context()
 
-	err := TerminateProcess(ctx, pid, "true", "true", 1*time.Second)
+	err := TerminateProcess(ctx, pid, "true", 1*time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess on dead process: %v", err)
 	}
@@ -191,21 +191,21 @@ func TestTerminateProcess_AlreadyDead(t *testing.T) {
 func TestTerminateProcess_InvalidPID(t *testing.T) {
 	ctx := t.Context()
 
-	if err := TerminateProcess(ctx, 0, "x", "x", time.Second); err != nil {
+	if err := TerminateProcess(ctx, 0, "x", time.Second); err != nil {
 		t.Errorf("expected nil for PID 0, got %v", err)
 	}
-	if err := TerminateProcess(ctx, -1, "x", "x", time.Second); err != nil {
+	if err := TerminateProcess(ctx, -1, "x", time.Second); err != nil {
 		t.Errorf("expected nil for PID -1, got %v", err)
 	}
 }
 
 func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
-	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`)
+	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`, "vmm-sock")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	pid := cmd.Process.Pid
-	waitForExec(t, pid, "bash", "sleep")
+	waitForExec(t, pid, "vmm-sock")
 
 	waitDone := make(chan struct{})
 	go func() {
@@ -218,7 +218,7 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 	}()
 
 	ctx := t.Context()
-	err := TerminateProcess(ctx, pid, "bash", "sleep", 200*time.Millisecond)
+	err := TerminateProcess(ctx, pid, "vmm-sock", 200*time.Millisecond)
 	if err != nil {
 		t.Fatalf("TerminateProcess: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
-	waitForExec(t, pid, "sleep", "60")
+	waitForExec(t, pid, "60")
 	defer func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -280,7 +280,7 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_ = TerminateProcess(ctx, pid, "sleep", "60", 100*time.Millisecond)
+	_ = TerminateProcess(ctx, pid, "60", 100*time.Millisecond)
 }
 
 func TestWaitProcessExitReturnsOnExit(t *testing.T) {
@@ -317,11 +317,11 @@ func TestWaitProcessExitTimesOutOnALiveProcess(t *testing.T) {
 	}
 }
 
-func waitForExec(t *testing.T, pid int, binaryName, expectArg string) {
+func waitForExec(t *testing.T, pid int, expectArg string) {
 	t.Helper()
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
-		return VerifyProcessCmdline(pid, binaryName, expectArg), nil
+		return VerifyProcessCmdline(pid, expectArg), nil
 	}); err != nil {
-		t.Fatalf("child never execed into %s, so TerminateProcess would decline the mismatched cmdline (#87): %v", binaryName, err)
+		t.Fatalf("child never execed into %s, so TerminateProcess would decline the mismatched cmdline (#87): %v", expectArg, err)
 	}
 }

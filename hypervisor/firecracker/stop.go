@@ -35,5 +35,5 @@ func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
 }
 
 func (fc *Firecracker) forceTerminate(ctx context.Context, sockPath string, pid int) error {
-	return utils.TerminateProcess(ctx, pid, fc.conf.BinaryName(), sockPath, fc.conf.TerminateGracePeriod())
+	return utils.TerminateProcess(ctx, pid, sockPath, fc.conf.TerminateGracePeriod())
 }

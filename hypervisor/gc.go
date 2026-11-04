@@ -224,7 +224,7 @@ func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bo
 func (b *Backend) ensureOrphanVMMDead(ctx context.Context, runDir string) error {
 	sockPath := SocketPath(runDir)
 	if pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir)); err == nil {
-		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+		if termErr := utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
 			return termErr
 		}
 	}
@@ -233,7 +233,7 @@ func (b *Backend) ensureOrphanVMMDead(ctx context.Context, runDir string) error 
 		return fmt.Errorf("/proc scan: %w", err)
 	}
 	for _, pid := range pids {
-		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+		if termErr := utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
 			return termErr
 		}
 	}

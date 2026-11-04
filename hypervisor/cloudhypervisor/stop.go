@@ -43,5 +43,5 @@ func (ch *CloudHypervisor) forceTerminate(ctx context.Context, hc *http.Client, 
 	if err := shutdownVM(ctx, hc); err != nil {
 		log.WithFunc("cloudhypervisor.forceTerminate").Warnf(ctx, "vm.shutdown %s: %v", vmID, err)
 	}
-	return utils.TerminateProcess(ctx, pid, ch.conf.BinaryName(), socketPath, ch.conf.TerminateGracePeriod())
+	return utils.TerminateProcess(ctx, pid, socketPath, ch.conf.TerminateGracePeriod())
 }

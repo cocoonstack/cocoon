@@ -23,8 +23,8 @@ func (b *Backend) RunningVMClient(ctx context.Context, vmRef string) (*http.Clie
 	if pidErr != nil {
 		return nil, "", fmt.Errorf("vm %s read pidfile: %w: %w", vmID, pidErr, ErrNotRunning)
 	}
-	if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
-		return nil, "", fmt.Errorf("vm %s pid %d not %s: %w", vmID, pid, b.Conf.BinaryName(), ErrNotRunning)
+	if !utils.VerifyProcessCmdline(pid, sockPath) {
+		return nil, "", fmt.Errorf("vm %s pid %d is not its VMM: %w", vmID, pid, ErrNotRunning)
 	}
 	return utils.NewSocketHTTPClient(sockPath), vmID, nil
 }

@@ -42,7 +42,7 @@ func TestToVMKeepsTheVMMPID(t *testing.T) {
 		_ = vmm.Wait()
 	})
 	deadline := time.Now().Add(2 * time.Second)
-	for !utils.VerifyProcessCmdline(vmm.Process.Pid, b.Conf.BinaryName(), sock) {
+	for !utils.VerifyProcessCmdline(vmm.Process.Pid, sock) {
 		if time.Now().After(deadline) {
 			t.Fatal("fake VMM did not exec in time")
 		}

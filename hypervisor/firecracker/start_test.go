@@ -86,7 +86,7 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 				_ = cmd.Wait()
 			})
 			if err := utils.WaitFor(t.Context(), 2*time.Second, 10*time.Millisecond, func() (bool, error) {
-				return utils.VerifyProcessCmdline(cmd.Process.Pid, fc.Conf.BinaryName(), sock), nil
+				return utils.VerifyProcessCmdline(cmd.Process.Pid, sock), nil
 			}); err != nil {
 				t.Fatal(err)
 			}
