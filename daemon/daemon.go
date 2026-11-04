@@ -141,11 +141,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
-	dir := filepath.Join(d.conf.RootDir, "locks")
-	if err := utils.EnsureDirs(dir); err != nil {
+	path := LockPath(d.conf.RootDir)
+	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	l := flock.New(filepath.Join(dir, lockFileName))
+	l := flock.New(path)
 	ok, err := l.TryLock(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire daemon lock: %w", err)
@@ -187,6 +187,11 @@ func (d *Daemon) runGC(ctx context.Context) {
 			logger.Error(ctx, err, "gc run")
 		}
 	}()
+}
+
+// LockPath is the single-instance lock a running daemon holds.
+func LockPath(rootDir string) string {
+	return filepath.Join(rootDir, "locks", lockFileName)
 }
 
 func drain(ch <-chan struct{}) {

@@ -30,10 +30,11 @@ var testCrashStep func(step string) error
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
-	MetaRoot string // manifest directory (parent of the sqlite DB)
-	DBPath   string
-	Decls    []metasqlite.Namespace
-	JSON     []metajson.Namespace
+	MetaRoot   string // manifest directory (parent of the sqlite DB)
+	DBPath     string
+	DaemonLock string
+	Decls      []metasqlite.Namespace
+	JSON       []metajson.Namespace
 }
 
 // Manifest is the crash-recovery authority for one conversion run.
@@ -56,6 +57,11 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
+	unlock, err := lockOutDaemon(ctx, spec.DaemonLock)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := loadManifest(spec.MetaRoot)
 	if err != nil {
 		return err
@@ -72,6 +78,21 @@ func Run(ctx context.Context, spec Spec, target string) error {
 		return err
 	}
 	return finishManifest(spec.MetaRoot)
+}
+
+func lockOutDaemon(ctx context.Context, path string) (func(), error) {
+	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	l := flock.New(path)
+	ok, err := l.TryLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("a cocoon daemon is running; stop it before converting")
+	}
+	return func() { _ = l.Unlock(ctx) }, nil
 }
 
 func crashStep(step string) error {
