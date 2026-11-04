@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"path/filepath"
 
 	"github.com/projecteru2/core/log"
@@ -53,12 +52,8 @@ func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, 
 
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
 	return ch.KillForRestore(ctx, vmID, rec, func(pid int) error {
-		return ch.terminateVMM(ctx, rec, utils.NewSocketHTTPClient(hypervisor.SocketPath(rec.RunDir)), pid)
+		return ch.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 	}, runtimeFiles)
-}
-
-func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMRecord, hc *http.Client, pid int) error {
-	return ch.forceTerminate(ctx, hc, rec.ID, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
 func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, meta *snapshot.SnapshotMeta) (_ *types.VM, err error) {

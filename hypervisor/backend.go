@@ -157,7 +157,7 @@ type SnapshotSpec struct {
 // HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.
 type HibernateSpec struct {
 	SnapshotSpec
-	Terminate    func(rec *VMRecord, hc *http.Client, pid int) error
+	Terminate    func(rec *VMRecord, pid int) error
 	RuntimeFiles []string
 }
 

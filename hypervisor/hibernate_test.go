@@ -90,7 +90,7 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 	calls := &hibernateCalls{}
 
 	spec := hibernateStubSpec(calls)
-	spec.Terminate = func(*VMRecord, *http.Client, int) error { return errors.New("kill refused") }
+	spec.Terminate = func(*VMRecord, int) error { return errors.New("kill refused") }
 	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, srcDir string) error {
 		return os.RemoveAll(srcDir)
 	})
@@ -131,7 +131,7 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	}})
 	store := b.Meta
 	spec := hibernateStubSpec(&hibernateCalls{})
-	spec.Terminate = func(*VMRecord, *http.Client, int) error {
+	spec.Terminate = func(*VMRecord, int) error {
 		b.Meta = busyStore{store}
 		return nil
 	}
@@ -259,7 +259,7 @@ func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {
 			return os.WriteFile(filepath.Join(tmpDir, "mem"), []byte("x"), 0o600)
 		},
 		BuildMeta: func(*VMRecord, string) (*snapshot.SnapshotMeta, error) { return &snapshot.SnapshotMeta{}, nil },
-		Terminate: func(*VMRecord, *http.Client, int) error { calls.terminated = true; return nil },
+		Terminate: func(*VMRecord, int) error { calls.terminated = true; return nil },
 	}
 }
 

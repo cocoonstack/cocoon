@@ -23,7 +23,7 @@ func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.Snapsho
 func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
 	return fc.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: fc.snapshotSpec(ctx),
-		Terminate: func(rec *hypervisor.VMRecord, _ *http.Client, pid int) error {
+		Terminate: func(rec *hypervisor.VMRecord, pid int) error {
 			return fc.terminateVMM(ctx, rec, pid)
 		},
 		RuntimeFiles: runtimeFiles,

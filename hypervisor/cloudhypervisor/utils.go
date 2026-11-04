@@ -108,11 +108,6 @@ func vmPutJSON(ctx context.Context, hc *http.Client, endpoint, kind string, payl
 	return err
 }
 
-func shutdownVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.shutdown")
-	return err
-}
-
 // pauseVM is idempotent — swallows CH's Paused→Paused 500 so a stuck-paused VM recovers.
 func pauseVM(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.pause")
