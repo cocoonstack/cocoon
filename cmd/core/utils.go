@@ -163,7 +163,11 @@ func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, 
 		return nil
 	}
 	// The name index, not Inspect: a killed save leaves a pending record still holding the name that Inspect reports as not-found, and passing that preflight wastes the whole capture before the insert rejects it.
-	id, held, err := snapBackend.NameOwner(ctx, name)
+	nh, ok := snapBackend.(snapshot.NameHolder)
+	if !ok {
+		return fmt.Errorf("backend %s has no snapshot name index", snapBackend.Type())
+	}
+	id, held, err := nh.NameOwner(ctx, name)
 	if err != nil {
 		return fmt.Errorf("check snapshot name: %w", err)
 	}
