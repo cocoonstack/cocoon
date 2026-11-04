@@ -25,25 +25,11 @@ The `--windows` flag:
 
 ### Image
 
-Pre-built images and build automation are maintained in [cocoonstack/windows](https://github.com/cocoonstack/windows).
-
-The Windows image is published as an **OCI artifact** (split qcow2 parts pushed via ORAS), not a runnable OCI container image — use `oras pull` (not `cocoon image pull` or `docker pull`).
-
-```bash
-# 1. Pull split parts via oras (https://oras.land)
-oras pull ghcr.io/cocoonstack/windows/win11:25h2
-
-# 2. Verify the split parts
-sha256sum -c SHA256SUMS
-
-# 3. Import the parts into Cocoon in order
-cocoon image import win11-25h2 windows-11-25h2.qcow2.*.qcow2.part
-```
-
+Pre-built images are published as split OCI artifacts and imported with `oras pull` + `cocoon image import`; see [OS images](os-image.md#windows) for the pull steps and [cocoonstack/windows](https://github.com/cocoonstack/windows) for build automation.
 
 ### Post-Clone Networking
 
-- **DHCP networks**: no action needed, Windows DHCP client auto-configures
-- **Static IP**: configure via SAC serial console (`cocoon vm console`)
+- **DHCP networks**: the clone comes up on hot-swapped NICs with new MACs; if a NIC is left without IPv4, run the `Get-PnpDevice` rebind that `cocoon vm clone` prints
+- **Static IP**: after the rebind, run the printed `netsh interface ipv4 set address ...` inside the guest (SAC serial console via `cocoon vm console`)
 
 For more details, see the [Cloud Hypervisor Windows documentation](https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/docs/windows.md).

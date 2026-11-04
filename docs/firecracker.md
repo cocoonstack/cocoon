@@ -48,8 +48,7 @@ cocoon vm clone my-snap --name clone-vm
 - **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before SIGKILL
 - **Clone MTU must match**: a clone requires the target network's MTU to equal the snapshot's
 - **Raw disks only**: Firecracker uses raw virtio-blk without serial support; disks are referenced by device path (`/dev/vdX`)
-- **Single-queue networking**: `NetworkConfig.NumQueues` is ignored
-- **Snapshot portability requires same directory layout**: FC snapshots store absolute paths in the vmstate binary; cocoon bind-mounts the snapshot's drives into place inside a private mount namespace and re-anchors them after resume, so a differing `run_dir` fails outright (`unusable source ... is outside the managed run root`) rather than corrupting the clone, and the same OCI image must be pulled
+- **Snapshot portability requires same directory layout**: FC snapshots store absolute host paths, so cross-host import needs the same `root_dir`/`run_dir` and OCI image; see [known issues](known-issues.md#firecracker-snapshot-portability)
 - **Console via PTY relay**: a background relay process bridges FC's serial (stdin/stdout) to `console.sock`
 
 ### OCI Image Compatibility

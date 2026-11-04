@@ -104,7 +104,7 @@ With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as 
 
 Firecracker attaches virtio devices over MMIO by default (and adds `pci=off` to the guest command line itself). `--pci` on `vm run`/`vm create` starts Firecracker with `--enable-pci`, so the guest enumerates virtio-pci devices instead; this is the prerequisite for Firecracker device hot-plug (Developer Preview upstream). The transport is fixed for the VM's lifetime and travels with its snapshots: clones and restores relaunch on the transport the snapshot was taken with, and a snapshot cannot move between transports. The guest kernel needs `CONFIG_PCI`, `CONFIG_VIRTIO_PCI` and `CONFIG_ACPI`; distro kernels have both transports, while the sandbox guest kernel is built without `CONFIG_VIRTIO_MMIO`, so sandbox images can never use the MMIO transport (booting them on Firecracker at all is not validated yet). Cloud Hypervisor is always virtio-pci, so `--pci` is rejected there.
 
-With `--pci`, `vm net`, `vm disk attach`/`detach`, clone `--nics` and clone `--data-disk` work as on Cloud Hypervisor, with one difference: a Firecracker build that plugs devices onto the root bus does not notify the guest, so cocoon prints the guest-side step after each change (a build that places devices behind PCIe root ports, which cocoon requests for every `--pci` VM, needs no step; `echo 1 > /sys/bus/pci/rescan` after a plug, `echo 1 > /sys/.../device/../remove` for the stale node after an unplug; `--output json` returns them as `hints`). Unmount or down a device inside the guest before detaching it. Hot-attached disks show up as `/dev/vdX` (Firecracker has no virtio-blk serial) and, as on Cloud Hypervisor, block snapshot and hibernate until detached.
+With `--pci`, `vm net`, `vm disk attach`/`detach`, clone `--nics` and clone `--data-disk` work as on Cloud Hypervisor; on a Firecracker build that plugs devices onto the root bus cocoon prints the guest-side rescan/remove step after each change (see [Firecracker `--pci`](devices.md#firecracker---pci)). Unmount or down a device inside the guest before detaching it. Hot-attached disks show up as `/dev/vdX` (Firecracker has no virtio-blk serial) and, as on Cloud Hypervisor, block snapshot and hibernate until detached.
 
 ## Cloud-init & First Boot
 
@@ -117,7 +117,7 @@ Cloudimg VMs receive a NoCloud cidata disk (FAT12 with `CIDATA` volume label) co
 
 The cidata disk is **automatically excluded on subsequent boots** — after the first successful start, the VM record is marked as `first_booted` and the cidata disk is no longer attached, preventing cloud-init from re-running.
 
-Note: `--user`/`--password` only apply to **cloudimg** VMs (cloud-init). OCI VM images bake credentials at build time — every official `os-image/ubuntu/*` image ships `openssh-server` enabled with `PermitRootLogin yes` and the default `root:cocoon` credentials. Host-to-guest control plane operations (kubectl exec, kubectl logs) prefer cocoon-agent over vsock; SSH stays available as the human-on-keyboard path.
+Note: `--user`/`--password` only apply to **cloudimg** VMs (cloud-init). OCI VM images bake credentials at build time — every official Ubuntu and Debian image ships `openssh-server` enabled with `PermitRootLogin yes` and the default `root:cocoon` credentials. Host-to-guest control plane operations (kubectl exec, kubectl logs) prefer cocoon-agent over vsock; SSH stays available as the human-on-keyboard path.
 
 ## Data Disks
 
@@ -140,9 +140,9 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 | Key        | Default          | Notes |
 | ---------- | ---------------- | ----- |
-| `size`     | required         | Minimum 16 MiB; goes through `units.RAMInBytes` so `512M`, `2G`, etc. all work |
+| `size`     | required         | Minimum 16 MiB; same spellings as `--memory` (`20G`, `20GiB`, `20Gi`, all binary) |
 | `name`     | `dataN` (auto)   | 1-20 chars, `[a-z][a-z0-9_-]{0,19}`, `cocoon-` prefix reserved; auto-numbered names skip any explicit one already taken |
-| `fstype`   | `ext4`           | `ext4` (cocoon mkfs's it) or `none` (guest must format); xfs is not supported in Phase 1 |
+| `fstype`   | `ext4`           | `ext4` (cocoon mkfs's it) or `none` (guest must format); xfs is not supported |
 | `mount`    | `/mnt/<name>`    | Cloudimg+CH only — emitted as a cloud-init `mounts:` row using `/dev/disk/by-id/virtio-<name>`. Pass `mount=` (empty) to skip auto-mount even when fstype is ext4. `fstype=none` requires `mount=`/empty |
 | `directio` | `auto`           | `on` forces `direct=on`, `off` forces page-cache, `auto` inherits VM-level `--no-direct-io`. CH only — FC has no DirectIO knob and logs a warn |
 
@@ -157,7 +157,7 @@ cocoon vm run --data-disk size=20G,name=raw,fstype=none <oci-image>
 
 ### Snapshot/Clone/Restore
 
-Phase 1 inherits data disks 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); clone-created disks are hot-added after cidata is regenerated, so that clone does not auto-mount them — `mount=` has no effect on it; mount them inside the guest. A clone of that clone inherits the disk like any other: its regenerated cidata lists the mount, which applies when the [post-clone guest setup](snapshots.md#post-clone-guest-setup) commands run. Removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
+Data disks are inherited 1:1: snapshot reflinks each `data-<name>.raw` into the snapshot tar, clone re-creates them under the new VM's runDir (and regenerates cidata so cloud-init re-mounts on the new identity), and restore rolls all data disks back to the snapshot timepoint along with the rootfs and memory state. Cloud Hypervisor clones can additionally CREATE fresh data disks at clone time via `--data-disk` (hot-added after restore — the snapshot's device tree itself cannot grow); clone-created disks are hot-added after cidata is regenerated, so that clone does not auto-mount them — `mount=` has no effect on it; mount them inside the guest. A clone of that clone inherits the disk like any other: its regenerated cidata lists the mount, which applies when the [post-clone guest setup](snapshots.md#post-clone-guest-setup) commands run. Removing inherited disks at clone time is not supported, and Firecracker clones accept `--data-disk` only from a `--pci` snapshot (MMIO cannot hot-plug).
 
 Restore preflight verifies sidecar integrity, file presence (vmstate, memory, COW, every `data-*.raw` — presence, not size; `--from-dir` and `snapshot import` separately check the COW size against the envelope), per-index Path/RO agreement between the sidecar and CH config.json, Role/Serial agreement between the sidecar and the VM record, and on Firecracker that every COW and data disk is recorded at this VM's own path, all **before** killing the running VM, so a malformed or imported snapshot fails fast and leaves the live VM untouched.
 

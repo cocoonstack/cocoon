@@ -13,10 +13,6 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 **Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs they re-run `cloud-init`; for OCI VMs they replace the generated `/etc/systemd/network/10-*.network` files with per-MAC units for the new IP and restart `systemd-networkd`; on Firecracker they set the new MAC first. The clone answers on its allocated IP a few seconds after they run.
 
-## Clone and restore resources are fixed at snapshot time
-
-`cocoon vm clone` inherits CPU, memory, and storage from the snapshot — none of these can be grown at clone time on either backend. NIC count inherits by default; Cloud Hypervisor clones may override it with `--nics N` (cocoon hot-swaps the snapshot's NICs for a fresh set after restore). MMIO Firecracker clones must keep the snapshot's NIC topology — FC's `network_overrides` only retargets existing interfaces, so `--nics` is rejected there (a `--pci` snapshot restores its NICs and hot-plugs the delta). On every Firecracker clone, MMIO and `--pci` alike, the target network's MTU must equal the snapshot's because the guest keeps the advertised MTU. `cocoon vm restore` is more restrictive: CPU, memory, and storage come from the snapshot (the persisted record is realigned to match), and NIC count must already match the target VM (mismatches are rejected, since restore reuses the existing network namespace). Use `cocoon vm run` to create a fresh VM with different sizing.
-
 ## OCI VM multi-NIC kernel IP limitation
 
 OCI VMs use the kernel `ip=` boot parameter for network configuration. While multiple `ip=` parameters can be specified, the Linux kernel only reliably configures **one interface** via this mechanism — subsequent `ip=` parameters may be silently ignored or produce inconsistent results depending on kernel version.
@@ -48,7 +44,7 @@ This is by design: clone restores the VM's exact state including all account set
 
 ## `vm exec` requires vsock — legacy VMs excluded
 
-`cocoon vm exec` dials the cocoon-agent inside the guest over hybrid vsock. Two caveats:
+`cocoon vm exec` dials the cocoon-agent inside the guest over hybrid vsock. Three caveats:
 
 - **Legacy VMs (created before vsock support landed)** have no vsock UDS bound. `vm inspect` omits `vsock_socket` and `vm exec` returns `vsock not configured for this VM (recreate the VM to enable agent exec)`. Recreate the VM to gain exec capability.
 - **FC clone vsock requires FC ≥ v1.16** (the `vsock_override` field on `PUT /snapshot/load` was merged post-v1.15). Older FC rejects the field with `unknown field vsock_override`. Cocoon omits the field on same-VM restore, so FC < v1.16 still runs and restores fine — only `vm clone` needs the field.
@@ -137,34 +133,6 @@ The rules an earlier `ipMasq` network left carry its name in their comment, for 
 iptables-save -t nat | grep -F 'name: \"cocoon\"'
 ```
 
-## Windows VM requires Cloud Hypervisor v50.2
-
-**Status: FIXED** in our fork and upstream.
-
-Cloud Hypervisor v51.x had a regression ([#7849](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7849)) that caused Windows to BSOD (`DRIVER_IRQL_NOT_LESS_OR_EQUAL` in `viostor.sys`) when DISCARD/WRITE_ZEROES features were advertised with default-zero config values, violating virtio spec v1.2.
-
-**Fix**: the DISCARD fix is included in our Cloud Hypervisor fork ([cocoonstack/cloud-hypervisor `dev` branch](https://github.com/cocoonstack/cloud-hypervisor/tree/dev)). Upstream has also merged it ([PR #7936](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7936)). Cloud Hypervisor **v52** and newer work correctly with Windows VMs.
-
-**Previous recommendation** (no longer needed): use Cloud Hypervisor v50.2 for Windows VMs.
-
-## Windows VM requires virtio-win 0.1.240
-
-**Status: FIXED** upstream since Cloud Hypervisor v52.
-
-virtio-win 0.1.271+ network drivers were incompatible with Cloud Hypervisor due to incomplete virtio-net control queue implementation ([#7925](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7925)). CH only handled `CTRL_MQ` and `CTRL_GUEST_OFFLOADS`; all other commands (`CTRL_RX`, `CTRL_MAC`, `CTRL_VLAN`, `CTRL_ANNOUNCE`) returned `VIRTIO_NET_ERR`.
-
-| Version  | Behavior on VIRTIO_NET_ERR                               |
-|----------|----------------------------------------------------------|
-| 0.1.240  | Tolerates error, continues working                       |
-| 0.1.271  | May silently fail, NIC unusable                          |
-| 0.1.285+ | Fail-fast: NdisMRemoveMiniport(), Problem Code 43        |
-
-0.1.285 introduced commit `50e7db9` ("indicate driver error on unexpected CX behavior") with zero-tolerance on control queue errors. Root cause was a CH bug — the correct fix is to return `VIRTIO_NET_OK` for unsupported commands and to report the correct `used_len`.
-
-**Fix**: the ctrl_queue command tolerance (from [@liuw](https://github.com/liuw)) plus the `used_len` fix merged upstream in [PR #7953](https://github.com/cloud-hypervisor/cloud-hypervisor/pull/7953) and ship in Cloud Hypervisor v52 and newer, including the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) build. virtio-win **0.1.285** now works.
-
-**Previous recommendation** (no longer needed): use virtio-win 0.1.240 for Windows VMs on Cloud Hypervisor.
-
 ## Windows VM does not respond to ACPI power-button
 
 **Status: FIXED** in our firmware fork.
@@ -231,14 +199,7 @@ Firecracker does not support virtio-blk serial numbers. Cocoon's OCI init script
 
 ## Cloudimg post-restart snapshot includes orphan `cidata.img`
 
-When a cloudimg VM is snapshotted **after** it has been stopped and started at least once, the resulting snapshot tar still contains a `cidata.img` file even though the snapshot's `cocoon.json` sidecar and CH `config.json` no longer reference cidata. This is because `hypervisor/cloudhypervisor/snapshot.go` copies `cidata.img` whenever the source VM's `runDir` has it (cloudimg + non-Windows), regardless of whether `activeDisks(rec)` would have re-attached it.
-
-**Consequence**: ~1 MB of dead weight inside the tar. No correctness impact:
-
-- Clone from such a snapshot regenerates a fresh `cidata.img` via `ensureCloneCidata` and overwrites the orphan with the clone's identity / network config.
-- Restore leaves the orphan in place: `cleanSnapshotFiles` removes only the memory ranges, `config.json`, `state.json`, `cocoon.json` and `data-*.raw`, so the staged `cidata.img` is merged back over the VM's own copy — harmless, since restore targets the same VM.
-
-This predates the data-disk feature; the cocoon.json sidecar just makes the asymmetry visible. We are not patching the copy logic because the orphan is harmless and the cidata disk is small (sparse-copied, ~1 MB).
+A cloudimg VM snapshotted after a stop/start carries an unreferenced ~1 MB sparse `cidata.img`; clone overwrites it and restore keeps it. Harmless.
 
 ## Firecracker clone guest MAC address
 
@@ -253,10 +214,6 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 ## Vhost-user-fs requires VM-level shared memory
 
 `cocoon vm fs attach` only works on CH VMs that were created with `--shared-memory`. CH's `memory shared=on` is fixed at VM creation: backend processes (e.g. virtiofsd) need to mmap guest memory via the negotiated memfd, and the memory model cannot be flipped on a running VM. If `--shared-memory` was omitted at create time, the only path is to recreate the VM. Cocoon's preflight reads `vm.info` and surfaces a clear error rather than letting CH return a vague rejection.
-
-## Snapshotting a VM with attached vhost-user-fs / VFIO / hot-attached disks is refused
-
-Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the live `vm.info` before pausing the guest and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`, `hot-attached disk "<name>": ...`) before anything is captured or recorded. `cocoon vm fs detach` / `cocoon vm device detach` / `cocoon vm disk detach` first to clear runtime devices, then snapshot.
 
 ## A killed capture leaves the guest paused
 
@@ -275,10 +232,6 @@ On v0.6.7 and older every `snapshot save` leaves that zero-byte file behind and 
 ## `--from-dir` and `snapshot import` reject a snapshot rebuilt by a third-party tar
 
 `cocoon vm clone --from-dir`, `cocoon vm restore --from-dir` and `cocoon snapshot import` compare `cow.raw`'s on-disk size with the size recorded in `snapshot.json`. cocoon's export tar stores sparse disks with private pax records that only its own extractor understands; a generic `tar -x` drops them and rebuilds a short, shifted disk that would restore into silent corruption. The snapshot is refused with `cow.raw in <dir> is N bytes but the envelope records M`. Use `snapshot export --to-dir` for the directory form, or `snapshot import` on the tar exactly as cocoon wrote it.
-
-## Runtime attached devices do not survive VM stop / clone / restore
-
-Attaches via `cocoon vm fs attach`, `cocoon vm device attach` and `cocoon vm disk attach` are runtime-only — they live in the VMM process state and are never written into the VM record, sidecar, or snapshot. After `vm stop`, `vm clone`, or `vm restore`, the user must re-run the attach commands. `vm inspect` reflects the live VMM state for running VMs and omits `attached_devices` for stopped VMs. This is by design: cocoon does not own the backend (virtiofsd, the vfio-pci binding, an external disk file) and cannot guarantee the resource still exists across host events.
 
 ## virtiofsd is a single-shot daemon
 
@@ -311,10 +264,8 @@ Firecracker VMs created with `--pci` resize through the same command. After remo
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 
-Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, 10–20 s on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the new wait only applies to the running-VM resize.
+Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, 10–20 s on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the wait only applies to the running-VM resize.
 
 ## Android cocoon-agent service may be blocked by SELinux
 
-`os-image/android/{14.0,15.0,15.0-gms}` install the cocoon-agent binary at `/system/bin/cocoon-agent` and register it via `/system/etc/init/cocoon-agent.rc`. Android's SELinux policies don't ship with a domain for cocoon-agent, so the service may run in `init`'s domain or be denied outright depending on the redroid build.
-
-If `cocoon vm exec` against an Android VM returns `dial agent: ...`, check `logcat | grep -i avc` inside the guest. The fix is build-time — adjust the Android sepolicy to grant the new binary network/socket permissions — and is out of scope for the Dockerfile.
+`os-image/android/{14.0,15.0,15.0-gms}` install the cocoon-agent binary at `/system/bin/cocoon-agent` and register it via `/system/etc/init/cocoon-agent.rc`. The official images boot with `androidboot.selinux=permissive` (`os-image/android/init-wrapper.sh`), so the service runs and SELinux denials are only logged. On an enforcing build the policy has no domain for cocoon-agent and may deny it outright: if `cocoon vm exec` returns `dial agent: ...`, check `logcat | grep -i avc` inside the guest and grant the binary network/socket permissions in the Android sepolicy at build time.

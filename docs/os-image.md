@@ -30,7 +30,7 @@ checksum-verified agent.
 
 ### Android (Redroid)
 
-The three bare `android/` tags run Android via [Redroid](https://github.com/remote-android/redroid-doc) directly as PID 1 in the VM — no Ubuntu/systemd layer — and are `linux/amd64` only; the 16.0-gms-h264 image is Ubuntu-based, builds under `ubuntu/` on the default multi-arch matrix, and behaves like the Ubuntu images below.
+The three bare `android/` tags run Android via [Redroid](https://github.com/remote-android/redroid-doc) directly as PID 1 in the VM — no Ubuntu/systemd layer — and are `linux/amd64` only; the 16.0-gms-h264 image is Ubuntu-based, builds under `ubuntu/` on the default multi-arch matrix, and behaves like the Ubuntu images above.
 
 | Image | Tag | IMAGE_NAME |
 |-------|-----|------------|
@@ -40,8 +40,6 @@ The three bare `android/` tags run Android via [Redroid](https://github.com/remo
 | Android 16 + GMS + H.264 ([README](https://github.com/cocoonstack/cocoon/blob/master/os-image/ubuntu/22.04-redroid-16.0-gms-h264/README.md)) | `16.0-gms-h264` | `ghcr.io/cocoonstack/cocoon/android:16.0-gms-h264` |
 
 Access via `adb connect <vm-ip>:5555` or `scrcpy -s <vm-ip>:5555 --no-audio`.
-
-The `16.0-gms-h264` image is Ubuntu+Redroid-based (built from `os-image/ubuntu/22.04-redroid-16.0-gms-h264/`), unlike the bare `os-image/android/` family above.
 
 The `15.0-gms` variant adds Google Play services (GmsCore, Play Store, GSF)
 and `libndk_translation` so arm64-only APKs run on the x86_64 host. It runs
