@@ -162,4 +162,4 @@ The stream is a hint, not a log: it replays nothing and a slow reader loses
 events. After a reconnect, compare each VM's `transition_generation` against the
 last one you handled — a generation you have not seen whose state is `stopped`
 and whose reason is `unexpected-exit` is a crash you missed. A `MODIFIED` can
-repeat a generation: the quiesce-pending flag is cleared without bumping it.
+repeat a generation: the quiesce-pending flag changes without bumping it.

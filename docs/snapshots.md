@@ -187,7 +187,7 @@ Rules for the caller:
 - A VM cloned or received seconds ago may still eject its old NICs. If that happens during a series, the next delta fails; start again.
 - Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
 
-The received VM gets fresh NICs like a clone, with new MACs, so the guest needs the [post-clone network setup](#post-clone-guest-setup). No reseed runs: the guest state is the same one, not a copy. `--restore-mode ondemand` is rejected by the hypervisor for a series with deltas. Metering opens the new intervals with reason `migrate`.
+The received VM gets fresh NICs like a clone, with new MACs, so the guest needs the [post-clone network setup](#post-clone-guest-setup). No reseed runs: the guest state is the same one, not a copy. If the target VMM dies before `vm start`, the start cold-boots from the disk and still succeeds, so check the guest before removing the source. `--restore-mode ondemand` is rejected by the hypervisor for a series with deltas. Metering opens the new intervals with reason `migrate`.
 
 A qcow2 overlay is open when captured, so its dirty bit is set and the target VMM rebuilds the refcounts when it opens the file. The overlay hash therefore differs after the receive; compare it before the VMM opens it.
 
