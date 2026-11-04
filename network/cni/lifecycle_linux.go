@@ -35,6 +35,7 @@ func createNetns(name string) error {
 
 	ns, err := netns.NewNamed(name)
 	if err != nil {
+		_ = netns.Set(origNS)
 		return fmt.Errorf("create netns %s: %w", name, err)
 	}
 	_ = ns.Close()
