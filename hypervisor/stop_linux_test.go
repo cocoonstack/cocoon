@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -90,12 +91,16 @@ func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	child := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
-	child.Args[0] = b.Conf.BinaryName()
+	child := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", b.Conf.BinaryName(), sockPath))
 	if err := child.Start(); err != nil {
 		t.Fatalf("start fake VMM child: %v", err)
 	}
 	t.Cleanup(func() { _ = child.Wait() })
+	if err := utils.WaitFor(ctx, 5*time.Second, time.Millisecond, func() (bool, error) {
+		return utils.VerifyProcessCmdline(child.Process.Pid, sockPath), nil
+	}); err != nil {
+		t.Fatalf("fake VMM child never execed: %v", err)
+	}
 	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		t.Fatalf("scan: %v", err)
