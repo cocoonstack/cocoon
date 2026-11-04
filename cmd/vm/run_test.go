@@ -28,6 +28,7 @@ func TestValidateBackendFlagsRejectsFirecrackerIncompatibleConfig(t *testing.T) 
 		{"shared memory", types.Config{SharedMemory: true}, "--shared-memory"},
 		{"hugepages", types.Config{HugePages: true}, "--hugepages"},
 		{"mergeable", types.Config{Mergeable: true}, "--mergeable"},
+		{"no watchdog", types.Config{NoWatchdog: true}, "--no-watchdog"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,12 +71,12 @@ func TestCloneNICPlan(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			init, resize, err := cloneNICPlan(tt.useFC, tt.cfg, tt.override, tt.target)
+			initNICs, resize, err := cloneNICPlan(tt.useFC, tt.cfg, tt.override, tt.target)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !tt.wantErr && (init != tt.wantInit || resize != tt.wantResize) {
-				t.Fatalf("plan = (%d, %d), want (%d, %d)", init, resize, tt.wantInit, tt.wantResize)
+			if !tt.wantErr && (initNICs != tt.wantInit || resize != tt.wantResize) {
+				t.Fatalf("plan = (%d, %d), want (%d, %d)", initNICs, resize, tt.wantInit, tt.wantResize)
 			}
 		})
 	}

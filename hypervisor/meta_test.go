@@ -59,21 +59,21 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 		t.Fatalf("round-trip not byte-identical to legacy baseline:\n got: %s\nwant: %s", got, baseline)
 	}
 
-	t2 := time.Date(2026, 7, 3, 12, 45, 0, 0, time.UTC)
-	if err := b.update(ctx, func(t *vmTx) error {
-		g, err := t.Get("VMCCCCCCCCCCCCCCCCCCCCCCCC")
+	updatedAt := time.Date(2026, 7, 3, 12, 45, 0, 0, time.UTC)
+	if err := b.update(ctx, func(tx *vmTx) error {
+		g, err := tx.Get("VMCCCCCCCCCCCCCCCCCCCCCCCC")
 		if err != nil {
 			return err
 		}
 		g.State = types.VMStateCreated
-		g.UpdatedAt = t2
-		if err := t.Put("VMCCCCCCCCCCCCCCCCCCCCCCCC", g); err != nil {
+		g.UpdatedAt = updatedAt
+		if err := tx.Put("VMCCCCCCCCCCCCCCCCCCCCCCCC", g); err != nil {
 			return err
 		}
-		if err := t.NameDel("beta"); err != nil {
+		if err := tx.NameDel("beta"); err != nil {
 			return err
 		}
-		return t.Del("VMBBBBBBBBBBBBBBBBBBBBBBBB")
+		return tx.Del("VMBBBBBBBBBBBBBBBBBBBBBBBB")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -153,12 +153,7 @@ func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.S
 
 func testNamespace(t *testing.T, typ, dir string) meta.Store {
 	t.Helper()
-	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: filepath.Join(dir, "index.json"), LockPath: filepath.Join(dir, "index.lock"), Codec: testVMTables})
-	if err != nil {
-		t.Fatalf("open meta store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return newTestMetaStore(t, typ, filepath.Join(dir, "index.json"), filepath.Join(dir, "index.lock"))
 }
 
 func testSQLiteNamespace(t *testing.T, typ, dir string) meta.Store {

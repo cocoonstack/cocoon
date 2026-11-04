@@ -21,7 +21,7 @@ func TestTarDirStreamFailsTheReaderOnAnUnreadableEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	stream := TarDirStream(src, nil)
-	defer stream.Close() //nolint:errcheck
+	defer stream.Close()
 	if err := ExtractTar(t.TempDir(), stream); err == nil {
 		t.Fatal("ExtractTar accepted an archive that is missing b-memory-range")
 	}

@@ -3,6 +3,7 @@ package hypervisor
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"strings"
@@ -44,7 +45,7 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 		t.Error("record should be gone after delete")
 	}
 	for _, dir := range []string{runDir, logDir} {
-		if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(dir); !errors.Is(statErr, fs.ErrNotExist) {
 			t.Errorf("dir %s should be removed, stat err: %v", dir, statErr)
 		}
 	}

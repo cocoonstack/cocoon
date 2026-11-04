@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
@@ -81,6 +82,9 @@ func TestDeletingPendingRecoverySkipsSnapStorageStop(t *testing.T) {
 	if err := lf.recoverSnapTombstone(t.Context(), id); err != nil {
 		t.Fatalf("recoverSnapTombstone: %v", err)
 	}
+	if _, held, err := lf.NameOwner(t.Context(), "pending"); err != nil || held {
+		t.Errorf("NameOwner = (%v, %v), want the pending record gone", err, held)
+	}
 	if entries := rec.Entries(); len(entries) != 0 {
 		t.Errorf("entries = %+v, want no stop for pending snapshot", entries)
 	}
@@ -94,8 +98,12 @@ func TestDeletePendingSkipsSnapStorageStop(t *testing.T) {
 		t.Fatalf("beginCreate: %v", err)
 	}
 
-	if _, err := lf.Delete(t.Context(), []string{id}); err != nil {
+	deleted, err := lf.Delete(t.Context(), []string{id})
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+	if !slices.Equal(deleted, []string{id}) {
+		t.Errorf("deleted = %v, want [%s]", deleted, id)
 	}
 	if entries := rec.Entries(); len(entries) != 0 {
 		t.Errorf("entries = %+v, want no stop for pending snapshot", entries)

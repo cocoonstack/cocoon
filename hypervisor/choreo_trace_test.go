@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -129,14 +130,8 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		if got.Op != g.Op || got.ErrClass != g.ErrClass || got.ErrMsg != g.ErrMsg || got.Result != g.Result {
 			t.Errorf("step %s drift:\n got: %+v\nwant: %+v", g.Op, got, g)
 		}
-		if len(got.Metering) != len(g.Metering) {
+		if !slices.Equal(got.Metering, g.Metering) {
 			t.Errorf("step %s metering drift: got %v, legacy %v", g.Op, got.Metering, g.Metering)
-			continue
-		}
-		for j := range g.Metering {
-			if got.Metering[j] != g.Metering[j] {
-				t.Errorf("step %s metering[%d]: got %s, legacy %s", g.Op, j, got.Metering[j], g.Metering[j])
-			}
 		}
 	}
 

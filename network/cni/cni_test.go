@@ -3,6 +3,7 @@ package cni
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -250,8 +251,8 @@ func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {
 	ctx := t.Context()
 
 	seedRecords(t, c, "vm1", "eth1")
-	if err := c.update(ctx, func(t *netTx) error {
-		return t.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
+	if err := c.update(ctx, func(tx *netTx) error {
+		return tx.Put("n-eth1-dup", &networkRecord{ID: "n-eth1-dup", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +342,7 @@ func TestReclaimStaleNIC(t *testing.T) {
 	assertRecordIDs(t, c, []string{"n-eth1"})
 
 	exec.failIf = ""
-	deleteTAPFn = func(string, string) error { return fmt.Errorf("device busy") }
+	deleteTAPFn = func(string, string) error { return errors.New("device busy") }
 	if err := c.reclaimStaleNIC(ctx, "vm1", "/run/netns/vm1", rec); err == nil {
 		t.Fatal("reclaimStaleNIC: want error on failed TAP delete")
 	}
@@ -376,9 +377,9 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 		t.Fatalf("got %d configs, want 1", len(configs))
 	}
 	var got []networkRecord
-	if err := c.view(ctx, func(t *netTx) error {
+	if err := c.view(ctx, func(tx *netTx) error {
 		var err error
-		got, err = t.byVMID("vm1")
+		got, err = tx.byVMID("vm1")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -408,9 +409,9 @@ func TestAddRollsBackTheNICsItAttemptedOnAPartialFailure(t *testing.T) {
 		t.Fatalf("deleted TAPs = %v, want %v", deletedTAPs, want)
 	}
 	var got []networkRecord
-	if err := c.view(t.Context(), func(t *netTx) error {
+	if err := c.view(t.Context(), func(tx *netTx) error {
 		var err error
-		got, err = t.byVMID("vm1")
+		got, err = tx.byVMID("vm1")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -514,9 +515,9 @@ func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
 			t.Fatalf("recover Add: %v", err)
 		}
 		var got []networkRecord
-		if err := c.view(t.Context(), func(t *netTx) error {
+		if err := c.view(t.Context(), func(tx *netTx) error {
 			var err error
-			got, err = t.byVMID("vm1")
+			got, err = tx.byVMID("vm1")
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -603,10 +604,10 @@ type recordingExec struct {
 }
 
 func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, environ []string) ([]byte, error) {
-	var ifName, args string
+	var ifn, args string
 	for _, kv := range environ {
 		if v, ok := strings.CutPrefix(kv, "CNI_IFNAME="); ok {
-			ifName = v
+			ifn = v
 		}
 		if v, ok := strings.CutPrefix(kv, "CNI_ARGS="); ok {
 			args = v
@@ -615,9 +616,9 @@ func (e *recordingExec) ExecPlugin(_ context.Context, _ string, _ []byte, enviro
 	if slices.Contains(environ, "CNI_COMMAND=ADD") {
 		e.addArgs = append(e.addArgs, args)
 	}
-	e.attempted = append(e.attempted, ifName)
-	if ifName == e.failIf {
-		return nil, fmt.Errorf("simulated plugin failure on %s", ifName)
+	e.attempted = append(e.attempted, ifn)
+	if ifn == e.failIf {
+		return nil, fmt.Errorf("simulated plugin failure on %s", ifn)
 	}
 	return []byte(`{"cniVersion":"1.0.0"}`), nil
 }
@@ -680,9 +681,9 @@ func testVMCfg() *types.VMConfig {
 func seedRecords(t *testing.T, c *CNI, vmID string, ifNames ...string) {
 	t.Helper()
 	if err := c.update(t.Context(), func(tx *netTx) error {
-		for _, ifName := range ifNames {
-			id := "n-" + ifName
-			if err := tx.Put(id, &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifName}); err != nil {
+		for _, ifn := range ifNames {
+			id := "n-" + ifn
+			if err := tx.Put(id, &networkRecord{ID: id, Type: "cni-bridge", VMID: vmID, IfName: ifn}); err != nil {
 				return err
 			}
 		}

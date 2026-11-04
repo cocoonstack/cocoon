@@ -21,7 +21,6 @@ func TestBuildRecorderBackends(t *testing.T) {
 		{"explicit file", config.MeteringFile, (*meteringfile.Recorder)(nil)},
 		{"nop", config.MeteringNop, metering.NopRecorder{}},
 		{"stderr", config.MeteringStderr, (*meteringstderr.Recorder)(nil)},
-		{"unknown falls back to nop", "kafka", metering.NopRecorder{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

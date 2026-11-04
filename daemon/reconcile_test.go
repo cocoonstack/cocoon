@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -190,11 +189,11 @@ func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	}{
 		{"clean pass", func(*fakeSupervisor) {}, 0, 1},
 		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, 0, 0},
-		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, 1, 0},
-		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, 1, 0},
+		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = errors.New("no such directory") }, 1, 0},
+		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = errors.New("/proc scan errored") }, 1, 0},
 		{"delete cannot finish", func(f *fakeSupervisor) {
 			f.tombstoned["vm1"] = struct{}{}
-			f.resumeErr = fmt.Errorf("cni down")
+			f.resumeErr = errors.New("cni down")
 		}, 1, 0},
 	}
 	for _, tt := range tests {

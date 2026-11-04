@@ -139,7 +139,7 @@ func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
 
 func TestDetectLocalImportSource(t *testing.T) {
 	dir := t.TempDir()
-	qcow2Path := writeTempFile(t, dir, "image.qcow2", append(utils.Qcow2Magic, make([]byte, 32)...))
+	qcow2Path := writeTempFile(t, dir, "image.qcow2", slices.Concat(utils.Qcow2Magic, make([]byte, 32)))
 	tarPath := writeTempFile(t, dir, "image.tar", tarWrap(t, "payload.txt", []byte("payload")))
 	gzipTarPath := writeTempFile(t, dir, "image.tar.gz", gzipWrap(t, tarWrap(t, "payload.txt", []byte("payload"))))
 	invalidPath := writeTempFile(t, dir, "invalid.bin", []byte("not an archive"))
@@ -177,7 +177,7 @@ func TestDetectLocalImportSource(t *testing.T) {
 
 func TestPlanLocalImportDetectsKindFromFirstFile(t *testing.T) {
 	dir := t.TempDir()
-	part1 := writeTempFile(t, dir, "part-1.qcow2", append(utils.Qcow2Magic, make([]byte, 8)...))
+	part1 := writeTempFile(t, dir, "part-1.qcow2", slices.Concat(utils.Qcow2Magic, make([]byte, 8)))
 	part2 := writeTempFile(t, dir, "part-2.qcow2", []byte("second-part"))
 
 	kind, err := planLocalImport([]string{part1, part2})

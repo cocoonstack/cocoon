@@ -104,7 +104,7 @@ func TestValidate_NetScope(t *testing.T) {
 		scope string
 		ok    bool
 	}{
-		{"", true}, {"mt", true}, {"m", false}, {"mtap", false}, {"m-", false}, {"bt", false}, {"rm", false},
+		{"", true}, {"mt", true}, {"A9", true}, {"m", false}, {"mtap", false}, {"m-", false}, {"m/", false}, {"bt", false}, {"rm", false},
 	} {
 		c := &Config{
 			RootDir: "/r", RunDir: "/r/run", LogDir: "/l",
@@ -135,27 +135,6 @@ func TestScopeFamilies(t *testing.T) {
 		}
 		if got := c.NetnsPrefix(); got != tt.wantNS {
 			t.Errorf("NetnsPrefix(%q) = %q, want %q", tt.scope, got, tt.wantNS)
-		}
-	}
-}
-
-func TestValidateScope(t *testing.T) {
-	for _, tt := range []struct {
-		scope string
-		ok    bool
-	}{
-		{"", true},
-		{"mt", true},
-		{"A9", true},
-		{"m", false},
-		{"mtap", false},
-		{"m-", false},
-		{"m/", false},
-		{"bt", false},
-		{"rm", false},
-	} {
-		if err := validateScope(tt.scope); (err == nil) != tt.ok {
-			t.Errorf("validateScope(%q) = %v, want ok=%v", tt.scope, err, tt.ok)
 		}
 	}
 }

@@ -71,7 +71,7 @@ func TestMigrateFinalRoundLeavesTheGuestPaused(t *testing.T) {
 	if !round.Paused || calls.resumed != 0 || calls.ended != 0 {
 		t.Errorf("paused %t resumed %d ended %d, want true 0 0", round.Paused, calls.resumed, calls.ended)
 	}
-	if utils.FileExists(filepath.Join(dir, "cow.raw.ref")) {
+	if utils.FileExists(nextRefPath(filepath.Join(dir, types.COWRawFileName))) {
 		t.Error("the final round reflinked a reference inside the pause")
 	}
 }

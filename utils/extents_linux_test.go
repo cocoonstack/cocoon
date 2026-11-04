@@ -32,6 +32,9 @@ func TestFileExtentsReportsDataAndSkipsHoles(t *testing.T) {
 	if first.Logical > 1<<21 || last.Logical+last.Length < 1<<21+4096 {
 		t.Errorf("extents %+v do not cover the write", extents)
 	}
+	if first.Logical < 1<<21 {
+		t.Errorf("extents %+v cover the leading hole", extents)
+	}
 }
 
 func TestPunchHoleKeepsSize(t *testing.T) {

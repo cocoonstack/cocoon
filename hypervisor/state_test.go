@@ -2,7 +2,7 @@ package hypervisor
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -148,7 +148,7 @@ func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
 	}
 }
 
-func TestDeleteForceClosesIntervalAfterMarkError(t *testing.T) {
+func TestEmitDeleteCloseClosesIntervalAfterMarkError(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
@@ -300,7 +300,7 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
 		Kill:             func(context.Context, string, *VMRecord) error { return nil },
-		Populate:         func(*VMRecord, string) error { return fmt.Errorf("populate boom") },
+		Populate:         func(*VMRecord, string) error { return errors.New("populate boom") },
 		AfterExtract: func(_ context.Context, _ string, _ *types.VMConfig, _ *VMRecord) (*types.VM, error) {
 			t.Fatal("AfterExtract should not run when Populate fails")
 			return nil, nil
@@ -409,7 +409,7 @@ func TestDeleteAfterErrorEmitsOnlyStorageStop(t *testing.T) {
 	}
 	rec.Reset()
 
-	b.emitDeleteClose(ctx, "vm1", metering.Shape{CPU: 2, MemBytes: 2 << 30, StorageBytes: 20 << 30}, metering.ReasonStopCrash, false)
+	b.emitDeleteClose(ctx, "vm1", metering.Shape{CPU: 2, MemBytes: 2 << 30, StorageBytes: 20 << 30}, metering.ReasonStopCrash, hasOpenComputeInterval(recordOf(t, b, "vm1")))
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMStorageStop {
 		t.Fatalf("post-Error delete: got %+v, want one storage.stop", entries)

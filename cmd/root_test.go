@@ -123,7 +123,7 @@ func TestEveryConfigKeyRegistered(t *testing.T) {
 }
 
 func TestCommandGroupsRejectAnUnknownVerb(t *testing.T) {
-	for _, group := range [][]string{{"vm"}, {"vm", "disk"}, {"vm", "fs"}, {"vm", "device"}, {"image"}, {"snapshot"}, {"meta"}} {
+	for _, group := range [][]string{{"vm"}, {"vm", "disk"}, {"vm", "fs"}, {"vm", "device"}, {"vm", "migrate"}, {"image"}, {"snapshot"}, {"meta"}} {
 		if err := executeRoot(t, group...); err != nil {
 			t.Errorf("%v: bare group: %v, want its help", group, err)
 		}

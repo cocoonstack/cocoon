@@ -65,7 +65,7 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 		want   types.VMState
 	}{
 		{"stopped origin survives a post-populate failure", types.VMStateStopped, failAfterExtract, types.VMStateStopped},
-		{"running origin quarantines on a post-populate failure", types.VMStateRunning, failAfterExtract, types.VMStateError},
+		{"running origin marks error on a post-populate failure", types.VMStateRunning, failAfterExtract, types.VMStateError},
 		{"partial populate quarantines even a stopped origin", types.VMStateStopped, failPopulate, types.VMStateError},
 	}
 	for _, tt := range tests {
@@ -235,7 +235,7 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 		want   types.VMState
 	}{
 		{"stopped origin stays restorable (hibernate wake)", types.VMStateStopped, types.VMStateStopped},
-		{"running origin quarantines", types.VMStateRunning, types.VMStateError},
+		{"running origin marks error", types.VMStateRunning, types.VMStateError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -33,7 +33,7 @@ func TestIsUnderDir(t *testing.T) {
 		{"exactly root", "/srv/cocoon", "/srv/cocoon", false},
 		{"escape via dotdot", "/srv/cocoon/../etc/shadow", "/srv/cocoon", false},
 		{"sibling dir", "/srv/cocoon-other/x", "/srv/cocoon", false},
-		{"empty dir disables check", "/anything", "", false},
+		{"empty dir fails closed", "/anything", "", false},
 		{"trailing slash on dir", "/srv/cocoon/x", "/srv/cocoon/", true},
 		{"relative path normalized", "srv/cocoon/x/../y", "srv/cocoon", true},
 	}

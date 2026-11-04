@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,9 @@ func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
 	got := pickLRU(records, EvictionPolicy{Enabled: true})
 	if len(got) != 3 {
 		t.Fatalf("want 3 evictions, got %v", got)
+	}
+	if got["a"] != "lru-all" {
+		t.Errorf("reason: got %q, want lru-all", got["a"])
 	}
 }
 
@@ -103,14 +107,6 @@ func TestPickLRU_ZeroTimeIsOldest(t *testing.T) {
 	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 1})
 	if !slices.Equal(sortedKeys(got), []string{"zero"}) {
 		t.Errorf("zero time should be evicted first: got %v", got)
-	}
-}
-
-func TestPickLRU_NoCriteriaAllReasonAll(t *testing.T) {
-	records := map[string]snapshotMeta{"a": agedMeta(1, 10)}
-	got := pickLRU(records, EvictionPolicy{Enabled: true})
-	if got["a"] != "lru-all" {
-		t.Errorf("reason: got %q, want lru-all", got["a"])
 	}
 }
 
@@ -366,18 +362,24 @@ func TestGCModule_RemovalFailureKeepsDBRecord(t *testing.T) {
 		t.Fatalf("ReadDB: %v", err)
 	}
 
-	parent := lf.conf.DataDir()
-	if err := os.Chmod(parent, 0o500); err != nil {
-		t.Skipf("chmod failed: %v", err)
+	for _, id := range ids {
+		dir := lf.conf.SnapshotDataDir(id)
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Skipf("chmod failed: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o750) })
 	}
-	t.Cleanup(func() { _ = os.Chmod(parent, 0o750) })
 
-	if err := mod.Collect(ctx, ids, snap); err == nil {
-		t.Fatal("expected Collect to error on chmod-protected parent")
+	err = mod.Collect(ctx, ids, snap)
+	if err == nil || !strings.Contains(err.Error(), "tombstone kept") {
+		t.Fatalf("Collect error = %v, want a data dir removal failure keeping the tombstone", err)
 	}
 	for i, name := range []string{"a", "b"} {
 		if _, err := lf.lookupRecord(ctx, ids[i], false); err != nil {
 			t.Errorf("%s: DB record should survive removal failure, got: %v", name, err)
+		}
+		if !snapTombstonePresent(t, lf, ids[i]) {
+			t.Errorf("%s: tombstone should be kept after removal failure", name)
 		}
 	}
 }
@@ -524,7 +526,7 @@ func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 	id := testID(t)
-	release, err := lf.acquireBuildLease(t.Context(), id)
+	release, err := lf.acquireBuildLease(ctx, id)
 	if err != nil {
 		t.Fatalf("acquireBuildLease: %v", err)
 	}

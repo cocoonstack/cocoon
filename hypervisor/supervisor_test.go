@@ -2,7 +2,7 @@ package hypervisor
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -123,7 +123,7 @@ func TestConvergeDeadKeepsPendingWhenQuiesceFails(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		return fmt.Errorf("netns gone")
+		return errors.New("netns gone")
 	}})
 
 	if err := b.ConvergeDead(ctx, "vm1", recordOf(t, b, "vm1").TransitionGeneration, timeNow()); err == nil {

@@ -79,6 +79,18 @@ func TestTCRedirectConvergesOnPartialPlumbing(t *testing.T) {
 	if err := tapProvisionedInNetns(nsPath, "tap0"); err == nil {
 		t.Fatal("tap without its ingress redirect must not verify")
 	}
+
+	if _, _, err := setupTCRedirect(nsPath, "eth0", "tap0", 1, ""); err != nil {
+		t.Fatalf("setupTCRedirect on partial plumbing: %v", err)
+	}
+	if err := tapProvisionedInNetns(nsPath, "tap0"); err != nil {
+		t.Fatalf("tap must verify after the redirect is re-established: %v", err)
+	}
+	for _, dev := range []string{"eth0", "tap0"} {
+		if n := ingressFilterCount(t, nsPath, dev); n != 1 {
+			t.Fatalf("%s carries %d ingress filters after convergence, want 1", dev, n)
+		}
+	}
 }
 
 func TestEnsureNetnsReplacesAStaleEntry(t *testing.T) {
