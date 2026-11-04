@@ -15,12 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	diskDeltaInfix = ".delta."
-
-	// deltaLengthSize is the byte count of the big-endian header length that opens a delta file.
-	deltaLengthSize = 8
-)
+const diskDeltaInfix = ".delta."
 
 // diskDelta heads a delta file; the bytes of each non-zero range follow in order.
 type diskDelta struct {
@@ -139,7 +134,7 @@ func writeDeltaFile(dst string, header *diskDelta, src *os.File) (err error) {
 		}
 		err = os.Rename(tmp, dst)
 	}()
-	if err = binary.Write(out, binary.BigEndian, uint64(len(raw))); err != nil {
+	if err = binary.Write(out, binary.BigEndian, int64(len(raw))); err != nil {
 		return fmt.Errorf("write delta header: %w", err)
 	}
 	if _, err = out.Write(raw); err != nil {
@@ -194,35 +189,15 @@ func applyDiskDelta(dst, delta string) error {
 	return nil
 }
 
-// readDeltaHeader leaves f at the first data byte and rejects a file whose size disagrees with its header.
+// readDeltaHeader leaves f at the first data byte.
 func readDeltaHeader(f *os.File) (*diskDelta, error) {
-	var length uint64
+	var length int64
 	if err := binary.Read(f, binary.BigEndian, &length); err != nil {
 		return nil, fmt.Errorf("read delta header length: %w", err)
 	}
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if length > uint64(fi.Size()) { //nolint:gosec
-		return nil, fmt.Errorf("delta header length %d exceeds file size %d", length, fi.Size())
-	}
-	raw := make([]byte, length)
-	if _, err = io.ReadFull(f, raw); err != nil {
-		return nil, fmt.Errorf("read delta header: %w", err)
-	}
 	var header diskDelta
-	if err = json.Unmarshal(raw, &header); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(f, length), &header); err != nil {
 		return nil, fmt.Errorf("decode delta header: %w", err)
-	}
-	want := deltaLengthSize + int64(length)
-	for _, r := range header.Ranges {
-		if !r.Zero {
-			want += r.Length
-		}
-	}
-	if fi.Size() != want {
-		return nil, fmt.Errorf("delta is %d bytes, its header needs %d: the transfer is incomplete", fi.Size(), want)
 	}
 	return &header, nil
 }

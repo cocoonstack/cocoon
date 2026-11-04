@@ -153,9 +153,6 @@ func (b *Backend) captureDelta(ctx context.Context, rec *VMRecord, req MigrateRe
 	if err != nil {
 		return nil, err
 	}
-	if _, err = os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("series %s: %w", req.Series, err)
-	}
 	pairs, err := writableDiskPairs(dir, rec)
 	if err != nil {
 		return nil, err

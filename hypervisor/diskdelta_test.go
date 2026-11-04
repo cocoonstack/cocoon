@@ -3,10 +3,10 @@ package hypervisor
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/utils"
@@ -167,8 +167,8 @@ func TestApplyDiskDeltaRejectsATruncatedFile(t *testing.T) {
 	}
 	dst := filepath.Join(dir, "dst")
 	writeSparse(t, dst, 4096, nil)
-	if err = applyDiskDelta(dst, delta); err == nil || !strings.Contains(err.Error(), "incomplete") {
-		t.Errorf("applyDiskDelta: %v, want incomplete transfer", err)
+	if err = applyDiskDelta(dst, delta); !errors.Is(err, io.EOF) {
+		t.Errorf("applyDiskDelta: %v, want EOF", err)
 	}
 }
 
