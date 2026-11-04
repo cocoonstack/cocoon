@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -130,6 +131,10 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		}
 		if ResolveMetaBackend(conf) == config.MetaBackendSQLite {
 			metaStore, metaErr = openSQLiteStore(ctx, conf, dbPath)
+			return
+		}
+		if utils.FileExists(dbPath) {
+			metaErr = fmt.Errorf("meta_backend is json but %s holds sqlite metadata; run `cocoon meta convert`", dbPath)
 			return
 		}
 		if conf.MetaBackend == "" {

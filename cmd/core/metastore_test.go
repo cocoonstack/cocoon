@@ -96,6 +96,22 @@ func TestMetaStoreRepairsCrashedBootstrap(t *testing.T) {
 	resetMetaStore()
 }
 
+func TestMetaStoreRefusesJSONOverSQLiteData(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	if _, err := MetaStore(conf); err != nil {
+		t.Fatalf("bootstrap sqlite root: %v", err)
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+	conf.MetaBackend = config.MetaBackendJSON
+	if _, err := MetaStore(conf); err == nil {
+		t.Fatal("json backend opened over a live meta.db and would hide its records")
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+}
+
 func TestResolveMetaBackend(t *testing.T) {
 	conf := testConf(t)
 	if b := ResolveMetaBackend(conf); b != "sqlite" {
