@@ -68,7 +68,7 @@ type roundSteps struct {
 	afterPause func() error
 }
 
-// MigrateCaptureSequence runs one round; any failure ends the series, resumes the guest and deletes the directory.
+// MigrateCaptureSequence runs one round; a failed round resumes the guest, ends the series and deletes the directory.
 func (b *Backend) MigrateCaptureSequence(ctx context.Context, ref string, req MigrateRequest, spec MigrateSpec) (*MigrateRound, error) {
 	vmID, rec, unlock, err := b.lockForCapture(ctx, ref)
 	if err != nil {
@@ -203,7 +203,7 @@ func (b *Backend) captureRound(ctx context.Context, rec *VMRecord, spec MigrateS
 	}
 	if err = b.WithRunningVM(ctx, rec, func(_ int) error {
 		if runErr := run(); runErr != nil {
-			return errors.Join(runErr, spec.EndSeries(rec, hc), resumeAfterCapture(spec.Resume, rec, hc))
+			return errors.Join(runErr, resumeAfterCapture(spec.Resume, rec, hc), spec.EndSeries(rec, hc))
 		}
 		return nil
 	}); err != nil {

@@ -82,6 +82,13 @@ func TestMigrateFailedRoundResumesAndDiscardsTheSeries(t *testing.T) {
 	calls := &migrateCalls{}
 	spec := migrateStubSpec(calls)
 	spec.Capture = func(*VMRecord, *http.Client, string) error { return errors.New("dump failed") }
+	spec.EndSeries = func(_ *VMRecord, hc *http.Client) error {
+		calls.ended++
+		if calls.resumed == 0 || hc.Timeout != VMMemTransferTimeout {
+			t.Error("the series ended on the short timeout before the resume waited out the dump")
+		}
+		return nil
+	}
 	if _, err := b.MigrateCaptureSequence(t.Context(), id, MigrateRequest{Series: "s1", Final: true}, spec); err == nil || !strings.Contains(err.Error(), "dump failed") {
 		t.Fatalf("capture: %v, want dump failed", err)
 	}
