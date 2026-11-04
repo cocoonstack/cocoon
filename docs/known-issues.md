@@ -73,6 +73,12 @@ On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hyper
 
 This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333) and [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356). As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
 
+## Data disk fsck sends an existing VM to the emergency shell
+
+Cidata from v0.7.6 and earlier gives a mounted data disk fstab pass number 2. If the host's `mke2fs` formats with a feature the guest's `e2fsck` does not know, such as `orphan_file` from a Debian 13 host with an Ubuntu 22.04 guest, the next boot fails the fsck and enters the emergency shell with no network and no sshd, despite `nofail`. New cidata writes pass number 0.
+
+**Recovery**: log in through `cocoon vm console`, set the last field of the disk's `/etc/fstab` line to 0, then stop and start the VM.
+
 ## Named netns path removed while a VM runs
 
 cocoon never removes a running VM's named network namespace. If an operator or a foreign GC runs `ip netns del`, it removes the name under `/var/run/netns`; the running VMM still holds the original namespace and its TAPs. Existing traffic may continue, and `vm list` still shows the recorded IP. NIC hot-add cannot open the missing netns path, while `cocoon vm exec` can still work over vsock.
@@ -170,6 +176,8 @@ Cloud Hypervisor uses a GED (Generic Event Device, `ACPI0013`) to deliver power-
 **Fix**: our firmware fork ([cocoonstack/rust-hypervisor-firmware `dev` branch](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev)) implements `ResetSystem` properly. Upstream merged the same fix in [cloud-hypervisor/rust-hypervisor-firmware#424](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/pull/424) (replacing #423); no firmware release carries it yet, the latest being 0.5.0. With this fix, the ACPI power-button works for Windows guests, and `cocoon vm stop` completes in ~8-13 seconds on a fully booted VM.
 
 **Timing caveat**: the Windows ACPI shutdown handler needs ~60 seconds from cold boot to fully initialize (SAC appears at ~30s, handler ready ~30s later). Stopping a Windows VM before the handler is ready triggers the 30s `stop_timeout_seconds` fallback and escalates to force-kill. Clone-restored VMs inherit the ready ACPI state and shut down in ~8-13s immediately.
+
+**Background servicing**: after about 15 minutes of uptime, Windows runs maintenance such as `StartComponentCleanup`, and shutdown waits for `TrustedInstaller` to stop. In testing a cold-booted VM took 20s and a clone 73s to power off, with the power-button event logged at once, so `vm stop` can reach the 30s `stop_timeout_seconds` and force-kill. Raise `stop_timeout_seconds` for a Windows VM that must stop cleanly.
 
 **Previous consequence** (no longer applies with our firmware fork): `cocoon vm stop` always timed out on Windows VMs (default 30s), then fell back to `vm.shutdown` → SIGTERM → SIGKILL.
 
