@@ -152,7 +152,7 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 	}
 }
 
-func TestRestoreKeepsAQuiescePendingFromTheKillToTheVMM(t *testing.T) {
+func TestRestoreHasAQuiescePendingBeforeTheVMM(t *testing.T) {
 	tests := []struct {
 		name           string
 		origin         types.VMState
@@ -183,8 +183,8 @@ func TestRestoreKeepsAQuiescePendingFromTheKillToTheVMM(t *testing.T) {
 			}
 			pending := func() bool { return recordOf(t, b, id).QuiescePending }
 			b.SetNetwork(stubNetwork{recover: func(context.Context, *types.VM) error {
-				if !pending() {
-					t.Error("a kill during network recovery leaves no quiesce pending")
+				if got := pending(); got != tt.pendingInApply {
+					t.Errorf("pending during network recovery = %v, want %v", got, tt.pendingInApply)
 				}
 				return nil
 			}})
@@ -201,6 +201,9 @@ func TestRestoreKeepsAQuiescePendingFromTheKillToTheVMM(t *testing.T) {
 					return nil
 				},
 				AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
+					if !pending() {
+						t.Error("a kill before the VMM runs leaves no quiesce pending")
+					}
 					return nil, errors.New("stop after the window")
 				},
 			})

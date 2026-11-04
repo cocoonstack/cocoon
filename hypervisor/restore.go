@@ -141,15 +141,15 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 		if err := run.apply(run.rec); err != nil {
 			return err
 		}
+		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
+		if err := b.RecoverNetwork(ctx, run.rec); err != nil {
+			return fmt.Errorf("recover network: %w", err)
+		}
 		placed, err := b.placeRecord(ctx, run.vmID, &run.vmCfg.Config)
 		if err != nil {
 			return fmt.Errorf("place VM: %w", err)
 		}
 		run.rec.CPUSet, run.rec.QueueCPUs = placed.CPUSet, placed.QueueCPUs
-		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
-		if err := b.RecoverNetwork(ctx, run.rec); err != nil {
-			return fmt.Errorf("recover network: %w", err)
-		}
 		var afterErr error
 		result, afterErr = run.afterExtract(ctx, run.vmID, run.vmCfg, run.rec)
 		return afterErr
