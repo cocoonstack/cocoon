@@ -44,7 +44,7 @@ runcmd:
 {{- if .Mounts}}
 mounts:
 {{- range .Mounts}}
-  - ['{{yamlQuote .Device}}', '{{yamlQuote .MountPoint}}', '{{yamlQuote .FSType}}', '{{yamlQuote .Options}}', '0', '2']
+  - ['{{yamlQuote .Device}}', '{{yamlQuote .MountPoint}}', '{{yamlQuote .FSType}}', '{{yamlQuote .Options}}', '0', '0']
 {{- end}}
 {{- end}}
 {{- if .Networks}}

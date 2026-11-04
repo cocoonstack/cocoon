@@ -282,6 +282,9 @@ func TestUserData_Mounts(t *testing.T) {
 	if !strings.Contains(out, "/dev/disk/by-id/virtio-data1") || !strings.Contains(out, "/mnt/data") {
 		t.Errorf("mount entry missing\n%s", out)
 	}
+	if !strings.Contains(out, "'0', '0']") {
+		t.Errorf("mount entry must not request a boot fsck\n%s", out)
+	}
 }
 
 func TestUserData_NoMounts(t *testing.T) {
