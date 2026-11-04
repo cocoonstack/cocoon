@@ -29,7 +29,7 @@ var ErrEnvelopeMissing = errors.New("snapshot envelope missing")
 type SnapshotMeta struct {
 	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
 	BootConfig     *types.BootConfig      `json:"boot_config,omitzero"`
-	NICMACs        []string               `json:"nic_macs,omitempty"`
+	NICMACs        []string               `json:"nic_macs,omitzero"`
 }
 
 // ReadSnapshotEnvelope reads <dir>/snapshot.json.

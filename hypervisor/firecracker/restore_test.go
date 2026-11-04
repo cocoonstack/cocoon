@@ -89,6 +89,17 @@ func TestPreflightRestoreRefusesDriftedNICs(t *testing.T) {
 		})
 	}
 
+	meta.NICMACs = []string{}
+	if err := snapshot.SaveSnapshotMeta(srcDir, meta); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+	if err := fc.preflightRestore(srcDir, recordWith()); err != nil {
+		t.Fatalf("preflight of a zero-NIC snapshot: %v", err)
+	}
+	if err := fc.preflightRestore(srcDir, recordWith(snapMAC)); err == nil || !strings.Contains(err.Error(), "NIC identity must match") {
+		t.Fatalf("err = %v, want the NIC added after a zero-NIC snapshot refused", err)
+	}
+
 	meta.NICMACs = nil
 	if err := snapshot.SaveSnapshotMeta(srcDir, meta); err != nil {
 		t.Fatalf("write sidecar: %v", err)
