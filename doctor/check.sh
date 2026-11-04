@@ -145,9 +145,7 @@ generate_cni_conflist() {
   ]
 }
 CNIEOF
-    iptables -t nat -C POSTROUTING -s "$subnet" ! -o cni0 -j MASQUERADE 2>/dev/null ||
-        iptables -t nat -A POSTROUTING -s "$subnet" ! -o cni0 -j MASQUERADE
-    fixed "generated $CNI_CONFLIST (subnet: ${subnet}); persist the masquerade rule for ${subnet} with your firewall tooling"
+    fixed "generated $CNI_CONFLIST (subnet: ${subnet})"
 }
 
 # ---------------------------------------------------------------------------
@@ -444,6 +442,12 @@ else
         mkdir -p "$COCOON_CNI_CONF_DIR" && fixed "created $COCOON_CNI_CONF_DIR" || warn "failed"
         generate_cni_conflist
     fi
+fi
+
+if grep -q '"ipMasq": false' "$CNI_CONFLIST" 2>/dev/null; then
+    masq_subnet=$(sed -n 's/.*"subnet": "\([^"]*\)".*/\1/p' "$CNI_CONFLIST" | head -1)
+    check_iptables_rule "nat POSTROUTING MASQUERADE ${masq_subnet}" \
+        POSTROUTING -t nat -s "$masq_subnet" ! -o cni0 -j MASQUERADE
 fi
 
 # ---------------------------------------------------------------------------
