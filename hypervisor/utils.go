@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -188,11 +189,6 @@ func BlobHexFromPath(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-func PrefixToNetmask(prefix int) string {
-	mask := net.CIDRMask(prefix, 32)
-	return net.IP(mask).String()
-}
-
 // BuildBaseCmdline composes the cocoon-shared cmdline: prefix (backend-specific console+quirks) + boot/layers/cow + per-NIC ip= params.
 func BuildBaseCmdline(prefix, layers, cow string, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var b strings.Builder
@@ -214,7 +210,7 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 		}
 		fmt.Fprintf(&params, " ip=%s::%s:%s:%s:eth%d:off",
 			n.Network.IP, n.Network.Gateway,
-			PrefixToNetmask(n.Network.Prefix), vmName, i)
+			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), vmName, i)
 		if dns != "" {
 			params.WriteString(":" + dns)
 		}
@@ -287,8 +283,9 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; trailing cidata is the only allowed extension.
+// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; cidata is the only disk rec may add.
 func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
+	rec = RecordDisksForSidecar(sidecar, rec)
 	if len(sidecar) > len(rec) {
 		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
 	}
@@ -306,6 +303,14 @@ func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
 		}
 	}
 	return nil
+}
+
+func RecordDisksForSidecar(sidecar, rec []*types.StorageConfig) []*types.StorageConfig {
+	isCidata := func(sc *types.StorageConfig) bool { return sc.Role == types.StorageRoleCidata }
+	if slices.ContainsFunc(sidecar, isCidata) {
+		return rec
+	}
+	return slices.DeleteFunc(slices.Clone(rec), isCidata)
 }
 
 // ValidateResidentPaths runs after ValidateRoleSequence, which bounds sidecar by rec.

@@ -27,9 +27,6 @@ type TableCodec struct {
 
 func (c TableCodec) Decode(data []byte) (*Model, error) {
 	m := NewModel()
-	if data == nil {
-		return m, nil
-	}
 	byKey := make(map[string]TableSpec, len(c.Specs))
 	for _, sp := range c.Specs {
 		byKey[sp.Key] = sp

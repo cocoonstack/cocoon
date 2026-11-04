@@ -68,7 +68,6 @@ type BackendConfig interface {
 type LaunchSpec struct {
 	Cmd       *exec.Cmd
 	NetnsPath string
-	OnFail    func()
 
 	// Rec names the VM whose CPU scope the process enters at spawn (ID + cgroup knobs); every VM enters a scope.
 	Rec *VMRecord

@@ -79,14 +79,10 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
 	now := timeNow()
-	if err := b.update(ctx, func(t *vmTx) error {
-		r, err := t.Get(id)
-		if err != nil || r == nil {
-			return err
-		}
+	if err := b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
 		markTransition(r, types.VMStateError, types.TransitionError, now)
 		r.Quarantine = reason
-		return t.Put(id, r)
+		return nil
 	}); err != nil {
 		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
 	}
@@ -209,17 +205,13 @@ func (b *Backend) markFailedOperation(ctx context.Context, id string, markError 
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
 	now := timeNow()
-	if err := b.update(ctx, func(t *vmTx) error {
-		r, err := t.Get(id)
-		if err != nil || r == nil {
-			return err
-		}
+	if err := b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
 		if markError && r.State != types.VMStateError {
 			markTransition(r, types.VMStateError, types.TransitionError, now)
 		}
 		r.CPUSet, r.QueueCPUs = "", ""
 		r.QuiescePending = needsQuiesce(r)
-		return t.Put(id, r)
+		return nil
 	}); err != nil {
 		log.WithFunc(b.Typ+".markFailedOperation").Errorf(ctx, err, "persist failed operation for VM %s", id)
 	}

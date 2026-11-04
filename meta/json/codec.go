@@ -10,7 +10,7 @@ import (
 
 // Codec maps between a namespace file's bytes and its Model; Encode output is the complete file content including the trailing newline.
 type Codec interface {
-	// Decode parses file bytes; data == nil means the file does not exist.
+	// Decode parses file bytes.
 	Decode(data []byte) (*Model, error)
 	Encode(m *Model) ([]byte, error)
 }
@@ -26,9 +26,6 @@ type GenericCodec struct{}
 
 func (GenericCodec) Decode(data []byte) (*Model, error) {
 	m := NewModel()
-	if data == nil {
-		return m, nil
-	}
 	var file genericFile
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("decode generic namespace: %w", err)

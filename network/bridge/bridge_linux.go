@@ -83,7 +83,9 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 	added := make([]int, 0, len(specs))
 	defer func() {
 		if retErr != nil {
-			_ = tearDownTAPs(b.tapPrefix, vmID, added, true)
+			for _, index := range added {
+				_ = b.Remove(ctx, vmID, index)
+			}
 		}
 	}()
 
@@ -128,7 +130,15 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 }
 
 func (b *Bridge) Remove(_ context.Context, vmID string, index int) error {
-	return tearDownTAPs(b.tapPrefix, vmID, []int{index}, false)
+	name := network.TAPName(b.tapPrefix, vmID, index)
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return fmt.Errorf("find tap %s: %w", name, err)
+	}
+	if err := netlink.LinkDel(link); err != nil {
+		return fmt.Errorf("delete tap %s: %w", name, err)
+	}
+	return nil
 }
 
 // Quiesce and Unquiesce are no-ops: bridge TAPs sit directly on the host bridge, with no TC redirect to storm when the VM stops.
@@ -169,26 +179,6 @@ func attachBridgeUp(tapIndex, bridgeIndex, mtu int) error {
 	}
 	if _, err := req.Execute(unix.NETLINK_ROUTE, 0); err != nil {
 		return fmt.Errorf("attach tap %d to bridge %d: %w", tapIndex, bridgeIndex, err)
-	}
-	return nil
-}
-
-func tearDownTAPs(tapPrefix, vmID string, indices []int, bestEffort bool) error {
-	for _, i := range indices {
-		name := network.TAPName(tapPrefix, vmID, i)
-		link, err := netlink.LinkByName(name)
-		if err != nil {
-			if bestEffort {
-				continue
-			}
-			return fmt.Errorf("find tap %s: %w", name, err)
-		}
-		if err := netlink.LinkDel(link); err != nil {
-			if bestEffort {
-				continue
-			}
-			return fmt.Errorf("delete tap %s: %w", name, err)
-		}
 	}
 	return nil
 }

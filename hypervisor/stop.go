@@ -71,13 +71,15 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 	return nil
 }
 
-// StopAll runs stopOne per ref, each flipping its own state under its VM's ops lock.
-func (b *Backend) StopAll(ctx context.Context, refs []string, stopOne VMOp) ([]string, error) {
+// StopAll stops each ref, each flipping its own state under its VM's ops lock.
+func (b *Backend) StopAll(ctx context.Context, refs []string, spec StopSpec) ([]string, error) {
 	ids, err := b.ResolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	return b.ForEachVM(ctx, ids, "Stop", stopOne)
+	return b.ForEachVM(ctx, ids, "Stop", func(ctx context.Context, id string) error {
+		return b.StopOneSequence(ctx, id, spec)
+	})
 }
 
 // DeleteAll removes VMs by ref; each VM's stop+probe+delete runs under its ops lock (#103), so stopLocked must not re-take it.

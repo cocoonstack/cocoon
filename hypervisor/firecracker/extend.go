@@ -173,7 +173,7 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) er
 	if err != nil {
 		return err
 	}
-	if info.State == "Not started" {
+	if info.State == vmStateNotStarted {
 		return hypervisor.ErrNotRunning
 	}
 	if info.State != vmStatePaused {

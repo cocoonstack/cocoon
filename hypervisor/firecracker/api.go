@@ -16,6 +16,7 @@ import (
 const (
 	actionInstanceStart  = "InstanceStart"
 	actionSendCtrlAltDel = "SendCtrlAltDel"
+	vmStateNotStarted    = "Not started"
 	vmStatePaused        = "Paused"
 	vmStateResumed       = "Resumed"
 	memBackendTypeFile   = "File"
@@ -121,7 +122,7 @@ func (c *fcVMConfig) hasNIC(id string) bool {
 	return slices.ContainsFunc(c.NetworkInterfaces, func(n fcNetworkInterface) bool { return n.IfaceID == id })
 }
 
-func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
+func putJSON(ctx context.Context, hc *http.Client, endpoint string, payload any, kind string) error {
 	_, err := utils.DoWithRetry(ctx, func() ([]byte, error) {
 		return utils.DoJSONOnce(ctx, hc, http.MethodPut, "http://localhost"+endpoint, kind, payload)
 	})
@@ -129,7 +130,7 @@ func putJSON[T any](ctx context.Context, hc *http.Client, endpoint string, paylo
 }
 
 // sendJSONOnce skips retry: a resent state transition answers wrong-state.
-func sendJSONOnce[T any](ctx context.Context, hc *http.Client, method, endpoint string, payload T, kind string, successCodes ...int) error {
+func sendJSONOnce(ctx context.Context, hc *http.Client, method, endpoint string, payload any, kind string, successCodes ...int) error {
 	_, err := utils.DoJSONOnce(ctx, hc, method, "http://localhost"+endpoint, kind, payload, successCodes...)
 	return err
 }
@@ -208,7 +209,7 @@ func getJSON(ctx context.Context, hc *http.Client, endpoint string, out any) err
 }
 
 // hotplugDevice PUTs a device onto a running VM without retry — a retried PUT after a lost ACK echoes as "already exists".
-func hotplugDevice[T any](ctx context.Context, hc *http.Client, endpoint string, payload T, kind string) error {
+func hotplugDevice(ctx context.Context, hc *http.Client, endpoint string, payload any, kind string) error {
 	return sendJSONOnce(ctx, hc, http.MethodPut, endpoint, payload, kind)
 }
 

@@ -214,11 +214,7 @@ func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.Storage
 	return out
 }
 
-// IsUnderDir returns false for an empty dir rather than matching every path.
 func IsUnderDir(path, dir string) bool {
-	if dir == "" {
-		return false
-	}
 	cleaned := filepath.Clean(path)
 	root := filepath.Clean(dir)
 	return strings.HasPrefix(cleaned, root+string(filepath.Separator))

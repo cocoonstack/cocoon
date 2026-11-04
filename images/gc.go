@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	gofrsflock "github.com/gofrs/flock"
@@ -89,13 +88,10 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 	}
 }
 
-// gcStaleTemp removes temp entries older than StaleTempAge; .lock files stay — flock syncs on inode, so deleting one races a current holder.
+// gcStaleTemp removes temp entries older than StaleTempAge.
 func gcStaleTemp(ctx context.Context, dir string) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".lock") {
-			return false
-		}
 		info, err := e.Info()
 		return err == nil && info.ModTime().Before(cutoff)
 	})

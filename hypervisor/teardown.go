@@ -9,6 +9,8 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/metering"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 // vmCleanup is the vms-namespace tombstone payload: everything teardown needs once the record is gone.
@@ -36,10 +38,15 @@ func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, e
 	var (
 		rec *tombstone.Record
 		cl  vmCleanup
+		vm  *VMRecord
 	)
 	if err := b.update(ctx, func(t *vmTx) error {
 		var err error
 		rec, err = ts.Recover(ctx, t.w, id, &cl)
+		if err != nil || rec == nil {
+			return err
+		}
+		vm, err = t.Get(id)
 		return err
 	}); err != nil {
 		return false, err
@@ -49,6 +56,9 @@ func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, e
 	}
 	if err := b.finishVMTeardown(ctx, id, rec.LeaseID, cl); err != nil {
 		return false, err
+	}
+	if vm != nil && vm.State != types.VMStateCreating {
+		b.emitDeleteClose(ctx, id, shapeFromConfig(vm.Config), metering.ReasonStopCrash, hasOpenComputeInterval(vm))
 	}
 	log.WithFunc(b.Typ+".RecoverTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
 	return true, nil

@@ -2,6 +2,8 @@ package firecracker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -28,6 +30,7 @@ const (
 	relayLeaseFD         = relayLeaseResponseFD + 1
 
 	relayPollInterval        = time.Second
+	relayResponseTimeout     = 5 * time.Second
 	relayAbortRetryInterval  = time.Second
 	relayAbortGrace          = time.Second
 	relayBufSize             = 4096
@@ -121,12 +124,7 @@ func RunRelay(ctx context.Context) {
 	})
 	defer releaseLeases()
 
-	pidStr := os.Getenv(relayPIDEnvKey)
-	fcPID, pidErr := strconv.Atoi(pidStr)
-	if pidErr != nil || fcPID <= 0 {
-		log.WithFunc("firecracker.RunRelay").Warnf(ctx, "invalid FC PID %q, skipping relay", pidStr)
-		return
-	}
+	fcPID, _ := strconv.Atoi(os.Getenv(relayPIDEnvKey))
 
 	ctx, stopRelay := context.WithCancel(ctx)
 	defer stopRelay()
@@ -229,4 +227,30 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 	case <-ctx.Done(): // FC died
 	}
 	// Closing conn unblocks the io.Copy(master, conn) goroutine.
+}
+
+func waitRelayLeaseReady(ready *os.File) error {
+	return waitRelayLeaseResponse(ready, relayLeaseReadyCommand, "readiness")
+}
+
+func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
+	result := make(chan error, 1)
+	go func() {
+		var command [1]byte
+		_, err := io.ReadFull(response, command[:])
+		if err == nil && command[0] != want {
+			err = fmt.Errorf("unexpected response %d", command[0])
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if err != nil {
+			return fmt.Errorf("source-lease relay %s: %w", phase, err)
+		}
+		return nil
+	case <-time.After(relayResponseTimeout):
+		closeErr := response.Close()
+		return errors.Join(fmt.Errorf("source-lease relay %s timed out", phase), closeErr)
+	}
 }

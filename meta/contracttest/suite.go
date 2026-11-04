@@ -85,8 +85,8 @@ func testCRUD(t *testing.T, factory Factory) {
 	update(t, s, nsAlpha, func(w meta.Writer) error {
 		return c.Replace(ctx, w, "a", &record{Name: "one", N: 2})
 	})
-	if got, _ = get1(t, s, c); got.N != 2 {
-		t.Fatalf("get after replace: %+v", got)
+	if got, err = get1(t, s, c); err != nil || got.N != 2 {
+		t.Fatalf("get after replace: %+v, %v", got, err)
 	}
 	if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
 		return c.Replace(ctx, w, "absent", &record{})
@@ -119,7 +119,7 @@ func testDetached(t *testing.T, factory Factory) {
 	}
 	got.Name = "mutated-after-get"
 	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
-		t.Fatalf("get returned attached value: %q", again.Name)
+		t.Fatalf("get returned attached value: %+v, %v", again, err)
 	}
 
 	if err := s.View(ctx, []string{nsAlpha}, func(r meta.Reader) error {
@@ -131,7 +131,7 @@ func testDetached(t *testing.T, factory Factory) {
 		t.Fatal(err)
 	}
 	if again, err := get1(t, s, c); err != nil || again.Name != nameOrig {
-		t.Fatalf("scan exposed engine state: %q", again.Name)
+		t.Fatalf("scan exposed engine state: %+v, %v", again, err)
 	}
 
 	update(t, s, nsAlpha, func(w meta.Writer) error {
@@ -295,6 +295,7 @@ func testViewIsolation(t *testing.T, factory Factory) {
 
 	attempted := make(chan struct{})
 	done := make(chan struct{})
+	var writeErr error
 	if err := s.View(ctx, []string{nsAlpha}, func(r meta.Reader) error {
 		first, err := c.Get(ctx, r, "a")
 		if err != nil {
@@ -303,7 +304,7 @@ func testViewIsolation(t *testing.T, factory Factory) {
 		go func() {
 			defer close(done)
 			close(attempted)
-			update(t, s, nsAlpha, func(w meta.Writer) error {
+			writeErr = s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
 				return c.Replace(ctx, w, "a", &record{N: 2})
 			})
 		}()
@@ -321,8 +322,11 @@ func testViewIsolation(t *testing.T, factory Factory) {
 		t.Fatal(err)
 	}
 	<-done
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
 	if got, err := get1(t, s, c); err != nil || got.N != 2 {
-		t.Fatalf("post-view state: %+v", got)
+		t.Fatalf("post-view state: %+v, %v", got, err)
 	}
 }
 

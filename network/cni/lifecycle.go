@@ -55,19 +55,13 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		return nil, err
 	}
 
-	var stale map[string]networkRecord
-	if err = c.view(ctx, func(t *netTx) error {
-		records, byErr := t.byVMID(vmID)
-		if byErr != nil {
-			return byErr
-		}
-		stale = make(map[string]networkRecord, len(records))
-		for _, r := range records {
-			stale[r.IfName] = r
-		}
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("read network index: %w", err)
+	records, err := c.recordsOf(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+	stale := make(map[string]networkRecord, len(records))
+	for _, r := range records {
+		stale[r.IfName] = r
 	}
 
 	attempted := 0
@@ -153,13 +147,9 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 
 // Remove keeps a failed NIC's DB record so retry, vm rm or GC can still release its CNI resources.
 func (c *CNI) Remove(ctx context.Context, vmID string, index int) error {
-	var records []networkRecord
-	if err := c.view(ctx, func(t *netTx) error {
-		var err error
-		records, err = t.byVMID(vmID)
+	records, err := c.recordsOf(ctx, vmID)
+	if err != nil {
 		return err
-	}); err != nil {
-		return fmt.Errorf("read network index: %w", err)
 	}
 	ifn := ifName(index)
 	var subset []string
@@ -278,8 +268,8 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 	}, nil
 }
 
-func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifName string) error {
-	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
+func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifn string) error {
+	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifn}
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
 }
 

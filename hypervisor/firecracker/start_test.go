@@ -40,7 +40,7 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 			}
 
 			var mu sync.Mutex
-			liveState := "Not started"
+			liveState := vmStateNotStarted
 			fail := true
 			var puts []string
 			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 					_ = json.MarshalWrite(w, fcInstanceInfo{State: liveState})
 					return
 				}
-				if r.Method != http.MethodPut || liveState != "Not started" {
+				if r.Method != http.MethodPut || liveState != vmStateNotStarted {
 					http.Error(w, "unexpected request", http.StatusBadRequest)
 					return
 				}

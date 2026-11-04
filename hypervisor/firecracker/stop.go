@@ -8,11 +8,7 @@ import (
 )
 
 func (fc *Firecracker) Stop(ctx context.Context, refs []string) ([]string, error) {
-	return fc.StopAll(ctx, refs, fc.stopOne)
-}
-
-func (fc *Firecracker) stopOne(ctx context.Context, id string) error {
-	return fc.StopOneSequence(ctx, id, fc.stopSpec())
+	return fc.StopAll(ctx, refs, fc.stopSpec())
 }
 
 func (fc *Firecracker) stopOneLocked(ctx context.Context, id string) error {

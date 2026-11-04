@@ -26,11 +26,11 @@ func ociTracker(ctx context.Context, logger *log.Fields, name string, pullMsg fu
 }
 
 // Imports have no byte progress; pullCloudimg keeps its own progress-bar tracker.
-func cloudimgImportTracker(ctx context.Context, logger *log.Fields, name string, downloadMsg func() string) progress.Tracker {
+func cloudimgImportTracker(ctx context.Context, logger *log.Fields, name, downloadMsg string) progress.Tracker {
 	return progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {
 		case cloudimgProgress.PhaseDownload:
-			logger.Info(ctx, downloadMsg())
+			logger.Info(ctx, downloadMsg)
 		case cloudimgProgress.PhaseConvert:
 			logger.Info(ctx, "converting to qcow2...")
 		case cloudimgProgress.PhaseCommit:

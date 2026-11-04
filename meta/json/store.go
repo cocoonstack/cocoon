@@ -246,12 +246,7 @@ func loadNamespace(ctx context.Context, def Namespace) (*loaded, error) {
 	raw, err := os.ReadFile(def.FilePath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		m, cerr := def.Codec.Decode(nil)
-		if cerr != nil {
-			return nil, cerr
-		}
-		m.markClean()
-		return &loaded{model: m}, nil
+		return &loaded{model: NewModel()}, nil
 	case err != nil:
 		return nil, fmt.Errorf("read %s: %w", def.FilePath, code(err, meta.ErrIO))
 	}

@@ -136,8 +136,8 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 
 	var result *types.VM
 	inner := func() error {
-		if err := markRestoreDirty(run.rec.RunDir); err != nil {
-			return err
+		if err := os.WriteFile(filepath.Join(run.rec.RunDir, restoreDirtyName), nil, 0o600); err != nil {
+			return fmt.Errorf("mark restore dirty: %w", err)
 		}
 		if err := run.apply(run.rec); err != nil {
 			return err
@@ -160,7 +160,9 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 		b.markFailedOperation(ctx, run.vmID, run.rec.State != types.VMStateStopped)
 		return nil, err
 	}
-	b.emitRestoreSuccess(ctx, result, oldShape, run.sourceSnapshotID)
+	now := timeNow()
+	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, result.ID, run.sourceSnapshotID, metering.ReasonRestore, oldShape, now))
+	b.emitOpenInterval(ctx, result, metering.ReasonRestore, run.sourceSnapshotID, now)
 	return result, nil
 }
 
@@ -224,12 +226,6 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMComputeStop, vmID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 }
 
-func (b *Backend) emitRestoreSuccess(ctx context.Context, vm *types.VM, oldShape metering.Shape, sourceSnapshotID string) {
-	now := timeNow()
-	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, vm.ID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
-	b.emitOpenInterval(ctx, vm, metering.ReasonRestore, sourceSnapshotID, now)
-}
-
 // PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
@@ -251,13 +247,6 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 func restorableState(vmID string, rec *VMRecord) error {
 	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
 		return fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)
-	}
-	return nil
-}
-
-func markRestoreDirty(runDir string) error {
-	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
-		return fmt.Errorf("mark restore dirty: %w", err)
 	}
 	return nil
 }

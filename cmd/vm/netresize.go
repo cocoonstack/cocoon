@@ -19,11 +19,8 @@ type netResult struct {
 }
 
 func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
-	ctx, conf, hyper, resizer, err := h.resolveAttacher[netresize.Resizer](cmd, args, "vm net", netresize.ErrUnsupportedBackend)
-	if err != nil {
-		return err
-	}
-	vm, err := hyper.Inspect(ctx, args[0])
+	ctx, conf := h.Init(cmd)
+	hyper, vm, err := cmdcore.FindVM(ctx, conf, args[0])
 	if err != nil {
 		return fmt.Errorf("vm net: %w", err)
 	}
@@ -32,7 +29,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("vm net: %w", err)
 	}
 	target, _ := cmd.Flags().GetInt("nics")
-	res, err := resizer.NetResize(ctx, vm.ID, netresize.Spec{Target: target}, plumbing)
+	res, err := hyper.NetResize(ctx, vm.ID, netresize.Spec{Target: target}, plumbing)
 	if err != nil {
 		return err
 	}

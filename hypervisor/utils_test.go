@@ -171,6 +171,31 @@ func TestValidateRoleSequence(t *testing.T) {
 			},
 			wantErr: "must be cidata",
 		},
+		{
+			name: "clone data disk recorded after cidata, snapshot taken after a cold start",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW},
+				{Role: types.StorageRoleData, Serial: "d"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW},
+				{Role: types.StorageRoleCidata},
+				{Role: types.StorageRoleData, Serial: "d"},
+			},
+		},
+		{
+			name: "clone data disk recorded after cidata, snapshot taken before a restart",
+			sidecar: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW},
+				{Role: types.StorageRoleCidata},
+				{Role: types.StorageRoleData, Serial: "d"},
+			},
+			rec: []*types.StorageConfig{
+				{Role: types.StorageRoleCOW},
+				{Role: types.StorageRoleCidata},
+				{Role: types.StorageRoleData, Serial: "d"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

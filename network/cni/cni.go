@@ -48,7 +48,7 @@ type CNI struct {
 	loadErr     error
 }
 
-// New creates a CNI provider; conflist loading is best-effort so Delete still works when none is available — Add fails in that case.
+// New creates a CNI provider; conflist loading is best-effort, so Delete still tears down a 0-NIC VM when none is available and Add fails.
 func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
@@ -163,14 +163,22 @@ func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []n
 	return downIDs, errors.Join(errs...)
 }
 
-func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
+func (c *CNI) recordsOf(ctx context.Context, vmID string) ([]networkRecord, error) {
 	var records []networkRecord
 	if err := c.view(ctx, func(t *netTx) error {
 		var err error
 		records, err = t.byVMID(vmID)
 		return err
 	}); err != nil {
-		return fmt.Errorf("read network index: %w", err)
+		return nil, fmt.Errorf("read network index: %w", err)
+	}
+	return records, nil
+}
+
+func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
+	records, err := c.recordsOf(ctx, vmID)
+	if err != nil {
+		return err
 	}
 	if len(records) == 0 {
 		return nil

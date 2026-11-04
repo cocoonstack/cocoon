@@ -92,9 +92,6 @@ func ResolveImage(ctx context.Context, backends []imagebackend.Images, vmCfg *ty
 
 // EnsureImage pulls the digest-pinned base if missing; only warns so VerifyBaseFiles surfaces the real error for imported images.
 func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *types.VMConfig) {
-	if vmCfg.Image == "" || vmCfg.ImageType == "" {
-		return
-	}
 	logger := log.WithFunc("core.EnsureImage")
 
 	lookupRef := cmp.Or(vmCfg.ImageDigest, vmCfg.Image)
@@ -154,35 +151,27 @@ func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 	})
 }
 
-// EnsureSnapshotNameFree validates name and rejects a duplicate; empty passes.
-func EnsureSnapshotNameFree(ctx context.Context, snapBackend snapshot.Snapshot, name string) error {
-	if err := (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
-		return err
+// SnapshotNameFlags reads the --name/--description pair and rejects a taken name; an empty name passes.
+func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
+	name, _ = cmd.Flags().GetString("name")
+	description, _ = cmd.Flags().GetString("description")
+	if err = (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+		return "", "", err
 	}
 	if name == "" {
-		return nil
+		return name, description, nil
 	}
 	// The name index, not Inspect: a killed save leaves a pending record still holding the name that Inspect reports as not-found, and passing that preflight wastes the whole capture before the insert rejects it.
 	nh, ok := snapBackend.(snapshot.NameHolder)
 	if !ok {
-		return fmt.Errorf("backend %s has no snapshot name index", snapBackend.Type())
+		return "", "", fmt.Errorf("backend %s has no snapshot name index", snapBackend.Type())
 	}
 	id, held, err := nh.NameOwner(ctx, name)
 	if err != nil {
-		return fmt.Errorf("check snapshot name: %w", err)
+		return "", "", fmt.Errorf("check snapshot name: %w", err)
 	}
 	if held {
-		return fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
-	}
-	return nil
-}
-
-// SnapshotNameFlags reads the --name/--description pair and rejects a taken name.
-func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
-	name, _ = cmd.Flags().GetString("name")
-	description, _ = cmd.Flags().GetString("description")
-	if err = EnsureSnapshotNameFree(ctx, snapBackend, name); err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
 	}
 	return name, description, nil
 }

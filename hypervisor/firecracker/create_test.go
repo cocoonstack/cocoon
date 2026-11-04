@@ -30,9 +30,9 @@ func TestDevPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			got := DevPath(tt.idx)
+			got := devPath(tt.idx)
 			if got != tt.want {
-				t.Errorf("DevPath(%d) = %q, want %q", tt.idx, got, tt.want)
+				t.Errorf("devPath(%d) = %q, want %q", tt.idx, got, tt.want)
 			}
 		})
 	}

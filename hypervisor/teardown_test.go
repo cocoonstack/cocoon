@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -67,6 +68,55 @@ func TestDeleteProtocolTeardownFailureKeepsTombstoneThenConverges(t *testing.T) 
 	}
 	if _, err := b.LoadRecord(ctx, "vmproto2"); err == nil {
 		t.Fatal("record survived recovery finalize")
+	}
+}
+
+func TestRecoverDeletingClosesMetering(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		open        bool
+		wantCompute int
+	}{
+		{"open compute interval", true, 1},
+		{"stopped before the delete", false, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			b, capture := newMeteringTestBackend(t)
+			ctx := t.Context()
+			rec := seedProtoVM(t, b, "vmproto-meter")
+			if tt.open {
+				if err := b.UpdateRecord(ctx, "vmproto-meter", func(r *VMRecord) error {
+					now := timeNow()
+					r.StartedAt = &now
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			boom := errors.New("cni del failed")
+			b.SetNetwork(stubNetwork{cleanup: func(context.Context, string) error { return boom }})
+			if err := b.deleteVMProtocol(ctx, "vmproto-meter", rec); !errors.Is(err, boom) {
+				t.Fatalf("want teardown failure surfaced, got %v", err)
+			}
+			b.SetNetwork(stubNetwork{})
+			for range 2 {
+				if _, err := b.RecoverTombstone(ctx, "vmproto-meter"); err != nil {
+					t.Fatalf("roll forward: %v", err)
+				}
+			}
+			compute, storage := 0, 0
+			for _, e := range capture.Entries() {
+				switch e.Kind {
+				case metering.KindVMComputeStop:
+					compute++
+				case metering.KindVMStorageStop:
+					storage++
+				}
+			}
+			if compute != tt.wantCompute || storage != 1 {
+				t.Fatalf("compute.stop = %d, storage.stop = %d; want %d and 1", compute, storage, tt.wantCompute)
+			}
+		})
 	}
 }
 

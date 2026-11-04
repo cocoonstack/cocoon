@@ -39,63 +39,17 @@ func DebugCmdline(storageConfigs []*types.StorageConfig, vmName string) string {
 	return buildCmdline(storageConfigs, nil, vmName, nil)
 }
 
-// DevPath maps idx to vda..vdz, vdaa..vdaz, vdba..vdbz, ...
-func DevPath(idx int) string {
-	const letters = 26
-	if idx < letters {
-		return fmt.Sprintf("/dev/vd%c", 'a'+idx)
-	}
-	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
-}
-
 // EnsureVmlinuxBoot swaps boot.KernelPath for the uncompressed ELF FC requires.
 func EnsureVmlinuxBoot(boot *types.BootConfig) error {
 	if boot == nil || boot.KernelPath == "" {
 		return nil
 	}
-	vmlinuxPath, err := EnsureVmlinux(boot.KernelPath)
+	vmlinuxPath, err := ensureVmlinux(boot.KernelPath)
 	if err != nil {
 		return fmt.Errorf("extract vmlinux: %w", err)
 	}
 	boot.KernelPath = vmlinuxPath
 	return nil
-}
-
-// EnsureVmlinux decompresses kernelPath if needed and returns the ELF path.
-func EnsureVmlinux(kernelPath string) (string, error) {
-	f, err := os.Open(kernelPath) //nolint:gosec
-	if err != nil {
-		return "", fmt.Errorf("open kernel: %w", err)
-	}
-	var magic [4]byte
-	_, err = io.ReadFull(f, magic[:])
-	_ = f.Close()
-	if err != nil {
-		return "", fmt.Errorf("read kernel magic: %w", err)
-	}
-	if bytes.Equal(magic[:], elfMagic) {
-		return kernelPath, nil
-	}
-
-	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
-	if utils.FileExists(vmlinuxPath) {
-		return vmlinuxPath, nil
-	}
-
-	data, err := os.ReadFile(kernelPath) //nolint:gosec
-	if err != nil {
-		return "", fmt.Errorf("read kernel: %w", err)
-	}
-
-	decompressed, decompErr := decompressKernel(data)
-	if decompErr != nil {
-		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
-	}
-
-	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600, utils.Sync); err != nil {
-		return "", fmt.Errorf("write vmlinux: %w", err)
-	}
-	return vmlinuxPath, nil
 }
 
 func decompressKernel(data []byte) ([]byte, error) {
@@ -151,11 +105,57 @@ func decompressGzip(data []byte) ([]byte, error) {
 
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	// Top layer first for overlayfs lowerdir; the FC quirks skip absent-hardware probes.
-	layerDevs := hypervisor.ReverseLayers(storageConfigs, func(idx int, _ *types.StorageConfig) string { return DevPath(idx) })
+	layerDevs := hypervisor.ReverseLayers(storageConfigs, func(idx int, _ *types.StorageConfig) string { return devPath(idx) })
 	return hypervisor.BuildBaseCmdline(
 		"console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
 		strings.Join(layerDevs, ","),
-		DevPath(len(layerDevs)),
+		devPath(len(layerDevs)),
 		networkConfigs, vmName, dnsServers,
 	)
+}
+
+// devPath maps idx to vda..vdz, vdaa..vdaz, vdba..vdbz, ...
+func devPath(idx int) string {
+	const letters = 26
+	if idx < letters {
+		return fmt.Sprintf("/dev/vd%c", 'a'+idx)
+	}
+	return fmt.Sprintf("/dev/vd%c%c", 'a'+(idx/letters)-1, 'a'+idx%letters)
+}
+
+// ensureVmlinux decompresses kernelPath if needed and returns the ELF path.
+func ensureVmlinux(kernelPath string) (string, error) {
+	f, err := os.Open(kernelPath) //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("open kernel: %w", err)
+	}
+	var magic [4]byte
+	_, err = io.ReadFull(f, magic[:])
+	_ = f.Close()
+	if err != nil {
+		return "", fmt.Errorf("read kernel magic: %w", err)
+	}
+	if bytes.Equal(magic[:], elfMagic) {
+		return kernelPath, nil
+	}
+
+	vmlinuxPath := filepath.Join(filepath.Dir(kernelPath), "vmlinux")
+	if utils.FileExists(vmlinuxPath) {
+		return vmlinuxPath, nil
+	}
+
+	data, err := os.ReadFile(kernelPath) //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("read kernel: %w", err)
+	}
+
+	decompressed, decompErr := decompressKernel(data)
+	if decompErr != nil {
+		return "", fmt.Errorf("decompress kernel from %s: %w (FC requires uncompressed ELF kernel)", kernelPath, decompErr)
+	}
+
+	if err := utils.AtomicWriteFile(vmlinuxPath, decompressed, 0o600, utils.Sync); err != nil {
+		return "", fmt.Errorf("write vmlinux: %w", err)
+	}
+	return vmlinuxPath, nil
 }

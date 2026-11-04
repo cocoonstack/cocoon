@@ -61,10 +61,6 @@ func (t *vmTx) resolve(ref string) (string, error) {
 	return t.Resolve(ref, ErrNotFound)
 }
 
-func (t *vmTx) resolveMany(refs []string) ([]string, error) {
-	return t.ResolveMany(refs, ErrNotFound)
-}
-
 func (b *Backend) view(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.View(ctx, []string{b.NS}, func(r meta.Reader) error {
 		return fn(b.tx(ctx, r, nil))

@@ -39,8 +39,6 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 	switch conf.Metering.Backend {
 	case "", config.MeteringFile:
 		return buildFileRecorder(ctx, conf)
-	case config.MeteringNop:
-		return metering.NopRecorder{}
 	case config.MeteringStderr:
 		return meteringstderr.New()
 	case config.MeteringMeta:
@@ -51,7 +49,6 @@ func buildRecorder(ctx context.Context, conf *config.Config) metering.Recorder {
 		}
 		return metalog.New(s)
 	default:
-		logger.Warnf(ctx, "unknown metering backend %q; using nop", conf.Metering.Backend)
 		return metering.NopRecorder{}
 	}
 }
