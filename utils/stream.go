@@ -45,11 +45,10 @@ func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
 func TarDirStream(dir string, cleanup func()) io.ReadCloser {
 	return PipeStream(cleanup, func(w io.Writer) error {
 		tw := tar.NewWriter(w)
-		err := TarDir(tw, dir)
-		if closeErr := tw.Close(); err == nil {
-			err = closeErr
+		if err := TarDir(tw, dir); err != nil {
+			return err
 		}
-		return err
+		return tw.Close()
 	})
 }
 
