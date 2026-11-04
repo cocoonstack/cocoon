@@ -17,7 +17,7 @@ import (
 )
 
 func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, stream io.Reader, sourceSnapshotID string) (*types.VM, error) {
-	// Preflight's validated meta feeds AfterExtract: cocoon.json is merged verbatim, so re-reading it would decode identical bytes.
+	// Preflight's meta feeds AfterExtract; cocoon.json is merged verbatim.
 	var meta *snapshot.SnapshotMeta
 	return ch.RestoreSequence(ctx, vmRef, hypervisor.RestoreSpec{
 		VMCfg:            vmCfg,

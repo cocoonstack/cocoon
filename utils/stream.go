@@ -45,15 +45,14 @@ func PipeStream(cleanup func(), write func(io.Writer) error) io.ReadCloser {
 func TarDirStream(dir string, cleanup func()) io.ReadCloser {
 	return PipeStream(cleanup, func(w io.Writer) error {
 		tw := tar.NewWriter(w)
-		err := TarDir(tw, dir)
-		if closeErr := tw.Close(); err == nil {
-			err = closeErr
+		if err := TarDir(tw, dir); err != nil {
+			return err
 		}
-		return err
+		return tw.Close()
 	})
 }
 
-// PeekReader peeks up to n bytes + returns a reader that re-emits them then the rest; short read at EOF is not an error.
+// PeekReader returns up to n head bytes and a reader that replays them before the rest; a short read at EOF is not an error.
 func PeekReader(r io.Reader, n int) ([]byte, io.Reader, error) {
 	head := make([]byte, n)
 	actual, err := io.ReadFull(r, head)

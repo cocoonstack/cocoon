@@ -8,14 +8,13 @@
 # Usage:
 #   ./doctor/vm-inspect.sh <VM_ID_or_NAME>
 #
-# Requirements: cocoon, jq, ip, tc, nsenter (standard on any Linux with iproute2).
+# Requirements: cocoon, jq, ip, tc, curl (ip and tc ship with iproute2).
 
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-COCOON_ROOT_DIR="${COCOON_ROOT_DIR:-/var/lib/cocoon}"
 COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 
 COCOON_BIN="${COCOON_BIN:-cocoon}"
@@ -247,8 +246,8 @@ fi
 # ---------------------------------------------------------------------------
 header "Network Chain (per-NIC)"
 
-NETNS_NAME="cocoon-${VM_ID}"
-NETNS_PATH="/var/run/netns/${NETNS_NAME}"
+NETNS_PATH=$(echo "$VM_REC" | jq -r '.netns_path // .network_configs[0].netns_path // empty')
+NETNS_NAME="${NETNS_PATH##*/}"
 
 # Read network configs from VM record
 NIC_COUNT=$(echo "$VM_REC" | jq '.network_configs | length')
@@ -257,11 +256,14 @@ if [ "$NIC_COUNT" -eq 0 ]; then
     info "No NICs configured"
 else
     kv "NIC count" "$NIC_COUNT"
-    kv "Netns" "$NETNS_NAME"
 
-    if [ ! -e "$NETNS_PATH" ]; then
+    if [ -z "$NETNS_PATH" ]; then
+        info "No network namespace recorded (backend without netns); skipping veth/tc checks"
+    elif [ ! -e "$NETNS_PATH" ]; then
+        kv "Netns" "$NETNS_NAME"
         fail "Network namespace missing: $NETNS_PATH"
     else
+        kv "Netns" "$NETNS_NAME"
         pass "Network namespace exists"
 
         for i in $(seq 0 $((NIC_COUNT - 1))); do

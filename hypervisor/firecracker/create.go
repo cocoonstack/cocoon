@@ -52,7 +52,6 @@ func EnsureVmlinuxBoot(boot *types.BootConfig) error {
 	return nil
 }
 
-// ensureVmlinux decompresses kernelPath if needed and returns the ELF path.
 func ensureVmlinux(kernelPath string) (string, error) {
 	f, err := os.Open(kernelPath) //nolint:gosec
 	if err != nil {

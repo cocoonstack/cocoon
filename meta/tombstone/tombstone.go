@@ -156,7 +156,7 @@ func (t *Table) Acquire(ctx context.Context, w meta.Writer, id string, build fun
 	return leaseID, nil, err
 }
 
-// Recover takes over id's tombstone under the held entity lock and decodes a deleting-phase payload into cl; a leased entry rolls back in place and a nil Record means nothing to roll forward.
+// Recover takes over id's tombstone and decodes a deleting-phase payload into cl; a leased entry rolls back and returns nil.
 func (t *Table) Recover(ctx context.Context, w meta.Writer, id string, cl any) (*Record, error) {
 	rec, err := t.TakeOver(ctx, w, id)
 	if err != nil || rec == nil {

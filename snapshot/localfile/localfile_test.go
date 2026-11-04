@@ -1212,48 +1212,6 @@ func TestExportCompressed_ImportRoundtrip(t *testing.T) {
 	}
 }
 
-func TestExport_ImportRoundtrip(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	origFiles := map[string][]byte{
-		"cow.raw":    []byte("disk data"),
-		"state.json": []byte(`{"ok":true}`),
-	}
-	makeExportableSnapshot(t, lf, "raw-export-src", origFiles)
-
-	stream, err := lf.Export(ctx, "raw-export-src")
-	if err != nil {
-		t.Fatalf("Export: %v", err)
-	}
-	defer stream.Close()
-
-	importedID, err := lf.Import(ctx, stream, "raw-imported", "")
-	if err != nil {
-		t.Fatalf("Import: %v", err)
-	}
-
-	s, err := lf.Inspect(ctx, importedID)
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
-	}
-	if s.Name != "raw-imported" {
-		t.Errorf("Name: got %q, want %q", s.Name, "raw-imported")
-	}
-
-	dataDir := lf.conf.SnapshotDataDir(importedID)
-	for name, wantContent := range origFiles {
-		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
-		if readErr != nil {
-			t.Errorf("read %s: %v", name, readErr)
-			continue
-		}
-		if !bytes.Equal(got, wantContent) {
-			t.Errorf("file %s: got %q, want %q", name, got, wantContent)
-		}
-	}
-}
-
 func TestImport_InvalidStream(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()

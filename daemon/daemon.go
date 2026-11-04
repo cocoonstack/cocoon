@@ -110,7 +110,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	gcTick := d.gcTick()
 
 	logger.Infof(ctx, "supervising %d backend(s), reconcile every %s", len(d.order), d.conf.ReconcileInterval)
-	d.reconcile(ctx)
+	stuck := d.reconcile(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -123,13 +123,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 					logger.Info(ctx, "meta change events restored")
 				}
 			}
-			d.reconcile(ctx)
+			stuck = d.reconcile(ctx)
 		case <-events:
+			if stuck {
+				continue
+			}
 			if !d.settle(ctx) {
 				return nil
 			}
 			drain(events)
-			d.reconcile(ctx)
+			stuck = d.reconcile(ctx)
 		case ev := <-d.watcher.exits:
 			d.handleExit(ctx, ev)
 			// The convergence just written wakes this daemon's own subscription; its pass already ran.
@@ -141,11 +144,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 func (d *Daemon) lockInstance(ctx context.Context) (func(), error) {
-	dir := filepath.Join(d.conf.RootDir, "locks")
-	if err := utils.EnsureDirs(dir); err != nil {
+	path := LockPath(d.conf.RootDir)
+	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	l := flock.New(filepath.Join(dir, lockFileName))
+	l := flock.New(path)
 	ok, err := l.TryLock(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire daemon lock: %w", err)
@@ -187,6 +190,11 @@ func (d *Daemon) runGC(ctx context.Context) {
 			logger.Error(ctx, err, "gc run")
 		}
 	}()
+}
+
+// LockPath is the single-instance lock a running daemon holds.
+func LockPath(rootDir string) string {
+	return filepath.Join(rootDir, "locks", lockFileName)
 }
 
 func drain(ch <-chan struct{}) {

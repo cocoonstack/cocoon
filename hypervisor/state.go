@@ -45,7 +45,7 @@ func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, err
 	return true, err
 }
 
-// UpdateState flips id to Stopped or Error and emits compute.stop on Running→Stopped; an Error path leaves the interval open for a confirmed-dead helper.
+// UpdateState flips id to Stopped or Error; Running→Stopped emits compute.stop.
 func (b *Backend) UpdateState(ctx context.Context, id string, state types.VMState) error {
 	now := timeNow()
 	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
@@ -200,7 +200,7 @@ func (b *Backend) updateVM(ctx context.Context, id string, mutate func(r *VMReco
 	return nil
 }
 
-// markFailedOperation records retryable network convergence after an operation may have brought plumbing up without committing a usable VMM; the daemon re-observes before acting on it.
+// markFailedOperation schedules network convergence after an operation may have left plumbing up without a usable VMM.
 func (b *Backend) markFailedOperation(ctx context.Context, id string, markError bool) {
 	ctx, cancel := detachedWrite(ctx)
 	defer cancel()
@@ -221,19 +221,19 @@ func detachedWrite(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
 }
 
-// hasOpenComputeInterval reports whether the VM's record shows an unmatched compute.start (StoppedAt is the ledger-close sentinel; transitions to Running clear it).
+// hasOpenComputeInterval reports an unmatched compute.start.
 func hasOpenComputeInterval(r *VMRecord) bool {
 	return r != nil && r.StartedAt != nil && r.StoppedAt == nil
 }
 
-// markTransition stamps one committed state change; every transition after the creating placeholder goes through it so generations stay dense enough to fence stale observations.
+// markTransition stamps one committed state change and bumps the generation.
 func markTransition(r *VMRecord, state types.VMState, reason types.TransitionReason, at time.Time) {
 	r.State = state
 	r.TransitionGeneration++
 	r.LastTransitionReason = reason
 	r.LastTransitionAt = &at
 	r.UpdatedAt = at
-	// A recorded placement means the VMM may hold those cpus; only Stopped proves it is gone, an Error-state VMM may still be pinned
+	// A recorded placement means the VMM may hold those cpus; only Stopped proves it is gone, an Error-state VMM may still be pinned.
 	if state == types.VMStateStopped {
 		r.CPUSet, r.QueueCPUs = "", ""
 	}

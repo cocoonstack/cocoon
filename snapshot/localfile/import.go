@@ -45,7 +45,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	if err = utils.ExtractTar(dataDir, tarReader); err != nil {
 		return "", fmt.Errorf("extract archive: %w", err)
 	}
-	// Drain to true EOF before Close: tar stops at its end-of-archive blocks, and gzip only verifies the CRC32/size trailer once the stream is read out.
+	// Drain to EOF before Close: gzip verifies its CRC trailer only once the stream is read out.
 	if gzCloser != nil {
 		if _, err = io.Copy(io.Discard, tarReader); err != nil {
 			return "", fmt.Errorf("gzip integrity check: %w", err)
@@ -104,7 +104,7 @@ func (lf *LocalFile) Import(ctx context.Context, r io.Reader, name, description 
 	return id, nil
 }
 
-// unwrapGzip sniffs the 2-byte gzip magic (0x1f 0x8b) and returns the tar reader plus a gzip closer (nil for raw tar).
+// unwrapGzip returns the tar reader plus a gzip closer (nil for raw tar).
 func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
 	head, full, err := utils.PeekReader(r, 2)
 	if err != nil {
@@ -123,7 +123,7 @@ func unwrapGzip(r io.Reader) (io.Reader, io.Closer, error) {
 	return full, nil, nil
 }
 
-// readAndRemoveSnapshotJSON reads the envelope and deletes it; the registered snapshot dir keeps only runtime sidecars (cocoon.json), not import metadata.
+// readAndRemoveSnapshotJSON reads the envelope and deletes it so the data dir holds only runtime sidecars.
 func readAndRemoveSnapshotJSON(dataDir string) (types.SnapshotExport, error) {
 	envelope, err := snapshot.ReadSnapshotEnvelope(dataDir)
 	if err != nil {

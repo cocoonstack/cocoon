@@ -3,9 +3,29 @@ package utils
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestTarDirStreamFailsTheReaderOnAnUnreadableEntry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads mode-000 files")
+	}
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a-config.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "b-memory-range"), []byte("mem"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	stream := TarDirStream(src, nil)
+	defer stream.Close()
+	if err := ExtractTar(t.TempDir(), stream); err == nil {
+		t.Fatal("ExtractTar accepted an archive that is missing b-memory-range")
+	}
+}
 
 func TestPeekReader_FullRead(t *testing.T) {
 	src := strings.NewReader("hello world")

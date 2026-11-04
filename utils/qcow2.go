@@ -18,7 +18,7 @@ type Qcow2Header struct {
 	BackingFile    string
 }
 
-// ReadQcow2Header parses the leading 32 bytes of path and the backing file name; ok=false when the file is not qcow2 (wrong magic or shorter than the header).
+// ReadQcow2Header parses the qcow2 header and backing file name; ok is false when path is not qcow2.
 func ReadQcow2Header(path string) (Qcow2Header, bool, error) {
 	f, err := os.Open(path) //nolint:gosec // cocoon-managed or caller-validated path
 	if err != nil {

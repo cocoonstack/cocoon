@@ -88,7 +88,7 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 		os.Remove(path) //nolint:errcheck,gosec
 		return "", "", err
 	}
-	// A lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it
+	// A lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it.
 	deviceID, err := addDevice(ctx, hc, "vm.add-disk", hotDisk(&rec, id, &types.StorageConfig{
 		Role: types.StorageRoleData, Path: path, Serial: src.Name,
 	}))
@@ -222,7 +222,7 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	})
 }
 
-// lockedDeviceOp serializes device-set mutations per VM and returns the record plus a vm.info snapshot taken under the lock, with an ownerless pause already resumed.
+// lockedDeviceOp locks device-set mutations per VM and returns the record plus vm.info, resuming an ownerless pause.
 func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*http.Client, hypervisor.VMRecord, *chVMInfoResponse, func(), error) {
 	hc, rec, unlock, err := ch.LockedRunningOp(ctx, vmRef)
 	if err != nil {
@@ -270,7 +270,7 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 			return fmt.Errorf("device %s removal initiated but the guest has not ejected it: %w", deviceID, err)
 		}
 	}
-	// A detach whose remove-device response was lost finds no device, so the copy is reclaimed here too
+	// A detach whose remove-device response was lost finds no device, so the copy is reclaimed here too.
 	if afterEject == nil {
 		return nil
 	}
@@ -305,7 +305,7 @@ func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any) 
 	return pci.ID, nil
 }
 
-// The CH fork refuses disks without an explicit image_type; build from the record reloaded under the ops lock so DirectIO/queue semantics match create-path data disks (restore rewrites Config).
+// The CH fork refuses disks without an explicit image_type; build from the record reloaded under the ops lock.
 func hotDisk(rec *hypervisor.VMRecord, id string, sc *types.StorageConfig) chDisk {
 	d := storageConfigToDisk(sc, rec.Config.CPU, rec.Config.DiskQueueSize, rec.Config.NoDirectIO, hypervisor.QueueCPUs(rec))
 	d.ID = id
@@ -331,7 +331,7 @@ func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) 
 	return "", nil
 }
 
-// The pause is ownerless: callers hold the ops lock every capture window holds.
+// convergeOrphanedPause resumes a pause no capture holds, including a final-round or received migration.
 func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*chVMInfoResponse, error) {
 	info, err := getVMInfo(ctx, hc)
 	if err != nil {

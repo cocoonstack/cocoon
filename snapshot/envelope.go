@@ -66,7 +66,7 @@ func WriteSnapshotEnvelope(dir string, cfg types.SnapshotConfig, files, diskAtta
 	return utils.AtomicWriteFile(filepath.Join(dir, SnapshotJSONName), data, 0o644, utils.Sync)
 }
 
-// VerifyManifest checks that every file the envelope lists landed in dir; a tar cut at an entry boundary reads as complete, so the manifest is what catches it.
+// VerifyManifest checks that every file the envelope lists is present in dir.
 func VerifyManifest(dir string, files []string) error {
 	for _, name := range files {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {

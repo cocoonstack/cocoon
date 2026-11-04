@@ -20,7 +20,7 @@ import (
 // StaleTempAge is the age threshold for removing stale temp files during GC.
 const StaleTempAge = time.Hour
 
-// SameFilesystem reports whether a and b live on the same filesystem (matching st_dev), so a rename or hardlink between them can succeed rather than failing with EXDEV.
+// SameFilesystem reports whether a and b share a st_dev, so rename or hardlink avoids EXDEV.
 func SameFilesystem(a, b string) (bool, error) {
 	sa, err := os.Stat(a)
 	if err != nil {
@@ -88,10 +88,7 @@ func ScanFileStems(dir, suffix string) ([]string, error) {
 // ScanSubdirs returns the names of all immediate subdirectories of dir.
 func ScanSubdirs(dir string) ([]string, error) {
 	return scanDir(dir, func(e os.DirEntry) (string, bool) {
-		if e.IsDir() {
-			return e.Name(), true
-		}
-		return "", false
+		return e.Name(), e.IsDir()
 	})
 }
 

@@ -53,13 +53,16 @@ func (b *Backend) StopOneLocked(ctx context.Context, id string, spec StopSpec) e
 		return spec.Shutdown(ctx, &rec, sockPath, pid)
 	})
 	settled := errors.Is(shutdownErr, ErrNotRunning) && rec.State == types.VMStateStopped && !hasOpenComputeInterval(&rec)
-	if err := b.HandleStopResult(ctx, id, rec.RunDir, spec.RuntimeFiles, shutdownErr); err != nil {
-		return err
+	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
+		b.MarkError(ctx, id)
+		return shutdownErr
 	}
+	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
+	b.removeCgroupScope(ctx, id)
 	transitioned := false
 	if !settled {
-		// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
 		logger := log.WithFunc(b.Typ + ".StopOneLocked")
+		// Warn-and-continue: the VMM is dead and the flip self-heals on the next reconcile.
 		if err := b.UpdateState(ctx, id, types.VMStateStopped); err != nil {
 			logger.Warnf(ctx, "mark stopped %s: %v", id, err)
 		} else {
@@ -104,16 +107,6 @@ func (b *Backend) DeleteAll(ctx context.Context, refs []string, force bool, stop
 		}
 		return b.deleteOneLocked(ctx, id, force, stopLocked, &rec, procScan)
 	})
-}
-
-func (b *Backend) HandleStopResult(ctx context.Context, id, runDir string, runtimeFiles []string, shutdownErr error) error {
-	if shutdownErr != nil && !errors.Is(shutdownErr, ErrNotRunning) {
-		b.MarkError(ctx, id)
-		return shutdownErr
-	}
-	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
-	b.removeCgroupScope(ctx, id)
-	return nil
 }
 
 func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, stopLocked VMOp, rec *VMRecord, procScan utils.ProcScan) error {

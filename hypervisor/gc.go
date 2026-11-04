@@ -123,7 +123,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
 	for _, id := range ids {
-		// Ops lock excludes in-flight owners: a create pre-locks and mkdirs before its DB record lands, so an unlocked "orphan" may be seconds old.
+		// Hold the ops lock: a create mkdirs before its record lands.
 		ok := b.withOpsTryLock(ctx, id, func() {
 			rec, err := b.PeekRecord(ctx, id)
 			if err != nil {
@@ -209,7 +209,7 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 	return errs
 }
 
-// withOpsTryLock runs fn holding the VM ops lock, reporting false (fn skipped) when an in-flight operation owns it; GC never blocks on ops locks, so the reversed order vs. the ops-outer/index-inner convention cannot deadlock.
+// withOpsTryLock runs fn under the VM ops lock and reports false when another operation holds it; GC only try-locks, so lock order cannot deadlock.
 func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bool {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil || !ok {
@@ -220,7 +220,7 @@ func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bo
 	return true
 }
 
-// ensureOrphanVMMDead terminates any VMM bound to runDir's socket and errors unless none survive; a missing pidfile is not proof of death, so it also scans /proc by socket path.
+// ensureOrphanVMMDead kills any VMM on runDir's socket; the /proc scan covers a missing pidfile.
 func (b *Backend) ensureOrphanVMMDead(ctx context.Context, runDir string) error {
 	sockPath := SocketPath(runDir)
 	if pid, err := utils.ReadPIDFile(b.PIDFilePath(runDir)); err == nil {

@@ -10,10 +10,10 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/cmd/meta/convert"
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/daemon"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 )
 
-// Handler groups the meta store lifecycle commands (init, convert, backup).
 type Handler struct {
 	cmdcore.BaseHandler
 }
@@ -40,10 +40,11 @@ func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 	target := cmp.Or(conf.MetaBackend, config.MetaBackendSQLite)
 	dbPath := cmdcore.MetaDBPath(conf)
 	spec := convert.Spec{
-		MetaRoot: filepath.Dir(dbPath),
-		DBPath:   dbPath,
-		Decls:    cmdcore.MetaNamespaces(),
-		JSON:     cmdcore.MetaJSONNamespaces(conf),
+		MetaRoot:   filepath.Dir(dbPath),
+		DBPath:     dbPath,
+		DaemonLock: daemon.LockPath(conf.RootDir),
+		Decls:      cmdcore.MetaNamespaces(),
+		JSON:       cmdcore.MetaJSONNamespaces(conf),
 	}
 	if err := convert.Run(ctx, spec, target); err != nil {
 		return err

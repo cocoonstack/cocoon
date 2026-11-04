@@ -112,7 +112,7 @@ func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := hdr.PAXRecords[paxSparseMap]; !ok {
-		t.Errorf("expected sparse PAX record for small fragmentation, got none")
+		t.Error("expected sparse PAX record for small fragmentation, got none")
 	}
 }
 

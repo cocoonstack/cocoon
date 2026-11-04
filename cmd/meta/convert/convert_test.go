@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
@@ -225,6 +226,34 @@ func TestConvertRefusesUnsupportedFS(t *testing.T) {
 	}
 	if utils.FileExists(spec.DBPath) {
 		t.Fatal("convert created target WAL state on refused filesystem")
+	}
+	if err := metasqlite.RefuseManifest(spec.DBPath); err != nil {
+		t.Fatalf("the refused convert locked the root: %v", err)
+	}
+}
+
+func TestConvertRefusesARunningDaemon(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	if err := os.MkdirAll(filepath.Dir(spec.DaemonLock), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	daemon := flock.New(spec.DaemonLock)
+	if ok, err := daemon.TryLock(t.Context()); err != nil || !ok {
+		t.Fatalf("hold daemon lock: ok=%v err=%v", ok, err)
+	}
+	err := Run(t.Context(), spec, "sqlite")
+	if err == nil || !strings.Contains(err.Error(), "daemon is running") {
+		t.Fatalf("want daemon refusal, got %v", err)
+	}
+	if !utils.FileExists(spec.JSON[0].FilePath) || utils.FileExists(spec.DBPath) {
+		t.Fatal("the refused convert touched the stores")
+	}
+	if err := daemon.Unlock(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("convert after the daemon stopped: %v", err)
 	}
 }
 
@@ -463,7 +492,11 @@ func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
 func testSpec(t *testing.T, nss ...string) Spec {
 	t.Helper()
 	root := t.TempDir()
-	spec := Spec{MetaRoot: filepath.Join(root, "meta"), DBPath: filepath.Join(root, "meta", metasqlite.DBFileName)}
+	spec := Spec{
+		MetaRoot:   filepath.Join(root, "meta"),
+		DBPath:     filepath.Join(root, "meta", metasqlite.DBFileName),
+		DaemonLock: filepath.Join(root, "locks", "daemon.lock"),
+	}
 	for _, ns := range nss {
 		spec.Decls = append(spec.Decls, metasqlite.Namespace{Name: ns, Tables: testTables})
 		spec.JSON = append(spec.JSON, metajson.Namespace{

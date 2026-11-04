@@ -79,7 +79,7 @@ func TestDecompressKernel(t *testing.T) {
 			got, err := decompressKernel(tt.data)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("want error, got nil")
+					t.Fatal("want error, got nil")
 				}
 				return
 			}

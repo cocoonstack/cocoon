@@ -99,7 +99,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		return nil, fmt.Errorf("validate post-cidata storage: %w", vErr)
 	}
 
-	// vm.restore attaches the snapshot's TAP names and vm.remove-device releases a TAP only after the guest's eject ACK, so every restored NIC gets a clone-unique throwaway TAP that CH creates and drops itself.
+	// Each restored NIC gets a clone-unique throwaway TAP: vm.restore reuses snapshot TAP names and CH frees a TAP only after the eject ACK.
 	netTAPs := make([]string, len(chCfg.Nets))
 	for i := range netTAPs {
 		netTAPs[i] = network.TAPName(config.RestoreTAPPrefix, vmID, i)

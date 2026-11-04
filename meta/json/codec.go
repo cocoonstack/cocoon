@@ -10,7 +10,6 @@ import (
 
 // Codec maps between a namespace file's bytes and its Model; Encode output is the complete file content including the trailing newline.
 type Codec interface {
-	// Decode parses file bytes.
 	Decode(data []byte) (*Model, error)
 	Encode(m *Model) ([]byte, error)
 }

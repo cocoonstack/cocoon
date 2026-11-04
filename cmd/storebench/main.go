@@ -151,7 +151,6 @@ func runCreate(ctx context.Context, engine string, workers, per, resident int, d
 	return nil
 }
 
-// runWorker performs `per` creates (reserve placeholder + finalize to running) — the meta half of one VM creation each.
 func runWorker(ctx context.Context, engine, prefix string, per int, dir string) error {
 	b, err := openBackend(ctx, engine, dir)
 	if err != nil {
@@ -287,7 +286,7 @@ func argDir(i int) string {
 	return dir
 }
 
-// uniquePayload defeats any identical-bytes write elision so replace ops measure a REAL durable commit.
+// uniquePayload defeats identical-bytes write elision.
 func uniquePayload(i int) jsontext.Value {
 	return jsontext.Value(fmt.Sprintf(`{"name":"bench","state":"running","seq":%d}`, i))
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -48,6 +50,9 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			}
 			if len(info.Config.Nets) != len(rec.NetworkConfigs) {
 				return fmt.Errorf("vm %s has %d NICs but its record has %d; rerun vm net first", rec.ID, len(info.Config.Nets), len(rec.NetworkConfigs))
+			}
+			if err := waitPendingNICEjects(ctx, hc, rec.ID, info); err != nil {
+				return err
 			}
 			if err := waitBalloonSettled(ctx, hc, rec.ID, info); err != nil {
 				return err
@@ -118,6 +123,34 @@ func hotAttachedError(fs []chFs, devices []chDevice, disks []chDisk) error {
 		}
 	}
 	return nil
+}
+
+func waitPendingNICEjects(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) error {
+	if !hasPendingNICEject(info) {
+		return nil
+	}
+	err := utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
+		cur, infoErr := getVMInfo(ctx, hc)
+		if infoErr != nil {
+			return false, infoErr
+		}
+		return !hasPendingNICEject(cur), nil
+	})
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	log.WithFunc("cloudhypervisor.waitPendingNICEjects").Warnf(ctx, "vm %s: capturing with a NIC the guest has not ejected: %v", vmID, err)
+	return nil
+}
+
+func hasPendingNICEject(info *chVMInfoResponse) bool {
+	for id := range info.DeviceTree {
+		isNIC := strings.HasPrefix(id, "_net") || strings.HasPrefix(id, cocoonNetIDPrefix)
+		if isNIC && !slices.ContainsFunc(info.Config.Nets, func(n chNet) bool { return n.ID == id }) {
+			return true
+		}
+	}
+	return false
 }
 
 func waitBalloonSettled(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) error {

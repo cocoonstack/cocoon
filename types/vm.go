@@ -11,9 +11,9 @@ import (
 const (
 	VMStateCreating VMState = "creating" // DB placeholder written, dirs/disks being prepared
 	VMStateCreated  VMState = "created"  // registered, VMM process not yet started
-	VMStateRunning  VMState = "running"  // VMM process alive, guest is up
-	VMStateStopped  VMState = "stopped"  // VMM process has exited cleanly
-	VMStateError    VMState = "error"    // start, stop, or restore failed
+	VMStateRunning  VMState = "running"
+	VMStateStopped  VMState = "stopped"
+	VMStateError    VMState = "error"
 
 	TransitionCreate         TransitionReason = "create"
 	TransitionBoot           TransitionReason = "boot"

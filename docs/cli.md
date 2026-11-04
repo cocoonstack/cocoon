@@ -2,6 +2,8 @@
 
 Every command and flag. Concept guides: [VM lifecycle](vm.md), [networking](networking.md), [snapshots](snapshots.md), [devices](devices.md), [GC](gc.md).
 
+Guides that document specific verbs and flags: `vm stop`/`vm rm` in [Shutdown Behavior](vm.md#shutdown-behavior), `vm net` in [NIC hot-resize](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci), `vm fs`/`device`/`disk` in [Runtime Device Attach](devices.md), `gc` flags in [GC](gc.md), and `daemon` flags in [Daemon](daemon.md#running-it).
+
 ## CLI Commands
 
 ```
@@ -63,7 +65,7 @@ cocoon
 
 `daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
-The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the configured `meta_backend` (unset = sqlite). Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
+The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the configured `meta_backend` (unset = sqlite). Stop the daemon and any `cocoon gc` timer first: convert refuses while the daemon runs, and it needs the store otherwise idle. Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
 
 ## Global Flags
 
@@ -82,7 +84,7 @@ Config-file / env-only keys (no CLI flag):
 
 | Key          | Env Variable        | Default | Description                                                            |
 | ------------ | ------------------- | ------- | ---------------------------------------------------------------------- |
-| `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry |
+| `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry; capped at 64 |
 | `cgroup_parent` | `COCOON_CGROUP_PARENT` | `cocoon.slice` | cgroup v2 slice under `/sys/fs/cgroup` holding the per-VM CPU scopes; GC removes any empty `vm-<id>.scope` under it that none of its own VMs owns, so co-hosted installations need distinct slices, as with `net_scope`; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 | `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); kernel cpu-list syntax |
 | `net_scope` | `COCOON_NET_SCOPE` | empty (legacy names) | Two alphanumerics keying this installation's host network families — bridge TAPs `<scope><vmid8>-<nic>`, CNI netns `<scope>-<vmid>` — so co-hosted installations never GC each other's; see [Host device namespaces](networking.md#host-device-namespaces) |
@@ -106,6 +108,8 @@ The `log` section is decoded by field name, so its keys are the compact
 spellings — `level`, `filename`, `usejson`, `maxsize`, `maxage`, `maxbackups`
 (not `use_json` / `max_age` / `max_backups`). A dotted key maps to its env
 variable by replacing `.` with `_`, hence `COCOON_LOG_MAXSIZE` for `log.maxsize`.
+
+Mutating `vm` verbs (`create`, `run`, `clone`, `start`, `stop`, `rm`, `restore`, `reconcile-stale-create`, `net`, `fs`/`device`/`disk` `attach`/`detach`, `migrate capture`/`receive`) take `-o, --output json` for machine-readable output; `list` and `status` use `-o, --format`; `snapshot export -o` is the output file path.
 
 ## VM Flags
 
@@ -161,13 +165,7 @@ Applies to `cocoon vm clone`:
 | `--from-dir` | empty                | Clone from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--data-disk` | empty (repeatable)  | Create a fresh data disk for the clone and hot-add it after restore: `size=20G[,name=...][,fstype=ext4|none]` (CH, or FC `--pci` snapshots; names must not collide with disks inherited from the snapshot) |
 
-CPU, memory, and storage all inherit from the snapshot — both hypervisors
-restore the guest from the snapshot's binary device state, so those values
-are fixed at snapshot time. NIC count inherits by default but `--nics N`
-overrides it: Cloud Hypervisor hot-swaps the snapshot's NICs for a fresh set
-right after restore, a Firecracker `--pci` clone restores the snapshot's NICs
-and hot-plugs the delta afterwards; a Firecracker MMIO snapshot rejects the override (`--nics override on clone needs a --pci snapshot on Firecracker`). Use
-`cocoon vm run` to create a fresh VM with different CPU/memory/storage.
+CPU, memory, and storage are fixed at snapshot time; `--nics` overrides the NIC count. Backend rules in [clone constraints](snapshots.md#clone-constraints); use `cocoon vm run` for a different CPU/memory/storage shape.
 
 **Network backend** is decided per clone (the snapshot does not persist a
 bridge device). `--bridge` and `--network` are mutually exclusive:
@@ -186,7 +184,7 @@ Applies to `cocoon vm restore`:
 
 | Flag          | Default | Description                                                                                            |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode: `copy`, `ondemand` (UFFD) or `mmap` (CoW map); CH only, `mmap` needs Cloud Hypervisor v54 or newer (`cocoon-check --upgrade` installs the cocoonstack fork build) and `ondemand` v52 or newer: v52–v53 reject a mode they lack, and builds before v52 ignore the field and restore by copy; hugepages/shared snapshots degrade `mmap` to `copy` with a warning |
+| `--restore-mode` | `mmap` for plain private-anon snapshots, else `copy` | Memory restore mode; same values and version floors as [clone `--restore-mode`](#clone-flags) |
 | `--from-dir`  | empty   | Restore from a snapshot directory (must contain `snapshot.json`); mutually exclusive with positional `SNAPSHOT` |
 | `--force`     | `false` | Skip the snapshot-belongs-to-VM check. Valid only with `--from-dir`; used on its own it is rejected with `--force only applies with --from-dir` |
 
@@ -200,7 +198,7 @@ See [restore constraints](snapshots.md#restore-constraints).
 
 ### Snapshot Flags
 
-Applies to `cocoon snapshot save`:
+Applies to `cocoon snapshot save` and `cocoon vm hibernate`:
 
 | Flag            | Default | Description          |
 | --------------- | ------- | -------------------- |
@@ -232,7 +230,7 @@ When FILE is omitted, data is read from stdin. This enables piping: `cocoon snap
 
 ### Direct Clone / Restore From a Directory
 
-`vm clone --from-dir DIR` and `vm restore --from-dir DIR` accept a directory produced by `snapshot export --to-dir`. Do not unpack an `export -o file.tar` with a third-party tar and pass the result: cocoon stores sparse disks with private pax records that only its own extractor understands, so another tar rebuilds a short, content-shifted disk. To go through a tar, use `snapshot import`. The snapshot does not need to be in the local snapshot DB:
+`vm clone --from-dir DIR` and `vm restore --from-dir DIR` accept a directory produced by `snapshot export --to-dir`. Do not unpack an `export -o file.tar` with a third-party tar and pass the result; go through `snapshot import` instead ([known issue](known-issues.md#--from-dir-and-snapshot-import-reject-a-snapshot-rebuilt-by-a-third-party-tar)). The snapshot does not need to be in the local snapshot DB:
 
 ```bash
 # Build a portable snapshot dir, ship it, clone from it:

@@ -45,7 +45,7 @@ type snapshotGCSnapshot struct {
 	dataDirs     []string
 	leaseIDs     []string
 	stalePending []string
-	missingDir   []string // finalized records whose data dir vanished (rm dir-deleted, DB update failed)
+	missingDir   []string // finalized records whose data dir vanished
 	records      map[string]snapshotMeta
 	reasons      map[string]string
 	policy       EvictionPolicy
@@ -67,7 +67,6 @@ func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, er
 	return pins, nil
 }
 
-// gcRecover resumes existing snapshot tombstones by phase before discovery.
 func (lf *LocalFile) gcRecover(ctx context.Context) []error {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {
@@ -114,7 +113,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 			}); err != nil {
 				return snap, err
 			}
-			// the stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
+			// The stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
 			for id := range snap.records {
 				if _, statErr := os.Stat(conf.SnapshotDataDir(id)); errors.Is(statErr, fs.ErrNotExist) {
 					snap.missingDir = append(snap.missingDir, id)
@@ -163,7 +162,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					errs = append(errs, err)
 					break
 				}
-				// an exclusive acquire proves the pending record's owner died; no age gate needed
+				// An exclusive acquire proves the pending record's owner died; no age gate needed
 				release, ok, lockErr := lf.tryExclusiveLease(ctx, id)
 				if lockErr != nil {
 					errs = append(errs, lockErr)
@@ -173,7 +172,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					logger.Warnf(ctx, "skip %s: leased by an active holder", id)
 					continue
 				}
-				// the reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
+				// The reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
 				var sawRecord bool
 				revalidate := func(rec *snapshotRecord) bool {
 					sawRecord = true

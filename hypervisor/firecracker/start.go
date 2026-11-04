@@ -159,11 +159,10 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	}
 
 	leaseControl, relayErr := fc.startConsoleRelay(rec.RunDir, master, pid, leaseFiles)
+	_ = master.Close()
 	switch {
 	case relayErr == nil:
-		_ = master.Close()
 	case len(leaseFiles) > 0:
-		_ = master.Close()
 		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
 		_ = fcCmd.Process.Kill()
 		<-exited

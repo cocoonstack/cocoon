@@ -10,7 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// Events subscribes to committed-change signals; data_version is comparable only across calls on one pinned connection and never moves for that connection's own commits (§7).
+// Events pins one connection; data_version moves only for other connections' commits (§7).
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -26,7 +26,7 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	return ch, func() { stop(); release() }, nil
 }
 
-// notifier holds the pinned data_version connection; version is touched only by the init call and the Run goroutine. ctx is the notifier's own lifetime — it outlives every Events caller and ends at stop.
+// Version is touched only by the init call and the Run goroutine; ctx lives until stop.
 type notifier struct {
 	b       *meta.Broadcaster
 	watcher *fsnotify.Watcher // kept for the severed-watch test seam

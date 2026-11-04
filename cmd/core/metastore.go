@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -37,7 +38,7 @@ var (
 	metaStore meta.Store
 	metaErr   error
 
-	// vmTables maps the legacy vms.json fields onto the vms-namespace tables; the json field names are engine knowledge and live only here.
+	// vmTables maps legacy vms.json fields onto the vms-namespace tables.
 	vmTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "vms", Table: hypervisor.TableRecords},
 		{Key: "names", Table: hypervisor.TableNames},
@@ -68,7 +69,7 @@ func MetaNamespaces() []metasqlite.Namespace {
 	}
 }
 
-// MetaJSONNamespaces declares the json engine's namespace set: legacy file locations and field mappings, consumed by open and by conversion.
+// MetaJSONNamespaces declares the json engine's namespaces.
 func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 	chCfg := cloudhypervisor.NewConfig(conf)
 	fcCfg := firecracker.NewConfig(conf)
@@ -95,7 +96,7 @@ func MetaDBPath(conf *config.Config) string {
 	return filepath.Join(conf.RootDir, "meta", metasqlite.DBFileName)
 }
 
-// ResolveMetaBackend returns the effective engine: an explicit setting wins, then an existing store binds (meta.db → sqlite, legacy json files → json), and a fresh root gets sqlite.
+// ResolveMetaBackend returns the effective engine: explicit setting, then the existing store, else sqlite.
 func ResolveMetaBackend(conf *config.Config) string {
 	if conf.MetaBackend != "" {
 		return conf.MetaBackend
@@ -116,7 +117,7 @@ func LegacyJSONPresent(conf *config.Config) bool {
 	})
 }
 
-// MetaStore builds the process-wide meta store once, one store for every namespace and backend; the engine follows ResolveMetaBackend, and a fresh sqlite root bootstraps itself.
+// MetaStore builds the process-wide meta store once.
 func MetaStore(conf *config.Config) (meta.Store, error) {
 	metaOnce.Do(func() {
 		// Bootstrap owns its context: the store outlives any single caller, and a canceled first caller must not poison the Once for everyone.
@@ -130,6 +131,10 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		}
 		if ResolveMetaBackend(conf) == config.MetaBackendSQLite {
 			metaStore, metaErr = openSQLiteStore(ctx, conf, dbPath)
+			return
+		}
+		if utils.FileExists(dbPath) {
+			metaErr = fmt.Errorf("meta_backend is json but %s holds sqlite metadata; run `cocoon meta convert`", dbPath)
 			return
 		}
 		if conf.MetaBackend == "" {
@@ -175,7 +180,7 @@ func ImageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
 	}
 }
 
-// openSQLiteStore opens the sqlite engine, bootstrapping a fresh root or repairing a crashed bootstrap; a legacy json root never bootstraps — that would shadow its data.
+// openSQLiteStore never bootstraps over legacy json data, which a fresh store would shadow.
 func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
 	if !LegacyJSONPresent(conf) {
 		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {

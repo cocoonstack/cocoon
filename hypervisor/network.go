@@ -8,14 +8,13 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// VMNetwork converges a VM's host networking; the command layer supplies it so a state transition and its network action share one VM ops lock (design §5).
+// VMNetwork converges a VM's host networking under the caller's VM ops lock.
 type VMNetwork interface {
 	Recover(ctx context.Context, vm *types.VM) error
 	Quiesce(ctx context.Context, vm *types.VM) error
 	Cleanup(ctx context.Context, vmID string) error
 }
 
-// SetNetwork injects the host-networking seam.
 func (b *Backend) SetNetwork(n VMNetwork) { b.Net = n }
 
 // RecoverNetwork rebuilds and un-quiesces a VM's plumbing before launch; the caller holds the VM ops lock.

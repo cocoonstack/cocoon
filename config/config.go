@@ -25,7 +25,6 @@ const (
 	// RestoreTAPPrefix names CH's throwaway restore TAPs; a scope equal to it would collide with a clone's own bridge TAPs.
 	RestoreTAPPrefix = "rm"
 
-	// defaultPullConns is the default concurrent Range connections per cloud-image download.
 	defaultPullConns = 8
 	// maxPullConns caps it so a misconfigured pull_conns can't exhaust file descriptors.
 	maxPullConns = 64

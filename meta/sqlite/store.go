@@ -33,7 +33,6 @@ const (
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
-	// busyRetryCeiling bounds the BEGIN IMMEDIATE retry loop; busyRetryPause caps the jittered pause between retries (§4).
 	busyRetryCeiling   = 30 * time.Second
 	busyRetryPause     = 2 * time.Millisecond
 	slowTxnWarn        = 500 * time.Millisecond
@@ -87,7 +86,7 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if !utils.FileExists(dbPath) {
 		return nil, fmt.Errorf("no sqlite store at %s: run `cocoon meta init` or `cocoon meta convert`", dbPath)
 	}
-	if err := checkFS(dbPath); err != nil {
+	if err := CheckFS(dbPath); err != nil {
 		return nil, err
 	}
 	s := &Store{path: dbPath, nss: map[string]Namespace{}}

@@ -32,7 +32,7 @@ var nonImageSignatures = []struct {
 
 type sourceImageInfo struct {
 	Format string
-	Compat string // qcow2 compat level (e.g. "0.10", "1.1"); empty for non-qcow2
+	Compat string // empty for non-qcow2
 }
 
 func sniffHead(head []byte) error {
@@ -58,7 +58,7 @@ func inspectImage(ctx context.Context, path string) (*sourceImageInfo, error) {
 	if isQcow2 {
 		return info, nil
 	}
-	// Not qcow2: shell out to qemu-img to distinguish raw from unsupported (vmdk/vdi/vhd/etc.) — treating non-qcow2 as raw would corrupt the converted blob.
+	// Treating non-qcow2 as raw would corrupt the blob, so qemu-img distinguishes raw from vmdk/vdi/vhd.
 	log.WithFunc("cloudimg.inspectImage").Debugf(ctx, "exec qemu-img info %s", path)
 	cmd := exec.CommandContext(ctx, "qemu-img", "info", "--output=json", path) //nolint:gosec // path is controlled
 	out, err := cmd.Output()

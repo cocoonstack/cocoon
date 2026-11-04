@@ -42,7 +42,6 @@ func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types
 }
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
-	// Shell out because no Go ext4 formatter library; mkfs.ext4 is authoritative.
 	out, err := exec.CommandContext( //nolint:gosec
 		ctx,
 		"mkfs.ext4", "-F", "-m", "0", "-q",
@@ -55,7 +54,7 @@ func InitCOWFilesystem(ctx context.Context, path string) error {
 	return nil
 }
 
-// DataDiskBaseName is the canonical file name (centralized so matchers, reflink loops, and clone path rewrites stay in sync).
+// DataDiskBaseName returns the canonical data disk file name.
 func DataDiskBaseName(serial string) string {
 	return "data-" + serial + ".raw"
 }

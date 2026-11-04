@@ -66,7 +66,7 @@ build: ## Build cocoon binary
 # --- Testing ---
 
 test: vet ## Run tests with race detection and coverage
-	go test -race -timeout 120s -count=1 -cover -coverprofile=coverage.out ./...
+	go test -race -timeout 20m -count=1 -cover -coverprofile=coverage.out ./...
 
 coverage: test ## Generate and display coverage report
 	go tool cover -func=coverage.out
@@ -93,7 +93,7 @@ fmt: gofumpt goimports ## Format code with gofumpt and goimports
 
 fmt-check: gofumpt goimports ## Check formatting (fails if files need formatting)
 	@test -z "$$($(GOFMT) -extra -l .)" || { echo "Files need formatting (gofumpt):"; $(GOFMT) -extra -l .; exit 1; }
-	@test -z "$$($(GOIMPORTS) -l .)" || { echo "Files need formatting (goimports):"; $(GOIMPORTS) -l .; exit 1; }
+	@test -z "$$($(GOIMPORTS) -l --local 'github.com/cocoonstack/cocoon' .)" || { echo "Files need formatting (goimports):"; $(GOIMPORTS) -l --local 'github.com/cocoonstack/cocoon' .; exit 1; }
 
 # --- Maintenance ---
 

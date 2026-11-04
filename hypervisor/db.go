@@ -15,9 +15,9 @@ type VMRecord struct {
 	RunDir string `json:"run_dir,omitempty"`
 	LogDir string `json:"log_dir,omitempty"`
 
-	// Quarantine names why start must refuse (e.g. partial restore merge); only a successful restore clears it — stop's state flip cannot.
+	// Quarantine names why start must refuse; only a successful restore clears it.
 	Quarantine string `json:"quarantine,omitempty"`
 
-	// QuiescePending survives a crash between the stop transition and the network Quiesce, so a later pass retries it.
+	// QuiescePending marks plumbing a stop or a killed launch may have left up, so a later pass brings it down.
 	QuiescePending bool `json:"quiesce_pending,omitzero"`
 }

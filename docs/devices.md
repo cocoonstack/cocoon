@@ -109,6 +109,11 @@ cocoon vm device attach my-vm --pci 01:00.0 --id mygpu
 cocoon vm device detach my-vm --id mygpu
 ```
 
+| Flag | Applies to | Description |
+| ---- | ---------- | ----------- |
+| `--pci` | `attach` (required) | Short BDF (`01:00.0`), full BDF (`0000:01:00.0`) or a sysfs path under `/sys/bus/pci/devices/` |
+| `--id` | `attach` (optional), `detach` (required) | Device id; Cloud Hypervisor generates one when `attach` omits it, and `detach` takes the id `attach` returned. Must not start with `cocoon-` |
+
 `cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs and whenever the live attach set is empty.
 
 ## Firecracker (`--pci`)

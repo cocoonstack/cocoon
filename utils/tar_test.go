@@ -25,7 +25,7 @@ func TestTarFile(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	if err := openAndTarFile(tw, src, "custom-name.txt"); err != nil {
-		t.Fatalf("tarFile: %v", err)
+		t.Fatalf("openAndTarFile: %v", err)
 	}
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestTarFile_EmptyFile(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	if err := openAndTarFile(tw, src, "empty.txt"); err != nil {
-		t.Fatalf("tarFile: %v", err)
+		t.Fatalf("openAndTarFile: %v", err)
 	}
 	tw.Close()
 
@@ -334,18 +334,14 @@ func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
 		t.Fatalf("logical size: got %d, want %d", len(got), realSize)
 	}
 
-	for i := range 8192 {
-		if got[i] != 0 {
-			t.Fatalf("byte %d: expected 0, got %d", i, got[i])
-		}
+	if !isAllZero(got[:8192]) {
+		t.Fatal("leading hole not zero")
 	}
 	if !bytes.Equal(got[8192:8192+4096], dataContent) {
 		t.Error("data segment content mismatch")
 	}
-	for i := 8192 + 4096; i < realSize; i++ {
-		if got[i] != 0 {
-			t.Fatalf("byte %d: expected 0, got %d", i, got[i])
-		}
+	if !isAllZero(got[8192+4096:]) {
+		t.Fatal("trailing hole not zero")
 	}
 }
 

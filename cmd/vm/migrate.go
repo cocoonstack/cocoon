@@ -48,8 +48,12 @@ func (h Handler) MigrateReceive(cmd *cobra.Command, _ []string) error {
 	}
 	// A receive killed mid-flight leaves its placeholder and maybe a VMM under this ID.
 	if id != "" {
-		if _, err = hyper.ReconcileStaleCreate(ctx, id); err != nil {
-			return fmt.Errorf("reclaim interrupted receive: %w", err)
+		outcome, reclaimErr := hyper.ReconcileStaleCreate(ctx, id)
+		if reclaimErr != nil {
+			return fmt.Errorf("reclaim interrupted receive: %w", reclaimErr)
+		}
+		if outcome == hypervisor.StaleCreateBusy {
+			return fmt.Errorf("vm %s is busy: another operation owns it", id)
 		}
 	}
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)

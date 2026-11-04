@@ -32,7 +32,7 @@ type NetworkConfig struct {
 	Network *Network `json:"network,omitzero"`
 }
 
-// Network is the guest-visible IP config for a NIC; all fields omitempty so DHCP NICs serialize empty.
+// Network is the guest-visible IP config for a NIC; DHCP NICs serialize empty.
 type Network struct {
 	IP      string `json:"ip,omitempty"`      // dotted decimal, e.g. "10.0.0.2"
 	Gateway string `json:"gateway,omitempty"` // dotted decimal, e.g. "10.0.0.1"

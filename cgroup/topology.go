@@ -57,7 +57,7 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 	return t, nil
 }
 
-// Place picks the least-loaded domain and, for two or more queues, one hardware thread per queue inside it: distinct cores before SMT siblings, fewer pins than queues once the domain runs out.
+// Place picks the least-loaded domain and, for 2+ queues, one thread per queue, preferring distinct cores.
 func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
 	pick := 0
 	best := sumLoad(t.domains[0], load)
@@ -76,8 +76,8 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
 	for _, c := range t.cores[pick] {
 		core := slices.Clone(c)
 		slices.SortFunc(core, byLoad)
-		for i, c := range core {
-			layer[c] = i
+		for i, cpu := range core {
+			layer[cpu] = i
 		}
 		ranked = append(ranked, core...)
 	}

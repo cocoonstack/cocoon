@@ -88,12 +88,8 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	logger.Debugf(ctx, "detected source format: %s (compat=%q)", info.Format, info.Compat)
 
 	if info.Format == "qcow2" && info.Compat == "1.1" {
-		tmpBlobPath := conf.tmpBlobPath(digestHex)
-		if err = os.Rename(sourcePath, tmpBlobPath); err != nil {
-			return "", fmt.Errorf("rename tmp blob: %w", err)
-		}
-		logger.Debugf(ctx, "source already qcow2 v3, renamed to %s", tmpBlobPath)
-		return tmpBlobPath, nil
+		logger.Debugf(ctx, "source already qcow2 v3: %s", sourcePath)
+		return sourcePath, nil
 	}
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseConvert})

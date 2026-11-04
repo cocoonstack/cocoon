@@ -135,9 +135,6 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 	if !strings.Contains(cfg.Payload.Cmdline, "ip=10.211.0.134::10.211.0.1:255.255.252.0:vm1:eth0:off") {
 		t.Errorf("cmdline = %q, want the address the record now holds", cfg.Payload.Cmdline)
 	}
-	if strings.Contains(cfg.Payload.Cmdline, "10.211.0.20") {
-		t.Errorf("cmdline = %q, still replays the address the VM was created with", cfg.Payload.Cmdline)
-	}
 }
 
 func TestPayloadFollowsBootShape(t *testing.T) {

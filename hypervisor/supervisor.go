@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	StaleCreateCollected   StaleCreateOutcome = "collected"    // ownerless placeholder reclaimed; record and name freed
-	StaleCreateBusy        StaleCreateOutcome = "busy"         // in-flight operation owns the VM; nothing touched
-	StaleCreateNotCreating StaleCreateOutcome = "not-creating" // record left the creating state under the lock
-	StaleCreateNotFound    StaleCreateOutcome = "not-found"    // no record under the id
+	StaleCreateCollected   StaleCreateOutcome = "collected"
+	StaleCreateBusy        StaleCreateOutcome = "busy"
+	StaleCreateNotCreating StaleCreateOutcome = "not-creating"
+	StaleCreateNotFound    StaleCreateOutcome = "not-found"
 )
 
-// StaleCreateOutcome reports what ReconcileStaleCreate did with the record.
+// StaleCreateOutcome reports what ReconcileStaleCreate did; busy means an in-flight operation owns the VM.
 type StaleCreateOutcome string
 
 // Supervisable is the backend surface a resident supervisor drives.
@@ -47,7 +47,7 @@ type SupervisionScan struct {
 	Procs      utils.ProcScan
 }
 
-// ScanSupervision reads every record plus the unfinished-delete set in one transaction; the json engine holds the namespace flock for the whole closure, so never widen this into per-VM reads.
+// ScanSupervision reads records and pending tombstones in one transaction; the json engine holds the namespace flock across it.
 func (b *Backend) ScanSupervision(ctx context.Context) (SupervisionScan, error) {
 	var scan SupervisionScan
 	if err := b.view(ctx, func(t *vmTx) error {
@@ -99,7 +99,7 @@ func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(),
 	return func() { _ = l.Unlock(ctx) }, true, nil
 }
 
-// ConvergeDead lands the stop transition for a VMM that exited outside a cocoon stop; gen fences a stale observation from re-labeling a newer one.
+// ConvergeDead lands the stop transition for a VMM that exited outside cocoon; gen fences a stale observation.
 func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, observedAt time.Time) error {
 	if err := b.convergeDeadRecord(ctx, id, gen, observedAt); err != nil {
 		return err
@@ -133,7 +133,7 @@ func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
 	return b.clearQuiescePending(ctx, id, gen)
 }
 
-// ReconcileStaleCreate reclaims id when it is an ownerless creating placeholder; a free ops lock is the proof of ownerlessness, since create and clone hold it from prereserve through the final record commit.
+// ReconcileStaleCreate reclaims an ownerless creating placeholder; a free ops lock proves ownerlessness.
 func (b *Backend) ReconcileStaleCreate(ctx context.Context, id string) (StaleCreateOutcome, error) {
 	unlock, ok, err := b.TryLockVMOps(ctx, id)
 	if err != nil {
@@ -216,7 +216,7 @@ func (b *Backend) clearQuiescePending(ctx context.Context, id string, gen uint64
 	})
 }
 
-// convergeCrashedStart closes a crashed VM's ledger on the start path, skipping the quiesce the imminent launch would undo; the in-memory precheck exists because even an empty transaction takes the namespace flock.
+// convergeCrashedStart closes a crashed VM's ledger on the start path without quiescing.
 func (b *Backend) convergeCrashedStart(ctx context.Context, rec *VMRecord) {
 	if !NeedsDeadConvergence(rec) {
 		return

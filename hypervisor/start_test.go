@@ -44,6 +44,7 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 	seedStoppedVMWithDirs(t, b, id)
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{nil}
+		idx.VMs[id].Config.CPUSetCPUs = "0"
 		return nil
 	}); err != nil {
 		t.Fatalf("seed nil NIC: %v", err)
@@ -62,8 +63,39 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load record: %v", err)
 	}
-	if loaded.State != types.VMStateError {
-		t.Errorf("state = %s, want error", loaded.State)
+	if loaded.State != types.VMStateError || loaded.CPUSet != "" {
+		t.Errorf("state = %s cpuset = %q, want error and no placement", loaded.State, loaded.CPUSet)
+	}
+}
+
+func TestStartSequenceLaunchWindowKeepsAQuiescePending(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	const id = "vm-launch-window"
+	seedStoppedVMWithDirs(t, b, id)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	b.SetNetwork(stubNetwork{})
+
+	err := b.StartSequence(t.Context(), id, nil, StartSpec{
+		Launch: func(context.Context, *VMRecord, string) (int, error) {
+			if rec := recordOf(t, b, id); !rec.QuiescePending {
+				t.Error("a kill before the VMM runs would leave the plumbing up with no quiesce pending")
+			}
+			return 4242, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartSequence: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateRunning || rec.QuiescePending {
+		t.Fatalf("state = %s pending = %v, want running and cleared", rec.State, rec.QuiescePending)
 	}
 }
 

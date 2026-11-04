@@ -21,10 +21,9 @@ COCOON_META_BACKEND="${COCOON_META_BACKEND:-}"
 
 # Dependency versions. cloud-hypervisor, Firecracker and the x86_64 firmware come from the
 # cocoonstack fork release tags (rolling dev builds verified against their SHA256SUMS);
-# ch-remote, the aarch64 firmware and the CNI plugins come from upstream releases.
+# the aarch64 firmware and the CNI plugins come from upstream releases.
 # The edk2 release publishes no SHA256SUMS, so EDK2_SHA256 pins the aarch64 firmware digest.
 CH_REF="${CH_REF:-dev}"
-CH_REMOTE_VERSION="${CH_REMOTE_VERSION:-v53.0}"
 CH_MIN_MAJOR=54
 FC_REF="${FC_REF:-dev}"
 FW_REF="${FW_REF:-dev}"
@@ -38,8 +37,8 @@ FW_RELEASE_BASE="https://github.com/cocoonstack/rust-hypervisor-firmware/release
 # Architecture detection
 ARCH=$(uname -m)
 case "$ARCH" in
-    x86_64)  GO_ARCH="amd64"; CH_SUFFIX="" ;;
-    aarch64) GO_ARCH="arm64";  CH_SUFFIX="-aarch64" ;;
+    x86_64)  GO_ARCH="amd64" ;;
+    aarch64) GO_ARCH="arm64" ;;
     *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
@@ -65,7 +64,6 @@ Options:
   --fix            Attempt to fix detected issues (dirs, sysctl, iptables, CNI config)
   --upgrade        Fix issues and install/upgrade dependencies:
                      cloud-hypervisor cocoonstack fork release ${CH_REF}
-                     ch-remote        ${CH_REMOTE_VERSION}
                      firecracker      cocoonstack fork release ${FC_REF}
                      firmware         hypervisor-fw cocoonstack fork release ${FW_REF} (x86_64), EDK2 ${EDK2_REF} (aarch64)
                      CNI plugins      ${CNI_VERSION}
@@ -73,7 +71,6 @@ Options:
 
 Environment variables:
   CH_REF            cocoonstack/cloud-hypervisor release tag   (default: ${CH_REF})
-  CH_REMOTE_VERSION upstream ch-remote version                 (default: ${CH_REMOTE_VERSION})
   FC_REF            cocoonstack/firecracker release tag        (default: ${FC_REF})
   FW_REF            cocoonstack/rust-hypervisor-firmware tag   (default: ${FW_REF})
   EDK2_REF          cloud-hypervisor/edk2 tag, aarch64 only    (default: ${EDK2_REF})
@@ -110,8 +107,6 @@ generate_cni_conflist() {
     # Extract gateway: replace last octet of network address with .1
     local network_part
     network_part=$(echo "$subnet" | cut -d/ -f1)
-    local prefix_len
-    prefix_len=$(echo "$subnet" | cut -d/ -f2)
     # Simple gateway: network address with last octet = 1
     local gateway
     gateway=$(echo "$network_part" | awk -F. '{printf "%s.%s.%s.1", $1, $2, $3}')
@@ -135,7 +130,7 @@ generate_cni_conflist() {
       "bridge": "cni0",
       "mtu": ${host_mtu},
       "isGateway": true,
-      "ipMasq": true,
+      "ipMasq": false,
       "hairpinMode": true,
       "ipam": {
         "type": "host-local",
@@ -209,7 +204,6 @@ check_binary() {
         local ver=""
         case "$name" in
             cloud-hypervisor) ver=$("$name" --version 2>/dev/null | head -1) || true ;;
-            ch-remote)        ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             firecracker)      ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             qemu-img)         ver=$("$name" --version 2>/dev/null | head -1) || true ;;
             mkfs.ext4)        ver=$("$name" -V 2>&1 | head -1) || true ;;
@@ -248,7 +242,6 @@ if [ "$ARCH" = "aarch64" ] && ch_features=$(cloud-hypervisor -v --version 2>/dev
         fail "cloud-hypervisor lacks fw_cfg — arm64 OCI boot hands the kernel to EDK2 over fw_cfg; run --upgrade"
     fi
 fi
-check_binary ch-remote
 # Firecracker is optional — only needed for --fc backend.
 if command -v firecracker &>/dev/null; then
     check_binary firecracker
@@ -451,6 +444,12 @@ else
     fi
 fi
 
+if grep -q '"ipMasq": false' "$CNI_CONFLIST" 2>/dev/null; then
+    masq_subnet=$(sed -n 's/.*"subnet": "\([^"]*\)".*/\1/p' "$CNI_CONFLIST" | head -1)
+    check_iptables_rule "nat POSTROUTING MASQUERADE ${masq_subnet}" \
+        POSTROUTING -t nat -s "$masq_subnet" ! -o cni0 -j MASQUERADE
+fi
+
 # ---------------------------------------------------------------------------
 # 8. CNI plugins
 # ---------------------------------------------------------------------------
@@ -508,19 +507,6 @@ if $UPGRADE; then
         fixed "cloud-hypervisor ${CH_REF} (commit $(release_commit "$CH_RELEASE_BASE")) -> ${ch_dest}"
     else
         fail "failed to download or verify cloud-hypervisor from ${ch_url}"
-    fi
-
-    # -- ch-remote ----------------------------------------------------------
-    header "Install ch-remote ${CH_REMOTE_VERSION}"
-
-    chr_url="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_REMOTE_VERSION}/ch-remote-static${CH_SUFFIX}"
-    chr_dest="/usr/local/bin/ch-remote"
-    info "downloading ${chr_url}"
-    if curl -fsSL -o "${tmpdir}/ch-remote" "$chr_url"; then
-        install -m 0755 "${tmpdir}/ch-remote" "$chr_dest"
-        fixed "ch-remote ${CH_REMOTE_VERSION} -> ${chr_dest}"
-    else
-        fail "failed to download ch-remote from ${chr_url}"
     fi
 
     # -- firecracker --------------------------------------------------------

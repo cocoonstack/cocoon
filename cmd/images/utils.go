@@ -10,7 +10,9 @@ import (
 	ociProgress "github.com/cocoonstack/cocoon/progress/oci"
 )
 
-func ociTracker(ctx context.Context, logger *log.Fields, name string, pullMsg func(total int) string) progress.Tracker {
+type pullMsgFunc func(total int) string
+
+func ociTracker(ctx context.Context, logger *log.Fields, name string, pullMsg pullMsgFunc) progress.Tracker {
 	return progress.NewTracker(func(e ociProgress.Event) {
 		switch e.Phase {
 		case ociProgress.PhasePull:

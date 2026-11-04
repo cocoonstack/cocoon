@@ -1,4 +1,4 @@
-// Package convert is the explicit offline engine cutover (design §6): a standalone fsync-first manifest is the only recovery authority, targets are fresh, sources retire aside, and every step is crash-rerunnable.
+// Package convert runs the offline meta engine cutover (design §6).
 package convert
 
 import (
@@ -30,10 +30,11 @@ var testCrashStep func(step string) error
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
-	MetaRoot string // manifest directory (parent of the sqlite DB)
-	DBPath   string
-	Decls    []metasqlite.Namespace
-	JSON     []metajson.Namespace
+	MetaRoot   string // manifest directory (parent of the sqlite DB)
+	DBPath     string
+	DaemonLock string
+	Decls      []metasqlite.Namespace
+	JSON       []metajson.Namespace
 }
 
 // Manifest is the crash-recovery authority for one conversion run.
@@ -56,6 +57,11 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
+	unlock, err := lockOutDaemon(ctx, spec.DaemonLock)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := loadManifest(spec.MetaRoot)
 	if err != nil {
 		return err
@@ -72,6 +78,21 @@ func Run(ctx context.Context, spec Spec, target string) error {
 		return err
 	}
 	return finishManifest(spec.MetaRoot)
+}
+
+func lockOutDaemon(ctx context.Context, path string) (func(), error) {
+	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	l := flock.New(path)
+	ok, err := l.TryLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("a cocoon daemon is running; stop it before converting")
+	}
+	return func() { _ = l.Unlock(ctx) }, nil
 }
 
 func crashStep(step string) error {
@@ -94,6 +115,9 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		return qerr
 	}
 	if m == nil {
+		if ferr := checkTargetFS(spec, target); ferr != nil {
+			return ferr
+		}
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
 			return err
 		}
@@ -128,6 +152,16 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 	return nil
 }
 
+func checkTargetFS(spec Spec, target string) error {
+	if target != config.MetaBackendSQLite {
+		return nil
+	}
+	if err := utils.EnsureDirs(filepath.Dir(spec.DBPath)); err != nil {
+		return err
+	}
+	return metasqlite.CheckFS(spec.DBPath)
+}
+
 func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) (*Manifest, error) {
 	m := &Manifest{Target: target, Namespaces: map[string]*NSRecord{}, StartedAt: time.Now()}
 	for _, ns := range spec.Decls {
@@ -140,7 +174,7 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 	return m, nil
 }
 
-// checkQuiesced is §6's advisory activity check: an in-flight source write means live cocoon processes, and converting under them could lose writes landing on a namespace already marked done.
+// checkQuiesced refuses conversion while a live process holds the source (§6).
 func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
 	if target == config.MetaBackendJSON {
 		// sqlite source: an empty durable transaction fails ErrBusy while a writer is mid-flight.
@@ -169,7 +203,7 @@ func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store
 	return nil
 }
 
-// ensureJSONDirs creates namespace dirs for subsystems that never ran — their absence means empty, and the engine's flock needs the dir to exist.
+// ensureJSONDirs creates namespace dirs for subsystems that never ran; flock needs them.
 func ensureJSONDirs(spec Spec) error {
 	dirs := make([]string, 0, len(spec.JSON))
 	for _, jns := range spec.JSON {
@@ -234,7 +268,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 	return crashStep("ns-done")
 }
 
-// duplicateGeneration copies a freshly written json target to its .prev so the imported data survives a later torn main (§9: never less resilient than steady state).
+// duplicateGeneration writes the json target's .prev so imported data survives a torn main (§9).
 func duplicateGeneration(spec Spec, nsName string) error {
 	jns, ok := findJSON(spec, nsName)
 	if !ok {
@@ -311,7 +345,7 @@ func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 	})
 }
 
-// verifyNames is §6's referential name check: every name entry must point at an existing record. Table names are the record-SPI convention shared by every namespace declaration.
+// verifyNames checks every name entry points at an existing record (§6).
 func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) error {
 	if !slices.Contains(ns.Tables, "names") {
 		return nil
@@ -322,9 +356,11 @@ func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) err
 			if err := json.Unmarshal(raw, &id); err != nil {
 				return fmt.Errorf("name %q: %w", name, err)
 			}
-			if _, ok, err := r.GetRaw(ctx, ns.Name, "records", id); err != nil {
+			_, ok, err := r.GetRaw(ctx, ns.Name, "records", id)
+			if err != nil {
 				return err
-			} else if !ok {
+			}
+			if !ok {
 				return fmt.Errorf("name %q points at missing record %q", name, id)
 			}
 			return nil
@@ -360,7 +396,7 @@ func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace)
 	return hex.EncodeToString(h.Sum(nil)), count, nil
 }
 
-// retireSources aside-renames every source file after full verification; a sqlite source checkpoints to a single file first (§6). Runs with both engines closed; already-renamed files are skipped, so a crash here reruns.
+// retireSources renames verified source files aside; renamed files are skipped on rerun.
 func retireSources(ctx context.Context, spec Spec, target string) error {
 	if target == config.MetaBackendJSON && utils.FileExists(spec.DBPath) {
 		if err := metasqlite.Checkpoint(ctx, spec.DBPath); err != nil {

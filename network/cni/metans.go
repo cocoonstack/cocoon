@@ -11,6 +11,8 @@ const (
 	TableRecords  = "records"
 )
 
+type netTxFn func(*netTx) error
+
 // netTx is the CNI view of one meta transaction: a records-only namespace with the vm_id secondary lookup served by scan.
 type netTx struct {
 	*meta.RecordTx[networkRecord]
@@ -30,13 +32,13 @@ func (t *netTx) byVMID(vmID string) ([]networkRecord, error) {
 	return out, nil
 }
 
-func (c *CNI) view(ctx context.Context, fn func(*netTx) error) error {
+func (c *CNI) view(ctx context.Context, fn netTxFn) error {
 	return c.meta.View(ctx, []string{NamespaceName}, func(r meta.Reader) error {
 		return fn(c.tx(ctx, r, nil))
 	})
 }
 
-func (c *CNI) update(ctx context.Context, fn func(*netTx) error) error {
+func (c *CNI) update(ctx context.Context, fn netTxFn) error {
 	return c.meta.Update(ctx, meta.Scope{Write: NamespaceName}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(c.tx(ctx, w, w))
 	})

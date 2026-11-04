@@ -15,16 +15,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// noReflink remembers the filesystems whose FICLONE answered "not supported", so later copies on them skip the create/ioctl/unlink round trip.
+// noReflink holds filesystems whose FICLONE is unsupported, so later copies skip the probe.
 var noReflink sync.Map
 
 // ReflinkCopy copies a single file, preferring FICLONE (O(1) CoW on btrfs/xfs/bcachefs) and falling back to SparseCopy on any error.
-func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
+func ReflinkCopy(ctx context.Context, dst, src string, mode SyncMode) error {
 	fs, known := fsID(filepath.Dir(dst))
 	if _, unsupported := noReflink.Load(fs); known && unsupported {
-		return SparseCopy(dst, src, sync)
+		return SparseCopy(dst, src, mode)
 	}
-	err := tryFiclone(dst, src, sync)
+	err := tryFiclone(dst, src, mode)
 	if err == nil {
 		return nil
 	}
@@ -33,7 +33,7 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 			log.WithFunc("utils.ReflinkCopy").Warnf(ctx, "reflink unsupported on the filesystem holding %s (%v); clones copy their disks in full", filepath.Dir(dst), err)
 		}
 	}
-	return SparseCopy(dst, src, sync)
+	return SparseCopy(dst, src, mode)
 }
 
 // CheckReflink reports whether the filesystem holding dir supports FICLONE.
@@ -49,13 +49,13 @@ func CheckReflink(dir string) error {
 	return tryFiclone(dst, src.Name(), NoSync)
 }
 
-func tryFiclone(dst, src string, sync SyncMode) error {
+func tryFiclone(dst, src string, mode SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if err := unix.IoctlFileClone(int(dstFile.Fd()), int(srcFile.Fd())); err != nil {
 			return fmt.Errorf("ficlone: %w", err)
 		}
 		// FICLONE only shares extents — still honor Sync, or the fast path silently drops durability.
-		if sync == Sync {
+		if mode == Sync {
 			if err := dstFile.Sync(); err != nil {
 				return fmt.Errorf("sync dst: %w", err)
 			}

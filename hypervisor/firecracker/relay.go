@@ -39,7 +39,6 @@ const (
 	relayLeaseCommitAck      = byte(3)
 )
 
-// broadcaster swaps the PTY reader's sink atomically.
 type broadcaster struct {
 	master io.Reader
 	mu     sync.Mutex
@@ -224,7 +223,7 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 
 	select {
 	case <-done:
-	case <-ctx.Done(): // FC died
+	case <-ctx.Done(): // firecracker exited
 	}
 	// Closing conn unblocks the io.Copy(master, conn) goroutine.
 }

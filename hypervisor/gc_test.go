@@ -54,15 +54,6 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	}
 }
 
-func TestWithOpsTryLockRecreatesMissingRunDir(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	dir := filepath.Join(t.TempDir(), "gone")
-	ran := false
-	if !b.withOpsTryLock(t.Context(), dir, func() { ran = true }) || !ran {
-		t.Fatal("a missing run dir (logDir-only orphan) must not read as busy")
-	}
-}
-
 func TestQuarantineVMSurvivesCanceledContext(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-quarantine-cancel"

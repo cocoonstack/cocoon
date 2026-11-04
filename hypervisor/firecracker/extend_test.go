@@ -189,10 +189,10 @@ type fcStub struct {
 	pending []string
 }
 
-func (s *fcStub) put(path string) string {
+func (s *fcStub) put(endpoint string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.puts[path]
+	return s.puts[endpoint]
 }
 
 func (s *fcStub) deleted() []string {

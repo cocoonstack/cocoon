@@ -16,6 +16,8 @@ import (
 // TableRecords is the image-namespace records table.
 const TableRecords = "records"
 
+type IndexFunc[E any] func(*Index[E]) error
+
 // Store is one image namespace on the shared meta engine; image lookups are whole-map by nature (ref normalization, digest-prefix matching).
 type Store[E any] struct {
 	meta meta.Store
@@ -28,7 +30,7 @@ func NewMetaStore[E any](store meta.Store, ns string) *Store[E] {
 }
 
 // View runs fn over a materialized read snapshot.
-func (s *Store[E]) View(ctx context.Context, fn func(*Index[E]) error) error {
+func (s *Store[E]) View(ctx context.Context, fn IndexFunc[E]) error {
 	return s.meta.View(ctx, []string{s.ns}, func(r meta.Reader) error {
 		idx, _, err := s.materialize(ctx, r)
 		if err != nil {
@@ -39,13 +41,13 @@ func (s *Store[E]) View(ctx context.Context, fn func(*Index[E]) error) error {
 }
 
 // Update runs a pure fn against the materialized index and writes the difference back as record operations.
-func (s *Store[E]) Update(ctx context.Context, fn func(*Index[E]) error) error {
+func (s *Store[E]) Update(ctx context.Context, fn IndexFunc[E]) error {
 	return s.meta.Update(ctx, meta.Scope{Write: s.ns}, meta.CommitDurable, func(w meta.Writer) error {
 		return s.applyDiff(ctx, w, fn)
 	})
 }
 
-func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn func(*Index[E]) error) error {
+func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn IndexFunc[E]) error {
 	idx, before, err := s.materialize(ctx, w)
 	if err != nil {
 		return err
@@ -95,7 +97,7 @@ func (s *Store[E]) materialize(ctx context.Context, r meta.Reader) (*Index[E], m
 	return idx, before, nil
 }
 
-// BlobLocks holds per-digest blob locks for a publish critical section: sorted acquisition so concurrent multi-digest publishes cannot deadlock; Release never removes the lock files (flock synchronizes on the inode).
+// BlobLocks holds per-digest blob locks for a publish; Lock sorts paths so concurrent publishes cannot deadlock.
 type BlobLocks struct {
 	held []*gofrsflock.Flock
 }

@@ -3,14 +3,18 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/meta"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
+	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -181,6 +185,41 @@ func TestHandleExitIgnoresDeletedRecord(t *testing.T) {
 	}
 }
 
+func TestFailingRollForwardDoesNotWakeItsOwnDaemon(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 1500*time.Millisecond)
+	defer cancel()
+	const ns = "vms_fake"
+	decl := metasqlite.Namespace{Name: ns, Tables: []string{"records", tombstone.TableName}}
+	dir := t.TempDir()
+	db := filepath.Join(dir, "meta", metasqlite.DBFileName)
+	if err := metasqlite.Init(ctx, db, decl); err != nil {
+		t.Fatal(err)
+	}
+	store, err := metasqlite.Open(db, decl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ts := tombstone.NewTable(ns)
+	if err := store.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
+		lease, err := ts.Lease(ctx, w, "vm1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: []byte(`{}`)})
+		if err != nil {
+			return err
+		}
+		return ts.MarkDeleting(ctx, w, "vm1", lease)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f := &committingSupervisor{fakeSupervisor: newFake().put(runningRec("vm1", 1)), store: store, ns: ns}
+	f.tombstoned["vm1"] = struct{}{}
+	if err := New(Config{RootDir: dir, ReconcileInterval: time.Hour}, store, []Supervisor{f}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.passes.Load(); got != 1 {
+		t.Fatalf("passes = %d with an hourly ticker, want 1", got)
+	}
+}
+
 func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -190,11 +229,11 @@ func TestPassCountsDegradedVMsWithoutGoingUnready(t *testing.T) {
 	}{
 		{"clean pass", func(*fakeSupervisor) {}, 0, 1},
 		{"busy ops lock", func(f *fakeSupervisor) { f.busy["vm1"] = struct{}{} }, 0, 0},
-		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = fmt.Errorf("no such directory") }, 1, 0},
-		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = fmt.Errorf("/proc scan errored") }, 1, 0},
+		{"ops lock error", func(f *fakeSupervisor) { f.lockErr = errors.New("no such directory") }, 1, 0},
+		{"inconclusive liveness", func(f *fakeSupervisor) { f.observeErr = errors.New("/proc scan errored") }, 1, 0},
 		{"delete cannot finish", func(f *fakeSupervisor) {
 			f.tombstoned["vm1"] = struct{}{}
-			f.resumeErr = fmt.Errorf("cni down")
+			f.resumeErr = errors.New("cni down")
 		}, 1, 0},
 	}
 	for _, tt := range tests {
@@ -370,6 +409,29 @@ func newFake() *fakeSupervisor {
 		live:       map[string]utils.ProcRef{},
 		busy:       map[string]struct{}{},
 	}
+}
+
+type committingSupervisor struct {
+	*fakeSupervisor
+	store  meta.Store
+	ns     string
+	passes atomic.Int64
+}
+
+func (s *committingSupervisor) ScanSupervision(ctx context.Context) (hypervisor.SupervisionScan, error) {
+	s.passes.Add(1)
+	return s.fakeSupervisor.ScanSupervision(ctx)
+}
+
+func (s *committingSupervisor) RecoverTombstone(ctx context.Context, id string) (bool, error) {
+	var cl struct{}
+	if err := s.store.Update(ctx, meta.Scope{Write: s.ns}, meta.CommitDurable, func(w meta.Writer) error {
+		_, err := tombstone.NewTable(s.ns).Recover(ctx, w, id, &cl)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	return false, errors.New("cni down")
 }
 
 func newTestDaemon(t *testing.T, f *fakeSupervisor) *Daemon {

@@ -45,7 +45,7 @@ func NewSocketHTTPClientWithTimeout(socketPath string, timeout time.Duration) *h
 	}
 }
 
-// DoAPI sends a request, validates status, returns body. url must be fully-formed.
+// DoAPI sends a request and returns the body when the status is expectedStatus.
 func DoAPI(ctx context.Context, hc *http.Client, method, url string, body []byte, expectedStatus int) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {

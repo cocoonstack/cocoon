@@ -34,7 +34,7 @@ type vmsResponse struct {
 	VMs []VMStatus `json:"vms"`
 }
 
-// healthResponse: degraded VMs do not flip readiness — a daemon restart cannot fix a VM nobody can converge.
+// Degraded does not affect OK.
 type healthResponse struct {
 	OK       bool      `json:"ok"`
 	Degraded int       `json:"degraded"`

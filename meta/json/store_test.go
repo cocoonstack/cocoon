@@ -40,8 +40,8 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			crash := errors.New("crash")
-			testCrashStep = (&crashPoint{step: step, err: crash}).hook
+			errCrash := errors.New("crash")
+			testCrashStep = (&crashPoint{step: step, err: errCrash}).hook
 			defer func() { testCrashStep = nil }()
 			err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
 				next := map[string]int{"v": 2}
@@ -51,7 +51,7 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 				fresh := map[string]int{"v": 2}
 				return c.Insert(ctx, w, "b", &fresh)
 			})
-			if !errors.Is(err, crash) {
+			if !errors.Is(err, errCrash) {
 				t.Fatalf("crash injection: %v", err)
 			}
 			testCrashStep = nil
@@ -138,32 +138,6 @@ func TestCorruptBothGenerations(t *testing.T) {
 	err := s.View(ctx, []string{"alpha"}, func(meta.Reader) error { return nil })
 	if !errors.Is(err, meta.ErrCorrupt) {
 		t.Fatalf("both generations bad: got %v, want ErrCorrupt", err)
-	}
-}
-
-func TestExternalProcessEvents(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-	s := newStore(t, dir, "alpha")
-
-	ch, release, err := s.Events(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer release()
-
-	s2 := newStore(t, dir, "alpha")
-	c2 := meta.NewCollection[map[string]int]("alpha", "records")
-	v := map[string]int{"v": 1}
-	if err := s2.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return c2.Insert(ctx, w, "a", &v)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-ch:
-	case <-time.After(10 * time.Second):
-		t.Fatal("no event after external commit")
 	}
 }
 

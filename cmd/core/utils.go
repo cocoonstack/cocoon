@@ -152,31 +152,31 @@ func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 }
 
 // SnapshotNameFlags reads the --name/--description pair and rejects a taken name; an empty name passes.
-func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (name, description string, err error) {
-	name, _ = cmd.Flags().GetString("name")
+func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (snapName, description string, err error) {
+	snapName, _ = cmd.Flags().GetString("name")
 	description, _ = cmd.Flags().GetString("description")
-	if err = (&types.SnapshotConfig{Name: name}).Validate(); err != nil {
+	if err = (&types.SnapshotConfig{Name: snapName}).Validate(); err != nil {
 		return "", "", err
 	}
-	if name == "" {
-		return name, description, nil
+	if snapName == "" {
+		return snapName, description, nil
 	}
-	// The name index, not Inspect: a killed save leaves a pending record still holding the name that Inspect reports as not-found, and passing that preflight wastes the whole capture before the insert rejects it.
+	// Use the name index: Inspect misses a pending record from a killed save that still holds the name.
 	nh, ok := snapBackend.(snapshot.NameHolder)
 	if !ok {
 		return "", "", fmt.Errorf("backend %s has no snapshot name index", snapBackend.Type())
 	}
-	id, held, err := nh.NameOwner(ctx, name)
+	id, held, err := nh.NameOwner(ctx, snapName)
 	if err != nil {
 		return "", "", fmt.Errorf("check snapshot name: %w", err)
 	}
 	if held {
-		return "", "", fmt.Errorf("snapshot name %q already exists (held by %s)", name, id)
+		return "", "", fmt.Errorf("snapshot name %q already exists (held by %s)", snapName, id)
 	}
-	return name, description, nil
+	return snapName, description, nil
 }
 
-// PersistSnapshotDir stores a finalized capture dir, moving it in place when srcDir shares a filesystem with the backend and streaming a tar otherwise; srcDir is consumed on every path.
+// PersistSnapshotDir stores a finalized capture dir; srcDir is consumed on every path.
 func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
 	logger := log.WithFunc("core.PersistSnapshotDir")
 	cfg.Name = name
@@ -234,7 +234,7 @@ func resolveOwner[T typed](backends []T, ref string, found func(T) (bool, error)
 	}
 }
 
-// resolveVMOwner returns the owning hypervisor and resolved *types.VM so callers use vm.ID instead of re-resolving the raw ref.
+// resolveVMOwner returns the owning hypervisor and the resolved VM.
 func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	var resolved *types.VM
 	owner, err := resolveOwner(
@@ -255,7 +255,7 @@ func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref str
 	return owner, resolved, err
 }
 
-// validateRefShape rejects URL/OCI ref mismatches early so backends don't surface misleading downstream errors.
+// validateRefShape rejects URL/OCI ref mismatches before any backend runs.
 func validateRefShape(ref, imageType string) error {
 	switch imageType {
 	case types.ImageTypeCloudImg:

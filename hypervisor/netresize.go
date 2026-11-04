@@ -71,7 +71,7 @@ func (b *Backend) netResizeAdd(ctx context.Context, vmID string, rec *VMRecord, 
 		nc := ncs[0]
 		devID, err := dev.AddNIC(ctx, i, nc)
 		if err != nil {
-			// Survives Ctrl-C: an abandoned half-add is exactly the divergence the reconcile above exists for.
+			// Detach from ctx so Ctrl-C cannot abandon a half-add.
 			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nicRollbackTimeout)
 			if rmErr := plumbing.Remove(rctx, vmID, i); rmErr != nil {
 				logger.Warnf(rctx, "rollback host plumbing for nic %d: %v", i, rmErr)
@@ -130,7 +130,7 @@ func (b *Backend) netResizeRemove(ctx context.Context, vmID string, rec *VMRecor
 			devID = live[j].ID
 		}
 		if devID == "" {
-			// Already gone after an interrupted prior resize: resume with the host/DB halves so retries converge instead of wedging on "no live device".
+			// Device already gone from an interrupted resize: finish the host and DB halves so retries converge.
 			logger.Warnf(ctx, "nic %d (%s): no live device, resuming interrupted remove", i, nc.TAP)
 		} else if err := dev.RemoveNIC(ctx, devID); err != nil {
 			return res, fmt.Errorf("remove nic %d (%s): %w", i, devID, err)
@@ -171,7 +171,7 @@ func (b *Backend) truncateNetworkConfigs(ctx context.Context, vmID string, lengt
 	})
 }
 
-// reconcileOrphanNICs removes live NICs in slots the record does not know — leftovers of a resize interrupted between the device add and the DB write — and best-effort reclaims their host slot (bridge TAPs have no DB record, and a leftover TAP wedges every retry at CreateTAP).
+// reconcileOrphanNICs removes live NICs in slots the record does not know and reclaims their host slot.
 func reconcileOrphanNICs(ctx context.Context, dev NICDeviceOps, vmID string, live []LiveNIC, known int, plumbing netresize.Plumbing) error {
 	logger := log.WithFunc("hypervisor.reconcileOrphanNICs")
 	for _, n := range live {

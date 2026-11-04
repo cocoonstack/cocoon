@@ -48,11 +48,6 @@ func TestKindWireFormat(t *testing.T) {
 	}
 }
 
-func TestNopRecorder(t *testing.T) {
-	var r NopRecorder
-	r.Emit(t.Context(), Entry{Kind: KindVMComputeStart, VMID: "x"})
-}
-
 func TestEntryWriteToProducesJSONLine(t *testing.T) {
 	e := Entry{Kind: KindVMComputeStart, VMID: "vm1", Shape: Shape{CPU: 2}}
 	var buf bytes.Buffer

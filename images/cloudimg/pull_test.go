@@ -281,9 +281,7 @@ func parseTestRange(h string, size int64) (start, end int64, ok bool) {
 	if err != nil {
 		return 0, 0, false
 	}
-	if end >= size {
-		end = size - 1
-	}
+	end = min(end, size-1)
 	return start, end, true
 }
 
