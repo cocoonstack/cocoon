@@ -93,10 +93,13 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 	}
 
 	runErr := b.withRunningVM(ctx, &rec, scan, func(pid int) error {
+		if convergeErr := spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid); convergeErr != nil {
+			return convergeErr
+		}
 		if rec.State != types.VMStateRunning {
 			_, _ = b.ReconcileToRunning(ctx, id)
 		}
-		return spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid)
+		return nil
 	})
 	switch {
 	case runErr == nil:

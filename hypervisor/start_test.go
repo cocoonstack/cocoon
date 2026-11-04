@@ -130,6 +130,12 @@ func TestStartSequenceConvergesALiveVMMInsteadOfLaunching(t *testing.T) {
 	convergeErr := errors.New("vmm busy")
 	for _, want := range []error{nil, convergeErr} {
 		b, id := newHibernateTestVM(t)
+		if err := b.UpdateRecord(t.Context(), id, func(rec *VMRecord) error {
+			rec.State = types.VMStateCreated
+			return nil
+		}); err != nil {
+			t.Fatalf("seed state: %v", err)
+		}
 		converged := false
 		err := b.StartSequence(t.Context(), id, nil, StartSpec{
 			Launch: func(context.Context, *VMRecord, string) (int, error) {
@@ -137,12 +143,22 @@ func TestStartSequenceConvergesALiveVMMInsteadOfLaunching(t *testing.T) {
 				return 0, nil
 			},
 			ConvergeRunning: func(context.Context, *VMRecord, string, int) error {
+				if rec := recordOf(t, b, id); rec.State != types.VMStateCreated {
+					t.Errorf("state before convergence = %s, want created", rec.State)
+				}
 				converged = true
 				return want
 			},
 		})
 		if !errors.Is(err, want) || !converged {
 			t.Errorf("StartSequence: %v converged=%v, want %v and a converge", err, converged, want)
+		}
+		state := types.VMStateRunning
+		if want != nil {
+			state = types.VMStateCreated
+		}
+		if rec := recordOf(t, b, id); rec.State != state {
+			t.Errorf("state after convergence = %s, want %s", rec.State, state)
 		}
 	}
 }
