@@ -18,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -73,11 +74,10 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
 
-	if hypervisor.DiskPathByRole(meta.StorageConfigs, types.StorageRoleCidata) != "" {
-		return nil, fmt.Errorf("snapshot has a cidata disk; FC does not support cloudimg")
-	}
-	storageConfigs := hypervisor.CloneStorageConfigs(meta.StorageConfigs)
-	if err = hypervisor.RetargetCloneDisks(storageConfigs, fc.conf.COWRawPath(vmID), runDir); err != nil {
+	cowPath := fc.conf.COWRawPath(vmID)
+
+	storageConfigs, err := rebuildCloneStorage(meta, cowPath)
+	if err != nil {
 		return nil, err
 	}
 	dataDisks, prepErr := fc.PrepareCloneDataDisks(ctx, vmID, vmCfg, storageConfigs)
@@ -208,6 +208,25 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 		}
 	}
 	return nil
+}
+
+func rebuildCloneStorage(meta *snapshot.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
+	runDir := filepath.Dir(cowPath)
+	configs := hypervisor.CloneStorageConfigs(meta.StorageConfigs)
+	for i, sc := range configs {
+		switch sc.Role {
+		case types.StorageRoleLayer:
+		case types.StorageRoleCOW:
+			sc.Path = cowPath
+		case types.StorageRoleData:
+			sc.Path = filepath.Join(runDir, hypervisor.DataDiskBaseName(sc.Serial))
+		case types.StorageRoleCidata:
+			return nil, fmt.Errorf("snapshot disk[%d] has cidata role; FC does not support cloudimg", i)
+		default:
+			return nil, fmt.Errorf("snapshot disk[%d] has unknown role %q", i, sc.Role)
+		}
+	}
+	return configs, nil
 }
 
 func redirectedDriveIndices(srcConfigs, dstConfigs []*types.StorageConfig) []int {
