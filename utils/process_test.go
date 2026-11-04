@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -200,11 +202,21 @@ func TestTerminateProcess_InvalidPID(t *testing.T) {
 }
 
 func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
-	cmd := exec.Command("bash", "-c", `trap "" TERM; sleep 60; :`, "vmm-sock")
+	const grace = 200 * time.Millisecond
+	cmd := exec.Command("bash", "-c", `trap "" TERM; echo ready; sleep 60; :`, "vmm-sock")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	pid := cmd.Process.Pid
+	if line, readErr := bufio.NewReader(stdout).ReadString('\n'); readErr != nil || line != "ready\n" {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("child did not install its TERM trap: %q, %v", line, readErr)
+	}
 	waitForExec(t, pid, "vmm-sock")
 
 	waitDone := make(chan struct{})
@@ -217,10 +229,12 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 		<-waitDone
 	}()
 
-	ctx := t.Context()
-	err := TerminateProcess(ctx, pid, "vmm-sock", 200*time.Millisecond)
-	if err != nil {
+	start := time.Now()
+	if err := TerminateProcess(t.Context(), pid, "vmm-sock", grace); err != nil {
 		t.Fatalf("TerminateProcess: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < grace {
+		t.Errorf("returned after %s, before the %s grace: SIGTERM was not ignored or SIGKILL came early", elapsed, grace)
 	}
 
 	<-waitDone
@@ -268,15 +282,28 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	}
 	pid := cmd.Process.Pid
 	waitForExec(t, pid, "60")
+
+	waitDone := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(waitDone)
+	}()
 	defer func() {
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		<-waitDone
 	}()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_ = TerminateProcess(ctx, pid, "60", 100*time.Millisecond)
+	if err := TerminateProcess(ctx, pid, "60", 100*time.Millisecond); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("TerminateProcess = %v, want nil or context.Canceled", err)
+	}
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a canceled context left the process alive")
+	}
 }
 
 func TestWaitProcessExitReturnsOnExit(t *testing.T) {

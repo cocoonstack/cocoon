@@ -15,7 +15,6 @@ import (
 	"github.com/cocoonstack/cocoon/network"
 )
 
-// TestSubsetTeardownRecovery is the design §9 subset gate: crash mid-deleting on a one-NIC `vm net remove`, then recover — the untouched NIC row survives and the netns stays (an aggregate-shaped test would pass while this fails).
 func TestSubsetTeardownRecovery(t *testing.T) {
 	c, exec := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

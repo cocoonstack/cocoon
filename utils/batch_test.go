@@ -58,7 +58,7 @@ func TestForEach_PartialFailure(t *testing.T) {
 
 func TestForEach_EmptyIDs(t *testing.T) {
 	result := ForEach(t.Context(), nil, func(_ context.Context, _ string) error {
-		t.Fatal("should not be called")
+		t.Error("should not be called")
 		return nil
 	})
 
@@ -90,12 +90,12 @@ func TestForEach_SingleID(t *testing.T) {
 }
 
 func TestForEach_Concurrent(t *testing.T) {
-	var peak atomic.Int32
-	var cur atomic.Int32
+	var peak, cur, ready atomic.Int32
+	gate := make(chan struct{})
 
 	result := ForEach(t.Context(), []string{"a", "b", "c", "d", "e"}, func(_ context.Context, _ string) error {
 		raisePeak(&peak, cur.Add(1))
-		time.Sleep(50 * time.Millisecond)
+		awaitPair(&ready, gate)
 		cur.Add(-1)
 		return nil
 	})
@@ -109,11 +109,12 @@ func TestForEach_Concurrent(t *testing.T) {
 }
 
 func TestForEach_WithConcurrencyLimit(t *testing.T) {
-	var peak atomic.Int32
-	var cur atomic.Int32
+	var peak, cur, ready atomic.Int32
+	gate := make(chan struct{})
 
 	result := ForEach(t.Context(), []string{"a", "b", "c", "d", "e"}, func(_ context.Context, _ string) error {
 		raisePeak(&peak, cur.Add(1))
+		awaitPair(&ready, gate)
 		time.Sleep(50 * time.Millisecond)
 		cur.Add(-1)
 		return nil
@@ -182,7 +183,7 @@ func TestMap_FailFast(t *testing.T) {
 
 func TestMap_Empty(t *testing.T) {
 	results, err := Map(t.Context(), []int{}, func(_ context.Context, _, _ int) (string, error) {
-		t.Fatal("should not be called")
+		t.Error("should not be called")
 		return "", nil
 	})
 	if err != nil {
@@ -252,5 +253,15 @@ func raisePeak(peak *atomic.Int32, n int32) {
 		if n <= old || peak.CompareAndSwap(old, n) {
 			return
 		}
+	}
+}
+
+func awaitPair(ready *atomic.Int32, gate chan struct{}) {
+	if ready.Add(1) == 2 {
+		close(gate)
+	}
+	select {
+	case <-gate:
+	case <-time.After(2 * time.Second):
 	}
 }

@@ -35,7 +35,10 @@ func TestCacheEmitsNothingForAnUnchangedPass(t *testing.T) {
 	events, release := c.subscribe()
 	defer release()
 
-	c.publish([]VMStatus{st}, true, 0, time.Now())
+	again := st
+	again.VerifiedAt = st.VerifiedAt.Add(time.Second)
+	again.WatchedPID = 99
+	c.publish([]VMStatus{again}, true, 0, time.Now())
 	if got := collect(t, events); len(got) != 0 {
 		t.Errorf("got %+v, want no events when nothing a consumer acts on changed", got)
 	}

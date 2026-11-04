@@ -292,7 +292,7 @@ func TestPlaceScopeReadGate(t *testing.T) {
 	}
 }
 
-func TestArmSetsQuotaThenBurst(t *testing.T) {
+func TestArmWritesQuotaAndBurst(t *testing.T) {
 	parent := t.TempDir()
 	dir := ScopeDir(parent, "A")
 	if err := os.Mkdir(dir, 0o755); err != nil {
