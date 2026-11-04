@@ -115,8 +115,8 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		return qerr
 	}
 	if m == nil {
-		if err := checkTargetFS(spec, target); err != nil {
-			return err
+		if ferr := checkTargetFS(spec, target); ferr != nil {
+			return ferr
 		}
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
 			return err
