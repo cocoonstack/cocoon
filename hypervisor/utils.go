@@ -327,7 +327,7 @@ func ValidateResidentPaths(sidecar, rec []*types.StorageConfig) error {
 }
 
 func ValidateRestoreMACs(snapMACs []string, rec *VMRecord) error {
-	if len(snapMACs) > len(rec.NetworkConfigs) {
+	if snapMACs != nil && len(snapMACs) != len(rec.NetworkConfigs) {
 		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(snapMACs), len(rec.NetworkConfigs))
 	}
 	for i, mac := range snapMACs {

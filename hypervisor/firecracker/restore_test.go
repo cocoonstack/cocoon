@@ -73,6 +73,7 @@ func TestPreflightRestoreRefusesDriftedNICs(t *testing.T) {
 		{name: "MAC case differs", rec: recordWith(strings.ToUpper(snapMAC))},
 		{name: "drifted MAC", rec: recordWith("02:00:00:00:00:02"), wantErr: "nic 0 MAC drifted"},
 		{name: "NIC removed", rec: recordWith(), wantErr: "NIC identity must match"},
+		{name: "NIC added after the snapshot", rec: recordWith(snapMAC, "02:00:00:00:00:03"), wantErr: "NIC identity must match"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := fc.preflightRestore(srcDir, tt.rec)
