@@ -96,6 +96,8 @@ type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConf
 
 type RunDirHook func(runDir string) error
 
+type DirHook func(rec *VMRecord, dir string) error
+
 type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
 
 type TransitionHook func(rec *VMRecord, hc *http.Client) error
@@ -118,7 +120,7 @@ type DirectRestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
-	Populate         func(rec *VMRecord, srcDir string) error
+	Populate         DirHook
 	AfterExtract     AfterExtractHook
 }
 
@@ -150,7 +152,7 @@ type SnapshotSpec struct {
 	Pause        TransitionHook
 	Resume       TransitionHook
 	Capture      func(rec *VMRecord, hc *http.Client, tmpDir string) error
-	AfterCapture func(rec *VMRecord, tmpDir string) error
+	AfterCapture DirHook
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error)
 }
 

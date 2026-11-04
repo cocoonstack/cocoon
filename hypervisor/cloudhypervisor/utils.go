@@ -31,7 +31,7 @@ const (
 	apiSocketFlag = "--api-socket"
 
 	vmBootPollInterval = 10 * time.Millisecond
-	// ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows can take 10–20 s.
+	// ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows up to 14 s.
 	ejectWaitTimeout = 30 * time.Second
 
 	restoreModeCopy     = "copy"

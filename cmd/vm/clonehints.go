@@ -38,7 +38,6 @@ func printPostCloneHints(vm *types.VM) {
 		fmt.Println("  echo 3 > /proc/sys/vm/drop_caches")
 	}
 
-	// FC clone: guest MAC is baked in vmstate; change it before networkd config.
 	if isFirecracker(vm.Hypervisor) {
 		printFCMACHints(vm.NetworkConfigs)
 	}

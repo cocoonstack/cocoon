@@ -15,7 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// nicRollbackTimeout bounds a rollback that outlives a canceled resize (guest eject on CH can take 10–20 s).
+// nicRollbackTimeout bounds a rollback that outlives a canceled resize (guest eject on CH can take 14 s).
 const nicRollbackTimeout = 60 * time.Second
 
 // ErrEjectPending marks a RemoveNIC whose request the VMM accepted but the guest has not released; the host slot is reclaimed anyway.
