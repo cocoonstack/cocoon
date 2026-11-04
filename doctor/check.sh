@@ -130,7 +130,7 @@ generate_cni_conflist() {
       "bridge": "cni0",
       "mtu": ${host_mtu},
       "isGateway": true,
-      "ipMasq": true,
+      "ipMasq": false,
       "hairpinMode": true,
       "ipam": {
         "type": "host-local",
@@ -145,7 +145,9 @@ generate_cni_conflist() {
   ]
 }
 CNIEOF
-    fixed "generated $CNI_CONFLIST (subnet: ${subnet})"
+    iptables -t nat -C POSTROUTING -s "$subnet" ! -o cni0 -j MASQUERADE 2>/dev/null ||
+        iptables -t nat -A POSTROUTING -s "$subnet" ! -o cni0 -j MASQUERADE
+    fixed "generated $CNI_CONFLIST (subnet: ${subnet}); persist the masquerade rule for ${subnet} with your firewall tooling"
 }
 
 # ---------------------------------------------------------------------------
