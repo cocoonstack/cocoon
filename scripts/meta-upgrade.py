@@ -29,7 +29,7 @@ USER_VERSION = 2
 BACKENDS = ("cloudhypervisor", "firecracker")
 
 
-def placement(record: dict[str, Any]) -> list[int] | None:
+def placement(record: dict[str, Any]) -> str | None:
     return record.get("queue_cpus") or record.get("cpuset") or None
 
 
