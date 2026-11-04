@@ -152,7 +152,7 @@ func ScopeDir(parentDir, vmID string) string {
 	return filepath.Join(parentDir, scopePrefix+vmID+scopeSuffix)
 }
 
-// Prepare creates or reconfigures vmID's scope and returns its directory for CLONE_INTO_CGROUP; idempotent.
+// Prepare creates vmID's scope, replacing one that survived, and returns its directory for CLONE_INTO_CGROUP.
 func Prepare(ctx context.Context, parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
 	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
