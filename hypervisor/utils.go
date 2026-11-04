@@ -189,11 +189,6 @@ func BlobHexFromPath(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-func PrefixToNetmask(prefix int) string {
-	mask := net.CIDRMask(prefix, 32)
-	return net.IP(mask).String()
-}
-
 // BuildBaseCmdline composes the cocoon-shared cmdline: prefix (backend-specific console+quirks) + boot/layers/cow + per-NIC ip= params.
 func BuildBaseCmdline(prefix, layers, cow string, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var b strings.Builder
@@ -215,7 +210,7 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 		}
 		fmt.Fprintf(&params, " ip=%s::%s:%s:%s:eth%d:off",
 			n.Network.IP, n.Network.Gateway,
-			PrefixToNetmask(n.Network.Prefix), vmName, i)
+			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), vmName, i)
 		if dns != "" {
 			params.WriteString(":" + dns)
 		}

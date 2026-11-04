@@ -66,7 +66,7 @@ func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, err
 	var ids []string
 	return ids, b.view(ctx, func(t *vmTx) error {
 		var err error
-		ids, err = t.resolveMany(refs)
+		ids, err = t.ResolveMany(refs, ErrNotFound)
 		return err
 	})
 }

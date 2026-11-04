@@ -60,18 +60,6 @@ func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRe
 	}
 }
 
-func (ch *CloudHypervisor) cowPath(vmID string, directBoot bool) string {
-	if directBoot {
-		return ch.conf.COWRawPath(vmID)
-	}
-	return ch.conf.OverlayPath(vmID)
-}
-
-// ReverseLayerSerials extracts layer serials, reversed for overlayfs lowerdir.
-func ReverseLayerSerials(storageConfigs []*types.StorageConfig) []string {
-	return hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial })
-}
-
 func validateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig, chCfg *chVMConfig) error {
 	if err := hypervisor.ValidateSnapshotIntegrity(srcDir, sidecar); err != nil {
 		return err
@@ -110,7 +98,7 @@ func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string) ([]byte, e
 	return utils.DoAPIOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, nil)
 }
 
-func vmPutJSON[T any](ctx context.Context, hc *http.Client, endpoint, kind string, payload T, successCodes ...int) error {
+func vmPutJSON(ctx context.Context, hc *http.Client, endpoint, kind string, payload any, successCodes ...int) error {
 	_, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, kind, payload, successCodes...)
 	return err
 }

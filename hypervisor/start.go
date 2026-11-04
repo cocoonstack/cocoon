@@ -137,9 +137,6 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 			<-reaped
 			_ = os.Remove(pidPath)
 		}
-		if spec.OnFail != nil {
-			spec.OnFail()
-		}
 	}()
 
 	knobs := cgroup.ResolveKnobs(&spec.Rec.Config.Config)

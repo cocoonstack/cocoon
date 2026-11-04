@@ -100,9 +100,6 @@ func CopyWritableDisks(ctx context.Context, dstDir string, rec *VMRecord) error 
 
 // PrepareDataDisks requires unique, ValidDataDiskName-passing names.
 func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDiskSpec) ([]*types.StorageConfig, error) {
-	if len(specs) == 0 {
-		return nil, nil
-	}
 	out := make([]*types.StorageConfig, 0, len(specs))
 	for _, spec := range specs {
 		out = append(out, &types.StorageConfig{

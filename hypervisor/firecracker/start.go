@@ -154,11 +154,11 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	pid, exited, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           fcCmd,
 		NetnsPath:     netnsPath,
-		OnFail:        func() { _ = master.Close() },
 		Rec:           rec,
 		DeferCPUQuota: deferQuota,
 	})
 	if err != nil {
+		_ = master.Close()
 		return 0, nil, err
 	}
 

@@ -135,7 +135,7 @@ func DoAPIOnce(ctx context.Context, hc *http.Client, method, url string, body []
 }
 
 // DoJSONOnce marshals payload and sends it via DoAPIOnce; kind names the payload in the marshal error.
-func DoJSONOnce[T any](ctx context.Context, hc *http.Client, method, url, kind string, payload T, successCodes ...int) ([]byte, error) {
+func DoJSONOnce(ctx context.Context, hc *http.Client, method, url, kind string, payload any, successCodes ...int) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s: %w", kind, err)

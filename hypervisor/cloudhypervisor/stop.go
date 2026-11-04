@@ -11,11 +11,7 @@ import (
 )
 
 func (ch *CloudHypervisor) Stop(ctx context.Context, refs []string) ([]string, error) {
-	return ch.StopAll(ctx, refs, ch.stopOne)
-}
-
-func (ch *CloudHypervisor) stopOne(ctx context.Context, id string) error {
-	return ch.StopOneSequence(ctx, id, ch.stopSpec())
+	return ch.StopAll(ctx, refs, ch.stopSpec())
 }
 
 func (ch *CloudHypervisor) stopOneLocked(ctx context.Context, id string) error {

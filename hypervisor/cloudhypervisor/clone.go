@@ -62,7 +62,10 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	bootCfg := meta.BootConfig
 	directBoot := hypervisor.IsDirectBoot(bootCfg)
 
-	cowPath := ch.cowPath(vmID, directBoot)
+	cowPath := ch.conf.OverlayPath(vmID)
+	if directBoot {
+		cowPath = ch.conf.COWRawPath(vmID)
+	}
 	if err = updateCOWPath(storageConfigs, cowPath); err != nil {
 		return nil, fmt.Errorf("update COW path: %w", err)
 	}
@@ -282,7 +285,7 @@ func updateCOWPath(configs []*types.StorageConfig, newCOWPath string) error {
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	return hypervisor.BuildBaseCmdline(
 		"console=hvc0 loglevel=3",
-		strings.Join(ReverseLayerSerials(storageConfigs), ","),
+		strings.Join(hypervisor.ReverseLayers(storageConfigs, func(_ int, sc *types.StorageConfig) string { return sc.Serial }), ","),
 		hypervisor.CowSerial,
 		networkConfigs, vmName, dnsServers,
 	)
