@@ -110,7 +110,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	gcTick := d.gcTick()
 
 	logger.Infof(ctx, "supervising %d backend(s), reconcile every %s", len(d.order), d.conf.ReconcileInterval)
-	d.reconcile(ctx)
+	stuck := d.reconcile(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -123,13 +123,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 					logger.Info(ctx, "meta change events restored")
 				}
 			}
-			d.reconcile(ctx)
+			stuck = d.reconcile(ctx)
 		case <-events:
+			if stuck {
+				continue
+			}
 			if !d.settle(ctx) {
 				return nil
 			}
 			drain(events)
-			d.reconcile(ctx)
+			stuck = d.reconcile(ctx)
 		case ev := <-d.watcher.exits:
 			d.handleExit(ctx, ev)
 			// The convergence just written wakes this daemon's own subscription; its pass already ran.

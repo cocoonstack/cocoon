@@ -12,8 +12,8 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// reconcile runs one idempotent pass over every backend and republishes the API snapshot.
-func (d *Daemon) reconcile(ctx context.Context) {
+// reconcile runs one idempotent pass over every backend, republishes the API snapshot, and reports whether a VM could not converge.
+func (d *Daemon) reconcile(ctx context.Context) bool {
 	var all []VMStatus
 	healthy, degraded := true, 0
 	for _, b := range d.order {
@@ -27,6 +27,7 @@ func (d *Daemon) reconcile(ctx context.Context) {
 		all = append(all, st...)
 	}
 	d.state.publish(all, healthy, degraded, time.Now())
+	return degraded > 0
 }
 
 // reconcileBackend returns the backend's statuses, how many VMs the pass could not converge, and any scan failure; a busy ops lock is not a failure.
