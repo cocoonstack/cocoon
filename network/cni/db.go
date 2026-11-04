@@ -8,9 +8,7 @@ import (
 type networkRecord struct {
 	types.Network `json:"network"`
 	ID            string `json:"id"`
-	// Type is the CNI conflist name (e.g. "cocoon", "calico").
-	Type string `json:"type"`
-	VMID string `json:"vm_id"`
-	// IfName is the CNI interface name inside the netns (eth0, eth1, ...).
-	IfName string `json:"if_name"`
+	Type          string `json:"type"`
+	VMID          string `json:"vm_id"`
+	IfName        string `json:"if_name"`
 }

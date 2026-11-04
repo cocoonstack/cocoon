@@ -13,7 +13,7 @@ import (
 // CloneFilesFunc copies a snapshot's files from srcDir into dstDir.
 type CloneFilesFunc func(dstDir, srcDir string) error
 
-// AfterExtractFn finalizes a cloned VM after snapshot files are in place; rec is the placed placeholder, sourceSnapshotID flows through for metering lineage.
+// AfterExtractFn finalizes a cloned VM once snapshot files are in place.
 type AfterExtractFn func(ctx context.Context, rec *VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error)
 
 // CloneSpec carries one clone's inputs through the shared placeholder→populate→finalize skeleton.

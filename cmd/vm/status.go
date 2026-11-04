@@ -105,7 +105,7 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	return renderVMList(vms, format, scopeDir, reconcileVMStates(vms))
 }
 
-// renderVMList prints vms as JSON or a table; stale marks records whose VMM is gone, a flag in JSON and a state suffix in the table.
+// Stale marks records whose VMM is gone: a flag in JSON, a state suffix in the table.
 func renderVMList(vms []*types.VM, format, scopeDir string, stale map[string]bool) error {
 	if format == cliutil.FormatJSON {
 		items := make([]vmOutput, len(vms))
@@ -136,7 +136,7 @@ func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
 	return ch
 }
 
-// runLoop warns on backend errors so polling ticks don't break; one-shot callers use cmdcore.ListAllVMs directly.
+// Warn on list errors so a failed tick does not stop the loop.
 func runLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, fn func([]*types.VM)) {
 	poll := func() {
 		vms, err := cmdcore.ListAllVMs(ctx, hypers)

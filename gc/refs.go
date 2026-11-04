@@ -2,12 +2,10 @@ package gc
 
 import "maps"
 
-// usedBlobIDs is implemented by snapshots that reference image blobs.
 type usedBlobIDs interface {
 	UsedBlobIDs() map[string]struct{}
 }
 
-// activeVMIDs is implemented by snapshots that track live VMs.
 type activeVMIDs interface {
 	ActiveVMIDs() map[string]struct{}
 }

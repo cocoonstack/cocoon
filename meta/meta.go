@@ -38,13 +38,13 @@ type CommitMode uint8
 // WriteOpt modifies a single write; see RelaxedOK.
 type WriteOpt uint8
 
-// Scope declares, before the closure runs, every namespace a transaction touches: Write is the single namespace it may modify, Read the others it may read. Engines acquire all of them in one fixed global order before invoking the closure.
+// Scope declares, before the closure runs, every namespace a transaction touches.
 type Scope struct {
 	Write string
 	Read  []string
 }
 
-// Store is the engine-neutral transaction boundary. Closures must be pure and retryable: they may run more than once, all effects go through the handle, and results are published only after the transaction returns nil.
+// Store is the engine-neutral transaction boundary. Closures must be pure and retryable.
 type Store interface {
 	// View runs fn over a consistent snapshot of the given namespaces.
 	View(ctx context.Context, nss []string, fn ViewFunc) error

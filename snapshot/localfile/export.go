@@ -20,12 +20,11 @@ func (lf *LocalFile) Export(ctx context.Context, ref string) (io.ReadCloser, err
 	return lf.export(ctx, ref, false)
 }
 
-// ExportCompressed streams the snapshot as a gzip-compressed tar archive.
 func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error) {
 	return lf.export(ctx, ref, true)
 }
 
-// ExportToDir reflinks snapshot data into dir + writes snapshot.json last so its presence is the all-data-ready marker for --from-dir.
+// snapshot.json is written last as the all-data-ready marker.
 func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err error) {
 	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
@@ -51,7 +50,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	if err != nil {
 		return err
 	}
-	// a partial tree would make the retry refuse the non-empty target
+	// A partial tree would make the retry refuse the non-empty target
 	defer func() {
 		if err != nil {
 			for _, name := range names {

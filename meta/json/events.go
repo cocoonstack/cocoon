@@ -34,7 +34,7 @@ type fileToken struct {
 	mtime int64
 }
 
-// tokens are touched only by newNotifier and the Run goroutine, never concurrently.
+// Tokens are touched only by newNotifier and the Run goroutine, never concurrently.
 type notifier struct {
 	b       *meta.Broadcaster
 	watcher *fsnotify.Watcher // kept for the severed-watch test seam

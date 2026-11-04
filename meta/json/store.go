@@ -149,11 +149,12 @@ func (s *Store) resolve(nss []string) ([]*nsState, error) {
 
 // withLocked holds every namespace flock in sorted order; unlock errors log only, since joining them would make callers roll back an already-durable commit.
 func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() error) error {
+	logger := log.WithFunc("meta.json.withLocked")
 	for i, st := range states {
 		if err := st.locker.Lock(ctx); err != nil {
 			for _, held := range slices.Backward(states[:i]) {
 				if uerr := held.locker.Unlock(ctx); uerr != nil {
-					log.WithFunc("meta.json.withLocked").Errorf(ctx, uerr, "unlock %s", held.def.Name)
+					logger.Errorf(ctx, uerr, "unlock %s", held.def.Name)
 				}
 			}
 			return fmt.Errorf("lock %s: %w", st.def.Name, err)
@@ -162,7 +163,7 @@ func (s *Store) withLocked(ctx context.Context, states []*nsState, fn func() err
 	defer func() {
 		for _, st := range slices.Backward(states) {
 			if err := st.locker.Unlock(ctx); err != nil {
-				log.WithFunc("meta.json.withLocked").Errorf(ctx, err, "unlock %s", st.def.Name)
+				logger.Errorf(ctx, err, "unlock %s", st.def.Name)
 			}
 		}
 	}()
@@ -303,7 +304,7 @@ func commitLocked(st *nsState, l *loaded) error {
 	return crash("main-renamed")
 }
 
-// syncCommitted runs after the flock is released: main first so a .prev sync failure still leaves the caller's own generation durable; the parent-dir sync is what CommitRelaxed relinquishes.
+// Syncs main first so a .prev sync failure still leaves the caller's generation durable.
 func syncCommitted(st *nsState, mode meta.CommitMode) error {
 	path := st.def.FilePath
 	if err := utils.SyncFile(path); err != nil {

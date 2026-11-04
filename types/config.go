@@ -14,7 +14,7 @@ type Config struct {
 	QueueSize     int    `json:"queue_size,omitzero"`      // virtio-net ring depth per queue; 0 = default
 	DiskQueueSize int    `json:"disk_queue_size,omitzero"` // virtio-blk ring depth per device; 0 = default
 	Image         string `json:"image,omitempty"`
-	ImageDigest   string `json:"image_digest,omitempty"` // resolved image digest (e.g. "sha256:abc123")
+	ImageDigest   string `json:"image_digest,omitempty"`
 	ImageType     string `json:"image_type,omitempty"`
 	Network       string `json:"network,omitempty"`     // CNI conflist name; empty = default
 	NoDirectIO    bool   `json:"no_direct_io,omitzero"` // disable O_DIRECT on writable disks

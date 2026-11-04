@@ -111,7 +111,7 @@ func seekToLastNLines(f *os.File, n int) error {
 	return err
 }
 
-// watchFile watches a file via fsnotify on the parent dir (atomic rename changes inode).
+// watchFile watches the parent dir because an atomic rename changes the inode.
 func watchFile(ctx context.Context, filePath string, debounce time.Duration) (<-chan struct{}, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

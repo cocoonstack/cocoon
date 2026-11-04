@@ -13,7 +13,7 @@ import (
 
 const killWaitTimeout = 5 * time.Second
 
-// WritePIDFile writes pid to path atomically, so a concurrent ReadPIDFile never observes a truncated or empty file mid-write.
+// WritePIDFile writes pid to path atomically.
 func WritePIDFile(path string, pid int) error {
 	return AtomicWriteFile(path, []byte(strconv.Itoa(pid)+"\n"), 0o600, NoSync)
 }
@@ -40,7 +40,7 @@ func IsProcessAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-// VerifyProcessCmdline matches pid against a whole expectArg argument in /proc/<pid>/cmdline; falls back to IsProcessAlive on non-Linux or read errors.
+// VerifyProcessCmdline matches pid against a whole expectArg argument in /proc/<pid>/cmdline.
 func VerifyProcessCmdline(pid int, expectArg string) bool {
 	if pid <= 0 {
 		return false

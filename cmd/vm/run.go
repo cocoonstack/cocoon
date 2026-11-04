@@ -402,7 +402,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	info, createErr := hyper.Create(ctx, vmID, vmCfg, storageConfigs, netSetup, bootCfg)
 	if createErr != nil {
 		rollbackNetwork(ctx, netProvider, vmID)
-		// Idempotent belt over Create's own rollback: pre-adoption failures (e.g. CPU validation) leave the placeholder squatting the name until GC.
+		// Pre-adoption failures leave the placeholder squatting the name until GC.
 		rollbackReserve()
 		return nil, nil, nil, fmt.Errorf("create VM: %w", createErr)
 	}

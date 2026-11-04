@@ -35,7 +35,7 @@ type Doer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-// DownloadBlob writes url into dst and returns the sha256 hex of what landed: pullConns Range requests when the server honors them, else the single stream the probe already opened; the first bytes are sniffed before any bulk transfer.
+// DownloadBlob writes url into dst and returns its sha256 hex, using pullConns Range requests when the server honors them.
 func DownloadBlob(ctx context.Context, client Doer, url string, dst *os.File, pullConns int, tracker progress.Tracker) (string, error) {
 	logger := log.WithFunc("cloudimg.DownloadBlob")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -73,14 +73,14 @@ func DownloadBlob(ctx context.Context, client Doer, url string, dst *os.File, pu
 	}
 
 	logger.Debugf(ctx, "downloading %s in %d parallel range(s)", url, pullConns)
-	// the post-redirect URL spares every range request the redirect chain
+	// The post-redirect URL spares each range request the redirect chain.
 	if err := downloadRangesParallel(ctx, client, resp.Request.URL.String(), dst, size, pullConns, tracker); err != nil {
 		return "", err
 	}
 	return hashDigest(dst)
 }
 
-// progressCounter emits PhaseDownload events every ~1 MiB; mutex-guarded so it serves both the serial writer and parallel range workers.
+// progressCounter is mutex-guarded because the serial writer and range workers share it.
 type progressCounter struct {
 	mu         sync.Mutex
 	written    int64

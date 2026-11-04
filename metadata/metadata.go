@@ -22,7 +22,7 @@ var (
 		"instance-id: {{.InstanceID}}\nlocal-hostname: {{.Hostname}}\n",
 	))
 
-	// userDataTmpl renders cloud-config; also writes systemd-networkd fallback units so clone reinit survives netplan PERM-MAC mismatch.
+	// Fallback units survive netplan PERM-MAC mismatch on clone reinit.
 	userDataTmpl = template.Must(template.New("user-data").Funcs(tmplFuncs).Parse(`#cloud-config
 {{- if and .Password .Username}}
 ssh_pwauth: true
@@ -119,7 +119,7 @@ type Config struct {
 	Username   string
 	Password   string
 	Networks   []NetworkInfo
-	Mounts     []MountSpec // optional fstab entries written by cloud-init
+	Mounts     []MountSpec
 	DNS        []string
 }
 

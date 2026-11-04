@@ -87,7 +87,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 			return err
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
-			// A partial merge leaves mixed-vintage files in the run dir; quarantine regardless of origin so vm start cannot boot them.
+			// A partial merge mixes vintages; quarantine any origin so vm start cannot boot it.
 			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
@@ -109,7 +109,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 	}
 	apply := func(rec *VMRecord) error {
 		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
-			// Populate cleans then clones with no rollback; a partial run dir must quarantine regardless of origin, like the merge.
+			// Populate has no rollback; quarantine any origin on a partial run dir.
 			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
@@ -126,7 +126,6 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 	b.MarkError(ctx, vmID)
 }
 
-// restoreCore is the shared kill→emit→apply→finalize tail of both restore sequences.
 func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, error) {
 	oldShape := shapeFromConfig(run.rec.Config)
 	if killErr := run.kill(ctx, run.vmID, run.rec); killErr != nil {
@@ -182,7 +181,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 		unlock()
 		return "", nil, nil, err
 	}
-	// Revalidate under the lock (from the guard's own transaction): the pre-lock record may predate a concurrent mutating verb, and preflight anchors the external trust set to it.
+	// Revalidate under the lock; the pre-lock record may predate a concurrent mutating verb.
 	rec, err := b.EntryGuardLoad(ctx, vmID)
 	if err != nil {
 		return fail(err)
@@ -199,7 +198,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 	return vmID, &rec, unlock, nil
 }
 
-// emitRestoreComputeStop closes the compute interval after a confirmed kill; fail-closed on DB error and skip on vanished record so the ledger never gets a phantom entry.
+// emitRestoreComputeStop closes the compute interval after a confirmed kill; a vanished record gets no phantom entry.
 func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldShape metering.Shape, sourceSnapshotID string) {
 	now := timeNow()
 	closed := false
@@ -226,7 +225,7 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMComputeStop, vmID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 }
 
-// PrepareStagingDir extracts the snapshot into a staging dir inside the run dir: a top-level sibling would look like an orphan to the GC run-dir scan and be reaped mid-restore.
+// PrepareStagingDir extracts inside the run dir; a top-level sibling would look like an orphan to the GC run-dir scan.
 func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
 	if err = os.RemoveAll(stagingDir); err != nil {
@@ -243,7 +242,7 @@ func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cl
 	return stagingDir, cleanup, nil
 }
 
-// Stopped is a hibernate resume; Error is allowed because restore rebuilds the run dir and is the recovery path out of a crashed restore, which would otherwise dead-end at vm rm.
+// Error is restorable: restore is the recovery path out of a crashed restore.
 func restorableState(vmID string, rec *VMRecord) error {
 	if rec.State != types.VMStateRunning && rec.State != types.VMStateStopped && rec.State != types.VMStateError {
 		return fmt.Errorf("vm %s is %s and cannot be restored", vmID, rec.State)

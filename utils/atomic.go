@@ -30,7 +30,7 @@ func ReadJSONFile(path string, v any) error {
 	return nil
 }
 
-// SyncParentDir fsyncs the directory containing the file to ensure the directory entry is persisted.
+// SyncParentDir fsyncs dir so its entries are durable.
 func SyncParentDir(dir string) error {
 	parent, err := os.Open(dir) //nolint:gosec // directory is derived from cocoon-managed target path
 	if err != nil {
@@ -55,7 +55,7 @@ func SyncFile(path string) (err error) {
 	return f.Sync()
 }
 
-// SyncTree fsyncs every regular file directly under dir (snapshot dirs are flat), then dir and its parent — the durable-before-kill barrier hibernate needs, since a bare rename fsyncs nothing.
+// SyncTree fsyncs dir's regular files, then dir and its parent; a bare rename persists nothing.
 func SyncTree(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -75,7 +75,7 @@ func SyncTree(dir string) error {
 	return SyncParentDir(filepath.Dir(dir))
 }
 
-// AtomicWriteFile writes data via temp + rename so readers never see a partial file; Sync fsyncs it, NoSync suits run-dir files regenerated on the next launch.
+// AtomicWriteFile writes data via temp + rename so readers never see a partial file.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode, mode SyncMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")

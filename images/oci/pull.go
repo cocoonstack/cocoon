@@ -33,7 +33,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], im
 		return err
 	}
 
-	// Heavy work (downloads, EROFS conversion, blob renames) runs outside any transaction under finishImport's per-digest locks; the up-to-date pre-check is racy but benign since the whole flow is idempotent per digest.
+	// Heavy work runs outside any transaction; the racy up-to-date pre-check is benign since the flow is idempotent per digest.
 	var upToDate bool
 	var knownBootHexes map[string]struct{}
 	if err := store.View(ctx, func(idx *imageIndex) error {

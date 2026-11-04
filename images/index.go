@@ -42,7 +42,7 @@ func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 	return refs
 }
 
-// LookupOne resolves id to a single entry via LookupRefs' rules; multiple refs must all name one digest (tag aliases) — a prefix spanning distinct digests resolves to nothing rather than map-iteration luck.
+// LookupOne resolves id to one entry; refs spanning distinct digests resolve to nothing.
 func LookupOne[E Entry](images map[string]*E, id string) (string, *E, bool) {
 	refs := LookupRefs(images, id)
 	if len(refs) == 0 || !refsShareDigest(images, refs) {
@@ -56,7 +56,7 @@ func LookupRefs[E Entry](images map[string]*E, id string) []string {
 	if entry, ok := images[id]; ok && entry != nil {
 		return []string{id}
 	}
-	// Digest match (exact or prefix); minHexLen guards against over-broad prefixes like "sha256:a".
+	// minHexLen guards against over-broad prefixes like "sha256:a".
 	idHex := strings.TrimPrefix(id, "sha256:")
 	var refs []string
 	for ref, ep := range images {
@@ -92,7 +92,7 @@ func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
 	return true
 }
 
-// deleteByID removes every ref matching an id, so "delete <digest>" sweeps all refs pointing at it. A prefix spanning distinct digests is rejected — guessing on a destructive op would delete unrelated images.
+// deleteByID removes every ref matching an id; a prefix spanning distinct digests is rejected.
 func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[string]*E, ids []string) ([]string, error) {
 	logger := log.WithFunc(logPrefix)
 	var deleted []string

@@ -153,7 +153,7 @@ func (d *Daemon) collectOwnerless(ctx context.Context, b Supervisor, rec *hyperv
 	return nil
 }
 
-// resumeDelete finishes a delete a previous worker left mid-protocol; supervision starts deletes of its own, and an unfinished one strands the record and its name until a manual gc.
+// resumeDelete finishes a delete a previous worker left mid-protocol.
 func (d *Daemon) resumeDelete(ctx context.Context, b Supervisor, vmID string) error {
 	unlock, ok, err := d.tryLock(ctx, b, vmID)
 	if !ok {
@@ -226,7 +226,7 @@ func (d *Daemon) confirmDead(ctx context.Context, b Supervisor, rec *hypervisor.
 	return false, err
 }
 
-// tryLock reports ok=false for a busy lock and for a lock error alike; only the error is worth logging, and only it makes the pass unhealthy.
+// tryLock reports ok=false for a busy lock and for an error alike; only the error is logged and counted.
 func (d *Daemon) tryLock(ctx context.Context, b Supervisor, vmID string) (func(), bool, error) {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil {

@@ -5,6 +5,8 @@ import (
 	"encoding/json/jsontext"
 	"maps"
 	"slices"
+
+	"github.com/cocoonstack/cocoon/meta"
 )
 
 type table struct {
@@ -62,7 +64,7 @@ func (m *Model) Delete(tbl, id string) {
 func (m *Model) Dirty() bool { return m.dirty }
 
 // Scan yields (tbl, id) pairs in insertion order; fn errors abort and propagate.
-func (m *Model) Scan(tbl string, fn func(id string, raw jsontext.Value) error) error {
+func (m *Model) Scan(tbl string, fn meta.RawScanFunc) error {
 	t := m.tables[tbl]
 	if t == nil {
 		return nil

@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	// TAPTxQueueLen absorbs traffic bursts (especially UDP) without dropping; the kernel default of 1000 is too small for VM workloads.
+	// TAPTxQueueLen absorbs UDP bursts; the kernel default of 1000 is too small.
 	TAPTxQueueLen = 10000
 
-	// GROMaxSize matches the maximum virtio-net segment size so the kernel aggregates inbound packets before CH reads them.
+	// GROMaxSize matches the maximum virtio-net segment size.
 	GROMaxSize = 65536
 )
 
-// CreateTAP adds a multi-queue TAP sized for numQueues virtio-net queues and returns its index, then closes the kernel fds (CH/QEMU reopen it by name).
+// CreateTAP adds a multi-queue TAP and returns its index; the VMM reopens it by name.
 func CreateTAP(name string, numQueues int) (int, error) {
-	// queue_pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
+	// Queue pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
 	queuePairs := max(1, numQueues/2)
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {
@@ -36,7 +36,7 @@ func CreateTAP(name string, numQueues int) (int, error) {
 	if err := netlink.LinkAdd(tap); err != nil {
 		return 0, fmt.Errorf("add tap %s: %w", name, err)
 	}
-	// netlink's post-TUNSETIFF index lookup drops its error; on a zero index drop persistence so the device dies with the fds instead of outliving the failure.
+	// Netlink drops the index-lookup error; on index 0, clear persistence so the TAP dies with the fds.
 	index := tap.Attrs().Index
 	if index == 0 {
 		_ = unix.IoctlSetInt(int(tap.Fds[0].Fd()), unix.TUNSETPERSIST, 0)

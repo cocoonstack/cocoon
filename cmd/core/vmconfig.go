@@ -67,7 +67,7 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 	return cfg, nil
 }
 
-// CloneVMConfigFromFlags builds VMConfig for a clone. The snapshot's cgroup knobs record its source VM's policy and are never applied; the clone's policy comes from flags alone.
+// CloneVMConfigFromFlags builds a clone's VMConfig; cgroup knobs come from flags alone, never the snapshot.
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {

@@ -30,7 +30,7 @@ type Bridge struct {
 	bridgeIdx int
 }
 
-// New: the bridge device must already exist.
+// New returns a Bridge on bridgeDev, which must already exist.
 func New(conf *config.Config, bridgeDev string) (*Bridge, error) {
 	br, err := netlink.LinkByName(bridgeDev)
 	if err != nil {
@@ -96,7 +96,7 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
 		}
-		// Fresh adds only: a same-name TAP is an interrupted-resize leftover that would wedge every retry; recovery specs re-attach the existing TAP (their slot may hold a live VMM's TAP).
+		// Fresh adds reclaim a same-name stale TAP; recovery specs re-attach the existing one.
 		if spec.Existing == nil {
 			if old, lErr := netlink.LinkByName(name); lErr == nil {
 				if delErr := netlink.LinkDel(old); delErr != nil {
@@ -141,7 +141,7 @@ func (b *Bridge) Remove(_ context.Context, vmID string, index int) error {
 	return nil
 }
 
-// Quiesce and Unquiesce are no-ops: bridge TAPs sit directly on the host bridge, with no TC redirect to storm when the VM stops.
+// Bridge TAPs have no TC redirect to storm.
 func (b *Bridge) Quiesce(_ context.Context, _ string) error   { return nil }
 func (b *Bridge) Unquiesce(_ context.Context, _ string) error { return nil }
 

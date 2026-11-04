@@ -99,7 +99,7 @@ func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity In
 
 func (c *BaseConfig) RootDirPath() string { return c.RootDir }
 
-// ResolveExternalVolume canonicalizes path (EvalSymlinks also asserts existence) and refuses cocoon-managed roots — vm rm / GC delete those trees, and a symlink must not smuggle one past the check.
+// ResolveExternalVolume returns path with symlinks resolved and refuses cocoon-managed roots, which vm rm and GC delete.
 func (c *BaseConfig) ResolveExternalVolume(path string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {

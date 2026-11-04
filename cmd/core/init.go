@@ -130,7 +130,7 @@ func InitSnapshot(ctx context.Context, conf *config.Config, opts ...localfile.Op
 	return s, nil
 }
 
-// PinEnvelopeBlobs locks envelope-sourced pins (clone/restore --from-dir, snapshot import) on the owning backend; digests with no local blob are skipped.
+// PinEnvelopeBlobs locks envelope-sourced blob pins on the owning backend, skipping digests with no local blob.
 func PinEnvelopeBlobs(ctx context.Context, conf *config.Config, blobIDs map[string]struct{}) (func(), error) {
 	if len(blobIDs) == 0 {
 		return func() {}, nil
@@ -175,7 +175,7 @@ func wireHypervisor[H networkedHypervisor](newFn func(*config.Config, metering.R
 	}
 }
 
-// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck; the backends build once, on the first candidate blob.
+// pinnedElsewhere unions VM and snapshot blob pins for image GC's under-lock recheck.
 func pinnedElsewhere(conf *config.Config) imagebackend.PinRecheck {
 	var (
 		once    sync.Once

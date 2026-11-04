@@ -23,8 +23,7 @@ const (
 	// Root is the cgroup v2 unified hierarchy mount point.
 	Root = "/sys/fs/cgroup"
 	// DefaultParent holds every per-VM scope unless cgroup_parent overrides it.
-	DefaultParent = "cocoon.slice"
-	// defaultPeriodUs is the kernel's default cpu.max period.
+	DefaultParent   = "cocoon.slice"
 	defaultPeriodUs = 100000
 	// AutoCPUSet asks launch to place the VM on the least-loaded last-level-cache domain.
 	AutoCPUSet = "auto"
@@ -153,7 +152,7 @@ func ScopeDir(parentDir, vmID string) string {
 	return filepath.Join(parentDir, scopePrefix+vmID+scopeSuffix)
 }
 
-// Prepare creates or reconfigures vmID's scope and returns its opened directory for CLONE_INTO_CGROUP; idempotent, so a relaunch reuses a scope its dying predecessor still occupies. deferQuota leaves the ceiling at max for the provisioning window — weight, fence, and placement still apply — until Arm sets the finite quota.
+// Prepare creates or reconfigures vmID's scope and returns its directory for CLONE_INTO_CGROUP; idempotent.
 func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
 	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
@@ -189,7 +188,7 @@ func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File,
 	return scope, nil
 }
 
-// Arm sets the finite quota on a scope prepared with deferQuota; called after memory load, before resume, so the guest never runs uncapped. Idempotent — a retry after a partial failure converges.
+// Arm sets the finite quota on a scope prepared with deferQuota, which keeps the ceiling at max until now; call it after memory load, before resume.
 func Arm(parentDir, vmID string, k Knobs) error {
 	return armQuota(ScopeDir(parentDir, vmID), k)
 }

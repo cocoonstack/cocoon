@@ -13,7 +13,7 @@ import (
 // sysCPURoot is the sysfs cpu tree; tests point it at a fixture.
 var sysCPURoot = cgroup.SysCPURoot
 
-// placeRecord resolves id's cpu placement for a launch under cfg and persists it in one write transaction, so concurrent launches see each other's placements.
+// placeRecord resolves and persists id's cpu placement in one write transaction so concurrent launches see each other.
 func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config) (VMRecord, error) {
 	topo, topoErr := b.placementTopology(cfg)
 	if topoErr != nil {
@@ -40,7 +40,7 @@ func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config)
 	return placed, err
 }
 
-// placementTopology reads the host's cache domains inside the fence when launch picks cfg's cpus; nil when cfg names them or pins nothing.
+// placementTopology reads the host cache domains; nil when cfg names cpus or pins nothing.
 func (b *Backend) placementTopology(cfg *types.Config) (*cgroup.Topology, error) {
 	if cfg.CPUSetCPUs != cgroup.AutoCPUSet && (cfg.CPUSetCPUs != "" || !b.pinsQueues(cfg)) {
 		return nil, nil
@@ -58,7 +58,7 @@ func (b *Backend) placementTopology(cfg *types.Config) (*cgroup.Topology, error)
 	return b.topo, b.topoErr
 }
 
-// placeVM fills rec's placement from cfg: an explicit cpuset is copied; with a topology, "auto" and no cpuset pick the least-loaded cache domain against the placements live VMs already hold.
+// placeVM fills rec's placement from cfg; with a topology it picks the least-loaded cache domain.
 func (b *Backend) placeVM(ctx context.Context, r meta.Reader, rec *VMRecord, cfg *types.Config, topo *cgroup.Topology) error {
 	rec.CPUSet, rec.QueueCPUs = "", ""
 	pins := b.pinsQueues(cfg)
@@ -89,7 +89,7 @@ func (b *Backend) pinsQueues(cfg *types.Config) bool {
 	return b.PinsQueues && cfg.CPU > 1
 }
 
-// placementLoad counts per host cpu the VMs across every backend holding it, from the placement rows; self is the VM being placed.
+// placementLoad counts live VMs per host cpu across all backends, excluding self.
 func (b *Backend) placementLoad(ctx context.Context, r meta.Reader, self string) (map[int]int, error) {
 	load := map[int]int{}
 	count := func(id string, cpuList *string) error {

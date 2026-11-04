@@ -113,7 +113,7 @@ func importCloudimg(ctx context.Context, conf *config.Config, name, downloadMsg 
 	return nil
 }
 
-func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg func(int) string, do func(*oci.OCI, progress.Tracker) error) error {
+func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg pullMsgFunc, do func(*oci.OCI, progress.Tracker) error) error {
 	store, _, err := cmdcore.InitImageBackendsForPull(ctx, conf)
 	if err != nil {
 		return err

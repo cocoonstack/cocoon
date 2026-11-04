@@ -25,14 +25,14 @@ func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
 
 	for _, image := range args {
+		var pullErr error
 		if cliutil.IsURL(image) {
-			if err := h.pullCloudimg(ctx, cloudimgStore, image, force); err != nil {
-				return err
-			}
+			pullErr = h.pullCloudimg(ctx, cloudimgStore, image, force)
 		} else {
-			if err := h.pullOCI(ctx, ociStore, image); err != nil {
-				return err
-			}
+			pullErr = h.pullOCI(ctx, ociStore, image)
+		}
+		if pullErr != nil {
+			return pullErr
 		}
 	}
 	return nil

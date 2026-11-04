@@ -13,7 +13,6 @@ import (
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 )
 
-// Handler groups the meta store lifecycle commands (init, convert, backup).
 type Handler struct {
 	cmdcore.BaseHandler
 }

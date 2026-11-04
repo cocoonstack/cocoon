@@ -46,7 +46,7 @@ func createNetns(name string) error {
 	return nil
 }
 
-// deleteNetns removes a named netns with retry for async kernel cleanup.
+// deleteNetns retries because kernel netns cleanup is async.
 func deleteNetns(ctx context.Context, name string) error {
 	path := filepath.Join(netnsBasePath, name)
 	var last error
@@ -137,23 +137,23 @@ func setLinkStateInNetns(nsPath string, ifNames []string, up bool) error {
 	return ignoreMissingNetns(err)
 }
 
-func setupTCRedirect(nsPath, ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
+func setupTCRedirect(nsPath, ifn, tapName string, queues int, overrideMAC string) (string, int, error) {
 	var (
 		mac string
 		mtu int
 	)
 	err := cns.WithNetNSPath(nsPath, func(_ cns.NetNS) error {
 		var nsErr error
-		mac, mtu, nsErr = tcRedirectInNS(ifName, tapName, queues, overrideMAC)
+		mac, mtu, nsErr = tcRedirectInNS(ifn, tapName, queues, overrideMAC)
 		return nsErr
 	})
 	return mac, mtu, err
 }
 
-func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (string, int, error) {
-	link, err := netlink.LinkByName(ifName)
+func tcRedirectInNS(ifn, tapName string, queues int, overrideMAC string) (string, int, error) {
+	link, err := netlink.LinkByName(ifn)
 	if err != nil {
-		return "", 0, fmt.Errorf("find %s: %w", ifName, err)
+		return "", 0, fmt.Errorf("find %s: %w", ifn, err)
 	}
 
 	if overrideMAC != "" {
@@ -162,7 +162,7 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 			return "", 0, fmt.Errorf("parse MAC %s: %w", overrideMAC, parseErr)
 		}
 		if setErr := netlink.LinkSetHardwareAddr(link, hwAddr); setErr != nil {
-			return "", 0, fmt.Errorf("set MAC on %s: %w", ifName, setErr)
+			return "", 0, fmt.Errorf("set MAC on %s: %w", ifn, setErr)
 		}
 	}
 
@@ -170,11 +170,11 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
 	if err != nil {
-		return "", 0, fmt.Errorf("list addrs on %s: %w", ifName, err)
+		return "", 0, fmt.Errorf("list addrs on %s: %w", ifn, err)
 	}
 	for _, addr := range addrs {
 		if delErr := netlink.AddrDel(link, &addr); delErr != nil {
-			return "", 0, fmt.Errorf("flush addr %s on %s: %w", addr.IPNet, ifName, delErr)
+			return "", 0, fmt.Errorf("flush addr %s on %s: %w", addr.IPNet, ifn, delErr)
 		}
 	}
 
@@ -212,10 +212,10 @@ func tcRedirectInNS(ifName, tapName string, queues int, overrideMAC string) (str
 	}
 
 	if err := replaceTCRedirect(link, tapLink); err != nil {
-		return "", 0, fmt.Errorf("redirect %s -> %s: %w", ifName, tapName, err)
+		return "", 0, fmt.Errorf("redirect %s -> %s: %w", ifn, tapName, err)
 	}
 	if err := replaceTCRedirect(tapLink, link); err != nil {
-		return "", 0, fmt.Errorf("redirect %s -> %s: %w", tapName, ifName, err)
+		return "", 0, fmt.Errorf("redirect %s -> %s: %w", tapName, ifn, err)
 	}
 	return mac, link.Attrs().MTU, nil
 }

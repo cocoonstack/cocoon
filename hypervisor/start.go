@@ -121,7 +121,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 	return &placed, nil
 }
 
-// LaunchVMProcess starts spec.Cmd and waits for the API socket; exited closes once the VMM is reaped, and any post-Start error kills the process + removes the PID file.
+// LaunchVMProcess starts spec.Cmd and waits for the API socket; exited closes when the VMM is reaped.
 func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int, exited <-chan struct{}, err error) {
 	reaped := make(chan struct{})
 	started := false

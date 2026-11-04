@@ -22,6 +22,10 @@ type Handler struct {
 
 func (h Handler) Run(cmd *cobra.Command, _ []string) error {
 	ctx, conf := h.Init(cmd)
+	dconf, err := daemonConfig(cmd, conf)
+	if err != nil {
+		return err
+	}
 	store, err := cmdcore.MetaStore(conf)
 	if err != nil {
 		return err
@@ -33,10 +37,6 @@ func (h Handler) Run(cmd *cobra.Command, _ []string) error {
 	supervisors := make([]cocoond.Supervisor, 0, len(hypers))
 	for _, hyper := range hypers {
 		supervisors = append(supervisors, hyper)
-	}
-	dconf, err := daemonConfig(cmd, conf)
-	if err != nil {
-		return err
 	}
 	return cocoond.New(dconf, store, supervisors).Run(ctx)
 }

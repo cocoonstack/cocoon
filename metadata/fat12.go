@@ -29,7 +29,6 @@ const (
 	writeBufSize = 64 << 10
 )
 
-// fat12Builder constructs a FAT12 image in memory (FAT + root dir only) and streams the full image on writeTo.
 type fat12Builder struct {
 	label       string
 	fat         []byte // single FAT copy (written twice)
@@ -37,7 +36,7 @@ type fat12Builder struct {
 	data        [][]byte // file data in cluster-allocation order
 	nextCluster uint16
 	rootUsed    int
-	shortSeq    int // counter for ~N short-name suffixes
+	shortSeq    int
 }
 
 func newFAT12Builder(label string) *fat12Builder {
@@ -202,7 +201,6 @@ func setFATEntry(fat []byte, cluster int, val uint16) {
 	fat[off+1] = byte(word >> 8)
 }
 
-// needsLFN reports whether name requires VFAT long-filename entries.
 func needsLFN(name string) bool {
 	upper := strings.ToUpper(name)
 	base, ext := splitName(upper)

@@ -49,7 +49,7 @@ type DataDiskSpec struct {
 	Size          int64
 	FSType        string
 	MountPoint    string
-	MountPointSet bool `json:"-"` // distinguishes mount=<empty> (set) from omitted
+	MountPointSet bool // distinguishes mount=<empty> (set) from omitted
 	DirectIO      *bool
 }
 

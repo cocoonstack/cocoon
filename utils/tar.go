@@ -57,7 +57,7 @@ func ListRegularFiles(dir string) ([]string, error) {
 	return names, nil
 }
 
-// ExtractTar extracts flat tar entries into dir. It never fsyncs — callers needing durability follow with SyncTree.
+// ExtractTar extracts flat tar entries into dir without fsync; callers needing durability follow with SyncTree.
 func ExtractTar(dir string, r io.Reader) error {
 	tr := tar.NewReader(r)
 	for {
@@ -119,7 +119,7 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dat
 		}
 		sum += seg.Length
 	}
-	// A tar rewritten by a third-party tool keeps the map but not the data it describes
+	// A tar rewritten by a third-party tool keeps the map but not the data it describes.
 	if sum != dataSize {
 		return fmt.Errorf("sparse map describes %d data bytes, entry holds %d", sum, dataSize)
 	}
@@ -200,17 +200,17 @@ func isAllZero(b []byte) bool {
 	return true
 }
 
-// tarFileMaybeSparse writes file as COCOON.sparse PAX when it has holes; falls back to a regular entry on empty files, unsupported FS, no holes, or an oversized segment map.
+// tarFileMaybeSparse writes a COCOON.sparse PAX entry, or a plain entry when sparse cannot help.
 func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
-		return fmt.Errorf("open %s: %w", path, err)
+		return err
 	}
 	defer f.Close() //nolint:errcheck
 
 	fi, err := f.Stat()
 	if err != nil {
-		return fmt.Errorf("stat %s: %w", path, err)
+		return err
 	}
 	size := fi.Size()
 

@@ -27,7 +27,7 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	return nil
 }
 
-// finishImport commits blobs, then records the entry in one pure transaction; verb names the operation for logging.
+// finishImport commits blobs, then records the entry in one pure transaction.
 func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
 	logger := log.WithFunc("oci.finishImport")
 
@@ -59,7 +59,7 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 	return nil
 }
 
-// commitBlobs moves each layer's blob and boot files into their final paths, outside any transaction and under per-digest locks so GC cannot delete a not-yet-indexed blob.
+// commitBlobs moves blobs and boot files into place under per-digest locks so GC cannot delete a not-yet-indexed blob.
 func commitBlobs(conf *Config, results []pullLayerResult) error {
 	for i := range results {
 		r := &results[i]

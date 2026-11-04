@@ -28,16 +28,12 @@ import (
 )
 
 const (
-	// SnapshotFileMemory is a read-only memory/state file (hard link or symlink).
 	SnapshotFileMemory SnapshotFileKind = iota
-	// SnapshotFileCOW is a writable disk that must be copied (reflink/sparse).
 	SnapshotFileCOW
-	// SnapshotFileMeta is small metadata that is plain-copied.
 	SnapshotFileMeta
-	// SnapshotFileSkip is left out of the clone.
 	SnapshotFileSkip
 
-	// CloneLocksDirName holds FC clone locks under the backend run root, outside any VM dir — a clone must be able to lock a source whose dir is already gone.
+	// CloneLocksDirName holds FC clone locks outside any VM dir so a clone can lock a source whose dir is gone.
 	CloneLocksDirName = "clone-locks"
 
 	restoreStagingName = ".restore-staging"
@@ -53,7 +49,7 @@ const (
 
 var hostCPUCount = sync.OnceValue(func() int { return hostCPUCountAt(onlineCPUsPath) })
 
-// SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
+// SnapshotFileKind tells clone how to bring a file over: Memory links, COW copies, Meta plain-copies, Skip omits.
 type SnapshotFileKind int
 
 // LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
@@ -99,7 +95,7 @@ func (b *Backend) PIDFilePath(runDir string) string {
 	return filepath.Join(runDir, b.Conf.PIDFileName())
 }
 
-// LogFilePath returns the per-VM hypervisor log file under logDir (named after the backend so write/read can't drift).
+// LogFilePath returns the per-VM hypervisor log file under logDir.
 func (b *Backend) LogFilePath(logDir string) string {
 	return filepath.Join(logDir, b.Typ+".log")
 }
@@ -250,7 +246,7 @@ func MergeDirInto(src, dst string) error {
 	return nil
 }
 
-// HostCPUCount returns the host's online CPU count; runtime.NumCPU reports the process affinity mask, which undersizes guests when the control plane is core-pinned.
+// HostCPUCount returns the online CPU count; runtime.NumCPU honors the affinity mask and undersizes guests.
 func HostCPUCount() int { return hostCPUCount() }
 
 // ValidateHostCPU rejects vCPU counts beyond the host's online cores.

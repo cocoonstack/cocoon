@@ -85,7 +85,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if prepErr != nil {
 		return nil, prepErr
 	}
-	if err := types.ValidateStorageConfigs(append(slices.Clone(storageConfigs), dataDisks...)); err != nil {
+	if err := types.ValidateStorageConfigs(slices.Concat(storageConfigs, dataDisks)); err != nil {
 		return nil, fmt.Errorf("validate storage configs: %w", err)
 	}
 	bootCfg := meta.BootConfig

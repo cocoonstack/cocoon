@@ -13,7 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-// vmCleanup is the vms-namespace tombstone payload: everything teardown needs once the record is gone.
+// vmCleanup is the vms-namespace tombstone payload: what teardown needs once the record is gone.
 type vmCleanup struct {
 	Name   string `json:"name,omitempty"`
 	RunDir string `json:"run_dir,omitempty"`
@@ -32,7 +32,7 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 	return *rec, nil
 }
 
-// RecoverTombstone drives id's tombstone to completion under the held ops lock; supervision starts deletes of its own, so it must be able to finish them.
+// RecoverTombstone drives id's tombstone to completion under the held ops lock.
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) {
 	ts := b.tombstones()
 	var (
@@ -68,7 +68,7 @@ func (b *Backend) tombstones() *tombstone.Table {
 	return tombstone.NewTable(b.NS)
 }
 
-// deleteVMProtocol runs the §5 phase protocol (lease → deleting → teardown → fenced finalize) under the held ops lock; a crash at any point leaves a phase-directed tombstone a later worker resumes.
+// deleteVMProtocol runs lease, deleting, teardown and fenced finalize under the held ops lock; a crash leaves a tombstone a later worker resumes.
 func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord) error {
 	ts := b.tombstones()
 	cl := vmCleanup{Name: rec.Config.Name, RunDir: rec.RunDir, LogDir: rec.LogDir}
@@ -104,7 +104,7 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 	return b.finishVMTeardown(ctx, id, leaseID, cl)
 }
 
-// finishVMTeardown runs the slow cleanup outside any transaction, then the fenced finalize that deletes record, name and tombstone together.
+// finishVMTeardown runs the slow cleanup outside any transaction, then the fenced finalize.
 func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl vmCleanup) error {
 	if err := b.cleanupNetwork(ctx, id); err != nil {
 		return fmt.Errorf("vm %s network teardown (tombstone kept, retry or gc resumes): %w", id, err)

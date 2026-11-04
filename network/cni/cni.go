@@ -80,7 +80,6 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 
 func (c *CNI) Type() string { return typ }
 
-// Verify checks that no teardown is pending, the netns exists, and every expected TAP carries its ingress redirect.
 func (c *CNI) Verify(ctx context.Context, vmID string, expected []*types.NetworkConfig) error {
 	var pending *tombstone.Record
 	if err := c.view(ctx, func(t *netTx) error {
@@ -123,7 +122,7 @@ func (c *CNI) Delete(ctx context.Context, vmID string) error {
 	return c.teardownProtocol(ctx, vmID, nil, false)
 }
 
-// tearDownNICs runs CNI DEL (+ optional TAP delete) on every record, returning the fully-torn-down record IDs (the caller's sweep set) and the joined failures.
+// tearDownNICs runs CNI DEL (and the optional TAP delete) per record; it returns fully released IDs and the joined errors.
 func (c *CNI) tearDownNICs(ctx context.Context, vmID, nsPath string, records []networkRecord, deleteTAP bool) ([]string, error) {
 	logger := log.WithFunc("cni.tearDownNICs")
 	// Zero records need no plugin: a missing conflist must not wedge a 0-NIC VM's netns removal.
@@ -220,7 +219,7 @@ func loadConfLists(dir string) (map[string]*libcni.NetworkConfigList, string, er
 	if len(files) == 0 {
 		return nil, "", fmt.Errorf("no .conflist files in %s", dir)
 	}
-	// files are already sorted by ConfFiles.
+	// Files are already sorted by ConfFiles.
 	lists := make(map[string]*libcni.NetworkConfigList, len(files))
 	var defaultName string
 	for _, f := range files {

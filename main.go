@@ -13,7 +13,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	// Console relay mode: this binary is re-exec'd as a background process by FC launchProcess for the PTY bridge.
+	// Console relay mode: this binary is re-exec'd as a background process by FC startConsoleRelay for the PTY bridge.
 	if firecracker.IsRelayMode() {
 		firecracker.RunRelay(ctx)
 		return

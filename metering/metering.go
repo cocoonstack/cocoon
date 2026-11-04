@@ -1,4 +1,4 @@
-// Package metering emits append-only VM/snapshot lifecycle endpoints through Recorder; backends live in subpackages (file, stderr, capture).
+// Package metering emits append-only VM and snapshot lifecycle entries through Recorder; backends live in subpackages.
 package metering
 
 import (

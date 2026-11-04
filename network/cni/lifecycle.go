@@ -34,7 +34,6 @@ func (c *CNI) Prepare(_ context.Context, vmID string, _ *types.VMConfig) (string
 	return nsPath, nil
 }
 
-// Add allocates each NIC's CNI plumbing inside the netns Prepare created.
 func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...network.AddSpec) (configs []*types.NetworkConfig, retErr error) {
 	if c.cniConf == nil {
 		return nil, c.errNoConflist()
@@ -70,7 +69,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		if retErr == nil {
 			return
 		}
-		// Survives caller cancellation, bounded so a hung plugin can't wedge the caller; a failed DEL keeps its intent record so a later re-add, vm rm or GC releases the lease.
+		// Rollback survives caller cancellation but is bounded; a failed DEL keeps its intent record.
 		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer rcancel()
 		var releasedIDs []string

@@ -8,13 +8,13 @@ import (
 	"os"
 )
 
-// SparseCopy copies src to dst. On non-Linux platforms, sparsity is not preserved.
-func SparseCopy(dst, src string, sync SyncMode) error {
+// SparseCopy copies src to dst without preserving sparsity.
+func SparseCopy(dst, src string, mode SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if _, err := io.Copy(dstFile, srcFile); err != nil {
 			return err
 		}
-		if !sync {
+		if !mode {
 			return nil
 		}
 		return dstFile.Sync()

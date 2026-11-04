@@ -92,7 +92,7 @@ func FormatSize(bytes int64) string {
 	return units.BytesSize(float64(bytes))
 }
 
-// The discarded error on each Flag* accessor means "no such flag", which the command tree makes impossible.
+// A flag absent on this command reads as its zero value.
 func FlagBool(cmd *cobra.Command, name string) bool { v, _ := cmd.Flags().GetBool(name); return v }
 
 func FlagInt(cmd *cobra.Command, name string) int { v, _ := cmd.Flags().GetInt(name); return v }

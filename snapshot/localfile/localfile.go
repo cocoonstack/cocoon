@@ -52,6 +52,7 @@ var (
 	_ snapshot.DirectCreator      = (*LocalFile)(nil)
 	_ snapshot.CompressedExporter = (*LocalFile)(nil)
 	_ snapshot.DirectoryExporter  = (*LocalFile)(nil)
+	_ snapshot.NameHolder         = (*LocalFile)(nil)
 )
 
 // LocalFile is the local-filesystem snapshot backend.
@@ -84,13 +85,12 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...O
 
 func (lf *LocalFile) Type() string { return typ }
 
-// DataDir returns the local data directory, snapshot config, and a read-lease release for direct file access.
 func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.SnapshotConfig, func(), error) {
 	rec, err := lf.lookupRecord(ctx, ref, true)
 	if err != nil {
 		return "", types.SnapshotConfig{}, nil, err
 	}
-	// A shared holder can't drive recovery, so this releases the shared lease, recovers exclusively, then re-acquires shared to avoid self-deadlocking an in-place upgrade.
+	// Release shared, recover exclusively, then re-acquire: a shared holder cannot upgrade in place.
 	for range 2 {
 		release, err := lf.acquireReadLease(ctx, rec.ID)
 		if err != nil {
@@ -138,7 +138,7 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	return cfg.ID, nil
 }
 
-// CreateFromDir renames srcDir into the store data dir when they share a filesystem and reports ok=false (srcDir untouched) otherwise so the caller streams instead; the placeholder→move→finalize protocol matches Create, so a mid-flight crash leaves a GC-collectable pending record.
+// CreateFromDir renames srcDir into the store; ok=false (srcDir untouched) means the caller must stream.
 func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (_ string, _ bool, err error) {
 	sameFS, err := utils.SameFilesystem(srcDir, lf.conf.DataDir())
 	if err != nil {
@@ -230,7 +230,7 @@ func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 	orch.Register(gcModule(lf, lf.gcPolicy))
 }
 
-// NameOwner reports the record holding name in the index, pending or not — this is the reservation insertRecord enforces, so the save preflight sees the same thing the insert will.
+// NameOwner reports the record holding name, pending or not, matching what insertRecord enforces.
 func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, error) {
 	if name == "" {
 		return "", false, nil
@@ -310,7 +310,7 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 	return nil
 }
 
-// beginBuild is the shared Create/CreateFromDir preamble: build lease + pending record; done (deferred with the caller's named error) removes the half-built dir and rolls the record back on failure, then releases the lease.
+// beginBuild takes the build lease and inserts the pending record; done rolls back on a non-nil *err and releases the lease.
 func (lf *LocalFile) beginBuild(ctx context.Context, cfg *types.SnapshotConfig) (dataDir string, done func(*error), err error) {
 	if cfg.ID == "" {
 		return "", nil, fmt.Errorf("snapshot ID is required (must be set by caller)")

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// RunQemuImg shells out to qemu-img; non-zero exit returns wrapped combined output. Use exec.CommandContext directly when stdout matters.
+// RunQemuImg shells out to qemu-img; non-zero exit returns wrapped combined output.
 func RunQemuImg(ctx context.Context, args ...string) error {
 	out, err := exec.CommandContext(ctx, "qemu-img", args...).CombinedOutput() //nolint:gosec
 	if err != nil {
