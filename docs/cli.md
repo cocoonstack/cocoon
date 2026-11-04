@@ -39,6 +39,10 @@ cocoon
 │   │   ├── attach [flags] VM     Hot-attach a raw disk file (CH, or FC with --pci) or a snapshot's COW disk copy (CH)
 │   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps a --path file, removes a snapshot copy)
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH, or FC with --pci)
+│   ├── migrate
+│   │   ├── capture [flags] VM     Start a migration series, or add a delta with --series (CH only)
+│   │   ├── receive [flags]        Restore a transferred series into a new VM, guest paused
+│   │   └── abort --series ID VM   End a series, resume the guest, delete the directory
 │   └── debug [flags] IMAGE        Generate hypervisor launch command (dry run)
 ├── snapshot
 │   ├── save [flags] VM            Create a snapshot from a running VM
@@ -244,6 +248,21 @@ cocoon vm restore my-vm --from-dir /sync/from-host-b --force
 ```
 
 The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image may not be present locally — `EnsureImage` pulls the envelope's image by digest when it is missing, and `image_blob_ids` pin its blobs against GC for the clone's lifetime.
+
+### Migrate Flags
+
+See [Live Migration](snapshots.md#live-migration).
+
+`cocoon vm migrate capture`:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--series` | empty | Series to add a delta to; empty starts a new series |
+| `--final` | `false` | Leave the guest paused after this delta; needs `--series` |
+
+`cocoon vm migrate receive` takes `--from-dir` (required), `--id` (default: generated, must have the shape of a generated ID) and the [clone flags](#clone-flags) except `--nics` and `--data-disk`, which would resume the guest. With `--output json`, `capture` prints `{"series", "dir", "round", "paused", "files": [{"name", "size"}]}`; round 0 is the baseline.
+
+`cocoon vm migrate abort` requires `--series`.
 
 ### Reconcile Stale Create
 

@@ -152,6 +152,45 @@ Pause, capture, persist, and VMM termination share one pause window: the snapsho
 
 A canceled or timed-out `vm hibernate` or `snapshot save` waits for the hypervisor to end its memory dump, up to 10 minutes, then resumes the guest, so SIGTERM can take that long to end the command. SIGKILL skips the resume; see [known issues](known-issues.md#a-killed-capture-leaves-the-guest-paused).
 
+### Live Migration
+
+`vm migrate` captures a running VM in rounds and restores it on another node (Cloud Hypervisor only). The guest stops only for the last round, the copy of its files and the restore, and its processes and memory carry over. Cocoon captures and restores; moving the files, choosing how many rounds to run, and deciding which node owns the VM stay with the caller.
+
+```bash
+# Source: a full baseline, then deltas. The guest runs again after each one.
+cocoon vm migrate capture my-vm --output json                        # prints series, dir, files
+cocoon vm migrate capture my-vm --series 123 --output json           # optional, repeatable
+# Source: the last delta leaves the guest paused.
+cocoon vm migrate capture my-vm --series 123 --final --output json
+
+# Target: after copying every file each round listed into one directory
+cocoon vm migrate receive --from-dir /xfer/123 --id <source-vm-id> --name my-vm --pull
+cocoon vm start my-vm                                                # resumes the guest
+
+# Source: only after the target runs
+cocoon vm rm --force my-vm
+```
+
+To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. It can run again safely.
+
+Requirements:
+
+- **Hypervisor build**: the cocoonstack fork at `35b098c65260` or newer. An older VMM answers 404 on the first capture and nothing changes. A VM keeps the VMM it started on, so it needs a restart after an upgrade.
+- **Filesystem**: the source run dir must support reflink (XFS, btrfs); capture refuses otherwise before it pauses the guest. On the target, keep the copied directory on the filesystem of the run dir, so memory files hard-link and the directory can go after the receive.
+- **Devices**: a hot-attached disk, share or VFIO device refuses the capture, as it does for `snapshot save`.
+
+Rules for the caller:
+
+- Copy every file a round lists, in the listed round order. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
+- A VM has one live series. A new baseline ends the previous one, whose directory stays until `abort` or a `gc` 24 hours later.
+- A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. This includes a call with an old series ID, which also ends the live series. `snapshot save`, a NIC resize, a device detach, a reboot or a stop ends the series too, and the next delta fails.
+- A VM cloned or received seconds ago may still eject its old NICs. If that happens during a series, the next delta fails; start again.
+- Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
+
+The received VM gets fresh NICs like a clone, with new MACs, so the guest needs the [post-clone network setup](#post-clone-guest-setup). No reseed runs: the guest state is the same one, not a copy. `--restore-mode ondemand` is rejected by the hypervisor for a series with deltas. Metering opens the new intervals with reason `migrate`.
+
+A qcow2 overlay is open when captured, so its dirty bit is set and the target VMM rebuilds the refcounts when it opens the file. The overlay hash therefore differs after the receive; compare it before the VMM opens it.
+
 ### Restore Constraints
 
 - **VM must be running, stopped, or error.** Restore cold-spawns a fresh hypervisor process from the snapshot; a stopped target (e.g. hibernated) gets the `vm start` network self-heal first. Error-state VMs are admitted because restore rebuilds the run dir — it is the recovery path for a crashed or interrupted restore (which `vm start` refuses).

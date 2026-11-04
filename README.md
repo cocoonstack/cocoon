@@ -9,6 +9,7 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 - **OCI VM images** — pull container-registry images with kernel + rootfs layers, content-addressed EROFS blob cache; **cloud images** from HTTP(S) URLs with automatic qcow2 conversion; local file/stdin import
 - **Docker-like CLI** — `create`, `run`, `start`, `stop`, `list`, `inspect`, `console`, `exec`, `rm`, `clone`, `status`
 - **Snapshot & clone** — capture a running VM (memory, disks, config) and clone it into new VMs with fresh network identity; clones restore memory copy-on-write by default (page cache shared across sibling clones) and hold shared source leases so parallel clone bursts survive concurrent source removal; restore and atomic hibernate in place; portable export/import between hosts
+- **Live migration** — move a running VM to another node (CH): round-based memory and disk deltas, the guest stops only for the last round; the caller owns transfer and round policy
 - **CNI networking** — multi-queue virtio-net TAPs wired via TC redirect (no bridge in the data path), multi-NIC, bridge mode, NIC hot-resize
 - **Data disks & runtime attach** — extra virtio-blk disks at create/clone time; hot-plug vhost-user-fs shares and VFIO PCI devices (CH); external raw disks and NIC resize on CH or Firecracker `--pci` VMs; a private copy of a snapshot's COW disk on CH
 - **Windows guests** — UEFI + Hyper-V enlightenments via the cocoonstack CH/firmware forks

@@ -382,7 +382,7 @@ func addCloneFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArray("data-disk", nil, "create and hot-add an extra data disk to the clone: size=20G[,name=...][,fstype=ext4|none]; repeatable (CH, or FC --pci snapshots)")
 }
 
-// addReceiveFlags holds the clone flags that need no device change after restore: one would resume a received guest.
+// addReceiveFlags holds the clone flags that need no device op after restore: a device op resumes a paused guest.
 func addReceiveFlags(cmd *cobra.Command) {
 	cmd.Flags().String("name", "", "VM name (default: cocoon-clone-<id>)")
 	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = inherit from snapshot)")

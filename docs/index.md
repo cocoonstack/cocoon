@@ -26,7 +26,7 @@ cocoon CLI ──► images: OCI (EROFS layers, direct boot) | cloudimg (qcow2, 
 - [Networking](networking.md) — CNI with TC redirect, bridge mode,
   multi-NIC, NIC hot-resize
 - [Snapshots, clone & restore](snapshots.md) — capture, clone, restore,
-  hibernate, export/import, cross-node moves
+  hibernate, export/import, cross-node moves, live migration
 - [Runtime device attach](devices.md) — vhost-user-fs shares, VFIO PCI
   passthrough, external disk hot-attach
 - [Windows guests](windows.md) — the `--windows` path and the patched
