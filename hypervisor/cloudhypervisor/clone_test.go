@@ -539,7 +539,7 @@ func writeQcow2(t *testing.T, path, backing string) {
 	binary.BigEndian.PutUint32(hdr[4:8], 3)
 	if backing != "" {
 		binary.BigEndian.PutUint64(hdr[8:16], uint64(len(hdr)))
-		binary.BigEndian.PutUint32(hdr[16:20], uint32(len(backing))) //nolint:gosec // short test path
+		binary.BigEndian.PutUint32(hdr[16:20], uint32(len(backing)))
 	}
 	if err := os.WriteFile(path, append(hdr, backing...), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
