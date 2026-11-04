@@ -1,8 +1,6 @@
 package cloudimg
 
 import (
-	"path/filepath"
-
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -24,8 +22,4 @@ func NewConfig(rootDir string, pullConns int) *Config {
 		RootDir: rootDir, Subdir: "cloudimg", BlobExt: ".qcow2", Name: NamespaceName,
 		PullConns: utils.OrDefault(pullConns, defaultPullConns),
 	}
-}
-
-func (c *Config) tmpBlobPath(digestHex string) string {
-	return filepath.Join(c.TempDir(), ".tmp-"+digestHex+".qcow2")
 }
