@@ -171,7 +171,7 @@ cocoon vm start my-vm                                                # resumes t
 cocoon vm rm --force my-vm
 ```
 
-To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. Once the directory is gone, a repeat or an old series ID does nothing, so it cannot resume a guest paused for a newer series.
+To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. Once the directory is gone, a repeat or an old series ID does nothing, so it cannot resume a guest paused for a newer series. After `--final`, receive the series or abort it: resuming the guest with `vm start` and capturing again leaves a delta that misses blocks the guest discarded.
 
 Requirements:
 

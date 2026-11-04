@@ -248,6 +248,9 @@ func checkRoundsInStep(spec MigrateSpec, dir string, pairs [][2]string, round in
 		if n := nextRound(p[0]); n != round {
 			return fmt.Errorf("%s is at round %d, want %d: an earlier capture died, start a new series", filepath.Base(p[0]), n-1, round-1)
 		}
+		if utils.FileExists(nextRefPath(p[0])) {
+			return fmt.Errorf("%s has an unmoved reference: an earlier capture died, start a new series", filepath.Base(p[0]))
+		}
 	}
 	return nil
 }

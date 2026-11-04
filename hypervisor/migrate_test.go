@@ -184,6 +184,15 @@ func TestMigrateRoundOutOfStepDiscardsTheSeries(t *testing.T) {
 				writeSparse(t, filepath.Join(dir, diskDeltaName(types.COWRawFileName, 1)), 8, nil)
 			},
 		},
+		{
+			name: "round killed before its reference moved",
+			setup: func(t *testing.T, dir string, spec *MigrateSpec) {
+				spec.Rounds = func(string) (int, error) { return 1, nil }
+				disk := filepath.Join(dir, types.COWRawFileName)
+				writeSparse(t, filepath.Join(dir, diskDeltaName(types.COWRawFileName, 1)), 8, nil)
+				writeSparse(t, nextRefPath(disk), 8, nil)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
