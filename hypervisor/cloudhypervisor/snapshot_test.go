@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
@@ -57,6 +58,30 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 				t.Fatalf("pauses = %d, want one pause for a clean device set", pauses)
 			}
 		})
+	}
+}
+
+func TestSnapshotPauseRefusesANICCountOffItsRecord(t *testing.T) {
+	pauses := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.MarshalWrite(w, chVMInfoResponse{State: chStateRunning, Config: chVMConfig{Nets: []chNet{{ID: "net0"}}}})
+	})
+	mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+		pauses++
+		w.WriteHeader(http.StatusNoContent)
+	})
+	hc := &http.Client{Transport: handlerTransport{mux}}
+	rec := &hypervisor.VMRecord{}
+	rec.NetworkConfigs = []*types.NetworkConfig{{}, {}}
+
+	err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc)
+
+	if err == nil || !strings.Contains(err.Error(), "rerun vm net") {
+		t.Fatalf("err = %v, want the capture refused until vm net converges", err)
+	}
+	if pauses != 0 {
+		t.Fatalf("pauses = %d, want the VM left running", pauses)
 	}
 }
 
