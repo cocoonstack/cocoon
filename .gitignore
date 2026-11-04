@@ -1,9 +1,4 @@
 
-# Internal review documents (contain sensitive information)
-docs/P0-RESOLVED.md
-docs/P0-VERIFICATION-SUMMARY.md
-docs/P1-TODO.md
-
 # Build artifacts
 /cocoon
 cocoon-linux
@@ -40,7 +35,7 @@ coverage/
 .testcache/
 
 # Local dev environment (macOS)
-dev/
+/dev/
 
 # Implementation plan (internal)
 TODO*
@@ -50,8 +45,8 @@ tmp/*
 .tmp/*
 
 .claude/*
-cocoon-test
+/cocoon-test
 
 # Local scratch / test scripts (not for upstream)
 /scratch/
-storebench
+/storebench

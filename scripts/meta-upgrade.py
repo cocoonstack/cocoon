@@ -14,23 +14,26 @@ the old binary already gone.
 usage: meta-upgrade.py [--root-dir /var/lib/cocoon]
 """
 
+from __future__ import annotations
+
 import argparse
 import fcntl
 import json
 import os
 import sqlite3
 import sys
+from typing import Any
 
 APPLICATION_ID = 0x434F434E
 USER_VERSION = 2
 BACKENDS = ("cloudhypervisor", "firecracker")
 
 
-def placement(record):
+def placement(record: dict[str, Any]) -> list[int] | None:
     return record.get("queue_cpus") or record.get("cpuset") or None
 
 
-def upgrade_sqlite(db_path):
+def upgrade_sqlite(db_path: str) -> None:
     if os.path.exists(os.path.join(os.path.dirname(db_path), "meta-convert.manifest")):
         sys.exit(f"{db_path}: a meta convert is in flight; finish it first")
     db = sqlite3.connect(db_path, timeout=5, isolation_level=None)
@@ -39,18 +42,25 @@ def upgrade_sqlite(db_path):
         sys.exit(f"{db_path}: application_id {app_id:#x} is not a cocoon meta store")
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version > USER_VERSION:
-        sys.exit(f"{db_path}: schema version {version} is newer than this script ({USER_VERSION})")
+        sys.exit(
+            f"{db_path}: schema version {version} is newer than this script ({USER_VERSION})"
+        )
     db.execute("BEGIN IMMEDIATE")
     for backend in BACKENDS:
         ns = f"vms_{backend}"
         table = f'"{ns}__placements"'
-        db.execute(f"CREATE TABLE IF NOT EXISTS {table} (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL)")
+        db.execute(
+            f"CREATE TABLE IF NOT EXISTS {table} (id TEXT NOT NULL PRIMARY KEY, data TEXT NOT NULL)"
+        )
         rows = 0
-        for vm_id, data in db.execute(f'SELECT id, data FROM "{ns}__records"').fetchall():
+        for vm_id, data in db.execute(
+            f'SELECT id, data FROM "{ns}__records"'
+        ).fetchall():
             cpus = placement(json.loads(data))
             if cpus:
                 db.execute(
-                    f"INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)", (vm_id, json.dumps(cpus).encode())
+                    f"INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)",
+                    (vm_id, json.dumps(cpus).encode()),
                 )
                 rows += 1
         print(f"{ns}: {rows} placement rows")
@@ -60,7 +70,7 @@ def upgrade_sqlite(db_path):
     print(f"{db_path}: schema generation {version} -> {USER_VERSION}")
 
 
-def write_file(path, data):
+def write_file(path: str, data: str) -> None:
     tmp = path + ".upgrade"
     with open(tmp, "w") as f:
         f.write(data)
@@ -69,7 +79,7 @@ def write_file(path, data):
     os.rename(tmp, path)
 
 
-def upgrade_json(root):
+def upgrade_json(root: str) -> None:
     found = 0
     for backend in BACKENDS:
         db_dir = os.path.join(root, backend, "db")
@@ -81,7 +91,11 @@ def upgrade_json(root):
             fcntl.flock(lock, fcntl.LOCK_EX)
             with open(path) as f:
                 doc = json.load(f)
-            rows = {vm_id: cpus for vm_id, rec in doc.get("vms", {}).items() if (cpus := placement(rec))}
+            rows = {
+                vm_id: cpus
+                for vm_id, rec in doc.get("vms", {}).items()
+                if (cpus := placement(rec))
+            }
             if rows == doc.get("placements", {}):
                 print(f"{path}: {len(rows)} placement rows already present")
                 continue
@@ -94,19 +108,28 @@ def upgrade_json(root):
             os.close(dir_fd)
         print(f"{path}: {len(rows)} placement rows")
     if not found:
-        sys.exit(f"{root}: no meta store found (neither meta/meta.db nor a VM namespace file)")
+        sys.exit(
+            f"{root}: no meta store found (neither meta/meta.db nor a VM namespace file)"
+        )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--root-dir", default="/var/lib/cocoon", help="cocoon root_dir (default: %(default)s)")
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--root-dir",
+        default="/var/lib/cocoon",
+        help="cocoon root_dir (default: %(default)s)",
+    )
     root = parser.parse_args().root_dir
     db_path = os.path.join(root, "meta", "meta.db")
     if os.path.exists(db_path):
         upgrade_sqlite(db_path)
     else:
         upgrade_json(root)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
