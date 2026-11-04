@@ -175,8 +175,8 @@ def main() -> None:
     print(f"Configured: model={model_field}")
     if args.api_base or provider_prefix in PROVIDER_API_BASE:
         print(f"  api_base={entry.get('api_base', '')}")
-    print(f"  api_key={key[:12]}...{key[-4:]}")
-    print(f"  telegram=enabled")
+    print(f"  api_key=...{key[-4:]}")
+    print("  telegram=enabled")
 
     # Enable and (re)start picoclaw.
     systemctl("daemon-reload")

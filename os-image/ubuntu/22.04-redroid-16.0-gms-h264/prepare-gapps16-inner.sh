@@ -22,7 +22,7 @@ install_tree() {
     find "$dst" -type d -name oat -prune -exec rm -rf {} +
 }
 
-# API-36 x86_64 GMS core from Google's Play Store emulator image. Avoid emulator
+# API-36 GMS core from Google's Play Store emulator image. Avoid emulator
 # Settings/SystemUI/HAL packages; ReDroid keeps its own framework and hardware UI.
 install_tree /tmp/google-product/priv-app/PrebuiltGmsCore \
     /tmp/gapps-out/system/product/priv-app/PrebuiltGmsCore
@@ -38,7 +38,7 @@ install_tree /tmp/google-system-ext/priv-app/GoogleFeedback \
     /tmp/gapps-out/system/system_ext/priv-app/GoogleFeedback
 
 # Chrome uses TrichromeLibrary. The emulator stores the full APKs gzip-compressed
-# next to tiny stubs; install the full x86_64 APKs directly for offline first boot.
+# next to tiny stubs; install the full APKs directly for offline first boot.
 mkdir -p /tmp/gapps-out/system/product/app/Chrome
 gzip -dc /tmp/google-product/app/Chrome/Chrome.apk.gz \
     > /tmp/gapps-out/system/product/app/Chrome/Chrome.apk
