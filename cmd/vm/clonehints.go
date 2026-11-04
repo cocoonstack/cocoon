@@ -22,9 +22,9 @@ func printPostCloneHints(vm *types.VM) {
 		fmt.Println()
 		fmt.Println(`  powershell -nop -c '$x=Get-PnpDevice -Class Net -PresentOnly;$x|Disable-PnpDevice -Confirm:$false;$x|Enable-PnpDevice -Confirm:$false'`)
 		fmt.Println()
-		fmt.Println("Static IP: run inside the guest after the rebind above, e.g.:")
+		fmt.Println("Static IP: run inside the guest after the rebind above; Get-NetAdapter shows the adapter name:")
 		fmt.Println()
-		fmt.Println(`  netsh interface ipv4 set address name="Ethernet" static <IP> <MASK> <GATEWAY>`)
+		fmt.Println(`  netsh interface ipv4 set address name="<ADAPTER>" static <IP> <MASK> <GATEWAY>`)
 		fmt.Println()
 		return
 	}
