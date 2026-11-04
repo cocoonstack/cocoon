@@ -45,10 +45,6 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 	if rec == nil {
 		return nil
 	}
-	if vErr := validateRecordInvariants(rec); vErr != nil {
-		b.MarkError(ctx, id)
-		return vErr
-	}
 	// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
 	if err = b.RecoverNetwork(ctx, rec); err != nil {
 		b.markFailedOperation(ctx, id, true)
@@ -114,6 +110,10 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
 	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
+	if err = validateRecordInvariants(&rec); err != nil {
+		b.MarkError(ctx, id)
+		return nil, err
+	}
 	placed, err := b.placeRecord(ctx, id, &rec.Config.Config)
 	if err != nil {
 		return nil, fmt.Errorf("place VM: %w", err)

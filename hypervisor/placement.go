@@ -28,6 +28,9 @@ func (b *Backend) placeRecord(ctx context.Context, id string, cfg *types.Config)
 		if err := b.placeVM(ctx, t.r, r, cfg, topo); err != nil {
 			return err
 		}
+		if r.State != types.VMStateCreating && needsQuiesce(r) {
+			r.QuiescePending = true
+		}
 		if err := t.Put(id, r, meta.RelaxedOK); err != nil {
 			return err
 		}
