@@ -219,7 +219,7 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 `snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process dies or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs. SIGKILL does this. SIGPIPE does too: when the process that reads cocoon's stderr exits, cocoon dies on its next log line, and for a hibernate that line comes after the snapshot persists and before the VMM stops.
 
-`cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it.
+`cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it. `vm inspect` also waits on that API, up to 30 s per device list, then prints without the attached devices; `vm list` does not call it.
 
 A killed capture also leaves its files. A `snapshot-*` directory under the VM's run dir stays until `vm rm` or a `gc` 24 hours later. A hibernate killed while it persists leaves a hidden pending snapshot that keeps its `--name` taken until the next `gc`. A hibernate killed after it persists leaves a listed snapshot that keeps its `--name` until `snapshot rm`.
 
