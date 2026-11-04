@@ -250,6 +250,14 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or a VFIO PCI passthrough device, but the result cannot be restored: it names a backend socket that is gone (restore fails after 60s) or hangs against a fresh one. Cocoon refuses the capture itself — the pre-flight reads the live `vm.info` before pausing the guest and fails with `hot-attached vhost-user-fs "<tag>": detach before snapshot or hibernate` (or `hot-attached device "<path>": ...`, `hot-attached disk "<name>": ...`) before anything is captured or recorded. `cocoon vm fs detach` / `cocoon vm device detach` / `cocoon vm disk detach` first to clear runtime devices, then snapshot.
 
+## A killed capture leaves the guest paused
+
+`snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process gets SIGKILL or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs.
+
+`cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it.
+
+A killed capture also leaves its files. A `snapshot-*` directory under the VM's run dir stays until `vm rm` or a `gc` 24 hours later. A hibernate killed while it persists leaves a hidden pending snapshot that keeps its `--name` taken until the next `gc`.
+
 ## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 
 Fixed in v0.6.8 by #253: `snapshot rm` unlinks the snapshot's `<root>/snapshot/localfile/<id>.lease` when it releases the exclusive lease, and `gc` reclaims the leases of snapshots that no longer have a record or a data dir, so a host upgraded from an older binary converges on its first `gc` run (133 leftover files on one testbed went to the four live snapshots' leases).

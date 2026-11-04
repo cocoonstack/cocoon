@@ -45,22 +45,13 @@ func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, err
 	return true, err
 }
 
-// WithPausedVM pauses, runs fn and resumes on the way out; a resume failure is promoted only when fn succeeded.
+// WithPausedVM pauses, runs fn and resumes on the way out; a resume failure joins fn's error.
 func (b *Backend) WithPausedVM(ctx context.Context, rec *VMRecord, pause, resume, fn func() error) error {
 	return b.WithRunningVM(ctx, rec, func(_ int) (err error) {
 		if err = pause(); err != nil {
 			return fmt.Errorf("pause: %w", err)
 		}
-		defer func() {
-			resumeErr := resume()
-			if resumeErr == nil {
-				return
-			}
-			log.WithFunc(b.Typ+".WithPausedVM").Warnf(ctx, "resume VM %s: %v", rec.ID, resumeErr)
-			if err == nil {
-				err = fmt.Errorf("snapshot data captured but resume failed: %w", resumeErr)
-			}
-		}()
+		defer func() { err = errors.Join(err, resume()) }()
 		return fn()
 	})
 }

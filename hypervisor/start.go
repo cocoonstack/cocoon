@@ -39,7 +39,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 		return err
 	}
 	defer unlock()
-	rec, err := b.PrepareStart(ctx, id, scan, spec.RuntimeFiles)
+	rec, err := b.PrepareStart(ctx, id, scan, spec)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 	return nil
 }
 
-func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcScan, runtimeFiles []string) (*VMRecord, error) {
+func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcScan, spec StartSpec) (*VMRecord, error) {
 	rec, err := b.EntryGuardLoad(ctx, id)
 	if err != nil {
 		return nil, err
@@ -93,12 +93,14 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
 	}
 
-	runErr := b.withRunningVM(ctx, &rec, scan, func(_ int) error { return nil })
-	switch {
-	case runErr == nil:
+	runErr := b.withRunningVM(ctx, &rec, scan, func(pid int) error {
 		if rec.State != types.VMStateRunning {
 			_, _ = b.ReconcileToRunning(ctx, id)
 		}
+		return spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid)
+	})
+	switch {
+	case runErr == nil:
 		return nil, nil
 	case errors.Is(runErr, ErrNotRunning):
 		b.convergeCrashedStart(ctx, &rec)
@@ -109,7 +111,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 	if err = utils.EnsureDirs(rec.RunDir, rec.LogDir); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
-	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
+	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
 	placed, err := b.placeRecord(ctx, id, &rec.Config.Config)
 	if err != nil {
 		return nil, fmt.Errorf("place VM: %w", err)

@@ -238,10 +238,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
-	info, err := getVMInfo(ctx, hc)
-	if err == nil {
-		info, err = convergeOrphanedPause(ctx, hc, rec.ID, info)
-	}
+	info, err := convergeOrphanedPause(ctx, hc, rec.ID)
 	if err != nil {
 		unlock()
 		return nil, hypervisor.VMRecord{}, nil, nil, err
@@ -351,8 +348,12 @@ func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) 
 	return "", nil
 }
 
-// The ops lock plus the Running gate exclude every capture window, so a pause seen here is ownerless.
-func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) (*chVMInfoResponse, error) {
+// The pause is ownerless: callers hold the ops lock every capture window holds.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*chVMInfoResponse, error) {
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return nil, err
+	}
 	if info.State != chStatePaused {
 		return info, nil
 	}

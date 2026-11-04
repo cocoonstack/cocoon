@@ -115,7 +115,7 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 		t.Errorf("MarkError must not write StoppedAt; got %v", loaded.StoppedAt)
 	}
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil, nil)
+	prep, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{})
 	if err != nil {
 		t.Fatalf("PrepareStart: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	}
 	rec.Reset()
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil, nil)
+	prep, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{})
 	if err != nil {
 		t.Fatalf("PrepareStart: %v", err)
 	}
@@ -520,14 +520,14 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
 	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
-	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM")
 	}
 
 	if err := b.UpdateStates(ctx, []string{"vm1"}, types.VMStateStopped); err != nil {
 		t.Fatalf("UpdateStates: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
 	}
 }
@@ -549,7 +549,7 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, id, nil, nil); err == nil {
+	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
 	}
 }
@@ -560,7 +560,7 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, nil); err == nil {
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a creating placeholder")
 	}
 }

@@ -2,8 +2,10 @@ package hypervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -81,7 +83,7 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
 	pause := func() error { return spec.Pause(&rec, hc) }
-	resume := func() error { return spec.Resume(&rec, hc) }
+	resume := func() error { return resumeAfterCapture(spec.Resume, &rec, hc) }
 	if err = b.WithPausedVM(ctx, &rec, pause, resume, func() error { return spec.Capture(&rec, hc, tmpDir) }); err != nil {
 		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
@@ -112,12 +114,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		if pErr := spec.Pause(&rec, hc); pErr != nil {
 			return fmt.Errorf("pause: %w", pErr)
 		}
-		failResume := func(e error) error {
-			if rErr := spec.Resume(&rec, hc); rErr != nil {
-				logger.Warnf(ctx, "resume VM %s after failed hibernate: %v", rec.ID, rErr)
-			}
-			return e
-		}
+		failResume := func(e error) error { return errors.Join(e, resumeAfterCapture(spec.Resume, &rec, hc)) }
 		if cErr := spec.Capture(&rec, hc, tmpDir); cErr != nil {
 			return failResume(cErr)
 		}
@@ -290,4 +287,12 @@ func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(id
 	}
 	slices.Reverse(out)
 	return out
+}
+
+func resumeAfterCapture(resume TransitionHook, rec *VMRecord, hc *http.Client) error {
+	hc.Timeout = VMMemTransferTimeout
+	if err := resume(rec, hc); err != nil {
+		return fmt.Errorf("resume: %w (the VM stays paused until vm start resumes it)", err)
+	}
+	return nil
 }

@@ -46,7 +46,7 @@ func Command(h Handler) *cobra.Command {
 
 	startCmd := &cobra.Command{
 		Use:   "start VM [VM...]",
-		Short: "Start created/stopped VM(s)",
+		Short: "Start created/stopped VM(s); resume a VM a killed capture left paused",
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  h.Start,
 	}

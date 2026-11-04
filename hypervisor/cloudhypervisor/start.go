@@ -40,6 +40,10 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.
 			saveConsolePTY(ctx, rec.ID, rec.RunDir, sockPath, hypervisor.IsDirectBoot(rec.BootConfig))
 			return nil
 		},
+		ConvergeRunning: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
+			_, err := convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID)
+			return err
+		},
 	})
 }
 
