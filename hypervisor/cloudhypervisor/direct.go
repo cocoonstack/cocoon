@@ -64,21 +64,19 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 	if err != nil {
 		return nil, fmt.Errorf("parse source config: %w", err)
 	}
-	return chCfg, hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, classifySnapshotFile(chCfg))
-}
-
-func classifySnapshotFile(chCfg *chVMConfig) hypervisor.SnapshotClassifier {
 	cowFiles := identifyCOWFiles(chCfg)
-	return func(name string) hypervisor.SnapshotFileKind {
+	return chCfg, hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case strings.HasPrefix(name, memoryRangeFile):
 			return hypervisor.SnapshotFileMemory
 		case cowFiles[name]:
 			return hypervisor.SnapshotFileCOW
+		case hypervisor.IsMigrateDeltaFile(name):
+			return hypervisor.SnapshotFileSkip
 		default:
 			return hypervisor.SnapshotFileMeta
 		}
-	}
+	})
 }
 
 // cleanSnapshotFiles enumerates by name so stale data-*.raw and cocoon.json from a previous incarnation don't linger; COW files are overwritten anyway.

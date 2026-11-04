@@ -29,7 +29,6 @@ type deltaRange struct {
 	Zero   bool  `json:"zero,omitzero"`
 }
 
-// mapping is where one logical position lives; the zero value is a hole.
 type mapping struct {
 	physical  int64
 	unwritten bool

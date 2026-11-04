@@ -19,7 +19,6 @@ import (
 const (
 	diskRefSuffix = ".ref"
 
-	// seriesDirPrefix extends captureDirPrefix so the GC sweep still ages out a series.
 	seriesDirPrefix = captureDirPrefix + "migrate-"
 )
 
@@ -48,20 +47,18 @@ type MigrateRound struct {
 	Files  []MigrateFile `json:"files"`
 }
 
-// MigrateFile is one file a round wrote.
 type MigrateFile struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 }
 
-// MigrateSpec carries backend hooks for the migrate sequences; SnapshotSpec.Capture writes the guest state of one round and Rounds counts those in a series directory.
+// MigrateSpec carries backend hooks for the migrate sequences.
 type MigrateSpec struct {
 	SnapshotSpec
 	EndSeries TransitionHook
 	Rounds    func(dir string) (int, error)
 }
 
-// roundSteps is what a baseline and a delta do differently around the shared pause window.
 type roundSteps struct {
 	series     string
 	round      int
@@ -69,11 +66,6 @@ type roundSteps struct {
 	before     func(hc *http.Client) error
 	inPause    func() error
 	afterPause func() error
-}
-
-type fileStamp struct {
-	size    int64
-	modTime int64
 }
 
 // MigrateCaptureSequence runs one round; any failure ends the series, resumes the guest and deletes the directory.
@@ -95,7 +87,7 @@ func (b *Backend) MigrateCaptureSequence(ctx context.Context, ref string, req Mi
 	return round, nil
 }
 
-// MigrateAbortSequence acts only while the series directory exists, so a repeat or an old series leaves the guest alone; the directory goes last so a failed resume can retry.
+// MigrateAbortSequence acts only while the series directory exists.
 func (b *Backend) MigrateAbortSequence(ctx context.Context, ref, series string, spec MigrateSpec) error {
 	vmID, rec, unlock, err := b.lockForCapture(ctx, ref)
 	if err != nil {
@@ -124,7 +116,6 @@ func (b *Backend) captureBaseline(ctx context.Context, rec *VMRecord, spec Migra
 	if err := utils.CheckReflink(rec.RunDir); err != nil {
 		return nil, fmt.Errorf("live migration needs a reflink filesystem under the run dir: %w", err)
 	}
-	// One directory per VM keeps an old series ID from reaching the guest.
 	if errs := utils.RemoveMatching(ctx, rec.RunDir, isSeriesDir); len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -162,7 +153,12 @@ func (b *Backend) captureDelta(ctx context.Context, rec *VMRecord, req MigrateRe
 		series: req.Series,
 		round:  number,
 		final:  req.Final,
-		before: func(*http.Client) error { return checkRoundsInStep(spec, dir, pairs, number) },
+		before: func(*http.Client) error {
+			if err := checkRoundsInStep(spec, dir, pairs, number); err != nil {
+				return err
+			}
+			return b.writeSeriesEnvelope(rec, req.Series, dir)
+		},
 		inPause: func() error {
 			if req.Final {
 				return nil
@@ -170,12 +166,10 @@ func (b *Backend) captureDelta(ctx context.Context, rec *VMRecord, req MigrateRe
 			return reflinkNextRefs(ctx, pairs)
 		},
 		afterPause: func() error {
-			if _, mapErr := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
+			_, mapErr := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
 				return struct{}{}, writeRoundDelta(p, number, req.Final)
-			}); mapErr != nil {
-				return mapErr
-			}
-			return b.writeSeriesEnvelope(rec, req.Series, dir)
+			})
+			return mapErr
 		},
 	}
 	return b.captureRound(ctx, rec, spec, dir, steps)
@@ -222,7 +216,6 @@ func (b *Backend) captureRound(ctx context.Context, rec *VMRecord, spec MigrateS
 	return &MigrateRound{Series: steps.series, Dir: dir, Round: steps.round, Paused: steps.final, Files: files}, nil
 }
 
-// writeSeriesEnvelope reruns each round because a NIC added mid-series does not end the series.
 func (b *Backend) writeSeriesEnvelope(rec *VMRecord, series, dir string) error {
 	return snapshot.WriteSnapshotEnvelope(dir, *b.BuildSnapshotConfig(series, rec), nil, nil)
 }
@@ -243,7 +236,6 @@ func isSeriesDir(e os.DirEntry) bool {
 	return e.IsDir() && strings.HasPrefix(e.Name(), seriesDirPrefix)
 }
 
-// checkRoundsInStep catches a round a killed capture left half written, which would otherwise surface only at the receive.
 func checkRoundsInStep(spec MigrateSpec, dir string, pairs [][2]string, round int) error {
 	rounds, err := spec.Rounds(dir)
 	if err != nil {
@@ -298,33 +290,34 @@ func nextRefPath(copyPath string) string {
 	return copyPath + ".next" + diskRefSuffix
 }
 
-func stampFiles(dir string) (map[string]fileStamp, error) {
+func stampFiles(dir string) (map[string]os.FileInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read series dir: %w", err)
 	}
-	stamps := make(map[string]fileStamp, len(entries))
+	stamps := make(map[string]os.FileInfo, len(entries))
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
 			return nil, fmt.Errorf("stat %s: %w", e.Name(), err)
 		}
 		if info.Mode().IsRegular() && !strings.HasSuffix(e.Name(), diskRefSuffix) {
-			stamps[e.Name()] = fileStamp{size: info.Size(), modTime: info.ModTime().UnixNano()}
+			stamps[e.Name()] = info
 		}
 	}
 	return stamps, nil
 }
 
-func changedFiles(dir string, before map[string]fileStamp) ([]MigrateFile, error) {
+func changedFiles(dir string, before map[string]os.FileInfo) ([]MigrateFile, error) {
 	after, err := stampFiles(dir)
 	if err != nil {
 		return nil, err
 	}
 	files := []MigrateFile{}
 	for _, name := range slices.Sorted(maps.Keys(after)) {
-		if stamp, ok := before[name]; !ok || stamp != after[name] {
-			files = append(files, MigrateFile{Name: name, Size: after[name].size})
+		info := after[name]
+		if old, ok := before[name]; !ok || old.Size() != info.Size() || !old.ModTime().Equal(info.ModTime()) {
+			files = append(files, MigrateFile{Name: name, Size: info.Size()})
 		}
 	}
 	return files, nil

@@ -36,7 +36,7 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 	return SparseCopy(dst, src, sync)
 }
 
-// CheckReflink reports whether the filesystem holding dir supports FICLONE; cloning an empty file costs no extent walk.
+// CheckReflink reports whether the filesystem holding dir supports FICLONE.
 func CheckReflink(dir string) error {
 	src, err := os.CreateTemp(dir, ".reflink-probe-*")
 	if err != nil {

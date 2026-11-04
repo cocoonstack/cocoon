@@ -56,9 +56,6 @@ var hostCPUCount = sync.OnceValue(readHostCPUCount)
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
 
-// SnapshotClassifier picks the kind of the snapshot file called name.
-type SnapshotClassifier func(name string) SnapshotFileKind
-
 // LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
 func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 	l, err := vmlock.New(b.Conf.RootDirPath(), vmID)
@@ -369,7 +366,7 @@ func VerifyBaseFiles(storageConfigs []*types.StorageConfig, boot *types.BootConf
 }
 
 // CloneSnapshotFiles copies snapshot files by kind: COW-class copies fan out concurrently, links and small meta stay serial.
-func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify SnapshotClassifier) error {
+func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify func(name string) SnapshotFileKind) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return fmt.Errorf("read srcDir: %w", err)

@@ -96,9 +96,7 @@ func TestDiskDeltaRoundTrip(t *testing.T) {
 	writeSparse(t, src, 2<<20, map[int64]string{0: "next", 1 << 19: "kept", 3 << 19: "grown"})
 	delta := filepath.Join(dir, diskDeltaName("disk", 1))
 	if err := writeDiskDelta(delta, ref, src); err != nil {
-		if errors.Is(err, errors.ErrUnsupported) {
-			t.Skip("needs FIEMAP")
-		}
+		skipWithoutFiemap(t, err)
 		t.Fatalf("writeDiskDelta: %v", err)
 	}
 	if err := applyDiskDelta(ref, delta); err != nil {

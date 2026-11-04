@@ -6,7 +6,6 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -49,17 +48,8 @@ func (ch *CloudHypervisor) migrateSpec(ctx context.Context) hypervisor.MigrateSp
 }
 
 func cloneSeriesFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig, error) {
-	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
+	chCfg, err := cloneSnapshotFiles(ctx, dstDir, srcDir)
 	if err != nil {
-		return nil, fmt.Errorf("parse source config: %w", err)
-	}
-	classify := classifySnapshotFile(chCfg)
-	if err = hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
-		if hypervisor.IsMigrateDeltaFile(name) {
-			return hypervisor.SnapshotFileSkip
-		}
-		return classify(name)
-	}); err != nil {
 		return nil, err
 	}
 	rounds, err := countMemoryDiffs(srcDir)
