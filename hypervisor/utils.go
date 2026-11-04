@@ -51,7 +51,7 @@ const (
 	onlineCPUsPath = cgroup.SysCPURoot + "/online"
 )
 
-var hostCPUCount = sync.OnceValue(readHostCPUCount)
+var hostCPUCount = sync.OnceValue(func() int { return hostCPUCountAt(onlineCPUsPath) })
 
 // SnapshotFileKind classifies a snapshot file for CloneSnapshotFiles.
 type SnapshotFileKind int
@@ -476,8 +476,8 @@ func snapshotResidentBasename(sc *types.StorageConfig) string {
 	}
 }
 
-func readHostCPUCount() int {
-	cpus, err := cgroup.ReadCPUList(onlineCPUsPath)
+func hostCPUCountAt(path string) int {
+	cpus, err := cgroup.ReadCPUList(path)
 	if err != nil || len(cpus) == 0 {
 		return runtime.NumCPU()
 	}

@@ -67,10 +67,7 @@ func TestPlaceRecord(t *testing.T) {
 			if placed.CPUSet != tt.wantCPUSet || placed.QueueCPUs != tt.wantQueueCPUs {
 				t.Errorf("got cpuset %q queue_cpus %q, want %q %q", placed.CPUSet, placed.QueueCPUs, tt.wantCPUSet, tt.wantQueueCPUs)
 			}
-			stored, err := b.PeekRecord(ctx, "self")
-			if err != nil {
-				t.Fatalf("PeekRecord: %v", err)
-			}
+			stored := recordOf(t, b, "self")
 			if stored.CPUSet != placed.CPUSet || stored.QueueCPUs != placed.QueueCPUs {
 				t.Errorf("stored cpuset %q queue_cpus %q differ from placed", stored.CPUSet, stored.QueueCPUs)
 			}
@@ -133,7 +130,9 @@ func TestPlacementRowFollowsTheRecord(t *testing.T) {
 				var got string
 				if err := b.view(ctx, func(tx *vmTx) error {
 					return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
-						got += id + "=" + *cpus + ";"
+						if cpus != nil {
+							got += id + "=" + *cpus + ";"
+						}
 						return nil
 					})
 				}); err != nil {
@@ -239,10 +238,7 @@ func TestLeavingRunningClearsPlacement(t *testing.T) {
 	seed("failed", types.VMStateStopped)
 	b.markFailedOperation(ctx, "failed", false)
 	for _, id := range []string{"stopped", "failed"} {
-		rec, err := b.PeekRecord(ctx, id)
-		if err != nil {
-			t.Fatalf("PeekRecord %s: %v", id, err)
-		}
+		rec := recordOf(t, b, id)
 		if rec.CPUSet != "" || rec.QueueCPUs != "" {
 			t.Errorf("%s: cpuset %q queue_cpus %q survived leaving running", id, rec.CPUSet, rec.QueueCPUs)
 		}

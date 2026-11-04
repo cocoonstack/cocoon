@@ -12,10 +12,16 @@ import (
 )
 
 func TestHostCPUCountIgnoresAffinityMask(t *testing.T) {
-	got := HostCPUCount()
-	t.Logf("HostCPUCount=%d runtime.NumCPU=%d", got, runtime.NumCPU())
-	if got < runtime.NumCPU() {
-		t.Fatalf("HostCPUCount() = %d, below runtime.NumCPU() = %d", got, runtime.NumCPU())
+	dir := t.TempDir()
+	online := filepath.Join(dir, "online")
+	if err := os.WriteFile(online, []byte("0-1023\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if got := hostCPUCountAt(online); got != 1024 {
+		t.Errorf("hostCPUCountAt(online) = %d, want the 1024 online cpus", got)
+	}
+	if got := hostCPUCountAt(filepath.Join(dir, "absent")); got != runtime.NumCPU() {
+		t.Errorf("hostCPUCountAt(absent) = %d, want the runtime.NumCPU() fallback %d", got, runtime.NumCPU())
 	}
 }
 

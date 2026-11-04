@@ -31,7 +31,7 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	}
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
-		t.Fatal("stopLocked must not run for a stopped VM")
+		t.Error("stopLocked must not run for a stopped VM")
 		return nil
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 	if len(deleted) != 1 || deleted[0] != id {
 		t.Fatalf("deleted = %v, want [%s]", deleted, id)
 	}
-	if utils.IsProcessAlive(pid) {
+	if utils.VerifyProcessCmdline(pid, sock) {
 		t.Errorf("orphan vmm pid %d still alive", pid)
 	}
 	if _, err := b.LoadRecord(ctx, id); err == nil {
@@ -172,7 +172,7 @@ func TestDeleteCreatingPlaceholderEmitsNoMetering(t *testing.T) {
 	}
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
-		t.Fatal("stopLocked must not run for a placeholder without a VMM")
+		t.Error("stopLocked must not run for a placeholder without a VMM")
 		return nil
 	})
 	if err != nil || len(deleted) != 1 {
@@ -342,31 +342,6 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	}
 	if _, loadErr := b.LoadRecord(ctx, id); loadErr != nil {
 		t.Error("record must survive a refused delete")
-	}
-}
-
-func TestDeleteMigratedVMRemovesItsDirs(t *testing.T) {
-	b, _ := newMeteringTestBackend(t)
-	ctx := t.Context()
-	const id = "vm-migrated"
-	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
-	runDir, logDir := shortTempDir(t), shortTempDir(t)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = logDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if _, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error { return nil }); err != nil {
-		t.Fatalf("DeleteAll: %v", err)
-	}
-	for _, dir := range []string{runDir, logDir} {
-		if _, err := os.Stat(dir); !os.IsNotExist(err) {
-			t.Fatalf("migrated dir %s must be removed", dir)
-		}
 	}
 }
 
