@@ -155,9 +155,6 @@ func ScopeDir(parentDir, vmID string) string {
 
 // Prepare creates or reconfigures vmID's scope and returns its opened directory for CLONE_INTO_CGROUP; idempotent, so a relaunch reuses a scope its dying predecessor still occupies. deferQuota leaves the ceiling at max for the provisioning window — weight, fence, and placement still apply — until Arm sets the finite quota.
 func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
-	if vmID == "" {
-		return nil, errors.New("cgroup scope: empty vm id")
-	}
 	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
 	}
@@ -235,8 +232,10 @@ func ListScopeVMIDs(parentDir string) ([]string, error) {
 	}
 	var ids []string
 	for _, name := range names {
-		if strings.HasPrefix(name, scopePrefix) && strings.HasSuffix(name, scopeSuffix) {
-			ids = append(ids, strings.TrimSuffix(strings.TrimPrefix(name, scopePrefix), scopeSuffix))
+		rest, hasPrefix := strings.CutPrefix(name, scopePrefix)
+		id, hasSuffix := strings.CutSuffix(rest, scopeSuffix)
+		if hasPrefix && hasSuffix {
+			ids = append(ids, id)
 		}
 	}
 	return ids, nil

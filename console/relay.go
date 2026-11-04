@@ -21,11 +21,7 @@ func Relay(rw io.ReadWriter, escapeKeys []byte) error {
 	}()
 
 	go func() {
-		var r io.Reader = os.Stdin
-		if len(escapeKeys) > 0 {
-			r = term.NewEscapeProxy(os.Stdin, escapeKeys)
-		}
-		_, err := io.Copy(rw, r)
+		_, err := io.Copy(rw, term.NewEscapeProxy(os.Stdin, escapeKeys))
 		errCh <- err
 	}()
 

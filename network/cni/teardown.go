@@ -47,7 +47,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		mode := tombstone.ModeAggregate
 		if subset != nil {
 			mode = tombstone.ModeSubset
-			records = filterRecords(records, subset)
+			records = slices.DeleteFunc(records, func(r networkRecord) bool { return !slices.Contains(subset, r.ID) })
 		}
 		for _, r := range records {
 			cl.Records = append(cl.Records, netCleanupRecord{ID: r.ID, Type: r.Type, IfName: r.IfName})
@@ -76,7 +76,7 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 			return err
 		}
 		// A retry of the interrupted operation resumes it; any other intent is finished first and refused, since its outcome is not this call's.
-		recovered = resumed.Payload.Mode != mode || (mode == tombstone.ModeSubset && !subsetOf(recordIDs(want), recordIDs(cl)))
+		recovered = resumed.Payload.Mode != mode || (mode == tombstone.ModeSubset && !coversRecords(cl, want))
 		return nil
 	}); err != nil {
 		return err
@@ -164,22 +164,8 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	return true, nil
 }
 
-func filterRecords(records []networkRecord, ids []string) []networkRecord {
-	want := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		want[id] = true
-	}
-	return slices.DeleteFunc(records, func(r networkRecord) bool { return !want[r.ID] })
-}
-
-func recordIDs(cl netCleanup) []string {
-	ids := make([]string, 0, len(cl.Records))
-	for _, r := range cl.Records {
-		ids = append(ids, r.ID)
-	}
-	return ids
-}
-
-func subsetOf(ids, of []string) bool {
-	return !slices.ContainsFunc(ids, func(id string) bool { return !slices.Contains(of, id) })
+func coversRecords(cl, want netCleanup) bool {
+	return !slices.ContainsFunc(want.Records, func(w netCleanupRecord) bool {
+		return !slices.ContainsFunc(cl.Records, func(r netCleanupRecord) bool { return r.ID == w.ID })
+	})
 }
