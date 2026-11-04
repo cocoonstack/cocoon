@@ -123,7 +123,7 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 					w.WriteHeader(http.StatusNoContent)
 				})
 				hc := &http.Client{Transport: handlerTransport{mux}}
-				rec := &hypervisor.VMRecord{VM: types.VM{NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{{}}}}}
+				rec := &hypervisor.VMRecord{NetworkConfigs: []*types.NetworkConfig{{}}}
 				start := time.Now()
 
 				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
