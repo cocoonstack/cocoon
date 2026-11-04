@@ -2,11 +2,8 @@ package hypervisor
 
 import (
 	"context"
-	"fmt"
-	"os/exec"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -17,15 +14,7 @@ func TestStartSequenceRelaunchesWhenTheScannedVMMDiedBeforeTheLock(t *testing.T)
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	vmm := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", b.Conf.BinaryName(), sockPath))
-	if err := vmm.Start(); err != nil {
-		t.Fatalf("start fake VMM: %v", err)
-	}
-	if err := utils.WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(vmm.Process.Pid, sockPath), nil
-	}); err != nil {
-		t.Fatalf("fake VMM never execed: %v", err)
-	}
+	vmm := startFakeVMM(t, b.Conf.BinaryName(), sockPath)
 	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		t.Fatalf("scan: %v", err)

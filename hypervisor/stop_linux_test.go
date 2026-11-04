@@ -3,10 +3,8 @@ package hypervisor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -26,11 +24,7 @@ func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	vmm := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
-	vmm.Args[0] = "previous-" + b.Conf.BinaryName()
-	if err := vmm.Start(); err != nil {
-		t.Fatalf("start fake VMM: %v", err)
-	}
+	vmm := startFakeVMM(t, "previous-"+b.Conf.BinaryName(), sockPath)
 	exited := make(chan struct{})
 	go func() {
 		_ = vmm.Wait()
@@ -40,11 +34,6 @@ func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
 		_ = vmm.Process.Kill()
 		<-exited
 	})
-	if err := utils.WaitFor(ctx, 5*time.Second, time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(vmm.Process.Pid, sockPath), nil
-	}); err != nil {
-		t.Fatalf("fake VMM never execed: %v", err)
-	}
 	if err := utils.WritePIDFile(b.PIDFilePath(dir), vmm.Process.Pid); err != nil {
 		t.Fatalf("write pidfile: %v", err)
 	}
@@ -91,16 +80,7 @@ func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 	dir := seedStoppedVMWithDirs(t, b, id)
 	sockPath := SocketPath(dir)
 
-	child := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", b.Conf.BinaryName(), sockPath))
-	if err := child.Start(); err != nil {
-		t.Fatalf("start fake VMM child: %v", err)
-	}
-	t.Cleanup(func() { _ = child.Wait() })
-	if err := utils.WaitFor(ctx, 5*time.Second, time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(child.Process.Pid, sockPath), nil
-	}); err != nil {
-		t.Fatalf("fake VMM child never execed: %v", err)
-	}
+	child := startFakeVMM(t, b.Conf.BinaryName(), sockPath)
 	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
 	if err != nil {
 		t.Fatalf("scan: %v", err)

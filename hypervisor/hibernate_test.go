@@ -215,10 +215,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	if err := os.WriteFile(sock, nil, 0o600); err != nil {
 		t.Fatalf("touch sock: %v", err)
 	}
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", b.Conf.BinaryName(), sock))
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start stub vmm: %v", err)
-	}
+	cmd := startFakeVMM(t, b.Conf.BinaryName(), sock)
 
 	waitDone := make(chan struct{})
 	go func() {
@@ -230,15 +227,28 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 		<-waitDone
 	})
 
-	if err := utils.WaitFor(t.Context(), 2*time.Second, 10*time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(cmd.Process.Pid, sock), nil
-	}); err != nil {
-		t.Fatalf("stub vmm did not exec in time: %v", err)
-	}
 	if err := os.WriteFile(b.PIDFilePath(runDir), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 		t.Fatalf("write pidfile: %v", err)
 	}
 	return b, id
+}
+
+func startFakeVMM(t *testing.T, argv0, sock string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", argv0, sock))
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start fake VMM: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	if err := utils.WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
+		return utils.VerifyProcessCmdline(cmd.Process.Pid, sock), nil
+	}); err != nil {
+		t.Fatalf("fake VMM never execed: %v", err)
+	}
+	return cmd
 }
 
 func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {

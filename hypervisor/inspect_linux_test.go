@@ -2,12 +2,8 @@ package hypervisor
 
 import (
 	"os"
-	"os/exec"
 	"strconv"
 	"testing"
-	"time"
-
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestToVMDropsARecycledPID(t *testing.T) {
@@ -32,20 +28,7 @@ func TestToVMKeepsTheVMMPID(t *testing.T) {
 		t.Fatalf("load record: %v", err)
 	}
 	sock := SocketPath(rec.RunDir)
-	vmm := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sock)
-	vmm.Args[0] = b.Conf.BinaryName()
-	if err := vmm.Start(); err != nil {
-		t.Fatalf("start fake VMM: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = vmm.Process.Kill()
-		_ = vmm.Wait()
-	})
-	if err := utils.WaitFor(t.Context(), 2*time.Second, 10*time.Millisecond, func() (bool, error) {
-		return utils.VerifyProcessCmdline(vmm.Process.Pid, sock), nil
-	}); err != nil {
-		t.Fatalf("fake VMM did not exec in time: %v", err)
-	}
+	vmm := startFakeVMM(t, b.Conf.BinaryName(), sock)
 	writeRunFile(t, b.PIDFilePath(rec.RunDir), strconv.Itoa(vmm.Process.Pid))
 
 	if info := b.ToVM(&rec); info.PID != vmm.Process.Pid {

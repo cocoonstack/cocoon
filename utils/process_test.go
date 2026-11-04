@@ -151,15 +151,7 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 	pid := cmd.Process.Pid
 	waitForExec(t, pid, "60")
 
-	waitDone := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
-	defer func() {
-		_ = cmd.Process.Kill()
-		<-waitDone
-	}()
+	waitDone := reapChild(t, cmd)
 
 	if !IsProcessAlive(pid) {
 		t.Fatal("sleep process should be alive")
@@ -219,15 +211,7 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 	}
 	waitForExec(t, pid, "vmm-sock")
 
-	waitDone := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
-	defer func() {
-		_ = cmd.Process.Kill()
-		<-waitDone
-	}()
+	waitDone := reapChild(t, cmd)
 
 	start := time.Now()
 	if err := TerminateProcess(t.Context(), pid, "vmm-sock", grace); err != nil {
@@ -283,15 +267,7 @@ func TestTerminateProcess_ContextCancelled(t *testing.T) {
 	pid := cmd.Process.Pid
 	waitForExec(t, pid, "60")
 
-	waitDone := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
-	defer func() {
-		_ = cmd.Process.Kill()
-		<-waitDone
-	}()
+	waitDone := reapChild(t, cmd)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -338,6 +314,20 @@ func TestWaitProcessExitTimesOutOnALiveProcess(t *testing.T) {
 	if err == nil {
 		t.Fatal("WaitProcessExit = nil, want a timeout while the process is alive")
 	}
+}
+
+func reapChild(t *testing.T, cmd *exec.Cmd) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+	})
+	return done
 }
 
 func waitForExec(t *testing.T, pid int, expectArg string) {
