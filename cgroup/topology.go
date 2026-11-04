@@ -17,8 +17,9 @@ const SysCPURoot = "/sys/devices/system/cpu"
 
 // Topology is the host's online cpus inside the fence, grouped by the last-level cache they share.
 type Topology struct {
-	root    string
-	domains [][]int
+	root            string
+	domains         [][]int
+	soleDomainCores [][]int
 }
 
 // ReadTopology groups the online cpus inside fence by last-level cache; a host without cache sysfs forms one domain.
@@ -47,6 +48,12 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 			rest = slices.DeleteFunc(rest, inShared)
 		}
 	}
+	if len(t.domains) == 1 {
+		var err error
+		if t.soleDomainCores, err = coresOf(root, t.domains[0]); err != nil {
+			return nil, err
+		}
+	}
 	return t, nil
 }
 
@@ -63,14 +70,17 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int, err 
 	if queues < 2 {
 		return domain, nil, nil
 	}
-	cores, err := coresOf(t.root, domain)
-	if err != nil {
-		return nil, nil, err
+	cores := t.soleDomainCores
+	if cores == nil {
+		if cores, err = coresOf(t.root, domain); err != nil {
+			return nil, nil, err
+		}
 	}
 	byLoad := func(a, b int) int { return cmp.Or(cmp.Compare(load[a], load[b]), cmp.Compare(a, b)) }
 	layer := make(map[int]int, len(domain))
 	ranked := make([]int, 0, len(domain))
-	for _, core := range cores {
+	for _, c := range cores {
+		core := slices.Clone(c)
 		slices.SortFunc(core, byLoad)
 		for i, cpu := range core {
 			layer[cpu] = i

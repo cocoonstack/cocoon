@@ -55,6 +55,27 @@ func TestReadTopologyWithoutCacheSysfs(t *testing.T) {
 	}
 }
 
+func TestPlaceOnALoneDomainReadsSiblingsUpFront(t *testing.T) {
+	root := writeSysfsCPUs(t, 1, 2, 2)
+	topo, err := ReadTopology(root, nil)
+	if err != nil {
+		t.Fatalf("ReadTopology: %v", err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	load := map[int]int{0: 1, 2: 1}
+	for range 2 {
+		_, pins, err := topo.Place(2, load)
+		if err != nil {
+			t.Fatalf("Place: %v", err)
+		}
+		if want := []int{0, 1}; !slices.Equal(pins, want) {
+			t.Errorf("pins = %v, want %v", pins, want)
+		}
+	}
+}
+
 func TestPlace(t *testing.T) {
 	root := writeSysfsCPUs(t, 2, 2, 2)
 	topo, err := ReadTopology(root, nil)

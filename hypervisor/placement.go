@@ -75,7 +75,11 @@ func (b *Backend) placeVM(ctx context.Context, r meta.Reader, rec *VMRecord, cfg
 	if err != nil {
 		return err
 	}
-	domain, queueCPUs, err := topo.Place(cfg.CPU, load)
+	queues := 1
+	if pins {
+		queues = cfg.CPU
+	}
+	domain, queueCPUs, err := topo.Place(queues, load)
 	if err != nil {
 		return err
 	}
