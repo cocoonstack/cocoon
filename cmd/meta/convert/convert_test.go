@@ -108,6 +108,11 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	if err := copyNamespace(ctx, src, dst, spec.Decls[0]); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
+	if err := src.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
+		return w.PutRaw(ctx, "vms", "records", "late", jsontext.Value(`{}`), false)
+	}); err != nil {
+		t.Fatalf("mutate source: %v", err)
+	}
 	_ = src.Close()
 	_ = dst.Close()
 

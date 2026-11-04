@@ -8,6 +8,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 	meteringfile "github.com/cocoonstack/cocoon/metering/file"
 	meteringstderr "github.com/cocoonstack/cocoon/metering/stderr"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestBuildRecorderBackends(t *testing.T) {
@@ -38,15 +39,19 @@ func TestBuildRecorderBackends(t *testing.T) {
 
 func TestBuildFileRecorderCustomPath(t *testing.T) {
 	dir := t.TempDir()
+	path := dir + "/custom/ledger.jsonl"
 	conf := &config.Config{
 		RootDir: dir,
 		Metering: config.MeteringConfig{
 			Backend: config.MeteringFile,
-			File:    config.FileMeteringConfig{Path: dir + "/custom/ledger.jsonl"},
+			File:    config.FileMeteringConfig{Path: path},
 		},
 	}
 	r := buildRecorder(t.Context(), conf)
 	if _, ok := r.(*meteringfile.Recorder); !ok {
 		t.Fatalf("got %T, want *meteringfile.Recorder", r)
+	}
+	if !utils.FileExists(path) {
+		t.Errorf("ledger %s not created at the configured path", path)
 	}
 }
