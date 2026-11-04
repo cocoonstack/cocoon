@@ -1,6 +1,7 @@
 package cloudhypervisor
 
 import (
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"net/http"
@@ -82,6 +83,60 @@ func TestSnapshotPauseRefusesANICCountOffItsRecord(t *testing.T) {
 	}
 	if pauses != 0 {
 		t.Fatalf("pauses = %d, want the VM left running", pauses)
+	}
+}
+
+func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
+	tests := []struct {
+		name string
+		tree func(polls int) []string
+		wait time.Duration
+	}{
+		{"nothing pending", func(int) []string { return []string{"cocoon-net-new"} }, 0},
+		{"guest acks the eject", func(polls int) []string {
+			if polls < 4 {
+				return []string{"cocoon-net-new", "_net3"}
+			}
+			return []string{"cocoon-net-new"}
+		}, 300 * time.Millisecond},
+		{"a node the guest never ejects stops at the cap", func(int) []string { return []string{"cocoon-net-new", "_net3"} }, ejectWaitTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				polls, pauses := 0, 0
+				mux := http.NewServeMux()
+				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+					tree := map[string]jsontext.Value{}
+					for _, id := range tt.tree(polls) {
+						tree[id] = jsontext.Value(`{}`)
+					}
+					_ = json.MarshalWrite(w, chVMInfoResponse{
+						State:      chStateRunning,
+						Config:     chVMConfig{Nets: []chNet{{ID: "cocoon-net-new"}}},
+						DeviceTree: tree,
+					})
+					polls++
+				})
+				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+					pauses++
+					w.WriteHeader(http.StatusNoContent)
+				})
+				hc := &http.Client{Transport: handlerTransport{mux}}
+				rec := &hypervisor.VMRecord{VM: types.VM{NetSetup: types.NetSetup{NetworkConfigs: []*types.NetworkConfig{{}}}}}
+				start := time.Now()
+
+				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
+					t.Fatalf("Pause: %v", err)
+				}
+				if got := time.Since(start); got != tt.wait {
+					t.Errorf("paused after %s, want %s", got, tt.wait)
+				}
+				if pauses != 1 {
+					t.Errorf("pauses = %d, want 1", pauses)
+				}
+			})
+		})
 	}
 }
 
