@@ -205,7 +205,7 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	}})
 
 	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
-		return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 	}})
 	if err != nil {
 		t.Fatalf("StopOneLocked: %v", err)
@@ -240,7 +240,7 @@ func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 
 	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 		b.Meta = busyStore{store}
-		return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 	}})
 	b.Meta = store
 	if err != nil {
@@ -307,7 +307,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 		return b.StopOneLocked(ctx, id, StopSpec{
 			RuntimeFiles: []string{APISocketName},
 			Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
-				return utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, time.Second)
+				return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 			},
 		})
 	}

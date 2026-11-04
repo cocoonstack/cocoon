@@ -141,10 +141,10 @@ func (b *Backend) deleteOneLocked(ctx context.Context, id string, force bool, st
 	}
 	for _, pid := range procScan.Find(sockPath) {
 		// procScan predates the stop: only a still-live match is a real orphan worth killing.
-		if !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
+		if !utils.VerifyProcessCmdline(pid, sockPath) {
 			continue
 		}
-		if termErr := utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
+		if termErr := utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod()); termErr != nil {
 			return fmt.Errorf("terminate orphan VMM pid=%d for VM %s: %w", pid, id, termErr)
 		}
 		log.WithFunc(b.Typ+".deleteOneLocked").Warnf(ctx, "killed orphan VMM pid=%d for VM %s", pid, id)

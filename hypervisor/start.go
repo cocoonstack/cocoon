@@ -190,7 +190,7 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 }
 
 func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
-	_ = utils.TerminateProcess(ctx, pid, b.Conf.BinaryName(), sockPath, b.Conf.TerminateGracePeriod())
+	_ = utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod())
 	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
 }
 

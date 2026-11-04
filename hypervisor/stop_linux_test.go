@@ -1,7 +1,9 @@
 package hypervisor
 
 import (
+	"context"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,65 @@ import (
 
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
+	ctx := t.Context()
+	b, _ := newMeteringTestBackend(t)
+	const id = "vm-renamed-binary"
+	dir := seedStoppedVMWithDirs(t, b, id)
+	sockPath := SocketPath(dir)
+
+	vmm := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sockPath)
+	vmm.Args[0] = "previous-" + b.Conf.BinaryName()
+	if err := vmm.Start(); err != nil {
+		t.Fatalf("start fake VMM: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() {
+		_ = vmm.Wait()
+		close(exited)
+	}()
+	t.Cleanup(func() {
+		_ = vmm.Process.Kill()
+		<-exited
+	})
+	if err := utils.WaitFor(ctx, 5*time.Second, time.Millisecond, func() (bool, error) {
+		return utils.VerifyProcessCmdline(vmm.Process.Pid, sockPath), nil
+	}); err != nil {
+		t.Fatalf("fake VMM never execed: %v", err)
+	}
+	if err := utils.WritePIDFile(b.PIDFilePath(dir), vmm.Process.Pid); err != nil {
+		t.Fatalf("write pidfile: %v", err)
+	}
+	listener, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen on %s: %v", sockPath, err)
+	}
+	defer listener.Close()
+
+	stopped := false
+	stopLocked := func(ctx context.Context, _ string) error {
+		stopped = true
+		_ = listener.Close()
+		return utils.TerminateProcess(ctx, vmm.Process.Pid, sockPath, time.Second)
+	}
+	scan, err := utils.ScanProcsByBinary(b.Conf.BinaryName())
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	rec := recordOf(t, b, id)
+	if err := b.deleteOneLocked(ctx, id, true, stopLocked, rec, scan); err != nil {
+		t.Fatalf("deleteOneLocked: %v", err)
+	}
+	if !stopped {
+		t.Fatal("force delete did not stop the VMM started under the previous binary")
+	}
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the VMM started under the previous binary survived the force delete")
+	}
+}
 
 func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 	ctx := t.Context()
@@ -44,7 +105,7 @@ func TestDeleteSkipsAScannedVMMThatExitedBeforeTheKill(t *testing.T) {
 	}
 	_ = child.Process.Kill()
 	if err := utils.WaitFor(ctx, 2*time.Second, 10*time.Millisecond, func() (bool, error) {
-		return !utils.VerifyProcessCmdline(child.Process.Pid, b.Conf.BinaryName(), sockPath), nil
+		return !utils.VerifyProcessCmdline(child.Process.Pid, sockPath), nil
 	}); err != nil {
 		t.Fatalf("killed child kept its cmdline: %v", err)
 	}

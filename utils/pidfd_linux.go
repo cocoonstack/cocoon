@@ -26,14 +26,14 @@ func CloseFD(fd int) {
 }
 
 // terminateWithPidfd signals through a pidfd, immune to PID reuse; handled is false without pidfd support (kernel < 5.3).
-func terminateWithPidfd(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
+func terminateWithPidfd(ctx context.Context, pid int, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
 	fd, err := OpenPidfd(pid)
 	if err != nil {
 		return false, nil
 	}
 	defer CloseFD(fd)
 
-	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+	match, err := verifyProcessForTermination(pid, expectArg)
 	if err != nil {
 		return true, err
 	}

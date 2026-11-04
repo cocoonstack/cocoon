@@ -40,24 +40,24 @@ func IsProcessAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-// VerifyProcessCmdline matches pid against binaryName + expectArg in /proc/<pid>/cmdline; falls back to IsProcessAlive on non-Linux or read errors.
-func VerifyProcessCmdline(pid int, binaryName, expectArg string) bool {
+// VerifyProcessCmdline matches pid against a whole expectArg argument in /proc/<pid>/cmdline; falls back to IsProcessAlive on non-Linux or read errors.
+func VerifyProcessCmdline(pid int, expectArg string) bool {
 	if pid <= 0 {
 		return false
 	}
-	if match, err := verifyProcessCmdline(pid, binaryName, expectArg); err == nil {
+	if match, err := verifyProcessCmdline(pid, expectArg); err == nil {
 		return match
 	}
 	return IsProcessAlive(pid)
 }
 
-// TerminateProcess verifies pid matches binaryName+expectArg, sends SIGTERM, waits gracePeriod, escalates to SIGKILL.
-func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string, gracePeriod time.Duration) error {
-	if handled, err := terminateWithPidfd(ctx, pid, binaryName, expectArg, gracePeriod); handled {
+// TerminateProcess verifies pid matches expectArg, sends SIGTERM, waits gracePeriod, escalates to SIGKILL.
+func TerminateProcess(ctx context.Context, pid int, expectArg string, gracePeriod time.Duration) error {
+	if handled, err := terminateWithPidfd(ctx, pid, expectArg, gracePeriod); handled {
 		return err
 	}
 
-	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+	match, err := verifyProcessForTermination(pid, expectArg)
 	if err != nil {
 		return err
 	}
@@ -73,14 +73,14 @@ func TerminateProcess(ctx context.Context, pid int, binaryName, expectArg string
 		if !IsProcessAlive(pid) {
 			return nil
 		}
-		return killAndWait(ctx, proc, pid, binaryName, expectArg)
+		return killAndWait(ctx, proc, pid, expectArg)
 	}
 
 	if err := waitDead(ctx, pid, gracePeriod); err == nil {
 		return nil
 	}
 
-	return killAndWait(ctx, proc, pid, binaryName, expectArg)
+	return killAndWait(ctx, proc, pid, expectArg)
 }
 
 // WaitProcessExit blocks until pid exits, the timeout elapses, or ctx ends; a pidfd makes the wait kernel-driven where the OS has one.
@@ -91,8 +91,8 @@ func WaitProcessExit(ctx context.Context, pid int, timeout time.Duration) error 
 	return waitDead(ctx, pid, timeout)
 }
 
-func killAndWait(ctx context.Context, proc *os.Process, pid int, binaryName, expectArg string) error {
-	match, err := verifyProcessForTermination(pid, binaryName, expectArg)
+func killAndWait(ctx context.Context, proc *os.Process, pid int, expectArg string) error {
+	match, err := verifyProcessForTermination(pid, expectArg)
 	if err != nil || !match {
 		return err
 	}

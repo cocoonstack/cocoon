@@ -51,7 +51,7 @@ type aliveFn func(int) bool
 
 type readFileFn func(string) ([]byte, error)
 
-type cmdlineVerifier func(pid int, binaryName, expectArg string) (bool, error)
+type cmdlineVerifier func(pid int, expectArg string) (bool, error)
 
 type procEntry struct {
 	pid     int
@@ -118,29 +118,31 @@ func readKthreaddChildren(readFile readFileFn) map[int]struct{} {
 	return pids
 }
 
-// Match argv[0] basename strictly + expectArg substring so "bash -c 'cloud-hypervisor ...'" can't impersonate the VMM.
-func verifyProcessCmdline(pid int, binaryName, expectArg string) (bool, error) {
+// A whole-argument match keeps "bash -c 'cloud-hypervisor ...'" out; the binary name is not checked because a VMM outlives a config change of its binary.
+func verifyProcessCmdline(pid int, expectArg string) (bool, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {
 		return false, err
 	}
-	argv0, rest, _ := strings.Cut(string(data), "\x00")
-	if filepath.Base(argv0) != binaryName {
-		return false, nil
+	_, rest, _ := strings.Cut(string(data), "\x00")
+	for arg := range strings.SplitSeq(rest, "\x00") {
+		if arg == expectArg {
+			return true, nil
+		}
 	}
-	return strings.Contains(rest, expectArg), nil
+	return false, nil
 }
 
 // verifyProcessForTermination fails closed when /proc cannot prove the PID's identity.
-func verifyProcessForTermination(pid int, binaryName, expectArg string) (bool, error) {
-	return verifyForTermination(pid, binaryName, expectArg, verifyProcessCmdline, IsProcessAlive)
+func verifyProcessForTermination(pid int, expectArg string) (bool, error) {
+	return verifyForTermination(pid, expectArg, verifyProcessCmdline, IsProcessAlive)
 }
 
-func verifyForTermination(pid int, binaryName, expectArg string, verify cmdlineVerifier, alive aliveFn) (bool, error) {
+func verifyForTermination(pid int, expectArg string, verify cmdlineVerifier, alive aliveFn) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}
-	match, err := verify(pid, binaryName, expectArg)
+	match, err := verify(pid, expectArg)
 	if err == nil {
 		return match, nil
 	}

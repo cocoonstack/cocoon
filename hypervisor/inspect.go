@@ -44,7 +44,7 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	if info.State == types.VMStateRunning {
 		SetRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
-		if !utils.VerifyProcessCmdline(info.PID, b.Conf.BinaryName(), info.SocketPath) {
+		if !utils.VerifyProcessCmdline(info.PID, info.SocketPath) {
 			info.PID = 0
 		}
 	}

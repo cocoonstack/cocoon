@@ -162,7 +162,7 @@ func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.
 		logger.Warnf(ctx, "read PID file: %v", pidErr)
 	}
 	sockPath := SocketPath(rec.RunDir)
-	if utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath) {
+	if utils.VerifyProcessCmdline(pid, sockPath) {
 		return fn(pid)
 	}
 	// Fail closed: an inconclusive scan must not read as ErrNotRunning.
@@ -180,7 +180,7 @@ func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.
 func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) {
 	if scan != nil {
 		return slices.DeleteFunc(scan.Find(sockPath), func(pid int) bool {
-			return !utils.VerifyProcessCmdline(pid, b.Conf.BinaryName(), sockPath)
+			return !utils.VerifyProcessCmdline(pid, sockPath)
 		}), nil
 	}
 	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)

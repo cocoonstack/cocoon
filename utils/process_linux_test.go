@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestScanProcsByBinaryReadErrors(t *testing.T) {
@@ -118,10 +120,49 @@ func TestReadKthreaddChildrenExcludesSelf(t *testing.T) {
 	}
 }
 
+func TestVerifyProcessCmdlineIgnoresTheBinaryName(t *testing.T) {
+	const sock = "/run/vm/api.sock"
+	cmd := exec.Command("/bin/sh", "-c", "sleep 60; :", "sh", sock)
+	cmd.Args[0] = "a-renamed-vmm"
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
+		return VerifyProcessCmdline(cmd.Process.Pid, sock), nil
+	}); err != nil {
+		t.Fatalf("a process holding the socket argument under another binary name was not matched: %v", err)
+	}
+}
+
+func TestVerifyProcessCmdlineRejectsTheArgumentInsideAShellCommand(t *testing.T) {
+	const sock = "/run/vm/api.sock"
+	const script = "sleep 60; echo " + sock
+	cmd := exec.Command("/bin/sh", "-c", script)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
+		return VerifyProcessCmdline(cmd.Process.Pid, script), nil
+	}); err != nil {
+		t.Fatalf("child never execed: %v", err)
+	}
+	if VerifyProcessCmdline(cmd.Process.Pid, sock) {
+		t.Fatal("a shell command that mentions the socket path was matched as the VMM")
+	}
+}
+
 func TestVerifyForTerminationFailsClosed(t *testing.T) {
 	injected := errors.New("injected cmdline read failure")
-	failing := func(int, string, string) (bool, error) { return false, injected }
-	matching := func(int, string, string) (bool, error) { return true, nil }
+	failing := func(int, string) (bool, error) { return false, injected }
+	matching := func(int, string) (bool, error) { return true, nil }
 
 	tests := []struct {
 		name    string
@@ -138,7 +179,7 @@ func TestVerifyForTerminationFailsClosed(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := verifyForTermination(tt.pid, "vmm", "sock", tt.verify, tt.alive)
+			got, err := verifyForTermination(tt.pid, "sock", tt.verify, tt.alive)
 			if got != tt.want || !errors.Is(err, tt.wantErr) {
 				t.Errorf("got (%v, %v), want (%v, %v)", got, err, tt.want, tt.wantErr)
 			}

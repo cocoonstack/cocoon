@@ -18,7 +18,6 @@ const (
 	relayEnvKey           = "_COCOON_CONSOLE_RELAY"
 	relayPIDEnvKey        = "_COCOON_FC_PID"
 	relayLeaseCountEnvKey = "_COCOON_FC_LEASE_COUNT"
-	relayBinaryEnvKey     = "_COCOON_FC_BINARY"
 	relaySocketEnvKey     = "_COCOON_FC_SOCKET"
 
 	// relayMasterFD is ExtraFiles[0]; the relay fds follow in append order.
@@ -136,7 +135,6 @@ func RunRelay(ctx context.Context) {
 		_ = listener.Close()
 	}
 
-	binaryName := os.Getenv(relayBinaryEnvKey)
 	sockPath := os.Getenv(relaySocketEnvKey)
 	if leaseCount > 0 {
 		control := os.NewFile(relayLeaseControlFD, "source-lease-control")
@@ -144,14 +142,14 @@ func RunRelay(ctx context.Context) {
 		if _, err := responses.Write([]byte{relayLeaseReadyCommand}); err != nil {
 			_ = responses.Close()
 			_ = control.Close()
-			abortRelayFirecracker(ctx, fcPID, binaryName, sockPath)
+			abortRelayFirecracker(ctx, fcPID, sockPath)
 			return
 		}
 		go func() {
 			defer control.Close()   //nolint:errcheck
 			defer responses.Close() //nolint:errcheck
 			waitRelayLeaseControl(control, responses, releaseLeases, func() {
-				abortRelayFirecracker(ctx, fcPID, binaryName, sockPath)
+				abortRelayFirecracker(ctx, fcPID, sockPath)
 				stop()
 			})
 		}()
@@ -197,13 +195,13 @@ func waitRelayLeaseControl(control io.Reader, responses io.Writer, release, abor
 	abort()
 }
 
-func abortRelayFirecracker(ctx context.Context, pid int, binaryName, sockPath string) {
+func abortRelayFirecracker(ctx context.Context, pid int, sockPath string) {
 	logger := log.WithFunc("firecracker.abortRelayFirecracker")
-	for utils.VerifyProcessCmdline(pid, binaryName, sockPath) {
-		if err := utils.TerminateProcess(ctx, pid, binaryName, sockPath, relayAbortGrace); err != nil {
+	for utils.VerifyProcessCmdline(pid, sockPath) {
+		if err := utils.TerminateProcess(ctx, pid, sockPath, relayAbortGrace); err != nil {
 			logger.Warnf(ctx, "terminate Firecracker %d after clone parent exit: %v", pid, err)
 		}
-		if !utils.VerifyProcessCmdline(pid, binaryName, sockPath) {
+		if !utils.VerifyProcessCmdline(pid, sockPath) {
 			return
 		}
 		select {

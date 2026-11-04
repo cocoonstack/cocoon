@@ -226,7 +226,6 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 	if controlReader != nil {
 		relayCmd.Env = append(
 			relayCmd.Env,
-			relayBinaryEnvKey+"="+fc.conf.BinaryName(),
 			relaySocketEnvKey+"="+hypervisor.SocketPath(runDir),
 		)
 		relayCmd.ExtraFiles = append(relayCmd.ExtraFiles, controlReader, readyWriter)
