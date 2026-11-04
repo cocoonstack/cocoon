@@ -115,6 +115,9 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		return qerr
 	}
 	if m == nil {
+		if err := checkTargetFS(spec, target); err != nil {
+			return err
+		}
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
 			return err
 		}
@@ -147,6 +150,16 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		}
 	}
 	return nil
+}
+
+func checkTargetFS(spec Spec, target string) error {
+	if target != config.MetaBackendSQLite {
+		return nil
+	}
+	if err := utils.EnsureDirs(filepath.Dir(spec.DBPath)); err != nil {
+		return err
+	}
+	return metasqlite.CheckFS(spec.DBPath)
 }
 
 func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) (*Manifest, error) {

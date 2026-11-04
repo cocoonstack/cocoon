@@ -227,6 +227,9 @@ func TestConvertRefusesUnsupportedFS(t *testing.T) {
 	if utils.FileExists(spec.DBPath) {
 		t.Fatal("convert created target WAL state on refused filesystem")
 	}
+	if err := metasqlite.RefuseManifest(spec.DBPath); err != nil {
+		t.Fatalf("the refused convert locked the root: %v", err)
+	}
 }
 
 func TestConvertRefusesARunningDaemon(t *testing.T) {

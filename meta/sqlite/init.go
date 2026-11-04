@@ -53,7 +53,7 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 	if merr := utils.EnsureDirs(filepath.Dir(dbPath)); merr != nil {
 		return merr
 	}
-	if ferr := checkFS(dbPath); ferr != nil {
+	if ferr := CheckFS(dbPath); ferr != nil {
 		return ferr
 	}
 	if utils.FileExists(dbPath) {
