@@ -230,12 +230,10 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 		<-waitDone
 	})
 
-	deadline := time.Now().Add(2 * time.Second)
-	for !utils.VerifyProcessCmdline(cmd.Process.Pid, sock) {
-		if time.Now().After(deadline) {
-			t.Fatal("stub vmm did not exec in time")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := utils.WaitFor(t.Context(), 2*time.Second, 10*time.Millisecond, func() (bool, error) {
+		return utils.VerifyProcessCmdline(cmd.Process.Pid, sock), nil
+	}); err != nil {
+		t.Fatalf("stub vmm did not exec in time: %v", err)
 	}
 	if err := os.WriteFile(b.PIDFilePath(runDir), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 		t.Fatalf("write pidfile: %v", err)

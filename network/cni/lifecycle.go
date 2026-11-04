@@ -268,8 +268,8 @@ func (c *CNI) provisionNIC(ctx context.Context, confList *libcni.NetworkConfigLi
 	}, nil
 }
 
-func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifName string) error {
-	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifName}
+func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vmID, nsPath, ifn string) error {
+	rt := &libcni.RuntimeConf{ContainerID: vmID, NetNS: nsPath, IfName: ifn}
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
 }
 

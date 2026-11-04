@@ -25,7 +25,7 @@ func CloseFD(fd int) {
 	}
 }
 
-// terminateWithPidfd signals through a pidfd, immune to PID reuse; handled is false without pidfd support (kernel < 5.3).
+// terminateWithPidfd signals through a pidfd, immune to PID reuse; handled is false when no pidfd can be opened.
 func terminateWithPidfd(ctx context.Context, pid int, expectArg string, gracePeriod time.Duration) (handled bool, err error) {
 	fd, err := OpenPidfd(pid)
 	if err != nil {
@@ -55,7 +55,7 @@ func terminateWithPidfd(ctx context.Context, pid int, expectArg string, gracePer
 	return true, waitPidfd(ctx, fd, killWaitTimeout)
 }
 
-// waitExitWithPidfd blocks on pid's exit through a pidfd; handled is false without pidfd support (kernel < 5.3).
+// waitExitWithPidfd blocks on pid's exit through a pidfd; handled is false when no pidfd can be opened.
 func waitExitWithPidfd(ctx context.Context, pid int, timeout time.Duration) (handled bool, err error) {
 	fd, err := OpenPidfd(pid)
 	if err != nil {

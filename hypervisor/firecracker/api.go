@@ -16,6 +16,7 @@ import (
 const (
 	actionInstanceStart  = "InstanceStart"
 	actionSendCtrlAltDel = "SendCtrlAltDel"
+	vmStateNotStarted    = "Not started"
 	vmStatePaused        = "Paused"
 	vmStateResumed       = "Resumed"
 	memBackendTypeFile   = "File"

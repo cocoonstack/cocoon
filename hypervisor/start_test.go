@@ -58,7 +58,10 @@ func TestStartSequenceRejectsNilNIC(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "network invariants violated") {
 		t.Fatalf("err = %v, want network invariants violation", err)
 	}
-	loaded, _ := b.LoadRecord(ctx, id)
+	loaded, err := b.LoadRecord(ctx, id)
+	if err != nil {
+		t.Fatalf("load record: %v", err)
+	}
 	if loaded.State != types.VMStateError {
 		t.Errorf("state = %s, want error", loaded.State)
 	}

@@ -182,7 +182,7 @@ func TestTerminateProcess_AlreadyDead(t *testing.T) {
 
 	ctx := t.Context()
 
-	err := TerminateProcess(ctx, pid, "true", 1*time.Second)
+	err := TerminateProcess(ctx, pid, "true", time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess on dead process: %v", err)
 	}
@@ -242,16 +242,12 @@ func TestFindVMMByCmdline(t *testing.T) {
 	}()
 
 	var pids []int
-	for range 50 {
+	if err := WaitFor(t.Context(), 500*time.Millisecond, 10*time.Millisecond, func() (bool, error) {
 		got, err := FindVMMByCmdline("sh", marker)
-		if err != nil {
-			t.Fatalf("FindVMMByCmdline: %v", err)
-		}
-		if len(got) > 0 {
-			pids = got
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+		pids = got
+		return len(got) > 0, err
+	}); err != nil {
+		t.Fatalf("FindVMMByCmdline: %v", err)
 	}
 	if !slices.Contains(pids, cmd.Process.Pid) {
 		t.Errorf("FindVMMByCmdline never matched the execed cmdline: got %v, want %d", pids, cmd.Process.Pid)

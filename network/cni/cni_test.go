@@ -1,6 +1,7 @@
 package cni
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -75,7 +76,7 @@ func TestLoadConfLists(t *testing.T) {
 		dir := t.TempDir()
 		_, _, err := loadConfLists(dir)
 		if err == nil {
-			t.Fatalf("expected error on empty dir, got nil")
+			t.Fatal("expected error on empty dir, got nil")
 		}
 		if !strings.Contains(err.Error(), "no .conflist files") {
 			t.Errorf("unexpected error: %v", err)
@@ -88,7 +89,7 @@ func TestLoadConfLists(t *testing.T) {
 		writeFile(t, filepath.Join(dir, "20-readme.txt"), "ignored")
 		_, _, err := loadConfLists(dir)
 		if err == nil {
-			t.Fatalf("expected error when only non-.conflist files present")
+			t.Fatal("expected error when only non-.conflist files present")
 		}
 	})
 
@@ -136,7 +137,7 @@ func TestLoadConfLists(t *testing.T) {
 		writeFile(t, filepath.Join(dir, "bad.conflist"), "{not json")
 		_, _, err := loadConfLists(dir)
 		if err == nil {
-			t.Fatalf("expected parse error, got nil")
+			t.Fatal("expected parse error, got nil")
 		}
 	})
 }
@@ -520,7 +521,7 @@ func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		slices.SortFunc(got, func(a, b networkRecord) int { return strings.Compare(a.IfName, b.IfName) })
+		slices.SortFunc(got, func(a, b networkRecord) int { return cmp.Compare(a.IfName, b.IfName) })
 		if len(got) != 2 || got[0].ID != "n-eth0" || got[1].IfName != "eth1" || got[1].Type != "cni-bridge" {
 			t.Fatalf("records = %+v, want n-eth0 plus one cni-bridge eth1 record", got)
 		}

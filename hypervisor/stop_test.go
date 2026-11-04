@@ -264,7 +264,9 @@ func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 		var got string
 		if err := b.view(ctx, func(tx *vmTx) error {
 			return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
-				got += id + "=" + *cpus + ";"
+				if cpus != nil {
+					got += id + "=" + *cpus + ";"
+				}
 				return nil
 			})
 		}); err != nil {
@@ -327,16 +329,7 @@ func TestDeleteAllRefusesLiveAPISocket(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-live-sock"
-	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
-	runDir := shortTempDir(t)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = runDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed dirs: %v", err)
-	}
+	runDir := seedStoppedVMWithDirs(t, b, id)
 	ln, err := net.Listen("unix", SocketPath(runDir))
 	if err != nil {
 		t.Fatalf("listen: %v", err)

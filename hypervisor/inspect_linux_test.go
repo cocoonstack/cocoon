@@ -41,12 +41,10 @@ func TestToVMKeepsTheVMMPID(t *testing.T) {
 		_ = vmm.Process.Kill()
 		_ = vmm.Wait()
 	})
-	deadline := time.Now().Add(2 * time.Second)
-	for !utils.VerifyProcessCmdline(vmm.Process.Pid, sock) {
-		if time.Now().After(deadline) {
-			t.Fatal("fake VMM did not exec in time")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := utils.WaitFor(t.Context(), 2*time.Second, 10*time.Millisecond, func() (bool, error) {
+		return utils.VerifyProcessCmdline(vmm.Process.Pid, sock), nil
+	}); err != nil {
+		t.Fatalf("fake VMM did not exec in time: %v", err)
 	}
 	writeRunFile(t, b.PIDFilePath(rec.RunDir), strconv.Itoa(vmm.Process.Pid))
 
