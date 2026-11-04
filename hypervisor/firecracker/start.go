@@ -37,7 +37,12 @@ func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.Proc
 			return fc.configureVM(ctx, utils.NewSocketHTTPClient(sockPath), rec)
 		},
 		ConvergeRunning: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
-			return convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID)
+			hc := utils.NewSocketHTTPClient(sockPath)
+			err := convergeOrphanedPause(ctx, hc, rec.ID)
+			if errors.Is(err, hypervisor.ErrNotRunning) {
+				return fc.configureVM(ctx, hc, rec)
+			}
+			return err
 		},
 	})
 }
