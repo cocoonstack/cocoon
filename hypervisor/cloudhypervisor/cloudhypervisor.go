@@ -8,7 +8,6 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
-	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
@@ -19,14 +18,12 @@ const typ = "cloud-hypervisor"
 
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
-	_ hypervisor.Direct     = (*CloudHypervisor)(nil)
 	_ disk.Attacher         = (*CloudHypervisor)(nil)
-	_ disk.Lister           = (*CloudHypervisor)(nil)
+	_ disk.SnapshotAttacher = (*CloudHypervisor)(nil)
 	_ fs.Attacher           = (*CloudHypervisor)(nil)
 	_ fs.Lister             = (*CloudHypervisor)(nil)
 	_ vfio.Attacher         = (*CloudHypervisor)(nil)
 	_ vfio.Lister           = (*CloudHypervisor)(nil)
-	_ netresize.Resizer     = (*CloudHypervisor)(nil)
 )
 
 type CloudHypervisor struct {

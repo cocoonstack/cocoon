@@ -49,7 +49,9 @@ def upgrade_sqlite(db_path):
         for vm_id, data in db.execute(f'SELECT id, data FROM "{ns}__records"').fetchall():
             cpus = placement(json.loads(data))
             if cpus:
-                db.execute(f"INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)", (vm_id, json.dumps(cpus).encode()))
+                db.execute(
+                    f"INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)", (vm_id, json.dumps(cpus).encode())
+                )
                 rows += 1
         print(f"{ns}: {rows} placement rows")
     db.execute(f"PRAGMA user_version = {USER_VERSION}")

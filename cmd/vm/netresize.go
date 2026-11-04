@@ -34,7 +34,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	target, _ := cmd.Flags().GetInt("nics")
 	res, err := resizer.NetResize(ctx, vm.ID, netresize.Spec{Target: target}, plumbing)
 	if err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	out := netResult{Result: res}
 	if isFirecracker(hyper.Type()) {

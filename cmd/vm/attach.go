@@ -2,7 +2,6 @@ package vm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/projecteru2/core/log"
@@ -26,7 +25,7 @@ func (h Handler) FsAttach(cmd *cobra.Command, args []string) error {
 	qSize, _ := cmd.Flags().GetInt("queue-size")
 	id, err := a.FsAttach(ctx, args[0], fs.Spec{Socket: socket, Tag: tag, NumQueues: numQ, QueueSize: qSize})
 	if err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	return outputOrLog(cmd, map[string]string{"vm": args[0], "tag": tag, "id": id}, func() {
 		log.WithFunc("cmd.vm.fs.attach").Infof(ctx, "attached fs tag=%s id=%s vm=%s", tag, id, args[0])
@@ -40,7 +39,7 @@ func (h Handler) FsDetach(cmd *cobra.Command, args []string) error {
 	}
 	tag, _ := cmd.Flags().GetString("tag")
 	if err := a.FsDetach(ctx, args[0], tag); err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	return outputOrLog(cmd, map[string]string{"vm": args[0], "tag": tag}, func() {
 		log.WithFunc("cmd.vm.fs.detach").Infof(ctx, "detached fs tag=%s vm=%s", tag, args[0])
@@ -56,7 +55,7 @@ func (h Handler) DeviceAttach(cmd *cobra.Command, args []string) error {
 	id, _ := cmd.Flags().GetString("id")
 	deviceID, err := a.DeviceAttach(ctx, args[0], vfio.Spec{PCI: pci, ID: id})
 	if err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	return outputOrLog(cmd, map[string]string{"vm": args[0], "pci": pci, "id": deviceID}, func() {
 		log.WithFunc("cmd.vm.device.attach").Infof(ctx, "attached device pci=%s id=%s vm=%s", pci, deviceID, args[0])
@@ -70,7 +69,7 @@ func (h Handler) DeviceDetach(cmd *cobra.Command, args []string) error {
 	}
 	id, _ := cmd.Flags().GetString("id")
 	if err := a.DeviceDetach(ctx, args[0], id); err != nil {
-		return classifyAttachErr(err)
+		return err
 	}
 	return outputOrLog(cmd, map[string]string{"vm": args[0], "id": id}, func() {
 		log.WithFunc("cmd.vm.device.detach").Infof(ctx, "detached device id=%s vm=%s", id, args[0])
@@ -89,11 +88,4 @@ func (h Handler) resolveAttacher[A any](cmd *cobra.Command, args []string, op st
 		return ctx, conf, hyper, zero, fmt.Errorf("%s: backend %s: %w", op, hyper.Type(), errUnsupported)
 	}
 	return ctx, conf, hyper, a, nil
-}
-
-func classifyAttachErr(err error) error {
-	if errors.Is(err, hypervisor.ErrNotRunning) {
-		return fmt.Errorf("vm is not running: %w", err)
-	}
-	return err
 }

@@ -76,7 +76,7 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 	return nil
 }
 
-func (b *Backend) cloneBase(ctx context.Context, vmID string, spec CloneSpec, populate func(runDir string) error) (_ *types.VM, err error) {
+func (b *Backend) cloneBase(ctx context.Context, vmID string, spec CloneSpec, populate RunDirHook) (_ *types.VM, err error) {
 	runDir, _, cleanup, err := b.reservePlaceholder(ctx, vmID, spec.VMCfg, spec.SnapshotConfig.ImageBlobIDs)
 	if err != nil {
 		return nil, err

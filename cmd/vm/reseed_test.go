@@ -11,9 +11,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon-agent/agent"
+	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestSignalReseed_SkipsWindows(t *testing.T) {
@@ -89,4 +93,55 @@ func TestReseedVM_AgentRejectionNotRetried(t *testing.T) {
 	if n := accepts.Load(); n != 1 {
 		t.Errorf("agent accepted %d times; a live rejection must not be retried (want 1)", n)
 	}
+}
+
+func TestDetachReseedAppendsChildStderrToVMLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "hypervisor.log")
+	if err := os.WriteFile(logPath, []byte("vmm line\n"), 0o600); err != nil {
+		t.Fatalf("seed log: %v", err)
+	}
+	conf := &config.Config{RootDir: t.TempDir()}
+	if !detachReseed(t.Context(), conf, reseedLogHypervisor{path: logPath}, &types.VM{ID: "vm1"}, false) {
+		t.Fatal("detachReseed = false, want the child started")
+	}
+	var got []byte
+	err := utils.WaitFor(t.Context(), 30*time.Second, 10*time.Millisecond, func() (bool, error) {
+		var readErr error
+		got, readErr = os.ReadFile(logPath)
+		return strings.Contains(string(got), "root-dir"), readErr
+	})
+	if err != nil {
+		t.Fatalf("child stderr never reached the log: %v (log: %q)", err, got)
+	}
+	if !strings.HasPrefix(string(got), "vmm line\n") {
+		t.Errorf("log %q lost its existing content", got)
+	}
+}
+
+func TestDetachReseedStartsWithoutAnOpenableLog(t *testing.T) {
+	conf := &config.Config{RootDir: t.TempDir()}
+	tests := []struct {
+		name  string
+		hyper reseedLogHypervisor
+	}{
+		{name: "log path lookup fails", hyper: reseedLogHypervisor{err: errors.New("record gone")}},
+		{name: "log dir missing", hyper: reseedLogHypervisor{path: filepath.Join(t.TempDir(), "missing", "hypervisor.log")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !detachReseed(t.Context(), conf, tt.hyper, &types.VM{ID: "vm1"}, false) {
+				t.Error("detachReseed = false, want the child started")
+			}
+		})
+	}
+}
+
+type reseedLogHypervisor struct {
+	hypervisor.Hypervisor
+	path string
+	err  error
+}
+
+func (h reseedLogHypervisor) LogPath(context.Context, string) (string, error) {
+	return h.path, h.err
 }

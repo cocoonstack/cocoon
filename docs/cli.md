@@ -188,7 +188,7 @@ Applies to `cocoon vm restore`:
 
 CPU, memory, and storage come from the snapshot (the hypervisor
 reconstructs the guest from snapshot state, so the persisted record is
-realigned to match). NIC count must match the target VM — restore reuses
+realigned to match). NIC count and MACs must match the target VM — restore reuses
 its existing network namespace, TAP devices, and IP allocation. `--force`
 only skips snapshot ownership validation; it does not switch the target's
 base image, and an incompatible base image is rejected before the VM stops.
@@ -247,7 +247,7 @@ The dir is read-only across the call, so multiple clones of the same dir (golden
 
 ### Reconcile Stale Create
 
-`cocoon vm reconcile-stale-create VM` reclaims a `creating` placeholder whose owning create or clone died mid-flight, freeing the record and its name. A free VM ops lock is the proof of ownerlessness — create and clone hold it from prereserve through the final record commit — so the verb never races an in-flight operation and needs no age heuristics (contrast `vm rm --force`, which queues behind a live clone and then deletes the freshly created VM). With `--output json` it prints `{"id": "...", "outcome": "..."}`:
+`cocoon vm reconcile-stale-create VM` reclaims a `creating` placeholder whose owning create or clone died mid-flight, freeing the record and its name. A free VM ops lock is the proof of ownerlessness — create and clone hold it from prereserve through the final record commit — so the verb never races an in-flight operation and needs no age heuristics (contrast `vm rm --force`, which queues behind a live clone and then deletes the freshly created VM). With `--output json` it prints `{"id": "...", "outcome": "..."}`, omitting `id` for `not-found`:
 
 | Outcome | Meaning |
 |------|-------------|
@@ -260,7 +260,7 @@ All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orpha
 
 ### Reseed Flags
 
-Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed):
+Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed, which reports to `cocoon vm logs`):
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -275,7 +275,7 @@ Applies to `cocoon vm status`:
 | `--interval`, `-n` | `5`     | Poll interval in seconds (only with `--watch` or `--event`) |
 | `--watch`, `-w`    | `false` | Refresh-loop mode (full-screen redraw each tick); omit for a one-shot snapshot |
 | `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
-| `--format`         |         | Output format: `json` (one-shot and event modes; `--watch` always renders a table) |
+| `--format`, `-o`   | `table` | Output format: `table` or `json` (one-shot and event modes; `--watch` always renders a table) |
 
 `--event` and `--watch` are mutually exclusive; passing both fails with
 `--event and --watch are mutually exclusive`. With neither, `status` prints a

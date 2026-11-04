@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -230,15 +231,78 @@ func TestStatusWatchRefreshesThrottlingWithoutVMChanges(t *testing.T) {
 	}
 }
 
+func TestStatusEventSkipsATickWhoseListFailed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	h := &statusWatchHypervisor{
+		vm:     &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
+		failOn: 2,
+		onList: func(n int) {
+			if n == 3 {
+				cancel()
+			}
+		},
+	}
+	var events []string
+	statusEventDiffLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, twoTicks(), eventEmitter{
+		emit: func(event string, snap vmSnapshot, _ vmOutput) { events = append(events, event+" "+snap.id) },
+	})
+	if h.calls != 3 {
+		t.Fatalf("list calls = %d, want 3", h.calls)
+	}
+	if want := []string{"ADDED vm-1"}; !slices.Equal(events, want) {
+		t.Errorf("events = %v, want %v", events, want)
+	}
+}
+
+func TestStatusWatchSkipsATickWhoseListFailed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	h := &statusWatchHypervisor{
+		vm:     &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
+		failOn: 2,
+		onList: func(n int) {
+			if n == 3 {
+				cancel()
+			}
+		},
+	}
+	out := clitest.CaptureStdout(t, func() {
+		statusRefreshLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, twoTicks(), true, t.TempDir())
+	})
+	if h.calls != 3 {
+		t.Fatalf("list calls = %d, want 3", h.calls)
+	}
+	if strings.Contains(out, "No VMs found.") {
+		t.Errorf("a failed list rendered as an empty one: %q", out)
+	}
+	if got := strings.Count(out, "\033[H\033[2J"); got != 2 {
+		t.Errorf("screen redraws = %d, want 2", got)
+	}
+}
+
 type statusWatchHypervisor struct {
 	hypervisor.Hypervisor
 	vm     *types.VM
 	onList func(int)
+	failOn int
 	calls  int
 }
+
+func (h *statusWatchHypervisor) Type() string { return "fake" }
 
 func (h *statusWatchHypervisor) List(context.Context) ([]*types.VM, error) {
 	h.calls++
 	h.onList(h.calls)
+	if h.calls == h.failOn {
+		return nil, errors.New("database is locked")
+	}
 	return []*types.VM{h.vm}, nil
+}
+
+func twoTicks() <-chan time.Time {
+	tick := make(chan time.Time, 2)
+	tick <- time.Now()
+	tick <- time.Now()
+	return tick
 }

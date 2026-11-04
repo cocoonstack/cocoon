@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"sync"
 )
 
@@ -51,13 +50,6 @@ func TarDirStream(dir string, cleanup func()) io.ReadCloser {
 			err = closeErr
 		}
 		return err
-	})
-}
-
-// TarDirStreamWithRemove streams a directory as tar and removes it after close.
-func TarDirStreamWithRemove(dir string) io.ReadCloser {
-	return TarDirStream(dir, func() {
-		os.RemoveAll(dir) //nolint:errcheck,gosec
 	})
 }
 

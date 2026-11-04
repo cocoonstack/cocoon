@@ -110,7 +110,7 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 			release()
 			return "", types.SnapshotConfig{}, nil, err
 		}
-		return rec.DataDir, rec.SnapshotConfig, release, nil
+		return lf.conf.SnapshotDataDir(rec.ID), rec.SnapshotConfig, release, nil
 	}
 	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
@@ -179,7 +179,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
 	return result, lf.view(ctx, func(t *snapTx) error {
-		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			if rec.Pending {
 				return nil
 			}
@@ -338,15 +338,13 @@ func (lf *LocalFile) beginCreate(ctx context.Context, cfg *types.SnapshotConfig)
 	if err := cfg.Validate(); err != nil {
 		return "", err
 	}
-	dataDir := lf.conf.SnapshotDataDir(cfg.ID)
-	if err := lf.insertRecord(ctx, cfg.ID, cfg.Name, &snapshot.SnapshotRecord{
+	if err := lf.insertRecord(ctx, cfg.ID, cfg.Name, &snapshotRecord{
 		SnapshotConfig: *cfg, CreatedAt: time.Now(),
 		Pending: true,
-		DataDir: dataDir,
 	}); err != nil {
 		return "", err
 	}
-	return dataDir, nil
+	return lf.conf.SnapshotDataDir(cfg.ID), nil
 }
 
 func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConfig, dataDir string) error {
@@ -374,7 +372,7 @@ func (lf *LocalFile) finalizeCreate(ctx context.Context, cfg *types.SnapshotConf
 	return nil
 }
 
-func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *snapshot.SnapshotRecord) error {
+func (lf *LocalFile) insertRecord(ctx context.Context, id, name string, rec *snapshotRecord) error {
 	return lf.update(ctx, func(t *snapTx) error {
 		// Reject an existing ID: a same-ID retry must not adopt (and later roll back) a finalized snapshot.
 		if existing, err := t.Get(id); err != nil {
@@ -414,8 +412,8 @@ func (lf *LocalFile) rollbackCreate(ctx context.Context, id, name string) {
 }
 
 // lookupRecord resolves ref to a non-pending record; touch=true also bumps LastAccessedAt under the same write lock.
-func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (snapshot.SnapshotRecord, error) {
-	var rec snapshot.SnapshotRecord
+func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (snapshotRecord, error) {
+	var rec snapshotRecord
 	apply := func(t *snapTx) error {
 		id, err := t.Resolve(ref, snapshot.ErrNotFound)
 		if err != nil {

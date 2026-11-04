@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -46,27 +47,27 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 			if err := createSnapshotFC(ctx, sockPath, tmpDir); err != nil {
 				return fmt.Errorf("snapshot: %w", err)
 			}
-			cowPath, err := hypervisor.RecordedCOWPath(rec)
-			if err != nil {
-				return err
-			}
-			return hypervisor.CopyWritableDisks(ctx, tmpDir, cowPath, rec.StorageConfigs)
+			return hypervisor.CopyWritableDisks(ctx, tmpDir, rec)
 		},
 		BuildMeta: buildSnapshotMeta,
 	}
 }
 
 // buildSnapshotMeta rewrites kernel path to vmlinuz so clones get the portable artifact instead of the FC-specific vmlinux cache.
-func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*hypervisor.SnapshotMeta, error) {
-	meta := &hypervisor.SnapshotMeta{
+func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*snapshot.SnapshotMeta, error) {
+	macs := make([]string, len(rec.NetworkConfigs))
+	for i, nc := range rec.NetworkConfigs {
+		macs[i] = nc.MAC
+	}
+	meta := &snapshot.SnapshotMeta{
 		StorageConfigs: hypervisor.CloneStorageConfigs(rec.StorageConfigs),
+		NICMACs:        macs,
 	}
 	if rec.BootConfig != nil {
 		b := *rec.BootConfig
 		if filepath.Base(b.KernelPath) == "vmlinux" {
 			b.KernelPath = filepath.Join(filepath.Dir(b.KernelPath), "vmlinuz")
 		}
-		b.Cmdline = "" // cmdline is rebuilt on clone with new VM name/IP
 		meta.BootConfig = &b
 	}
 	return meta, nil

@@ -95,7 +95,7 @@ func InitAllHypervisors(ctx context.Context, conf *config.Config) ([]hypervisor.
 	return result, nil
 }
 
-func InitNetwork(conf *config.Config) (network.Network, error) {
+func InitNetwork(conf *config.Config) (*cni.CNI, error) {
 	store, err := MetaStore(conf)
 	if err != nil {
 		return nil, err
@@ -210,9 +210,7 @@ func blobPinners(ctx context.Context, conf *config.Config) ([]blobPinner, error)
 	}
 	sources := make([]blobPinner, 0, len(hypers)+1)
 	for _, h := range hypers {
-		if p, ok := h.(blobPinner); ok {
-			sources = append(sources, p)
-		}
+		sources = append(sources, h)
 	}
 	if p, ok := snapBackend.(blobPinner); ok {
 		sources = append(sources, p)

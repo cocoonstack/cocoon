@@ -1,4 +1,4 @@
-package utils
+package cloudimg
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// SplitRanges divides [0,size) into up to n contiguous, inclusive-ended byte ranges.
-func SplitRanges(size int64, n int) [][2]int64 {
+// splitRanges divides [0,size) into up to n contiguous, inclusive-ended byte ranges.
+func splitRanges(size int64, n int) [][2]int64 {
 	n = max(n, 1)
 	chunk := (size + int64(n) - 1) / int64(n)
 	ranges := make([][2]int64, 0, n)
@@ -18,8 +18,8 @@ func SplitRanges(size int64, n int) [][2]int64 {
 	return ranges
 }
 
-// CopyRangeBody validates resp against the requested bytes=start-end range (status, span, length) and copies it into w — a mismatch would otherwise surface only at the later digest pass.
-func CopyRangeBody(resp *http.Response, w io.Writer, start, end int64) error {
+// copyRangeBody validates resp against the requested bytes=start-end range (status, span, length) and copies it into w — a mismatch would otherwise surface only at the later digest pass.
+func copyRangeBody(resp *http.Response, w io.Writer, start, end int64) error {
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("range %d-%d: unexpected status %s", start, end, resp.Status)
 	}

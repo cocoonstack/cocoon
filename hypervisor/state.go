@@ -45,24 +45,10 @@ func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, err
 	return true, err
 }
 
-// WithPausedVM pauses, runs fn and resumes on the way out; a resume failure joins fn's error.
-func (b *Backend) WithPausedVM(ctx context.Context, rec *VMRecord, pause, resume, fn func() error) error {
-	return b.WithRunningVM(ctx, rec, func(_ int) (err error) {
-		if err = pause(); err != nil {
-			return fmt.Errorf("pause: %w", err)
-		}
-		defer func() { err = errors.Join(err, resume()) }()
-		return fn()
-	})
-}
-
-// UpdateStates flips ids to Stopped or Error and emits compute.stop on Running→Stopped; an Error path leaves the interval open for a confirmed-dead helper.
-func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VMState) error {
-	if len(ids) == 0 {
-		return nil
-	}
+// UpdateState flips id to Stopped or Error and emits compute.stop on Running→Stopped; an Error path leaves the interval open for a confirmed-dead helper.
+func (b *Backend) UpdateState(ctx context.Context, id string, state types.VMState) error {
 	now := timeNow()
-	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
 		if state != types.VMStateStopped {
 			markTransition(r, state, types.TransitionError, now)
 			return nil
@@ -83,7 +69,7 @@ func (b *Backend) UpdateStates(ctx context.Context, ids []string, state types.VM
 }
 
 func (b *Backend) MarkError(ctx context.Context, id string) {
-	if err := b.UpdateStates(ctx, []string{id}, types.VMStateError); err != nil {
+	if err := b.UpdateState(ctx, id, types.VMStateError); err != nil {
 		log.WithFunc(b.Typ+".MarkError").Errorf(ctx, err, "mark VM %s error", id)
 	}
 }
@@ -106,13 +92,10 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 	}
 }
 
-// BatchMarkStarted flips ids to VMStateRunning; entrants with an open compute interval are stale-running (close stop-crash, then open fresh).
-func (b *Backend) BatchMarkStarted(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
+// MarkStarted flips id to VMStateRunning; a VM with an open compute interval is stale-running (close stop-crash, then open fresh).
+func (b *Backend) MarkStarted(ctx context.Context, id string) error {
 	now := timeNow()
-	return b.batchUpdateVMs(ctx, ids, func(r *VMRecord, id string) []metering.Entry {
+	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
 		shape := shapeFromConfig(r.Config)
 		emitReason, transition := bootReasons(r.FirstBooted)
 		var staged []metering.Entry
@@ -204,24 +187,16 @@ func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) 
 }
 
 // Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit (meta contract clause 1).
-func (b *Backend) batchUpdateVMs(ctx context.Context, ids []string, mutate func(r *VMRecord, id string) []metering.Entry) error {
+func (b *Backend) updateVM(ctx context.Context, id string, mutate func(r *VMRecord) []metering.Entry) error {
 	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {
 		emits = nil
-		for _, id := range ids {
-			r, err := t.Get(id)
-			if err != nil {
-				return err
-			}
-			if r == nil {
-				continue
-			}
-			emits = append(emits, mutate(r, id)...)
-			if err := t.Put(id, r); err != nil {
-				return err
-			}
+		r, err := t.Get(id)
+		if err != nil || r == nil {
+			return err
 		}
-		return nil
+		emits = mutate(r)
+		return t.Put(id, r)
 	}); err != nil {
 		return err
 	}
@@ -274,7 +249,7 @@ func markTransition(r *VMRecord, state types.VMState, reason types.TransitionRea
 
 // needsQuiesce reports whether the VM owns host plumbing a stop must bring down.
 func needsQuiesce(r *VMRecord) bool {
-	return r != nil && r.ResolvedNetBackend() != "" && len(r.NetworkConfigs) > 0
+	return r != nil && len(r.NetworkConfigs) > 0
 }
 
 func bootReasons(firstBooted bool) (metering.Reason, types.TransitionReason) {

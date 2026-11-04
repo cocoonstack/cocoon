@@ -19,13 +19,13 @@ import (
 func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  chVMInfoConfig
+		config  chVMConfig
 		wantErr bool
 	}{
-		{"vhost-user-fs", chVMInfoConfig{Fs: []chFs{{ID: "cocoon-fs-data", Tag: "data"}}}, true},
-		{"vfio device", chVMInfoConfig{Devices: []chDevice{{ID: "gpu", Path: "/sys/bus/pci/devices/0000:01:00.0"}}}, true},
-		{"hot-attached disk", chVMInfoConfig{Disks: []chDisk{{ID: "cocoon-disk-vol1", Path: "/vols/a.raw"}}}, true},
-		{"only recorded disks", chVMInfoConfig{Disks: []chDisk{{ID: "_disk0", Path: "/run/vm/cow.raw"}}}, false},
+		{"vhost-user-fs", chVMConfig{Fs: []chFs{{ID: "cocoon-fs-data", Tag: "data"}}}, true},
+		{"vfio device", chVMConfig{Devices: []chDevice{{ID: "gpu", Path: "/sys/bus/pci/devices/0000:01:00.0"}}}, true},
+		{"hot-attached disk", chVMConfig{Disks: []chDisk{{ID: "cocoon-disk-vol1", Path: "/vols/a.raw"}}}, true},
+		{"only recorded disks", chVMConfig{Disks: []chDisk{{ID: "_disk0", Path: "/run/vm/cow.raw"}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 					_ = json.MarshalWrite(w, chVMInfoResponse{
 						State:            tt.state,
-						Config:           chVMInfoConfig{Memory: chMemory{Size: mem}, Balloon: tt.balloon},
+						Config:           chVMConfig{Memory: chMemory{Size: mem}, Balloon: tt.balloon},
 						MemoryActualSize: tt.actual(polls),
 					})
 					polls++

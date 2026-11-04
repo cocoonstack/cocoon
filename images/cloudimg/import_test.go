@@ -3,8 +3,10 @@ package cloudimg
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/images"
@@ -131,6 +133,36 @@ func TestCommitRepublishesABlobCollectedAfterTheEntryCheck(t *testing.T) {
 	}
 	if img, err := c.Inspect(ctx, "pulled"); err != nil || img.ID != images.NewDigest(digest).String() {
 		t.Fatalf("published image=%+v err=%v", img, err)
+	}
+}
+
+func TestImportRefusesABackingFile(t *testing.T) {
+	for _, version := range []uint32{2, 3} {
+		t.Run(fmt.Sprintf("qcow2 v%d", version), func(t *testing.T) {
+			c := newImportTestBackend(t)
+			backingPath := []byte("/etc/shadow")
+			payload := make([]byte, 512)
+			copy(payload, utils.Qcow2Magic)
+			binary.BigEndian.PutUint32(payload[4:8], version)
+			binary.BigEndian.PutUint64(payload[8:16], 72)
+			binary.BigEndian.PutUint32(payload[16:20], uint32(len(backingPath)))
+			copy(payload[72:], backingPath)
+			source := filepath.Join(t.TempDir(), "evil.qcow2")
+			if err := os.WriteFile(source, payload, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			err := c.Import(t.Context(), "evil", progress.Nop, source)
+			if err == nil || !strings.Contains(err.Error(), "backing file") {
+				t.Fatalf("import err = %v, want a backing file refusal", err)
+			}
+			if utils.ValidFile(c.conf.BlobPath(sha256Hex(payload))) {
+				t.Error("refused image reached the blob store")
+			}
+			if img, err := c.Inspect(t.Context(), "evil"); err != nil || img != nil {
+				t.Errorf("refused image indexed: img=%+v err=%v", img, err)
+			}
+		})
 	}
 }
 

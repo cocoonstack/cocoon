@@ -81,12 +81,10 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
 	}
 	apply := func(rec *VMRecord) error {
-		if spec.BeforeMerge != nil {
-			if err := spec.BeforeMerge(rec); err != nil {
-				// The sweep may already have deleted snapshot files; a stopped origin would otherwise stay startable on mixed state.
-				b.QuarantineVM(ctx, vmID, "partial restore cleanup")
-				return err
-			}
+		if err := spec.Clean(rec.RunDir); err != nil {
+			// The sweep may already have deleted snapshot files; a stopped origin would otherwise stay startable on mixed state.
+			b.QuarantineVM(ctx, vmID, "partial restore cleanup")
+			return err
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
 			// A partial merge leaves mixed-vintage files in the run dir; quarantine regardless of origin so vm start cannot boot them.

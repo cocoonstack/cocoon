@@ -19,29 +19,11 @@ func (ch *CloudHypervisor) Create(ctx context.Context, id string, vmCfg *types.V
 		BootConfig:     bootCfg,
 		Prepare: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, sc []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error) {
 			if hypervisor.IsDirectBoot(boot) {
-				return ch.prepareOCI(ctx, vmID, vmCfg, sc, net.NetworkConfigs, boot)
+				return ch.PrepareOCIDisks(ctx, vmID, vmCfg, sc)
 			}
 			return ch.prepareCloudimg(ctx, vmID, vmCfg, sc, net.NetworkConfigs)
 		},
 	})
-}
-
-func (ch *CloudHypervisor) prepareOCI(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, boot *types.BootConfig) ([]*types.StorageConfig, error) {
-	storageConfigs, err := hypervisor.PrepareOCICOW(ctx, ch.conf.COWRawPath(vmID), vmCfg.Storage, storageConfigs)
-	if err != nil {
-		return nil, err
-	}
-	dataDisks, err := hypervisor.PrepareDataDisks(ctx, ch.conf.VMRunDir(vmID), vmCfg.DataDisks)
-	if err != nil {
-		return nil, err
-	}
-	storageConfigs = append(storageConfigs, dataDisks...)
-	dns, err := ch.conf.DNSServers()
-	if err != nil {
-		return nil, fmt.Errorf("parse DNS servers: %w", err)
-	}
-	boot.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
-	return storageConfigs, nil
 }
 
 func (ch *CloudHypervisor) prepareCloudimg(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig) ([]*types.StorageConfig, error) {

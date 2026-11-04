@@ -1,7 +1,9 @@
 package cloudhypervisor
 
 import (
+	"encoding/binary"
 	"encoding/json/v2"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
@@ -267,49 +270,48 @@ func TestUpdateCOWPath_NoCOW(t *testing.T) {
 	}
 }
 
-func TestRebuildBootConfig(t *testing.T) {
-	t.Run("nil_payload", func(t *testing.T) {
-		cfg := &chVMConfig{}
-		if boot := rebuildBootConfig(cfg); boot != nil {
-			t.Errorf("expected nil, got %+v", boot)
-		}
-	})
+func TestCloneBlobIDsDirectBoot(t *testing.T) {
+	configs := []*types.StorageConfig{
+		{Path: "/blobs/layer0.erofs", Role: types.StorageRoleLayer},
+		{Path: "/blobs/layer1.erofs", Role: types.StorageRoleLayer},
+		{Path: "/run/vm/cow.raw", Role: types.StorageRoleCOW},
+	}
+	boot := &types.BootConfig{KernelPath: "/boot/layer1/vmlinuz", InitrdPath: "/boot/layer0/initrd.img"}
+	got, err := cloneBlobIDs(configs, boot, "/run/vm/cow.raw")
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	want := map[string]struct{}{"layer0": {}, "layer1": {}}
+	if !maps.Equal(got, want) {
+		t.Fatalf("blob IDs = %v, want %v", got, want)
+	}
+}
 
-	t.Run("firmware", func(t *testing.T) {
-		cfg := &chVMConfig{Payload: &chPayload{Firmware: "/OVMF.fd"}}
-		boot := rebuildBootConfig(cfg)
-		if boot == nil {
-			t.Fatal("expected non-nil")
-		}
-		if boot.FirmwarePath != "/OVMF.fd" {
-			t.Errorf("FirmwarePath: %q", boot.FirmwarePath)
-		}
-	})
+func TestCloneBlobIDsCloudimgPinsTheBackingBlob(t *testing.T) {
+	overlay := filepath.Join(t.TempDir(), "overlay.qcow2")
+	writeQcow2(t, overlay, "/blobs/basehex.qcow2")
+	configs := []*types.StorageConfig{{Path: overlay, Role: types.StorageRoleCOW}}
+	boot := &types.BootConfig{FirmwarePath: "/firmware/CLOUDHV.fd"}
+	got, err := cloneBlobIDs(configs, boot, overlay)
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	want := map[string]struct{}{"basehex": {}}
+	if !maps.Equal(got, want) {
+		t.Fatalf("blob IDs = %v, want the backing blob %v and not the overlay", got, want)
+	}
+}
 
-	t.Run("firmware_kernel", func(t *testing.T) {
-		path := writeCHConfig(t, t.TempDir(), map[string]any{"payload": map[string]any{
-			"firmware":      "/fw/CLOUDHV.fd",
-			"kernel":        "/boot/Image",
-			"initramfs":     "/boot/initrd.img",
-			"cmdline":       "console=hvc0",
-			"fw_cfg_config": map[string]any{"e820": true, "kernel": true, "cmdline": true, "initramfs": true, "acpi_tables": true},
-		}})
-		cfg, err := parseCHConfig(path)
-		if err != nil {
-			t.Fatalf("parseCHConfig: %v", err)
-		}
-		want := types.BootConfig{KernelPath: "/boot/Image", InitrdPath: "/boot/initrd.img", Cmdline: "console=hvc0", FirmwarePath: "/fw/CLOUDHV.fd"}
-		if boot := rebuildBootConfig(cfg); boot == nil || *boot != want {
-			t.Errorf("got %+v, want %+v", boot, want)
-		}
-	})
-
-	t.Run("empty_payload", func(t *testing.T) {
-		cfg := &chVMConfig{Payload: &chPayload{}}
-		if boot := rebuildBootConfig(cfg); boot != nil {
-			t.Errorf("expected nil for empty payload, got %+v", boot)
-		}
-	})
+func TestCloneBlobIDsCloudimgWithoutBackingKeepsTheReservation(t *testing.T) {
+	overlay := filepath.Join(t.TempDir(), "overlay.qcow2")
+	writeQcow2(t, overlay, "")
+	got, err := cloneBlobIDs(nil, &types.BootConfig{FirmwarePath: "/firmware/CLOUDHV.fd"}, overlay)
+	if err != nil {
+		t.Fatalf("cloneBlobIDs: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("blob IDs = %v, want nil so FinalizeClone keeps the reserved set", got)
+	}
 }
 
 func TestRestorePatchStorageConfigs(t *testing.T) {
@@ -529,3 +531,17 @@ type tmpScopeConf struct {
 }
 
 func (c tmpScopeConf) CgroupParentDir() string { return c.parent }
+
+func writeQcow2(t *testing.T, path, backing string) {
+	t.Helper()
+	hdr := make([]byte, 64)
+	copy(hdr, utils.Qcow2Magic)
+	binary.BigEndian.PutUint32(hdr[4:8], 3)
+	if backing != "" {
+		binary.BigEndian.PutUint64(hdr[8:16], uint64(len(hdr)))
+		binary.BigEndian.PutUint32(hdr[16:20], uint32(len(backing)))
+	}
+	if err := os.WriteFile(path, append(hdr, backing...), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}

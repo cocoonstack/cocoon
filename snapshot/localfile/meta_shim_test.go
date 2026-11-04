@@ -9,7 +9,6 @@ import (
 	"time"
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
-	"github.com/cocoonstack/cocoon/snapshot"
 )
 
 func TestLegacyDifferentialTrace(t *testing.T) {
@@ -81,13 +80,13 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 }
 
 type snapshotIndex struct {
-	Snapshots map[string]*snapshot.SnapshotRecord `json:"snapshots"`
-	Names     map[string]string                   `json:"names"`
+	Snapshots map[string]*snapshotRecord `json:"snapshots"`
+	Names     map[string]string          `json:"names"`
 }
 
 func (idx *snapshotIndex) Init() {
 	if idx.Snapshots == nil {
-		idx.Snapshots = map[string]*snapshot.SnapshotRecord{}
+		idx.Snapshots = map[string]*snapshotRecord{}
 	}
 	if idx.Names == nil {
 		idx.Names = map[string]string{}

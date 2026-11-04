@@ -21,19 +21,9 @@ func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.V
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
-		BeforeMerge: func(rec *hypervisor.VMRecord) error {
-			return cleanSnapshotFiles(rec.RunDir)
-		},
-		AfterExtract: fc.restoreAfterExtractCOW,
+		Clean:            cleanSnapshotFiles,
+		AfterExtract:     fc.restoreAfterExtract,
 	})
-}
-
-func (fc *Firecracker) restoreAfterExtractCOW(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-	cowPath, err := hypervisor.RecordedCOWPath(rec)
-	if err != nil {
-		return nil, err
-	}
-	return fc.restoreAfterExtract(ctx, vmID, vmCfg, rec, cowPath)
 }
 
 func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
@@ -46,9 +36,13 @@ func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecor
 	return fc.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
-func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, cowPath string) (_ *types.VM, err error) {
+func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (_ *types.VM, err error) {
 	logger := log.WithFunc("firecracker.restoreAfterExtract")
 
+	cowPath, err := hypervisor.RecordedCOWPath(rec)
+	if err != nil {
+		return nil, err
+	}
 	snapshotCOW := filepath.Join(rec.RunDir, types.COWRawFileName)
 	if snapshotCOW != cowPath && utils.FileExists(snapshotCOW) {
 		if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {

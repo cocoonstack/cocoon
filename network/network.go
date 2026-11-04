@@ -3,13 +3,9 @@ package network
 
 import (
 	"context"
-	"errors"
 
-	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/types"
 )
-
-var ErrNotConfigured = errors.New("network provider not configured")
 
 type VMInUse func(context.Context, string) (bool, error)
 
@@ -27,11 +23,10 @@ type Network interface {
 	Prepare(ctx context.Context, vmID string, vmCfg *types.VMConfig) (string, error)
 	// Add attaches NICs; the CNI backend also writes the resolved conflist name into vmCfg.Network.
 	Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs ...AddSpec) ([]*types.NetworkConfig, error)
-	Remove(ctx context.Context, vmID string, indices ...int) error
+	Remove(ctx context.Context, vmID string, index int) error
 	Quiesce(ctx context.Context, vmID string) error
 	Unquiesce(ctx context.Context, vmID string) error
 	Delete(ctx context.Context, vmID string) error
-	RegisterGC(*gc.Orchestrator, VMInUse)
 }
 
 // AddRange builds AddSpecs for a contiguous block of fresh NIC indices.

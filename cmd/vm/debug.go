@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
@@ -29,20 +28,8 @@ type chDebugSpec struct {
 func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
-	if fc, _ := cmd.Flags().GetBool("fc"); fc {
-		conf.UseFirecracker = true
-	}
-
-	backends, err := cmdcore.InitImageBackends(ctx, conf)
+	_, vmCfg, storageConfigs, boot, err := resolveCreateImage(ctx, cmd, conf, args[0])
 	if err != nil {
-		return err
-	}
-
-	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, args[0])
-	if err != nil {
-		return err
-	}
-	if err = validateBackendFlags(conf, vmCfg); err != nil {
 		return err
 	}
 	if len(vmCfg.DataDisks) > 0 {
@@ -52,17 +39,6 @@ func (h Handler) Debug(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "warning: %s ignored in debug mode (debug only prints the hypervisor launch command; NICs need a prepared netns and TAP, cgroup knobs are applied by cocoon at launch)\n", strings.Join(set, "/"))
 	}
 	fmt.Fprintln(os.Stderr, "note: the printed command omits the agent vsock, cocoon's max-vcpu and console wiring, and any cidata disk; vm exec and cloud-init do not reach a VM launched from it")
-
-	_, storageConfigs, boot, err := cmdcore.ResolveImage(ctx, backends, vmCfg)
-	if err != nil {
-		return err
-	}
-	if err = validateBootCompat(conf, vmCfg, boot); err != nil {
-		return err
-	}
-	if err = cmdcore.EnsureFirmwarePath(conf, boot); err != nil {
-		return err
-	}
 
 	if conf.UseFirecracker {
 		if set := changedFlags(cmd, "max-cpu", "balloon", "cow", "ch"); len(set) > 0 {

@@ -136,23 +136,33 @@ func metaEvents(ctx context.Context, conf *config.Config) <-chan struct{} {
 	return ch
 }
 
-func runLoop(ctx context.Context, watchCh <-chan struct{}, tick <-chan time.Time, fn func()) {
-	fn()
+// runLoop warns on backend errors so polling ticks don't break; one-shot callers use cmdcore.ListAllVMs directly.
+func runLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, fn func([]*types.VM)) {
+	poll := func() {
+		vms, err := cmdcore.ListAllVMs(ctx, hypers)
+		if err != nil {
+			log.WithFunc("cmd.vm.runLoop").Warnf(ctx, "list: %v", err)
+			return
+		}
+		vms = applyFilters(vms, filters)
+		sortVMs(vms)
+		fn(vms)
+	}
+	poll()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-watchCh:
-			fn()
+			poll()
 		case <-tick:
-			fn()
+			poll()
 		}
 	}
 }
 
 func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time, isTTY bool, scopeDir string) {
-	runLoop(ctx, watchCh, tick, func() {
-		vms := listAndFilter(ctx, hypers, filters)
+	runLoop(ctx, hypers, filters, watchCh, tick, func(vms []*types.VM) {
 		stale := reconcileVMStates(vms)
 		if isTTY {
 			fmt.Print("\033[H\033[2J")
@@ -189,8 +199,7 @@ func statusEventDiffLoop(ctx context.Context, hypers []hypervisor.Hypervisor, fi
 		vm   vmOutput
 	}
 	prev := map[string]entry{}
-	runLoop(ctx, watchCh, tick, func() {
-		vms := listAndFilter(ctx, hypers, filters)
+	runLoop(ctx, hypers, filters, watchCh, tick, func(vms []*types.VM) {
 		curr := make(map[string]entry, len(vms))
 		for _, vm := range vms {
 			state, isStale := cmdcore.ReconcileState(vm)
@@ -243,18 +252,6 @@ func printEventRow(w *tabwriter.Writer, event string, snap vmSnapshot) {
 		event, snap.id, snap.name, snap.state,
 		snap.cpu, cliutil.FormatSize(snap.memory),
 		snap.ip, snap.image)
-}
-
-// listAndFilter warns on backend errors so polling ticks don't break; one-shot callers use cmdcore.ListAllVMs directly.
-func listAndFilter(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string) []*types.VM {
-	vms, err := cmdcore.ListAllVMs(ctx, hypers)
-	if err != nil {
-		log.WithFunc("cmd.vm.listAndFilter").Warnf(ctx, "list: %v", err)
-		return nil
-	}
-	vms = applyFilters(vms, filters)
-	sortVMs(vms)
-	return vms
 }
 
 func applyFilters(vms []*types.VM, filters []string) []*types.VM {

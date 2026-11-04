@@ -15,7 +15,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/lock/flock"
-	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -35,7 +34,6 @@ func (p EvictionPolicy) hasCriteria() bool {
 }
 
 type snapshotMeta struct {
-	dataDir      string
 	name         string
 	lastAccessed time.Time
 	sizeBytes    int64
@@ -59,7 +57,7 @@ func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs
 func (lf *LocalFile) PinnedBlobIDs(ctx context.Context) (map[string]struct{}, error) {
 	pins := map[string]struct{}{}
 	if err := lf.view(ctx, func(t *snapTx) error {
-		return t.Scan(func(_ string, rec *snapshot.SnapshotRecord) error {
+		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			maps.Copy(pins, rec.ImageBlobIDs)
 			return nil
 		})
@@ -99,7 +97,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
-				return t.Scan(func(id string, rec *snapshot.SnapshotRecord) error {
+				return t.Scan(func(id string, rec *snapshotRecord) error {
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
 					if rec.Pending {
@@ -108,7 +106,6 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 					}
 					snap.records[id] = snapshotMeta{
 						name:         rec.Name,
-						dataDir:      cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)),
 						lastAccessed: cmp.Or(rec.LastAccessedAt, rec.CreatedAt),
 						sizeBytes:    rec.SizeBytes,
 					}
@@ -118,8 +115,8 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				return snap, err
 			}
 			// the stats run after the read transaction closes: a large store would otherwise pin WAL frames for the whole walk
-			for id, m := range snap.records {
-				if _, statErr := os.Stat(m.dataDir); errors.Is(statErr, fs.ErrNotExist) {
+			for id := range snap.records {
+				if _, statErr := os.Stat(conf.SnapshotDataDir(id)); errors.Is(statErr, fs.ErrNotExist) {
 					snap.missingDir = append(snap.missingDir, id)
 				}
 			}
@@ -178,13 +175,13 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				}
 				// the reason picked at ReadDB must still hold, or a create in the window evicts the wrong snapshot
 				var sawRecord bool
-				revalidate := func(rec *snapshot.SnapshotRecord) bool {
+				revalidate := func(rec *snapshotRecord) bool {
 					sawRecord = true
 					switch snap.reasons[id] {
 					case "stale-pending":
 						return rec.Pending
 					case "missing-dir":
-						_, statErr := os.Stat(cmp.Or(rec.DataDir, conf.SnapshotDataDir(id)))
+						_, statErr := os.Stat(conf.SnapshotDataDir(id))
 						return errors.Is(statErr, fs.ErrNotExist)
 					case reasonOrphan:
 						return false // a record appeared for a dir orphaned at ReadDB

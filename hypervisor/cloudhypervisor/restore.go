@@ -7,38 +7,36 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strings"
 
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader, sourceSnapshotID string) (*types.VM, error) {
+func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, stream io.Reader, sourceSnapshotID string) (*types.VM, error) {
 	// Preflight's validated meta feeds AfterExtract: cocoon.json is merged verbatim, so re-reading it would decode identical bytes.
-	var meta *hypervisor.SnapshotMeta
+	var meta *snapshot.SnapshotMeta
 	return ch.RestoreSequence(ctx, vmRef, hypervisor.RestoreSpec{
 		VMCfg:            vmCfg,
-		Snapshot:         snapshot,
+		Snapshot:         stream,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
 			var err error
 			meta, err = ch.preflightRestore(ctx, srcDir, rec, vmCfg)
 			return err
 		},
-		Kill: ch.killForRestore,
-		BeforeMerge: func(rec *hypervisor.VMRecord) error {
-			return cleanSnapshotFiles(rec.RunDir)
-		},
+		Kill:  ch.killForRestore,
+		Clean: cleanSnapshotFiles,
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, meta)
 		},
 	})
 }
 
-func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) (*hypervisor.SnapshotMeta, error) {
+func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) (*snapshot.SnapshotMeta, error) {
 	chCfg, err := parseCHConfig(filepath.Join(srcDir, configJSONName))
 	if err != nil {
 		return nil, fmt.Errorf("parse snapshot config: %w", err)
@@ -63,7 +61,7 @@ func (ch *CloudHypervisor) terminateVMM(ctx context.Context, rec *hypervisor.VMR
 	return ch.forceTerminate(ctx, hc, rec.ID, hypervisor.SocketPath(rec.RunDir), pid)
 }
 
-func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, meta *hypervisor.SnapshotMeta) (_ *types.VM, err error) {
+func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, meta *snapshot.SnapshotMeta) (_ *types.VM, err error) {
 	logger := log.WithFunc("cloudhypervisor.restoreAfterExtract")
 	directBoot := hypervisor.IsDirectBoot(rec.BootConfig)
 
@@ -138,10 +136,9 @@ func validateRestoreNICs(chCfg *chVMConfig, rec *hypervisor.VMRecord) error {
 	if len(chCfg.Nets) != len(rec.NetworkConfigs) {
 		return fmt.Errorf("snapshot has %d NICs, vm has %d; NIC identity must match for restore", len(chCfg.Nets), len(rec.NetworkConfigs))
 	}
+	macs := make([]string, len(chCfg.Nets))
 	for i, n := range chCfg.Nets {
-		if !strings.EqualFold(n.MAC, rec.NetworkConfigs[i].MAC) {
-			return fmt.Errorf("nic %d MAC drifted since snapshot (%s -> %s, net resize?); recreate via clone instead", i, n.MAC, rec.NetworkConfigs[i].MAC)
-		}
+		macs[i] = n.MAC
 	}
-	return nil
+	return hypervisor.ValidateRestoreMACs(macs, rec)
 }

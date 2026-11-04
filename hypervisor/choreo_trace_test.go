@@ -93,8 +93,8 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		r.Config.Storage = 20 << 30
 		return nil
 	}))
-	recordLoad("mark-started", "VM1", b.BatchMarkStarted(ctx, []string{"VM1"}))
-	recordLoad("update-stopped", "VM1", b.UpdateStates(ctx, []string{"VM1"}, types.VMStateStopped))
+	recordLoad("mark-started", "VM1", b.MarkStarted(ctx, "VM1"))
+	recordLoad("update-stopped", "VM1", b.UpdateState(ctx, "VM1", types.VMStateStopped))
 	cfgBeta := &types.VMConfig{Name: "beta", CPU: 1}
 	record("reserve-vm3", "", b.ReserveVM(ctx, "VM3", cfgBeta, nil, "/r/VM3", "/l/VM3"))
 	b.RollbackCreate(ctx, "VM3", "beta")

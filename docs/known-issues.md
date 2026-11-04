@@ -60,7 +60,7 @@ Race window: `cocoon vm run X && cocoon vm exec X -- cmd` may fail with `read CO
 
 ## Cloud image UEFI boot compatibility
 
-On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions. aarch64 hosts boot through EDK2 (`CLOUDHV_EFI.fd`, installed by `cocoon-check --upgrade`), which is not affected.
+On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hypervisor/rust-hypervisor-firmware) (`CLOUDHV.fd`) for cloud image UEFI boot. This firmware implements a minimal EFI specification and does **not** support the `InstallMultipleProtocolInterfaces()` call required by newer distributions. aarch64 hosts boot through EDK2 (the `CLOUDHV_EFI.fd` release asset, which `cocoon-check --upgrade` installs as `CLOUDHV.fd`), which is not affected.
 
 **Affected images** (kernel panic on boot — GRUB loads kernel but not initrd):
 
@@ -252,11 +252,11 @@ Cloud Hypervisor captures a snapshot of a VM that holds a vhost-user-fs share or
 
 ## A killed capture leaves the guest paused
 
-`snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process gets SIGKILL or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs.
+`snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process dies or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs. SIGKILL does this. SIGPIPE does too: when the process that reads cocoon's stderr exits, cocoon dies on its next log line, and for a hibernate that line comes after the snapshot persists and before the VMM stops.
 
 `cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it.
 
-A killed capture also leaves its files. A `snapshot-*` directory under the VM's run dir stays until `vm rm` or a `gc` 24 hours later. A hibernate killed while it persists leaves a hidden pending snapshot that keeps its `--name` taken until the next `gc`.
+A killed capture also leaves its files. A `snapshot-*` directory under the VM's run dir stays until `vm rm` or a `gc` 24 hours later. A hibernate killed while it persists leaves a hidden pending snapshot that keeps its `--name` taken until the next `gc`. A hibernate killed after it persists leaves a listed snapshot that keeps its `--name` until `snapshot rm`.
 
 ## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 
@@ -299,7 +299,7 @@ If the host plumbing teardown itself fails after a successful eject, cocoon trun
 
 Quiesce the guest NIC (ip link set down + NetworkManager remove on Linux; Disable-PnpDevice + driver unbind on Windows) before reducing the count.
 
-Firecracker VMs created with `--pci` resize through the same command; the guest receives no eject notification, so cocoon prints the rescan/remove steps instead of waiting (see [networking](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci)). MMIO Firecracker VMs are rejected.
+Firecracker VMs created with `--pci` resize through the same command. After removing a NIC, cocoon polls `/vm/config` for up to 30 s for the VMM to drop it and returns the same eject-pending error if it does not; it also prints rescan/remove steps for builds that plug devices onto the root bus (see [networking](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci)). MMIO Firecracker VMs are rejected.
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 

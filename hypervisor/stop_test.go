@@ -382,8 +382,8 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	ctx := t.Context()
 	rec := meteringcapture.New()
 	b.Metering = rec
-	if err := b.BatchMarkStarted(ctx, []string{id}); err != nil {
-		t.Fatalf("BatchMarkStarted: %v", err)
+	if err := b.MarkStarted(ctx, id); err != nil {
+		t.Fatalf("MarkStarted: %v", err)
 	}
 
 	stopLocked := func(ctx context.Context, id string) error {

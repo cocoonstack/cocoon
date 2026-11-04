@@ -2,6 +2,7 @@ package cloudhypervisor
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -50,7 +52,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 			Role: types.StorageRoleData, Path: path, Serial: spec.Name, RO: spec.ReadOnly, DirectIO: spec.DirectIO,
 		})
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, id, func(info *chVMInfoResponse) (string, error) {
+	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, func(info *chVMInfoResponse) (string, error) {
 		return diskAttached(info, id, spec.Name, path, spec.ReadOnly)
 	})
 }
@@ -59,11 +61,11 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 	if err := src.Normalize(); err != nil {
 		return "", "", err
 	}
-	meta, err := hypervisor.LoadSnapshotMeta(src.Dir)
+	meta, err := snapshot.LoadSnapshotMeta(src.Dir)
 	if err != nil {
 		return "", "", fmt.Errorf("load snapshot metadata: %w", err)
 	}
-	cowFile, err := hypervisor.SnapshotCOWFile(meta)
+	cowFile, err := snapshot.SnapshotCOWFile(meta)
 	if err != nil {
 		return "", "", err
 	}
@@ -89,7 +91,7 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 	// A lost add-disk response may have attached the copy, so only a retry, detach or stop reclaims it
 	deviceID, err := addDevice(ctx, hc, "vm.add-disk", hotDisk(&rec, id, &types.StorageConfig{
 		Role: types.StorageRoleData, Path: path, Serial: src.Name,
-	}), id)
+	}))
 	if err != nil {
 		return "", "", err
 	}
@@ -141,33 +143,24 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 			QueueSize: spec.QueueSize,
 		}
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-fs", makeBody, id, func(info *chVMInfoResponse) (string, error) {
+	return ch.attachWith(ctx, vmRef, "vm.add-fs", makeBody, func(info *chVMInfoResponse) (string, error) {
 		if !info.Config.Memory.Shared {
 			return "", fmt.Errorf("fs attach requires the VM to be created with --shared-memory (current memory shared=off; cannot be flipped on a running VM)")
 		}
-		for _, ex := range info.Config.Fs {
-			if ex.Tag == spec.Tag {
-				return "", fmt.Errorf("fs tag %q already attached", spec.Tag)
-			}
-			if ex.ID == id {
-				return "", fmt.Errorf("fs id %q already attached", id)
-			}
+		if slices.ContainsFunc(info.Config.Fs, func(f chFs) bool { return f.Tag == spec.Tag }) {
+			return "", fmt.Errorf("fs tag %q already attached", spec.Tag)
 		}
 		return "", nil
 	})
 }
 
 func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) error {
-	if tag == "" {
-		return fmt.Errorf("tag is required")
-	}
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
-		for _, ex := range info.Config.Fs {
-			if ex.Tag == tag {
-				return ex.ID, true, nil
-			}
+		i := slices.IndexFunc(info.Config.Fs, func(f chFs) bool { return f.Tag == tag })
+		if i < 0 {
+			return "", false, fmt.Errorf("fs tag %q not attached", tag)
 		}
-		return "", false, fmt.Errorf("fs tag %q not attached", tag)
+		return info.Config.Fs[i].ID, true, nil
 	}, nil)
 }
 
@@ -189,7 +182,7 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 	makeBody := func(*hypervisor.VMRecord) any {
 		return chDevice{ID: spec.ID, Path: path}
 	}
-	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, spec.ID, func(info *chVMInfoResponse) (string, error) {
+	return ch.attachWith(ctx, vmRef, "vm.add-device", makeBody, func(info *chVMInfoResponse) (string, error) {
 		// Stat is gated behind the running-VM check so stopped VMs surface the state error, not a host-path one.
 		st, statErr := os.Stat(path)
 		if statErr != nil {
@@ -211,9 +204,6 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 }
 
 func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) error {
-	if id == "" {
-		return fmt.Errorf("id is required")
-	}
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, bool, error) {
 		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
 			return id, true, nil
@@ -226,7 +216,7 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []vfio.Attached {
 		out := make([]vfio.Attached, 0, len(info.Config.Devices))
 		for _, d := range info.Config.Devices {
-			out = append(out, vfio.Attached{ID: d.ID, BDF: bdfFromSysfsPath(d.Path)})
+			out = append(out, vfio.Attached{ID: d.ID, BDF: strings.TrimPrefix(d.Path, vfio.SysfsPCIPrefix)})
 		}
 		return out
 	})
@@ -246,7 +236,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	return hc, rec, info, unlock, nil
 }
 
-func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint string, makeBody makeBodyFn, fallbackID string, preCheck preCheckFn) (string, error) {
+func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint string, makeBody makeBodyFn, preCheck preCheckFn) (string, error) {
 	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return "", err
@@ -256,7 +246,7 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 	if checkErr != nil || existing != "" {
 		return existing, checkErr
 	}
-	return addDevice(ctx, hc, endpoint, makeBody(&rec), fallbackID)
+	return addDevice(ctx, hc, endpoint, makeBody(&rec))
 }
 
 func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn, afterEject func(*hypervisor.VMRecord) error) error {
@@ -303,23 +293,16 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 	return extract(info), nil
 }
 
-func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any, fallbackID string) (string, error) {
-	resp, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, endpoint, body, http.StatusOK, http.StatusNoContent)
+func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any) (string, error) {
+	resp, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, endpoint, body, http.StatusOK)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}
-	pci, err := decodePciDeviceInfo(resp)
-	if err != nil {
-		return "", err
+	var pci chPciDeviceInfo
+	if err := json.Unmarshal(resp, &pci); err != nil {
+		return "", fmt.Errorf("decode PciDeviceInfo: %w", err)
 	}
-	if pci.ID != "" {
-		return pci.ID, nil
-	}
-	// VFIO without --id has no detach key, so an empty fallback must fail.
-	if fallbackID == "" {
-		return "", fmt.Errorf("%s: empty response body and no fallback id (CH returned no PciDeviceInfo)", endpoint)
-	}
-	return fallbackID, nil
+	return pci.ID, nil
 }
 
 // The CH fork refuses disks without an explicit image_type; build from the record reloaded under the ops lock so DirectIO/queue semantics match create-path data disks (restore rewrites Config).
@@ -363,15 +346,6 @@ func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*
 		return nil, fmt.Errorf("resume orphaned pause: %w", err)
 	}
 	return getVMInfo(ctx, hc)
-}
-
-// CH may report a non-PCI host path, which has no BDF.
-func bdfFromSysfsPath(p string) string {
-	bdf, ok := strings.CutPrefix(p, vfio.SysfsPCIPrefix)
-	if !ok {
-		return ""
-	}
-	return bdf
 }
 
 // checkSnapshotImage compares digests only, so a sidecar written under another node's root still matches.

@@ -19,7 +19,7 @@ cocoon image pull https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-
 cocoon image pull --force https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 ```
 
-Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3. A cloud-image URL must serve an uncompressed disk image — gzip/xz/bzip2/zstd payloads are refused (`cloudimg does not auto-decompress`); decompress first and use `image import`, which does unwrap gzip. Cloud-image URL downloads are capped at 20 GiB; OCI pulls and `image import` are uncapped.
+Blobs are content-addressed (SHA-256) and deduplicated; OCI layers are converted to EROFS, cloud images to qcow2 v3. A cloud-image URL must serve an uncompressed disk image — gzip/xz/bzip2/zstd payloads are refused (`cloudimg does not auto-decompress`); decompress first and use `image import`, which does unwrap gzip. A qcow2 with a backing file is refused on both pull and import, because converting it would read the host path named inside the image; flatten it first with `qemu-img convert`. Cloud-image URL downloads are capped at 20 GiB; OCI pulls and `image import` are uncapped.
 
 ## Importing
 

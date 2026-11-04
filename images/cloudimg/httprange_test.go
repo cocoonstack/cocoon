@@ -1,4 +1,4 @@
-package utils
+package cloudimg
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ func TestSplitRanges(t *testing.T) {
 	sizes := []int64{1, 7, 8, 9, 100, 257 << 10, (257 << 10) + 7}
 	for _, size := range sizes {
 		for _, n := range []int{0, 1, 3, 8, 100} {
-			ranges := SplitRanges(size, n)
+			ranges := splitRanges(size, n)
 			if len(ranges) == 0 {
 				t.Fatalf("size=%d n=%d: no ranges", size, n)
 			}
@@ -33,7 +33,7 @@ func TestSplitRanges(t *testing.T) {
 			}
 		}
 	}
-	if got := SplitRanges(0, 4); len(got) != 0 {
+	if got := splitRanges(0, 4); len(got) != 0 {
 		t.Errorf("size=0: got %v, want no ranges", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestCopyRangeBody(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(tt.body)),
 			}
 			var buf bytes.Buffer
-			err := CopyRangeBody(resp, &buf, start, end)
+			err := copyRangeBody(resp, &buf, start, end)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got %v, want nil", err)

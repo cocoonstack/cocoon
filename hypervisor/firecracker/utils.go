@@ -22,7 +22,10 @@ func (fc *Firecracker) preflightRestore(srcDir string, rec *hypervisor.VMRecord)
 	if err != nil {
 		return err
 	}
-	return hypervisor.ValidateResidentPaths(meta.StorageConfigs, rec.StorageConfigs)
+	if err := hypervisor.ValidateResidentPaths(meta.StorageConfigs, rec.StorageConfigs); err != nil {
+		return err
+	}
+	return hypervisor.ValidateRestoreMACs(meta.NICMACs, rec)
 }
 
 // snapshotIntegrity adds the vmstate and memory file checks: the sidecar is FC's only disk-shape source.

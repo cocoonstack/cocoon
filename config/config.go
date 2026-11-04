@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	coretypes "github.com/projecteru2/core/types"
 
 	"github.com/cocoonstack/cocoon/cgroup"
-	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -22,11 +22,20 @@ const (
 	MetaBackendJSON   = "json"
 	MetaBackendSQLite = "sqlite"
 
+	// RestoreTAPPrefix names CH's throwaway restore TAPs; a scope equal to it would collide with a clone's own bridge TAPs.
+	RestoreTAPPrefix = "rm"
+
 	// defaultPullConns is the default concurrent Range connections per cloud-image download.
 	defaultPullConns = 8
 	// maxPullConns caps it so a misconfigured pull_conns can't exhaust file descriptors.
 	maxPullConns = 64
+
+	legacyBridgeTAPPrefix = "bt"
+	legacyNetnsPrefix     = "cocoon-"
 )
+
+// validScope pins net_scope at two chars: equal-length tags are never proper prefixes of each other, so scoped families stay disjoint by construction.
+var validScope = regexp.MustCompile(`^[A-Za-z0-9]{2}$`)
 
 // HypervisorType identifies the selected hypervisor backend.
 type HypervisorType string
@@ -61,7 +70,7 @@ type Config struct {
 	DNS string `json:"dns" mapstructure:"dns"`
 	// NetScope: two-alphanumeric prefix on this installation's TAP and netns names so co-hosted installations never GC each other's; empty keeps the legacy names.
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`
-	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, then VM Running); exceeding it kills the VMM. Default: 5.
+	// SocketWaitTimeoutSeconds bounds each start phase (API socket up, VM Running, vsock socket up); exceeding it kills the VMM. Default: 5.
 	SocketWaitTimeoutSeconds int `json:"socket_wait_timeout_seconds" mapstructure:"socket_wait_timeout_seconds"`
 	// TerminateGracePeriodSeconds: SIGTERM→SIGKILL window when force-killing the VMM. Default: 5.
 	TerminateGracePeriodSeconds int `json:"terminate_grace_period_seconds" mapstructure:"terminate_grace_period_seconds"`
@@ -93,10 +102,15 @@ func (c *Config) EffectivePullConns() int {
 }
 
 // BridgeTAPPrefix returns this installation's host-side bridge TAP name prefix.
-func (c *Config) BridgeTAPPrefix() string { return network.BridgeTAPPrefix(c.NetScope) }
+func (c *Config) BridgeTAPPrefix() string { return cmp.Or(c.NetScope, legacyBridgeTAPPrefix) }
 
 // NetnsPrefix returns this installation's per-VM CNI netns name prefix.
-func (c *Config) NetnsPrefix() string { return network.NetnsPrefix(c.NetScope) }
+func (c *Config) NetnsPrefix() string {
+	if c.NetScope == "" {
+		return legacyNetnsPrefix
+	}
+	return c.NetScope + "-"
+}
 
 // CgroupParentDir returns the absolute cgroup v2 directory holding per-VM CPU scopes.
 func (c *Config) CgroupParentDir() string {
@@ -132,7 +146,7 @@ func (c *Config) Validate() error {
 	if _, err := cgroup.ParseCPUList(c.CgroupCPUs); err != nil {
 		return fmt.Errorf("cgroup_cpus: %w", err)
 	}
-	if err := network.ValidateScope(c.NetScope); err != nil {
+	if err := validateScope(c.NetScope); err != nil {
 		return fmt.Errorf("net_scope: %w", err)
 	}
 	return nil
@@ -156,4 +170,17 @@ func (c *Config) DNSServers() ([]string, error) {
 		servers = append(servers, s)
 	}
 	return servers, nil
+}
+
+func validateScope(scope string) error {
+	if scope == "" {
+		return nil
+	}
+	if !validScope.MatchString(scope) {
+		return fmt.Errorf("%q must be exactly two alphanumeric chars", scope)
+	}
+	if scope == legacyBridgeTAPPrefix || scope == RestoreTAPPrefix {
+		return fmt.Errorf("%q is reserved", scope)
+	}
+	return nil
 }

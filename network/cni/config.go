@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/config"
-	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -18,10 +17,6 @@ type Config struct {
 
 // NewConfig wraps the shared config with the CNI path layout.
 func NewConfig(conf *config.Config) *Config { return &Config{Config: conf} }
-
-func (c *Config) EnsureDirs() error {
-	return utils.EnsureDirs(c.dbDir())
-}
 
 func (c *Config) IndexFile() string { return filepath.Join(c.dbDir(), "networks.json") }
 func (c *Config) IndexLock() string { return filepath.Join(c.dbDir(), "networks.lock") }

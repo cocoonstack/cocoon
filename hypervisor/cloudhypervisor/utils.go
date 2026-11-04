@@ -212,17 +212,6 @@ func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) 
 	return &info, nil
 }
 
-func decodePciDeviceInfo(resp []byte) (chPciDeviceInfo, error) {
-	if len(resp) == 0 {
-		return chPciDeviceInfo{}, nil
-	}
-	var info chPciDeviceInfo
-	if err := json.Unmarshal(resp, &info); err != nil {
-		return chPciDeviceInfo{}, fmt.Errorf("decode PciDeviceInfo: %w", err)
-	}
-	return info, nil
-}
-
 func powerButton(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.power-button")
 	return err
@@ -251,10 +240,11 @@ func queryConsolePTY(ctx context.Context, apiSocketPath string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if info.Config.Console.File == "" {
-		return "", fmt.Errorf("console PTY not available (mode=%s)", info.Config.Console.Mode)
+	console := info.Config.Console
+	if console == nil || console.File == "" {
+		return "", fmt.Errorf("console PTY not available (console=%+v)", console)
 	}
-	return info.Config.Console.File, nil
+	return console.File, nil
 }
 
 func resolveConsole(ctx context.Context, vmID, sockPath, consoleSock string, directBoot bool) string {

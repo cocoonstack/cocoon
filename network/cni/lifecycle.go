@@ -152,10 +152,7 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 }
 
 // Remove keeps a failed NIC's DB record so retry, vm rm or GC can still release its CNI resources.
-func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
-	if len(indices) == 0 {
-		return nil
-	}
+func (c *CNI) Remove(ctx context.Context, vmID string, index int) error {
 	var records []networkRecord
 	if err := c.view(ctx, func(t *netTx) error {
 		var err error
@@ -164,22 +161,15 @@ func (c *CNI) Remove(ctx context.Context, vmID string, indices ...int) error {
 	}); err != nil {
 		return fmt.Errorf("read network index: %w", err)
 	}
-	wanted := make(map[string]bool, len(indices))
-	for _, i := range indices {
-		wanted[ifName(i)] = true
-	}
-	subset := make([]string, 0, len(indices))
-	found := make(map[string]bool, len(indices))
+	ifn := ifName(index)
+	var subset []string
 	for _, r := range records {
-		if wanted[r.IfName] {
+		if r.IfName == ifn {
 			subset = append(subset, r.ID)
-			found[r.IfName] = true
 		}
 	}
-	for _, i := range indices {
-		if ifn := ifName(i); !found[ifn] {
-			return fmt.Errorf("nic %d (%s): no record", i, ifn)
-		}
+	if len(subset) == 0 {
+		return fmt.Errorf("nic %d (%s): no record", index, ifn)
 	}
 	// The payload names record IDs, never NIC indices, so a crash mid-teardown recovers exactly these rows and leaves the netns and the other NICs alone.
 	return c.teardownProtocol(ctx, vmID, subset, true)

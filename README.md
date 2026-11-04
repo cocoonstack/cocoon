@@ -19,12 +19,12 @@ Lightweight MicroVM engine with dual hypervisor backends: [Cloud Hypervisor](htt
 ## Quick Start
 
 ```bash
-# Install the binary (Linux amd64; arm64: cocoon_0.7.2_Linux_arm64.tar.gz)
-curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.7.2/cocoon_0.7.2_Linux_x86_64.tar.gz
+# Install the binary (Linux amd64; arm64: cocoon_0.7.5_Linux_arm64.tar.gz)
+curl -fsSL -o cocoon.tar.gz https://github.com/cocoonstack/cocoon/releases/download/v0.7.5/cocoon_0.7.5_Linux_x86_64.tar.gz
 tar -xzf cocoon.tar.gz && install -m 0755 cocoon /usr/local/bin/
 
 # One-time environment setup (installs CH, firmware, CNI plugins)
-curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.7.2/doctor/check.sh
+curl -fsSL -o cocoon-check https://raw.githubusercontent.com/cocoonstack/cocoon/refs/tags/v0.7.5/doctor/check.sh
 install -m 0755 cocoon-check /usr/local/bin/ && sudo cocoon-check --upgrade
 
 # Pull an image and run a VM

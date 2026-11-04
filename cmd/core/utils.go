@@ -187,19 +187,6 @@ func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snap
 	return name, description, nil
 }
 
-// CaptureSnapshot checks the --name preflight, runs capture, and persists the capture dir, returning the stored snapshot id.
-func CaptureSnapshot(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot, capture func() (*types.SnapshotConfig, string, error)) (string, error) {
-	name, description, err := SnapshotNameFlags(ctx, cmd, snapBackend)
-	if err != nil {
-		return "", err
-	}
-	cfg, srcDir, err := capture()
-	if err != nil {
-		return "", err
-	}
-	return PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
-}
-
 // PersistSnapshotDir stores a finalized capture dir, moving it in place when srcDir shares a filesystem with the backend and streaming a tar otherwise; srcDir is consumed on every path.
 func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg *types.SnapshotConfig, srcDir, name, description string) (string, error) {
 	logger := log.WithFunc("core.PersistSnapshotDir")
@@ -216,7 +203,9 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 			return id, nil
 		}
 	}
-	stream := utils.TarDirStreamWithRemove(srcDir)
+	stream := utils.TarDirStream(srcDir, func() {
+		os.RemoveAll(srcDir) //nolint:errcheck,gosec
+	})
 	defer stream.Close() //nolint:errcheck
 	defer CloseOnCancel(ctx, stream)()
 	logger.Info(ctx, "saving snapshot data ...")

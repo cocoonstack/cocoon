@@ -41,7 +41,7 @@ func NewGCOrchestrator(ctx context.Context, conf *config.Config, snapOpts ...loc
 	}
 	inUse := vmInUse(hypers)
 	o.Register(hypervisor.CgroupGCModule(conf.CgroupParentDir(), inUse))
-	netProvider.RegisterGC(o, inUse)
+	o.Register(netProvider.GCModule(inUse))
 	o.Register(bridge.GCModule(conf.BridgeTAPPrefix(), inUse))
 	o.Register(vmlock.GCModule(conf.RootDir))
 	snapBackend.RegisterGC(o)

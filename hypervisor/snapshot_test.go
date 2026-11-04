@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -48,7 +49,7 @@ func TestIsUnderDir(t *testing.T) {
 func TestValidateMetaPaths_Accepts(t *testing.T) {
 	rootDir := "/srv/cocoon"
 	runDir := "/run/cocoon"
-	meta := &SnapshotMeta{
+	meta := &snapshot.SnapshotMeta{
 		StorageConfigs: []*types.StorageConfig{
 			{Path: filepath.Join(rootDir, "layers/abc")},
 			{Path: filepath.Join(runDir, "vm1/cow.raw")},
@@ -66,7 +67,7 @@ func TestValidateMetaPaths_Accepts(t *testing.T) {
 func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
 	rootDir := "/srv/cocoon"
 	runDir := "/run/cocoon"
-	meta := &SnapshotMeta{
+	meta := &snapshot.SnapshotMeta{
 		StorageConfigs: []*types.StorageConfig{
 			{Path: "/etc/shadow"},
 		},
@@ -77,7 +78,7 @@ func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
 }
 
 func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
-	meta := &SnapshotMeta{
+	meta := &snapshot.SnapshotMeta{
 		BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"},
 	}
 	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
@@ -86,7 +87,7 @@ func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
 }
 
 func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
-	meta := &SnapshotMeta{
+	meta := &snapshot.SnapshotMeta{
 		BootConfig: &types.BootConfig{
 			KernelPath: "/srv/cocoon/oci/k",
 			InitrdPath: "/etc/passwd",
@@ -98,7 +99,7 @@ func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
 }
 
 func TestValidateMetaPaths_RejectsNilStorage(t *testing.T) {
-	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}
+	meta := &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}
 	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("nil storage config in an imported snapshot must be rejected, not panic")
 	}
@@ -162,7 +163,7 @@ func TestReverseLayers_NoLayers(t *testing.T) {
 }
 
 func TestValidateMetaPathsResidentExemption(t *testing.T) {
-	meta := &SnapshotMeta{StorageConfigs: []*types.StorageConfig{
+	meta := &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{
 		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
 	}}
 	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
@@ -201,33 +202,5 @@ func TestPrepareSnapshotRejectsNilNIC(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "network invariants violated") {
 		t.Fatalf("err = %v, want network invariants violation", err)
-	}
-}
-
-func TestSnapshotCOWFile(t *testing.T) {
-	tests := []struct {
-		name    string
-		configs []*types.StorageConfig
-		want    string
-		wantErr bool
-	}{
-		{"oci raw cow", []*types.StorageConfig{
-			{Path: "/other/root/blobs/a.erofs", Role: types.StorageRoleLayer},
-			{Path: "/other/run/vm/cow.raw", Role: types.StorageRoleCOW},
-		}, "cow.raw", false},
-		{"cloudimg overlay", []*types.StorageConfig{
-			{Path: "/other/run/vm/overlay.qcow2", Role: types.StorageRoleCOW},
-			{Path: "/other/run/vm/cidata.img", RO: true, Role: types.StorageRoleCidata},
-		}, "overlay.qcow2", false},
-		{"nil entry skipped", []*types.StorageConfig{nil, {Path: "/r/cow.raw", Role: types.StorageRoleCOW}}, "cow.raw", false},
-		{"no cow", []*types.StorageConfig{{Path: "/r/a.erofs", Role: types.StorageRoleLayer}}, "", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := SnapshotCOWFile(&SnapshotMeta{StorageConfigs: tt.configs})
-			if (err != nil) != tt.wantErr || got != tt.want {
-				t.Errorf("SnapshotCOWFile = (%q, %v), want (%q, wantErr %v)", got, err, tt.want, tt.wantErr)
-			}
-		})
 	}
 }

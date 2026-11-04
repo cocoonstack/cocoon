@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Network backend identifiers stored in NetworkConfig.Backend.
+// Network backend identifiers stored in NetSetup.NetBackend and NetworkConfig.Backend.
 const (
 	BackendCNI    = "cni"
 	BackendBridge = "bridge"
@@ -25,7 +25,7 @@ type NetworkConfig struct {
 	// BridgeDev is the Linux bridge device name; set only when Backend=="bridge".
 	BridgeDev string `json:"bridge_dev,omitempty"`
 
-	// NetnsPath is the netns where the TAP lives; empty for backends without netns (e.g. macOS vmnet).
+	// NetnsPath is the netns where the TAP lives; empty for backends without netns (e.g. bridge).
 	NetnsPath string `json:"netns_path,omitempty"`
 
 	// Network is nil for DHCP NICs.

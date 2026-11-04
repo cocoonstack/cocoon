@@ -49,6 +49,10 @@ var (
 		{Key: "names", Table: localfile.TableNames},
 		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
 	}}
+	netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+		{Key: "networks", Table: cni.TableRecords},
+		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
+	}}
 )
 
 // MetaNamespaces lists every namespace with its tables — the engine-neutral declaration both engines consume.
@@ -69,13 +73,14 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 	chCfg := cloudhypervisor.NewConfig(conf)
 	fcCfg := firecracker.NewConfig(conf)
 	snapCfg := localfile.NewConfig(conf)
+	netCfg := cni.NewConfig(conf)
 	return []metajson.Namespace{
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
 		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
 		ImageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
 		ImageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
-		cni.NewConfig(conf).JSONNamespace(),
+		{Name: cni.NamespaceName, FilePath: netCfg.IndexFile(), LockPath: netCfg.IndexLock(), Codec: netTables},
 		{
 			Name:     metalog.NamespaceName,
 			FilePath: filepath.Join(conf.RootDir, meteringSubdir, "log.json"),

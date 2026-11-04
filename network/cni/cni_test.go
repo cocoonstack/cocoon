@@ -47,7 +47,10 @@ const (
 	}`
 )
 
-var testNetTables = NewConfig(&config.Config{}).JSONNamespace().Codec
+var testNetTables = metajson.TableCodec{Specs: []metajson.TableSpec{
+	{Key: "networks", Table: TableRecords},
+	{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
+}}
 
 func TestNetnsNameHonorsScope(t *testing.T) {
 	for _, tt := range []struct {
@@ -224,7 +227,10 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
-	if err := c.Remove(ctx, "vm1", 0, 1); err == nil || !strings.Contains(err.Error(), "eth1") {
+	if err := c.Remove(ctx, "vm1", 0); err != nil {
+		t.Fatalf("Remove eth0: %v", err)
+	}
+	if err := c.Remove(ctx, "vm1", 1); err == nil || !strings.Contains(err.Error(), "eth1") {
 		t.Fatalf("Remove err = %v, want eth1 failure", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
@@ -265,7 +271,7 @@ func TestDeleteVMKeepsFailedNICRecords(t *testing.T) {
 
 	err := c.teardownProtocol(ctx, "vm1", nil, false)
 	if err == nil || !strings.Contains(err.Error(), "netns kept") {
-		t.Fatalf("deleteVM should surface the incomplete release, got: %v", err)
+		t.Fatalf("teardownProtocol should surface the incomplete release, got: %v", err)
 	}
 	assertRecordIDs(t, c, []string{"n-eth1"})
 }
@@ -276,7 +282,7 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 	stubLifecycleSeams(t)
 
 	if err := c.teardownProtocol(t.Context(), "vm1", nil, false); err != nil {
-		t.Fatalf("deleteVM with zero records: %v", err)
+		t.Fatalf("teardownProtocol with zero records: %v", err)
 	}
 }
 
@@ -650,7 +656,6 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	}, exec
 }
 
-// stubLifecycleSeams replaces the linux-only netns/TAP seams with success stubs, matching the real absent-is-success semantics; t.Cleanup restores them.
 func stubLifecycleSeams(t *testing.T) {
 	t.Helper()
 	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn

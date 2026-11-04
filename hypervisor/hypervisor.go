@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -20,7 +22,9 @@ var (
 
 // Hypervisor manages VM lifecycle.
 type Hypervisor interface {
-	Type() string
+	Supervisable
+	disk.Lister
+	netresize.Resizer
 
 	Create(ctx context.Context, vmID string, vmCfg *types.VMConfig, storage []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) (*types.VM, error)
 	Start(ctx context.Context, refs []string) ([]string, error)
@@ -34,25 +38,21 @@ type Hypervisor interface {
 	Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error)
 	Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader, sourceSnapshotID string) (*types.VM, error)
 
-	RegisterGC(*gc.Orchestrator)
-}
+	// DirectClone and DirectRestore read a local snapshot directory.
+	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)
+	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
 
-// Reserver pre-claims a VM ID before host resources are provisioned, so GC never sees an ownerless TAP/netns.
-type Reserver interface {
+	// PrereserveVM pre-claims a VM ID before host resources are provisioned, so GC never sees an ownerless TAP/netns.
 	PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error
 	RollbackCreate(ctx context.Context, id, name string)
 	LockVMOps(ctx context.Context, vmID string) (func(), error)
-}
 
-// Direct is an optional interface for hypervisors that support clone/restore from a local snapshot directory.
-type Direct interface {
-	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)
-	DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error)
+	// Hibernate captures, persists and terminates in one pause window; persist consumes srcDir and returns only once the snapshot is durable.
+	Hibernate(ctx context.Context, ref string, persist PersistFunc) error
+
+	PinnedBlobIDs(context.Context) (map[string]struct{}, error)
+
+	RegisterGC(*gc.Orchestrator)
 }
 
 type PersistFunc func(cfg *types.SnapshotConfig, srcDir string) error
-
-// Hibernator captures, persists and terminates in one pause window; persist consumes srcDir and returns only once the snapshot is durable.
-type Hibernator interface {
-	Hibernate(ctx context.Context, ref string, persist PersistFunc) error
-}

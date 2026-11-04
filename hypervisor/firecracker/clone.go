@@ -18,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/lock/vmlock"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -94,9 +95,6 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 
 	if verifyErr := hypervisor.VerifyBaseFiles(storageConfigs, bootCfg); verifyErr != nil {
 		return nil, fmt.Errorf("verify base files: %w", verifyErr)
-	}
-	if err := fc.setBootCmdline(bootCfg, storageConfigs, networkConfigs, vmCfg.Name); err != nil {
-		return nil, err
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
@@ -212,7 +210,7 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	return nil
 }
 
-func rebuildCloneStorage(meta *hypervisor.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
+func rebuildCloneStorage(meta *snapshot.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
 	runDir := filepath.Dir(cowPath)
 	configs := hypervisor.CloneStorageConfigs(meta.StorageConfigs)
 	for i, sc := range configs {

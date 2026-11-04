@@ -13,18 +13,10 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
-
-// SnapshotMetaFile is the cocoon-owned sidecar carrying fields the hypervisor's native config cannot hold.
-const SnapshotMetaFile = "cocoon.json"
-
-// SnapshotMeta is the schema of the cocoon.json snapshot sidecar.
-type SnapshotMeta struct {
-	StorageConfigs []*types.StorageConfig `json:"storage_configs"`
-	BootConfig     *types.BootConfig      `json:"boot_config,omitzero"`
-}
 
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
 type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
@@ -82,9 +74,13 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 	}()
 
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
-	pause := func() error { return spec.Pause(&rec, hc) }
-	resume := func() error { return resumeAfterCapture(spec.Resume, &rec, hc) }
-	if err = b.WithPausedVM(ctx, &rec, pause, resume, func() error { return spec.Capture(&rec, hc, tmpDir) }); err != nil {
+	if err = b.WithRunningVM(ctx, &rec, func(_ int) (captureErr error) {
+		if pErr := spec.Pause(&rec, hc); pErr != nil {
+			return fmt.Errorf("pause: %w", pErr)
+		}
+		defer func() { captureErr = errors.Join(captureErr, resumeAfterCapture(spec.Resume, &rec, hc)) }()
+		return spec.Capture(&rec, hc, tmpDir)
+	}); err != nil {
 		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
@@ -141,8 +137,8 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 
 	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
 	b.removeCgroupScope(ctx, vmID)
-	// Warn-and-continue like StopAll: the VMM is dead and the flip self-heals; the snapshot is already durable.
-	uErr := b.UpdateStates(ctx, []string{vmID}, types.VMStateStopped)
+	// Warn-and-continue like StopOneLocked: the VMM is dead and the flip self-heals; the snapshot is already durable.
+	uErr := b.UpdateState(ctx, vmID, types.VMStateStopped)
 	if uErr != nil {
 		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
 	}
@@ -187,7 +183,7 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	if err != nil {
 		return nil, fmt.Errorf("build snapshot metadata: %w", err)
 	}
-	if err = SaveSnapshotMeta(tmpDir, meta); err != nil {
+	if err = snapshot.SaveSnapshotMeta(tmpDir, meta); err != nil {
 		return nil, fmt.Errorf("save snapshot metadata: %w", err)
 	}
 	snapID, err := b.RecordSnapshot(ctx, vmID)
@@ -197,28 +193,7 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	return b.BuildSnapshotConfig(snapID, rec), nil
 }
 
-func SaveSnapshotMeta(dir string, meta *SnapshotMeta) error {
-	return utils.AtomicWriteJSON(filepath.Join(dir, SnapshotMetaFile), meta, utils.Sync)
-}
-
-func LoadSnapshotMeta(dir string) (*SnapshotMeta, error) {
-	var meta SnapshotMeta
-	if err := utils.ReadJSONFile(filepath.Join(dir, SnapshotMetaFile), &meta); err != nil {
-		return nil, err
-	}
-	return &meta, nil
-}
-
-// SnapshotCOWFile returns the basename of the sidecar's COW disk; only the basename is trusted, so another node's sidecar works.
-func SnapshotCOWFile(meta *SnapshotMeta) (string, error) {
-	i := slices.IndexFunc(meta.StorageConfigs, func(sc *types.StorageConfig) bool { return sc != nil && sc.Role == types.StorageRoleCOW })
-	if i < 0 {
-		return "", fmt.Errorf("no cow disk in snapshot metadata")
-	}
-	return filepath.Base(meta.StorageConfigs[i].Path), nil
-}
-
-func PopulateFromSrc(runDir, srcDir string, clean func(string) error, clone CloneFilesFunc) error {
+func PopulateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
 	if err := clean(runDir); err != nil {
 		return fmt.Errorf("clean old snapshot files: %w", err)
 	}
@@ -250,7 +225,7 @@ func IsUnderDir(path, dir string) bool {
 }
 
 // ValidateMetaPaths treats an imported cocoon.json as untrusted; snapshot-resident paths are provenance only.
-func ValidateMetaPaths(meta *SnapshotMeta, rootDir, runDir string) error {
+func ValidateMetaPaths(meta *snapshot.SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)

@@ -20,6 +20,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const typ = "cni"
@@ -53,7 +54,7 @@ func New(conf *config.Config, store meta.Store) (*CNI, error) {
 		return nil, fmt.Errorf("config is nil")
 	}
 	cfg := NewConfig(conf)
-	if err := cfg.EnsureDirs(); err != nil {
+	if err := utils.EnsureDirs(cfg.dbDir()); err != nil {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)
 	}
 
@@ -188,9 +189,6 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 
 // confListByName resolves a conflist by name; empty name returns the default (the alphabetically-first file).
 func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
-	if len(c.confLists) == 0 {
-		return nil, c.errNoConflist()
-	}
 	cl, ok := c.confLists[cmp.Or(name, c.defaultName)]
 	if !ok {
 		return nil, fmt.Errorf("conflist %q not found (available: %s)", name, strings.Join(slices.Sorted(maps.Keys(c.confLists)), ", "))
@@ -200,9 +198,9 @@ func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 
 func (c *CNI) errNoConflist() error {
 	if c.loadErr != nil {
-		return fmt.Errorf("%w: load conflists from %s: %w", network.ErrNotConfigured, c.conf.CNIConfDir, c.loadErr)
+		return fmt.Errorf("network provider not configured: load conflists from %s: %w", c.conf.CNIConfDir, c.loadErr)
 	}
-	return fmt.Errorf("%w: no conflist found in %s", network.ErrNotConfigured, c.conf.CNIConfDir)
+	return fmt.Errorf("network provider not configured: no conflist found in %s", c.conf.CNIConfDir)
 }
 
 // loadConfLists loads all .conflist files from dir, returning name→conflist and the name of the alphabetically-first file as the default.

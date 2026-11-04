@@ -25,41 +25,13 @@ func (fc *Firecracker) Create(ctx context.Context, id string, vmCfg *types.VMCon
 		StorageConfigs: storageConfigs,
 		Net:            net,
 		BootConfig:     bootCfg,
-		Prepare: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, sc []*types.StorageConfig, net types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error) {
-			return fc.prepareOCI(ctx, vmID, vmCfg, sc, net.NetworkConfigs, boot)
+		Prepare: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, sc []*types.StorageConfig, _ types.NetSetup, boot *types.BootConfig) ([]*types.StorageConfig, error) {
+			if err := EnsureVmlinuxBoot(boot); err != nil {
+				return nil, err
+			}
+			return fc.PrepareOCIDisks(ctx, vmID, vmCfg, sc)
 		},
 	})
-}
-
-func (fc *Firecracker) prepareOCI(ctx context.Context, vmID string, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, boot *types.BootConfig) ([]*types.StorageConfig, error) {
-	storageConfigs, err := hypervisor.PrepareOCICOW(ctx, fc.conf.COWRawPath(vmID), vmCfg.Storage, storageConfigs)
-	if err != nil {
-		return nil, err
-	}
-	dataDisks, err := hypervisor.PrepareDataDisks(ctx, fc.conf.VMRunDir(vmID), vmCfg.DataDisks)
-	if err != nil {
-		return nil, err
-	}
-	storageConfigs = append(storageConfigs, dataDisks...)
-	if err := EnsureVmlinuxBoot(boot); err != nil {
-		return nil, err
-	}
-	if err := fc.setBootCmdline(boot, storageConfigs, networkConfigs, vmCfg.Name); err != nil {
-		return nil, err
-	}
-	return storageConfigs, nil
-}
-
-func (fc *Firecracker) setBootCmdline(boot *types.BootConfig, storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string) error {
-	if boot == nil {
-		return nil
-	}
-	dns, err := fc.conf.DNSServers()
-	if err != nil {
-		return fmt.Errorf("parse DNS servers: %w", err)
-	}
-	boot.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmName, dns)
-	return nil
 }
 
 // DebugCmdline renders the guest cmdline for vm debug, which attaches no NIC.

@@ -7,7 +7,6 @@ import (
 	"io"
 
 	"github.com/projecteru2/core/log"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/meta"
@@ -24,8 +23,7 @@ var _ images.Images = (*CloudImg)(nil)
 type CloudImg struct {
 	images.Ops[imageEntry]
 
-	conf      *Config
-	pullGroup singleflight.Group
+	conf *Config
 }
 
 // New builds the cloud image backend under rootDir; pullConns <= 0 defaults to 8 concurrent Range connections.
@@ -46,14 +44,7 @@ func New(ctx context.Context, rootDir string, pullConns int, metaStore meta.Stor
 }
 
 func (c *CloudImg) Pull(ctx context.Context, url string, force bool, tracker progress.Tracker) error {
-	key := url
-	if force {
-		// A forced refresh must not dedup onto an in-flight non-force pull — it would return success without ever refreshing the cached blob.
-		key += "\x00force"
-	}
-	return images.SingleflightDo(ctx, &c.pullGroup, key, func() error {
-		return pull(ctx, c.conf, c.Store, url, force, tracker)
-	})
+	return pull(ctx, c.conf, c.Store, url, force, tracker)
 }
 
 func (c *CloudImg) Import(ctx context.Context, name string, tracker progress.Tracker, file ...string) error {

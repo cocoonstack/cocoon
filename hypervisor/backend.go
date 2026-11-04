@@ -13,6 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/metering"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -94,6 +95,8 @@ type PrepareHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, s
 // AfterExtractHook finalizes the restored record and returns the resulting VM.
 type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *VMRecord) (*types.VM, error)
 
+type RunDirHook func(runDir string) error
+
 type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error
 
 type TransitionHook func(rec *VMRecord, hc *http.Client) error
@@ -105,7 +108,7 @@ type RestoreSpec struct {
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
-	BeforeMerge      func(rec *VMRecord) error
+	Clean            RunDirHook
 	AfterExtract     AfterExtractHook
 }
 
@@ -149,7 +152,7 @@ type SnapshotSpec struct {
 	Resume       TransitionHook
 	Capture      func(rec *VMRecord, hc *http.Client, tmpDir string) error
 	AfterCapture func(rec *VMRecord, tmpDir string) error
-	BuildMeta    func(rec *VMRecord, tmpDir string) (*SnapshotMeta, error)
+	BuildMeta    func(rec *VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error)
 }
 
 // HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.
@@ -158,8 +161,6 @@ type HibernateSpec struct {
 	Terminate    func(rec *VMRecord, hc *http.Client, pid int) error
 	RuntimeFiles []string
 }
-
-var _ Supervisable = (*Backend)(nil)
 
 // Backend provides shared store operations for hypervisor backends.
 type Backend struct {

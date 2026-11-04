@@ -8,7 +8,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -43,7 +46,7 @@ func streamLog(ctx context.Context, path string, follow bool, tail int) error {
 		return nil
 	}
 
-	events, err := utils.WatchFile(ctx, path, logFollowDebounce)
+	events, err := watchFile(ctx, path, logFollowDebounce)
 	if err != nil {
 		return fmt.Errorf("watch log: %w", err)
 	}
@@ -106,4 +109,63 @@ func seekToLastNLines(f *os.File, n int) error {
 	}
 	_, err = f.Seek(0, io.SeekStart)
 	return err
+}
+
+// watchFile watches a file via fsnotify on the parent dir (atomic rename changes inode).
+func watchFile(ctx context.Context, filePath string, debounce time.Duration) (<-chan struct{}, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+
+	dir := filepath.Dir(filePath)
+	base := filepath.Base(filePath)
+	if err := watcher.Add(dir); err != nil {
+		_ = watcher.Close()
+		return nil, err
+	}
+
+	ch := make(chan struct{}, 1)
+	go watchLoop(ctx, watcher, base, debounce, ch)
+	return ch, nil
+}
+
+func watchLoop(ctx context.Context, watcher *fsnotify.Watcher, base string, debounce time.Duration, ch chan<- struct{}) {
+	defer close(ch)
+	defer watcher.Close() //nolint:errcheck
+
+	timer := time.NewTimer(0)
+	timer.Stop()
+	pending := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			if filepath.Base(ev.Name) != base {
+				continue
+			}
+			if ev.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Rename) == 0 {
+				continue
+			}
+			if !pending {
+				timer.Reset(debounce)
+				pending = true
+			}
+		case _, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			pending = false
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+		}
+	}
 }

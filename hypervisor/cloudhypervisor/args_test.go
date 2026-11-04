@@ -124,7 +124,6 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 		BootConfig: &types.BootConfig{
 			KernelPath: "/run/vmlinuz",
 			InitrdPath: "/run/initrd.img",
-			Cmdline:    "console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=l0 cocoon.cow=cow clocksource=kvm-clock rw net.ifnames=0 cocoon.hostname=vm1 ip=10.211.0.20::10.211.0.1:255.255.252.0:vm1:eth0:off",
 		},
 	}
 

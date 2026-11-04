@@ -1,7 +1,6 @@
 package localfile
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
-	"github.com/cocoonstack/cocoon/snapshot"
 )
 
 // ErrTombstoned reports an entrypoint that met a deleting-phase snapshot.
@@ -19,7 +17,6 @@ var ErrTombstoned = errors.New("snapshot is being deleted")
 
 type snapCleanup struct {
 	Name       string `json:"name,omitempty"`
-	DataDir    string `json:"data_dir,omitempty"`
 	Hypervisor string `json:"hypervisor,omitempty"`
 	Pending    bool   `json:"pending,omitzero"`
 }
@@ -29,7 +26,7 @@ func (lf *LocalFile) tombstones() *tombstone.Table {
 }
 
 // deleteSnapshotProtocol runs the phase protocol for one snapshot under its held exclusive lease; revalidate, when set, re-checks candidacy inside the lease transaction and a false return skips without error.
-func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshot.SnapshotRecord) bool) (deleted bool, cl snapCleanup, err error) {
+func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, revalidate func(*snapshotRecord) bool) (deleted bool, cl snapCleanup, err error) {
 	ts := lf.tombstones()
 	var (
 		leaseID string
@@ -51,8 +48,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 				return nil
 			}
 			cl = snapCleanup{
-				Name: rec.Name, DataDir: cmp.Or(rec.DataDir, lf.conf.SnapshotDataDir(id)),
-				Hypervisor: rec.Hypervisor, Pending: rec.Pending,
+				Name: rec.Name, Hypervisor: rec.Hypervisor, Pending: rec.Pending,
 			}
 		}
 		var resumed *tombstone.Record
@@ -85,7 +81,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 }
 
 func (lf *LocalFile) finishSnapTeardown(ctx context.Context, id, leaseID string, cl snapCleanup) error {
-	if err := os.RemoveAll(cl.DataDir); err != nil {
+	if err := os.RemoveAll(lf.conf.SnapshotDataDir(id)); err != nil {
 		return fmt.Errorf("remove data dir %s (tombstone kept, retry or gc resumes): %w", id, err)
 	}
 	ts := lf.tombstones()

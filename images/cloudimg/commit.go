@@ -85,10 +85,9 @@ func prepareTmpBlob(ctx context.Context, conf *Config, tracker progress.Tracker,
 	if err != nil {
 		return "", fmt.Errorf("inspect image: %w", err)
 	}
-	logger.Debugf(ctx, "detected source format: %s (compat=%q, backing=%t)",
-		info.Format, info.Compat, info.HasBackingFile)
+	logger.Debugf(ctx, "detected source format: %s (compat=%q)", info.Format, info.Compat)
 
-	if info.Format == "qcow2" && info.Compat == "1.1" && !info.HasBackingFile {
+	if info.Format == "qcow2" && info.Compat == "1.1" {
 		tmpBlobPath := conf.tmpBlobPath(digestHex)
 		if err = os.Rename(sourcePath, tmpBlobPath); err != nil {
 			return "", fmt.Errorf("rename tmp blob: %w", err)

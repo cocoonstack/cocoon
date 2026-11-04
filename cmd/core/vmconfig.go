@@ -69,11 +69,6 @@ func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error
 
 // CloneVMConfigFromFlags builds VMConfig for a clone. The snapshot's cgroup knobs record its source VM's policy and are never applied; the clone's policy comes from flags alone.
 func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*types.VMConfig, error) {
-	noDirectIO := snapCfg.NoDirectIO
-	if cmd.Flags().Changed("no-direct-io") {
-		noDirectIO = cliutil.FlagBool(cmd, "no-direct-io")
-	}
-
 	restoreMode, err := restoreModeFromFlags(cmd)
 	if err != nil {
 		return nil, err
@@ -84,26 +79,16 @@ func CloneVMConfigFromFlags(cmd *cobra.Command, snapCfg types.SnapshotConfig) (*
 	}
 
 	cfg := &types.VMConfig{
-		Name:          cliutil.FlagStr(cmd, "name"),
-		CPU:           snapCfg.CPU,
-		Memory:        snapCfg.Memory,
-		Storage:       snapCfg.Storage,
-		QueueSize:     cmp.Or(cliutil.FlagInt(cmd, "queue-size"), snapCfg.QueueSize),
-		DiskQueueSize: cmp.Or(cliutil.FlagInt(cmd, "disk-queue-size"), snapCfg.DiskQueueSize),
-		Image:         snapCfg.Image,
-		ImageDigest:   snapCfg.ImageDigest,
-		ImageType:     snapCfg.ImageType,
-		Network:       cmp.Or(cliutil.FlagStr(cmd, "network"), snapCfg.Network),
-		NoDirectIO:    noDirectIO,
-		NoWatchdog:    snapCfg.NoWatchdog,
-		NoBalloon:     snapCfg.NoBalloon,
-		Windows:       snapCfg.Windows,
-		SharedMemory:  snapCfg.SharedMemory,
-		HugePages:     snapCfg.HugePages,
-		Mergeable:     snapCfg.Mergeable,
-		PCI:           snapCfg.PCI,
-		DataDisks:     dataDisks,
-		RestoreMode:   restoreMode,
+		Config:      snapCfg.Config,
+		Name:        cliutil.FlagStr(cmd, "name"),
+		DataDisks:   dataDisks,
+		RestoreMode: restoreMode,
+	}
+	cfg.QueueSize = cmp.Or(cliutil.FlagInt(cmd, "queue-size"), cfg.QueueSize)
+	cfg.DiskQueueSize = cmp.Or(cliutil.FlagInt(cmd, "disk-queue-size"), cfg.DiskQueueSize)
+	cfg.Network = cmp.Or(cliutil.FlagStr(cmd, "network"), cfg.Network)
+	if cmd.Flags().Changed("no-direct-io") {
+		cfg.NoDirectIO = cliutil.FlagBool(cmd, "no-direct-io")
 	}
 	cgroupKnobsFromFlags(cmd, &cfg.Config)
 	if err := cgroup.ResolveKnobs(&cfg.Config).Validate(); err != nil {

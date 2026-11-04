@@ -1,6 +1,7 @@
 package localfile
 
 import (
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
-	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -460,11 +461,10 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	}
 	stalePendingID := testID(t)
 	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		idx.Snapshots[stalePendingID] = &snapshot.SnapshotRecord{
+		idx.Snapshots[stalePendingID] = &snapshotRecord{
 			ID:        stalePendingID,
 			CreatedAt: time.Now().Add(-48 * time.Hour),
 			Pending:   true,
-			DataDir:   filepath.Join(lf.conf.DataDir(), stalePendingID),
 		}
 		return nil
 	}); err != nil {
@@ -636,6 +636,72 @@ func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
 	}
 	if _, err := os.Stat(lf.conf.LeasePath(id)); err != nil {
 		t.Fatalf("GC swept a lease held by a live build: %v", err)
+	}
+}
+
+func TestGCKeepsSnapshotsAfterTheRootMoved(t *testing.T) {
+	ctx := t.Context()
+	base := t.TempDir()
+	oldConf := &config.Config{RootDir: filepath.Join(base, "old")}
+	oldLF, err := New(oldConf, metering.NopRecorder{}, newTestMetaStore(t, oldConf))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	id := makeExportableSnapshot(t, oldLF, "moved", map[string][]byte{"disk.raw": []byte("data")})
+	staleDir := oldLF.conf.SnapshotDataDir(id)
+
+	conf := &config.Config{RootDir: filepath.Join(base, "new")}
+	if err := os.Rename(oldConf.RootDir, conf.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	indexPath := NewConfig(conf).IndexFile()
+	raw, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index map[string]map[string]any
+	if err := json.Unmarshal(raw, &index); err != nil {
+		t.Fatal(err)
+	}
+	record, ok := index["snapshots"][id].(map[string]any)
+	if !ok {
+		t.Fatalf("no row for %s in %s", id, raw)
+	}
+	record["data_dir"] = staleDir
+	if raw, err = json.Marshal(index); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(indexPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mod := gcModule(lf, EvictionPolicy{})
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := mod.Resolve(ctx, snap, map[string]any{})
+	if len(ids) != 0 {
+		t.Errorf("GC candidates = %v, want none", ids)
+	}
+	if err := mod.Collect(ctx, ids, snap); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, _, release, err := lf.DataDir(ctx, id)
+	if err != nil {
+		t.Fatalf("DataDir: %v", err)
+	}
+	defer release()
+	if want := lf.conf.SnapshotDataDir(id); dir != want {
+		t.Errorf("DataDir = %s, want %s", dir, want)
+	}
+	if _, err := os.Stat(filepath.Join(lf.conf.SnapshotDataDir(id), "disk.raw")); err != nil {
+		t.Errorf("snapshot data lost: %v", err)
 	}
 }
 

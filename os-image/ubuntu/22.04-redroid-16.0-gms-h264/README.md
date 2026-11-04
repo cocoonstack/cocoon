@@ -217,8 +217,7 @@ match the arch. `scrcpy-rfb` and `scrcpy-server` are released for both arches.
 
 ## Verification
 
-`verify-vm-inner.sh` runs during the VM Docker build and again against each
-published per-architecture image in CI. Runtime checks should additionally
-confirm `sys.boot_completed=1`, ports 5555/5900, the baked container coming up on
+`verify-vm-inner.sh` runs during the VM Docker build as a static check of the
+rootfs. Runtime checks against a booted image should confirm `sys.boot_completed=1`, ports 5555/5900, the baked container coming up on
 boot with no launcher service, Docker restart policy and data mount, the enabled
 package set above, and concurrent H.264 plus ordinary RFB clients.

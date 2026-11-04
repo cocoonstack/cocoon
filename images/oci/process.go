@@ -54,7 +54,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 
 	layerDir := filepath.Join(j.workDir, fmt.Sprintf("layer-%d", j.idx))
 	erofsPath := filepath.Join(layerDir, digestHex+".erofs")
-	layerUUID := utils.UUIDv5(digestHex)
+	layerUUID := uuidV5(digestHex)
 
 	var kernelPath, initrdPath string
 	err := retryLayer(ctx, pullLayerAttempts, pullLayerBackoff, func() error {

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -131,16 +130,16 @@ func (lf *LocalFile) export(ctx context.Context, ref string, compress bool) (io.
 }
 
 func diskAttachFiles(dataDir string) ([]string, error) {
-	meta, err := hypervisor.LoadSnapshotMeta(dataDir)
+	meta, err := snapshot.LoadSnapshotMeta(dataDir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
-	cowFile, err := hypervisor.SnapshotCOWFile(meta)
+	cowFile, err := snapshot.SnapshotCOWFile(meta)
 	if err != nil {
 		return nil, err
 	}
-	return []string{hypervisor.SnapshotMetaFile, cowFile}, nil
+	return []string{snapshot.SnapshotMetaFile, cowFile}, nil
 }

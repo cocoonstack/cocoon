@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -27,7 +28,7 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 }
 
 func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
-	var meta *hypervisor.SnapshotMeta
+	var meta *snapshot.SnapshotMeta
 	return ch.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
 		VMCfg:            vmCfg,
 		SrcDir:           srcDir,
@@ -72,7 +73,7 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 func cleanSnapshotFiles(runDir string) error {
 	return hypervisor.CleanSnapshotFiles(runDir, func(name string) bool {
 		return strings.HasPrefix(name, memoryRangeFile) || name == configJSONName || name == stateJSONName ||
-			name == hypervisor.SnapshotMetaFile || hypervisor.IsDataDiskFile(name)
+			name == snapshot.SnapshotMetaFile || hypervisor.IsDataDiskFile(name)
 	})
 }
 

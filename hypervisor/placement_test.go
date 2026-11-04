@@ -233,8 +233,8 @@ func TestLeavingRunningClearsPlacement(t *testing.T) {
 		}
 	}
 	seed("stopped", types.VMStateRunning)
-	if err := b.UpdateStates(ctx, []string{"stopped"}, types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateStates: %v", err)
+	if err := b.UpdateState(ctx, "stopped", types.VMStateStopped); err != nil {
+		t.Fatalf("UpdateState: %v", err)
 	}
 	seed("failed", types.VMStateStopped)
 	b.markFailedOperation(ctx, "failed", false)

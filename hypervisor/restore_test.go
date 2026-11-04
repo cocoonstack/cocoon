@@ -165,6 +165,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 		Snapshot:  tarWithFiles(t, "a", "b"),
 		Preflight: func(string, *VMRecord) error { return nil },
 		Kill:      func(context.Context, string, *VMRecord) error { return nil },
+		Clean:     func(string) error { return nil },
 		AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
 			t.Fatal("AfterExtract must not run after a failed merge")
 			return nil, nil
@@ -301,17 +302,17 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 	}
 }
 
-func TestRestoreBeforeMergeFailureQuarantines(t *testing.T) {
+func TestRestoreCleanFailureQuarantines(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	const id = "vm-sweep-fail"
 	seedStoppedVMWithDirs(t, b, id)
 
 	spec := RestoreSpec{
-		VMCfg:       &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
-		Snapshot:    tarWithFiles(t, "a"),
-		Preflight:   func(string, *VMRecord) error { return nil },
-		Kill:        func(context.Context, string, *VMRecord) error { return nil },
-		BeforeMerge: func(*VMRecord) error { return errors.New("sweep boom") },
+		VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
+		Snapshot:  tarWithFiles(t, "a"),
+		Preflight: func(string, *VMRecord) error { return nil },
+		Kill:      func(context.Context, string, *VMRecord) error { return nil },
+		Clean:     func(string) error { return errors.New("sweep boom") },
 		AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
 			t.Fatal("AfterExtract must not run after a failed sweep")
 			return nil, nil

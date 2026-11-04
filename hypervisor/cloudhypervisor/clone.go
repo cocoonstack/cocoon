@@ -11,6 +11,7 @@ import (
 
 	"github.com/projecteru2/core/log"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
@@ -58,7 +59,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	}
 
 	storageConfigs := meta.StorageConfigs
-	bootCfg := rebuildBootConfig(chCfg)
+	bootCfg := meta.BootConfig
 	directBoot := hypervisor.IsDirectBoot(bootCfg)
 
 	cowPath := ch.cowPath(vmID, directBoot)
@@ -66,6 +67,10 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		return nil, fmt.Errorf("update COW path: %w", err)
 	}
 	updateDataDiskPaths(storageConfigs, runDir)
+	blobIDs, err := cloneBlobIDs(storageConfigs, bootCfg, cowPath)
+	if err != nil {
+		return nil, err
+	}
 
 	// Snapshot may omit cidata if taken post-restart.
 	hadCidataInSnapshot := updateCloneCidataPath(storageConfigs, directBoot, ch.conf.CidataPath(vmID))
@@ -92,7 +97,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	// vm.restore attaches the snapshot's TAP names and vm.remove-device releases a TAP only after the guest's eject ACK, so every restored NIC gets a clone-unique throwaway TAP that CH creates and drops itself.
 	netTAPs := make([]string, len(chCfg.Nets))
 	for i := range netTAPs {
-		netTAPs[i] = network.TAPName(network.RestoreTAPPrefix, vmID, i)
+		netTAPs[i] = network.TAPName(config.RestoreTAPPrefix, vmID, i)
 	}
 
 	queueCPUs := hypervisor.QueueCPUs(rec)
@@ -108,14 +113,6 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		queueCPUs:      queueCPUs,
 	}); err != nil {
 		return nil, fmt.Errorf("patch CH config: %w", err)
-	}
-
-	if directBoot {
-		dns, dnsErr := ch.conf.DNSServers()
-		if dnsErr != nil {
-			return nil, fmt.Errorf("parse DNS servers: %w", dnsErr)
-		}
-		bootCfg.Cmdline = buildCmdline(storageConfigs, networkConfigs, vmCfg.Name, dns)
 	}
 
 	sockPath := hypervisor.SocketPath(runDir)
@@ -142,7 +139,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
 	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
-	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, nil, sourceSnapshotID); err != nil {
+	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
@@ -219,20 +216,18 @@ func parseCHConfig(path string) (*chVMConfig, error) {
 	return &cfg, nil
 }
 
-func rebuildBootConfig(cfg *chVMConfig) *types.BootConfig {
-	if cfg.Payload == nil {
-		return nil
+func cloneBlobIDs(storageConfigs []*types.StorageConfig, bootCfg *types.BootConfig, cowPath string) (map[string]struct{}, error) {
+	if hypervisor.IsDirectBoot(bootCfg) {
+		return hypervisor.ExtractBlobIDs(storageConfigs, bootCfg), nil
 	}
-	p := cfg.Payload
-	if p.Kernel == "" && p.Firmware == "" {
-		return nil
+	hdr, ok, err := utils.ReadQcow2Header(cowPath)
+	if err != nil {
+		return nil, fmt.Errorf("read overlay header: %w", err)
 	}
-	return &types.BootConfig{
-		KernelPath:   p.Kernel,
-		InitrdPath:   p.Initramfs,
-		Cmdline:      p.Cmdline,
-		FirmwarePath: p.Firmware,
+	if !ok || hdr.BackingFile == "" {
+		return nil, nil
 	}
+	return map[string]struct{}{hypervisor.BlobHexFromPath(hdr.BackingFile): {}}, nil
 }
 
 func updateCloneCidataPath(storageConfigs []*types.StorageConfig, directBoot bool, cidataPath string) bool {
