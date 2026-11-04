@@ -32,5 +32,5 @@ func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 }
 
 func (ch *CloudHypervisor) forceTerminate(ctx context.Context, socketPath string, pid int) error {
-	return utils.TerminateProcess(ctx, pid, socketPath, ch.conf.TerminateGracePeriod())
+	return utils.TerminateProcess(ctx, pid, socketPath, vmTeardownBudget+ch.conf.TerminateGracePeriod())
 }

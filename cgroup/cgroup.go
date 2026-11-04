@@ -153,13 +153,20 @@ func ScopeDir(parentDir, vmID string) string {
 }
 
 // Prepare creates or reconfigures vmID's scope and returns its directory for CLONE_INTO_CGROUP; idempotent.
-func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
+func Prepare(ctx context.Context, parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File, error) {
 	if err := ensureParent(parentDir, fence, k.CPUSet != ""); err != nil {
 		return nil, err
 	}
 	dir := ScopeDir(parentDir, vmID)
 	mkErr := os.Mkdir(dir, 0o750)
-	if mkErr != nil && !errors.Is(mkErr, fs.ErrExist) {
+	// A scope that outlived its VMM may carry a cgroup.kill, and the kernel then kills every clone into it.
+	if errors.Is(mkErr, fs.ErrExist) {
+		if err := Remove(ctx, parentDir, vmID); err != nil {
+			return nil, err
+		}
+		mkErr = os.Mkdir(dir, 0o750)
+	}
+	if mkErr != nil {
 		return nil, fmt.Errorf("create scope: %w", mkErr)
 	}
 	if err := placeScope(parentDir, dir, k.CPUSet); err != nil {
@@ -167,12 +174,6 @@ func Prepare(parentDir, fence, vmID string, k Knobs, deferQuota bool) (*os.File,
 	}
 	if err := writeControl(dir, weightName, strconv.Itoa(k.Weight)); err != nil {
 		return nil, err
-	}
-	// A reused scope may hold a leftover burst > target quota, which blocks the cpu.max write (kernel requires burst <= quota): zero it first; pre-5.14 kernels lack the file.
-	if errors.Is(mkErr, fs.ErrExist) {
-		if err := writeControl(dir, burstName, "0"); err != nil && !burstFileMissing(dir) {
-			return nil, err
-		}
 	}
 	if deferQuota {
 		if err := writeControl(dir, maxName, fmt.Sprintf("max %d", k.PeriodUs)); err != nil {

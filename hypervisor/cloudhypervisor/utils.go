@@ -33,6 +33,7 @@ const (
 	vmBootPollInterval = 10 * time.Millisecond
 	// ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows up to 14 s.
 	ejectWaitTimeout = 30 * time.Second
+	vmTeardownBudget = 30 * time.Second
 
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"
