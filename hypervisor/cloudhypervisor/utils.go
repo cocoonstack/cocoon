@@ -48,6 +48,11 @@ var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.Co
 
 type chMemoryRestoreMode string
 
+type chSnapshotConfig struct {
+	DestinationURL string `json:"destination_url"`
+	SnapshotType   string `json:"snapshot_type,omitempty"`
+}
+
 type chRestoreConfig struct {
 	SourceURL         string              `json:"source_url"`
 	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
@@ -134,10 +139,16 @@ func isAlreadyInStateError(err error, state string) bool {
 	return strings.Contains(ae.Message, fmt.Sprintf("Invalid transition: InvalidStateTransition(%s, %s)", state, state))
 }
 
-func snapshotVM(ctx context.Context, hc *http.Client, destDir string) error {
+func snapshotVM(ctx context.Context, hc *http.Client, destDir, snapshotType string) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
-	return vmPutJSON(ctx, hc, "vm.snapshot", "snapshot request", map[string]string{"destination_url": "file://" + destDir}, http.StatusNoContent)
+	cfg := chSnapshotConfig{DestinationURL: "file://" + destDir, SnapshotType: snapshotType}
+	return vmPutJSON(ctx, hc, "vm.snapshot", "snapshot request", cfg, http.StatusNoContent)
+}
+
+func endSnapshotSeries(ctx context.Context, hc *http.Client) error {
+	_, err := vmAPIOnce(ctx, hc, "vm.end-snapshot-series")
+	return err
 }
 
 func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string) error {

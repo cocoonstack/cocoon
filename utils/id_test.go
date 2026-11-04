@@ -4,6 +4,17 @@ import (
 	"testing"
 )
 
+func TestValidID(t *testing.T) {
+	if !ValidID(GenerateID()) {
+		t.Error("a generated ID is invalid")
+	}
+	for _, id := range []string{"", "short", "../../../../../../../etc/pw", "abcdefghijklmnopqrstuvwxyz", "AAAAAAAAAAAAAAAAAAAAAAAAA1"} {
+		if ValidID(id) {
+			t.Errorf("%q accepted", id)
+		}
+	}
+}
+
 func TestGenerateID_Length(t *testing.T) {
 	id := GenerateID()
 	if len(id) != 26 {

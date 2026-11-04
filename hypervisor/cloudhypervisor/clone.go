@@ -13,6 +13,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/metering"
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -28,6 +29,7 @@ type cloneResumeOpts struct {
 	networkConfigs      []*types.NetworkConfig
 	snapshotCfg         *chVMConfig
 	queueCPUs           []int
+	keepPaused          bool
 }
 
 func (ch *CloudHypervisor) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
@@ -39,10 +41,10 @@ func (ch *CloudHypervisor) cloneAfterExtract(ctx context.Context, rec *hyperviso
 	if err != nil {
 		return nil, fmt.Errorf("parse CH config: %w", err)
 	}
-	return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, chCfg)
+	return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, chCfg, false)
 }
 
-func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string, chCfg *chVMConfig) (*types.VM, error) {
+func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string, chCfg *chVMConfig, migrate bool) (*types.VM, error) {
 	vmID, runDir := rec.ID, rec.RunDir
 	networkConfigs := net.NetworkConfigs
 	logger := log.WithFunc("cloudhypervisor.cloneAfterExtractParsed")
@@ -136,13 +138,18 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		networkConfigs:      networkConfigs,
 		snapshotCfg:         chCfg,
 		queueCPUs:           queueCPUs,
+		keepPaused:          migrate,
 	}); err != nil {
 		return nil, err
 	}
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
 	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
-	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID); err != nil {
+	reason := metering.ReasonClone
+	if migrate {
+		reason = metering.ReasonMigrate
+	}
+	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID, reason); err != nil {
 		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
@@ -185,6 +192,9 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 	}
 	if err = ch.ArmCPUQuota(opts.vmID, &opts.vmCfg.Config); err != nil {
 		return err
+	}
+	if opts.keepPaused {
+		return nil
 	}
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("vm.resume: %w", err)

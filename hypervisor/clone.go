@@ -57,8 +57,8 @@ func (b *Backend) RunningCloneRecord(rec *VMRecord, vmCfg *types.VMConfig, stora
 	return info
 }
 
-// FinalizeClone persists the record and emits the clone open-interval pair.
-func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string) error {
+// FinalizeClone persists the record and emits the open-interval pair.
+func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}, sourceSnapshotID string, reason metering.Reason) error {
 	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
 		r.VM = *info
 		// The subpackage building info cannot reach markTransition; without this the clone commits at generation zero.
@@ -72,7 +72,7 @@ func (b *Backend) FinalizeClone(ctx context.Context, vmID string, info *types.VM
 	}); err != nil {
 		return err
 	}
-	b.emitOpenInterval(ctx, info, metering.ReasonClone, sourceSnapshotID, timeNow())
+	b.emitOpenInterval(ctx, info, reason, sourceSnapshotID, timeNow())
 	return nil
 }
 

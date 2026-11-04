@@ -17,7 +17,7 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 	spec := hypervisor.CloneSpec{
 		VMCfg: vmCfg, Net: net, SnapshotConfig: snapshotConfig,
 		AfterExtract: func(ctx context.Context, rec *hypervisor.VMRecord, vmCfg *types.VMConfig, net types.NetSetup, sourceSnapshotID string) (*types.VM, error) {
-			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg)
+			return ch.cloneAfterExtractParsed(ctx, rec, vmCfg, net, sourceSnapshotID, srcCfg, false)
 		},
 	}
 	return ch.DirectCloneBase(ctx, vmID, spec, srcDir, func(dstDir, srcDir string) error {
@@ -56,8 +56,12 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 	if err != nil {
 		return nil, fmt.Errorf("parse source config: %w", err)
 	}
+	return chCfg, hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, classifySnapshotFile(chCfg))
+}
+
+func classifySnapshotFile(chCfg *chVMConfig) func(name string) hypervisor.SnapshotFileKind {
 	cowFiles := identifyCOWFiles(chCfg)
-	return chCfg, hypervisor.CloneSnapshotFiles(ctx, dstDir, srcDir, func(name string) hypervisor.SnapshotFileKind {
+	return func(name string) hypervisor.SnapshotFileKind {
 		switch {
 		case strings.HasPrefix(name, memoryRangeFile):
 			return hypervisor.SnapshotFileMemory
@@ -66,7 +70,7 @@ func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig
 		default:
 			return hypervisor.SnapshotFileMeta
 		}
-	})
+	}
 }
 
 // cleanSnapshotFiles enumerates by name so stale data-*.raw and cocoon.json from a previous incarnation don't linger; COW files are overwritten anyway.

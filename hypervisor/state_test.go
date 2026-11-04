@@ -215,7 +215,7 @@ func TestFinalizeCloneEmitsCloneEntries(t *testing.T) {
 		State:      types.VMStateRunning,
 		Config:     types.VMConfig{CPU: 2, Memory: 2 << 30, Storage: 20 << 30},
 	}
-	if err := b.FinalizeClone(ctx, "vm1", info, nil, nil, "snap-source"); err != nil {
+	if err := b.FinalizeClone(ctx, "vm1", info, nil, nil, "snap-source", metering.ReasonClone); err != nil {
 		t.Fatalf("FinalizeClone: %v", err)
 	}
 	entries := rec.Entries()

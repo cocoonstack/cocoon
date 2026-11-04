@@ -147,44 +147,41 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 }
 
 func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, func(), error) {
-	vmID, err := b.ResolveRef(ctx, ref)
+	vmID, rec, unlock, err := b.lockForCapture(ctx, ref)
 	if err != nil {
 		return "", VMRecord{}, "", nil, err
-	}
-	unlock, err := b.LockVMOps(ctx, vmID)
-	if err != nil {
-		return "", VMRecord{}, "", nil, err
-	}
-	fail := func(err error) (string, VMRecord, string, func(), error) {
-		unlock()
-		return "", VMRecord{}, "", nil, err
-	}
-	rec, err := b.EntryGuardLoad(ctx, vmID)
-	if err != nil {
-		return fail(err)
-	}
-	if vErr := validateRecordInvariants(&rec); vErr != nil {
-		return fail(vErr)
 	}
 	tmpDir, err := os.MkdirTemp(rec.RunDir, captureDirPrefix)
 	if err != nil {
-		return fail(fmt.Errorf("create temp dir: %w", err))
+		unlock()
+		return "", VMRecord{}, "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	return vmID, rec, tmpDir, unlock, nil
 }
 
-func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, error) {
-	if spec.AfterCapture != nil {
-		if err := spec.AfterCapture(rec, tmpDir); err != nil {
-			return nil, err
-		}
-	}
-	meta, err := spec.BuildMeta(rec, tmpDir)
+func (b *Backend) lockForCapture(ctx context.Context, ref string) (string, VMRecord, func(), error) {
+	vmID, err := b.ResolveRef(ctx, ref)
 	if err != nil {
-		return nil, fmt.Errorf("build snapshot metadata: %w", err)
+		return "", VMRecord{}, nil, err
 	}
-	if err = snapshot.SaveSnapshotMeta(tmpDir, meta); err != nil {
-		return nil, fmt.Errorf("save snapshot metadata: %w", err)
+	unlock, err := b.LockVMOps(ctx, vmID)
+	if err != nil {
+		return "", VMRecord{}, nil, err
+	}
+	rec, err := b.EntryGuardLoad(ctx, vmID)
+	if err == nil {
+		err = validateRecordInvariants(&rec)
+	}
+	if err != nil {
+		unlock()
+		return "", VMRecord{}, nil, err
+	}
+	return vmID, rec, unlock, nil
+}
+
+func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMRecord, spec SnapshotSpec, tmpDir string) (*types.SnapshotConfig, error) {
+	if err := saveCaptureMeta(rec, spec, tmpDir); err != nil {
+		return nil, err
 	}
 	snapID, err := b.RecordSnapshot(ctx, vmID)
 	if err != nil {
@@ -258,6 +255,22 @@ func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(id
 	}
 	slices.Reverse(out)
 	return out
+}
+
+func saveCaptureMeta(rec *VMRecord, spec SnapshotSpec, tmpDir string) error {
+	if spec.AfterCapture != nil {
+		if err := spec.AfterCapture(rec, tmpDir); err != nil {
+			return err
+		}
+	}
+	meta, err := spec.BuildMeta(rec, tmpDir)
+	if err != nil {
+		return fmt.Errorf("build snapshot metadata: %w", err)
+	}
+	if err = snapshot.SaveSnapshotMeta(tmpDir, meta); err != nil {
+		return fmt.Errorf("save snapshot metadata: %w", err)
+	}
+	return nil
 }
 
 func resumeAfterCapture(resume TransitionHook, rec *VMRecord, hc *http.Client) error {

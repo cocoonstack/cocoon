@@ -36,6 +36,26 @@ func ReflinkCopy(ctx context.Context, dst, src string, sync SyncMode) error {
 	return SparseCopy(dst, src, sync)
 }
 
+// CheckReflink reports whether the filesystem holding dir supports FICLONE; cloning an empty file costs no extent walk.
+func CheckReflink(dir string) error {
+	src, err := os.CreateTemp(dir, ".reflink-probe-*")
+	if err != nil {
+		return fmt.Errorf("create reflink probe: %w", err)
+	}
+	defer os.Remove(src.Name()) //nolint:errcheck
+	defer src.Close()           //nolint:errcheck
+	dst, err := os.CreateTemp(dir, ".reflink-probe-*")
+	if err != nil {
+		return fmt.Errorf("create reflink probe: %w", err)
+	}
+	defer os.Remove(dst.Name()) //nolint:errcheck
+	defer dst.Close()           //nolint:errcheck
+	if err := unix.IoctlFileClone(int(dst.Fd()), int(src.Fd())); err != nil {
+		return fmt.Errorf("ficlone in %s: %w", dir, err)
+	}
+	return nil
+}
+
 func tryFiclone(dst, src string, sync SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		if err := unix.IoctlFileClone(int(dstFile.Fd()), int(srcFile.Fd())); err != nil {

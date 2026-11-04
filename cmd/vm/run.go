@@ -286,7 +286,12 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return cloneSetup{}, err
 	}
-	vmID := utils.GenerateID()
+	vmID := cliutil.FlagStr(cmd, "id")
+	if vmID == "" {
+		vmID = utils.GenerateID()
+	} else if !utils.ValidID(vmID) {
+		return cloneSetup{}, fmt.Errorf("--id must have the shape of a generated VM ID, got %q", vmID)
+	}
 	vmCfg.Name = cmp.Or(vmCfg.Name, "cocoon-clone-"+network.VMIDPrefix(vmID))
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
@@ -500,7 +505,6 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 		return nil, nil, err
 	}
 	if err := hyper.PrereserveVM(ctx, vmID, vmCfg, blobIDs); err != nil {
-		hyper.RollbackCreate(ctx, vmID, vmCfg.Name)
 		unlock()
 		return nil, nil, fmt.Errorf("reserve VM record: %w", err)
 	}

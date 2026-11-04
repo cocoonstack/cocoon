@@ -18,6 +18,8 @@ var (
 	ErrAmbiguous  = errors.New("vm ref resolves to multiple backends")
 
 	ErrHotAttached = errors.New("detach before snapshot or hibernate")
+
+	ErrMigrateUnsupported = errors.New("backend does not support live migration")
 )
 
 // Hypervisor manages VM lifecycle.
