@@ -225,9 +225,13 @@ A killed capture also leaves its files. A `snapshot-*` directory under the VM's 
 
 ## Windows: a capture right after a clone can strand the next clone's NIC
 
-A capture waits up to 30 seconds for a clone to eject its old NICs. A Windows guest acks in 0-14 seconds; only a CPU quota of 0.2 core or less for 4 vCPUs pushed it past 30. The wait ends at the ack, but the new NIC is still settling. A snapshot taken then yields a clone whose own eject never acks: 9 of 12 at zero delay, 0 of 78 with at least 7-8 seconds between the clone and the capture. Held VMs were still pending after 968 seconds, so a longer wait does not help.
+A clone's eject ack does not mean its replacement NIC has started: netkvm finishes starting 0.2-1.8 seconds later. A snapshot taken in between yields a clone whose own eject never acks. Its next capture then waits the full 30 seconds and warns, and a clone of that snapshot has no new NIC while `vm clone` reports success. On Windows, a capture that finds an eject pending therefore also waits, inside the same 30 seconds, until every NIC has sent a frame, and it re-sends `vm.remove-device` every 5 seconds for an eject the guest dropped. A capture started in the short window after the ack and before the NIC starts is not covered: wait a few seconds after cloning a Windows VM before capturing it.
 
-That clone's guest works, but its next capture waits the full 30 seconds and warns, and a clone of that snapshot has no new NIC while `vm clone` reports success. Wait 8 seconds after cloning a Windows VM before capturing it. A NIC in Error code 10 at capture does the same, with any delay, and the host cannot see it; check `Get-PnpDevice` in the guest before capturing. The `CocoonNicAutoHeal` task usually clears the error in 30-120 seconds. A VM with several NICs hits this often: a cold-booted `--nics 3` VM had 2 of 3 in Error.
+A NIC in Error code 10 (netkvm event 5005) at capture strands the eject the same way, with any delay. It appears when Windows re-enables several NICs at once: it moves a NIC's BAR into a range Cloud Hypervisor still assigns to another disabled NIC, Cloud Hypervisor refuses and logs `Failed moving device BAR ... keeping old BAR`, and the driver starts on resources that do not match. Disable and re-enable NICs one at a time; the clone hint and the image's `CocoonNicAutoHeal` task do.
+
+## A serial console slows NIC bring-up and VM wake
+
+On a host whose kernel console is a serial port (`console=ttyS0,115200`) at console_loglevel 7, every bridge port state change prints `entered blocking state` and `entered forwarding state` synchronously, about 6.5 ms per line, while the kernel holds RTNL. A VM wake or start pays about 14 ms of it, and any other netlink or TAP operation on the host waits behind it. Lowering console_loglevel (the first field of `/proc/sys/kernel/printk`) to 4 cuts the link-up work from 13.6 ms to 0.4 ms; the lines still reach `dmesg`.
 
 ## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 
