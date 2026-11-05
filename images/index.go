@@ -31,11 +31,7 @@ type Index[E any] struct {
 func ReferencedDigests[E Entry](images map[string]*E) map[string]struct{} {
 	refs := make(map[string]struct{})
 	for _, ep := range images {
-		if ep == nil {
-			continue
-		}
-		e := *ep
-		for _, hex := range e.DigestHexes() {
+		for _, hex := range (*ep).DigestHexes() {
 			refs[hex] = struct{}{}
 		}
 	}
@@ -53,18 +49,14 @@ func LookupOne[E Entry](images map[string]*E, id string) (string, *E, bool) {
 
 // LookupRefs returns all ref keys matching id by exact key or digest prefix.
 func LookupRefs[E Entry](images map[string]*E, id string) []string {
-	if entry, ok := images[id]; ok && entry != nil {
+	if _, ok := images[id]; ok {
 		return []string{id}
 	}
 	// minHexLen guards against over-broad prefixes like "sha256:a".
 	idHex := strings.TrimPrefix(id, "sha256:")
 	var refs []string
 	for ref, ep := range images {
-		if ep == nil {
-			continue
-		}
-		e := *ep
-		dStr := e.EntryID()
+		dStr := (*ep).EntryID()
 		dHex := strings.TrimPrefix(dStr, "sha256:")
 		if dStr == id || dHex == id {
 			refs = append(refs, ref)
@@ -79,13 +71,9 @@ func LookupRefs[E Entry](images map[string]*E, id string) []string {
 
 // refsShareDigest reports whether every ref names the same digest (tag aliases of one image).
 func refsShareDigest[E Entry](images map[string]*E, refs []string) bool {
-	first := images[refs[0]]
-	if first == nil {
-		return false
-	}
+	first := (*images[refs[0]]).EntryID()
 	for _, ref := range refs[1:] {
-		e := images[ref]
-		if e == nil || (*e).EntryID() != (*first).EntryID() {
+		if (*images[ref]).EntryID() != first {
 			return false
 		}
 	}
@@ -115,9 +103,6 @@ func deleteByID[E Entry](ctx context.Context, logPrefix string, images map[strin
 }
 
 func entryToImage[E Entry](entry *E, typ string) *types.Image {
-	if entry == nil {
-		return nil
-	}
 	e := *entry
 	return &types.Image{
 		ID:        e.EntryID(),
@@ -134,9 +119,6 @@ func listImages[E Entry](images map[string]*E, typ string) []*types.Image {
 	}
 	out := make([]*types.Image, 0, len(images))
 	for _, ep := range images {
-		if ep == nil {
-			continue
-		}
 		out = append(out, entryToImage(ep, typ))
 	}
 	return out

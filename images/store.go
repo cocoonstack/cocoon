@@ -63,9 +63,6 @@ func (s *Store[E]) applyDiff(ctx context.Context, w meta.Writer, fn IndexFunc[E]
 		}
 	}
 	for id, entry := range idx.Images {
-		if entry == nil {
-			continue
-		}
 		raw, err := json.Marshal(entry, json.Deterministic(true))
 		if err != nil {
 			return fmt.Errorf("encode image entry %q: %w", id, err)
