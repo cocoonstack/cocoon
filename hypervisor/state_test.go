@@ -444,6 +444,37 @@ func TestReconcileToRunningFromError(t *testing.T) {
 	}
 }
 
+func TestReconcileToRunningLeavesAnUncommittedRestore(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
+	b.MarkError(ctx, "vm1")
+	runDir := t.TempDir()
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs["vm1"].RunDir = runDir
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
+		t.Fatalf("mk tombstone: %v", err)
+	}
+	before, err := b.LoadRecord(ctx, "vm1")
+	if err != nil {
+		t.Fatalf("LoadRecord: %v", err)
+	}
+
+	b.ReconcileToRunning(ctx, "vm1")
+
+	loaded, err := b.LoadRecord(ctx, "vm1")
+	if err != nil {
+		t.Fatalf("LoadRecord: %v", err)
+	}
+	if loaded.State != types.VMStateError || !loaded.StartedAt.Equal(*before.StartedAt) {
+		t.Errorf("state %s started %v, want the uncommitted restore left as %s started %v", loaded.State, loaded.StartedAt, before.State, before.StartedAt)
+	}
+}
+
 func TestReconcileToRunningOrphanLaunchEmitsStart(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
