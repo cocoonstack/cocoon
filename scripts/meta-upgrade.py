@@ -34,10 +34,6 @@ def placement(record: dict[str, Any]) -> str | None:
 
 
 def upgrade_sqlite(db_path: str) -> None:
-    if os.path.exists(os.path.join(os.path.dirname(db_path), "meta-convert.manifest")):
-        sys.exit(
-            f"{db_path}: a meta convert is in flight; finish it with the binary that started it"
-        )
     db = sqlite3.connect(db_path, timeout=5, isolation_level=None)
     app_id = db.execute("PRAGMA application_id").fetchone()[0]
     if app_id != APPLICATION_ID:
@@ -126,6 +122,10 @@ def main() -> int:
     )
     root = parser.parse_args().root_dir
     db_path = os.path.join(root, "meta", "meta.db")
+    if os.path.exists(os.path.join(root, "meta", "meta-convert.manifest")):
+        sys.exit(
+            f"{root}: a meta convert is in flight; finish it with the binary that started it"
+        )
     if os.path.exists(db_path):
         upgrade_sqlite(db_path)
     else:
