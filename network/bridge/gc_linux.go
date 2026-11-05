@@ -34,7 +34,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			snap := bridgeSnapshot{prefixes: make(map[string]struct{})}
 
-			links, err := listLinksFn()
+			links, err := listLinks()
 			if err != nil {
 				return snap, err
 			}
@@ -61,7 +61,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 			if len(prefixes) == 0 {
 				return nil
 			}
-			links, err := listLinksFn()
+			links, err := listLinks()
 			if err != nil {
 				return err
 			}
@@ -97,6 +97,14 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 }
 
 // parseTAPName extracts the vmID prefix from a bridge TAP name "<tapPrefix><vmid8>-<nic>".
+func listLinks() ([]netlink.Link, error) {
+	links, err := listLinksFn()
+	if errors.Is(err, netlink.ErrDumpInterrupted) {
+		return links, nil
+	}
+	return links, err
+}
+
 func parseTAPName(tapPrefix, name string) (string, bool) {
 	rest, ok := strings.CutPrefix(name, tapPrefix)
 	if !ok {
