@@ -40,9 +40,6 @@ func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 
 // reseedAfterResume detaches by default: the post-resume vsock dial would otherwise sit on every clone/restore critical path.
 func (h Handler) reseedAfterResume(ctx context.Context, conf *config.Config, hyper hypervisor.Hypervisor, vm *types.VM, regenMachineID bool) {
-	if vm.VsockSocket == "" {
-		vm = refreshVM(ctx, hyper, vm)
-	}
 	if vm.VsockSocket == "" || vm.Config.Windows || !detachReseed(ctx, conf, hyper, vm, regenMachineID) {
 		signalReseed(ctx, vm, regenMachineID)
 	}
