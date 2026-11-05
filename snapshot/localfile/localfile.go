@@ -66,9 +66,6 @@ type LocalFile struct {
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...Option) (*LocalFile, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
 	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)

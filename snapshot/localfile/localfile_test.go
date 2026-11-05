@@ -45,13 +45,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestNew_NilConfig(t *testing.T) {
-	_, err := New(nil, metering.NopRecorder{}, nil)
-	if err == nil {
-		t.Fatal("expected error for nil config")
-	}
-}
-
 func TestCreateAndDeleteEmitMetering(t *testing.T) {
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)

@@ -3,7 +3,6 @@ package firecracker
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
@@ -27,9 +26,6 @@ type Firecracker struct {
 
 // New creates a Firecracker backend; a nil rec falls back to NopRecorder.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecracker, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
 	cfg := NewConfig(conf)
 	backend, err := hypervisor.NewBackend(typ, cfg, rec, store)
 	if err != nil {
