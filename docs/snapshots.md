@@ -184,7 +184,7 @@ Rules for the caller:
 
 - Copy every file a round lists, in the listed round order. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
 - A VM has one series. A new baseline ends the previous one and deletes its directory; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
-- A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A round after a killed capture fails the same way. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
+- A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A capture killed mid-round makes the next round fail the same way; a gap in `round` means a capture died after it finished, so copy every non-`.ref` file of the directory or start again. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
 - A VM cloned or received seconds ago may still eject its old NICs. A capture waits up to 30 seconds for that, then goes on with a warning; if an eject lands during a series, the next delta fails, so start again.
 - Pull the image on the target before `--final`. A receive that has to pull does it during the pause.
 - The receive uses the source's CNI network name. When the target has no conflist of that name, pass `--network`.
