@@ -75,7 +75,7 @@ func printCloudimgNetworkHints() {
 func printOCINetworkHints(vm *types.VM) {
 	fmt.Println()
 	fmt.Println("  # Set hostname")
-	fmt.Printf("  hostnamectl set-hostname %s\n", vm.Config.Name)
+	fmt.Printf("  echo %[1]s > /etc/hostname && hostname %[1]s\n", vm.Config.Name)
 
 	var staticNICs []nicHint
 	var dhcpMACs []string

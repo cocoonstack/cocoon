@@ -77,7 +77,7 @@ echo 3 > /proc/sys/vm/drop_caches
 
 # Clean old network configs from snapshot, then set the hostname
 rm -f /etc/systemd/network/10-*.network
-hostnamectl set-hostname <VM_NAME>
+echo <VM_NAME> > /etc/hostname && hostname <VM_NAME>
 
 # Write new MAC-based configs
 # (cocoon vm clone prints a ready-to-paste loop with actual MAC/IP/GW values)
