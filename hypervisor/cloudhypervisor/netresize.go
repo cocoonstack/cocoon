@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/extend/netresize"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/network"
@@ -27,9 +29,6 @@ func (o chNICOps) LiveNICs(ctx context.Context) ([]hypervisor.LiveNIC, error) {
 			idx = -1
 		}
 		live = append(live, hypervisor.LiveNIC{ID: n.ID, Index: idx})
-	}
-	for _, id := range pendingNICEjects(info) {
-		live = append(live, hypervisor.LiveNIC{ID: id, Index: -1})
 	}
 	return live, nil
 }
@@ -54,10 +53,15 @@ func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec net
 	if err := spec.Normalize(); err != nil {
 		return netresize.Result{}, err
 	}
-	hc, rec, _, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return netresize.Result{}, err
 	}
 	defer unlock()
+	for _, id := range pendingNICEjects(info) {
+		if rmErr := removeDevicePending(ctx, hc, id); rmErr != nil {
+			log.WithFunc("cloudhypervisor.NetResize").Warnf(ctx, "re-request eject of %s: %v", id, rmErr)
+		}
+	}
 	return ch.NetResizeWith(ctx, rec.ID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
 }

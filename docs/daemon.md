@@ -95,7 +95,7 @@ record once and applies the same idempotent rules:
 | committed, not `running` | live | repair to `running` under the lock, then watch it |
 | `running`, or an open compute interval | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
-| unfinished delete tombstone | any | finish a delete past its first filesystem step, roll back one that never reached it — supervision starts deletes of its own, so it resumes them |
+| unfinished delete tombstone | any | finish a delete whose tombstone reached the deleting phase, roll back one still leased — supervision starts deletes of its own, so it resumes them |
 
 Exits are detected with `pidfd` + `epoll`, so the normal path costs no polling;
 the ticker is the correctness floor for anything the watcher missed, including
