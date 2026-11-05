@@ -175,7 +175,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 // List returns all snapshots (excluding pending ones).
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
-	return result, lf.view(ctx, func(t *snapTx) error {
+	err := lf.view(ctx, func(t *snapTx) error {
 		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			if rec.Pending {
 				return nil
@@ -184,6 +184,7 @@ func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 			return nil
 		})
 	})
+	return result, err
 }
 
 func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, error) {
@@ -433,7 +434,9 @@ func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (
 		return nil
 	}
 	if touch {
-		return rec, lf.touch(ctx, apply)
+		err := lf.touch(ctx, apply)
+		return rec, err
 	}
-	return rec, lf.view(ctx, apply)
+	err := lf.view(ctx, apply)
+	return rec, err
 }
