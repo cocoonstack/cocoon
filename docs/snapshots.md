@@ -178,6 +178,7 @@ Requirements:
 - **Hypervisor build**: the cocoonstack fork at `35b098c65260` or newer. An older VMM answers 404 on the first capture and nothing changes. A VM keeps the VMM it started on, so it needs a restart after an upgrade.
 - **Filesystem**: the source run dir needs reflink, because disk deltas come from comparing extents the disk shares with a reflinked copy. XFS is the only filesystem tested. btrfs and bcachefs pass the capture check but are untested. ext4 and tmpfs have no reflink, so capture refuses before it pauses the guest. A target run dir without reflink falls back to a full disk copy (untested), and the VM then cannot migrate away from it. On the target, keep the copied directory on the filesystem of the run dir, so memory files hard-link and the directory can go after the receive.
 - **Devices**: a hot-attached disk, share or VFIO device refuses the capture, as it does for `snapshot save`.
+- **Root dir**: the target's `root_dir` must be the same path as the source's. Otherwise the receive fails during the pause with `untrusted storage path in snapshot metadata`.
 
 Rules for the caller:
 
@@ -185,6 +186,7 @@ Rules for the caller:
 - A VM has one series. A new baseline ends the previous one and deletes its directory; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
 - A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A round after a killed capture fails the same way. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
 - A VM cloned or received seconds ago may still eject its old NICs. A capture waits up to 30 seconds for that, then goes on with a warning; if an eject lands during a series, the next delta fails, so start again.
+- Pull the image on the target before `--final`. A receive that has to pull does it during the pause.
 - Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
 
 The received VM gets fresh NICs like a clone, with new MACs, so the guest needs the [post-clone network setup](#post-clone-guest-setup). No reseed runs: the guest state is the same one, not a copy. If the target VMM dies before `vm start`, the start cold-boots from the disk and still succeeds, so check the guest before removing the source. `--restore-mode ondemand` is rejected by the hypervisor for a series with deltas. Metering opens the new intervals with reason `migrate`.

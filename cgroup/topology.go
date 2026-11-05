@@ -17,8 +17,9 @@ const SysCPURoot = "/sys/devices/system/cpu"
 
 // Topology is the host's online cpus inside the fence, grouped by the last-level cache they share.
 type Topology struct {
-	domains [][]int
-	cores   [][][]int // per domain, the hardware threads of each physical core
+	root            string
+	domains         [][]int
+	soleDomainCores [][]int
 }
 
 // ReadTopology groups the online cpus inside fence by last-level cache; a host without cache sysfs forms one domain.
@@ -33,7 +34,7 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 	if len(online) == 0 {
 		return nil, errors.New("no online cpu inside the cgroup_cpus fence")
 	}
-	t := &Topology{}
+	t := &Topology{root: root}
 	if llc := lastCacheIndex(root, online[0]); llc == "" {
 		t.domains = [][]int{online}
 	} else {
@@ -47,18 +48,17 @@ func ReadTopology(root string, fence []int) (*Topology, error) {
 			rest = slices.DeleteFunc(rest, inShared)
 		}
 	}
-	for _, domain := range t.domains {
-		cores, err := coresOf(root, domain)
-		if err != nil {
+	if len(t.domains) == 1 {
+		var err error
+		if t.soleDomainCores, err = coresOf(root, t.domains[0]); err != nil {
 			return nil, err
 		}
-		t.cores = append(t.cores, cores)
 	}
 	return t, nil
 }
 
 // Place picks the least-loaded domain and, for 2+ queues, one thread per queue, preferring distinct cores.
-func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
+func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int, err error) {
 	pick := 0
 	best := sumLoad(t.domains[0], load)
 	for i, d := range t.domains[1:] {
@@ -68,12 +68,18 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
 	}
 	domain = slices.Clone(t.domains[pick])
 	if queues < 2 {
-		return domain, nil
+		return domain, nil, nil
+	}
+	cores := t.soleDomainCores
+	if cores == nil {
+		if cores, err = coresOf(t.root, domain); err != nil {
+			return nil, nil, err
+		}
 	}
 	byLoad := func(a, b int) int { return cmp.Or(cmp.Compare(load[a], load[b]), cmp.Compare(a, b)) }
 	layer := make(map[int]int, len(domain))
 	ranked := make([]int, 0, len(domain))
-	for _, c := range t.cores[pick] {
+	for _, c := range cores {
 		core := slices.Clone(c)
 		slices.SortFunc(core, byLoad)
 		for i, cpu := range core {
@@ -84,7 +90,7 @@ func (t *Topology) Place(queues int, load map[int]int) (domain, pins []int) {
 	slices.SortFunc(ranked, func(a, b int) int { return cmp.Or(cmp.Compare(layer[a], layer[b]), byLoad(a, b)) })
 	pins = ranked[:min(queues, len(ranked))]
 	slices.Sort(pins)
-	return domain, pins
+	return domain, pins, nil
 }
 
 func ReadCPUList(path string) ([]int, error) {

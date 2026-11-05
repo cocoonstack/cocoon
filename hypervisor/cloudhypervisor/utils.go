@@ -31,8 +31,9 @@ const (
 	apiSocketFlag = "--api-socket"
 
 	vmBootPollInterval = 10 * time.Millisecond
-	// ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows can take 10–20 s.
+	// ejectWaitTimeout bounds the wait for guest B0EJ; Linux acks < 1 s, Windows up to 14 s.
 	ejectWaitTimeout = 30 * time.Second
+	vmTeardownBudget = 30 * time.Second
 
 	restoreModeCopy     = "copy"
 	restoreModeOnDemand = "ondemand"
@@ -105,11 +106,6 @@ func vmAPIOnce(ctx context.Context, hc *http.Client, endpoint string) ([]byte, e
 
 func vmPutJSON(ctx context.Context, hc *http.Client, endpoint, kind string, payload any, successCodes ...int) error {
 	_, err := utils.DoJSONOnce(ctx, hc, http.MethodPut, chAPIBase+endpoint, kind, payload, successCodes...)
-	return err
-}
-
-func shutdownVM(ctx context.Context, hc *http.Client) error {
-	_, err := vmAPIOnce(ctx, hc, "vm.shutdown")
 	return err
 }
 

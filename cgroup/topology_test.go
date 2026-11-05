@@ -46,9 +46,33 @@ func TestReadTopologyWithoutCacheSysfs(t *testing.T) {
 	if want := [][]int{{0, 1, 2, 3}}; !slices.EqualFunc(topo.domains, want, slices.Equal) {
 		t.Errorf("domains = %v, want %v", topo.domains, want)
 	}
-	_, pins := topo.Place(3, nil)
+	_, pins, err := topo.Place(3, nil)
+	if err != nil {
+		t.Fatalf("Place: %v", err)
+	}
 	if want := []int{0, 1, 2}; !slices.Equal(pins, want) {
 		t.Errorf("pins = %v, want %v", pins, want)
+	}
+}
+
+func TestPlaceOnALoneDomainReadsSiblingsUpFront(t *testing.T) {
+	root := writeSysfsCPUs(t, 1, 2, 2)
+	topo, err := ReadTopology(root, nil)
+	if err != nil {
+		t.Fatalf("ReadTopology: %v", err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	load := map[int]int{0: 1, 2: 1}
+	for range 2 {
+		_, pins, err := topo.Place(2, load)
+		if err != nil {
+			t.Fatalf("Place: %v", err)
+		}
+		if want := []int{0, 1}; !slices.Equal(pins, want) {
+			t.Errorf("pins = %v, want %v", pins, want)
+		}
 	}
 }
 
@@ -74,14 +98,17 @@ func TestPlace(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			domain, pins := topo.Place(tt.queues, tt.load)
+			domain, pins, err := topo.Place(tt.queues, tt.load)
+			if err != nil {
+				t.Fatalf("Place: %v", err)
+			}
 			if !slices.Equal(domain, tt.wantDomain) || !slices.Equal(pins, tt.wantPins) {
 				t.Errorf("got domain %v pins %v, want domain %v pins %v", domain, pins, tt.wantDomain, tt.wantPins)
 			}
 		})
 	}
-	if !slices.Equal(topo.domains[0], []int{0, 1, 4, 5}) || !slices.Equal(topo.cores[0][0], []int{0, 4}) {
-		t.Errorf("Place mutated the shared topology: domains[0] = %v cores[0][0] = %v", topo.domains[0], topo.cores[0][0])
+	if !slices.Equal(topo.domains[0], []int{0, 1, 4, 5}) {
+		t.Errorf("Place mutated the shared topology: domains[0] = %v", topo.domains[0])
 	}
 }
 

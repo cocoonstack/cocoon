@@ -5,6 +5,7 @@ Requirements, install paths, the doctor script, and a first VM.
 ## Requirements
 
 - Linux with KVM (x86_64 or aarch64)
+- On x86_64, a Linux 5.17 or newer kernel for Cloud Hypervisor, which needs `KVM_CAP_XSAVE2`. On 5.15 it exits with `Capability missing: Xsave2`.
 - Root access (sudo)
 - [Cloud Hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) v54 or newer. `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/cloud-hypervisor/tree/dev) `dev` release build (upstream main plus diff snapshots and guest shadow-stack save/restore, built with the `fw_cfg` feature that aarch64 OCI boot needs), verified against the release checksums; v52–v53 reject the default clone/restore mode (`mmap`) and builds before v52 silently restore by copy; `cocoon-check` reports either
 - [Firecracker](https://github.com/firecracker-microvm/firecracker) v1.16.1 or newer (optional, for the `--fc` backend). `cocoon-check --upgrade` installs the [cocoonstack fork](https://github.com/cocoonstack/firecracker/tree/dev) `dev` release build (upstream main plus release CI), verified against the release checksums — the build the `--pci` hot-plug and NIC MTU paths are validated on. `vm clone` needs >= v1.16 for the vsock override, and v1.16.0 permanently breaks guest vsock after any restore, so v1.16.1 is the effective floor (see [known issues](known-issues.md))

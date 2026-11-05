@@ -122,7 +122,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			b.UnrecordSnapshot(ctx, vmID, cfg.ID)
 			return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 		}
-		if kErr := spec.Terminate(&rec, hc, pid); kErr != nil {
+		if kErr := spec.Terminate(&rec, pid); kErr != nil {
 			killFailed = true
 			return fmt.Errorf("terminate: %w", kErr)
 		}

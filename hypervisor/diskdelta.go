@@ -168,8 +168,14 @@ func applyDiskDelta(dst, delta string) error {
 		return err
 	}
 	defer out.Close() //nolint:errcheck
-	if err = out.Truncate(header.Size); err != nil {
-		return fmt.Errorf("resize %s: %w", dst, err)
+	info, err := out.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", dst, err)
+	}
+	if info.Size() != header.Size {
+		if err = out.Truncate(header.Size); err != nil {
+			return fmt.Errorf("resize %s: %w", dst, err)
+		}
 	}
 	for _, r := range header.Ranges {
 		if r.Zero {

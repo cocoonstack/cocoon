@@ -219,9 +219,15 @@ On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), 
 
 `snapshot save` and `vm hibernate` pause the guest for the capture. A canceled or timed-out capture attempts to resume the guest with a separate 10 minute timeout. If the cocoon process dies or that resume fails, the guest can remain paused: the VM record reads `running`, the guest is frozen, and `vm exec` hangs. SIGKILL does this. SIGPIPE does too: when the process that reads cocoon's stderr exits, cocoon dies on its next log line, and for a hibernate that line comes after the snapshot persists and before the VMM stops.
 
-`cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it.
+`cocoon vm start VM` resumes it. The hypervisor API does not answer during a dump, so until the dump ends the command fails after 30 s; retry it. `vm inspect` also waits on that API, up to 30 s per device list, then prints without the attached devices; `vm list` does not call it.
 
 A killed capture also leaves its files. A `snapshot-*` directory under the VM's run dir stays until `vm rm` or a `gc` 24 hours later. A hibernate killed while it persists leaves a hidden pending snapshot that keeps its `--name` taken until the next `gc`. A hibernate killed after it persists leaves a listed snapshot that keeps its `--name` until `snapshot rm`.
+
+## Windows: a capture right after a clone can strand the next clone's NIC
+
+A capture waits up to 30 seconds for a clone to eject its old NICs. A Windows guest acks in 0-14 seconds; only a CPU quota of 0.2 core or less for 4 vCPUs pushed it past 30. The wait ends at the ack, but the new NIC is still settling. A snapshot taken then yields a clone whose own eject never acks: 9 of 12 at zero delay, 0 of 78 with at least 7-8 seconds between the clone and the capture. Held VMs were still pending after 968 seconds, so a longer wait does not help.
+
+That clone's guest works, but its next capture waits the full 30 seconds and warns, and a clone of that snapshot has no new NIC while `vm clone` reports success. Wait 8 seconds after cloning a Windows VM before capturing it. A NIC in Error code 10 at capture does the same, with any delay, and the host cannot see it; check `Get-PnpDevice` in the guest before capturing. The `CocoonNicAutoHeal` task usually clears the error in 30-120 seconds. A VM with several NICs hits this often: a cold-booted `--nics 3` VM had 2 of 3 in Error.
 
 ## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 
@@ -264,7 +270,7 @@ Firecracker VMs created with `--pci` resize through the same command. After remo
 
 ## NIC hot-remove during clone hot-swap cannot wait for guest B0EJ
 
-Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, 10–20 s on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the wait only applies to the running-VM resize.
+Plain `cocoon vm net --nics N` polls CH's `device_tree` after `vm.remove-device` until the guest ACKs B0EJ via ACPI/SCI (typically < 1 s on Linux, up to 14 s on Windows). The clone path's `hotSwapNets` runs while the VM is paused, so the guest cannot process SCI — eject stays pending until resume. The clone path therefore returns without waiting and adds the fresh NICs against half-removed device-tree state. This is the long-standing CH limitation cocoon was designed around; the wait only applies to the running-VM resize.
 
 ## Android cocoon-agent service may be blocked by SELinux
 

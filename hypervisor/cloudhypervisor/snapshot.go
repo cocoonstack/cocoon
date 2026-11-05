@@ -31,8 +31,8 @@ func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.Sna
 func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
 	return ch.HibernateSequence(ctx, ref, hypervisor.HibernateSpec{
 		SnapshotSpec: ch.snapshotSpec(ctx),
-		Terminate: func(rec *hypervisor.VMRecord, hc *http.Client, pid int) error {
-			return ch.terminateVMM(ctx, rec, hc, pid)
+		Terminate: func(rec *hypervisor.VMRecord, pid int) error {
+			return ch.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 		},
 		RuntimeFiles: runtimeFiles,
 	}, persist)

@@ -2,9 +2,6 @@ package cloudhypervisor
 
 import (
 	"context"
-	"net/http"
-
-	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/utils"
@@ -22,22 +19,18 @@ func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 	return hypervisor.StopSpec{
 		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
-			hc := utils.NewSocketHTTPClient(sockPath)
 			if ch.conf.ForceStop() {
-				return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid)
+				return ch.forceTerminate(ctx, sockPath, pid)
 			}
+			hc := utils.NewSocketHTTPClient(sockPath)
 			return ch.GracefulStop(ctx, rec.ID, pid, ch.conf.StopTimeout(),
 				func() error { return powerButton(ctx, hc) },
-				func() error { return ch.forceTerminate(ctx, hc, rec.ID, sockPath, pid) },
+				func() error { return ch.forceTerminate(ctx, sockPath, pid) },
 			)
 		},
 	}
 }
 
-// forceTerminate swallows the vm.shutdown failure: SIGTERM follows regardless.
-func (ch *CloudHypervisor) forceTerminate(ctx context.Context, hc *http.Client, vmID, socketPath string, pid int) error {
-	if err := shutdownVM(ctx, hc); err != nil {
-		log.WithFunc("cloudhypervisor.forceTerminate").Warnf(ctx, "vm.shutdown %s: %v", vmID, err)
-	}
-	return utils.TerminateProcess(ctx, pid, socketPath, ch.conf.TerminateGracePeriod())
+func (ch *CloudHypervisor) forceTerminate(ctx context.Context, socketPath string, pid int) error {
+	return utils.TerminateProcess(ctx, pid, socketPath, vmTeardownBudget+ch.conf.TerminateGracePeriod())
 }
