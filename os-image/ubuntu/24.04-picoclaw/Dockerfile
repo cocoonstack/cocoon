@@ -30,7 +30,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
     ln -sf /usr/share/zoneinfo/Asia/Singapore /etc/localtime && \
     echo "Asia/Singapore" > /etc/timezone && \
     # Chrome (amd64: google-chrome, arm64: chromium)
-    ARCH=${TARGETARCH:-$(dpkg --print-architecture)}; \
+    ARCH=${TARGETARCH:-$(dpkg --print-architecture)} && \
     if [ "$ARCH" = "amd64" ]; then \
         wget "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" && \
         apt-get install -y "./google-chrome-stable_current_amd64.deb" && \
@@ -45,7 +45,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
         echo 'chromium --start-maximized --no-sandbox --user-data-dir=/root/.chromium-data --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --disable-smooth-scrolling --remote-debugging-port=9222 &' > /root/.config/openbox/autostart; \
     fi && \
     # PicoClaw: install pre-built binary
-    ARCH=${TARGETARCH:-$(dpkg --print-architecture)}; \
+    ARCH=${TARGETARCH:-$(dpkg --print-architecture)} && \
     case "$ARCH" in \
         amd64) PC_ARCH="x86_64"; PC_SHA256="86f0fe84aa55279352edbe13adfca484a03bcf189e2030b25e34628089069c3f" ;; \
         arm64) PC_ARCH="arm64"; PC_SHA256="e78ab0de05d000698ff8b32458e71cb3134e52e9eaf540e3323a72e9914de060" ;; \
