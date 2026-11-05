@@ -22,6 +22,8 @@ const (
 	balloonPollInterval  = 100 * time.Millisecond
 	balloonStallWindow   = 2 * time.Second
 	balloonSettleTimeout = time.Minute
+
+	ejectRenotifyInterval = 5 * time.Second
 )
 
 func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
@@ -126,13 +128,26 @@ func hotAttachedError(fs []chFs, devices []chDevice, disks []chDisk) error {
 }
 
 func waitPendingNICEjects(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord, info *chVMInfoResponse) error {
-	if !hasPendingNICEject(info) {
+	if len(pendingNICEjects(info)) == 0 {
 		return nil
 	}
+	renotifyAt := time.Now().Add(ejectRenotifyInterval)
 	err := utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
 		cur, err := getVMInfo(ctx, hc)
-		if err != nil || hasPendingNICEject(cur) {
+		if err != nil {
 			return false, err
+		}
+		if pending := pendingNICEjects(cur); len(pending) > 0 {
+			if time.Now().Before(renotifyAt) {
+				return false, nil
+			}
+			renotifyAt = time.Now().Add(ejectRenotifyInterval)
+			for _, id := range pending {
+				if rmErr := removeDeviceVM(ctx, hc, id); rmErr != nil {
+					return false, fmt.Errorf("re-request eject of %s: %w", id, rmErr)
+				}
+			}
+			return false, nil
 		}
 		if !rec.Config.Windows {
 			return true, nil
@@ -150,14 +165,15 @@ func waitPendingNICEjects(ctx context.Context, hc *http.Client, rec *hypervisor.
 	return nil
 }
 
-func hasPendingNICEject(info *chVMInfoResponse) bool {
+func pendingNICEjects(info *chVMInfoResponse) []string {
+	var ids []string
 	for id := range info.DeviceTree {
 		isNIC := strings.HasPrefix(id, "_net") || strings.HasPrefix(id, cocoonNetIDPrefix)
 		if isNIC && !slices.ContainsFunc(info.Config.Nets, func(n chNet) bool { return n.ID == id }) {
-			return true
+			ids = append(ids, id)
 		}
 	}
-	return false
+	return ids
 }
 
 func waitBalloonSettled(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) error {

@@ -88,27 +88,34 @@ func TestSnapshotPauseRefusesANICCountOffItsRecord(t *testing.T) {
 
 func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 	tests := []struct {
-		name string
-		tree func(polls int) []string
-		wait time.Duration
+		name    string
+		tree    func(polls, removes int) []string
+		wait    time.Duration
+		removes int
 	}{
-		{"nothing pending", func(int) []string { return []string{"cocoon-net-new"} }, 0},
-		{"guest acks the eject", func(polls int) []string {
+		{"nothing pending", func(int, int) []string { return []string{"cocoon-net-new"} }, 0, 0},
+		{"guest acks the eject", func(polls, _ int) []string {
 			if polls < 4 {
 				return []string{"cocoon-net-new", "_net3"}
 			}
 			return []string{"cocoon-net-new"}
-		}, 300 * time.Millisecond},
-		{"a node the guest never ejects stops at the cap", func(int) []string { return []string{"cocoon-net-new", "_net3"} }, ejectWaitTimeout},
+		}, 300 * time.Millisecond, 0},
+		{"a dropped eject request acks after the re-request", func(_, removes int) []string {
+			if removes == 0 {
+				return []string{"cocoon-net-new", "_net3"}
+			}
+			return []string{"cocoon-net-new"}
+		}, ejectRenotifyInterval + 100*time.Millisecond, 1},
+		{"a node the guest never ejects stops at the cap", func(int, int) []string { return []string{"cocoon-net-new", "_net3"} }, ejectWaitTimeout, 6},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				polls, pauses := 0, 0
+				polls, removes, pauses := 0, 0, 0
 				mux := http.NewServeMux()
 				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 					tree := map[string]jsontext.Value{}
-					for _, id := range tt.tree(polls) {
+					for _, id := range tt.tree(polls, removes) {
 						tree[id] = jsontext.Value(`{}`)
 					}
 					_ = json.MarshalWrite(w, chVMInfoResponse{
@@ -117,6 +124,10 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 						DeviceTree: tree,
 					})
 					polls++
+				})
+				mux.HandleFunc("/api/v1/vm.remove-device", func(w http.ResponseWriter, _ *http.Request) {
+					removes++
+					w.WriteHeader(http.StatusNoContent)
 				})
 				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
 					pauses++
@@ -131,6 +142,9 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 				}
 				if got := time.Since(start); got != tt.wait {
 					t.Errorf("paused after %s, want %s", got, tt.wait)
+				}
+				if removes != tt.removes {
+					t.Errorf("eject re-requests = %d, want %d", removes, tt.removes)
 				}
 				if pauses != 1 {
 					t.Errorf("pauses = %d, want 1", pauses)

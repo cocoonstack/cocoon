@@ -66,7 +66,7 @@ Both calls are idempotent. Attaching a disk that is already attached under
 the same name, path and mode succeeds and returns its existing id; the same
 name with a different path or mode is refused. Detaching a name that is not
 attached succeeds and logs a warning; on Cloud Hypervisor, a retry while the
-guest has not yet ejected an earlier removal waits for that eject.
+guest has not yet ejected an earlier removal requests the eject again and waits for it.
 
 Flags:
 
@@ -80,10 +80,11 @@ Flags:
 | `--directio` | `auto` | O_DIRECT for the disk: `on`/`off`/`auto` (use `off` for files on tmpfs); Cloud Hypervisor only, Firecracker ignores it with a warning; not with `--from-snapshot`/`--from-dir` |
 
 On Cloud Hypervisor, detach blocks until the guest acks the ACPI eject (up to
-30s — Windows can take 10–20s), so when it returns the slot, the name, and the
+30s; Windows acks in about 1s), so when it returns the slot, the name, and the
 backing file are free for immediate reuse; a guest that never acks fails the
-detach with an error naming the device. Firecracker detach also waits, with
-the same 30s bound, until the device leaves the VM config: behind a PCIe root
+detach with an error naming the device. Windows refuses the eject while a
+process holds a file open on the disk and does not retry it: close the file,
+then detach again. Firecracker detach also waits, with the same 30s bound, until the device leaves the VM config: behind a PCIe root
 port Firecracker removes the device only after the guest releases it.
 
 The block device (`/dev/vdX`, serial visible in `lsblk -o NAME,SERIAL`) is
