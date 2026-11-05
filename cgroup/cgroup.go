@@ -317,9 +317,6 @@ func placeScope(parentDir, dir, cpuset string) error {
 	if cpuset == "" {
 		return nil
 	}
-	if current, err := readControl(dir, cpusetName); err == nil && sameCPUList(current, cpuset) {
-		return nil
-	}
 	if err := checkSubset(cpuset, parentDir, "cpuset_cpus placement"); err != nil {
 		return err
 	}

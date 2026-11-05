@@ -278,20 +278,6 @@ func TestExplainFenceWriteNamesLiveVMs(t *testing.T) {
 	}
 }
 
-func TestPlaceScopeReadGate(t *testing.T) {
-	parent := t.TempDir()
-	dir := ScopeDir(parent, "X")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus"), []byte("2-3\n"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	if err := placeScope(parent, dir, "2,3"); err != nil {
-		t.Errorf("equal placement rewrote: %v", err)
-	}
-}
-
 func TestArmWritesQuotaAndBurst(t *testing.T) {
 	parent := t.TempDir()
 	dir := ScopeDir(parent, "A")
