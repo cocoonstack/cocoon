@@ -48,7 +48,6 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 			info.PID = 0
 		}
 	}
-	info.SnapshotIDs = maps.Clone(info.SnapshotIDs)
 	return &info
 }
 
