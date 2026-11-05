@@ -15,11 +15,11 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 ## OCI VM multi-NIC kernel IP limitation
 
-OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC and writes a `.network` file only for it. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=`, but the images ship `/etc/systemd/network/20-wired.network` (`Name=e* v*`, `DHCP=yes`), which sorts first and wins.
+OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=`. Images built from v0.7.7 or earlier ship the default DHCP config as `20-wired.network` (`Name=e* v*`), which sorts first and wins; later images name it `80-wired.network`, so the generated files apply.
 
-**Consequence**: on every boot of an OCI VM with multiple NICs, the first `vm run` included, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Removing a NIC with `vm net` while the guest is still in its initramfs makes that boot wait for the missing interface: about 13 minutes on the Ubuntu images.
+**Consequence on v0.7.7 and earlier images**: on every boot of an OCI VM with multiple NICs, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Workaround: rename `20-wired.network` in the guest so it sorts after `70-`, or write one MAC-matched `.network` file per NIC with the address `cocoon vm inspect` reports.
 
-**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has only the one the initramfs writes for the NIC its `ip=` configured, so write one `.network` file per other NIC in the guest, matching the MAC and address `cocoon vm inspect` reports. Renaming `20-wired.network` in the guest so it sorts after `70-` also lets the generated files apply. Run `vm net` after the guest has booted.
+**All images**: removing a NIC with `vm net` while the guest is still in its initramfs makes that boot wait for the missing interface, about 13 minutes on the Ubuntu images. Run `vm net` after the guest has booted.
 
 ## Non-root user creation requires cloud-init final stage
 
