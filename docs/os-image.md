@@ -111,7 +111,7 @@ All Ubuntu and Debian images configure systemd-networkd with `ClientIdentifier=m
 
 The setting is applied in two places per family:
 - `os-image/ubuntu/network.sh` and `os-image/debian/network.sh` — the initramfs DHCP fallback path
-- Each Dockerfile's `80-wired.network` — the default systemd-networkd config
+- Each Dockerfile's `99-wired.network` — the default systemd-networkd config
 
 ## Prerequisites
 

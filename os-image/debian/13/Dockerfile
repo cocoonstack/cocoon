@@ -47,7 +47,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
     # [Networking] Enable networkd/resolved and configure DHCP
     systemctl enable systemd-networkd systemd-resolved systemd-timesyncd && \
     mkdir -p /etc/systemd/network && \
-    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/80-wired.network && \
+    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/99-wired.network && \
     # [Cocoon agent + sshd] vsock exec daemon and SSH access.
     sh /run/secrets/cocoon_install_agent && \
     # [Access] Set root password

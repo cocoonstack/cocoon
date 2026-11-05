@@ -15,9 +15,9 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 ## OCI VM multi-NIC kernel IP limitation
 
-OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=`. Images built from v0.7.7 or earlier ship the default DHCP config as `20-wired.network` (`Name=e* v*`), which sorts first and wins; later images name it `80-wired.network`, so the generated files apply.
+OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=` (`90-<nic>.network` on systemd 249, which Ubuntu 22.04 ships). Images built from v0.7.7 or earlier ship the default DHCP config as `20-wired.network` (`Name=e* v*`), which sorts first and wins; later images name it `99-wired.network`, so the generated files apply.
 
-**Consequence on v0.7.7 and earlier images**: on every boot of an OCI VM with multiple NICs, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Workaround: rename `20-wired.network` in the guest so it sorts after `70-`, or write one MAC-matched `.network` file per NIC with the address `cocoon vm inspect` reports.
+**Consequence on v0.7.7 and earlier images**: on every boot of an OCI VM with multiple NICs, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Workaround: rename `20-wired.network` in the guest so it sorts after the generated files (`99-wired.network`), or write one MAC-matched `.network` file per NIC with the address `cocoon vm inspect` reports.
 
 **All images**: removing a NIC with `vm net` while the guest is still in its initramfs makes that boot wait for the missing interface, about 13 minutes on the Ubuntu images. Run `vm net` after the guest has booted.
 
