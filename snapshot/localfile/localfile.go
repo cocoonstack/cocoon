@@ -159,7 +159,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 		}
 		return "", false, fmt.Errorf("move capture into store: %w", err)
 	}
-	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (MkdirAll in Create)
+	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (utils.EnsureDirs)
 		return "", false, fmt.Errorf("chmod data dir: %w", err)
 	}
 	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize.
