@@ -74,7 +74,7 @@ def upgrade_sqlite(db_path: str) -> None:
 
 def write_file(path: str, data: str) -> None:
     tmp = path + ".upgrade"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
@@ -91,7 +91,7 @@ def upgrade_json(root: str) -> None:
         found += 1
         with open(os.path.join(db_dir, "vms.lock"), "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 doc = json.load(f)
             rows = {
                 vm_id: cpus
