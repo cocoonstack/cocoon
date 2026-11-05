@@ -210,10 +210,9 @@ func abortRelayFirecracker(ctx context.Context, pid int, sockPath string) {
 }
 
 func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broadcaster) {
-	defer conn.Close() //nolint:errcheck
-
 	bc.setSink(conn)
 	defer bc.setSink(nil)
+	defer conn.Close() //nolint:errcheck
 
 	done := make(chan struct{})
 	go func() {
@@ -225,7 +224,6 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 	case <-done:
 	case <-ctx.Done(): // firecracker exited
 	}
-	// Closing conn unblocks the io.Copy(master, conn) goroutine.
 }
 
 func waitRelayLeaseReady(ready *os.File) error {

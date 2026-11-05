@@ -1,10 +1,45 @@
 package firecracker
 
 import (
+	"context"
+	"io"
+	"net"
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 )
+
+func TestRelaySessionCancelWithBlockedOutput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		conn, peer := net.Pipe()
+		defer peer.Close()
+		reader, writer := io.Pipe()
+		defer reader.Close()
+		defer writer.Close()
+		bc := &broadcaster{master: reader}
+		done := make(chan struct{})
+		go func() {
+			relaySession(ctx, io.Discard, conn, bc)
+			close(done)
+		}()
+		synctest.Wait()
+		go bc.readLoop()
+		if _, err := writer.Write([]byte("guest output")); err != nil {
+			t.Fatalf("write guest output: %v", err)
+		}
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Error("relay session did not exit with blocked output")
+		}
+	})
+}
 
 func TestWaitRelayLeaseReady(t *testing.T) {
 	tests := []struct {
