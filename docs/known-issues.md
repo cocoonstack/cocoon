@@ -15,11 +15,11 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 ## OCI VM multi-NIC kernel IP limitation
 
-OCI VMs use the kernel `ip=` boot parameter for network configuration. While multiple `ip=` parameters can be specified, the Linux kernel only reliably configures **one interface** via this mechanism — subsequent `ip=` parameters may be silently ignored or produce inconsistent results depending on kernel version.
+OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC and writes a `.network` file only for it. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=`, but the images ship `/etc/systemd/network/20-wired.network` (`Name=e* v*`, `DHCP=yes`), which sorts first and wins.
 
-**Consequence**: on every boot of an OCI VM with multiple NICs, the first `vm run` included, only the last NIC receives its IP from the kernel `ip=` parameter (each `ip=` overrides the previous one). The other NICs come up without an IPv4 address until the guest init system configures them (e.g., systemd-networkd `.network` files written by the post-clone hints).
+**Consequence**: on every boot of an OCI VM with multiple NICs, the first `vm run` included, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Removing a NIC with `vm net` while the guest is still in its initramfs makes that boot wait for the missing interface: about 13 minutes on the Ubuntu images.
 
-**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot regardless of the kernel `ip=` limitation. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has only the one the initramfs writes for the NIC its `ip=` configured, so write one `.network` file per other NIC in the guest, matching the MAC and address `cocoon vm inspect` reports.
+**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has only the one the initramfs writes for the NIC its `ip=` configured, so write one `.network` file per other NIC in the guest, matching the MAC and address `cocoon vm inspect` reports. Renaming `20-wired.network` in the guest so it sorts after `70-` also lets the generated files apply. Run `vm net` after the guest has booted.
 
 ## Non-root user creation requires cloud-init final stage
 
