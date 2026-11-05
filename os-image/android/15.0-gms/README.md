@@ -19,7 +19,8 @@ host can run arm64-only APKs and log into Google Play.
   handlers.
 
 All payloads are pinned by URL + checksum in the Dockerfile and re-verified at
-build time (`test -f`/`grep -q`), so the image is reproducible.
+build time (`test -f`/`grep -q`). The redroid base image follows its tag, so a
+rebuild can pick up a newer one.
 
 ## Capability boundary
 

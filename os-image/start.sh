@@ -15,6 +15,11 @@ uuid_v5() {
 
 echo "=== Cocoon MicroVM Engine: Bootstrapping (Multi-Layer OCI) ==="
 
+if [ -z "$IMAGE_NAME" ]; then
+    echo "Error: IMAGE_NAME is required."
+    exit 1
+fi
+
 # 0. Check KVM
 if [ ! -w "/dev/kvm" ]; then
     echo "Error: Access to /dev/kvm denied."
@@ -39,45 +44,45 @@ CH_BIN="./cloud-hypervisor"
 if [ ! -x "$CH_BIN" ]; then
     [ "$ARCH" = "x86_64" ] && CH_URL="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}/cloud-hypervisor-static" \
     || CH_URL="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}/cloud-hypervisor-static-aarch64"
-    wget -qO "$CH_BIN" "$CH_URL" && chmod +x "$CH_BIN"
+    wget -qO "$CH_BIN" "$CH_URL"
+    chmod +x "$CH_BIN"
 fi
 sudo setcap cap_net_admin+ep "$CH_BIN"
 
 # 4. Extract Layers via Crane
-if [ -n "$IMAGE_NAME" ]; then
-    echo "[2/4] Extracting layers for '$IMAGE_NAME'..."
-    rm -f layer*.erofs boot/vmlinuz* boot/initrd.img*
-    
-    # Download Crane
-    if [ ! -x "./crane" ]; then
-        [ "$ARCH" = "x86_64" ] && CR_ARCH="x86_64" || CR_ARCH="arm64"
-        wget -qO- "https://github.com/google/go-containerregistry/releases/download/v0.19.1/go-containerregistry_Linux_${CR_ARCH}.tar.gz" | tar -xz crane
-    fi
+echo "[2/4] Extracting layers for '$IMAGE_NAME'..."
+rm -f layer*.erofs boot/vmlinuz* boot/initrd.img*
 
-    ./crane pull "$IMAGE_NAME" image.tar
-    rm -rf image_temp && mkdir -p image_temp boot
-    tar -xf image.tar -C image_temp
-
-    # Process layers (Bottom up)
-    LAYERS=$(jq -r '.[0].Layers[]' image_temp/manifest.json)
-    
-    IDX=0
-    for L in $LAYERS; do
-        echo "      Layer $IDX -> layer${IDX}.erofs"
-        tar -xf "image_temp/$L" boot/ 2>/dev/null || true
-        # Compress layer to EROFS
-        # UUID v5: deterministically derived from the layer path (which encodes the
-        # content digest). Same OCI layer -> same UUID. Pure bash + sha1sum, no Python.
-        LAYER_UUID=$(uuid_v5 "$L")
-        if gzip -t "image_temp/$L" 2>/dev/null; then
-            gzip -dc "image_temp/$L" | mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs"
-        else
-            mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs" "image_temp/$L"
-        fi
-        IDX=$((IDX+1))
-    done
-    rm -rf image_temp image.tar
+# Download Crane
+if [ ! -x "./crane" ]; then
+    [ "$ARCH" = "x86_64" ] && CR_ARCH="x86_64" || CR_ARCH="arm64"
+    wget -qO- "https://github.com/google/go-containerregistry/releases/download/v0.19.1/go-containerregistry_Linux_${CR_ARCH}.tar.gz" | tar -xz crane
 fi
+
+[ "$ARCH" = "x86_64" ] && OCI_ARCH="amd64" || OCI_ARCH="arm64"
+./crane pull --platform "linux/$OCI_ARCH" "$IMAGE_NAME" image.tar
+rm -rf image_temp && mkdir -p image_temp boot
+tar -xf image.tar -C image_temp
+
+# Process layers (Bottom up)
+LAYERS=$(jq -r '.[0].Layers[]' image_temp/manifest.json)
+
+IDX=0
+for L in $LAYERS; do
+    echo "      Layer $IDX -> layer${IDX}.erofs"
+    tar -xf "image_temp/$L" boot/ 2>/dev/null || true
+    # Compress layer to EROFS
+    # UUID v5: deterministically derived from the layer path (which encodes the
+    # content digest). Same OCI layer -> same UUID. Pure bash + sha1sum, no Python.
+    LAYER_UUID=$(uuid_v5 "$L")
+    if gzip -t "image_temp/$L" 2>/dev/null; then
+        gzip -dc "image_temp/$L" | mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs"
+    else
+        mkfs.erofs --tar=f --aufs -zlz4hc -C16384 -T0 -U "$LAYER_UUID" "layer${IDX}.erofs" "image_temp/$L"
+    fi
+    IDX=$((IDX+1))
+done
+rm -rf image_temp image.tar
 
 # 5. Prepare COW (Optimized for performance and sparse efficiency)
 # lazy_itable_init=1 speeds up formatting on large sparse files
