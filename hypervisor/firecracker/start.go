@@ -23,6 +23,17 @@ func (fc *Firecracker) Start(ctx context.Context, refs []string) ([]string, erro
 	return fc.StartAll(ctx, refs, fc.startOne)
 }
 
+func (fc *Firecracker) ReconcileToRunning(ctx context.Context, id string) (uint64, error) {
+	rec, err := fc.PeekRecord(ctx, id)
+	if err != nil || rec == nil {
+		return 0, err
+	}
+	if info, infoErr := getInstanceInfo(ctx, utils.NewSocketHTTPClient(hypervisor.SocketPath(rec.RunDir))); infoErr == nil && info.State == vmStateNotStarted {
+		return 0, nil
+	}
+	return fc.Backend.ReconcileToRunning(ctx, id)
+}
+
 func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
 	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
 		RuntimeFiles: runtimeFiles,

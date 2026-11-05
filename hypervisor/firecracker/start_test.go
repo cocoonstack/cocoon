@@ -97,6 +97,9 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 			if err := fc.startOne(t.Context(), id, nil); err == nil {
 				t.Fatal("start succeeded without completing configuration")
 			}
+			if gen, err := fc.ReconcileToRunning(t.Context(), id); err != nil || gen != 0 {
+				t.Fatalf("reconcile adopted a VMM that was never started: gen=%d err=%v", gen, err)
+			}
 			rec, err := fc.LoadRecord(t.Context(), id)
 			if err != nil || rec.State != state {
 				t.Fatalf("failed start: state=%s err=%v, want %s", rec.State, err, state)
