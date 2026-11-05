@@ -133,9 +133,6 @@ type VM struct {
 }
 
 func (v *VM) ResolvedNetnsPath() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetnsPath, nic.NetnsPath)
 	}
@@ -143,9 +140,6 @@ func (v *VM) ResolvedNetnsPath() string {
 }
 
 func (v *VM) ResolvedNetBackend() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetBackend, nic.Backend, BackendCNI)
 	}
@@ -153,9 +147,6 @@ func (v *VM) ResolvedNetBackend() string {
 }
 
 func (v *VM) ResolvedNetBridgeDev() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetBridgeDev, nic.BridgeDev)
 	}
@@ -163,7 +154,7 @@ func (v *VM) ResolvedNetBridgeDev() string {
 }
 
 func (v *VM) firstNIC() *NetworkConfig {
-	if v == nil || len(v.NetworkConfigs) == 0 {
+	if len(v.NetworkConfigs) == 0 {
 		return nil
 	}
 	return v.NetworkConfigs[0]
