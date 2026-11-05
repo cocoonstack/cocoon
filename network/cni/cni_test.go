@@ -504,6 +504,21 @@ func TestAddRecoveryPassesIdentityToPlugin(t *testing.T) {
 	}
 }
 
+func TestAddRecoveryRollbackKeepsRecordedNICsAllocated(t *testing.T) {
+	c, exec := newTestCNIWithStore(t)
+	stubLifecycleSeams(t)
+	seedRecords(t, c, "vm1", "eth0", "eth1")
+	exec.failIf = "eth1"
+	existing := []*types.NetworkConfig{{MAC: "02:00:00:00:00:01", Network: &types.Network{IP: "10.0.0.5"}}, {MAC: "02:00:00:00:00:02"}}
+	if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover(existing)...); err == nil {
+		t.Fatal("recover Add succeeded, want the eth1 failure")
+	}
+	if !slices.Equal(exec.attempted, []string{"eth0", "eth0", "eth1"}) {
+		t.Fatalf("plugin calls = %v, want no rollback DEL that frees a recorded NIC's IP", exec.attempted)
+	}
+	assertRecordIDs(t, c, []string{"n-eth0", "n-eth1"})
+}
+
 func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)

@@ -81,16 +81,19 @@ func (c *CNI) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, specs
 		}
 		for _, spec := range specs[:attempted] {
 			ifn := ifName(spec.Index)
-			if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
-				logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept)", vmID, ifn, delErr)
-				continue
+			recID, staged := recIDs[spec.Index]
+			if staged {
+				if delErr := c.cniDel(rctx, confList, vmID, nsPath, ifn); delErr != nil {
+					logger.Warnf(rctx, "rollback CNI DEL %s/%s: %v (record kept)", vmID, ifn, delErr)
+					continue
+				}
 			}
 			// setupTCRedirect creates the TAP; it would leak in the persisting netns.
 			if delErr := deleteTAPFn(nsPath, tapNameForVM(vmID, spec.Index)); delErr != nil {
 				logger.Warnf(rctx, "rollback tap delete %s: %v (record kept)", tapNameForVM(vmID, spec.Index), delErr)
 				continue
 			}
-			if recID := recIDs[spec.Index]; recID != "" {
+			if staged {
 				releasedIDs = append(releasedIDs, recID)
 			}
 		}
