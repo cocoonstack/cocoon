@@ -229,6 +229,12 @@ A clone's eject ack does not mean its replacement NIC has started: netkvm finish
 
 A NIC in Error code 10 (netkvm event 5005) at capture strands the eject the same way, with any delay. It appears when Windows re-enables several NICs at once: it moves a NIC's BAR into a range Cloud Hypervisor still assigns to another disabled NIC, Cloud Hypervisor refuses and logs `Failed moving device BAR ... keeping old BAR`, and the driver starts on resources that do not match. Disable and re-enable NICs one at a time; the clone hint and the image's `CocoonNicAutoHeal` task do.
 
+## A guest with unreachable DNS stops slowly
+
+When the guest's DNS servers drop queries (no egress, or a firewall that drops DNS), a graceful `vm stop` of an Ubuntu or Debian OCI guest can wait up to 20 s. systemd-timesyncd keeps an NTP server lookup in flight, and glibc gives up after 20 s (5 s timeout, 2 attempts, 2 servers). On exit, timesyncd waits for that lookup to finish. With working DNS, or with NTP pointing at an IP address, the stop takes about 0.3 s.
+
+**Workaround**: give the guest a DNS server that answers (`--dns`), or set an NTP server by IP in `/etc/systemd/timesyncd.conf`. Alternatively, a drop-in for `systemd-timesyncd.service` with `Environment="RES_OPTIONS=timeout:1 attempts:1"` caps the wait at about 2 s.
+
 ## A serial console slows NIC bring-up and VM wake
 
 On a host whose kernel console is a serial port (`console=ttyS0,115200`) at console_loglevel 7, every bridge port state change prints `entered blocking state` and `entered forwarding state` synchronously, about 6.5 ms per line, while the kernel holds RTNL. A VM wake or start pays about 14 ms of it, and any other netlink or TAP operation on the host waits behind it. Lowering console_loglevel (the first field of `/proc/sys/kernel/printk`) to 4 cuts the link-up work from 13.6 ms to 0.4 ms; the lines still reach `dmesg`.
