@@ -285,6 +285,17 @@ if [ -e /dev/kvm ]; then
 else
     fail "/dev/kvm not found (nested virtualization or bare-metal required)"
 fi
+if [ "$ARCH" = "x86_64" ]; then
+    kernel=$(uname -r)
+    kernel_major=${kernel%%.*}
+    kernel_rest=${kernel#*.}
+    kernel_minor=${kernel_rest%%[!0-9]*}
+    if [ "$kernel_major" -gt 5 ] || { [ "$kernel_major" -eq 5 ] && [ "$kernel_minor" -ge 17 ]; }; then
+        pass "kernel $kernel"
+    else
+        warn "kernel $kernel is older than 5.17 — cloud-hypervisor needs KVM_CAP_XSAVE2 unless the distro backported it"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Runtime directories
@@ -581,7 +592,7 @@ printf "  Pass: %d  Warn: %d  Fail: %d\n\n" "$PASS" "$WARN" "$FAIL"
 
 if [ "$FAIL" -gt 0 ] && ! $FIX; then
     info "Run '$0 --fix' to attempt automatic fixes"
-    info "Run '$0 --upgrade' to install/upgrade cloud-hypervisor, firmware, and CNI plugins"
+    info "Run '$0 --upgrade' to install/upgrade cloud-hypervisor, firecracker, firmware, and CNI plugins"
 fi
 
 [ "$FAIL" -eq 0 ] || exit 1

@@ -67,7 +67,7 @@ cocoon-check --fix
 # Generate the CNI bridge config on a different subnet (default 10.88.0.0/16)
 cocoon-check --fix --subnet=10.90.0.0/16
 
-# Full setup — install cloud-hypervisor, firmware, and CNI plugins
+# Full setup — install cloud-hypervisor, firecracker, firmware, and CNI plugins
 cocoon-check --upgrade
 ```
 
