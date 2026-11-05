@@ -57,15 +57,11 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		}
 		var resumed *tombstone.Record
 		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), vmID, func() (tombstone.Payload, error) {
-			kind := tombstone.KindRecord
-			if len(cl.Records) == 0 {
-				kind = tombstone.KindOrphan // a 0-NIC VM still owns its netns
-			}
 			cleanup, mErr := tombstone.MarshalCleanup(cl)
 			if mErr != nil {
 				return tombstone.Payload{}, mErr
 			}
-			return tombstone.Payload{Kind: kind, Mode: mode, Cleanup: cleanup}, nil
+			return tombstone.Payload{Mode: mode, Cleanup: cleanup}, nil
 		})
 		if err != nil || resumed == nil {
 			return err

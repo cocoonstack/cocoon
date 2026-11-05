@@ -86,7 +86,7 @@ func (b *Backend) deleteVMProtocol(ctx context.Context, id string, rec *VMRecord
 		var resumed *tombstone.Record
 		var err error
 		leaseID, resumed, err = ts.Acquire(ctx, t.w, id, func() (tombstone.Payload, error) {
-			return tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
+			return tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
 		})
 		if err != nil || resumed == nil {
 			return err

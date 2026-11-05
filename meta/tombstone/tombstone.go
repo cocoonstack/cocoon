@@ -20,9 +20,6 @@ const (
 	PhaseLeased   Phase = "leased"
 	PhaseDeleting Phase = "deleting"
 
-	KindRecord Kind = "record"
-	KindOrphan Kind = "orphan"
-
 	ModeAggregate Mode = "aggregate"
 	ModeSubset    Mode = "subset"
 )
@@ -33,15 +30,11 @@ var ErrLost = errors.New("tombstone lease lost")
 // Phase is the tombstone's protocol position.
 type Phase string
 
-// Kind distinguishes a record-backed candidate from a recordless orphan.
-type Kind string
-
 // Mode distinguishes a full teardown from an explicit subset; recovering a subset as an aggregate would destroy healthy resources.
 type Mode string
 
 // Payload is written whole at lease time and immutable after: recovery reads it and nothing else.
 type Payload struct {
-	Kind    Kind           `json:"kind"`
 	Mode    Mode           `json:"mode"`
 	Cleanup jsontext.Value `json:"cleanup"`
 }

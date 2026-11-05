@@ -57,7 +57,7 @@ func (lf *LocalFile) deleteSnapshotProtocol(ctx context.Context, id string, reva
 			if mErr != nil {
 				return tombstone.Payload{}, mErr
 			}
-			return tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
+			return tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup}, nil
 		})
 		if err != nil || resumed == nil {
 			return err
