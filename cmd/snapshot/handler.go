@@ -216,7 +216,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var r io.Reader
+	var r *os.File
 	if len(args) > 0 {
 		f, openErr := os.Open(args[0])
 		if openErr != nil {
@@ -229,6 +229,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 		r = os.Stdin
 		logger.Info(ctx, "importing from stdin ...")
 	}
+	defer cmdcore.CloseOnCancel(ctx, r)()
 
 	snapID, err := snapBackend.Import(ctx, r, name, description)
 	if err != nil {
