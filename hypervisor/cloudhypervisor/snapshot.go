@@ -143,7 +143,7 @@ func waitPendingNICEjects(ctx context.Context, hc *http.Client, rec *hypervisor.
 			}
 			renotifyAt = time.Now().Add(ejectRenotifyInterval)
 			for _, id := range pending {
-				if rmErr := removeDeviceVM(ctx, hc, id); rmErr != nil {
+				if rmErr := removeDevicePending(ctx, hc, id); rmErr != nil {
 					return false, fmt.Errorf("re-request eject of %s: %w", id, rmErr)
 				}
 			}

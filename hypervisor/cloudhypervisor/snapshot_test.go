@@ -92,21 +92,28 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 		tree    func(polls, removes int) []string
 		wait    time.Duration
 		removes int
+		gone    string
 	}{
-		{"nothing pending", func(int, int) []string { return []string{"cocoon-net-new"} }, 0, 0},
+		{"nothing pending", func(int, int) []string { return []string{"cocoon-net-new"} }, 0, 0, ""},
 		{"guest acks the eject", func(polls, _ int) []string {
 			if polls < 4 {
 				return []string{"cocoon-net-new", "_net3"}
 			}
 			return []string{"cocoon-net-new"}
-		}, 300 * time.Millisecond, 0},
+		}, 300 * time.Millisecond, 0, ""},
 		{"a dropped eject request acks after the re-request", func(_, removes int) []string {
 			if removes == 0 {
 				return []string{"cocoon-net-new", "_net3"}
 			}
 			return []string{"cocoon-net-new"}
-		}, ejectRenotifyInterval + 100*time.Millisecond, 1},
-		{"a node the guest never ejects stops at the cap", func(int, int) []string { return []string{"cocoon-net-new", "_net3"} }, ejectWaitTimeout, 6},
+		}, ejectRenotifyInterval + 100*time.Millisecond, 1, ""},
+		{"a node the guest never ejects stops at the cap", func(int, int) []string { return []string{"cocoon-net-new", "_net3"} }, ejectWaitTimeout, 6, ""},
+		{"a node ejected before its re-request does not end the wait", func(_, removes int) []string {
+			if removes < 2 {
+				return []string{"cocoon-net-new", "_net3", "_net4"}
+			}
+			return []string{"cocoon-net-new"}
+		}, ejectRenotifyInterval + 100*time.Millisecond, 2, "_net3"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -125,8 +132,16 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 					})
 					polls++
 				})
-				mux.HandleFunc("/api/v1/vm.remove-device", func(w http.ResponseWriter, _ *http.Request) {
+				mux.HandleFunc("/api/v1/vm.remove-device", func(w http.ResponseWriter, r *http.Request) {
 					removes++
+					var req struct {
+						ID string `json:"id"`
+					}
+					_ = json.UnmarshalRead(r.Body, &req)
+					if req.ID == tt.gone {
+						w.WriteHeader(http.StatusNotFound)
+						return
+					}
 					w.WriteHeader(http.StatusNoContent)
 				})
 				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {

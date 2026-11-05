@@ -258,7 +258,7 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 		return err
 	}
 	if deviceID != "" {
-		if err := removeDeviceVM(ctx, hc, deviceID); err != nil {
+		if err := removeDevicePending(ctx, hc, deviceID); err != nil {
 			return fmt.Errorf("vm.remove-device %s: %w", deviceID, err)
 		}
 		// CH frees the slot, id and backing file only after the guest's eject ack.

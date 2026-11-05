@@ -175,6 +175,14 @@ func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }
 
+func removeDevicePending(ctx context.Context, hc *http.Client, deviceID string) error {
+	err := removeDeviceVM(ctx, hc, deviceID)
+	if apiErr, ok := errors.AsType[*utils.APIError](err); ok && apiErr.Code == http.StatusNotFound {
+		return nil
+	}
+	return err
+}
+
 func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) error {
 	return utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
 		info, err := getVMInfo(ctx, hc)
