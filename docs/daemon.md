@@ -93,7 +93,7 @@ record once and applies the same idempotent rules:
 | `creating` | any | ownerless only if the ops lock is free; then run the stale-create cleanup at once, freeing the name |
 | `running` | live | watch that exact process generation |
 | committed, not `running` | live | repair to `running` under the lock, then watch it |
-| any | dead | close the interval, mark `unexpected-exit`, quiesce the network |
+| `running`, or an open compute interval | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
 | unfinished delete tombstone | any | finish a delete past its first filesystem step, roll back one that never reached it — supervision starts deletes of its own, so it resumes them |
 
@@ -138,8 +138,8 @@ the daemon does not claim an exit time it cannot know.
 
 ## Read-only API
 
-The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a `0750`
-directory — filesystem permissions are the authorization boundary).
+The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a directory
+the daemon creates `0750` when absent — filesystem permissions are the authorization boundary).
 `--api-socket` moves the socket, `--api-socket-mode` sets its permission bits
 (octal with a leading `0`: `660` without it is read as decimal);
 tighten the mode rather than widen it, since nothing else authenticates.

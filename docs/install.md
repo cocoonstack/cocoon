@@ -15,6 +15,7 @@ Requirements, install paths, the doctor script, and a first VM.
 - UEFI firmware (`CLOUDHV.fd`, for cloud images and, on aarch64, OCI images; not needed with `--fc`); on x86_64 `cocoon-check --upgrade` installs the [firmware fork](https://github.com/cocoonstack/rust-hypervisor-firmware/tree/dev) `dev` build (EFI ResetSystem for ACPI power-button shutdown and the IA32_FEATURE_CONTROL/VMXON lock, both needed by Windows guests — see [known issues](known-issues.md)); on aarch64 it installs the [EDK2](https://github.com/cloud-hypervisor/edk2/releases) `CLOUDHV_EFI.fd` build `ch-97eeb7b09`, which loads the OCI kernel over fw_cfg (see [Images](images.md#arm64-boot))
 - CNI plugins (`bridge`, `host-local`, `loopback`)
 - `mkfs.ext4` (from e2fsprogs, for the per-VM COW disk)
+- `root_dir` on a local filesystem: the default sqlite metadata engine refuses NFS, CIFS/SMB and FUSE, and `cocoon-check` reports them as FAIL
 - Go 1.27+ (build only)
 
 ## Installation

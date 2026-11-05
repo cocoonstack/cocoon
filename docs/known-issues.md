@@ -9,7 +9,7 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 - **Cloud Hypervisor** hot-swaps the snapshot's NICs while the VM is paused, so the clone comes up on a new interface with a fresh MAC (`ens3` → `ens8` on cloudimg, `eth0` → `eth1` on OCI). The snapshot's MAC-matched configuration then matches nothing and the guest has **no IPv4 address at all**: it cannot reach the network, and it cannot collide with the source VM either.
 - **Firecracker** keeps the source VM's guest MAC in the restored vmstate (see [Firecracker clone guest MAC address](#firecracker-clone-guest-mac-address)), so the per-MAC configuration still matches and the guest wakes up holding **the source VM's IP**.
 
-**Consequence on Firecracker**: if the source VM is still running, both VMs advertise the same IP with different MACs, the upstream gateway flaps between them, and both see **intermittent connectivity loss** until the clone is reconfigured. Nothing in the data path prevents this — it is L2 end to end (TC ingress redirect + bridge), no component checks the guest's source IP against the allocated one, and bridge CNI does not enforce IP ↔ veth binding (`host-local` IPAM only tracks allocations in its control-plane state files, not in data-plane rules).
+**Consequence on Firecracker**: if the source VM is still running, both VMs advertise the same IP from the same guest MAC on two bridge ports, the bridge forwarding table flaps between them, and both see **intermittent connectivity loss** until the clone is reconfigured. Nothing in the data path prevents this — it is L2 end to end (TC ingress redirect + bridge), no component checks the guest's source IP against the allocated one, and bridge CNI does not enforce IP ↔ veth binding (`host-local` IPAM only tracks allocations in its control-plane state files, not in data-plane rules).
 
 **Mitigation**: run the post-clone guest setup commands printed by `cocoon vm clone` (see [Post-Clone Guest Setup](snapshots.md#post-clone-guest-setup)). For cloudimg VMs they re-run `cloud-init`; for OCI VMs they replace the generated `/etc/systemd/network/10-*.network` files with per-MAC units for the new IP and restart `systemd-networkd`; on Firecracker they set the new MAC first. The clone answers on its allocated IP a few seconds after they run.
 
@@ -67,7 +67,7 @@ On x86_64, cocoon uses [rust-hypervisor-firmware](https://github.com/cloud-hyper
 
 - Ubuntu 22.04 (Jammy)
 
-This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333) and [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356). As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
+This is an upstream issue tracked in [rust-hypervisor-firmware#333](https://github.com/cloud-hypervisor/rust-hypervisor-firmware/issues/333); [cloud-hypervisor#7356](https://github.com/cloud-hypervisor/cloud-hypervisor/issues/7356) was closed without a fix. As a workaround, use **OCI VM images** for Ubuntu 24.04 — OCI images use direct kernel boot and are not affected.
 
 ## Data disk fsck sends an existing VM to the emergency shell
 
@@ -203,7 +203,7 @@ A cloudimg VM snapshotted after a stop/start carries an unreferenced ~1 MB spars
 
 ## Firecracker clone guest MAC address
 
-Firecracker does not support overriding the guest MAC address during snapshot/load. Cloned FC VMs retain the source VM's guest MAC (baked into the vmstate binary). In Cocoon's TC redirect architecture, each VM runs in an isolated network namespace, so MAC identity is not visible to other VMs or the host bridge — **no MAC conflict occurs in practice**.
+Firecracker does not support overriding the guest MAC address during snapshot/load. Cloned FC VMs retain the source VM's guest MAC (baked into the vmstate binary). The TC redirect passes guest frames to the bridge unchanged, so while the source runs both VMs send from that MAC (see [clone networking](#clone-networking-needs-in-guest-reconfiguration)); the post-clone guest setup sets the clone's own MAC.
 
 On CNI plugins with strict per-veth MAC enforcement (Cilium eBPF, Calico eBPF), the guest MAC vs veth MAC mismatch could theoretically cause packet drops. This has not been observed in testing with the standard bridge CNI.
 
