@@ -45,7 +45,7 @@ type snapshotGCSnapshot struct {
 	dataDirs     []string
 	leaseIDs     []string
 	stalePending []string
-	missingDir   []string // finalized records whose data dir vanished
+	missingDir   []string
 	records      map[string]snapshotMeta
 	reasons      map[string]string
 	policy       EvictionPolicy

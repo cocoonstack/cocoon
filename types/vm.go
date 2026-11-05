@@ -102,13 +102,13 @@ type VM struct {
 	State      VMState  `json:"state"`
 	Config     VMConfig `json:"config"`
 
-	// Runtime — populated only while State == VMStateRunning.
+	// Runtime — ToVM fills these only while State == VMStateRunning.
 	PID         int    `json:"pid"`
 	SocketPath  string `json:"socket_path,omitempty"`  // VMM API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 	ConsolePath string `json:"console_path,omitempty"` // guest console: console.sock UDS or CH-allocated PTY (direct boot)
 
-	// Placement is held from launch until the VM leaves VMStateRunning; --cpuset-cpus auto records its cache domain as CPUSet.
+	// Placement is held from launch until the VM is Stopped; --cpuset-cpus auto records its cache domain as CPUSet.
 	CPUSet    string `json:"cpuset,omitempty"`
 	QueueCPUs string `json:"queue_cpus,omitempty"` // host cpus the writable virtio-blk queue threads pin to
 

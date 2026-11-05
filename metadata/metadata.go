@@ -128,7 +128,7 @@ type NetworkInfo struct {
 	IP      string
 	Prefix  int
 	Gateway string
-	MAC     string // matched by macaddress in network-config
+	MAC     string
 }
 
 // MountSpec is one cloud-init `mounts:` row; fields render verbatim.

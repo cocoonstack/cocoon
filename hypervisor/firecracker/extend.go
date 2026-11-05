@@ -49,7 +49,6 @@ func (o fcNICOps) RemoveNIC(ctx context.Context, id string) error {
 	return nil
 }
 
-// TAPQueues is one queue pair: Firecracker opens every TAP single-queue.
 func (fcNICOps) TAPQueues(int) int { return network.NetNumQueues(1) }
 
 func (fc *Firecracker) NetResize(ctx context.Context, vmRef string, spec netresize.Spec, plumbing netresize.Plumbing) (netresize.Result, error) {

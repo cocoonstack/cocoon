@@ -1,4 +1,4 @@
-// Package json is the meta engine over today's per-namespace JSON files: same formats, same .prev crash story, same flocks (design §8).
+// Package json is the meta engine over today's per-namespace JSON files: same formats, same .prev crash story, same flocks.
 package json
 
 import (

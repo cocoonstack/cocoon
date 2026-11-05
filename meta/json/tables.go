@@ -59,7 +59,7 @@ func (c TableCodec) Decode(data []byte) (*Model, error) {
 	if _, err := dec.ReadToken(); err != nil {
 		return nil, err
 	}
-	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended main must fall back to .prev, not decode (§9 format fidelity).
+	// Legacy json.Unmarshal rejected trailing bytes; a truncated-then-appended main must fall back to .prev, not decode.
 	if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
 		return nil, errors.New("namespace file: trailing data after document")
 	}

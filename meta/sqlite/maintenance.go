@@ -12,10 +12,10 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// testBackupStep injects crashes between backup steps (§9 gate); nil in prod.
+// testBackupStep injects crashes between backup steps; nil in prod.
 var testBackupStep func(step string) error
 
-// MarkConverted records a namespace's conversion provenance in meta_state (§6).
+// MarkConverted records a namespace's conversion provenance in meta_state.
 func MarkConverted(ctx context.Context, dbPath, ns, source, sha256 string, records int) error {
 	return withDB(dbPath, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, "UPDATE meta_state SET state = 'converted', source = ?, sha256 = ?, records = ?, applied_at = datetime('now') WHERE namespace = ?", source, sha256, records, ns)
@@ -23,7 +23,7 @@ func MarkConverted(ctx context.Context, dbPath, ns, source, sha256 string, recor
 	})
 }
 
-// Checkpoint folds the WAL back into the main file (TRUNCATE) so the database is a single self-contained file (§6 aside rule).
+// Checkpoint folds the WAL back into the main file (TRUNCATE) so the database is a single self-contained file.
 func Checkpoint(ctx context.Context, dbPath string) error {
 	return withDB(dbPath, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
@@ -31,7 +31,7 @@ func Checkpoint(ctx context.Context, dbPath string) error {
 	})
 }
 
-// Backup replaces destPath atomically (VACUUM INTO a temp file, integrity check, fsync, rename), so a previously published backup stays intact until the rename commits (§9).
+// Backup replaces destPath atomically (VACUUM INTO a temp file, integrity check, fsync, rename), so a previously published backup stays intact until the rename commits.
 func Backup(ctx context.Context, dbPath, destPath string) error {
 	if !utils.FileExists(dbPath) {
 		return fmt.Errorf("no sqlite store at %s to back up", dbPath)

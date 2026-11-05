@@ -28,7 +28,7 @@ type Spec struct {
 	DirectIO *bool
 }
 
-// Normalize enforces required fields; Name doubles as the guest serial (/dev/disk/by-id/virtio-<name>) and the detach key.
+// Normalize enforces required fields.
 func (s *Spec) Normalize() error {
 	if s.Path == "" {
 		return fmt.Errorf("path is required")
@@ -84,7 +84,7 @@ func ValidateName(name string) error {
 		return fmt.Errorf("name is required")
 	}
 	if !types.ValidDataDiskName(name) {
-		return fmt.Errorf("name %q invalid: must match ^[a-z][a-z0-9_-]{0,19}$", name)
+		return fmt.Errorf("name %q invalid: must match ^[a-z][a-z0-9_-]{0,19}$ without the cocoon- prefix", name)
 	}
 	return nil
 }

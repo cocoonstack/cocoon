@@ -15,7 +15,7 @@ import (
 
 const initLockName = "init.lock"
 
-// Init creates a fresh store — schema, identity pragmas and one meta_state row per namespace — in one transaction, so a crash mid-init leaves nothing or a complete store (§6).
+// Init creates a fresh store — schema, identity pragmas and one meta_state row per namespace — in one transaction, so a crash mid-init leaves nothing or a complete store.
 func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
@@ -40,7 +40,7 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 	})
 }
 
-// InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard — the conversion tool creates its target while the manifest is necessarily present (§6) — and passes a completed one through.
+// InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard — the conversion tool creates its target while the manifest is necessarily present — and passes a completed one through.
 func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	need, err := initNeeded(ctx, dbPath)
 	if err != nil || !need {

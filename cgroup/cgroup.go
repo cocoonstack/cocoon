@@ -384,7 +384,7 @@ func explainFenceWrite(parentDir, current, fence string, err error) error {
 	return fmt.Errorf("cgroup_cpus %q -> %q rejected with %d VM(s) running; the fence is machine-wide, drain them first: %w", current, fence, len(ids), err)
 }
 
-// enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write. Missing controllers go in one combined write.
+// enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write.
 func enableControllers(dir string, ctrls []string) error {
 	have, _ := readControl(dir, subtreeControlName)
 	enabled := strings.Fields(have)

@@ -197,7 +197,7 @@ func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, 
 	return new(rec.Snapshot), nil
 }
 
-// Delete removes each ref (rm dir → DB update); a mid-loop rm-OK-then-DB-fail leaves a stale DB record for GC.
+// Delete removes each ref under its tombstone; a failure leaves that tombstone for a retry or gc to finish.
 func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {

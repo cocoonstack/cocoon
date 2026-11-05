@@ -10,7 +10,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// Events pins one connection; data_version moves only for other connections' commits (§7).
+// Events pins one connection; data_version moves only for other connections' commits.
 func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

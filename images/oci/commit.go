@@ -27,7 +27,6 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	return nil
 }
 
-// finishImport commits blobs, then records the entry in one pure transaction.
 func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
 	logger := log.WithFunc("oci.finishImport")
 

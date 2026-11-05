@@ -137,7 +137,7 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, cl netCl
 	return nil
 }
 
-// recoverTombstone drives vmID's tombstone under the held VM lock; rolledForward reports a completed deleting recovery so entrypoints refuse the current operation (design §5 binding rule).
+// recoverTombstone drives vmID's tombstone under the held VM lock; rolledForward reports a completed deleting recovery so entrypoints refuse the current operation.
 func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward bool, err error) {
 	ts := c.tombstones()
 	var (

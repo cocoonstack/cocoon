@@ -123,7 +123,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs := b.sweepStaleCaptureDirs(ctx, snap.sweepDirs(b.Conf.RunDir()))
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
 	for _, id := range ids {
-		// Hold the ops lock: a create mkdirs before its record lands.
+		// Hold the ops lock: records are scanned before dirs, so an in-flight create's dirs read as orphans.
 		ok := b.withOpsTryLock(ctx, id, func() {
 			rec, err := b.PeekRecord(ctx, id)
 			if err != nil {
