@@ -95,7 +95,7 @@ record once and applies the same idempotent rules:
 | committed, not `running` | live | repair to `running` under the lock, then watch it |
 | any | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
-| unfinished delete tombstone | any | finish the delete — supervision starts deletes of its own, so it resumes them |
+| unfinished delete tombstone | any | finish a delete past its first filesystem step, roll back one that never reached it — supervision starts deletes of its own, so it resumes them |
 
 Exits are detected with `pidfd` + `epoll`, so the normal path costs no polling;
 the ticker is the correctness floor for anything the watcher missed, including
@@ -156,8 +156,8 @@ curl --unix-socket /var/lib/cocoon/run/cocoond.sock -N http://localhost/v1/event
   nobody can converge must not put a working daemon into a restart loop.
 - `GET /v1/vms` — every supervised VM: persisted state, transition triple, current
   liveness, watched pid.
-- `GET /v1/events` — SSE. Opens with a `sync` snapshot, then streams `ADDED`,
-  `MODIFIED` and `DELETED` changes.
+- `GET /v1/events` — SSE. Opens with a `sync` snapshot, then streams `change`
+  events whose `type` is `ADDED`, `MODIFIED` or `DELETED`.
 
 The stream is a hint, not a log: it replays nothing and a slow reader loses
 events. After a reconnect, compare each VM's `transition_generation` against the

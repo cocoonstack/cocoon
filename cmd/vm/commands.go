@@ -162,7 +162,7 @@ func Command(h Handler) *cobra.Command {
 	}
 	addVMFlags(debugCmd)
 	debugCmd.Flags().Int("max-cpu", 8, "max CPUs")
-	debugCmd.Flags().Int("balloon", 0, "balloon size in MB")
+	debugCmd.Flags().Int("balloon", 0, "balloon size in MB (0 = auto)")
 	debugCmd.Flags().String("cow", "", "COW disk path")
 	debugCmd.Flags().String("ch", "", "cloud-hypervisor binary path (default: ch_binary from the config)")
 
@@ -356,7 +356,7 @@ func addVMFlags(cmd *cobra.Command) {
 	cmd.Flags().String("memory", "1G", "memory size")
 	cmd.Flags().String("storage", "10G", "COW disk size")
 	cmd.Flags().Int("nics", 1, "number of network interfaces (0 = no network); OCI images up to v0.7.7 configure only the last NIC")
-	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; tradeoff: larger improves download throughput, smaller improves RPC latency)")
+	cmd.Flags().Int("queue-size", 0, "virtio-net ring depth per queue (0 = default 512; larger improves download throughput, smaller improves RPC latency; CH only, ignored by FC)")
 	cmd.Flags().Int("disk-queue-size", 0, "virtio-blk ring depth per device (0 = default 512; CH only, ignored by FC)")
 	cmd.Flags().Int("cpu-weight", 0, "cgroup cpu.weight, 1..10000 (0 = vCPU count)")
 	addCPUBandwidthFlags(cmd)

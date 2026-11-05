@@ -38,7 +38,7 @@ Reasons:
 - **snapshot**: `orphan` (dataDir without DB record), `stale-pending` (a dead save's pending record — its build lease is free), `missing-dir` (a record whose dataDir is gone), `orphan-lease` (a lease file whose snapshot has no record), `lru-all` / `lru-age` / `lru-keep` / `lru-size` (multi-criterion uses `+` joiner)
 - **cloud-hypervisor / firecracker**: `orphan-runDir`, `orphan-logDir`, `stale-creating` (a dead create/clone's placeholder — its ops lock is free, no age wait), `stale-clone-lock` (a clone lock past the grace whose holder died)
 - **images (oci, cloudimg)**: `unreferenced`
-- **cni**: `orphan` (netns in this installation's `net_scope` family without active VM)
+- **cni**: `orphan` (netns in this installation's `net_scope` family, or CNI records, without an active VM)
 - **bridge**: `orphan-tap` (TAP in this installation's `net_scope` family without active VM)
 - **cgroup**: `orphan-scope` (empty `vm-<id>.scope` under `cgroup_parent` that no VM record owns; scopes with live members are left alone)
 - **vmlock**: `orphan-lease` (lease file for a VM no backend knows; the ops lock unlinks on release, so `locks/vm/` is normally empty even with VMs running)

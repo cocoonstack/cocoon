@@ -38,7 +38,7 @@ Flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--socket` | required | Absolute path to the virtiofsd unix socket |
-| `--tag` | required | Guest mount tag (also detach key) |
+| `--tag` | required | Guest mount tag (also detach key; `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}$`) |
 | `--num-queues` | `1` | Request queues |
 | `--queue-size` | `1024` | Queue depth |
 
@@ -113,13 +113,13 @@ cocoon vm device detach my-vm --id mygpu
 | Flag | Applies to | Description |
 | ---- | ---------- | ----------- |
 | `--pci` | `attach` (required) | Short BDF (`01:00.0`), full BDF (`0000:01:00.0`) or a sysfs path under `/sys/bus/pci/devices/` |
-| `--id` | `attach` (optional), `detach` (required) | Device id; Cloud Hypervisor generates one when `attach` omits it, and `detach` takes the id `attach` returned. Must not start with `cocoon-` |
+| `--id` | `attach` (optional), `detach` (required) | Device id; Cloud Hypervisor generates one when `attach` omits it, and `detach` takes the id `attach` returned. `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`, must not start with `cocoon-` |
 
 `cocoon vm inspect VM` includes an `attached_devices` field for running VMs that surfaces every attached vhost-user-fs share, VFIO device, and hot-attached disk, read live from CH `vm.info`. The field is omitted for stopped VMs and whenever the live attach set is empty.
 
 ## Firecracker (`--pci`)
 
-Firecracker VMs created with `--pci` accept `vm disk attach`/`detach` (vhost-user-fs and VFIO stay Cloud Hypervisor only); MMIO VMs are rejected. Cocoon gives each `--pci` VM 8 PCIe root ports. A Firecracker build that places hot-plugged devices behind them notifies the guest, which then finds and releases the devices itself. An older build plugs devices onto the root bus and does not notify the guest, so cocoon prints the guest-side step after each call, and `--output json` carries it as `hints`:
+Firecracker VMs created with `--pci` accept `vm disk attach`/`detach` (vhost-user-fs and VFIO stay Cloud Hypervisor only); MMIO VMs are rejected. Cocoon gives each `--pci` VM 8 PCIe root ports. A Firecracker build that places hot-plugged devices behind them notifies the guest, which then finds and releases the devices itself. An older build plugs devices onto the root bus and does not notify the guest. cocoon cannot tell the builds apart, so it prints the guest-side step after each call (a root-port build needs none), and `--output json` carries it as `hints`:
 
 ```bash
 cocoon vm disk attach my-vm --path /vols/scratch.raw --name scratch
