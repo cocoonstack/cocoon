@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -549,6 +550,37 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	}
 	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err == nil {
 		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
+	}
+}
+
+func TestPrepareStartClearsATombstoneOlderThanTheCommittedRestore(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx := t.Context()
+	const id = "vm-restored"
+	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
+	runDir := t.TempDir()
+	marker := filepath.Join(runDir, restoreDirtyName)
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatalf("mk tombstone: %v", err)
+	}
+	written := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(marker, written, written); err != nil {
+		t.Fatalf("age tombstone: %v", err)
+	}
+	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
+		idx.VMs[id].State = types.VMStateStopped
+		idx.VMs[id].RunDir = runDir
+		idx.VMs[id].LogDir = runDir
+		idx.VMs[id].StartedAt = new(written.Add(time.Second))
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err != nil && strings.Contains(err.Error(), "interrupted restore") {
+		t.Fatalf("PrepareStart refused a tombstone older than the committed restore: %v", err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale tombstone still present: %v", err)
 	}
 }
 

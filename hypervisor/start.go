@@ -82,9 +82,15 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 		return nil, fmt.Errorf("vm %s is still being created", id)
 	}
 	// Tombstone survives lost quarantine writes and process death mid-restore; the mixed run dir must not boot.
-	if _, statErr := os.Stat(filepath.Join(rec.RunDir, restoreDirtyName)); statErr == nil {
+	markerPath := filepath.Join(rec.RunDir, restoreDirtyName)
+	switch marker, statErr := os.Stat(markerPath); {
+	case statErr == nil && rec.StartedAt != nil && marker.ModTime().Before(*rec.StartedAt):
+		if err = os.Remove(markerPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("clear stale restore tombstone for %s: %w", id, err)
+		}
+	case statErr == nil:
 		return nil, fmt.Errorf("vm %s has an interrupted restore; recover with vm restore or delete with vm rm", id)
-	} else if !errors.Is(statErr, fs.ErrNotExist) {
+	case !errors.Is(statErr, fs.ErrNotExist):
 		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
 	}
 
