@@ -101,7 +101,7 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 }
 
 // UpdateRecord runs mutate on the VM's record inside one transaction and persists the result.
-func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VMRecord) error) error {
+func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate RecordHook) error {
 	return b.update(ctx, func(t *vmTx) error {
 		r, err := t.getRecord(vmID)
 		if err != nil {

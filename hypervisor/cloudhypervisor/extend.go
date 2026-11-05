@@ -249,7 +249,7 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 	return addDevice(ctx, hc, endpoint, makeBody(&rec))
 }
 
-func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn, afterEject func(*hypervisor.VMRecord) error) error {
+func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn, afterEject hypervisor.RecordHook) error {
 	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err

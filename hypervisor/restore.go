@@ -22,11 +22,11 @@ type restoreRun struct {
 	vmCfg            *types.VMConfig
 	sourceSnapshotID string
 	kill             KillHook
-	apply            func(*VMRecord) error
+	apply            RecordHook
 	afterExtract     AfterExtractHook
 }
 
-func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
+func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
 		b.failRestore(ctx, vmID, rec.State)

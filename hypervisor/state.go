@@ -27,7 +27,7 @@ const (
 )
 
 // WithRunningVM calls fn if rec still points to a live VM process.
-func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn func(pid int) error) error {
+func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn PIDHook) error {
 	return b.withRunningVM(ctx, rec, nil, fn)
 }
 
@@ -156,7 +156,7 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 }
 
 // withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.
-func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn func(pid int) error) error {
+func (b *Backend) withRunningVM(ctx context.Context, rec *VMRecord, scan *utils.ProcScan, fn PIDHook) error {
 	logger := log.WithFunc(b.Typ + ".withRunningVM")
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	if pidErr != nil && !errors.Is(pidErr, fs.ErrNotExist) {
