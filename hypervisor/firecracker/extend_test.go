@@ -111,11 +111,16 @@ func TestDiskDetachRejectsAnInvalidNameBeforeLocking(t *testing.T) {
 	}
 }
 
-func TestRefuseHotAttachedDisks(t *testing.T) {
+func TestRefuseUnrecordedDevices(t *testing.T) {
+	rec := &hypervisor.VMRecord{NetworkConfigs: []*types.NetworkConfig{{MAC: "aa:bb:cc:dd:ee:00"}}}
 	srv := newFCStub(t, fcVMConfig{Drives: []fcDrive{{DriveID: "drive_0"}, {DriveID: hotDiskIDPrefix + "scratch", PathOnHost: "/vols/s.raw"}}})
-	err := refuseHotAttachedDisks(t.Context(), srv.client)
+	err := refuseUnrecordedDevices(t.Context(), srv.client, rec)
 	if err == nil || !strings.Contains(err.Error(), `"scratch"`) {
 		t.Fatalf("err = %v, want the hot-attached disk named", err)
+	}
+	srv = newFCStub(t, fcVMConfig{NetworkInterfaces: []fcNetworkInterface{{IfaceID: "eth0"}, {IfaceID: "eth1"}}})
+	if err := refuseUnrecordedDevices(t.Context(), srv.client, rec); err == nil || !strings.Contains(err.Error(), "rerun vm net") {
+		t.Fatalf("err = %v, want a NIC added after the record refused", err)
 	}
 	if got := hotAttachedDisks(&fcVMConfig{Drives: []fcDrive{{DriveID: "drive_1"}}}); got != nil {
 		t.Fatalf("create-path drives listed as hot-attached: %+v", got)
