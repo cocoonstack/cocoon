@@ -15,6 +15,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
         systemd \
         systemd-sysv \
         systemd-timesyncd \
+        dbus \
         udev \
         kmod \
         iproute2 \
