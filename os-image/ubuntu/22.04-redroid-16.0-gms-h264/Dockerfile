@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt_ensure \
     linux-image-virtual \
     initramfs-tools \
-    systemd systemd-sysv systemd-timesyncd \
+    systemd systemd-sysv systemd-timesyncd dbus \
     udev kmod iproute2 iputils-ping curl wget ca-certificates gnupg \
     openssh-server \
     && \
