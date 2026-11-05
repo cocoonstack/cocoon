@@ -140,7 +140,8 @@ the daemon does not claim an exit time it cannot know.
 
 The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a `0750`
 directory — filesystem permissions are the authorization boundary).
-`--api-socket` moves the socket, `--api-socket-mode` sets its permission bits;
+`--api-socket` moves the socket, `--api-socket-mode` sets its permission bits
+(octal with a leading `0`: `660` without it is read as decimal);
 tighten the mode rather than widen it, since nothing else authenticates.
 
 ```bash
