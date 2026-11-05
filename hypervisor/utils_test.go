@@ -343,7 +343,7 @@ func TestBuildBaseCmdline(t *testing.T) {
 		},
 		{
 			name: "ch with nic + dns", prefix: chPrefix, layers: "L", cow: "C", nics: nics, dns: []string{"1.1.1.1"},
-			want: "console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=L cocoon.cow=C clocksource=kvm-clock rw net.ifnames=0 cocoon.hostname=vm ip=10.0.0.2::10.0.0.1:255.255.255.0:vm:eth0:off:1.1.1.1",
+			want: "console=hvc0 loglevel=3 boot=cocoon-overlay cocoon.layers=L cocoon.cow=C clocksource=kvm-clock rw net.ifnames=0 cocoon.hostname=vm ip=10.0.0.2::10.0.0.1:255.255.255.0::eth0:off:1.1.1.1",
 		},
 	}
 	for _, tt := range tests {
@@ -363,8 +363,8 @@ func TestBuildIPParams(t *testing.T) {
 		{Network: &types.Network{IP: "10.1.0.2", Prefix: 16}},
 	}
 	const (
-		eth0 = " ip=10.0.0.2::10.0.0.1:255.255.255.0:vm:eth0:off"
-		eth2 = " ip=10.1.0.2:::255.255.0.0:vm:eth2:off"
+		eth0 = " ip=10.0.0.2::10.0.0.1:255.255.255.0::eth0:off"
+		eth2 = " ip=10.1.0.2:::255.255.0.0::eth2:off"
 	)
 	for _, tt := range []struct {
 		dns  []string

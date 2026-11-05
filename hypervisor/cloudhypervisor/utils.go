@@ -175,6 +175,14 @@ func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }
 
+func removeDevicePending(ctx context.Context, hc *http.Client, deviceID string) error {
+	err := removeDeviceVM(ctx, hc, deviceID)
+	if apiErr, ok := errors.AsType[*utils.APIError](err); ok && apiErr.Code == http.StatusNotFound {
+		return nil
+	}
+	return err
+}
+
 func waitDeviceEjected(ctx context.Context, hc *http.Client, deviceID string) error {
 	return utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
 		info, err := getVMInfo(ctx, hc)
@@ -205,6 +213,18 @@ func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) 
 		return nil, fmt.Errorf("decode vm.info: %w", err)
 	}
 	return &info, nil
+}
+
+func getVMCounters(ctx context.Context, hc *http.Client) (chCounters, error) {
+	body, err := utils.DoAPI(ctx, hc, http.MethodGet, chAPIBase+"vm.counters", nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("query vm.counters: %w", err)
+	}
+	var ctr chCounters
+	if err := json.Unmarshal(body, &ctr); err != nil {
+		return nil, fmt.Errorf("decode vm.counters: %w", err)
+	}
+	return ctr, nil
 }
 
 func powerButton(ctx context.Context, hc *http.Client) error {

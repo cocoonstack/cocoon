@@ -45,7 +45,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
     systemctl mask systemd-fsck-root.service systemd-remount-fs.service systemd-fsck@.service && \
     systemctl enable systemd-networkd systemd-resolved systemd-timesyncd && \
     mkdir -p /etc/systemd/network && \
-    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/20-wired.network && \
+    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/99-wired.network && \
     echo "xfce4-session" > /root/.xsession && \
     sed -i 's/test -x \/etc\/X11\/Xsession && exec \/etc\/X11\/Xsession/exec \/usr\/bin\/startxfce4/g' /etc/xrdp/startwm.sh && \
     sed -i 's/^max_bpp=.*/max_bpp=16/' /etc/xrdp/xrdp.ini && \

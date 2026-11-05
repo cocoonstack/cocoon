@@ -132,7 +132,7 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 	if cfg.Payload == nil {
 		t.Fatal("no payload built for a direct-boot record")
 	}
-	if !strings.Contains(cfg.Payload.Cmdline, "ip=10.211.0.134::10.211.0.1:255.255.252.0:vm1:eth0:off") {
+	if !strings.Contains(cfg.Payload.Cmdline, "ip=10.211.0.134::10.211.0.1:255.255.252.0::eth0:off") {
 		t.Errorf("cmdline = %q, want the address the record now holds", cfg.Payload.Cmdline)
 	}
 }

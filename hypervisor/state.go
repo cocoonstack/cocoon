@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"syscall"
 	"time"
@@ -124,6 +126,9 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 			return err
 		}
 		if r == nil || r.State == types.VMStateRunning || r.State == types.VMStateCreating || r.Quarantine != "" {
+			return nil
+		}
+		if _, statErr := os.Stat(filepath.Join(r.RunDir, restoreDirtyName)); statErr == nil {
 			return nil
 		}
 		emitReason, transition := bootReasons(r.FirstBooted)

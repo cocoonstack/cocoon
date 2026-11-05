@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt_ensure \
     linux-image-virtual \
     initramfs-tools \
-    systemd systemd-sysv systemd-timesyncd \
+    systemd systemd-sysv systemd-timesyncd dbus \
     udev kmod iproute2 iputils-ping curl wget ca-certificates gnupg \
     openssh-server \
     && \
@@ -91,12 +91,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     systemctl mask systemd-fsck-root.service systemd-remount-fs.service systemd-fsck@.service && \
     systemctl enable systemd-networkd systemd-resolved systemd-timesyncd && \
     mkdir -p /etc/systemd/network && \
-    # networkd must NOT touch docker's veth/bridge: the 20-wired Name=e* v* would
+    # networkd must NOT touch docker's veth/bridge: the 99-wired Name=e* v* would
     # grab veth*, race docker's enslavement, and leave the container's veth off
     # docker0 (linkdown -> no container network). A higher-priority Unmanaged rule
-    # (05- < 20-) shields them so docker keeps them enslaved.
+    # (05- < 99-) shields them so docker keeps them enslaved.
     printf "[Match]\nName=veth* docker0 br-*\n\n[Link]\nUnmanaged=yes\n" > /etc/systemd/network/05-docker-unmanaged.network && \
-    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/20-wired.network && \
+    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/99-wired.network && \
     # --- SSH + cocoon-agent (vsock exec) ---
     sh /run/secrets/cocoon_install_agent && \
     echo 'root:cocoon' | chpasswd && \

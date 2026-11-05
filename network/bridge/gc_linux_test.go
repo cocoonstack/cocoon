@@ -71,6 +71,21 @@ func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 	}
 }
 
+func TestGCReadsAnInterruptedLinkDump(t *testing.T) {
+	oldList := listLinksFn
+	t.Cleanup(func() { listLinksFn = oldList })
+	listLinksFn = func() ([]netlink.Link, error) {
+		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}}, netlink.ErrDumpInterrupted
+	}
+	snap, err := GCModule("bt", nil).ReadDB(t.Context())
+	if err != nil {
+		t.Fatalf("ReadDB: %v, want an interrupted dump read as its partial list", err)
+	}
+	if _, ok := snap.prefixes["AAAAAAAA"]; !ok {
+		t.Errorf("prefixes = %v, want the TAP from the partial list", snap.prefixes)
+	}
+}
+
 func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 	readErr := errors.New("owner read failed")
 	for _, tt := range []struct {

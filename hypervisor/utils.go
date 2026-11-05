@@ -206,9 +206,9 @@ func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServ
 		if n.Network == nil || n.Network.IP == "" {
 			continue
 		}
-		fmt.Fprintf(&params, " ip=%s::%s:%s:%s:eth%d:off",
+		fmt.Fprintf(&params, " ip=%s::%s:%s::eth%d:off",
 			n.Network.IP, n.Network.Gateway,
-			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), vmName, i)
+			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), i)
 		if dns != "" {
 			params.WriteString(":" + dns)
 		}

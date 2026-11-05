@@ -15,11 +15,11 @@ Limitations, workarounds, and upstream tracking. Fixed entries are kept for oper
 
 ## OCI VM multi-NIC kernel IP limitation
 
-OCI VMs use the kernel `ip=` boot parameter for network configuration. While multiple `ip=` parameters can be specified, the Linux kernel only reliably configures **one interface** via this mechanism — subsequent `ip=` parameters may be silently ignored or produce inconsistent results depending on kernel version.
+OCI VMs get one `ip=` boot parameter per NIC. The initramfs-tools `init` script keeps only the last `ip=`, so the initramfs configures only the last NIC. After switch_root, systemd-network-generator writes a `70-<nic>.network` file for every `ip=` (`90-<nic>.network` on systemd 249, which Ubuntu 22.04 ships). Images built from v0.7.7 or earlier ship the default DHCP config as `20-wired.network` (`Name=e* v*`), which sorts first and wins; later images name it `99-wired.network`, so the generated files apply.
 
-**Consequence**: on every boot of an OCI VM with multiple NICs, the first `vm run` included, only the last NIC receives its IP from the kernel `ip=` parameter (each `ip=` overrides the previous one). The other NICs come up without an IPv4 address until the guest init system configures them (e.g., systemd-networkd `.network` files written by the post-clone hints).
+**Consequence on v0.7.7 and earlier images**: on every boot of an OCI VM with multiple NICs, only the last NIC gets its static IPv4 address. The other NICs ask for DHCP and, on a network without a DHCP server, have no IPv4 address. Workaround: rename `20-wired.network` in the guest so it sorts after the generated files (`99-wired.network`), or write one MAC-matched `.network` file per NIC with the address `cocoon vm inspect` reports.
 
-**Workaround**: persistent MAC-based systemd-networkd configs for **all** NICs configure every interface on every boot regardless of the kernel `ip=` limitation. The post-clone setup hints write them for a clone; a VM created with `vm run --nics N` has only the one the initramfs writes for the NIC its `ip=` configured, so write one `.network` file per other NIC in the guest, matching the MAC and address `cocoon vm inspect` reports.
+**All images**: removing a NIC with `vm net` while the guest is still in its initramfs makes that boot wait for the missing interface, about 13 minutes on the Ubuntu images. Run `vm net` after the guest has booted.
 
 ## Non-root user creation requires cloud-init final stage
 
@@ -225,9 +225,19 @@ A killed capture also leaves its files. A `snapshot-*` directory under the VM's 
 
 ## Windows: a capture right after a clone can strand the next clone's NIC
 
-A capture waits up to 30 seconds for a clone to eject its old NICs. A Windows guest acks in 0-14 seconds; only a CPU quota of 0.2 core or less for 4 vCPUs pushed it past 30. The wait ends at the ack, but the new NIC is still settling. A snapshot taken then yields a clone whose own eject never acks: 9 of 12 at zero delay, 0 of 78 with at least 7-8 seconds between the clone and the capture. Held VMs were still pending after 968 seconds, so a longer wait does not help.
+A clone's eject ack does not mean its replacement NIC has started: netkvm finishes starting 0.2-1.8 seconds later. A snapshot taken in between yields a clone whose own eject never acks. Its next capture then waits the full 30 seconds and warns, and a clone of that snapshot has no new NIC while `vm clone` reports success. On Windows, a capture that finds an eject pending therefore also waits, inside the same 30 seconds, until every NIC has sent a frame, and it re-sends `vm.remove-device` every 5 seconds for an eject the guest dropped. A capture started in the short window after the ack and before the NIC starts is not covered: wait a few seconds after cloning a Windows VM before capturing it.
 
-That clone's guest works, but its next capture waits the full 30 seconds and warns, and a clone of that snapshot has no new NIC while `vm clone` reports success. Wait 8 seconds after cloning a Windows VM before capturing it. A NIC in Error code 10 at capture does the same, with any delay, and the host cannot see it; check `Get-PnpDevice` in the guest before capturing. The `CocoonNicAutoHeal` task usually clears the error in 30-120 seconds. A VM with several NICs hits this often: a cold-booted `--nics 3` VM had 2 of 3 in Error.
+A NIC in Error code 10 (netkvm event 5005) at capture strands the eject the same way, with any delay. It appears when Windows re-enables several NICs at once: it moves a NIC's BAR into a range Cloud Hypervisor still assigns to another disabled NIC, Cloud Hypervisor refuses and logs `Failed moving device BAR ... keeping old BAR`, and the driver starts on resources that do not match. Disable and re-enable NICs one at a time; the clone hint and the image's `CocoonNicAutoHeal` task do.
+
+## A guest with unreachable DNS stops slowly
+
+When the guest's DNS servers drop queries (no egress, or a firewall that drops DNS), a graceful `vm stop` of an Ubuntu or Debian OCI guest can wait up to 20 s. systemd-timesyncd keeps an NTP server lookup in flight, and glibc gives up after 20 s (5 s timeout, 2 attempts, 2 servers). On exit, timesyncd waits for that lookup to finish. With working DNS, or with NTP pointing at an IP address, the stop takes about 0.3 s.
+
+**Workaround**: give the guest a DNS server that answers (`--dns`), or set an NTP server by IP in `/etc/systemd/timesyncd.conf`. Alternatively, a drop-in for `systemd-timesyncd.service` with `Environment="RES_OPTIONS=timeout:1 attempts:1"` caps the wait at about 2 s.
+
+## A serial console slows NIC bring-up and VM wake
+
+On a host whose kernel console is a serial port (`console=ttyS0,115200`) at console_loglevel 7, every bridge port state change prints `entered blocking state` and `entered forwarding state` synchronously, about 6.5 ms per line, while the kernel holds RTNL. A VM wake or start pays about 14 ms of it, and any other netlink or TAP operation on the host waits behind it. Lowering console_loglevel (the first field of `/proc/sys/kernel/printk`) to 4 cuts the link-up work from 13.6 ms to 0.4 ms; the lines still reach `dmesg`.
 
 ## Snapshot lease files are never reclaimed (fixed in v0.6.8)
 

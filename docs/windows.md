@@ -30,6 +30,6 @@ Pre-built images are published as split OCI artifacts and imported with `oras pu
 ### Post-Clone Networking
 
 - **DHCP networks**: the clone comes up on hot-swapped NICs with new MACs; if a NIC is left without IPv4, run the `Get-PnpDevice` rebind that `cocoon vm clone` prints
-- **Static IP**: after the rebind, run the printed `netsh interface ipv4 set address ...` inside the guest (SAC serial console via `cocoon vm console`)
+- **Static IP**: after the rebind, run the printed `netsh interface ipv4 set address ...` inside the guest (SAC serial console via `cocoon vm console`). Windows keeps a static IPv4 setting per PCI slot, so a clone NIC that lands in the source's slot re-applies the source's address and collides with any running VM that holds it; prefer DHCP for clone sources, or reset the adapter's settings in the clone
 
 For more details, see the [Cloud Hypervisor Windows documentation](https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/docs/windows.md).

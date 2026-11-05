@@ -47,5 +47,8 @@ func CreateTAP(name string, numQueues int) (int, error) {
 	if index == 0 {
 		return 0, fmt.Errorf("resolve index of tap %s", name)
 	}
+	if queuePairs > 1 {
+		_ = netlink.QdiscReplace(&netlink.GenericQdisc{LinkIndex: index, Parent: netlink.HANDLE_ROOT, QdiscType: "noqueue"})
+	}
 	return index, nil
 }

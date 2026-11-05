@@ -386,7 +386,7 @@ validate_boot_contract() {
 
 validate_network_and_services() {
   local rootfs=$1
-  local default_network="$rootfs/etc/systemd/network/20-wired.network"
+  local default_network="$rootfs/etc/systemd/network/99-wired.network"
   local agent_unit="$rootfs/etc/systemd/system/cocoon-agent.service"
   local shadow_line
   local root_hash

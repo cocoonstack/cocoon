@@ -15,6 +15,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
         systemd \
         systemd-sysv \
         systemd-timesyncd \
+        dbus \
         udev \
         kmod \
         iproute2 \
@@ -39,7 +40,7 @@ RUN --mount=type=secret,id=cocoon_overlay \
     systemctl mask systemd-fsck-root.service systemd-remount-fs.service systemd-fsck@.service && \
     systemctl enable systemd-networkd systemd-resolved systemd-timesyncd && \
     mkdir -p /etc/systemd/network && \
-    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/20-wired.network && \
+    printf "[Match]\nName=e* v*\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n" > /etc/systemd/network/99-wired.network && \
     # [Cocoon agent + sshd] vsock exec daemon and SSH access.
     sh /run/secrets/cocoon_install_agent && \
     # [Final Touches]
