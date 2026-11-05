@@ -68,18 +68,18 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 		refsByBackend[owner] = append(refsByBackend[owner], ref)
 	}
 
-	var allDeleted []string
+	total := 0
 	for backend, refs := range refsByBackend {
 		deleted, err := backend.Delete(ctx, refs)
 		if err != nil {
 			return fmt.Errorf("delete %s: %w", backend.Type(), err)
 		}
-		allDeleted = append(allDeleted, deleted...)
+		for _, ref := range deleted {
+			logger.Infof(ctx, "deleted: %s", ref)
+		}
+		total += len(deleted)
 	}
-	for _, ref := range allDeleted {
-		logger.Infof(ctx, "deleted: %s", ref)
-	}
-	if len(allDeleted) == 0 {
+	if total == 0 {
 		logger.Info(ctx, "no matching images found")
 	}
 	return nil
