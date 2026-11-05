@@ -108,8 +108,11 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "Connected to %s (escape sequence: %s.)\r\n", ref, escapeDisplay)
 
 	if f, ok := conn.(*os.File); ok {
-		cleanup := console.HandleResize(inFd, f.Fd())
-		defer cleanup()
+		if rc, rcErr := f.SyscallConn(); rcErr == nil {
+			var ptyFd uintptr
+			_ = rc.Control(func(fd uintptr) { ptyFd = fd })
+			defer console.HandleResize(inFd, ptyFd)()
+		}
 	}
 
 	escapeKeys := []byte{escapeChar, '.'}

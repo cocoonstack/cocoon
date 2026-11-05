@@ -7,7 +7,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta"
 )
 
-// CheckFS refuses unsupported filesystems before any WAL work (§4); the env seam lets every entry path (open, init, convert) be asserted in tests.
+// CheckFS refuses unsupported filesystems before any WAL work; the env seam lets every entry path (open, init, convert) be asserted in tests.
 func CheckFS(dbPath string) error {
 	if name := os.Getenv("COCOON_TEST_UNSUPPORTED_FS"); name != "" {
 		return fsRefusal(dbPath, name)

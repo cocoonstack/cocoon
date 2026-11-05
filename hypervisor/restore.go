@@ -22,11 +22,11 @@ type restoreRun struct {
 	vmCfg            *types.VMConfig
 	sourceSnapshotID string
 	kill             KillHook
-	apply            func(*VMRecord) error
+	apply            RecordHook
 	afterExtract     AfterExtractHook
 }
 
-func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate func(pid int) error, runtimeFiles []string) error {
+func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook, runtimeFiles []string) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
 		b.failRestore(ctx, vmID, rec.State)
@@ -50,7 +50,7 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 		return nil, fmt.Errorf("update record: %w", err)
 	}
 	if rmErr := os.Remove(filepath.Join(rec.RunDir, restoreDirtyName)); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-		log.WithFunc(b.Typ+".FinalizeRestore").Errorf(ctx, rmErr, "clear restore-dirty marker for %s; start will refuse it until the file goes", vmID)
+		log.WithFunc(b.Typ+".FinalizeRestore").Warnf(ctx, "clear restore-dirty marker for %s: %v; the next start clears it", vmID, rmErr)
 	}
 
 	info := rec.VM
@@ -82,12 +82,10 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	}
 	apply := func(rec *VMRecord) error {
 		if err := spec.Clean(rec.RunDir); err != nil {
-			// The sweep may already have deleted snapshot files; a stopped origin would otherwise stay startable on mixed state.
 			b.QuarantineVM(ctx, vmID, "partial restore cleanup")
 			return err
 		}
 		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
-			// A partial merge mixes vintages; quarantine any origin so vm start cannot boot it.
 			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}

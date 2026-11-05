@@ -202,7 +202,7 @@ func TestFailingRollForwardDoesNotWakeItsOwnDaemon(t *testing.T) {
 	defer store.Close()
 	ts := tombstone.NewTable(ns)
 	if err := store.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
-		lease, err := ts.Lease(ctx, w, "vm1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: []byte(`{}`)})
+		lease, err := ts.Lease(ctx, w, "vm1", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: []byte(`{}`)})
 		if err != nil {
 			return err
 		}

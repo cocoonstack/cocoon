@@ -57,15 +57,11 @@ func (c *CNI) teardownProtocol(ctx context.Context, vmID string, subset []string
 		}
 		var resumed *tombstone.Record
 		leaseID, resumed, err = ts.Acquire(ctx, t.Writer(), vmID, func() (tombstone.Payload, error) {
-			kind := tombstone.KindRecord
-			if len(cl.Records) == 0 {
-				kind = tombstone.KindOrphan // a 0-NIC VM still owns its netns
-			}
 			cleanup, mErr := tombstone.MarshalCleanup(cl)
 			if mErr != nil {
 				return tombstone.Payload{}, mErr
 			}
-			return tombstone.Payload{Kind: kind, Mode: mode, Cleanup: cleanup}, nil
+			return tombstone.Payload{Mode: mode, Cleanup: cleanup}, nil
 		})
 		if err != nil || resumed == nil {
 			return err
@@ -137,7 +133,7 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, cl netCl
 	return nil
 }
 
-// recoverTombstone drives vmID's tombstone under the held VM lock; rolledForward reports a completed deleting recovery so entrypoints refuse the current operation (design §5 binding rule).
+// recoverTombstone drives vmID's tombstone under the held VM lock; rolledForward reports a completed deleting recovery so entrypoints refuse the current operation.
 func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward bool, err error) {
 	ts := c.tombstones()
 	var (

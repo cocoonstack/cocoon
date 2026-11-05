@@ -1,12 +1,7 @@
-// Package others defines the top-level gc, version, and completion commands.
+// Package others defines the top-level gc and version commands.
 package others
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func Commands(h Handler) []*cobra.Command {
 	gcCmd := &cobra.Command{
@@ -27,27 +22,6 @@ func Commands(h Handler) []*cobra.Command {
 			Short: "Show version, git revision, and build timestamp",
 			Args:  cobra.NoArgs,
 			RunE:  h.Version,
-		},
-		{
-			Use:       "completion [bash|zsh|fish|powershell]",
-			Short:     "Generate shell completion script",
-			Args:      cobra.ExactArgs(1),
-			ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
-			RunE: func(cmd *cobra.Command, args []string) error {
-				root := cmd.Root()
-				switch args[0] {
-				case "bash":
-					return root.GenBashCompletion(os.Stdout)
-				case "zsh":
-					return root.GenZshCompletion(os.Stdout)
-				case "fish":
-					return root.GenFishCompletion(os.Stdout, true)
-				case "powershell":
-					return root.GenPowerShellCompletionWithDesc(os.Stdout)
-				default:
-					return fmt.Errorf("unsupported shell: %s", args[0])
-				}
-			},
 		},
 	}
 }

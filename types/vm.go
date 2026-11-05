@@ -31,7 +31,7 @@ var (
 	validName         = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
 	validSnapshotName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,62}$`)
 	validUsername     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
-	// shellUnsafe rejects chars that break the chpasswd YAML scalar in cidata.
+	// shellUnsafe rejects chars that break the cidata chpasswd scalar and the sh -c runcmd lines.
 	shellUnsafe = regexp.MustCompile("[`$;|&(){}\\\\<>!'\"\\x00-\\x1f\\x7f]")
 )
 
@@ -102,13 +102,13 @@ type VM struct {
 	State      VMState  `json:"state"`
 	Config     VMConfig `json:"config"`
 
-	// Runtime — populated only while State == VMStateRunning.
+	// Runtime — ToVM fills these only while State == VMStateRunning.
 	PID         int    `json:"pid"`
 	SocketPath  string `json:"socket_path,omitempty"`  // VMM API Unix socket
 	VsockSocket string `json:"vsock_socket,omitempty"` // hybrid vsock UDS for cocoon-agent
 	ConsolePath string `json:"console_path,omitempty"` // guest console: console.sock UDS or CH-allocated PTY (direct boot)
 
-	// Placement is held from launch until the VM leaves VMStateRunning; --cpuset-cpus auto records its cache domain as CPUSet.
+	// Placement is held from launch until the VM is Stopped; --cpuset-cpus auto records its cache domain as CPUSet.
 	CPUSet    string `json:"cpuset,omitempty"`
 	QueueCPUs string `json:"queue_cpus,omitempty"` // host cpus the writable virtio-blk queue threads pin to
 
@@ -133,9 +133,6 @@ type VM struct {
 }
 
 func (v *VM) ResolvedNetnsPath() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetnsPath, nic.NetnsPath)
 	}
@@ -143,9 +140,6 @@ func (v *VM) ResolvedNetnsPath() string {
 }
 
 func (v *VM) ResolvedNetBackend() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetBackend, nic.Backend, BackendCNI)
 	}
@@ -153,9 +147,6 @@ func (v *VM) ResolvedNetBackend() string {
 }
 
 func (v *VM) ResolvedNetBridgeDev() string {
-	if v == nil {
-		return ""
-	}
 	if nic := v.firstNIC(); nic != nil {
 		return cmp.Or(v.NetBridgeDev, nic.BridgeDev)
 	}
@@ -163,7 +154,7 @@ func (v *VM) ResolvedNetBridgeDev() string {
 }
 
 func (v *VM) firstNIC() *NetworkConfig {
-	if v == nil || len(v.NetworkConfigs) == 0 {
+	if len(v.NetworkConfigs) == 0 {
 		return nil
 	}
 	return v.NetworkConfigs[0]

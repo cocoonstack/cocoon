@@ -26,7 +26,7 @@ func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) 
 	for i, item := range items {
 		g.Go(func() error {
 			errs[i] = fn(gctx, item)
-			return nil // always nil so errgroup processes all items (best-effort)
+			return nil
 		})
 	}
 	_ = g.Wait()

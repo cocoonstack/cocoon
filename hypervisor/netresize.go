@@ -18,7 +18,7 @@ import (
 // nicRollbackTimeout bounds a rollback that outlives a canceled resize (guest eject on CH can take 14 s).
 const nicRollbackTimeout = 60 * time.Second
 
-// ErrEjectPending marks a RemoveNIC whose request the VMM accepted but the guest has not released; the host slot is reclaimed anyway.
+// ErrEjectPending marks a RemoveNIC whose request the VMM accepted but the guest has not released.
 var ErrEjectPending = errors.New("guest has not released the device")
 
 // LiveNIC is one NIC device the VMM exposes right now; Index is its host slot (record position), -1 when the VMM reports a device cocoon cannot place.

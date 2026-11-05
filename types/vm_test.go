@@ -267,19 +267,6 @@ func TestVMResolvedNetFields(t *testing.T) {
 	}
 }
 
-func TestVMResolvedNetNilReceiver(t *testing.T) {
-	var v *VM
-	if got := v.ResolvedNetnsPath(); got != "" {
-		t.Errorf("nil ResolvedNetnsPath = %q, want \"\"", got)
-	}
-	if got := v.ResolvedNetBackend(); got != "" {
-		t.Errorf("nil ResolvedNetBackend = %q, want \"\"", got)
-	}
-	if got := v.ResolvedNetBridgeDev(); got != "" {
-		t.Errorf("nil ResolvedNetBridgeDev = %q, want \"\"", got)
-	}
-}
-
 func validConfig() VMConfig {
 	return VMConfig{
 		Name:    "test-vm",

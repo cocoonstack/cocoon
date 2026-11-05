@@ -175,9 +175,8 @@ func statusRefreshLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filt
 }
 
 func statusEventLoop(ctx context.Context, hypers []hypervisor.Hypervisor, filters []string, watchCh <-chan struct{}, tick <-chan time.Time) {
-	fmt.Println("EVENT\tID\tNAME\tSTATE\tCPU\tMEMORY\tIP\tIMAGE")
-
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "EVENT\tID\tNAME\tSTATE\tCPU\tMEMORY\tIP\tIMAGE") //nolint:errcheck
 	statusEventDiffLoop(ctx, hypers, filters, watchCh, tick, eventEmitter{
 		emit: func(event string, snap vmSnapshot, _ vmOutput) { printEventRow(w, event, snap) },
 		end:  func() { _ = w.Flush() },

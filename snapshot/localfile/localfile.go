@@ -66,9 +66,6 @@ type LocalFile struct {
 
 // New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...Option) (*LocalFile, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
 	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
@@ -162,7 +159,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 		}
 		return "", false, fmt.Errorf("move capture into store: %w", err)
 	}
-	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (MkdirAll in Create)
+	if err = os.Chmod(dataDir, 0o750); err != nil { //nolint:gosec // match the store's 0o750 data dirs (utils.EnsureDirs)
 		return "", false, fmt.Errorf("chmod data dir: %w", err)
 	}
 	// Durable before kill: the VMM dies once we return and a bare rename fsyncs nothing, so sync files and dir entries before finalize.
@@ -178,7 +175,7 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 // List returns all snapshots (excluding pending ones).
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
-	return result, lf.view(ctx, func(t *snapTx) error {
+	err := lf.view(ctx, func(t *snapTx) error {
 		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			if rec.Pending {
 				return nil
@@ -187,6 +184,7 @@ func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 			return nil
 		})
 	})
+	return result, err
 }
 
 func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, error) {
@@ -197,7 +195,7 @@ func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, 
 	return new(rec.Snapshot), nil
 }
 
-// Delete removes each ref (rm dir → DB update); a mid-loop rm-OK-then-DB-fail leaves a stale DB record for GC.
+// Delete removes each ref under its tombstone; a failure leaves that tombstone for a retry or gc to finish.
 func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {
@@ -436,7 +434,9 @@ func (lf *LocalFile) lookupRecord(ctx context.Context, ref string, touch bool) (
 		return nil
 	}
 	if touch {
-		return rec, lf.touch(ctx, apply)
+		err := lf.touch(ctx, apply)
+		return rec, err
 	}
-	return rec, lf.view(ctx, apply)
+	err := lf.view(ctx, apply)
+	return rec, err
 }

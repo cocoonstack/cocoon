@@ -34,7 +34,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 	return hypervisor.SnapshotSpec{
 		Pause: func(rec *hypervisor.VMRecord, hc *http.Client) error {
 			if rec.Config.PCI {
-				if err := refuseHotAttachedDisks(ctx, hc); err != nil {
+				if err := refuseUnrecordedDevices(ctx, hc, rec); err != nil {
 					return err
 				}
 			}
@@ -73,14 +73,17 @@ func buildSnapshotMeta(rec *hypervisor.VMRecord, _ string) (*snapshot.SnapshotMe
 	return meta, nil
 }
 
-// A runtime-only disk has no sidecar entry, so the snapshot could never restore.
-func refuseHotAttachedDisks(ctx context.Context, hc *http.Client) error {
+// A runtime-only disk or NIC has no record entry, so the snapshot could never restore.
+func refuseUnrecordedDevices(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord) error {
 	cfg, err := getVMConfig(ctx, hc)
 	if err != nil {
 		return err
 	}
 	if hot := hotAttachedDisks(cfg); len(hot) > 0 {
 		return fmt.Errorf("hot-attached disk %q: %w", hot[0].Name, hypervisor.ErrHotAttached)
+	}
+	if len(cfg.NetworkInterfaces) != len(rec.NetworkConfigs) {
+		return fmt.Errorf("vm %s has %d NICs but its record has %d; rerun vm net first", rec.ID, len(cfg.NetworkInterfaces), len(rec.NetworkConfigs))
 	}
 	return nil
 }

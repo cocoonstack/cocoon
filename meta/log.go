@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"strconv"
 )
 
 const seqCursorID = "cursor"
@@ -42,11 +43,7 @@ func (l *Log[R]) Append(ctx context.Context, w Writer, rec *R, opts ...WriteOpt)
 	if perr := w.PutRaw(ctx, l.ns, l.table, seqID(next), data, relaxedOK(opts)); perr != nil {
 		return 0, perr
 	}
-	curRaw, err := json.Marshal(next)
-	if err != nil {
-		return 0, err
-	}
-	if perr := w.PutRaw(ctx, l.ns, l.table, seqCursorID, curRaw, relaxedOK(opts)); perr != nil {
+	if perr := w.PutRaw(ctx, l.ns, l.table, seqCursorID, strconv.AppendUint(nil, uint64(next), 10), relaxedOK(opts)); perr != nil {
 		return 0, perr
 	}
 	return next, nil

@@ -93,9 +93,9 @@ record once and applies the same idempotent rules:
 | `creating` | any | ownerless only if the ops lock is free; then run the stale-create cleanup at once, freeing the name |
 | `running` | live | watch that exact process generation |
 | committed, not `running` | live | repair to `running` under the lock, then watch it |
-| any | dead | close the interval, mark `unexpected-exit`, quiesce the network |
+| `running`, or an open compute interval | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
-| unfinished delete tombstone | any | finish the delete — supervision starts deletes of its own, so it resumes them |
+| unfinished delete tombstone | any | finish a delete whose tombstone reached the deleting phase, roll back one still leased — supervision starts deletes of its own, so it resumes them |
 
 Exits are detected with `pidfd` + `epoll`, so the normal path costs no polling;
 the ticker is the correctness floor for anything the watcher missed, including
@@ -138,9 +138,10 @@ the daemon does not claim an exit time it cannot know.
 
 ## Read-only API
 
-The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a `0750`
-directory — filesystem permissions are the authorization boundary).
-`--api-socket` moves the socket, `--api-socket-mode` sets its permission bits;
+The daemon serves HTTP/JSON over `<run-dir>/cocoond.sock` (`0660`, in a directory
+the daemon creates `0750` when absent — filesystem permissions are the authorization boundary).
+`--api-socket` moves the socket, `--api-socket-mode` sets its permission bits
+(octal with a leading `0`: `660` without it is read as decimal);
 tighten the mode rather than widen it, since nothing else authenticates.
 
 ```bash
@@ -155,8 +156,8 @@ curl --unix-socket /var/lib/cocoon/run/cocoond.sock -N http://localhost/v1/event
   nobody can converge must not put a working daemon into a restart loop.
 - `GET /v1/vms` — every supervised VM: persisted state, transition triple, current
   liveness, watched pid.
-- `GET /v1/events` — SSE. Opens with a `sync` snapshot, then streams `ADDED`,
-  `MODIFIED` and `DELETED` changes.
+- `GET /v1/events` — SSE. Opens with a `sync` snapshot, then streams `change`
+  events whose `type` is `ADDED`, `MODIFIED` or `DELETED`.
 
 The stream is a hint, not a log: it replays nothing and a slow reader loses
 events. After a reconnect, compare each VM's `transition_generation` against the

@@ -2,6 +2,7 @@ package cloudhypervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -100,7 +101,7 @@ func (ch *CloudHypervisor) generateCidata(vmID string, vmCfg *types.VMConfig, ne
 		_ = f.Close()
 		return fmt.Errorf("generate cidata: %w", err)
 	}
-	return f.Close()
+	return errors.Join(f.Sync(), f.Close())
 }
 
 func buildMountSpecs(configs []*types.StorageConfig) []metadata.MountSpec {

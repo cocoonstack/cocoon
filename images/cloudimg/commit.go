@@ -39,7 +39,7 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseCommit})
 
-	// Lock spans rename→index-commit so GC cannot delete a blob that is on disk but not yet indexed (design §5).
+	// Lock spans rename→index-commit so GC cannot delete a blob that is on disk but not yet indexed.
 	var blobLocks images.BlobLocks
 	defer blobLocks.Release()
 	if err := blobLocks.Lock(conf.BlobLockPath(digestHex)); err != nil {

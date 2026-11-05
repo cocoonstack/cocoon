@@ -1,4 +1,4 @@
-// Package sqlite is the meta scale engine: one WAL database, namespace = table group, generic (id, data) rows per root-declared table (§2-§4).
+// Package sqlite is the meta scale engine: one WAL database, namespace = table group, generic (id, data) rows per root-declared table.
 package sqlite
 
 import (
@@ -29,7 +29,7 @@ const (
 	// UserVersion is the schema generation, verified on every open and written only at init; scripts/meta-upgrade.py moves a store between generations.
 	UserVersion = 2
 
-	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse (§6).
+	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse.
 	DBFileName   = "meta.db"
 	ManifestName = "meta-convert.manifest"
 
@@ -52,7 +52,7 @@ type tableStmts struct {
 
 var _ meta.Store = (*Store)(nil)
 
-// Store is the sqlite engine; statements are prepared per handle at Open, since the table set is static (§4).
+// Store is the sqlite engine; statements are prepared per handle at Open, since the table set is static.
 type Store struct {
 	path          string
 	nss           map[string]Namespace
@@ -76,7 +76,7 @@ func Open(dbPath string, namespaces ...Namespace) (*Store, error) {
 	return openStore(dbPath, namespaces)
 }
 
-// OpenForRecovery is Open without the manifest guard, for the conversion tool itself (§6) — never for ordinary callers.
+// OpenForRecovery is Open without the manifest guard, for the conversion tool itself — never for ordinary callers.
 func OpenForRecovery(dbPath string, namespaces ...Namespace) (*Store, error) {
 	return openStore(dbPath, namespaces)
 }
@@ -228,7 +228,7 @@ func (s *Store) checkScope(nss []string) error {
 	return nil
 }
 
-// verifyIdentity never writes (§6): a wrong id or a mismatched version fails closed, and a namespace with no meta_state row is uninitialized, never empty.
+// verifyIdentity never writes: a wrong id or a mismatched version fails closed, and a namespace with no meta_state row is uninitialized, never empty.
 func (s *Store) verifyIdentity() error {
 	var appID, version int64
 	if err := s.readers.QueryRow("PRAGMA application_id").Scan(&appID); err != nil {
@@ -383,7 +383,7 @@ func scopeSet(nss []string) map[string]struct{} {
 	return set
 }
 
-// open applies the per-connection runtime contract (§4); cache_size is KB (negative form) and mmap_size covers the whole file at meta scale.
+// open applies the per-connection runtime contract; cache_size is KB (negative form) and mmap_size covers the whole file at meta scale.
 func open(dbPath, synchronous string, writer bool) (*sql.DB, error) {
 	dsn := "file:" + dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_pragma=trusted_schema(0)" +
 		"&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=synchronous(" + synchronous + ")"

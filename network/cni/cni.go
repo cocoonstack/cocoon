@@ -50,9 +50,6 @@ type CNI struct {
 
 // New creates a CNI provider; conflist loading is best-effort, so Delete still tears down a 0-NIC VM when none is available and Add fails.
 func New(conf *config.Config, store meta.Store) (*CNI, error) {
-	if conf == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
 	cfg := NewConfig(conf)
 	if err := utils.EnsureDirs(cfg.dbDir()); err != nil {
 		return nil, fmt.Errorf("ensure cni dirs: %w", err)

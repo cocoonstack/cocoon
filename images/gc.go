@@ -133,6 +133,9 @@ func collectBlob[E any](ctx context.Context, cfg GCModuleConfig[E], logger *log.
 			errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
 		}
 	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 	logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
-	return errors.Join(errs...)
+	return nil
 }

@@ -82,7 +82,7 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 			RunDir:       existing.RunDir,
 			LogDir:       existing.LogDir,
 		}
-		// The subpackage building info cannot reach markTransition; without this both create states share generation zero.
+		// Without this the placeholder and the created record share generation zero.
 		markTransition(rec, info.State, types.TransitionCreate, timeNow())
 		return t.Put(id, rec)
 	}); err != nil {

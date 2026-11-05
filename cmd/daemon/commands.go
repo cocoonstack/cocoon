@@ -19,6 +19,6 @@ func Command(h Handler) *cobra.Command {
 	cmd.Flags().Duration("gc-interval", 0, "sweep on this cadence in a background goroutine; 0 (default) leaves gc a CLI verb")
 	cmd.Flags().String("api-socket", "", "read-only API socket path (default: <run-dir>/cocoond.sock)")
 	cmd.Flags().Bool("no-api", false, "disable the read-only API")
-	cmd.Flags().Uint32("api-socket-mode", cocoond.DefaultAPISockMode, "read-only API socket permission bits")
+	cmd.Flags().Uint32("api-socket-mode", 0, "read-only API socket permission bits, octal with a leading 0 (default 0660)")
 	return cmd
 }

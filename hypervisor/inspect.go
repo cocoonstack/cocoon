@@ -48,37 +48,39 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 			info.PID = 0
 		}
 	}
-	info.SnapshotIDs = maps.Clone(info.SnapshotIDs)
 	return &info
 }
 
 func (b *Backend) ResolveRef(ctx context.Context, ref string) (string, error) {
 	var id string
-	return id, b.view(ctx, func(t *vmTx) error {
+	err := b.view(ctx, func(t *vmTx) error {
 		var err error
 		id, err = t.resolve(ref)
 		return err
 	})
+	return id, err
 }
 
 // ResolveRefs batch-resolves under a single transaction.
 func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string
-	return ids, b.view(ctx, func(t *vmTx) error {
+	err := b.view(ctx, func(t *vmTx) error {
 		var err error
 		ids, err = t.ResolveMany(refs, ErrNotFound)
 		return err
 	})
+	return ids, err
 }
 
 // LoadRecord returns a detached copy of the record.
 func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
 	var rec VMRecord
-	return rec, b.view(ctx, func(t *vmTx) error {
+	err := b.view(ctx, func(t *vmTx) error {
 		var err error
 		rec, err = t.loadDetached(id)
 		return err
 	})
+	return rec, err
 }
 
 // ResolveAndLoad combines ResolveRef + LoadRecord in a single transaction.
@@ -87,7 +89,7 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 		id  string
 		rec VMRecord
 	)
-	return id, rec, b.view(ctx, func(t *vmTx) error {
+	err := b.view(ctx, func(t *vmTx) error {
 		var err error
 		if id, err = t.resolve(ref); err != nil {
 			return err
@@ -95,10 +97,11 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 		rec, err = t.loadDetached(id)
 		return err
 	})
+	return id, rec, err
 }
 
 // UpdateRecord runs mutate on the VM's record inside one transaction and persists the result.
-func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate func(*VMRecord) error) error {
+func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate RecordHook) error {
 	return b.update(ctx, func(t *vmTx) error {
 		r, err := t.getRecord(vmID)
 		if err != nil {

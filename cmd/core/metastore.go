@@ -123,7 +123,7 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		// Bootstrap owns its context: the store outlives any single caller, and a canceled first caller must not poison the Once for everyone.
 		ctx, cancel := context.WithTimeout(context.Background(), metaBootstrapTimeout)
 		defer cancel()
-		// Ordinary opens of EITHER engine refuse while a conversion is in flight (§6); the json engine cannot see the manifest itself.
+		// Ordinary opens of EITHER engine refuse while a conversion is in flight; the json engine cannot see the manifest itself.
 		dbPath := MetaDBPath(conf)
 		if err := metasqlite.RefuseManifest(dbPath); err != nil {
 			metaErr = err

@@ -153,12 +153,13 @@ func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.S
 }
 
 func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) error {
+	id := fs.DeriveID(tag)
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		i := slices.IndexFunc(info.Config.Fs, func(f chFs) bool { return f.Tag == tag })
-		if i < 0 {
-			return "", fmt.Errorf("fs tag %q not attached", tag)
+		_, present := info.DeviceTree[id]
+		if present || slices.ContainsFunc(info.Config.Fs, func(f chFs) bool { return f.ID == id }) {
+			return id, nil
 		}
-		return info.Config.Fs[i].ID, nil
+		return "", fmt.Errorf("fs tag %q not attached", tag)
 	}, nil)
 }
 
@@ -247,7 +248,7 @@ func (ch *CloudHypervisor) attachWith(ctx context.Context, vmRef, endpoint strin
 	return addDevice(ctx, hc, endpoint, makeBody(&rec))
 }
 
-func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn, afterEject func(*hypervisor.VMRecord) error) error {
+func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID findIDFn, afterEject hypervisor.RecordHook) error {
 	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
 	if err != nil {
 		return err

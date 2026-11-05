@@ -234,7 +234,6 @@ func resolveOwner[T typed](backends []T, ref string, found func(T) (bool, error)
 	}
 }
 
-// resolveVMOwner returns the owning hypervisor and the resolved VM.
 func resolveVMOwner(ctx context.Context, hypers []hypervisor.Hypervisor, ref string) (hypervisor.Hypervisor, *types.VM, error) {
 	var resolved *types.VM
 	owner, err := resolveOwner(

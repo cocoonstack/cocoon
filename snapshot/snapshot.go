@@ -45,7 +45,7 @@ type Snapshot interface {
 	Create(ctx context.Context, cfg *types.SnapshotConfig, stream io.Reader) (string, error)
 	List(ctx context.Context) ([]*types.Snapshot, error)
 	Inspect(ctx context.Context, ref string) (*types.Snapshot, error)
-	// Delete removes snapshots by ID or name. Returns the list of actually deleted IDs.
+	// Delete removes snapshots by ID or name and returns the IDs it deleted.
 	Delete(ctx context.Context, refs []string) ([]string, error)
 	Restore(ctx context.Context, ref string) (types.SnapshotConfig, io.ReadCloser, error)
 

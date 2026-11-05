@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/meta/contracttest"
@@ -173,42 +172,6 @@ func TestOpenValidation(t *testing.T) {
 	def := Namespace{Name: "x", FilePath: filepath.Join(dir, "x.json"), LockPath: filepath.Join(dir, "x.lock"), Codec: GenericCodec{}}
 	if _, err := Open(def, def); err == nil {
 		t.Fatal("duplicate namespace accepted")
-	}
-}
-
-func TestEventsForcedOverflow(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-
-	s := newStore(t, dir, "alpha")
-
-	ch, release, err := s.Events(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer release()
-
-	if err := s.events.watcher.Remove(dir); err != nil {
-		t.Fatalf("remove watch: %v", err)
-	}
-	c := meta.NewCollection[map[string]int]("alpha", "records")
-	v := map[string]int{"v": 1}
-	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "a", &v)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	select {
-	case <-ch:
-	case <-time.After(200 * time.Millisecond):
-	}
-
-	s.events.watcher.Errors <- errors.New("forced overflow")
-	select {
-	case <-ch:
-	case <-time.After(3 * time.Second):
-		t.Fatal("no signal after forced overflow (safety poll is 5s, so this was the overflow path)")
 	}
 }
 

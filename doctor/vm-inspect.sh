@@ -327,8 +327,8 @@ else
                 # Check tap queue count via /sys
                 TAP_QUEUES=""
                 if ip netns exec "$NETNS_NAME" test -d "/sys/class/net/${N_TAP}/queues" 2>/dev/null; then
-                    TX_Q=$(ip netns exec "$NETNS_NAME" ls "/sys/class/net/${N_TAP}/queues/" 2>/dev/null | grep -c '^tx-' || echo 0)
-                    RX_Q=$(ip netns exec "$NETNS_NAME" ls "/sys/class/net/${N_TAP}/queues/" 2>/dev/null | grep -c '^rx-' || echo 0)
+                    TX_Q=$(ip netns exec "$NETNS_NAME" ls "/sys/class/net/${N_TAP}/queues/" 2>/dev/null | grep -c '^tx-' || true)
+                    RX_Q=$(ip netns exec "$NETNS_NAME" ls "/sys/class/net/${N_TAP}/queues/" 2>/dev/null | grep -c '^rx-' || true)
                     TAP_QUEUES="tx=$TX_Q rx=$RX_Q"
                     kv "    Queues" "$TAP_QUEUES"
 

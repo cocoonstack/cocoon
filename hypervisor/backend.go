@@ -96,6 +96,10 @@ type AfterExtractHook func(ctx context.Context, vmID string, vmCfg *types.VMConf
 
 type RunDirHook func(runDir string) error
 
+type PIDHook func(pid int) error
+
+type RecordHook func(rec *VMRecord) error
+
 type DirHook func(rec *VMRecord, dir string) error
 
 type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid int) error

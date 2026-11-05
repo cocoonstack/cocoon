@@ -1,4 +1,4 @@
-// Package tombstone is the §5 phase protocol: leased rolls back, deleting rolls forward, every mutation fenced by the holder's lease id.
+// Package tombstone is the delete phase protocol: leased rolls back, deleting rolls forward, every mutation fenced by the holder's lease id.
 package tombstone
 
 import (
@@ -14,34 +14,27 @@ import (
 )
 
 const (
-	// TableName is the tombstones satellite table every §5 namespace carries.
+	// TableName is the tombstones satellite table every tombstoned namespace carries.
 	TableName = "tombstones"
 
 	PhaseLeased   Phase = "leased"
 	PhaseDeleting Phase = "deleting"
 
-	KindRecord Kind = "record"
-	KindOrphan Kind = "orphan"
-
 	ModeAggregate Mode = "aggregate"
 	ModeSubset    Mode = "subset"
 )
 
-// ErrLost reports a fenced write that matched zero rows: another worker recovered and finalized this lease after its owner died.
+// ErrLost reports a fenced write whose lease no longer matches: another worker recovered and finalized it after its owner died.
 var ErrLost = errors.New("tombstone lease lost")
 
 // Phase is the tombstone's protocol position.
 type Phase string
-
-// Kind distinguishes a record-backed candidate from a recordless orphan.
-type Kind string
 
 // Mode distinguishes a full teardown from an explicit subset; recovering a subset as an aggregate would destroy healthy resources.
 type Mode string
 
 // Payload is written whole at lease time and immutable after: recovery reads it and nothing else.
 type Payload struct {
-	Kind    Kind           `json:"kind"`
 	Mode    Mode           `json:"mode"`
 	Cleanup jsontext.Value `json:"cleanup"`
 }

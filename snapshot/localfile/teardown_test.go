@@ -128,7 +128,7 @@ func injectSnapTombstone(t *testing.T, lf *LocalFile, id string, phase tombstone
 		if err != nil {
 			return err
 		}
-		leaseID, err := ts.Lease(ctx, tx.Writer(), id, tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cl})
+		leaseID, err := ts.Lease(ctx, tx.Writer(), id, tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cl})
 		if err != nil {
 			return err
 		}

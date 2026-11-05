@@ -143,8 +143,9 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 
 	fcLog := fc.LogFilePath(rec.LogDir)
 	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon creates it; appending keeps the previous launch's tail.
-	if f, createErr := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); createErr == nil { //nolint:gosec
-		_ = f.Close()
+	logFile, createErr := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec
+	if createErr == nil {
+		defer logFile.Close() //nolint:errcheck
 	}
 
 	master, slave, err := pty.Open()
@@ -158,6 +159,9 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
+	if logFile != nil {
+		fcCmd.Stderr = logFile
+	}
 	pid, exited, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           fcCmd,
 		NetnsPath:     netnsPath,

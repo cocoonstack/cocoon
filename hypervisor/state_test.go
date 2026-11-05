@@ -163,8 +163,8 @@ func TestEmitDeleteCloseClosesIntervalAfterMarkError(t *testing.T) {
 
 	b.emitDeleteClose(ctx, "vm1", shapeFromConfig(loaded.Config), metering.ReasonStopCrash, hasOpenComputeInterval(loaded))
 	entries := rec.Entries()
-	if len(entries) != 2 {
-		t.Fatalf("got %d entries, want 2 (compute.stop + storage.stop)", len(entries))
+	if len(entries) != 2 || entries[0].Kind != metering.KindVMComputeStop || entries[1].Kind != metering.KindVMStorageStop {
+		t.Fatalf("entries = %+v, want compute.stop then storage.stop", entries)
 	}
 }
 
@@ -550,15 +550,15 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
 	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
-		t.Fatal("PrepareStart must refuse a quarantined VM")
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
+		t.Fatalf("PrepareStart = %v, want the quarantine refusal", err)
 	}
 
 	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
 		t.Fatalf("UpdateState: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
-		t.Fatal("PrepareStart must refuse a quarantined VM after stop rewrote the state")
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
+		t.Fatalf("PrepareStart = %v, want the quarantine refusal after stop rewrote the state", err)
 	}
 }
 
@@ -579,8 +579,8 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err == nil {
-		t.Fatal("PrepareStart must refuse a run dir with a restore-dirty tombstone")
+	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "interrupted restore") {
+		t.Fatalf("PrepareStart = %v, want the interrupted-restore refusal", err)
 	}
 }
 
@@ -621,8 +621,8 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil {
-		t.Fatal("PrepareStart must refuse a creating placeholder")
+	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "still being created") {
+		t.Fatalf("PrepareStart = %v, want the creating-placeholder refusal", err)
 	}
 }
 

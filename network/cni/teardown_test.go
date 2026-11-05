@@ -267,7 +267,7 @@ func markDeleting(t *testing.T, c *CNI, vmID string, mode tombstone.Mode, cl net
 		if err != nil {
 			return err
 		}
-		leaseID, err = ts.Lease(ctx, tx.Writer(), vmID, tombstone.Payload{Kind: tombstone.KindRecord, Mode: mode, Cleanup: cleanup})
+		leaseID, err = ts.Lease(ctx, tx.Writer(), vmID, tombstone.Payload{Mode: mode, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)

@@ -28,21 +28,6 @@ const sourcePlaceholderProbeInterval = 2 * time.Millisecond
 
 var errBindSetup = errors.New("bind-mount clone redirect unavailable")
 
-type bindRedirectPlan struct {
-	binds  [][2]string
-	leases []*flock.SharedLease
-}
-
-func (p *bindRedirectPlan) files() []*os.File {
-	files := make([]*os.File, 0, len(p.leases))
-	for _, lease := range p.leases {
-		files = append(files, lease.File())
-	}
-	return files
-}
-
-func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
-
 // recordExistsFn reports whether the source VM's record survives; absent means the drive can be replaced with a placeholder.
 type recordExistsFn func(string) (bool, error)
 
@@ -57,6 +42,21 @@ type cloneLaunch struct {
 	src, dst            []*types.StorageConfig
 	dataDisks           []*types.StorageConfig
 }
+
+type bindRedirectPlan struct {
+	binds  [][2]string
+	leases []*flock.SharedLease
+}
+
+func (p *bindRedirectPlan) files() []*os.File {
+	files := make([]*os.File, 0, len(p.leases))
+	for _, lease := range p.leases {
+		files = append(files, lease.File())
+	}
+	return files
+}
+
+func (p *bindRedirectPlan) close() { closeLeases(p.leases) }
 
 func (fc *Firecracker) Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error) {
 	if err := validateCloneNetworkMTUs(snapshotConfig.NICMTUs, net.NetworkConfigs); err != nil {

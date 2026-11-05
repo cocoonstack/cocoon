@@ -64,12 +64,12 @@ func streamLog(ctx context.Context, path string, follow bool, tail int) error {
 			}
 			// Sig mismatch catches O_TRUNC re-opens.
 			newSig, _ := utils.FileHead(f, logHeadSigLen)
-			if !bytes.Equal(newSig, sig) {
+			if !bytes.HasPrefix(newSig, sig) {
 				if _, err := f.Seek(0, io.SeekStart); err != nil {
 					return fmt.Errorf("rewind log: %w", err)
 				}
-				sig = newSig
 			}
+			sig = newSig
 			if _, err := io.Copy(os.Stdout, f); err != nil {
 				return fmt.Errorf("read log: %w", err)
 			}
@@ -111,7 +111,6 @@ func seekToLastNLines(f *os.File, n int) error {
 	return err
 }
 
-// watchFile watches the parent dir because an atomic rename changes the inode.
 func watchFile(ctx context.Context, filePath string, debounce time.Duration) (<-chan struct{}, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

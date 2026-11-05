@@ -12,6 +12,9 @@ on:
     paths-ignore:
       - 'os-image/**'
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest

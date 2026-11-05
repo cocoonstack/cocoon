@@ -170,7 +170,6 @@ func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {
 	return vmPutJSON(ctx, hc, "vm.add-disk", "add-disk request", disk, http.StatusOK, http.StatusNoContent)
 }
 
-// removeDeviceVM is non-idempotent — a retry after a lost ACK would surface as "id not found".
 func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error {
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }

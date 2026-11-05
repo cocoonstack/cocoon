@@ -28,7 +28,7 @@ cocoon
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
-│   ├── restore [flags] VM [SNAP] Restore a VM (running or stopped) to a snapshot (or --from-dir)
+│   ├── restore [flags] VM [SNAP] Restore a VM (running, stopped or error) to a snapshot (or --from-dir)
 │   ├── hibernate [flags] VM       Atomically snapshot a running VM and stop it
 │   ├── status [VM...]             Show VM status (--watch refreshes, --event streams)
 │   ├── fs
@@ -71,14 +71,14 @@ The meta engine is selected by `meta_backend` in the config; unset auto-resolves
 
 | Flag              | Env Variable                   | Default            | Description                            |
 | ----------------- | ------------------------------ | ------------------ | -------------------------------------- |
-| `--config`        |                                |                    | Config file path                       |
+| `--config`        |                                |                    | Config file path (none is read by default; a missing explicit path is an error) |
 | `--root-dir`      | `COCOON_ROOT_DIR`              | `/var/lib/cocoon`  | Root directory for persistent data     |
 | `--run-dir`       | `COCOON_RUN_DIR`               | `/var/lib/cocoon/run` | Runtime directory for sockets and PIDs |
 | `--log-dir`       | `COCOON_LOG_DIR`               | `/var/log/cocoon`  | Log directory for VM and process logs  |
 | `--log-level`     | `COCOON_LOG_LEVEL`             | `info`             | Log level: debug, info, warn, error    |
 | `--cni-conf-dir`  | `COCOON_CNI_CONF_DIR`          | `/etc/cni/net.d`   | CNI plugin config directory            |
 | `--cni-bin-dir`   | `COCOON_CNI_BIN_DIR`           | `/opt/cni/bin`     | CNI plugin binary directory            |
-| `--dns`           | `COCOON_DNS`                   | `8.8.8.8,1.1.1.1`  | DNS servers for VMs (comma separated)  |
+| `--dns`           | `COCOON_DNS`                   | `8.8.8.8,1.1.1.1`  | DNS servers for VMs (comma or semicolon separated) |
 
 Config-file / env-only keys (no CLI flag):
 
@@ -86,7 +86,7 @@ Config-file / env-only keys (no CLI flag):
 | ------------ | ------------------- | ------- | ---------------------------------------------------------------------- |
 | `pull_conns` | `COCOON_PULL_CONNS` | `8`     | Concurrent HTTP Range connections per cloud-image download (`image pull`); raise for fat pipes, lower to be gentle on the registry; capped at 64 |
 | `cgroup_parent` | `COCOON_CGROUP_PARENT` | `cocoon.slice` | cgroup v2 slice under `/sys/fs/cgroup` holding the per-VM CPU scopes; GC removes any empty `vm-<id>.scope` under it that none of its own VMs owns, so co-hosted installations need distinct slices, as with `net_scope`; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
-| `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); kernel cpu-list syntax |
+| `cgroup_cpus` | `COCOON_CGROUP_CPUS` | empty (all cores) | Host cpu list fencing the whole VM population (e.g. `0-14` reserves core 15 for the host); ranges and commas, e.g. `0-3,8` |
 | `net_scope` | `COCOON_NET_SCOPE` | empty (legacy names) | Two alphanumerics keying this installation's host network families — bridge TAPs `<scope><vmid8>-<nic>`, CNI netns `<scope>-<vmid>` — so co-hosted installations never GC each other's; see [Host device namespaces](networking.md#host-device-namespaces) |
 | `ch_binary` | `COCOON_CH_BINARY` | `cloud-hypervisor` | cloud-hypervisor executable, path or `$PATH` name |
 | `fc_binary` | `COCOON_FC_BINARY` | `firecracker` | firecracker executable, path or `$PATH` name |
@@ -142,7 +142,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu-quota-us` | `0` (= vCPU count × period) | cgroup `cpu.max` quota in µs per period — caps the long-run average; add `--cpu-burst-us -1` for a strict per-period ceiling |
 | `--cpu-period-us` | `0` (= 100000) | cgroup `cpu.max` period in µs |
 | `--cpu-burst-us` | `0` (= quota) | cgroup `cpu.max.burst` credit in µs; `-1` = none; kernel requires burst ≤ quota |
-| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (kernel cpu-list, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned on every Cloud Hypervisor launch of a multi-vCPU VM, cpuset or not — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
+| `--cpuset-cpus` | empty (anywhere in fence) | Pin the VM to specific host cpus (ranges and commas, e.g. `0-3`) or `auto` (the least-loaded last-level-cache domain at launch); non-work-conserving, explicit opt-in. Writable disk queue threads are pinned on every Cloud Hypervisor launch of a multi-vCPU VM, cpuset or not — see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2) |
 
 Every size flag (`--memory`, `--storage`, `--data-disk size=`, `gc --snapshot-size`) accepts the Docker spelling (`20G`, `20GiB`) and the Kubernetes spelling (`20Gi`); all units are binary, so `20G` is 20 GiB.
 
@@ -277,7 +277,7 @@ All four outcomes exit 0; a non-zero exit is a real failure (store I/O, an orpha
 
 ### Reseed Flags
 
-Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, invoke manually to retry a failed auto-reseed, which reports to `cocoon vm logs`):
+Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs automatically best-effort after clone/restore, skipped for Windows guests and VMs without a vsock; invoke manually to retry a failed auto-reseed, which reports to `cocoon vm logs`):
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -324,7 +324,7 @@ the printed command carries no `queue_affinity` whatever `--cpuset-cpus` says.
 | ---------------- | -------- | ------------------------------------------------- |
 | `--escape-char`  | `^]`     | Escape character (single char or `^X` caret notation) |
 
-For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start. It also reports the resolved placement as `cpuset` and `queue_cpus`, both absent once the VM is not running.
+For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start. The Firecracker relay serves one console client at a time. It also reports the resolved placement as `cpuset` and `queue_cpus`, both absent once the VM is stopped.
 
 ### Exec Flags
 

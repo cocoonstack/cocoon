@@ -130,7 +130,7 @@ func TestRecoverLeasedRollsBack(t *testing.T) {
 	}
 	ts := b.tombstones()
 	if err := b.update(ctx, func(tx *vmTx) error {
-		_, err := ts.Lease(ctx, tx.w, "vmproto3", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		_, err := ts.Lease(ctx, tx.w, "vmproto3", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestTombstoneFencingABA(t *testing.T) {
 	}
 	var leaseA string
 	if err := b.update(ctx, func(tx *vmTx) error {
-		leaseA, err = ts.Lease(ctx, tx.w, "vmproto4", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		leaseA, err = ts.Lease(ctx, tx.w, "vmproto4", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 	}
 
 	if err := b.update(ctx, func(tx *vmTx) error {
-		_, err := ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		_, err := ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestEntryGuardDisciplines(t *testing.T) {
 
 	var lease string
 	if err := b.update(ctx, func(tx *vmTx) error {
-		lease, err = ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		lease, err = ts.Lease(ctx, tx.w, "vmproto5", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestLiveHolderKeepsLease(t *testing.T) {
 	}
 	var leaseA string
 	if err := b.update(ctx, func(tx *vmTx) error {
-		leaseA, err = ts.Lease(ctx, tx.w, "vmlive1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		leaseA, err = ts.Lease(ctx, tx.w, "vmlive1", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -290,7 +290,7 @@ func TestPrepareStartRefusesMidDeleting(t *testing.T) {
 	}
 	var leaseA string
 	if err := b.update(ctx, func(tx *vmTx) error {
-		leaseA, err = ts.Lease(ctx, tx.w, "vmentry1", tombstone.Payload{Kind: tombstone.KindRecord, Mode: tombstone.ModeAggregate, Cleanup: cleanup})
+		leaseA, err = ts.Lease(ctx, tx.w, "vmentry1", tombstone.Payload{Mode: tombstone.ModeAggregate, Cleanup: cleanup})
 		return err
 	}); err != nil {
 		t.Fatal(err)

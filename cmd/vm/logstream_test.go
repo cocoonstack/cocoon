@@ -8,8 +8,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil/clitest"
 	"github.com/cocoonstack/cocoon/utils"
 )
+
+func TestStreamLogFollowsAShortHeadWithoutReprinting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vm.log")
+	if err := os.WriteFile(path, []byte("ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	out := clitest.CaptureStdout(t, func() {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err == nil {
+				_, _ = f.WriteString("cd\n")
+				_ = f.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+			cancel()
+		}()
+		if err := streamLog(ctx, path, true, 0); err != nil {
+			t.Errorf("streamLog: %v", err)
+		}
+	})
+	if out != "ab\ncd\n" {
+		t.Fatalf("output = %q, want the appended line once, not the head again", out)
+	}
+}
 
 func TestWatchFile(t *testing.T) {
 	dir := t.TempDir()

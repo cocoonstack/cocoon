@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// WAL needs coherent shared memory; these magics mark filesystems that cannot provide it (§4), FUSE refused as unknowable.
+// WAL needs coherent shared memory; these magics mark filesystems that cannot provide it, FUSE refused as unknowable.
 var unsupportedFS = map[uint32]string{
 	unix.NFS_SUPER_MAGIC:  "nfs",
 	unix.CIFS_SUPER_MAGIC: "cifs",

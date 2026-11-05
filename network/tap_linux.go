@@ -17,7 +17,7 @@ const (
 	GROMaxSize = 65536
 )
 
-// CreateTAP adds a multi-queue TAP and returns its index; the VMM reopens it by name.
+// CreateTAP adds a persistent TAP with numQueues/2 queue pairs and returns its index; the VMM reopens it by name.
 func CreateTAP(name string, numQueues int) (int, error) {
 	// Queue pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
 	queuePairs := max(1, numQueues/2)

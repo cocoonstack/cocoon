@@ -37,7 +37,7 @@ const (
 	CloneLocksDirName = "clone-locks"
 
 	restoreStagingName = ".restore-staging"
-	// restoreDirtyName is cleared only by FinalizeRestore, never by GC.
+	// GC never clears restoreDirtyName.
 	restoreDirtyName = ".restore-dirty"
 	captureDirPrefix = "snapshot-"
 
@@ -49,7 +49,7 @@ const (
 
 var hostCPUCount = sync.OnceValue(func() int { return hostCPUCountAt(onlineCPUsPath) })
 
-// SnapshotFileKind tells clone how to bring a file over: Memory links, COW copies, Meta plain-copies, Skip omits.
+// SnapshotFileKind tells CloneSnapshotFiles how to bring a file over.
 type SnapshotFileKind int
 
 // LockVMOps serializes mutating verbs on one VM across processes; the flock dies with the holder so a crash never wedges the VM.
@@ -187,7 +187,7 @@ func BlobHexFromPath(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// BuildBaseCmdline composes the cocoon-shared cmdline: prefix (backend-specific console+quirks) + boot/layers/cow + per-NIC ip= params.
+// BuildBaseCmdline appends cocoon's overlay and per-NIC ip= params to the backend prefix.
 func BuildBaseCmdline(prefix, layers, cow string, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw", prefix, layers, cow)

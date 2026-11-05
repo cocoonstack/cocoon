@@ -1,4 +1,4 @@
-// Package convert runs the offline meta engine cutover (design §6).
+// Package convert runs the offline meta engine cutover.
 package convert
 
 import (
@@ -25,7 +25,7 @@ import (
 
 const asideSuffix = ".converted-"
 
-// testCrashStep injects crashes between protocol steps (§9 gate); nil in prod.
+// testCrashStep injects crashes between protocol steps; nil in prod.
 var testCrashStep func(step string) error
 
 // Spec carries both engines' declarations from the composition root.
@@ -121,7 +121,7 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
 			return err
 		}
-		// The manifest is durable before the first target byte (§6).
+		// The manifest is durable before the first target byte.
 		if serr := saveManifest(spec.MetaRoot, m); serr != nil {
 			return serr
 		}
@@ -174,7 +174,7 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 	return m, nil
 }
 
-// checkQuiesced refuses conversion while a live process holds the source (§6).
+// checkQuiesced refuses conversion while a live process holds the source.
 func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
 	if target == config.MetaBackendJSON {
 		// sqlite source: an empty durable transaction fails ErrBusy while a writer is mid-flight.
@@ -238,7 +238,7 @@ func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, erro
 }
 
 func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, m *Manifest, spec Spec) error {
-	// A committed-but-unmarked target (crash window) is re-verified and claimed, never redone (§6).
+	// A committed-but-unmarked target (crash window) is re-verified and claimed, never redone.
 	dstDigest, dstCount, err := canonicalDigest(ctx, dst, ns)
 	if err != nil {
 		return err
@@ -268,7 +268,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 	return crashStep("ns-done")
 }
 
-// duplicateGeneration writes the json target's .prev so imported data survives a torn main (§9).
+// duplicateGeneration writes the json target's .prev so imported data survives a torn main.
 func duplicateGeneration(spec Spec, nsName string) error {
 	jns, ok := findJSON(spec, nsName)
 	if !ok {
@@ -345,7 +345,7 @@ func copyNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Names
 	})
 }
 
-// verifyNames checks every name entry points at an existing record (§6).
+// verifyNames checks every name entry points at an existing record.
 func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) error {
 	if !slices.Contains(ns.Tables, "names") {
 		return nil
@@ -368,7 +368,7 @@ func verifyNames(ctx context.Context, s meta.Store, ns metasqlite.Namespace) err
 	})
 }
 
-// canonicalDigest is the engine-neutral namespace fingerprint (§6): rows sorted by id per table, tables in declaration order; count is records only.
+// canonicalDigest is the engine-neutral namespace fingerprint: rows sorted by id per table, tables in declaration order; count is records only.
 func canonicalDigest(ctx context.Context, s meta.Store, ns metasqlite.Namespace) (string, int, error) {
 	h := sha256.New()
 	count := 0
@@ -431,7 +431,7 @@ func sourceFiles(spec Spec, target, nsName string) []string {
 		return []string{spec.DBPath}
 	}
 	if jns, ok := findJSON(spec, nsName); ok {
-		// Both json generations are authority (§6).
+		// Both json generations are authority.
 		return []string{jns.FilePath, jns.FilePath + ".prev"}
 	}
 	return nil
