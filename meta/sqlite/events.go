@@ -26,46 +26,39 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 	return ch, func() { stop(); release() }, nil
 }
 
-// Version is touched only by the init call and the Run goroutine; ctx lives until stop.
+// Version is touched only by the init call and the Run goroutine.
 type notifier struct {
 	b       *meta.Broadcaster
 	watcher *fsnotify.Watcher // kept for the severed-watch test seam
 	pinned  *sql.Conn
 	pinDB   *sql.DB
-	ctx     context.Context
-	cancel  context.CancelFunc
 	version int64
 }
 
 func newNotifier(dbPath string) (*notifier, error) {
-	ctx, cancel := context.WithCancel(context.Background())
 	db, err := open(dbPath, "FULL", false)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	conn, err := db.Conn(ctx)
+	conn, err := db.Conn(context.Background())
 	if err != nil {
-		cancel()
 		_ = db.Close()
 		return nil, mapErr(err)
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		cancel()
 		_ = conn.Close()
 		_ = db.Close()
 		return nil, err
 	}
 	if err := watcher.Add(filepath.Dir(dbPath)); err != nil {
-		cancel()
 		_ = watcher.Close()
 		_ = conn.Close()
 		_ = db.Close()
 		return nil, err
 	}
-	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, pinned: conn, pinDB: db, ctx: ctx, cancel: cancel}
+	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, pinned: conn, pinDB: db}
 	n.version, _ = n.dataVersion()
 	go n.b.Run(n.check)
 	return n, nil
@@ -73,7 +66,6 @@ func newNotifier(dbPath string) (*notifier, error) {
 
 func (n *notifier) stop() {
 	n.b.Stop()
-	n.cancel()
 	_ = n.pinned.Close()
 	_ = n.pinDB.Close()
 }
@@ -89,6 +81,6 @@ func (n *notifier) check() {
 
 func (n *notifier) dataVersion() (int64, error) {
 	var v int64
-	err := n.pinned.QueryRowContext(n.ctx, "PRAGMA data_version").Scan(&v)
+	err := n.pinned.QueryRowContext(context.Background(), "PRAGMA data_version").Scan(&v)
 	return v, err
 }
