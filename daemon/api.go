@@ -49,7 +49,7 @@ func (d *Daemon) serveAPI(ctx context.Context) (func(), error) {
 		return nil, err
 	}
 	logger := log.WithFunc("daemon.serveAPI")
-	srv := &http.Server{Handler: d.routes(), ReadHeaderTimeout: apiReadHeaderTimeout}
+	srv := &http.Server{Handler: d.routes(), ReadHeaderTimeout: apiReadHeaderTimeout, BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error(ctx, err, "api server")

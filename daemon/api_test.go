@@ -2,8 +2,11 @@ package daemon
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -49,6 +52,36 @@ func TestReadsWaitForTheFirstPass(t *testing.T) {
 				<-done
 			})
 		})
+	}
+}
+
+func TestAPIShutdownEndsAnEventsStream(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "cocoond-api-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "api.sock")
+	d := &Daemon{conf: Config{APIAddr: sock}, state: newCache()}
+	d.state.publish(nil, true, 0, time.Now())
+	ctx, cancel := context.WithCancel(t.Context())
+	stop, err := d.serveAPI(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+	}}}
+	resp, err := hc.Get("http://cocoond/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	cancel()
+	start := time.Now()
+	stop()
+	if took := time.Since(start); took >= apiShutdownTimeout {
+		t.Fatalf("shutdown took %s, want the stream ended by the daemon ctx", took)
 	}
 }
 
