@@ -36,10 +36,9 @@ type fileToken struct {
 
 // Tokens are touched only by newNotifier and the Run goroutine, never concurrently.
 type notifier struct {
-	b       *meta.Broadcaster
-	watcher *fsnotify.Watcher // kept for the severed-watch test seam
-	files   []string
-	tokens  map[string]fileToken
+	b      *meta.Broadcaster
+	files  []string
+	tokens map[string]fileToken
 }
 
 func newNotifier(nss map[string]*nsState) (*notifier, error) {
@@ -47,7 +46,7 @@ func newNotifier(nss map[string]*nsState) (*notifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &notifier{b: meta.NewBroadcaster(watcher), watcher: watcher, tokens: map[string]fileToken{}}
+	n := &notifier{b: meta.NewBroadcaster(watcher), tokens: map[string]fileToken{}}
 	dirs := map[string]struct{}{}
 	for _, st := range nss {
 		n.files = append(n.files, st.def.FilePath)
