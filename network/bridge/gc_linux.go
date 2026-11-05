@@ -96,7 +96,6 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 	}
 }
 
-// parseTAPName extracts the vmID prefix from a bridge TAP name "<tapPrefix><vmid8>-<nic>".
 func listLinks() ([]netlink.Link, error) {
 	links, err := listLinksFn()
 	if errors.Is(err, netlink.ErrDumpInterrupted) {
@@ -105,6 +104,7 @@ func listLinks() ([]netlink.Link, error) {
 	return links, err
 }
 
+// parseTAPName extracts the vmID prefix from a bridge TAP name "<tapPrefix><vmid8>-<nic>".
 func parseTAPName(tapPrefix, name string) (string, bool) {
 	rest, ok := strings.CutPrefix(name, tapPrefix)
 	if !ok {
