@@ -51,7 +51,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if len(info.Config.Nets) != len(rec.NetworkConfigs) {
 				return fmt.Errorf("vm %s has %d NICs but its record has %d; rerun vm net first", rec.ID, len(info.Config.Nets), len(rec.NetworkConfigs))
 			}
-			if err := waitPendingNICEjects(ctx, hc, rec.ID, info); err != nil {
+			if err := waitPendingNICEjects(ctx, hc, rec, info); err != nil {
 				return err
 			}
 			if err := waitBalloonSettled(ctx, hc, rec.ID, info); err != nil {
@@ -125,21 +125,28 @@ func hotAttachedError(fs []chFs, devices []chDevice, disks []chDisk) error {
 	return nil
 }
 
-func waitPendingNICEjects(ctx context.Context, hc *http.Client, vmID string, info *chVMInfoResponse) error {
+func waitPendingNICEjects(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecord, info *chVMInfoResponse) error {
 	if !hasPendingNICEject(info) {
 		return nil
 	}
 	err := utils.WaitFor(ctx, ejectWaitTimeout, 100*time.Millisecond, func() (bool, error) {
-		cur, infoErr := getVMInfo(ctx, hc)
-		if infoErr != nil {
-			return false, infoErr
+		cur, err := getVMInfo(ctx, hc)
+		if err != nil || hasPendingNICEject(cur) {
+			return false, err
 		}
-		return !hasPendingNICEject(cur), nil
+		if !rec.Config.Windows {
+			return true, nil
+		}
+		ctr, err := getVMCounters(ctx, hc)
+		if err != nil {
+			return false, err
+		}
+		return !slices.ContainsFunc(cur.Config.Nets, func(n chNet) bool { return ctr[n.ID]["tx_frames"] == 0 }), nil
 	})
 	if err == nil || ctx.Err() != nil {
 		return err
 	}
-	log.WithFunc("cloudhypervisor.waitPendingNICEjects").Warnf(ctx, "vm %s: capturing with a NIC the guest has not ejected: %v", vmID, err)
+	log.WithFunc("cloudhypervisor.waitPendingNICEjects").Warnf(ctx, "vm %s: capturing with a NIC the guest has not ejected or not started: %v", rec.ID, err)
 	return nil
 }
 

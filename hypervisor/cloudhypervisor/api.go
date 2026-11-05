@@ -115,3 +115,5 @@ type chVMInfoResponse struct {
 	MemoryActualSize int64                     `json:"memory_actual_size,omitzero"`
 	DeviceTree       map[string]jsontext.Value `json:"device_tree,omitempty"`
 }
+
+type chCounters map[string]map[string]uint64

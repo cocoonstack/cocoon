@@ -207,6 +207,18 @@ func getVMInfo(ctx context.Context, hc *http.Client) (*chVMInfoResponse, error) 
 	return &info, nil
 }
 
+func getVMCounters(ctx context.Context, hc *http.Client) (chCounters, error) {
+	body, err := utils.DoAPI(ctx, hc, http.MethodGet, chAPIBase+"vm.counters", nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("query vm.counters: %w", err)
+	}
+	var ctr chCounters
+	if err := json.Unmarshal(body, &ctr); err != nil {
+		return nil, fmt.Errorf("decode vm.counters: %w", err)
+	}
+	return ctr, nil
+}
+
 func powerButton(ctx context.Context, hc *http.Client) error {
 	_, err := vmAPIOnce(ctx, hc, "vm.power-button")
 	return err

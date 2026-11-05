@@ -140,6 +140,65 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 	}
 }
 
+func TestSnapshotPauseWaitsForTheWindowsReplacementNICToStart(t *testing.T) {
+	tests := []struct {
+		name     string
+		windows  bool
+		txAfter  int
+		wait     time.Duration
+		counters bool
+	}{
+		{"linux pauses at the eject ack", false, 1 << 30, 100 * time.Millisecond, false},
+		{"windows waits for the first frame", true, 3, 400 * time.Millisecond, true},
+		{"windows NIC that never starts stops at the cap", true, 1 << 30, ejectWaitTimeout, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				infoPolls, ctrPolls := 0, 0
+				mux := http.NewServeMux()
+				mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+					tree := map[string]jsontext.Value{"cocoon-net-new": jsontext.Value(`{}`)}
+					if infoPolls < 2 {
+						tree["_net3"] = jsontext.Value(`{}`)
+					}
+					_ = json.MarshalWrite(w, chVMInfoResponse{
+						State:      chStateRunning,
+						Config:     chVMConfig{Nets: []chNet{{ID: "cocoon-net-new"}}},
+						DeviceTree: tree,
+					})
+					infoPolls++
+				})
+				mux.HandleFunc("/api/v1/vm.counters", func(w http.ResponseWriter, _ *http.Request) {
+					tx := uint64(0)
+					if ctrPolls >= tt.txAfter {
+						tx = 1
+					}
+					_ = json.MarshalWrite(w, chCounters{"cocoon-net-new": {"tx_frames": tx}, "_disk0": {"read_ops": 9}})
+					ctrPolls++
+				})
+				mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				})
+				hc := &http.Client{Transport: handlerTransport{mux}}
+				rec := &hypervisor.VMRecord{NetworkConfigs: []*types.NetworkConfig{{}}}
+				rec.Config.Windows = tt.windows
+				start := time.Now()
+
+				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
+					t.Fatalf("Pause: %v", err)
+				}
+				if got := time.Since(start); got != tt.wait {
+					t.Errorf("paused after %s, want %s", got, tt.wait)
+				}
+				if (ctrPolls > 0) != tt.counters {
+					t.Errorf("vm.counters polls = %d, want polled %v", ctrPolls, tt.counters)
+				}
+			})
+		})
+	}
+}
+
 func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 	const (
 		mem     = int64(8 << 30)
