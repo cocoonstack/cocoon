@@ -45,6 +45,25 @@ func TestCHNICOpsRemoveNICWaitsForEject(t *testing.T) {
 	}
 }
 
+func TestCHNICOpsLiveNICsListsAPendingEject(t *testing.T) {
+	hc, _ := newCHStubClient(t, []chNet{
+		{ID: "cocoon-net-aabbccddee02", MAC: "aa:bb:cc:dd:ee:02", TAP: "tapvm1beef-1"},
+	}, "cocoon-net-aabbccddee02")
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	if err := (chNICOps{hc: hc}).RemoveNIC(ctx, "cocoon-net-aabbccddee02"); !errors.Is(err, hypervisor.ErrEjectPending) {
+		t.Fatalf("RemoveNIC = %v, want ErrEjectPending", err)
+	}
+	live, err := chNICOps{hc: hc}.LiveNICs(t.Context())
+	if err != nil {
+		t.Fatalf("LiveNICs: %v", err)
+	}
+	want := []hypervisor.LiveNIC{{ID: "cocoon-net-aabbccddee02", Index: -1}}
+	if !slices.Equal(live, want) {
+		t.Fatalf("live = %+v, want the NIC CH dropped from config but not ejected listed unplaced so vm net re-requests it", live)
+	}
+}
+
 func TestConvergeOrphanedPause(t *testing.T) {
 	var (
 		mu      sync.Mutex

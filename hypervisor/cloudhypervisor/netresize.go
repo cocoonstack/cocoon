@@ -28,6 +28,9 @@ func (o chNICOps) LiveNICs(ctx context.Context) ([]hypervisor.LiveNIC, error) {
 		}
 		live = append(live, hypervisor.LiveNIC{ID: n.ID, Index: idx})
 	}
+	for _, id := range pendingNICEjects(info) {
+		live = append(live, hypervisor.LiveNIC{ID: id, Index: -1})
+	}
 	return live, nil
 }
 
@@ -36,7 +39,7 @@ func (o chNICOps) AddNIC(ctx context.Context, _ int, nc *types.NetworkConfig) (s
 }
 
 func (o chNICOps) RemoveNIC(ctx context.Context, id string) error {
-	if err := removeDeviceVM(ctx, o.hc, id); err != nil {
+	if err := removeDevicePending(ctx, o.hc, id); err != nil {
 		return err
 	}
 	if err := waitDeviceEjected(ctx, o.hc, id); err != nil {
