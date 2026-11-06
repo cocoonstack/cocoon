@@ -57,8 +57,8 @@ image (no translation). See [`os-image/android/15.0-gms/README.md`](https://gith
 Pre-built images are published to GHCR as split qcow2 parts (each part ≤ 1.9 GiB to stay within the GHCR per-layer limit):
 
 ```
-ghcr.io/cocoonstack/windows/win11:25h2              # moving alias, latest good build
-ghcr.io/cocoonstack/windows/win11:25h2-<YYYYMMDD>   # dated immutable tag
+ghcr.io/cocoonstack/windows/win11:26h2              # moving alias, latest good build
+ghcr.io/cocoonstack/windows/win11:26h2-<YYYYMMDD>   # dated immutable tag
 ```
 
 The Windows image is published as an **OCI artifact** (split qcow2 parts pushed via ORAS), not a runnable OCI container image — use `oras pull` (not `cocoon image pull` or `docker pull`).
@@ -67,14 +67,14 @@ Pull and import into Cocoon:
 
 ```bash
 # 1. Pull split parts via oras (https://oras.land)
-oras pull ghcr.io/cocoonstack/windows/win11:25h2
+oras pull ghcr.io/cocoonstack/windows/win11:26h2
 
 # 2. Verify the split parts
 sha256sum -c SHA256SUMS
 
 # 3. Import the parts into Cocoon in order
-cocoon image import win11-25h2 windows-11-25h2.qcow2.*.qcow2.part
-cocoon vm run --windows --name win11 --cpu 4 --memory 4G win11-25h2
+cocoon image import win11-26h2 windows-11-26h2.qcow2.*.qcow2.part
+cocoon vm run --windows --name win11 --cpu 4 --memory 4G win11-26h2
 ```
 
 See [cocoonstack/windows](https://github.com/cocoonstack/windows) for build steps and version requirements.
