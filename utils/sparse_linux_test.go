@@ -120,6 +120,43 @@ func TestSparseCopy_MultiSegment(t *testing.T) {
 	}
 }
 
+func TestCopySegmentSkipsZeroBlocks(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dst := filepath.Join(dir, "dst")
+
+	const size = 8 << 20
+	data := make([]byte, size)
+	copy(data[size-4:], "tail")
+	if err := os.WriteFile(src, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	if err := out.Truncate(size); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copySegment(out, in, sparseSegment{Offset: 0, Length: size}, make([]byte, copyBlockSize)); err != nil {
+		t.Fatalf("copySegment: %v", err)
+	}
+
+	if !bytes.Equal(readFull(t, dst), data) {
+		t.Error("content mismatch")
+	}
+	if blocks, fullBlocks := fileBlocks(t, dst), int64(size/512); blocks >= fullBlocks/2 {
+		t.Errorf("expected zero blocks left as holes: got %d blocks, full would be %d", blocks, fullBlocks)
+	}
+}
+
 func writeAt(t *testing.T, f *os.File, offset int64, data []byte) {
 	t.Helper()
 	if _, err := f.WriteAt(data, offset); err != nil {
