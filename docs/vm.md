@@ -106,7 +106,7 @@ With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as 
 
 Firecracker takes the target in MiB, so cocoon rounds it down, and Firecracker reports no `actual` because cocoon does not enable its balloon statistics. Firecracker snapshots also skip the settle wait that Cloud Hypervisor captures make (see [Snapshots](snapshots.md)).
 
-A VM without a balloon device (`--no-balloon`, `--windows`, memory under 256 MiB) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so restore and clone come back with it, and a cold `vm stop` + `vm start` resets it to the create-time target.
+A VM without a balloon device (`--no-balloon`, `--windows`, memory under 256 MiB) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so `vm restore` and `vm migrate receive` come back with it, while `vm clone` starts the new VM at the create-time target, as a cold `vm stop` + `vm start` does.
 
 ## PCI Transport (Firecracker)
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func (ch *CloudHypervisor) BalloonResize(ctx context.Context, vmRef string, spec balloon.Spec) (balloon.Status, error) {
@@ -55,7 +56,7 @@ func resizeBalloon(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecor
 	if err != nil {
 		return balloon.Status{}, err
 	}
-	if err := vmPutJSON(ctx, hc, "vm.resize", "resize", chResize{DesiredBalloon: target}); err != nil {
+	if err := resizeBalloonVM(ctx, hc, target); err != nil {
 		return balloon.Status{}, fmt.Errorf("vm.resize: %w", err)
 	}
 	st := balloonStatus(rec, info)
@@ -70,4 +71,12 @@ func balloonStatus(rec *hypervisor.VMRecord, info *chVMInfoResponse) balloon.Sta
 		Actual:  new(info.Config.Memory.Size - info.MemoryActualSize),
 		Default: def,
 	}
+}
+
+func resetCloneBalloon(ctx context.Context, hc *http.Client, snap *chBalloon, cfg *types.Config) error {
+	def, ok := hypervisor.BalloonSize(*cfg)
+	if snap == nil || !ok || snap.Size == def {
+		return nil
+	}
+	return resizeBalloonVM(ctx, hc, def)
 }

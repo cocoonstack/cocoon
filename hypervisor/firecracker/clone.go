@@ -195,6 +195,9 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("resume: %w", err)
 	}
+	if err = resetCloneBalloon(ctx, hc, &cl.vmCfg.Config); err != nil {
+		return fmt.Errorf("reset balloon: %w", err)
+	}
 	// Re-anchor redirected drives at the clone's own paths: the loaded vmstate still names the source's, and a future snapshot would embed those dangling paths, breaking its restore.
 	for _, i := range redirectedDriveIndices(cl.src, cl.dst) {
 		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), cl.dst[i].Path); err != nil {

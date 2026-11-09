@@ -145,6 +145,10 @@ func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost st
 	}{DriveID: driveID, PathOnHost: pathOnHost}, "drive patch")
 }
 
+func patchBalloon(ctx context.Context, hc *http.Client, amountMiB int) error {
+	return sendJSONOnce(ctx, hc, http.MethodPatch, "/balloon", fcBalloon{AmountMiB: amountMiB}, "balloon update")
+}
+
 func instanceStart(ctx context.Context, hc *http.Client) error {
 	return sendJSONOnce(ctx, hc, http.MethodPut, "/actions", fcAction{ActionType: actionInstanceStart}, "action",
 		http.StatusNoContent, http.StatusOK)

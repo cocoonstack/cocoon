@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/types"
 )
 
 func (fc *Firecracker) BalloonResize(ctx context.Context, vmRef string, spec balloon.Spec) (balloon.Status, error) {
@@ -59,7 +60,7 @@ func resizeBalloon(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecor
 		return balloon.Status{}, err
 	}
 	mib := int(target >> 20)
-	if err := sendJSONOnce(ctx, hc, http.MethodPatch, "/balloon", fcBalloon{AmountMiB: mib}, "balloon update"); err != nil {
+	if err := patchBalloon(ctx, hc, mib); err != nil {
 		return balloon.Status{}, err
 	}
 	return balloonStatus(rec, mib), nil
@@ -68,4 +69,17 @@ func resizeBalloon(ctx context.Context, hc *http.Client, rec *hypervisor.VMRecor
 func balloonStatus(rec *hypervisor.VMRecord, targetMiB int) balloon.Status {
 	def, _ := hypervisor.BalloonSize(rec.Config.Config)
 	return balloon.Status{Target: int64(targetMiB) << 20, Default: def >> 20 << 20}
+}
+
+func resetCloneBalloon(ctx context.Context, hc *http.Client, cfg *types.Config) error {
+	def, ok := hypervisor.BalloonSize(*cfg)
+	if !ok {
+		return nil
+	}
+	live, err := getVMConfig(ctx, hc)
+	mib := int(def >> 20)
+	if err != nil || live.Balloon == nil || live.Balloon.AmountMiB == mib {
+		return err
+	}
+	return patchBalloon(ctx, hc, mib)
 }

@@ -4,12 +4,15 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -120,6 +123,73 @@ func TestPatchCHConfigKeepsAnInflatedBalloonTarget(t *testing.T) {
 	got := readRawJSON(t, path)["balloon"].(map[string]any)["size"]
 	if got != float64(inflated) {
 		t.Errorf("balloon.size = %v, want %d", got, inflated)
+	}
+}
+
+func TestRestoreAndResumeCloneResetsTheBalloonTarget(t *testing.T) {
+	const def = balloonTestMem / 4
+	tests := []struct {
+		name       string
+		snap       *chBalloon
+		noBalloon  bool
+		keepPaused bool
+		want       []string
+	}{
+		{name: "inflated snapshot", snap: &chBalloon{Size: balloonTestMem / 2}, want: []string{"vm.resize", "vm.resume"}},
+		{name: "snapshot at the default", snap: &chBalloon{Size: def}, want: []string{"vm.resume"}},
+		{name: "no balloon device", want: []string{"vm.resume"}},
+		{name: "record without a balloon", snap: &chBalloon{Size: balloonTestMem / 2}, noBalloon: true, want: []string{"vm.resume"}},
+		{name: "migration receive keeps the guest's target", snap: &chBalloon{Size: balloonTestMem / 2}, keepPaused: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				mu      sync.Mutex
+				calls   []string
+				resized []int64
+			)
+			sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				endpoint := filepath.Base(r.URL.Path)
+				if endpoint == "vm.restore" {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				calls = append(calls, endpoint)
+				if endpoint == "vm.resize" {
+					var body chResize
+					_ = json.UnmarshalRead(r.Body, &body)
+					resized = append(resized, body.DesiredBalloon)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			scopeParent := t.TempDir()
+			if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			ch := &CloudHypervisor{
+				Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
+				conf:    NewConfig(&config.Config{}),
+			}
+			if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+				vmID:        "T",
+				vmCfg:       &types.VMConfig{CPU: 2, Memory: balloonTestMem, NoBalloon: tt.noBalloon},
+				directBoot:  true,
+				snapshotCfg: &chVMConfig{Balloon: tt.snap},
+				keepPaused:  tt.keepPaused,
+			}); err != nil {
+				t.Fatalf("restoreAndResumeClone: %v", err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if !slices.Equal(calls, tt.want) {
+				t.Errorf("calls after vm.restore = %v, want %v", calls, tt.want)
+			}
+			if len(resized) > 0 && resized[0] != def {
+				t.Errorf("desired_balloon = %d, want the default %d", resized[0], def)
+			}
+		})
 	}
 }
 

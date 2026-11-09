@@ -67,3 +67,30 @@ func TestResizeBalloon(t *testing.T) {
 		})
 	}
 }
+
+func TestResetCloneBalloon(t *testing.T) {
+	const memMiB = 4096
+	tests := []struct {
+		name      string
+		live      *fcBalloon
+		noBalloon bool
+		wantBody  string
+	}{
+		{name: "inflated snapshot", live: &fcBalloon{AmountMiB: memMiB / 2}, wantBody: `{"amount_mib":1024}`},
+		{name: "snapshot at the default", live: &fcBalloon{AmountMiB: memMiB / 4}},
+		{name: "no balloon device", live: nil},
+		{name: "record without a balloon", live: &fcBalloon{AmountMiB: memMiB / 2}, noBalloon: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFCStub(t, fcVMConfig{Balloon: tt.live, MachineConfig: fcMachineConfig{MemSizeMiB: memMiB}})
+			cfg := &types.Config{Memory: memMiB << 20, NoBalloon: tt.noBalloon}
+			if err := resetCloneBalloon(t.Context(), srv.client, cfg); err != nil {
+				t.Fatalf("resetCloneBalloon: %v", err)
+			}
+			if got := srv.put("/balloon"); got != tt.wantBody {
+				t.Errorf("PATCH /balloon body = %q, want %q", got, tt.wantBody)
+			}
+		})
+	}
+}

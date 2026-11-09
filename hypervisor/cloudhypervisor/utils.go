@@ -166,6 +166,10 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 }
 
 // addDiskVM is non-idempotent — a retry after a successful attach would surface as "duplicate id".
+func resizeBalloonVM(ctx context.Context, hc *http.Client, size int64) error {
+	return vmPutJSON(ctx, hc, "vm.resize", "resize", chResize{DesiredBalloon: size})
+}
+
 func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {
 	return vmPutJSON(ctx, hc, "vm.add-disk", "add-disk request", disk, http.StatusOK, http.StatusNoContent)
 }
