@@ -1,6 +1,7 @@
 package images
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,7 +62,7 @@ func (c *BaseConfig) WorkDir(pattern string) (dir string, cleanup func(), err er
 
 func (c *BaseConfig) EnsureDirs() error {
 	if c.RootDir == "" {
-		return fmt.Errorf("root dir must not be empty")
+		return errors.New("root dir must not be empty")
 	}
 	return utils.EnsureDirs(c.DBDir(), c.TempDir(), c.BlobsDir())
 }

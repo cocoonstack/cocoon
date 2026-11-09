@@ -80,7 +80,7 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 	return nil
 }
 
-// buildEntry assembles the index entry from committed blobs; read-only on the filesystem, so the enclosing transaction closure stays pure and retryable.
+// buildEntry assembles the index entry from the committed blobs and boot files.
 func buildEntry(conf *Config, ref string, manifestDigest images.Digest, results []pullLayerResult) (*imageEntry, error) {
 	var (
 		layerEntries []layerEntry

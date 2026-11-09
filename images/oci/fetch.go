@@ -73,7 +73,7 @@ func layerBlobHexes(layers []v1.Layer) ([]string, error) {
 
 func isUpToDate(conf *Config, idx *imageIndex, ref, digestHex string, blobHexes []string) bool {
 	entry, ok := idx.Images[ref]
-	if !ok || entry == nil || entry.ManifestDigest != images.NewDigest(digestHex) || !slices.Equal(entry.DigestHexes(), blobHexes) {
+	if !ok || entry.ManifestDigest != images.NewDigest(digestHex) || !slices.Equal(entry.DigestHexes(), blobHexes) {
 		return false
 	}
 	if !utils.ValidFile(conf.KernelPath(entry.KernelLayer.Hex())) ||
@@ -86,9 +86,6 @@ func isUpToDate(conf *Config, idx *imageIndex, ref, digestHex string, blobHexes 
 func collectBootHexes(idx *imageIndex) map[string]struct{} {
 	hexes := make(map[string]struct{})
 	for _, e := range idx.Images {
-		if e == nil {
-			continue
-		}
 		if e.KernelLayer != "" {
 			hexes[e.KernelLayer.Hex()] = struct{}{}
 		}
