@@ -15,6 +15,7 @@ func TestToVMClearsPersistedRuntimeFieldsWhenStopped(t *testing.T) {
 		idx.VMs["vm1"].SocketPath = "/stale/api.sock"
 		idx.VMs["vm1"].VsockSocket = "/stale/vsock.uds"
 		idx.VMs["vm1"].ConsolePath = "/dev/pts/9"
+		idx.VMs["vm1"].PID = 4242
 		return nil
 	}); err != nil {
 		t.Fatalf("seed runtime fields: %v", err)
@@ -25,9 +26,9 @@ func TestToVMClearsPersistedRuntimeFieldsWhenStopped(t *testing.T) {
 		t.Fatalf("load record: %v", err)
 	}
 	info := b.ToVM(&rec)
-	if info.SocketPath != "" || info.VsockSocket != "" || info.ConsolePath != "" {
-		t.Errorf("stopped VM leaks runtime paths: socket=%q vsock=%q console=%q",
-			info.SocketPath, info.VsockSocket, info.ConsolePath)
+	if info.PID != 0 || info.SocketPath != "" || info.VsockSocket != "" || info.ConsolePath != "" {
+		t.Errorf("stopped VM leaks runtime fields: pid=%d socket=%q vsock=%q console=%q",
+			info.PID, info.SocketPath, info.VsockSocket, info.ConsolePath)
 	}
 }
 

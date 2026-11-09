@@ -15,11 +15,14 @@ func TestRunningCloneRecordStampsStartAtLaunch(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 	b := &Backend{Typ: "test"}
 	rec := &VMRecord{ID: "c", CreatedAt: created, CPUSet: "0-7", QueueCPUs: "0-3", RunDir: t.TempDir()}
-	info := b.RunningCloneRecord(rec, &types.VMConfig{Name: "c"}, nil, types.NetSetup{})
+	info := b.RunningCloneRecord(rec, &types.VMConfig{Name: "c"}, nil, types.NetSetup{}, 4242)
 	if !info.CreatedAt.Equal(created) || info.StartedAt == nil || !info.StartedAt.Equal(launched) || !info.UpdatedAt.Equal(launched) {
 		t.Errorf("created %v started %v updated %v, want created %v started/updated %v", info.CreatedAt, info.StartedAt, info.UpdatedAt, created, launched)
 	}
 	if info.CPUSet != "0-7" || info.QueueCPUs != "0-3" {
 		t.Errorf("placement not carried: cpuset %q queue_cpus %q", info.CPUSet, info.QueueCPUs)
+	}
+	if info.PID != 4242 {
+		t.Errorf("pid = %d, want 4242", info.PID)
 	}
 }

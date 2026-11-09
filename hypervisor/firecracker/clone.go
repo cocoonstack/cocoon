@@ -109,7 +109,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	defer plan.close()
 	storageConfigs = append(storageConfigs, dataDisks...)
 
-	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
+	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net, pid)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID, metering.ReasonClone); err != nil {
 		leaseControl.close()
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
