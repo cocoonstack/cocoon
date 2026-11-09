@@ -129,12 +129,12 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dat
 		return fmt.Errorf("sparse map describes %d data bytes, entry holds %d", sum, dataSize)
 	}
 	buf := make([]byte, segmentCopyBuf)
-	w := struct{ io.Writer }{f}
+	noReadFrom := struct{ io.Writer }{f}
 	for _, seg := range segments {
 		if _, err := f.Seek(seg.Offset, io.SeekStart); err != nil {
 			return err
 		}
-		if _, err := io.CopyBuffer(w, io.LimitReader(r, seg.Length), buf); err != nil {
+		if _, err := io.CopyBuffer(noReadFrom, io.LimitReader(r, seg.Length), buf); err != nil {
 			return err
 		}
 	}
