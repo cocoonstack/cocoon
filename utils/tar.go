@@ -2,7 +2,7 @@ package utils
 
 import (
 	"archive/tar"
-	"encoding/binary"
+	"bytes"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -20,8 +20,12 @@ const (
 	extractReadBuf  = 1 << 20
 )
 
-// maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
-var maxSparseMapJSONSize = 800 * 1024
+var (
+	// maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
+	maxSparseMapJSONSize = 800 * 1024
+
+	zeroBlock [sparseBlockSize]byte
+)
 
 type sparseSegment struct {
 	Offset int64 `json:"o"`
@@ -186,16 +190,12 @@ func extractFile(path string, r io.Reader, perm os.FileMode, size int64) (err er
 }
 
 func isAllZero(b []byte) bool {
-	for len(b) >= 8 {
-		if binary.NativeEndian.Uint64(b) != 0 {
+	for len(b) > 0 {
+		n := min(len(b), sparseBlockSize)
+		if !bytes.Equal(b[:n], zeroBlock[:n]) {
 			return false
 		}
-		b = b[8:]
-	}
-	for _, v := range b {
-		if v != 0 {
-			return false
-		}
+		b = b[n:]
 	}
 	return true
 }
