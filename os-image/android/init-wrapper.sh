@@ -78,12 +78,14 @@ done
 # 4. config.disable_bluetooth (in cocoon-disable-bt.rc): framework-level disable
 if [ "${SDK:-0}" -lt 35 ] 2>/dev/null; then
     for f in $($BB find /system/apex -name '*btservices*' -o -name '*bluetooth*' 2>/dev/null); do
+        case "$f" in *.disabled) continue ;; esac
         $BB mv "$f" "${f}.disabled" 2>/dev/null
     done
 fi
 $BB mv /vendor/bin/hw/android.hardware.bluetooth@1.1-service.sim \
       /vendor/bin/hw/android.hardware.bluetooth@1.1-service.sim.disabled 2>/dev/null
 for f in $($BB find /vendor/etc/vintf -name '*bluetooth*' 2>/dev/null); do
+    case "$f" in *.disabled) continue ;; esac
     $BB mv "$f" "${f}.disabled" 2>/dev/null
 done
 
