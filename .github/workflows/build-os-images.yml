@@ -34,18 +34,15 @@ jobs:
       - name: Find changed Dockerfiles
         id: set-matrix
         run: |
-          # Determine if manual no-cache was requested
           MANUAL_NO_CACHE="${{ github.event.inputs.no-cache }}"
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            # On manual trigger, build everything
             declare -A names
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
               name=$(echo "$dockerfile" | cut -d'/' -f2)
               names[$name]=1
             done <<< "$(find os-image -name Dockerfile -type f)"
-            # Use all changed files (empty for dispatch = treat all as changed)
             all_changed=""
           else
             BEFORE="${{ github.event.before }}"
@@ -69,16 +66,12 @@ jobs:
             fi
           fi
 
-          # Build matrix with per-entry no-cache flag
           matrix_entries=()
           for name in "${!names[@]}"; do
-            # Check if any non-Dockerfile file changed under os-image/{name}/
-            # i.e. shared files like scripts that affect all tags
             needs_no_cache="false"
             if [[ "$MANUAL_NO_CACHE" == "true" ]]; then
               needs_no_cache="true"
             elif [[ -n "$all_changed" ]]; then
-              # Files directly under os-image/{name}/ (not in tag subdirs) changed
               while IFS= read -r f; do
                 [[ -z "$f" ]] && continue
                 # Count path components: os-image/{name}/{file} = 3 parts (not in a tag subdir)
@@ -90,13 +83,11 @@ jobs:
               done <<< "$(echo "$all_changed" | grep "^os-image/$name/")"
             fi
 
-            # Detect platform support (default: multi-arch)
             platforms="linux/amd64,linux/arm64"
             if [[ -f "os-image/$name/platforms" ]]; then
               platforms=$(cat "os-image/$name/platforms")
             fi
 
-            # Find all Dockerfiles for this name
             while IFS= read -r dockerfile; do
               [[ -z "$dockerfile" ]] && continue
               tag=$(echo "$dockerfile" | cut -d'/' -f3)
@@ -109,7 +100,6 @@ jobs:
             done <<< "$(find "os-image/$name" -name Dockerfile -type f)"
           done
 
-          # Optional workflow_dispatch scoping: build only one <family>/<tag>.
           ONLY="${{ github.event.inputs.only }}"
           if [[ -n "$ONLY" ]]; then
             want_name="${ONLY%%/*}"; want_tag="${ONLY#*/}"
@@ -153,8 +143,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # An image may repoint its published name/tag via a `publish-as` file
-      # (`<name>:<tag>`); without one it publishes as its own family/tag.
+      # A publish-as file (<name>:<tag>) overrides the published name and tag.
       - name: Resolve publish target
         id: publish
         run: |
@@ -174,8 +163,7 @@ jobs:
         uses: docker/metadata-action@v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}/${{ steps.publish.outputs.name }}
-          # Canonical tag only from master; the always-on sha tag gives a pullable
-          # ref for pre-merge dispatch builds without clobbering the release tag.
+          # Canonical tag only from master; the sha tag keeps pre-merge builds pullable.
           tags: |
             type=raw,value=${{ steps.publish.outputs.tag }},enable=${{ github.ref_name == 'master' }}
             type=sha,prefix=${{ steps.publish.outputs.tag }}-
@@ -187,7 +175,6 @@ jobs:
           tag="${{ matrix.tag }}"
           {
             echo "files<<EOF"
-            # Shared secrets (base dir)
             for f in "$base"/*.sh "$base"/*.rc; do
               [ -f "$f" ] || continue
               name="$(basename "$f")"
@@ -199,7 +186,6 @@ jobs:
               esac
               echo "${id}=${f}"
             done
-            # Tag-specific secrets (tag subdir, skip Dockerfile)
             for f in "$base/$tag"/*; do
               [ -f "$f" ] || continue
               name="$(basename "$f")"
@@ -210,11 +196,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # Optional per-image build-artifact hook: runs only for tag dirs that ship a
-      # ci-prepare.sh (currently only the ReDroid GMS image, which needs a
-      # privileged DinD bake to produce docker-data-<arch>.tar). No-op for every
-      # other image. Runs AFTER secret discovery so its multi-GB tars are not
-      # globbed as secrets, and after QEMU/Buildx so the arm64 bake can emulate.
+      # Runs only where ci-prepare.sh exists; after secret discovery so its tars are not globbed as secrets.
       - name: Free disk space
         if: ${{ hashFiles(format('os-image/{0}/{1}/ci-prepare.sh', matrix.name, matrix.tag)) != '' }}
         uses: jlumbroso/free-disk-space@v2.0.0

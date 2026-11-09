@@ -3,7 +3,6 @@ package hypervisor
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/projecteru2/core/log"
 
@@ -43,7 +42,7 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 	})
 }
 
-// PrereserveVM pins blobIDs so image GC cannot sweep the resolved image before adoption.
+// PrereserveVM inserts the creating placeholder, whose blobIDs keep image GC off the resolved image.
 func (b *Backend) PrereserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) error {
 	return b.ReserveVM(ctx, id, vmCfg, blobIDs, b.Conf.VMRunDir(id), b.Conf.VMLogDir(id))
 }
@@ -88,7 +87,8 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 // CreateSequence is the shared placeholder→finalize create skeleton.
 func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec) (_ *types.VM, err error) {
 	blobIDs := ExtractBlobIDs(spec.StorageConfigs, spec.BootConfig)
-	_, now, cleanup, err := b.reservePlaceholder(ctx, id, spec.VMCfg)
+	now := timeNow()
+	_, cleanup, err := b.prepareVMDirs(ctx, id, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -123,12 +123,11 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 	return info, nil
 }
 
-// reservePlaceholder returns a nil cleanup on failure (already rolled back); on success the caller decides when to run it.
-func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig) (runDir string, now time.Time, cleanup func(), err error) {
+// prepareVMDirs creates id's run and log dirs; it returns a nil cleanup on failure, and on success the caller decides when to run it.
+func (b *Backend) prepareVMDirs(ctx context.Context, id string, vmCfg *types.VMConfig) (runDir string, cleanup func(), err error) {
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
-		return "", time.Time{}, nil, err
+		return "", nil, err
 	}
-	now = timeNow()
 	runDir = b.Conf.VMRunDir(id)
 	logDir := b.Conf.VMLogDir(id)
 
@@ -140,7 +139,7 @@ func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *type
 
 	if err = utils.EnsureDirs(runDir, logDir); err != nil {
 		cleanup()
-		return "", time.Time{}, nil, fmt.Errorf("ensure dirs: %w", err)
+		return "", nil, fmt.Errorf("ensure dirs: %w", err)
 	}
-	return runDir, now, cleanup, nil
+	return runDir, cleanup, nil
 }

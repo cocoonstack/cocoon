@@ -17,7 +17,7 @@ const (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder appends entries through the meta store; Emit swallows errors so callers never block.
+// Recorder appends entries through the meta store; Emit logs and drops append errors.
 type Recorder struct {
 	store meta.Store
 	log   *meta.Log[metering.Entry]

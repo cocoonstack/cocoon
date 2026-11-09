@@ -12,18 +12,12 @@
 
 set -uo pipefail
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 
 COCOON_BIN="${COCOON_BIN:-cocoon}"
 CH_RUN_DIR="${COCOON_RUN_DIR}/cloudhypervisor"
 FC_RUN_DIR="${COCOON_RUN_DIR}/firecracker"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; CYAN='\033[36m'; BOLD='\033[1m'; RESET='\033[0m'
 
 pass()   { printf "  ${GREEN}[PASS]${RESET} %s\n" "$*"; }
@@ -38,9 +32,6 @@ die() { echo "error: $*" >&2; exit 1; }
 # tc prints "mirred (Egress Redirect to device tap0) stolen"; print the device.
 extract_mirred_target() { sed -n 's/.*to device \([^ )]*\).*/\1/p' | head -1; }
 
-# ---------------------------------------------------------------------------
-# Args
-# ---------------------------------------------------------------------------
 if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     cat <<'EOF'
 Usage: vm-inspect.sh <VM_ID_or_NAME>
@@ -58,16 +49,10 @@ fi
 
 REF="$1"
 
-# ---------------------------------------------------------------------------
-# Dependency check
-# ---------------------------------------------------------------------------
 for cmd in jq ip tc curl "$COCOON_BIN"; do
     command -v "$cmd" &>/dev/null || die "$cmd not found in PATH"
 done
 
-# ---------------------------------------------------------------------------
-# 1. VM record
-# ---------------------------------------------------------------------------
 header "VM Record"
 
 VM_REC=$("$COCOON_BIN" vm inspect "$REF" 2>/dev/null) || die "VM '$REF' not found ($COCOON_BIN vm inspect failed)"
@@ -91,9 +76,6 @@ kv "State" "$VM_STATE"
 kv "PID" "$VM_PID"
 kv "RunDir" "$RUN_DIR"
 
-# ---------------------------------------------------------------------------
-# 2. Process liveness
-# ---------------------------------------------------------------------------
 header "Process"
 
 if [ "$VM_PID" -gt 0 ] 2>/dev/null && kill -0 "$VM_PID" 2>/dev/null; then
@@ -105,9 +87,6 @@ else
     info "PID $VM_PID not alive (state: $VM_STATE)"
 fi
 
-# ---------------------------------------------------------------------------
-# 3. Console / PTY
-# ---------------------------------------------------------------------------
 header "Console / PTY"
 
 if [ -n "$CONSOLE_PATH" ]; then
@@ -123,9 +102,6 @@ else
     info "no console path recorded (VM not running)"
 fi
 
-# ---------------------------------------------------------------------------
-# 4. CH Configuration
-# ---------------------------------------------------------------------------
 header "Cloud Hypervisor Config"
 
 # Source priority: vm.info API (running VM) > config.json (clone) > DB record.
@@ -145,18 +121,15 @@ fi
 if [ -n "$CFG_SOURCE" ]; then
     info "source: $CFG_SOURCE"
 
-    # CPU
     BOOT_CPUS=$(echo "$CH_CFG" | jq '.cpus.boot_vcpus // 0')
     MAX_CPUS=$(echo "$CH_CFG" | jq '.cpus.max_vcpus // 0')
     kv "CPUs" "boot=$BOOT_CPUS max=$MAX_CPUS"
 
-    # Memory
     MEM_SIZE=$(echo "$CH_CFG" | jq '.memory.size // 0')
     MEM_HUGE=$(echo "$CH_CFG" | jq '.memory.hugepages // false')
     MEM_MB=$((MEM_SIZE / 1048576))
     kv "Memory" "${MEM_MB} MiB (hugepages=$MEM_HUGE)"
 
-    # Balloon
     BALLOON=$(echo "$CH_CFG" | jq '.balloon // null')
     if [ "$BALLOON" != "null" ]; then
         BAL_SIZE=$(echo "$BALLOON" | jq '.size // 0')
@@ -168,15 +141,12 @@ if [ -n "$CFG_SOURCE" ]; then
         kv "Balloon" "disabled"
     fi
 
-    # Watchdog
     WATCHDOG=$(echo "$CH_CFG" | jq '.watchdog // false')
     kv "Watchdog" "$WATCHDOG"
 
-    # RNG
     RNG_SRC=$(echo "$CH_CFG" | jq -r '.rng.src // "none"')
     kv "RNG" "$RNG_SRC"
 
-    # Payload
     PAYLOAD=$(echo "$CH_CFG" | jq '.payload // null')
     if [ "$PAYLOAD" != "null" ]; then
         PL_KERNEL=$(echo "$PAYLOAD" | jq -r '.kernel // empty')
@@ -187,7 +157,6 @@ if [ -n "$CFG_SOURCE" ]; then
         [ -n "$PL_FW" ]     && kv "Firmware" "$PL_FW"
     fi
 
-    # Disks
     DISK_COUNT=$(echo "$CH_CFG" | jq '.disks | length // 0')
     if [ "$DISK_COUNT" -gt 0 ]; then
         printf "\n  ${BOLD}Disks:${RESET}\n"
@@ -212,7 +181,6 @@ if [ -n "$CFG_SOURCE" ]; then
         done
     fi
 
-    # Nets (from CH config)
     NET_COUNT=$(echo "$CH_CFG" | jq '.net | length // 0')
     if [ "$NET_COUNT" -gt 0 ]; then
         printf "\n  ${BOLD}Nets (CH config):${RESET}\n"
@@ -244,15 +212,11 @@ else
     kv "Image" "$(echo "$VM_REC" | jq -r '.config.image // "-"')"
 fi
 
-# ---------------------------------------------------------------------------
-# 5. Per-NIC Network Chain (veth ↔ tap inside netns)
-# ---------------------------------------------------------------------------
 header "Network Chain (per-NIC)"
 
 NETNS_PATH=$(echo "$VM_REC" | jq -r '.netns_path // .network_configs[0].netns_path // empty')
 NETNS_NAME="${NETNS_PATH##*/}"
 
-# Read network configs from VM record
 NIC_COUNT=$(echo "$VM_REC" | jq '.network_configs | length')
 
 if [ "$NIC_COUNT" -eq 0 ]; then
@@ -289,7 +253,6 @@ else
 
             VETH_NAME="eth${i}"
 
-            # --- veth info ---
             printf "\n    ${CYAN}veth ($VETH_NAME):${RESET}\n"
             VETH_INFO=$(ip netns exec "$NETNS_NAME" ip -d link show "$VETH_NAME" 2>/dev/null || echo "")
             if [ -n "$VETH_INFO" ]; then
@@ -300,14 +263,12 @@ else
                 kv "    State" "${VETH_STATE:-unknown}"
                 kv "    MTU" "${VETH_MTU:-unknown}"
 
-                # MAC consistency check
                 if [ "$VETH_MAC" = "$N_MAC" ]; then
                     pass "  veth MAC matches CH config"
                 else
                     fail "  veth MAC mismatch: veth=$VETH_MAC, CH=$N_MAC"
                 fi
 
-                # Check IP on veth (should be flushed)
                 VETH_ADDRS=$(ip netns exec "$NETNS_NAME" ip -4 addr show dev "$VETH_NAME" 2>/dev/null | grep 'inet ' || true)
                 if [ -z "$VETH_ADDRS" ]; then
                     pass "  veth IP flushed (correct — guest owns the IP)"
@@ -318,7 +279,6 @@ else
                 fail "  veth $VETH_NAME not found in netns $NETNS_NAME"
             fi
 
-            # --- tap info ---
             printf "\n    ${CYAN}tap ($N_TAP):${RESET}\n"
             TAP_INFO=$(ip netns exec "$NETNS_NAME" ip -d link show "$N_TAP" 2>/dev/null || echo "")
             if [ -n "$TAP_INFO" ]; then
@@ -327,7 +287,6 @@ else
                 kv "    State" "${TAP_STATE:-unknown}"
                 kv "    MTU" "${TAP_MTU:-unknown}"
 
-                # Check tap queue count via /sys
                 TAP_QUEUES=""
                 if ip netns exec "$NETNS_NAME" test -d "/sys/class/net/${N_TAP}/queues" 2>/dev/null; then
                     TX_Q=$(ip netns exec "$NETNS_NAME" ls "/sys/class/net/${N_TAP}/queues/" 2>/dev/null | grep -c '^tx-' || true)
@@ -350,7 +309,6 @@ else
                     warn "  cannot read tap queue info from /sys"
                 fi
 
-                # MTU consistency
                 if [ -n "$VETH_MTU" ] && [ -n "$TAP_MTU" ]; then
                     if [ "$VETH_MTU" = "$TAP_MTU" ]; then
                         pass "  MTU consistent: veth=$VETH_MTU tap=$TAP_MTU"
@@ -362,9 +320,7 @@ else
                 fail "  tap $N_TAP not found in netns $NETNS_NAME"
             fi
 
-            # --- TC filters ---
             printf "\n    ${CYAN}TC redirect:${RESET}\n"
-            # veth → tap
             VETH_TC=$(ip netns exec "$NETNS_NAME" tc filter show dev "$VETH_NAME" ingress 2>/dev/null || echo "")
             if echo "$VETH_TC" | grep -qi "mirred.*redirect"; then
                 REDIRECT_TO=$(echo "$VETH_TC" | extract_mirred_target)
@@ -379,7 +335,6 @@ else
                 fail "  no TC redirect on $VETH_NAME ingress"
             fi
 
-            # tap → veth
             TAP_TC=$(ip netns exec "$NETNS_NAME" tc filter show dev "$N_TAP" ingress 2>/dev/null || echo "")
             if echo "$TAP_TC" | grep -qi "mirred.*redirect"; then
                 REDIRECT_TO=$(echo "$TAP_TC" | extract_mirred_target)
@@ -397,7 +352,4 @@ else
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
 printf "\n${BOLD}--- Done ---${RESET}\n"

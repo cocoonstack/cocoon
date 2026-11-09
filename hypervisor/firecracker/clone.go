@@ -115,7 +115,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
-	// The record is durable and a delivered commit byte (or relay exit) releases the leases; an unconfirmed release must not kill a committed VM.
+	// A delivered commit byte or relay exit releases the leases; an unconfirmed release must not kill a committed VM.
 	if err := leaseControl.commit(); err != nil {
 		logger.Warnf(ctx, "source VM lease release unconfirmed: %v", err)
 	}
@@ -194,7 +194,7 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	if err = resetCloneBalloon(ctx, hc, &cl.vmCfg.Config); err != nil {
 		return fmt.Errorf("reset balloon: %w", err)
 	}
-	// Re-anchor redirected drives at the clone's own paths: the loaded vmstate still names the source's, and a future snapshot would embed those dangling paths, breaking its restore.
+	// Re-anchor redirected drives: the loaded vmstate still names the source's paths, which a later snapshot would embed.
 	for _, i := range redirectedDriveIndices(cl.src, cl.dst) {
 		if err = patchDrivePath(ctx, hc, fmt.Sprintf(driveIDFmt, i), cl.dst[i].Path); err != nil {
 			return fmt.Errorf("re-anchor drive %d: %w", i, err)

@@ -578,9 +578,8 @@ func TestExtractFile_NoZeroBlocks(t *testing.T) {
 }
 
 func TestExtractFile_MixedZeroAndData(t *testing.T) {
-	zeroBlock := make([]byte, sparseBlockSize)
 	dataBlock := bytes.Repeat([]byte{0xCC}, sparseBlockSize)
-	data := slices.Concat(zeroBlock, dataBlock, zeroBlock, dataBlock)
+	data := slices.Concat(zeroBlock[:], dataBlock, zeroBlock[:], dataBlock)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mixed.bin")
@@ -600,8 +599,7 @@ func TestExtractFile_MixedZeroAndData(t *testing.T) {
 
 func TestExtractFile_EndsWithHole(t *testing.T) {
 	dataBlock := bytes.Repeat([]byte{0xDD}, sparseBlockSize)
-	zeroBlock := make([]byte, sparseBlockSize)
-	data := slices.Concat(dataBlock, zeroBlock)
+	data := slices.Concat(dataBlock, zeroBlock[:])
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "endhole.bin")

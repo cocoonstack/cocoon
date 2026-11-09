@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -25,15 +24,8 @@ func (ch *CloudHypervisor) BalloonResize(ctx context.Context, vmRef string, spec
 }
 
 func (ch *CloudHypervisor) BalloonStatus(ctx context.Context, vmRef string) (*balloon.Status, error) {
-	hc, rec, err := ch.RunningVMClient(ctx, vmRef)
-	if err != nil {
-		if errors.Is(err, hypervisor.ErrNotRunning) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil || info.Config.Balloon == nil {
+	info, rec, err := ch.runningInfo(ctx, vmRef)
+	if info == nil || info.Config.Balloon == nil {
 		return nil, err
 	}
 	return new(balloonStatus(&rec, info)), nil
