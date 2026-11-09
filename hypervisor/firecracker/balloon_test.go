@@ -2,8 +2,12 @@ package firecracker
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -94,3 +98,37 @@ func TestResetCloneBalloon(t *testing.T) {
 		})
 	}
 }
+
+func TestResumeAndReanchorCloneResetsTheBalloonTarget(t *testing.T) {
+	const memMiB = 4096
+	srv := newFCStub(t, fcVMConfig{Balloon: &fcBalloon{AmountMiB: memMiB / 2}, MachineConfig: fcMachineConfig{MemSizeMiB: memMiB}})
+	srv.setState(vmStatePaused)
+	scopeParent := t.TempDir()
+	if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	fc := &Firecracker{Backend: &hypervisor.Backend{Conf: scopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}}}
+
+	if err := fc.resumeAndReanchorClone(t.Context(), 0, cloneLaunch{
+		rec:      &hypervisor.VMRecord{ID: "T", RunDir: t.TempDir()},
+		sockPath: srv.sock,
+		vmCfg:    &types.VMConfig{CPU: 2, Memory: memMiB << 20},
+	}); err != nil {
+		t.Fatalf("resumeAndReanchorClone: %v", err)
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if want := []string{"resume", "balloon"}; !slices.Equal(srv.events, want) {
+		t.Errorf("events = %v, want %v", srv.events, want)
+	}
+	if got := srv.puts["/balloon"]; got != `{"amount_mib":1024}` {
+		t.Errorf("PATCH /balloon body = %q, want the create-time 1024 MiB", got)
+	}
+}
+
+type scopeConf struct {
+	*Config
+	parent string
+}
+
+func (c scopeConf) CgroupParentDir() string { return c.parent }
