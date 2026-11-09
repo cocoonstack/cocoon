@@ -35,6 +35,9 @@ kv()     { printf "  %-24s %s\n" "$1:" "$2"; }
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# tc prints "mirred (Egress Redirect to device tap0) stolen"; print the device.
+extract_mirred_target() { sed -n 's/.*to device \([^ )]*\).*/\1/p' | head -1; }
+
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------
@@ -361,13 +364,6 @@ else
 
             # --- TC filters ---
             printf "\n    ${CYAN}TC redirect:${RESET}\n"
-            # Extract redirect target device from tc output.
-            # tc prints: "mirred (Egress Redirect to device tap0) stolen"
-            # We extract the word after "to device" and strip the trailing ")".
-            extract_mirred_target() {
-                sed -n 's/.*to device \([^ )]*\).*/\1/p' | head -1
-            }
-
             # veth → tap
             VETH_TC=$(ip netns exec "$NETNS_NAME" tc filter show dev "$VETH_NAME" ingress 2>/dev/null || echo "")
             if echo "$VETH_TC" | grep -qi "mirred.*redirect"; then

@@ -61,7 +61,6 @@ jobs:
               all_changed=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'os-image/' ':!*.md' | sort -u)
               declare -A names
               for f in $all_changed; do
-                tag_dir=$(echo "$f" | cut -d'/' -f1-3)
                 name=$(echo "$f" | cut -d'/' -f2)
                 if [[ -n "$name" ]]; then
                   names[$name]=1
