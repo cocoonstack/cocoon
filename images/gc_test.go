@@ -2,6 +2,8 @@ package images
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
@@ -230,6 +233,38 @@ func TestGCCollectLogsUnreferencedReason(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "collected blob=deadbeef reason=unreferenced") {
 		t.Fatalf("gc.oci log: got %s, want a collected line with reason=unreferenced", out)
+	}
+}
+
+func TestGCStaleTempKeepsAWorkDirWithFreshContent(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-2 * utils.StaleTempAge)
+	live := filepath.Join(dir, "pull-live")
+	stale := filepath.Join(dir, "pull-stale")
+	for _, d := range []string{filepath.Join(live, "layer-0"), filepath.Join(stale, "layer-0")} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "blob.erofs"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, p := range []string{
+		filepath.Join(live, "layer-0"), live,
+		filepath.Join(stale, "layer-0", "blob.erofs"), filepath.Join(stale, "layer-0"), stale,
+	} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if errs := gcStaleTemp(t.Context(), dir); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Errorf("work dir with a fresh file was collected: %v", err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stale work dir kept: %v", err)
 	}
 }
 
