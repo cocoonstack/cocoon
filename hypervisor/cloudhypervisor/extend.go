@@ -116,15 +116,7 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 }
 
 func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
-	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []disk.Attached {
-		var out []disk.Attached
-		for _, d := range info.Config.Disks {
-			if name := disk.NameFromID(d.ID); name != "" {
-				out = append(out, disk.Attached{ID: d.ID, Name: name, Path: d.Path, ReadOnly: d.ReadOnly})
-			}
-		}
-		return out
-	})
+	return ch.listWith(ctx, vmRef, disksAttached)
 }
 
 func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.Spec) (string, error) {
@@ -164,13 +156,7 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 }
 
 func (ch *CloudHypervisor) FsList(ctx context.Context, vmRef string) ([]fs.Attached, error) {
-	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []fs.Attached {
-		out := make([]fs.Attached, 0, len(info.Config.Fs))
-		for _, f := range info.Config.Fs {
-			out = append(out, fs.Attached{ID: f.ID, Tag: f.Tag, Socket: f.Socket})
-		}
-		return out
-	})
+	return ch.listWith(ctx, vmRef, fsAttached)
 }
 
 func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec vfio.Spec) (string, error) {
@@ -213,13 +199,26 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 }
 
 func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio.Attached, error) {
-	return ch.listWith(ctx, vmRef, func(info *chVMInfoResponse) []vfio.Attached {
-		out := make([]vfio.Attached, 0, len(info.Config.Devices))
-		for _, d := range info.Config.Devices {
-			out = append(out, vfio.Attached{ID: d.ID, BDF: strings.TrimPrefix(d.Path, vfio.SysfsPCIPrefix)})
+	return ch.listWith(ctx, vmRef, devicesAttached)
+}
+
+func (ch *CloudHypervisor) RunningView(ctx context.Context, vmRef string) (*hypervisor.RunningView, error) {
+	hc, rec, err := ch.RunningVMClient(ctx, vmRef)
+	if err != nil {
+		if errors.Is(err, hypervisor.ErrNotRunning) {
+			return nil, nil
 		}
-		return out
-	})
+		return nil, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	if err != nil {
+		return nil, err
+	}
+	view := &hypervisor.RunningView{Fs: fsAttached(info), Devices: devicesAttached(info), Disks: disksAttached(info)}
+	if info.Config.Balloon != nil {
+		view.Balloon = new(balloonStatus(&rec, info))
+	}
+	return view, nil
 }
 
 // lockedDeviceOp locks device-set mutations per VM and returns the record plus vm.info, resuming an ownerless pause.
@@ -289,6 +288,32 @@ func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, ex
 		return nil, err
 	}
 	return extract(info), nil
+}
+
+func disksAttached(info *chVMInfoResponse) []disk.Attached {
+	var out []disk.Attached
+	for _, d := range info.Config.Disks {
+		if name := disk.NameFromID(d.ID); name != "" {
+			out = append(out, disk.Attached{ID: d.ID, Name: name, Path: d.Path, ReadOnly: d.ReadOnly})
+		}
+	}
+	return out
+}
+
+func fsAttached(info *chVMInfoResponse) []fs.Attached {
+	out := make([]fs.Attached, 0, len(info.Config.Fs))
+	for _, f := range info.Config.Fs {
+		out = append(out, fs.Attached{ID: f.ID, Tag: f.Tag, Socket: f.Socket})
+	}
+	return out
+}
+
+func devicesAttached(info *chVMInfoResponse) []vfio.Attached {
+	out := make([]vfio.Attached, 0, len(info.Config.Devices))
+	for _, d := range info.Config.Devices {
+		out = append(out, vfio.Attached{ID: d.ID, BDF: strings.TrimPrefix(d.Path, vfio.SysfsPCIPrefix)})
+	}
+	return out
 }
 
 func addDevice(ctx context.Context, hc *http.Client, endpoint string, body any) (string, error) {
