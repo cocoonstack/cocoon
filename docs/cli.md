@@ -123,7 +123,7 @@ Applies to `cocoon vm create`, `cocoon vm run`, and `cocoon vm debug`:
 | `--cpu`     | `2`              | Boot CPUs — also the VM's hard CPU cap (quota = N cores unless overridden; see [CPU Isolation](vm.md#cpu-isolation-cgroup-v2)); refused above the host's online core count |
 | `--memory`  | `1G`             | Memory size (e.g., 512M, 2G, 2Gi); minimum 512M |
 | `--storage` | `10G`            | COW disk size (e.g., 10G, 20G, 20Gi); minimum 10G |
-| `--nics`    | `1`              | Number of network interfaces (0 = no network) |
+| `--nics`    | `1`              | Number of network interfaces (0 = no network); OCI images up to v0.7.7 configure only the last NIC |
 | `--queue-size` | `0` (default 512) | Virtio-net ring depth per queue; a power of 2 no greater than 32768 (larger = better bulk throughput, smaller = better RPC latency; CH only, ignored by FC) |
 | `--disk-queue-size` | `0` (default 512) | Virtio-blk ring depth per device; a power of 2 no greater than 32768 (CH only, ignored by FC) |
 | `--network` | empty (default)  | CNI conflist name (empty = first conflist)     |
@@ -246,7 +246,7 @@ cocoon vm restore my-vm --from-dir /sync/from-host-a
 cocoon vm restore my-vm --from-dir /sync/from-host-b --force
 ```
 
-The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image may not be present locally — `EnsureImage` pulls the envelope's image by digest when it is missing, and `image_blob_ids` pin its blobs against GC for the clone's lifetime.
+The dir is read-only across the call, so multiple clones of the same dir (golden image use case) are safe. Pass `--pull` if the base image may not be present locally: it pulls the envelope's image by digest, and the clone's record then pins its blobs against GC.
 
 ### Migrate Flags
 
@@ -345,7 +345,7 @@ $ cocoon vm exec -e FOO=bar myvm -- sh -c 'echo $FOO'
 bar
 ```
 
-Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*`, `ghcr.io/cocoonstack/cocoon/debian:*` and `ghcr.io/cocoonstack/cocoon/android:*` images bake the binary and enable it on boot (systemd unit on Ubuntu and Debian, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images bake cocoon-agent v0.2.4 as a Windows service via SCM; DIY Windows images need to install the agent themselves.
+Requires cocoon-agent to be running inside the guest. All official `ghcr.io/cocoonstack/cocoon/ubuntu:*`, `ghcr.io/cocoonstack/cocoon/debian:*` and `ghcr.io/cocoonstack/cocoon/android:*` images bake the binary and enable it on boot (systemd unit on Ubuntu and Debian, init.rc service on Android). The official `ghcr.io/cocoonstack/windows/win11:*` images run cocoon-agent as a Windows service; DIY Windows images must install it themselves.
 
 ### Logs Flags
 

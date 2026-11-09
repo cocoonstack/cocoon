@@ -11,7 +11,7 @@ Cross-module GC, snapshot LRU eviction, and scheduled cleanup.
 3. **Resolve** each module identifies unreferenced resources using the full snapshot set (e.g., image GC checks VM and snapshot records for blob references)
 4. **Collect** — recheck ownership and delete remaining targets; CNI checks both VM backends under the VM ops lock, bridge checks the current owner after locating each TAP, and the cgroup module checks it before removing an empty scope. The bridge and cgroup rechecks need no lock because create writes the VM record before it provisions a TAP or a scope, so a live device always has a record. A failed owner lookup preserves that resource, reports an error, and lets the sweep continue with the rest.
 
-This ensures blobs referenced by running VMs or saved snapshots are never deleted. `cocoon gc` also terminates a VMM still bound to an orphaned run dir (SIGTERM, then SIGKILL) before removing the dir.
+This ensures blobs referenced by running VMs or saved snapshots are never deleted. `cocoon gc` also terminates a VMM still bound to an orphaned run dir (SIGTERM, then SIGKILL) before removing the dir, and removes capture (`snapshot-*`) and restore-staging dirs older than 24 hours from each VM run dir.
 
 ### Log Output
 
@@ -57,7 +57,7 @@ Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record), **m
 
 Sub-flags combine as union of evictions (intersection of kept) — a snapshot is kept only if it passes **every** active criterion. All sub-flags require `--snapshot`; negative values are rejected.
 
-`LastAccessedAt` is updated on `Restore`, `vm clone` (via `DataDir`) and `snapshot export`, set at finalize time by `snapshot save` and to the creation time by `snapshot import`, so a fresh snapshot is never age-evicted by the next sweep. `Inspect` and `list` do not count as access.
+`LastAccessedAt` is updated on `Restore`, `vm clone` and `vm disk attach --from-snapshot` (via `DataDir`) and `snapshot export`, set at finalize time by `snapshot save` and to the creation time by `snapshot import`, so a fresh snapshot is never age-evicted by the next sweep. `Inspect` and `list` do not count as access.
 
 ```bash
 # Preview what 30-day eviction would remove (snapshot-only — other GC modules still run)

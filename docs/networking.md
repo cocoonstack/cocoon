@@ -13,7 +13,7 @@ Guest virtio-net  ←→  TAP (multi-queue)  ←TC redirect→  veth  ←→  CN
 ```
 
 - **Multi-queue**: on Cloud Hypervisor each TAP device is created with one queue pair per boot vCPU (`num_queues = 2 × vCPU`), enabling per-CPU TX/RX rings for better throughput; Firecracker TAPs are always single queue-pair and ignore `--queue-size`. Ring depth per queue is configurable via `--queue-size` (default 512; larger values improve bulk download throughput, smaller values improve RPC latency)
-- **Offload**: TSO, UFO, and checksum offload are enabled on the virtio-net device; TAP uses `VNET_HDR` for zero-copy GSO passthrough
+- **Offload** (Cloud Hypervisor): TSO, UFO, and checksum offload are enabled on the virtio-net device; TAPs use `VNET_HDR` for GSO passthrough
 - **MAC passthrough**: the guest NIC inherits the CNI veth's MAC address, satisfying anti-spoofing requirements of Cilium, Calico eBPF, and VPC ENI plugins
 - **MTU sync**: TAP MTU is automatically synced to the veth to prevent silent large-packet drops in overlay or jumbo-frame setups
 - **IPv4 only**: cocoon records the first IPv4 address from the CNI result, with its `ips[].gateway` or, when that is empty, the gateway of the result's IPv4 default route; IPv6-only plugin results are not persisted (a warning is logged and the NIC carries no network info)

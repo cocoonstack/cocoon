@@ -130,7 +130,7 @@ The `--pull` flag uses the image digest recorded at snapshot time: OCI images ar
 
 ### Restore
 
-Restore reverts a VM — running or stopped — to a previous snapshot's state in-place:
+Restore reverts a VM — running, stopped or error — to a previous snapshot's state in-place:
 
 ```bash
 # Restore a VM to a previous snapshot

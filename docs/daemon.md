@@ -92,7 +92,7 @@ record once and applies the same idempotent rules:
 |---|---|---|
 | `creating` | any | ownerless only if the ops lock is free; then run the stale-create cleanup at once, freeing the name |
 | `running` | live | watch that exact process generation |
-| committed, not `running` | live | repair to `running` under the lock, then watch it |
+| committed, not `running`, not quarantined or mid-restore | live | repair to `running` under the lock, then watch it |
 | `running`, or an open compute interval | dead | close the interval, mark `unexpected-exit`, quiesce the network |
 | `quiesce_pending` | dead | retry the quiesce |
 | unfinished delete tombstone | any | finish a delete whose tombstone reached the deleting phase, roll back one still leased — supervision starts deletes of its own, so it resumes them |
@@ -163,4 +163,4 @@ The stream is a hint, not a log: it replays nothing and a slow reader loses
 events. After a reconnect, compare each VM's `transition_generation` against the
 last one you handled — a generation you have not seen whose state is `stopped`
 and whose reason is `unexpected-exit` is a crash you missed. A `MODIFIED` can
-repeat a generation: the quiesce-pending flag changes without bumping it.
+repeat a generation: `live` and the quiesce-pending flag change without bumping it.
