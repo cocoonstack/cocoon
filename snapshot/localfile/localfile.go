@@ -99,11 +99,6 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 			}
 			return "", types.SnapshotConfig{}, nil, gErr
 		}
-		// Re-verify under the lease: a delete may have completed between lookup and acquire.
-		if _, err := lf.lookupRecord(ctx, rec.ID, false); err != nil {
-			release()
-			return "", types.SnapshotConfig{}, nil, err
-		}
 		return lf.conf.SnapshotDataDir(rec.ID), rec.SnapshotConfig, release, nil
 	}
 	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)

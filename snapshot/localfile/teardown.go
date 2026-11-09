@@ -10,6 +10,7 @@ import (
 	"github.com/projecteru2/core/log"
 
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/snapshot"
 )
 
 // ErrTombstoned reports an entrypoint that met a tombstoned snapshot.
@@ -140,6 +141,13 @@ func (lf *LocalFile) guardSnapTombstone(ctx context.Context, id string, releaseS
 	if err := lf.view(ctx, func(t *snapTx) error {
 		rec, err := lf.tombstones().Get(ctx, t.Reader(), id)
 		present = rec != nil
+		if err != nil || present {
+			return err
+		}
+		snap, err := t.Get(id)
+		if err == nil && (snap == nil || snap.Pending) {
+			return snapshot.ErrNotFound
+		}
 		return err
 	}); err != nil {
 		// The guard consumes the lease on every path: leaking a shared flock here would block exclusive delete/GC for the process lifetime.
