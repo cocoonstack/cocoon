@@ -6,8 +6,11 @@ import (
 	"errors"
 	"io"
 
+	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/extend/disk"
+	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/netresize"
+	"github.com/cocoonstack/cocoon/extend/vfio"
 	"github.com/cocoonstack/cocoon/gc"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -23,6 +26,17 @@ var (
 )
 
 type PersistFunc func(cfg *types.SnapshotConfig, srcDir string) error
+
+type RunningViewer interface {
+	RunningView(ctx context.Context, ref string) (*RunningView, error)
+}
+
+type RunningView struct {
+	Fs      []fs.Attached
+	Devices []vfio.Attached
+	Disks   []disk.Attached
+	Balloon *balloon.Status
+}
 
 // Hypervisor manages VM lifecycle.
 type Hypervisor interface {
