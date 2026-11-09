@@ -25,7 +25,7 @@ var (
 	validIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 )
 
-// Spec is one attach request. PCI may be a short BDF, full BDF, or a sysfs path; NormalizedPath canonicalizes it.
+// Spec is one attach request; PCI is a short BDF, full BDF, or sysfs path.
 type Spec struct {
 	PCI string
 	ID  string

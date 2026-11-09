@@ -131,7 +131,7 @@ func Command(h Handler) *cobra.Command {
 
 	restoreCmd := &cobra.Command{
 		Use:   "restore [flags] VM [SNAPSHOT]",
-		Short: "Restore a running or stopped VM to a previous snapshot (or a directory via --from-dir)",
+		Short: "Restore a running, stopped or error VM to a previous snapshot (or a directory via --from-dir)",
 		Args:  cobra.RangeArgs(1, 2),
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			if cliutil.FlagBool(cmd, "force") && cliutil.FlagStr(cmd, "from-dir") == "" {

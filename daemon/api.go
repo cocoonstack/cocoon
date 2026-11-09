@@ -94,7 +94,7 @@ func (d *Daemon) routes() http.Handler {
 
 func (d *Daemon) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	all, h := d.state.snapshot()
-	ok := h.ok && !h.lastPass.IsZero() && time.Since(h.lastPass) < healthStaleFactor*d.conf.ReconcileInterval
+	ok := h.ok && time.Since(h.lastPass) < healthStaleFactor*d.conf.ReconcileInterval
 	status := http.StatusOK
 	if !ok {
 		status = http.StatusServiceUnavailable

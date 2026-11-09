@@ -13,7 +13,7 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder appends entries; each is one write, and O_APPEND gives cross-process atomicity.
+// Recorder appends one O_APPEND write per entry, atomic across processes; Emit logs and drops write errors.
 type Recorder struct {
 	f *os.File
 }
@@ -27,9 +27,8 @@ func New(path string) (*Recorder, error) {
 	return &Recorder{f: f}, nil
 }
 
-// Emit swallows write errors so callers never block.
 func (r *Recorder) Emit(ctx context.Context, e metering.Entry) {
 	if _, err := e.WriteTo(r.f); err != nil {
-		log.WithFunc("metering.file.Emit").Warnf(ctx, "emit entry: %v", err)
+		log.WithFunc("metering.file.Emit").Error(ctx, err, "emit entry")
 	}
 }

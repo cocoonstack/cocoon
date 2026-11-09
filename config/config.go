@@ -41,11 +41,11 @@ type HypervisorType string
 
 // Config holds global Cocoon configuration.
 type Config struct {
-	// RootDir: persistent data (images, firmware, VM DB). Env: COCOON_ROOT_DIR. Default: /var/lib/cocoon.
+	// RootDir: persistent data (images, firmware, VM DB). Default: /var/lib/cocoon.
 	RootDir string `json:"root_dir" mapstructure:"root_dir"`
-	// RunDir: ephemeral runtime state (PID files, sockets). Env: COCOON_RUN_DIR. Default: /var/lib/cocoon/run.
+	// RunDir: ephemeral runtime state (PID files, sockets). Default: /var/lib/cocoon/run.
 	RunDir string `json:"run_dir" mapstructure:"run_dir"`
-	// LogDir: VM and process logs. Env: COCOON_LOG_DIR. Default: /var/log/cocoon.
+	// LogDir: VM and process logs. Default: /var/log/cocoon.
 	LogDir string `json:"log_dir" mapstructure:"log_dir"`
 	// CHBinary: path or name of the cloud-hypervisor executable. Default: "cloud-hypervisor".
 	CHBinary string `json:"ch_binary" mapstructure:"ch_binary"`
@@ -65,7 +65,7 @@ type Config struct {
 	CNIConfDir string `json:"cni_conf_dir" mapstructure:"cni_conf_dir"`
 	// CNIBinDir: CNI plugin binary dir. Default: /opt/cni/bin.
 	CNIBinDir string `json:"cni_bin_dir" mapstructure:"cni_bin_dir"`
-	// DNS: comma/semicolon-separated DNS servers injected into VM net config. Env: COCOON_DNS. Default: "8.8.8.8,1.1.1.1".
+	// DNS: comma/semicolon-separated DNS servers injected into VM net config. Default: "8.8.8.8,1.1.1.1".
 	DNS string `json:"dns" mapstructure:"dns"`
 	// NetScope: two-alphanumeric prefix on this installation's TAP and netns names so co-hosted installations never GC each other's; empty keeps the legacy names.
 	NetScope string `json:"net_scope,omitempty" mapstructure:"net_scope"`

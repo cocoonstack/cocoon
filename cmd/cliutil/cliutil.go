@@ -1,4 +1,4 @@
-// Package cliutil holds dependency-free CLI helpers (flags, table/JSON output) shared by cocoon and downstream CLIs.
+// Package cliutil holds the flag and table/JSON output helpers the cocoon subcommands share.
 package cliutil
 
 import (

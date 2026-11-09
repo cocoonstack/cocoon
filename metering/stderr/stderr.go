@@ -12,7 +12,7 @@ import (
 
 var _ metering.Recorder = (*Recorder)(nil)
 
-// Recorder writes entries to os.Stderr; dev/debug only.
+// Recorder serializes concurrent entries onto one writer.
 type Recorder struct {
 	mu  sync.Mutex
 	out io.Writer

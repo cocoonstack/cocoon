@@ -28,7 +28,7 @@ type NameHolder interface {
 	NameOwner(ctx context.Context, name string) (id string, held bool, err error)
 }
 
-// CompressedExporter is an optional interface for backends that support exporting with compression (e.g. gzip). The default Export produces raw tar.
+// CompressedExporter exports with compression (e.g. gzip).
 type CompressedExporter interface {
 	ExportCompressed(ctx context.Context, ref string) (io.ReadCloser, error)
 }

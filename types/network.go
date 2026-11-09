@@ -28,7 +28,6 @@ type NetworkConfig struct {
 	// NetnsPath is the netns where the TAP lives; empty for backends without netns (e.g. bridge).
 	NetnsPath string `json:"netns_path,omitempty"`
 
-	// Network is nil for DHCP NICs.
 	Network *Network `json:"network,omitzero"`
 }
 
