@@ -284,7 +284,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}
-	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
+	// Envelope pins share create's digest-lock window, which image GC's VM-then-snapshot recheck needs even for a record-backed clone.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return cloneSetup{}, err
