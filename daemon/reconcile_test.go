@@ -141,8 +141,9 @@ func TestHandleExitConvergesWatchedGeneration(t *testing.T) {
 	d := newTestDaemon(t, f)
 	at := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 
-	d.handleExit(t.Context(), exitEvent{key: watchKey{backend: f.Type(), vmID: "vm1"}, gen: 4, at: at})
-
+	if ran, _ := d.handleExit(t.Context(), exitEvent{key: watchKey{backend: f.Type(), vmID: "vm1"}, gen: 4, at: at}); !ran {
+		t.Error("a converged exit must run a pass")
+	}
 	if len(f.converged) != 1 || f.converged[0].gen != 4 {
 		t.Fatalf("got %+v, want one convergence at generation 4", f.converged)
 	}
@@ -155,8 +156,9 @@ func TestHandleExitDropsStaleGeneration(t *testing.T) {
 	f := newFake().put(runningRec("vm1", 9))
 	d := newTestDaemon(t, f)
 
-	d.handleExit(t.Context(), exitEvent{key: watchKey{backend: f.Type(), vmID: "vm1"}, gen: 4, at: time.Now()})
-
+	if ran, _ := d.handleExit(t.Context(), exitEvent{key: watchKey{backend: f.Type(), vmID: "vm1"}, gen: 4, at: time.Now()}); ran {
+		t.Error("a dropped exit must not report a pass, or the loop drains meta events no pass saw")
+	}
 	if len(f.converged) != 0 {
 		t.Errorf("got %+v, want the stale event dropped", f.converged)
 	}
