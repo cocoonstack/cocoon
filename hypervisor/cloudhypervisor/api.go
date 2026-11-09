@@ -108,7 +108,6 @@ type chDevice struct {
 	Path string `json:"path"`
 }
 
-// chPciDeviceInfo is the response body from vm.add-fs / vm.add-device / vm.add-disk / vm.add-net (HTTP 200).
 type chPciDeviceInfo struct {
 	ID string `json:"id"`
 }
