@@ -33,7 +33,7 @@ A snapshot contains the full VM state:
 
 `snapshot save` and `vm hibernate` are refused while a vhost-user-fs share, a VFIO device or a hot-attached disk is present; see [Devices](devices.md).
 
-On Cloud Hypervisor, `snapshot save` and `vm hibernate` first let a running guest finish inflating its balloon, waiting up to a minute and moving on once inflation stalls for 2 s (the wait reads the live target, so it covers a target raised by `vm balloon`), so a `vm restore` or hibernate wake comes back with a settled balloon instead of inflating it again at a high CPU cost. A clone moves to the create-time balloon target after restore: it deflates from a raised snapshot target, so a golden saved at the default target keeps the settled balloon.
+On Cloud Hypervisor, `snapshot save` and `vm hibernate` first let a running guest finish inflating its balloon, waiting up to a minute and moving on once inflation frees less than 1% of guest memory in 2 s (the wait reads the live target, so it covers a target raised by `vm balloon`), so a `vm restore` or hibernate wake comes back with a settled balloon instead of inflating it again at a high CPU cost. A clone moves to the create-time balloon target after restore: it deflates from a raised snapshot target, so a golden saved at the default target keeps the settled balloon.
 
 ### Clone Constraints
 
