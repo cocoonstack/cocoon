@@ -15,8 +15,8 @@ func (b *Backend) RunningVMClient(ctx context.Context, vmRef string) (*http.Clie
 	if err != nil {
 		return nil, "", err
 	}
-	if rec.State != types.VMStateRunning {
-		return nil, "", fmt.Errorf("vm %s is %s: %w", vmID, rec.State, ErrNotRunning)
+	if err := requireRunning(vmID, &rec); err != nil {
+		return nil, "", err
 	}
 	sockPath := SocketPath(rec.RunDir)
 	pid, pidErr := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
@@ -40,9 +40,19 @@ func (b *Backend) LockedRunningOp(ctx context.Context, vmRef string) (*http.Clie
 		return nil, VMRecord{}, nil, err
 	}
 	rec, err := b.EntryGuardLoad(ctx, vmID)
+	if err == nil {
+		err = requireRunning(vmID, &rec)
+	}
 	if err != nil {
 		unlock()
 		return nil, VMRecord{}, nil, err
 	}
 	return hc, rec, unlock, nil
+}
+
+func requireRunning(vmID string, rec *VMRecord) error {
+	if rec.State == types.VMStateRunning {
+		return nil
+	}
+	return fmt.Errorf("vm %s is %s: %w", vmID, rec.State, ErrNotRunning)
 }
