@@ -203,15 +203,8 @@ func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio
 }
 
 func (ch *CloudHypervisor) RunningView(ctx context.Context, vmRef string) (*hypervisor.RunningView, error) {
-	hc, rec, err := ch.RunningVMClient(ctx, vmRef)
-	if err != nil {
-		if errors.Is(err, hypervisor.ErrNotRunning) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil {
+	info, rec, err := ch.runningInfo(ctx, vmRef)
+	if info == nil {
 		return nil, err
 	}
 	view := &hypervisor.RunningView{Fs: fsAttached(info), Devices: devicesAttached(info), Disks: disksAttached(info)}
@@ -274,20 +267,25 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 	return afterEject(&rec)
 }
 
-// listWith returns nil (not error) for stopped VMs so inspect can omit the field.
 func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
-	hc, _, err := ch.RunningVMClient(ctx, vmRef)
-	if err != nil {
-		if errors.Is(err, hypervisor.ErrNotRunning) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	info, err := getVMInfo(ctx, hc)
-	if err != nil {
+	info, _, err := ch.runningInfo(ctx, vmRef)
+	if info == nil {
 		return nil, err
 	}
 	return extract(info), nil
+}
+
+// runningInfo returns a nil info (not error) for a stopped VM so inspect can omit the field.
+func (ch *CloudHypervisor) runningInfo(ctx context.Context, vmRef string) (*chVMInfoResponse, hypervisor.VMRecord, error) {
+	hc, rec, err := ch.RunningVMClient(ctx, vmRef)
+	if errors.Is(err, hypervisor.ErrNotRunning) {
+		return nil, rec, nil
+	}
+	if err != nil {
+		return nil, rec, err
+	}
+	info, err := getVMInfo(ctx, hc)
+	return info, rec, err
 }
 
 func disksAttached(info *chVMInfoResponse) []disk.Attached {
