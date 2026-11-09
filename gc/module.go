@@ -1,9 +1,7 @@
 // Package gc runs modular garbage collection: recovery precedes discovery, snapshots are loose, and every destructive decision is revalidated by the module under its own entity locks and tombstone leases.
 package gc
 
-import (
-	"context"
-)
+import "context"
 
 // Module[S] is a typed GC participant; S is the snapshot type ReadDB returns and Resolve consumes.
 type Module[S any] struct {

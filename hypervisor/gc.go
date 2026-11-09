@@ -204,7 +204,7 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 		if !ok {
 			continue
 		}
-		logger.Infof(ctx, "collected clone lock %s reason=stale-clone-lock", e.Name())
+		logger.Infof(ctx, "collected lock=%s reason=stale-clone-lock", e.Name())
 	}
 	return errs
 }

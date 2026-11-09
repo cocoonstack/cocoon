@@ -189,7 +189,7 @@ type Backend struct {
 	topoErr  error
 }
 
-// NewBackend wires EnsureDirs, the backend's namespace on the injected meta store and the nil-recorder fallback.
+// NewBackend builds the shared backend on the injected meta store; a nil recorder becomes NopRecorder.
 func NewBackend(typ string, conf BackendConfig, rec metering.Recorder, store meta.Store) (*Backend, error) {
 	if err := conf.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)

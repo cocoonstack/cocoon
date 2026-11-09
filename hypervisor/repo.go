@@ -20,7 +20,7 @@ type vmTx struct {
 	placements *meta.Collection[string]
 }
 
-// Put writes rec and mirrors its placement row, which the launch tally scans instead of every record.
+// Put writes rec and mirrors its placement row.
 func (t *vmTx) Put(id string, rec *VMRecord, opts ...meta.WriteOpt) error {
 	if err := t.NamedTx.Put(id, rec, opts...); err != nil {
 		return err

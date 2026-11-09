@@ -43,17 +43,17 @@ func CgroupGCModule(parentDir string, vmInUse network.VMInUse) gc.Module[[]strin
 				} else if inUse {
 					continue
 				}
-				// A scope populated since the VM snapshot was read belongs to a launch in flight, not to an orphan
+				// EBUSY means members remain; GC never kills them.
 				err := removeScope(parentDir, id)
 				if errors.Is(err, syscall.EBUSY) {
-					logger.Infof(ctx, "skipped scope vm-%s reason=populated", id)
+					logger.Infof(ctx, "skipped id=%s reason=populated", id)
 					continue
 				}
 				if err != nil {
 					errs = append(errs, err)
 					continue
 				}
-				logger.Infof(ctx, "collected scope vm-%s reason=orphan-scope", id)
+				logger.Infof(ctx, "collected id=%s reason=orphan-scope", id)
 			}
 			return errors.Join(errs...)
 		},

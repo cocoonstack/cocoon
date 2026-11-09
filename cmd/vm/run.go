@@ -486,7 +486,6 @@ func validateBootCompat(conf *config.Config, vmCfg *types.VMConfig, bootCfg *typ
 	return nil
 }
 
-// prereserveVM reserves before network provisioning, so GC never sees ownerless TAP/netns.
 func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (rollback, unlock func(), err error) {
 	unlock, err = hyper.LockVMOps(ctx, vmID)
 	if err != nil {
