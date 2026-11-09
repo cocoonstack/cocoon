@@ -196,6 +196,9 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 	if opts.keepPaused {
 		return nil
 	}
+	if err = resetCloneBalloon(ctx, hc, opts.snapshotCfg.Balloon, &opts.vmCfg.Config); err != nil {
+		return fmt.Errorf("reset balloon: %w", err)
+	}
 	if err = resumeVM(ctx, hc); err != nil {
 		return fmt.Errorf("vm.resume: %w", err)
 	}

@@ -198,6 +198,7 @@ func Command(h Handler) *cobra.Command {
 		buildDeviceCommand(h),
 		buildDiskCommand(h),
 		buildNetCommand(h),
+		buildBalloonCommand(h),
 		buildMigrateCommand(h),
 	)
 	return vmCmd
@@ -212,6 +213,17 @@ func buildNetCommand(h Handler) *cobra.Command {
 	}
 	cmd.Flags().Int("nics", 0, "target NIC count (required, >= 0)")
 	_ = cmd.MarkFlagRequired("nics")
+	cliutil.AddOutputFlag(cmd)
+	return cmd
+}
+
+func buildBalloonCommand(h Handler) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "balloon VM SIZE",
+		Short: "Set a running VM's balloon target: NN% of guest memory or a byte size; returns before the guest settles",
+		Args:  cobra.ExactArgs(2),
+		RunE:  h.Balloon,
+	}
 	cliutil.AddOutputFlag(cmd)
 	return cmd
 }

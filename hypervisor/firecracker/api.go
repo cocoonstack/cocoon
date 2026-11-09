@@ -18,6 +18,7 @@ const (
 	actionSendCtrlAltDel = "SendCtrlAltDel"
 	vmStateNotStarted    = "Not started"
 	vmStatePaused        = "Paused"
+	vmStateRunning       = "Running"
 	vmStateResumed       = "Resumed"
 	memBackendTypeFile   = "File"
 
@@ -110,6 +111,8 @@ type fcInstanceInfo struct {
 }
 
 type fcVMConfig struct {
+	Balloon           *fcBalloon           `json:"balloon,omitzero"`
+	MachineConfig     fcMachineConfig      `json:"machine-config"`
 	Drives            []fcDrive            `json:"drives"`
 	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
 }
@@ -140,6 +143,10 @@ func patchDrivePath(ctx context.Context, hc *http.Client, driveID, pathOnHost st
 		DriveID    string `json:"drive_id"`
 		PathOnHost string `json:"path_on_host"`
 	}{DriveID: driveID, PathOnHost: pathOnHost}, "drive patch")
+}
+
+func patchBalloon(ctx context.Context, hc *http.Client, amountMiB int) error {
+	return sendJSONOnce(ctx, hc, http.MethodPatch, "/balloon", fcBalloon{AmountMiB: amountMiB}, "balloon update")
 }
 
 func instanceStart(ctx context.Context, hc *http.Client) error {

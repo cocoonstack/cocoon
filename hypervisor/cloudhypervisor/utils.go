@@ -170,6 +170,10 @@ func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {
 	return vmPutJSON(ctx, hc, "vm.add-disk", "add-disk request", disk, http.StatusOK, http.StatusNoContent)
 }
 
+func resizeBalloonVM(ctx context.Context, hc *http.Client, size int64) error {
+	return vmPutJSON(ctx, hc, "vm.resize", "resize", chResize{DesiredBalloon: size})
+}
+
 func removeDeviceVM(ctx context.Context, hc *http.Client, deviceID string) error {
 	return vmPutJSON(ctx, hc, "vm.remove-device", "remove-device request", map[string]string{"id": deviceID})
 }

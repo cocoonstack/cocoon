@@ -30,6 +30,7 @@ cocoon vm clone my-snap --name clone-vm
 | Snapshot / Clone / Restore | Y | Y |
 | Multi-queue networking | Y | N |
 | Memory balloon | Y | Y |
+| Runtime balloon target (`vm balloon`) | Y | Y (MiB granularity, no `actual`) |
 | qcow2 storage | Y | N |
 | Interactive console | Y | Y |
 | HugePages | Y (opt-in `--hugepages`) | N (would break snapshot restore) |

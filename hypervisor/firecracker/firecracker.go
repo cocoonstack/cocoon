@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
@@ -15,6 +16,7 @@ const typ = "firecracker"
 
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)
+	_ balloon.Resizer       = (*Firecracker)(nil)
 	_ disk.Attacher         = (*Firecracker)(nil)
 )
 

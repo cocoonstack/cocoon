@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +20,7 @@ import (
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestFCNICOpsRoundTrip(t *testing.T) {
@@ -183,12 +186,14 @@ func TestBuildMachineConfig(t *testing.T) {
 
 type fcStub struct {
 	client *http.Client
+	sock   string
 	mu     sync.Mutex
 	cfg    fcVMConfig
 	state  string
 	puts   map[string]string
 	dels   []string
 	resume int
+	events []string
 
 	release int
 	pending []string
@@ -293,18 +298,36 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		if req["state"] == vmStateResumed {
 			s.resume++
 			s.state = "Running"
+			s.events = append(s.events, "resume")
 		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("PATCH /balloon", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		body, _ := io.ReadAll(r.Body)
+		s.puts[r.URL.Path] = string(body)
+		s.events = append(s.events, "balloon")
+		_ = json.Unmarshal(body, s.cfg.Balloon)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/drives/", s.handleDevice)
 	mux.HandleFunc("/network-interfaces/", s.handleDevice)
-	srv := httptest.NewServer(mux)
+	dir, err := os.MkdirTemp("", "fc")
+	if err != nil {
+		t.Fatalf("socket dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	s.sock = filepath.Join(dir, "api.sock")
+	ln, err := net.Listen("unix", s.sock)
+	if err != nil {
+		t.Fatalf("listen %s: %v", s.sock, err)
+	}
+	srv := httptest.NewUnstartedServer(mux)
+	_ = srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
 	t.Cleanup(srv.Close)
-	addr := strings.TrimPrefix(srv.URL, "http://")
-	s.client = &http.Client{Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
-		},
-	}}
+	s.client = utils.NewSocketHTTPClient(s.sock)
 	return s
 }

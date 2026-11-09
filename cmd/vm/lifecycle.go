@@ -15,6 +15,7 @@ import (
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/console"
+	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -35,6 +36,7 @@ type vmOutput struct {
 	*types.VM
 	Stale           bool             `json:"stale,omitzero"`
 	AttachedDevices *attachedDevices `json:"attached_devices,omitzero"`
+	Balloon         *balloon.Status  `json:"balloon,omitzero"`
 }
 
 func (h Handler) Start(cmd *cobra.Command, args []string) error {
@@ -64,6 +66,7 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	out := vmOutput{VM: info, Stale: stale}
 	if info.State == types.VMStateRunning {
 		out.AttachedDevices = collectAttachedDevices(ctx, hyper, args[0])
+		out.Balloon = collectBalloon(ctx, hyper, args[0])
 	}
 	return cliutil.OutputJSON(out)
 }
@@ -197,6 +200,18 @@ func batchRoutedCmd(ctx context.Context, cmd *cobra.Command, name, pastTense str
 		logger.Infof(ctx, "no VMs %s", pastTense)
 	}
 	return nil
+}
+
+func collectBalloon(ctx context.Context, hyper hypervisor.Hypervisor, ref string) *balloon.Status {
+	r, ok := hyper.(balloon.Resizer)
+	if !ok {
+		return nil
+	}
+	st, err := r.BalloonStatus(ctx, ref)
+	if err != nil {
+		log.WithFunc("cmd.vm.inspect").Warnf(ctx, "read balloon for %s: %v", ref, err)
+	}
+	return st
 }
 
 // collectAttachedDevices logs and drops errors so inspect tolerates a flaky vm.info.
