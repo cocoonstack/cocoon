@@ -12,7 +12,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA; dst is truncated to src size and only data segments are written.
+const copyBlockSize = 1 << 20
+
+// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA, and from FUSE or NFS also leaves all-zero 1 MiB blocks as holes; dst is truncated to src size.
 func SparseCopy(dst, src string, mode SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		fi, err := srcFile.Stat()
@@ -28,14 +30,12 @@ func SparseCopy(dst, src string, mode SyncMode) error {
 		if err != nil {
 			return err
 		}
+		var zeroSkipBuf []byte
+		if seekBlind(srcFile) {
+			zeroSkipBuf = make([]byte, copyBlockSize)
+		}
 		for _, seg := range segments {
-			if _, err := srcFile.Seek(seg.Offset, io.SeekStart); err != nil {
-				return fmt.Errorf("seek src to %d: %w", seg.Offset, err)
-			}
-			if _, err := dstFile.Seek(seg.Offset, io.SeekStart); err != nil {
-				return fmt.Errorf("seek dst to %d: %w", seg.Offset, err)
-			}
-			if _, err := io.CopyN(dstFile, srcFile, seg.Length); err != nil {
+			if err := copySegment(dstFile, srcFile, seg, zeroSkipBuf); err != nil {
 				return fmt.Errorf("copy segment at %d len %d: %w", seg.Offset, seg.Length, err)
 			}
 		}
@@ -76,4 +76,35 @@ func scanDataSegments(fd int, size int64) ([]sparseSegment, error) {
 		offset = holeStart
 	}
 	return segments, nil
+}
+
+func copySegment(dst, src *os.File, seg sparseSegment, zeroSkipBuf []byte) error {
+	if zeroSkipBuf == nil {
+		if _, err := src.Seek(seg.Offset, io.SeekStart); err != nil {
+			return err
+		}
+		if _, err := dst.Seek(seg.Offset, io.SeekStart); err != nil {
+			return err
+		}
+		_, err := io.CopyN(dst, src, seg.Length)
+		return err
+	}
+	for pos, end := seg.Offset, seg.Offset+seg.Length; pos < end; {
+		block := zeroSkipBuf[:min(int64(len(zeroSkipBuf)), end-pos)]
+		if _, err := src.ReadAt(block, pos); err != nil {
+			return err
+		}
+		if !isAllZero(block) {
+			if _, err := dst.WriteAt(block, pos); err != nil {
+				return err
+			}
+		}
+		pos += int64(len(block))
+	}
+	return nil
+}
+
+func seekBlind(f *os.File) bool {
+	var st unix.Statfs_t
+	return unix.Fstatfs(int(f.Fd()), &st) == nil && (st.Type == unix.FUSE_SUPER_MAGIC || st.Type == unix.NFS_SUPER_MAGIC)
 }
