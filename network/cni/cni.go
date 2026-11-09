@@ -191,7 +191,7 @@ func (c *CNI) setLinkState(ctx context.Context, vmID string, up bool) error {
 	return setLinkStateFn(nsPath, ifNames, up)
 }
 
-// confListByName resolves a conflist by name; empty name returns the default (the alphabetically-first file).
+// confListByName resolves a conflist by name; empty name returns the default.
 func (c *CNI) confListByName(name string) (*libcni.NetworkConfigList, error) {
 	cl, ok := c.confLists[cmp.Or(name, c.defaultName)]
 	if !ok {

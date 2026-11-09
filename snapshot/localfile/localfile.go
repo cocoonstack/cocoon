@@ -64,14 +64,11 @@ type LocalFile struct {
 	pinBlobs BlobPinner
 }
 
-// New builds a LocalFile snapshot backend; rec may be nil and falls back to NopRecorder on emit.
+// New builds a LocalFile snapshot backend.
 func New(conf *config.Config, rec metering.Recorder, store meta.Store, opts ...Option) (*LocalFile, error) {
 	cfg := NewConfig(conf)
 	if err := cfg.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
-	}
-	if rec == nil {
-		rec = metering.NopRecorder{}
 	}
 	lf := &LocalFile{conf: cfg, meta: store, metering: rec}
 	for _, opt := range opts {
@@ -112,7 +109,6 @@ func (lf *LocalFile) DataDir(ctx context.Context, ref string) (string, types.Sna
 	return "", types.SnapshotConfig{}, nil, fmt.Errorf("snapshot %s: %w", rec.ID, snapshot.ErrNotFound)
 }
 
-// Create stores a snapshot via placeholder→extract→finalize; a mid-flight crash leaves a pending record for GC.
 func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stream io.Reader) (_ string, err error) {
 	dataDir, done, err := lf.beginBuild(ctx, cfg)
 	if err != nil {
@@ -135,7 +131,6 @@ func (lf *LocalFile) Create(ctx context.Context, cfg *types.SnapshotConfig, stre
 	return cfg.ID, nil
 }
 
-// CreateFromDir renames srcDir into the store; ok=false (srcDir untouched) means the caller must stream.
 func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfig, srcDir string) (_ string, _ bool, err error) {
 	sameFS, err := utils.SameFilesystem(srcDir, lf.conf.DataDir())
 	if err != nil {
@@ -172,10 +167,10 @@ func (lf *LocalFile) CreateFromDir(ctx context.Context, cfg *types.SnapshotConfi
 	return cfg.ID, true, nil
 }
 
-// List returns all snapshots (excluding pending ones).
 func (lf *LocalFile) List(ctx context.Context) ([]*types.Snapshot, error) {
 	var result []*types.Snapshot
 	err := lf.view(ctx, func(t *snapTx) error {
+		result = nil
 		return t.Scan(func(_ string, rec *snapshotRecord) error {
 			if rec.Pending {
 				return nil
@@ -195,7 +190,6 @@ func (lf *LocalFile) Inspect(ctx context.Context, ref string) (*types.Snapshot, 
 	return new(rec.Snapshot), nil
 }
 
-// Delete removes each ref under its tombstone; a failure leaves that tombstone for a retry or gc to finish.
 func (lf *LocalFile) Delete(ctx context.Context, refs []string) ([]string, error) {
 	var ids []string
 	if err := lf.view(ctx, func(t *snapTx) error {
@@ -228,7 +222,6 @@ func (lf *LocalFile) RegisterGC(orch *gc.Orchestrator) {
 	orch.Register(gcModule(lf, lf.gcPolicy))
 }
 
-// NameOwner reports the record holding name, pending or not, matching what insertRecord enforces.
 func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, error) {
 	if name == "" {
 		return "", false, nil
@@ -247,7 +240,7 @@ func (lf *LocalFile) NameOwner(ctx context.Context, name string) (string, bool, 
 	return id, held, nil
 }
 
-// tryExclusiveLease TryLocks id's transient lease; ok=false means an active holder. The caller owns release when ok, and releasing unlinks the lease file.
+// tryExclusiveLease TryLocks id's transient lease; ok=false means an active holder, and release unlinks the lease file.
 func (lf *LocalFile) tryExclusiveLease(ctx context.Context, id string) (release func(), ok bool, err error) {
 	l := flock.NewTransient(lf.conf.LeasePath(id))
 	locked, err := l.TryLock(ctx)
@@ -310,9 +303,6 @@ func (lf *LocalFile) deleteOne(ctx context.Context, id string) error {
 
 // beginBuild takes the build lease and inserts the pending record; done rolls back on a non-nil *err and releases the lease.
 func (lf *LocalFile) beginBuild(ctx context.Context, cfg *types.SnapshotConfig) (dataDir string, done func(*error), err error) {
-	if cfg.ID == "" {
-		return "", nil, fmt.Errorf("snapshot ID is required (must be set by caller)")
-	}
 	release, err := lf.acquireBuildLease(ctx, cfg.ID)
 	if err != nil {
 		return "", nil, err

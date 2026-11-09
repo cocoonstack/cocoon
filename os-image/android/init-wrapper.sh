@@ -33,25 +33,14 @@
 BB=/sbin/busybox
 SDK=$($BB grep '^ro.build.version.sdk=' /system/build.prop 2>/dev/null | $BB cut -d= -f2)
 
-for d in /system/product/app/*/; do
-    [ -d "$d" ] || continue
-    name=$($BB basename "$d")
-    [ -e "/system/app/$name" ] || $BB mv "$d" /system/app/
-done
-for d in /system/product/priv-app/*/; do
-    [ -d "$d" ] || continue
-    name=$($BB basename "$d")
-    [ -e "/system/priv-app/$name" ] || $BB mv "$d" /system/priv-app/
-done
-for d in /system/system_ext/app/*/; do
-    [ -d "$d" ] || continue
-    name=$($BB basename "$d")
-    [ -e "/system/app/$name" ] || $BB mv "$d" /system/app/
-done
-for d in /system/system_ext/priv-app/*/; do
-    [ -d "$d" ] || continue
-    name=$($BB basename "$d")
-    [ -e "/system/priv-app/$name" ] || $BB mv "$d" /system/priv-app/
+for part in product system_ext; do
+    for kind in app priv-app; do
+        for d in /system/$part/$kind/*/; do
+            [ -d "$d" ] || continue
+            name=$($BB basename "$d")
+            [ -e "/system/$kind/$name" ] || $BB mv "$d" "/system/$kind/"
+        done
+    done
 done
 
 # Fix native lib symlinks pointing to product/system_ext paths.
@@ -69,7 +58,7 @@ for link in $($BB find /system/app /system/priv-app -type l -name '*.so' 2>/dev/
 done
 
 # Disable simulated Bluetooth — no real BT hardware in VM.
-# Three layers disabled to fully prevent the crash loop:
+# Four layers disabled to fully prevent the crash loop:
 # 1. APEX: rename com.android.btservices apex so apexd won't activate it
 #    (SDK < 35 only — Android 15+ moved BT framework classes into the APEX;
 #    disabling it causes SystemServiceRegistry NoClassDefFoundError)
@@ -78,12 +67,14 @@ done
 # 4. config.disable_bluetooth (in cocoon-disable-bt.rc): framework-level disable
 if [ "${SDK:-0}" -lt 35 ] 2>/dev/null; then
     for f in $($BB find /system/apex -name '*btservices*' -o -name '*bluetooth*' 2>/dev/null); do
+        case "$f" in *.disabled) continue ;; esac
         $BB mv "$f" "${f}.disabled" 2>/dev/null
     done
 fi
 $BB mv /vendor/bin/hw/android.hardware.bluetooth@1.1-service.sim \
       /vendor/bin/hw/android.hardware.bluetooth@1.1-service.sim.disabled 2>/dev/null
 for f in $($BB find /vendor/etc/vintf -name '*bluetooth*' 2>/dev/null); do
+    case "$f" in *.disabled) continue ;; esac
     $BB mv "$f" "${f}.disabled" 2>/dev/null
 done
 

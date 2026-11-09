@@ -134,9 +134,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			drain(events)
 			stuck = d.reconcile(ctx)
 		case ev := <-d.watcher.exits:
-			d.handleExit(ctx, ev)
-			// The convergence just written wakes this daemon's own subscription; its pass already ran.
-			drain(events)
+			if ran, s := d.handleExit(ctx, ev); ran {
+				stuck = s
+				// The convergence just written wakes this daemon's own subscription; its pass already ran.
+				drain(events)
+			}
 		case <-gcTick:
 			d.runGC(ctx)
 		}

@@ -12,7 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 )
 
-// ErrTombstoned reports an entrypoint that met a deleting-phase snapshot.
+// ErrTombstoned reports an entrypoint that met a tombstoned snapshot.
 var ErrTombstoned = errors.New("snapshot is being deleted")
 
 type snapCleanup struct {

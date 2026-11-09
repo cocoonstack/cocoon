@@ -36,7 +36,7 @@ func (h Handler) InitStore(cmd *cobra.Command, _ []string) error {
 
 func (h Handler) Convert(cmd *cobra.Command, _ []string) error {
 	ctx, conf := h.Init(cmd)
-	// The configured backend is the sole target authority: convert always moves the OTHER engine's data into the effective backend.
+	// The target is the configured backend (default sqlite); the source is always the other engine.
 	target := cmp.Or(conf.MetaBackend, config.MetaBackendSQLite)
 	dbPath := cmdcore.MetaDBPath(conf)
 	spec := convert.Spec{

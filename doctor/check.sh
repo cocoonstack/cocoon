@@ -106,8 +106,7 @@ generate_cni_conflist() {
 
     # Extract gateway: replace last octet of network address with .1
     local network_part
-    network_part=$(echo "$subnet" | cut -d/ -f1)
-    # Simple gateway: network address with last octet = 1
+    network_part=${subnet%/*}
     local gateway
     gateway=$(echo "$network_part" | awk -F. '{printf "%s.%s.%s.1", $1, $2, $3}')
 
@@ -258,7 +257,7 @@ check_binary mkfs.erofs
 header "Firmware"
 
 if [ -f "$FIRMWARE_PATH" ]; then
-    local_size=$(stat -c%s "$FIRMWARE_PATH" 2>/dev/null || stat -f%z "$FIRMWARE_PATH" 2>/dev/null || echo 0)
+    local_size=$(stat -c%s "$FIRMWARE_PATH" 2>/dev/null || echo 0)
     if [ "$ARCH" = "aarch64" ] && ! edk2_ok "$FIRMWARE_PATH"; then
         fail "CLOUDHV.fd (${local_size} bytes) at $FIRMWARE_PATH is not EDK2 ${EDK2_REF} — arm64 OCI boot needs its fw_cfg kernel loading; run --upgrade"
     else
@@ -336,7 +335,7 @@ fi
 
 if [ "$COCOON_META_BACKEND" = "sqlite" ]; then
     # SQLite WAL needs coherent shared memory; report the same filesystem
-    # refusal enforced by cocoon open/init/convert (design v2.29 clause 4).
+    # refusal enforced by cocoon open/init/convert.
     meta_fstype=$(stat -f -c %T "$COCOON_ROOT_DIR" 2>/dev/null || echo unknown)
     case "$meta_fstype" in
         nfs*|cifs|smb*|fuse*)
@@ -584,13 +583,18 @@ if $UPGRADE; then
     fi
 fi
 
+if $FIX; then
+    "$BASH" "$0" ${SUBNET:+"--subnet=$SUBNET"}
+    exit
+fi
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 printf "\n\033[1m--- Summary ---\033[0m\n"
 printf "  Pass: %d  Warn: %d  Fail: %d\n\n" "$PASS" "$WARN" "$FAIL"
 
-if [ "$FAIL" -gt 0 ] && ! $FIX; then
+if [ "$FAIL" -gt 0 ]; then
     info "Run '$0 --fix' to attempt automatic fixes"
     info "Run '$0 --upgrade' to install/upgrade cloud-hypervisor, firecracker, firmware, and CNI plugins"
 fi

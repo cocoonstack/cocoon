@@ -10,22 +10,17 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-type lockSnapshot struct {
-	ids []string
-}
-
 // GCModule sweeps lease files for VMs no backend knows anymore.
-func GCModule(rootDir string) gc.Module[lockSnapshot] {
-	return gc.Module[lockSnapshot]{
+func GCModule(rootDir string) gc.Module[[]string] {
+	return gc.Module[[]string]{
 		Name: "vmlock",
-		ReadDB: func(context.Context) (lockSnapshot, error) {
-			ids, err := utils.ScanFileStems(lockDir(rootDir), lockSuffix)
-			return lockSnapshot{ids: ids}, err
+		ReadDB: func(context.Context) ([]string, error) {
+			return utils.ScanFileStems(lockDir(rootDir), lockSuffix)
 		},
-		Resolve: func(_ context.Context, snap lockSnapshot, others map[string]any) []string {
-			return utils.FilterUnreferenced(snap.ids, gc.Collect(others, gc.VMIDs))
+		Resolve: func(_ context.Context, ids []string, others map[string]any) []string {
+			return utils.FilterUnreferenced(ids, gc.Collect(others, gc.VMIDs))
 		},
-		Collect: func(ctx context.Context, ids []string, _ lockSnapshot) error {
+		Collect: func(ctx context.Context, ids, _ []string) error {
 			logger := log.WithFunc("gc.vmlock")
 			for _, id := range ids {
 				ok, err := flock.ReclaimTransient(ctx, Path(rootDir, id))

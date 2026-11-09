@@ -27,7 +27,7 @@ func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, erro
 		return VMRecord{}, err
 	}
 	if rec == nil {
-		return VMRecord{}, fmt.Errorf("%q not found", id)
+		return VMRecord{}, fmt.Errorf("vm %s: %w", id, ErrNotFound)
 	}
 	return *rec, nil
 }

@@ -40,7 +40,7 @@ func SparseCopy(dst, src string, mode SyncMode) error {
 			}
 		}
 
-		if !mode {
+		if mode == NoSync {
 			return nil
 		}
 		if err := dstFile.Sync(); err != nil {

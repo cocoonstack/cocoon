@@ -57,7 +57,7 @@ func (ch *CloudHypervisor) launchProcess(ctx context.Context, rec *hypervisor.VM
 	}
 
 	cmd := exec.Command(ch.conf.CHBinary, args...) //nolint:gosec
-	// Setpgid so CH survives if this process exits.
+	// Own process group: a terminal Ctrl-C must not reach the VMM.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if logFile != nil {
 		cmd.Stdout = logFile

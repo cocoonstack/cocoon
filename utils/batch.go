@@ -42,7 +42,7 @@ func ForEach[T any](ctx context.Context, items []T, fn func(context.Context, T) 
 	return r
 }
 
-// Map runs fn concurrently and returns results in input order; fail-fast via errgroup. concurrency[0] caps in-flight goroutines (0 = unlimited).
+// Map runs fn concurrently, returns results in input order, and stops at the first error; concurrency[0] caps in-flight goroutines (0 = unlimited).
 func Map[T, R any](ctx context.Context, items []T, fn func(ctx context.Context, idx int, item T) (R, error), concurrency ...int) ([]R, error) {
 	if len(items) == 0 {
 		return nil, nil

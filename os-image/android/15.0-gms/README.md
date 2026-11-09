@@ -38,8 +38,8 @@ libndk, berberis, and houdini all hit it, and there is no freely
 redistributable translator that both targets Android 15 and tolerates these
 apps.
 
-**To run hardened arm64 apps, use an arm64 host with the plain `15.0` image**:
-native execution, no translation, no hooking conflict.
+**Hardened arm64 apps need native arm64 execution**, which the amd64-only
+Android images do not offer.
 
 ## Licensing
 

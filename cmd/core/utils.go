@@ -133,15 +133,20 @@ func EnsureImage(ctx context.Context, backends []imagebackend.Images, vmCfg *typ
 	}
 }
 
-func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, error) {
-	return resolveOwner(
+func ResolveImageOwner(ctx context.Context, backends []imagebackend.Images, ref string) (imagebackend.Images, *types.Image, error) {
+	var resolved *types.Image
+	owner, err := resolveOwner(
 		backends, ref, func(b imagebackend.Images) (bool, error) {
 			img, err := b.Inspect(ctx, ref)
+			if img != nil {
+				resolved = img
+			}
 			return img != nil, err
 		},
 		fmt.Errorf("image %q: not found in any backend", ref),
 		fmt.Errorf("image %s: %w", ref, imagebackend.ErrAmbiguous),
 	)
+	return owner, resolved, err
 }
 
 // CloseOnCancel closes c when ctx is canceled; callers `defer CloseOnCancel(ctx, c)()` to stop the watcher on return.
@@ -207,7 +212,6 @@ func PersistSnapshotDir(ctx context.Context, snapBackend snapshot.Snapshot, cfg 
 
 type typed interface{ Type() string }
 
-// resolveOwner returns the unique backend where found==true; notFound on zero, ambiguous wrapped on multi-match (lists matched types).
 func resolveOwner[T typed](backends []T, ref string, found func(T) (bool, error), notFound, ambiguous error) (T, error) {
 	var matches []T
 	var zero T

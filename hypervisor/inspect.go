@@ -39,8 +39,8 @@ func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
 func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	info := rec.VM
 	info.Hypervisor = b.Typ
-	// Clear first: clone/restore persist boot-time sockets into the record, which would leak as stale paths once the VM stops.
-	info.SocketPath, info.VsockSocket, info.ConsolePath = "", "", ""
+	// Clear first: clone/restore persist boot-time runtime fields into the record, which would leak as stale values once the VM stops.
+	info.PID, info.SocketPath, info.VsockSocket, info.ConsolePath = 0, "", "", ""
 	if info.State == types.VMStateRunning {
 		SetRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))

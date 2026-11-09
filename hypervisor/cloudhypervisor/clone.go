@@ -144,7 +144,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 	}
 	saveConsolePTY(ctx, vmID, runDir, sockPath, directBoot)
 
-	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net)
+	info := ch.RunningCloneRecord(rec, vmCfg, storageConfigs, net, pid)
 	reason := metering.ReasonClone
 	if migrate {
 		reason = metering.ReasonMigrate

@@ -32,7 +32,7 @@ type Spec struct {
 	QueueSize int
 }
 
-// Normalize enforces required fields and applies queue-size defaults; mutates the receiver.
+// Normalize enforces required fields and applies queue-size defaults.
 func (s *Spec) Normalize() error {
 	if s.Socket == "" {
 		return fmt.Errorf("socket is required")

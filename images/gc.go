@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -92,9 +93,24 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 func gcStaleTemp(ctx context.Context, dir string) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
-		info, err := e.Info()
-		return err == nil && info.ModTime().Before(cutoff)
+		return !touchedSince(filepath.Join(dir, e.Name()), cutoff)
 	})
+}
+
+func touchedSince(root string, cutoff time.Time) bool {
+	touched := false
+	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		var info fs.FileInfo
+		if err == nil {
+			info, err = d.Info()
+		}
+		if err != nil || !info.ModTime().Before(cutoff) {
+			touched = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return touched
 }
 
 func collectBlob[E any](ctx context.Context, cfg GCModuleConfig[E], logger *log.Fields, hex string) error {

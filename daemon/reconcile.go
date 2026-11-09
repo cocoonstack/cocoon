@@ -173,8 +173,8 @@ func (d *Daemon) resumeDelete(ctx context.Context, b Supervisor, vmID string) er
 	return nil
 }
 
-// handleExit converges the generation the watcher saw exit, dating the stop from that observation, then republishes for stream consumers.
-func (d *Daemon) handleExit(ctx context.Context, ev exitEvent) {
+// handleExit converges the generation the watcher saw exit, dating the stop from that observation, then runs a pass when anything converged.
+func (d *Daemon) handleExit(ctx context.Context, ev exitEvent) (ran, stuck bool) {
 	converged := d.convergeExit(ctx, ev)
 	for {
 		select {
@@ -182,10 +182,10 @@ func (d *Daemon) handleExit(ctx context.Context, ev exitEvent) {
 			// Coalesce a burst: a host-wide kill must cost one pass, not one per VM.
 			converged = d.convergeExit(ctx, next) || converged
 		default:
-			if converged {
-				d.reconcile(ctx)
+			if !converged {
+				return false, false
 			}
-			return
+			return true, d.reconcile(ctx)
 		}
 	}
 }

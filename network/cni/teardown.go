@@ -117,7 +117,7 @@ func (c *CNI) finishTeardown(ctx context.Context, vmID, leaseID string, cl netCl
 			}
 		}
 		if tdErr != nil {
-			return nil // keep the tombstone: recovery re-runs the remaining DELs
+			return nil
 		}
 		err := ts.Finalize(ctx, t.Writer(), vmID, leaseID)
 		if errors.Is(err, tombstone.ErrLost) {

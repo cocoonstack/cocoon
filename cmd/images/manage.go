@@ -61,7 +61,7 @@ func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	// Resolve each ref to its owning backend so a name shared across OCI+cloudimg doesn't delete both.
 	refsByBackend := map[imagebackend.Images][]string{}
 	for _, ref := range args {
-		owner, resolveErr := cmdcore.ResolveImageOwner(ctx, backends, ref)
+		owner, _, resolveErr := cmdcore.ResolveImageOwner(ctx, backends, ref)
 		if resolveErr != nil {
 			return resolveErr
 		}
@@ -93,18 +93,9 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve owning backend first so cross-backend name collisions surface as ErrAmbiguous instead of iteration-order luck.
-	ref := args[0]
-	owner, err := cmdcore.ResolveImageOwner(ctx, backends, ref)
+	_, img, err := cmdcore.ResolveImageOwner(ctx, backends, args[0])
 	if err != nil {
 		return err
-	}
-	img, err := owner.Inspect(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("inspect %s: %w", owner.Type(), err)
-	}
-	if img == nil {
-		// TOCTOU: concurrent rm/GC between resolve and re-probe; fail explicit instead of dumping "null" JSON.
-		return fmt.Errorf("image %q: disappeared during resolve", ref)
 	}
 	return cliutil.OutputJSON(img)
 }

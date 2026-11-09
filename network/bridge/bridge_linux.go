@@ -6,6 +6,7 @@ package bridge
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 
@@ -64,7 +65,6 @@ func (b *Bridge) Verify(_ context.Context, _ string, expected []*types.NetworkCo
 	return nil
 }
 
-// Prepare is a no-op (bridge has no netns).
 func (b *Bridge) Prepare(_ context.Context, _ string, _ *types.VMConfig) (string, error) {
 	return "", nil
 }
@@ -132,6 +132,9 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 func (b *Bridge) Remove(_ context.Context, vmID string, index int) error {
 	name := network.TAPName(b.tapPrefix, vmID, index)
 	link, err := netlink.LinkByName(name)
+	if _, gone := errors.AsType[netlink.LinkNotFoundError](err); gone {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("find tap %s: %w", name, err)
 	}

@@ -18,7 +18,7 @@ func splitRanges(size int64, n int) [][2]int64 {
 	return ranges
 }
 
-// copyRangeBody validates resp against the requested bytes=start-end range (status, span, length) and copies it into w — a mismatch would otherwise surface only at the later digest pass.
+// copyRangeBody copies a validated 206 reply into w; a mismatch would otherwise surface only at the digest pass.
 func copyRangeBody(resp *http.Response, w io.Writer, start, end int64) error {
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("range %d-%d: unexpected status %s", start, end, resp.Status)

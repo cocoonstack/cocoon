@@ -18,8 +18,8 @@ import (
 )
 
 type cniSnapshot struct {
-	dbVMIDs    map[string]struct{}
-	netnsNames []string // VM IDs extracted from /var/run/netns/<netns prefix>*
+	dbVMIDs  map[string]struct{}
+	netnsIDs []string
 }
 
 // GCModule returns the GC module for orphan netns and stale CNI record cleanup.
@@ -42,7 +42,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 			if entries, readErr := os.ReadDir(netnsBasePath); readErr == nil {
 				for _, e := range entries {
 					if name, ok := strings.CutPrefix(e.Name(), netnsPrefix); ok {
-						snap.netnsNames = append(snap.netnsNames, name)
+						snap.netnsIDs = append(snap.netnsIDs, name)
 					}
 				}
 			}
@@ -51,7 +51,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 		Resolve: func(_ context.Context, snap cniSnapshot, others map[string]any) []string {
 			active := gc.Collect(others, gc.VMIDs)
 			candidates := maps.Clone(snap.dbVMIDs)
-			for _, name := range snap.netnsNames {
+			for _, name := range snap.netnsIDs {
 				candidates[name] = struct{}{}
 			}
 			return utils.FilterUnreferenced(slices.Sorted(maps.Keys(candidates)), active)

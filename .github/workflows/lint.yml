@@ -2,8 +2,6 @@ name: lint
 
 on:
   push:
-    tags:
-      - '!v*'
     branches:
       - '*'
     paths-ignore:

@@ -187,7 +187,7 @@ func (b *Backend) scanFor(scan *utils.ProcScan, sockPath string) ([]int, error) 
 	return utils.FindVMMByCmdline(b.Conf.BinaryName(), sockPath)
 }
 
-// Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit (meta contract clause 1).
+// Metering entries stage inside the closure and publish only after commit, so a retried closure cannot double-emit.
 func (b *Backend) updateVM(ctx context.Context, id string, mutate func(r *VMRecord) []metering.Entry) error {
 	var emits []metering.Entry
 	if err := b.update(ctx, func(t *vmTx) error {

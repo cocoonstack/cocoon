@@ -204,7 +204,8 @@ func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec 
 
 func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) error {
 	return ch.detachWith(ctx, vmRef, func(info *chVMInfoResponse) (string, error) {
-		if slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
+		_, present := info.DeviceTree[id]
+		if present || slices.ContainsFunc(info.Config.Devices, func(d chDevice) bool { return d.ID == id }) {
 			return id, nil
 		}
 		return "", fmt.Errorf("device id %q not attached", id)

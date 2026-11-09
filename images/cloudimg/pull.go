@@ -80,7 +80,7 @@ func DownloadBlob(ctx context.Context, client Doer, url string, dst *os.File, pu
 	return hashDigest(dst)
 }
 
-// progressCounter is mutex-guarded because the serial writer and range workers share it.
+// progressCounter is shared by the parallel range workers.
 type progressCounter struct {
 	mu         sync.Mutex
 	written    int64

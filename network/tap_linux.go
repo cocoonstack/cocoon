@@ -19,7 +19,7 @@ const (
 
 // CreateTAP adds a persistent TAP with numQueues/2 queue pairs and returns its index; the VMM reopens it by name.
 func CreateTAP(name string, numQueues int) (int, error) {
-	// Queue pairs = num_queues / 2 (TX+RX pair); multi-queue needs >1 and must match the VMM's IFF_MULTI_QUEUE expectation.
+	// The VMM opens a multi-queue TAP with IFF_MULTI_QUEUE, so the flags must match.
 	queuePairs := max(1, numQueues/2)
 	flags := netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_NO_PI
 	if queuePairs <= 1 {

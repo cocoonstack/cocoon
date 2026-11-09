@@ -44,10 +44,10 @@ func (b *Backend) CloneFromStream(ctx context.Context, vmID string, spec CloneSp
 	})
 }
 
-func (b *Backend) RunningCloneRecord(rec *VMRecord, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup) *types.VM {
+func (b *Backend) RunningCloneRecord(rec *VMRecord, vmCfg *types.VMConfig, storageConfigs []*types.StorageConfig, net types.NetSetup, pid int) *types.VM {
 	now := timeNow()
 	info := &types.VM{
-		ID: rec.ID, Hypervisor: b.Typ, State: types.VMStateRunning,
+		ID: rec.ID, Hypervisor: b.Typ, State: types.VMStateRunning, PID: pid,
 		Config: *vmCfg, StorageConfigs: storageConfigs,
 		CPUSet: rec.CPUSet, QueueCPUs: rec.QueueCPUs,
 		NetSetup:  net,

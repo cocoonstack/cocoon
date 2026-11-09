@@ -4,8 +4,6 @@ The `--fc` backend: trade features for boot speed and density.
 
 ## Overview
 
-Cocoon supports [Firecracker](https://github.com/firecracker-microvm/firecracker) as an alternative hypervisor for workloads that prioritize boot speed and resource density.
-
 ```bash
 # Run with Firecracker (--fc only needed for create/run/debug)
 cocoon vm run --fc --name fast-vm ghcr.io/cocoonstack/cocoon/ubuntu:24.04
@@ -35,7 +33,8 @@ cocoon vm clone my-snap --name clone-vm
 | Interactive console | Y | Y |
 | HugePages | Y (opt-in `--hugepages`) | N (would break snapshot restore) |
 | Disk hot-plug and NIC resize | Y | Only with `--pci` |
-| Vhost-user-fs and VFIO hot-plug | Y | N |
+| Vhost-user-fs, VFIO and snapshot-disk (`--from-snapshot`) attach | Y | N |
+| Live migration (`vm migrate`) | Y | N |
 | Boot time (indicative, not measured here) | ~200-500ms | ~125ms |
 | Memory overhead (indicative, not measured here) | ~10-20 MiB/VM | <5 MiB/VM |
 
@@ -46,7 +45,7 @@ cocoon vm clone my-snap --name clone-vm
 - **8 hot-plugged devices per VM**: a `--pci` VM gets 8 PCIe root ports, and a Firecracker build that places hot-plugged devices behind root ports refuses a 9th device. The guest kernel needs PCIe hot-plug (`CONFIG_HOTPLUG_PCI_PCIE`), or every detach waits 30s and fails. A snapshot keeps the root ports of its VM, so clones of a snapshot made before cocoon set root ports cannot hot-plug on such a build; create the base again
 - **Hot-plug is ahead of the published spec**: the Firecracker swagger still lists `PUT /drives/{id}` as pre-boot only and omits the `DELETE` verbs, while the router implements post-boot PUT and DELETE for drives and network interfaces; `--pci` hot-plug relies on the router, not the spec
 - **io_uring required**: writable disks use the `Async` engine with no opt-out, so a restrictive seccomp profile (Docker's default) breaks them; `--no-direct-io` is ignored
-- **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before SIGKILL
+- **Stop waits the full timeout**: FC guests without i8042 never answer CtrlAltDel, so `vm stop` waits out `stop_timeout_seconds` before escalating
 - **Clone MTU must match**: a clone requires the target network's MTU to equal the snapshot's
 - **Raw disks only**: Firecracker uses raw virtio-blk without serial support; disks are referenced by device path (`/dev/vdX`)
 - **Snapshot portability requires same directory layout**: FC snapshots store absolute host paths, so cross-host import needs the same `root_dir`/`run_dir` and OCI image; see [known issues](known-issues.md#firecracker-snapshot-portability)

@@ -189,7 +189,7 @@ func Prepare(ctx context.Context, parentDir, fence, vmID string, k Knobs, deferQ
 	return scope, nil
 }
 
-// Arm sets the finite quota on a scope prepared with deferQuota, which keeps the ceiling at max until now; call it after memory load, before resume.
+// Arm sets the finite quota on a scope prepared with deferQuota.
 func Arm(parentDir, vmID string, k Knobs) error {
 	return armQuota(ScopeDir(parentDir, vmID), k)
 }
@@ -215,7 +215,7 @@ func Remove(ctx context.Context, parentDir, vmID string) error {
 	return nil
 }
 
-// RemoveEmpty removes vmID's scope only if empty; ENOENT counts as success. GC's variant for unowned scopes — it never kills.
+// RemoveEmpty removes vmID's scope only if empty; ENOENT counts as success.
 func RemoveEmpty(parentDir, vmID string) error {
 	err := os.Remove(ScopeDir(parentDir, vmID))
 	if err == nil || errors.Is(err, fs.ErrNotExist) {

@@ -1,8 +1,6 @@
 package gc
 
-import (
-	"context"
-)
+import "context"
 
 // runner lets Orchestrator hold heterogeneous Module[S] values; callers use Module[S] + Register.
 type runner interface {

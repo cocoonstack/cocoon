@@ -18,7 +18,11 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const reasonOrphan = "orphan"
+const (
+	reasonOrphan       = "orphan"
+	reasonStalePending = "stale-pending"
+	reasonMissingDir   = "missing-dir"
+)
 
 // EvictionPolicy controls LRU snapshot eviction; Enabled with zero criteria evicts all non-pending.
 type EvictionPolicy struct {
@@ -48,7 +52,6 @@ type snapshotGCSnapshot struct {
 	missingDir   []string
 	records      map[string]snapshotMeta
 	reasons      map[string]string
-	policy       EvictionPolicy
 }
 
 func (s snapshotGCSnapshot) UsedBlobIDs() map[string]struct{} { return s.blobIDs }
@@ -91,11 +94,12 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 		Name:    "snapshot",
 		Recover: lf.gcRecover,
 		ReadDB: func(ctx context.Context) (snapshotGCSnapshot, error) {
-			snap := snapshotGCSnapshot{policy: policy, reasons: make(map[string]string)}
+			snap := snapshotGCSnapshot{reasons: make(map[string]string)}
 			if err := lf.view(ctx, func(t *snapTx) error {
 				snap.blobIDs = make(map[string]struct{})
 				snap.snapshotIDs = make(map[string]struct{})
 				snap.records = make(map[string]snapshotMeta)
+				snap.stalePending = nil
 				return t.Scan(func(id string, rec *snapshotRecord) error {
 					snap.snapshotIDs[id] = struct{}{}
 					maps.Copy(snap.blobIDs, rec.ImageBlobIDs)
@@ -134,16 +138,16 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				snap.reasons[id] = reasonOrphan
 			}
 			for _, id := range snap.stalePending {
-				snap.reasons[id] = "stale-pending"
+				snap.reasons[id] = reasonStalePending
 			}
 			for _, id := range snap.missingDir {
-				snap.reasons[id] = "missing-dir"
+				snap.reasons[id] = reasonMissingDir
 			}
 			candidates := slices.Concat(orphans, snap.stalePending, snap.missingDir)
 
-			if snap.policy.Enabled {
-				lruReasons := pickLRU(snap.records, snap.policy)
-				if snap.policy.DryRun {
+			if policy.Enabled {
+				lruReasons := pickLRU(snap.records, policy)
+				if policy.DryRun {
 					logWouldEvict(ctx, lruReasons, snap.records)
 				} else {
 					maps.Copy(snap.reasons, lruReasons)
@@ -177,9 +181,9 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 				revalidate := func(rec *snapshotRecord) bool {
 					sawRecord = true
 					switch snap.reasons[id] {
-					case "stale-pending":
+					case reasonStalePending:
 						return rec.Pending
-					case "missing-dir":
+					case reasonMissingDir:
 						_, statErr := os.Stat(conf.SnapshotDataDir(id))
 						return errors.Is(statErr, fs.ErrNotExist)
 					case reasonOrphan:
@@ -218,7 +222,7 @@ func gcModule(lf *LocalFile, policy EvictionPolicy) gc.Module[snapshotGCSnapshot
 	}
 }
 
-// sweepLeases reclaims lease files left by hosts that predate the transient lease, and by any crash between acquire and release.
+// sweepLeases reclaims unheld lease files of ids with no record.
 func sweepLeases(ctx context.Context, conf *Config, snap snapshotGCSnapshot) {
 	logger := log.WithFunc("gc.snapshot")
 	for _, id := range utils.FilterUnreferenced(snap.leaseIDs, snap.snapshotIDs) {

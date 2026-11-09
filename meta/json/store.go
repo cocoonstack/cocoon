@@ -194,7 +194,7 @@ func (r *txReader) GetRaw(_ context.Context, ns, table, id string) (jsontext.Val
 		return nil, false, fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
 	raw, ok := l.model.Get(table, id)
-	// Detached values (contract clause 4): aliasing model bytes would let a caller mutate committed state without PutRaw's scope/durability checks.
+	// Aliasing model bytes would let a caller mutate committed state without PutRaw's scope/durability checks.
 	return slices.Clone(raw), ok, nil
 }
 

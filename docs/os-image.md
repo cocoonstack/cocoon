@@ -47,8 +47,8 @@ ordinary arm64 apps (verified with Meituan). It does **not** run apps whose
 native layer hooks JNI or self-checks for tampering (WeChat, QQ, Alipay,
 banking, most anti-cheat games): the translator's proxied JNIEnv breaks those
 assumptions and they crash at startup — an x86 binary-translation limit, not a
-config gap. Hardened arm64 apps need an arm64 host running the plain `15.0`
-image (no translation). See [`os-image/android/15.0-gms/README.md`](https://github.com/cocoonstack/cocoon/blob/master/os-image/android/15.0-gms/README.md).
+config gap. Hardened arm64 apps need native arm64 execution, which these
+amd64-only images do not offer. See [`os-image/android/15.0-gms/README.md`](https://github.com/cocoonstack/cocoon/blob/master/os-image/android/15.0-gms/README.md).
 
 ### Windows
 
