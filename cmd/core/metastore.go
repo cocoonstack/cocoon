@@ -182,13 +182,17 @@ func ImageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
 
 // openSQLiteStore never bootstraps over legacy json data, which a fresh store would shadow.
 func openSQLiteStore(ctx context.Context, conf *config.Config, dbPath string) (meta.Store, error) {
-	if !LegacyJSONPresent(conf) {
-		if err := metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
-			return nil, err
-		}
-	}
 	s, err := metasqlite.Open(dbPath, MetaNamespaces()...)
-	if err != nil {
+	if err == nil {
+		return s, nil
+	}
+	if LegacyJSONPresent(conf) {
+		return nil, err
+	}
+	if err = metasqlite.InitIfMissing(ctx, dbPath, MetaNamespaces()...); err != nil {
+		return nil, err
+	}
+	if s, err = metasqlite.Open(dbPath, MetaNamespaces()...); err != nil {
 		return nil, err
 	}
 	return s, nil
