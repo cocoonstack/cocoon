@@ -65,8 +65,12 @@ func (h Handler) Inspect(cmd *cobra.Command, args []string) error {
 
 	out := vmOutput{VM: info, Stale: stale}
 	if info.State == types.VMStateRunning {
-		out.AttachedDevices = collectAttachedDevices(ctx, hyper, args[0])
-		out.Balloon = collectBalloon(ctx, hyper, args[0])
+		if v, ok := hyper.(hypervisor.RunningViewer); ok {
+			out.AttachedDevices, out.Balloon = collectRunningView(ctx, v, args[0])
+		} else {
+			out.AttachedDevices = collectAttachedDevices(ctx, hyper, args[0])
+			out.Balloon = collectBalloon(ctx, hyper, args[0])
+		}
 	}
 	return cliutil.OutputJSON(out)
 }
@@ -212,6 +216,20 @@ func collectBalloon(ctx context.Context, hyper hypervisor.Hypervisor, ref string
 		log.WithFunc("cmd.vm.inspect").Warnf(ctx, "read balloon for %s: %v", ref, err)
 	}
 	return st
+}
+
+func collectRunningView(ctx context.Context, v hypervisor.RunningViewer, ref string) (*attachedDevices, *balloon.Status) {
+	view, err := v.RunningView(ctx, ref)
+	if err != nil {
+		log.WithFunc("cmd.vm.inspect").Warnf(ctx, "read running state for %s: %v", ref, err)
+	}
+	if view == nil {
+		return nil, nil
+	}
+	if len(view.Fs) == 0 && len(view.Devices) == 0 && len(view.Disks) == 0 {
+		return nil, view.Balloon
+	}
+	return &attachedDevices{Fs: view.Fs, Devices: view.Devices, Disks: view.Disks}, view.Balloon
 }
 
 // collectAttachedDevices logs and drops errors so inspect tolerates a flaky vm.info.
