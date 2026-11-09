@@ -242,6 +242,9 @@ func TestRemoveKeepsFailedNICRecords(t *testing.T) {
 		t.Fatalf("retry Remove: %v", err)
 	}
 	assertRecordIDs(t, c, nil)
+	if err := c.Remove(ctx, "vm1", 1); err != nil {
+		t.Fatalf("Remove of a released slot: %v", err)
+	}
 }
 
 func TestRemoveSweepsDuplicateIfNameRecords(t *testing.T) {

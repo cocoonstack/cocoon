@@ -161,7 +161,7 @@ func (c *CNI) Remove(ctx context.Context, vmID string, index int) error {
 		}
 	}
 	if len(subset) == 0 {
-		return fmt.Errorf("nic %d (%s): no record", index, ifn)
+		return nil
 	}
 	// The payload names record IDs, never NIC indices, so a crash mid-teardown recovers exactly these rows and leaves the netns and the other NICs alone.
 	return c.teardownProtocol(ctx, vmID, subset, true)
