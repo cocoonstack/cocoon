@@ -324,6 +324,7 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		t.Fatalf("listen %s: %v", s.sock, err)
 	}
 	srv := httptest.NewUnstartedServer(mux)
+	_ = srv.Listener.Close()
 	srv.Listener = ln
 	srv.Start()
 	t.Cleanup(srv.Close)
