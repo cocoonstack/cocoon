@@ -116,9 +116,9 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if err = s.verifyIdentity(); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
-	s.stmtsDurable = newStmtCache(s.writerDurable, true)
-	s.stmtsRelaxed = newStmtCache(s.writerRelaxed, true)
-	s.stmtsReaders = newStmtCache(s.readers, false)
+	s.stmtsDurable = newStmtCache(s.writerDurable, s.nss, true)
+	s.stmtsRelaxed = newStmtCache(s.writerRelaxed, s.nss, true)
+	s.stmtsReaders = newStmtCache(s.readers, s.nss, false)
 	// A background PASSIVE checkpoint keeps the WAL short so committing writers rarely pay the autocheckpoint stall themselves.
 	s.cpDone = make(chan struct{})
 	go checkpointLoop(s.readers, dbPath, s.cpDone)
@@ -129,7 +129,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error 
 	if err := s.checkScope(nss); err != nil {
 		return err
 	}
-	sm, err := s.stmtsReaders.forScope(s.nss, nss)
+	sm, err := s.stmtsReaders.forScope(nss)
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if mode == meta.CommitRelaxed {
 		writer, cache = s.writerRelaxed, s.stmtsRelaxed
 	}
-	sm, err := cache.forScope(s.nss, nss)
+	sm, err := cache.forScope(nss)
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ var (
 // txHandle implements Reader/Writer over one transaction; values are detached by construction (every read allocates from row scans).
 type txHandle struct {
 	tx    *sql.Tx
-	sm    map[string]tableStmts
+	sm    stmtSet
 	scope map[string]struct{}
 	write string
 	mode  meta.CommitMode
@@ -348,7 +348,7 @@ func (h *txHandle) DeleteRaw(ctx context.Context, ns, table, id string, relaxedO
 }
 
 func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
-	ts, ok := h.sm[ns+"\x00"+table]
+	ts, ok := h.sm[ns][table]
 	if !ok {
 		return tableStmts{}, fmt.Errorf("table %s/%s not declared: %w", ns, table, meta.ErrScope)
 	}
@@ -364,49 +364,48 @@ func (h *txHandle) checkRead(ns string) error {
 
 type stmtCache struct {
 	db     *sql.DB
+	decls  map[string]Namespace
 	writer bool
 	mu     sync.Mutex
-	cur    atomic.Pointer[stmtSnapshot]
+	cur    atomic.Pointer[stmtSet]
 }
 
-func newStmtCache(db *sql.DB, writer bool) *stmtCache {
-	c := &stmtCache{db: db, writer: writer}
-	c.cur.Store(&stmtSnapshot{nss: map[string]struct{}{}, stmts: map[string]tableStmts{}})
+func newStmtCache(db *sql.DB, decls map[string]Namespace, writer bool) *stmtCache {
+	c := &stmtCache{db: db, decls: decls, writer: writer}
+	c.cur.Store(&stmtSet{})
 	return c
 }
 
-func (c *stmtCache) forScope(decls map[string]Namespace, scope []string) (map[string]tableStmts, error) {
-	if snap := c.cur.Load(); snap.covers(scope) {
-		return snap.stmts, nil
+func (c *stmtCache) forScope(scope []string) (stmtSet, error) {
+	if cur := *c.cur.Load(); cur.covers(scope) {
+		return cur, nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	snap := c.cur.Load()
-	if snap.covers(scope) {
-		return snap.stmts, nil
+	cur := *c.cur.Load()
+	if cur.covers(scope) {
+		return cur, nil
 	}
-	next := &stmtSnapshot{nss: maps.Clone(snap.nss), stmts: maps.Clone(snap.stmts)}
+	next := maps.Clone(cur)
 	for _, name := range scope {
-		if _, ok := next.nss[name]; ok {
+		if _, ok := next[name]; ok {
 			continue
 		}
-		if err := prepareStmts(c.db, decls[name], c.writer, next.stmts); err != nil {
+		ts, err := prepareStmts(c.db, c.decls[name], c.writer)
+		if err != nil {
 			return nil, err
 		}
-		next.nss[name] = struct{}{}
+		next[name] = ts
 	}
-	c.cur.Store(next)
-	return next.stmts, nil
+	c.cur.Store(&next)
+	return next, nil
 }
 
-type stmtSnapshot struct {
-	nss   map[string]struct{}
-	stmts map[string]tableStmts
-}
+type stmtSet map[string]map[string]tableStmts
 
-func (s *stmtSnapshot) covers(scope []string) bool {
+func (s stmtSet) covers(scope []string) bool {
 	return !slices.ContainsFunc(scope, func(name string) bool {
-		_, ok := s.nss[name]
+		_, ok := s[name]
 		return !ok
 	})
 }
@@ -454,28 +453,29 @@ func open(dbPath, synchronous string, writer bool) (*sql.DB, error) {
 	return db, nil
 }
 
-func prepareStmts(db *sql.DB, ns Namespace, writer bool, m map[string]tableStmts) error {
+func prepareStmts(db *sql.DB, ns Namespace, writer bool) (map[string]tableStmts, error) {
+	m := make(map[string]tableStmts, len(ns.Tables))
 	for _, tbl := range ns.Tables {
 		tn := tableName(ns.Name, tbl)
 		var ts tableStmts
 		var err error
 		if ts.get, err = db.Prepare("SELECT data FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-			return mapErr(err)
+			return nil, mapErr(err)
 		}
 		if ts.scan, err = db.Prepare("SELECT id, data FROM " + tn + " ORDER BY rowid"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-			return mapErr(err)
+			return nil, mapErr(err)
 		}
 		if writer {
 			if ts.put, err = db.Prepare("INSERT INTO " + tn + " (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-				return mapErr(err)
+				return nil, mapErr(err)
 			}
 			if ts.del, err = db.Prepare("DELETE FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-				return mapErr(err)
+				return nil, mapErr(err)
 			}
 		}
-		m[ns.Name+"\x00"+tbl] = ts
+		m[tbl] = ts
 	}
-	return nil
+	return m, nil
 }
 
 func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
