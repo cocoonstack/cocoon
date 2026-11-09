@@ -246,7 +246,8 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 		{"paused guest cannot inflate", chStatePaused, &chBalloon{Size: balloon}, func(int) int64 { return mem }, 0},
 		{"inflating reaches target", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - min(int64(polls)*(512<<20), balloon) }, 4 * balloonPollInterval},
 		{"stalled under guest memory pressure", chStateRunning, &chBalloon{Size: balloon}, func(int) int64 { return mem - (512 << 20) }, balloonStallWindow},
-		{"slow inflation stops at the cap", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - int64(polls)<<12 }, balloonSettleTimeout},
+		{"trickling inflation counts as stalled", chStateRunning, &chBalloon{Size: balloon}, func(polls int) int64 { return mem - int64(polls)<<12 }, balloonStallWindow},
+		{"slow inflation stops at the cap", chStateRunning, &chBalloon{Size: mem * 3 / 4}, func(polls int) int64 { return mem - int64(polls)*(mem/1000) }, balloonSettleTimeout},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 const (
 	balloonPollInterval  = 100 * time.Millisecond
 	balloonStallWindow   = 2 * time.Second
+	balloonStallPercent  = 1
 	balloonSettleTimeout = time.Minute
 
 	ejectRenotifyInterval = 5 * time.Second
@@ -182,8 +183,9 @@ func waitBalloonSettled(ctx context.Context, hc *http.Client, vmID string, info 
 		return nil
 	}
 	target := info.Config.Memory.Size - balloon.Size
+	step := info.Config.Memory.Size * balloonStallPercent / 100
 	start := time.Now()
-	progressAt := start
+	progressAt, progressFrom := start, info.MemoryActualSize
 	for actual := info.MemoryActualSize; actual > target; {
 		if time.Since(progressAt) >= balloonStallWindow || time.Since(start) >= balloonSettleTimeout {
 			log.WithFunc("cloudhypervisor.waitBalloonSettled").Warnf(ctx, "snapshot VM %s with balloon at %d of %d bytes", vmID, info.Config.Memory.Size-actual, balloon.Size)
@@ -198,10 +200,10 @@ func waitBalloonSettled(ctx context.Context, hc *http.Client, vmID string, info 
 		if err != nil {
 			return err
 		}
-		if cur.MemoryActualSize < actual {
-			progressAt = time.Now()
-		}
 		actual = cur.MemoryActualSize
+		if progressFrom-actual >= step {
+			progressAt, progressFrom = time.Now(), actual
+		}
 	}
 	return nil
 }
