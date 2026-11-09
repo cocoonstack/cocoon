@@ -100,6 +100,14 @@ With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as 
 - **Watchdog** (Cloud Hypervisor only): hardware watchdog enabled by default for automatic guest reset on hang; `--no-watchdog` is an explicit compatibility opt-out for guests whose watchdog driver is unsafe during reboot. Firecracker exposes no watchdog device and rejects `--fc --no-watchdog`
 - **vCPU topology** (Cloud Hypervisor): `--cpu N` boots N vCPUs with `max` set to the host's online core count, so the guest sizes its ACPI CPU table for the host rather than for N — a cold-boot cost that grows with host size
 
+## Runtime Balloon Target
+
+`cocoon vm balloon VM SIZE` sets how much memory the balloon of a running VM holds, as `NN%` of guest memory (0-99) or a byte size (`2G`, `512M`, `0`), rounded down to whole 4 KiB balloon pages; it must stay below guest memory. Inflating it makes the guest give page cache back to the host; `0` or a lower target deflates it. The command returns once the VMM accepts the request and does not wait for the guest to settle; setting the current target again is a no-op. `-o json` and the `balloon` block of `vm inspect` (running VMs with a balloon device only) report `target`, `actual` (bytes the guest has given the balloon so far) and `default` (the create-time target).
+
+Firecracker takes the target in MiB, so cocoon rounds it down, and Firecracker reports no `actual` because cocoon does not enable its balloon statistics. Firecracker snapshots also skip the settle wait that Cloud Hypervisor captures make (see [Snapshots](snapshots.md)).
+
+A VM without a balloon device (`--no-balloon`, `--windows`, memory under 256 MiB) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so restore and clone come back with it, and a cold `vm stop` + `vm start` resets it to the create-time target.
+
 ## PCI Transport (Firecracker)
 
 Firecracker attaches virtio devices over MMIO by default (and adds `pci=off` to the guest command line itself). `--pci` on `vm run`/`vm create` starts Firecracker with `--enable-pci`, so the guest enumerates virtio-pci devices instead; this is the prerequisite for Firecracker device hot-plug (Developer Preview upstream). The transport is fixed for the VM's lifetime and travels with its snapshots: clones and restores relaunch on the transport the snapshot was taken with, and a snapshot cannot move between transports. The guest kernel needs `CONFIG_PCI`, `CONFIG_VIRTIO_PCI` and `CONFIG_ACPI`; distro kernels have both transports, while the sandbox guest kernel is built without `CONFIG_VIRTIO_MMIO`, so sandbox images can never use the MMIO transport (booting them on Firecracker at all is not validated yet). Cloud Hypervisor is always virtio-pci, so `--pci` is rejected there.

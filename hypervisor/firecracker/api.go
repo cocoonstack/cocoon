@@ -18,6 +18,7 @@ const (
 	actionSendCtrlAltDel = "SendCtrlAltDel"
 	vmStateNotStarted    = "Not started"
 	vmStatePaused        = "Paused"
+	vmStateRunning       = "Running"
 	vmStateResumed       = "Resumed"
 	memBackendTypeFile   = "File"
 
@@ -110,6 +111,8 @@ type fcInstanceInfo struct {
 }
 
 type fcVMConfig struct {
+	Balloon           *fcBalloon           `json:"balloon,omitzero"`
+	MachineConfig     fcMachineConfig      `json:"machine-config"`
 	Drives            []fcDrive            `json:"drives"`
 	NetworkInterfaces []fcNetworkInterface `json:"network-interfaces"`
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/extend/disk"
 	"github.com/cocoonstack/cocoon/extend/fs"
 	"github.com/cocoonstack/cocoon/extend/vfio"
@@ -17,6 +18,7 @@ const typ = "cloud-hypervisor"
 
 var (
 	_ hypervisor.Hypervisor = (*CloudHypervisor)(nil)
+	_ balloon.Resizer       = (*CloudHypervisor)(nil)
 	_ disk.Attacher         = (*CloudHypervisor)(nil)
 	_ disk.SnapshotAttacher = (*CloudHypervisor)(nil)
 	_ fs.Attacher           = (*CloudHypervisor)(nil)

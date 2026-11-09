@@ -2,7 +2,7 @@
 
 Every command and flag. Concept guides: [VM lifecycle](vm.md), [networking](networking.md), [snapshots](snapshots.md), [devices](devices.md), [GC](gc.md).
 
-Guides that document specific verbs and flags: `vm stop`/`vm rm` in [Shutdown Behavior](vm.md#shutdown-behavior), `vm net` in [NIC hot-resize](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci), `vm fs`/`device`/`disk` in [Runtime Device Attach](devices.md), `gc` flags in [GC](gc.md), and `daemon` flags in [Daemon](daemon.md#running-it).
+Guides that document specific verbs and flags: `vm stop`/`vm rm` in [Shutdown Behavior](vm.md#shutdown-behavior), `vm net` in [NIC hot-resize](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci), `vm balloon` in [Runtime Balloon Target](vm.md#runtime-balloon-target), `vm fs`/`device`/`disk` in [Runtime Device Attach](devices.md), `gc` flags in [GC](gc.md), and `daemon` flags in [Daemon](daemon.md#running-it).
 
 ## CLI Commands
 
@@ -41,6 +41,7 @@ cocoon
 │   │   ├── attach [flags] VM     Hot-attach a raw disk file (CH, or FC with --pci) or a snapshot's COW disk copy (CH)
 │   │   └── detach [flags] VM     Detach a hot-attached disk by --name (keeps a --path file, removes a snapshot copy)
 │   ├── net [flags] VM             Resize NIC count on a running VM (CH, or FC with --pci)
+│   ├── balloon VM SIZE            Set a running VM's balloon target: NN% of memory or a byte size
 │   ├── migrate
 │   │   ├── capture [flags] VM     Start a migration series, or add a delta with --series (CH only)
 │   │   ├── receive [flags]        Restore a transferred series into a new VM, guest paused

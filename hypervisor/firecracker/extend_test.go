@@ -296,6 +296,14 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("PATCH /balloon", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		body, _ := io.ReadAll(r.Body)
+		s.puts[r.URL.Path] = string(body)
+		_ = json.Unmarshal(body, s.cfg.Balloon)
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("/drives/", s.handleDevice)
 	mux.HandleFunc("/network-interfaces/", s.handleDevice)
 	srv := httptest.NewServer(mux)

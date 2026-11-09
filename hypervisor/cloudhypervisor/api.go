@@ -76,6 +76,10 @@ type chBalloon struct {
 	FreePageReporting bool  `json:"free_page_reporting,omitzero"`
 }
 
+type chResize struct {
+	DesiredBalloon int64 `json:"desired_balloon"`
+}
+
 type chRNG struct {
 	Src string `json:"src"`
 }
