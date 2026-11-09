@@ -18,6 +18,7 @@ const (
 
 	sparseBlockSize = 4096
 	extractReadBuf  = 1 << 20
+	segmentCopyBuf  = 32 << 10
 )
 
 // maxSparseMapJSONSize keeps the sparse map under tar's 1 MiB PAX block; a var so tests can lower it.
@@ -123,11 +124,13 @@ func extractFileSparse(path string, r io.Reader, perm os.FileMode, realSize, dat
 	if sum != dataSize {
 		return fmt.Errorf("sparse map describes %d data bytes, entry holds %d", sum, dataSize)
 	}
+	buf := make([]byte, segmentCopyBuf)
+	w := struct{ io.Writer }{f}
 	for _, seg := range segments {
 		if _, err := f.Seek(seg.Offset, io.SeekStart); err != nil {
 			return err
 		}
-		if _, err := io.CopyN(f, r, seg.Length); err != nil {
+		if _, err := io.CopyBuffer(w, io.LimitReader(r, seg.Length), buf); err != nil {
 			return err
 		}
 	}
@@ -251,11 +254,12 @@ func tarFileMaybeSparse(tw *tar.Writer, path, nameInTar string) error {
 		return fmt.Errorf("write header %s: %w", nameInTar, err)
 	}
 
+	buf := make([]byte, segmentCopyBuf)
 	for _, seg := range segments {
 		if _, seekErr := f.Seek(seg.Offset, io.SeekStart); seekErr != nil {
 			return fmt.Errorf("seek %s to %d: %w", path, seg.Offset, seekErr)
 		}
-		if _, copyErr := io.CopyN(tw, f, seg.Length); copyErr != nil {
+		if _, copyErr := io.CopyBuffer(tw, io.LimitReader(f, seg.Length), buf); copyErr != nil {
 			return fmt.Errorf("copy segment at %d len %d from %s: %w", seg.Offset, seg.Length, path, copyErr)
 		}
 	}
