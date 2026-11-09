@@ -24,7 +24,6 @@ func (lf *LocalFile) ExportCompressed(ctx context.Context, ref string) (io.ReadC
 	return lf.export(ctx, ref, true)
 }
 
-// snapshot.json is written last as the all-data-ready marker.
 func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err error) {
 	dataDir, cfg, release, err := lf.DataDir(ctx, ref)
 	if err != nil {
@@ -66,6 +65,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	}); err != nil {
 		return err
 	}
+	// snapshot.json lands last: it marks the copy complete.
 	if err = snapshot.WriteSnapshotEnvelope(dir, cfg, names, attachFiles); err != nil {
 		return fmt.Errorf("write envelope: %w", err)
 	}
