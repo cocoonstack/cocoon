@@ -132,15 +132,15 @@ func (fc *Firecracker) DiskDetach(ctx context.Context, vmRef, name string) error
 
 // DiskList returns nil (not error) for stopped and MMIO VMs so inspect can omit the field.
 func (fc *Firecracker) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
-	if _, rec, err := fc.ResolveAndLoad(ctx, vmRef); err != nil || !rec.Config.PCI {
-		return nil, err
-	}
-	hc, _, err := fc.RunningVMClient(ctx, vmRef)
+	hc, rec, err := fc.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if !rec.Config.PCI {
+		return nil, nil
 	}
 	cfg, err := getVMConfig(ctx, hc)
 	if err != nil {

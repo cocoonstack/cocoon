@@ -21,11 +21,7 @@ func (fc *Firecracker) BalloonResize(ctx context.Context, vmRef string, spec bal
 }
 
 func (fc *Firecracker) BalloonStatus(ctx context.Context, vmRef string) (*balloon.Status, error) {
-	_, rec, err := fc.ResolveAndLoad(ctx, vmRef)
-	if err != nil {
-		return nil, err
-	}
-	hc, _, err := fc.RunningVMClient(ctx, vmRef)
+	hc, rec, err := fc.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil

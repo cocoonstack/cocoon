@@ -25,11 +25,7 @@ func (ch *CloudHypervisor) BalloonResize(ctx context.Context, vmRef string, spec
 }
 
 func (ch *CloudHypervisor) BalloonStatus(ctx context.Context, vmRef string) (*balloon.Status, error) {
-	_, rec, err := ch.ResolveAndLoad(ctx, vmRef)
-	if err != nil {
-		return nil, err
-	}
-	hc, _, err := ch.RunningVMClient(ctx, vmRef)
+	hc, rec, err := ch.RunningVMClient(ctx, vmRef)
 	if err != nil {
 		if errors.Is(err, hypervisor.ErrNotRunning) {
 			return nil, nil
