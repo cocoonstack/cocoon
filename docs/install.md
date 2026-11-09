@@ -72,6 +72,8 @@ cocoon-check --fix --subnet=10.90.0.0/16
 cocoon-check --upgrade
 ```
 
+`--fix` and `--upgrade` re-run the checks after fixing and exit with that result.
+
 The `--upgrade` flag downloads and installs:
 - Cloud Hypervisor from the cocoonstack fork `dev` release (checksum-verified)
 - Firecracker from the cocoonstack fork `dev` release (checksum-verified)
