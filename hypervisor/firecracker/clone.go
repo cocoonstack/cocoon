@@ -153,15 +153,11 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 		pid          int
 		leaseControl *cloneLeaseControl
 	)
-	if len(plan.binds) == 0 {
-		pid, leaseControl, err = fc.launchProcessWithLeases(ctx, cl.rec, cl.sockPath, cl.netnsPath, nil, true)
-	} else {
-		pid, err = launchWithBinds(plan.binds, func() (int, error) {
-			var launchErr error
-			pid, leaseControl, launchErr = fc.launchProcessWithLeases(ctx, cl.rec, cl.sockPath, cl.netnsPath, plan.files(), true)
-			return pid, launchErr
-		})
-	}
+	pid, err = launchWithBinds(plan.binds, func() (int, error) {
+		var launchErr error
+		pid, leaseControl, launchErr = fc.launchProcessWithLeases(ctx, cl.rec, cl.sockPath, cl.netnsPath, plan.files(), true)
+		return pid, launchErr
+	})
 	if err != nil {
 		plan.close()
 		return 0, nil, nil, fmt.Errorf("launch FC: %w", err)

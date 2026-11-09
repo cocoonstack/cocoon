@@ -222,7 +222,7 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 
 	select {
 	case <-done:
-	case <-ctx.Done(): // firecracker exited
+	case <-ctx.Done():
 	}
 }
 

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/projecteru2/core/log"
 
@@ -39,17 +37,6 @@ func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecor
 func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (_ *types.VM, err error) {
 	logger := log.WithFunc("firecracker.restoreAfterExtract")
 
-	cowPath, err := hypervisor.RecordedCOWPath(rec)
-	if err != nil {
-		return nil, err
-	}
-	snapshotCOW := filepath.Join(rec.RunDir, types.COWRawFileName)
-	if snapshotCOW != cowPath && utils.FileExists(snapshotCOW) {
-		if renameErr := os.Rename(snapshotCOW, cowPath); renameErr != nil {
-			return nil, fmt.Errorf("move COW: %w", renameErr)
-		}
-	}
-
 	sockPath := hypervisor.SocketPath(rec.RunDir)
 
 	// Launch under the target config: a --force cross-config restore changes the vCPU count the scope derives from.
@@ -65,7 +52,7 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 		}
 	}()
 
-	// Same-VM: snapshot's UDS path already matches rec.RunDir; "" stays compatible with FC < v1.16.
+	// Same-VM restore: the snapshot's vsock path already matches rec.RunDir.
 	if err = loadSnapshotFC(ctx, sockPath, rec.RunDir, nil, ""); err != nil {
 		return nil, fmt.Errorf("snapshot/load: %w", err)
 	}
