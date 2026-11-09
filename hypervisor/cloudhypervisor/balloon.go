@@ -40,8 +40,7 @@ func (ch *CloudHypervisor) BalloonStatus(ctx context.Context, vmRef string) (*ba
 	if err != nil || info.Config.Balloon == nil {
 		return nil, err
 	}
-	st := balloonStatus(&rec, info)
-	return &st, nil
+	return new(balloonStatus(&rec, info)), nil
 }
 
 // resizeBalloon refuses a paused guest instead of resuming it: a migration source or receiver is paused on purpose.

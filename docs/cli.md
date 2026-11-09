@@ -110,7 +110,7 @@ spellings — `level`, `filename`, `usejson`, `maxsize`, `maxage`, `maxbackups`
 (not `use_json` / `max_age` / `max_backups`). A dotted key maps to its env
 variable by replacing `.` with `_`, hence `COCOON_LOG_MAXSIZE` for `log.maxsize`.
 
-Mutating `vm` verbs (`create`, `run`, `clone`, `start`, `stop`, `rm`, `restore`, `reconcile-stale-create`, `net`, `fs`/`device`/`disk` `attach`/`detach`, `migrate capture`/`receive`) take `-o, --output json` for machine-readable output; `list` and `status` use `-o, --format`; `snapshot export -o` is the output file path.
+Mutating `vm` verbs (`create`, `run`, `clone`, `start`, `stop`, `rm`, `restore`, `reconcile-stale-create`, `net`, `balloon`, `fs`/`device`/`disk` `attach`/`detach`, `migrate capture`/`receive`) take `-o, --output json` for machine-readable output; `list` and `status` use `-o, --format`; `snapshot export -o` is the output file path.
 
 ## VM Flags
 

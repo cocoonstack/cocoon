@@ -102,11 +102,11 @@ With `cgroup_cpus=0-14`, the reserved core 15 has no VM competition and acts as 
 
 ## Runtime Balloon Target
 
-`cocoon vm balloon VM SIZE` sets how much memory the balloon of a running VM holds, as `NN%` of guest memory (0-99) or a byte size (`2G`, `512M`, `0`), rounded down to whole 4 KiB balloon pages; it must stay below guest memory. Inflating it makes the guest give page cache back to the host; `0` or a lower target deflates it. The command returns once the VMM accepts the request and does not wait for the guest to settle; setting the current target again is a no-op. `-o json` and the `balloon` block of `vm inspect` (running VMs with a balloon device only) report `target`, `actual` (bytes the guest has given the balloon so far) and `default` (the create-time target).
+`cocoon vm balloon VM SIZE` sets how much memory the balloon of a running VM holds, as `NN%` of guest memory (0-99) or a byte size (`2G`, `512M`, `0`), rounded down to whole 4 KiB balloon pages; it must stay below guest memory. Inflating it makes the guest give page cache back to the host; `0` or a lower target deflates it. The command returns once the VMM accepts the request and does not wait for the guest to settle; setting the current target again is a no-op. `-o json` and the `balloon` block of `vm inspect` (running VMs with a balloon device only) report `target`, `actual` (bytes the guest has given the balloon so far) and `default` (the target a cold `vm start` or a new clone applies).
 
 Firecracker takes the target in MiB, so cocoon rounds it down, and Firecracker reports no `actual` because cocoon does not enable its balloon statistics. Firecracker snapshots also skip the settle wait that Cloud Hypervisor captures make (see [Snapshots](snapshots.md)).
 
-A VM without a balloon device (`--no-balloon`, `--windows`, memory under 256 MiB) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so `vm restore` and `vm migrate receive` come back with it, while `vm clone` starts the new VM at the create-time target, as a cold `vm stop` + `vm start` does.
+A VM without a balloon device (`--no-balloon` or `--windows`) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so `vm restore` and `vm migrate receive` come back with it, while `vm clone` starts the new VM at the create-time target, as a cold `vm stop` + `vm start` does.
 
 ## PCI Transport (Firecracker)
 
