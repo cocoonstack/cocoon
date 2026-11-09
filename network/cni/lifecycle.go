@@ -168,6 +168,17 @@ func (c *CNI) Remove(ctx context.Context, vmID string, index int) error {
 
 // guardAdd finishes an interrupted teardown before new NICs are plumbed; a completed deleting roll-forward refuses the Add.
 func (c *CNI) guardAdd(ctx context.Context, vmID string) error {
+	var pending bool
+	if err := c.view(ctx, func(t *netTx) error {
+		rec, err := c.tombstones().Get(ctx, t.Reader(), vmID)
+		pending = rec != nil
+		return err
+	}); err != nil {
+		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
+	}
+	if !pending {
+		return nil
+	}
 	rolledForward, err := c.recoverTombstone(ctx, vmID)
 	if err != nil {
 		return fmt.Errorf("recover interrupted teardown for %s: %w", vmID, err)
