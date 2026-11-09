@@ -3,7 +3,6 @@
 package utils
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +14,7 @@ import (
 
 const copyBlockSize = 1 << 20
 
-// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA; dst is truncated to src size and only data segments are written.
+// SparseCopy copies src to dst preserving sparsity via SEEK_HOLE/SEEK_DATA, and from FUSE or NFS also leaves all-zero 1 MiB blocks as holes; dst is truncated to src size.
 func SparseCopy(dst, src string, mode SyncMode) error {
 	return CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
 		fi, err := srcFile.Stat()
@@ -32,7 +31,7 @@ func SparseCopy(dst, src string, mode SyncMode) error {
 			return err
 		}
 		var zeroSkipBuf []byte
-		if onFUSE(srcFile) {
+		if seekBlind(srcFile) {
 			zeroSkipBuf = make([]byte, copyBlockSize)
 		}
 		for _, seg := range segments {
@@ -95,7 +94,7 @@ func copySegment(dst, src *os.File, seg sparseSegment, zeroSkipBuf []byte) error
 		if _, err := src.ReadAt(block, pos); err != nil {
 			return err
 		}
-		if !isZero(block) {
+		if !isAllZero(block) {
 			if _, err := dst.WriteAt(block, pos); err != nil {
 				return err
 			}
@@ -105,11 +104,7 @@ func copySegment(dst, src *os.File, seg sparseSegment, zeroSkipBuf []byte) error
 	return nil
 }
 
-func onFUSE(f *os.File) bool {
+func seekBlind(f *os.File) bool {
 	var st unix.Statfs_t
-	return unix.Fstatfs(int(f.Fd()), &st) == nil && st.Type == unix.FUSE_SUPER_MAGIC
-}
-
-func isZero(data []byte) bool {
-	return data[0] == 0 && bytes.Equal(data[1:], data[:len(data)-1])
+	return unix.Fstatfs(int(f.Fd()), &st) == nil && (st.Type == unix.FUSE_SUPER_MAGIC || st.Type == unix.NFS_SUPER_MAGIC)
 }
