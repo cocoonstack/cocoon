@@ -4,8 +4,6 @@ Capture running VMs; clone them into new identities; restore or hibernate in pla
 
 ## Overview
 
-Cocoon supports snapshotting a running VM and cloning it into one or more new VMs.
-
 ### Workflow
 
 ```bash

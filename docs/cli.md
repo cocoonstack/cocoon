@@ -176,8 +176,7 @@ bridge device). `--bridge` and `--network` are mutually exclusive:
 3. neither → CNI backend, conflist inherited from the snapshot's recorded
    `vmCfg.Network` (empty = CNI default).
 
-A bridge-backed source snapshot cloned without `--bridge` silently defaults
-to CNI. Pass `--bridge X` at clone time to keep bridge mode.
+A bridge-backed snapshot cloned without `--bridge` lands on CNI.
 
 ### Restore Flags
 

@@ -4,8 +4,6 @@ The `--fc` backend: trade features for boot speed and density.
 
 ## Overview
 
-Cocoon supports [Firecracker](https://github.com/firecracker-microvm/firecracker) as an alternative hypervisor for workloads that prioritize boot speed and resource density.
-
 ```bash
 # Run with Firecracker (--fc only needed for create/run/debug)
 cocoon vm run --fc --name fast-vm ghcr.io/cocoonstack/cocoon/ubuntu:24.04
