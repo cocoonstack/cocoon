@@ -65,7 +65,6 @@ func (b *Bridge) Verify(_ context.Context, _ string, expected []*types.NetworkCo
 	return nil
 }
 
-// Prepare is a no-op (bridge has no netns).
 func (b *Bridge) Prepare(_ context.Context, _ string, _ *types.VMConfig) (string, error) {
 	return "", nil
 }

@@ -280,7 +280,6 @@ func putLFNChars(dst []byte, runes []uint16, offset, count int) {
 		case idx < len(runes):
 			binary.LittleEndian.PutUint16(dst[pos:], runes[idx])
 		case idx == len(runes):
-			// Null terminator
 		default:
 			binary.LittleEndian.PutUint16(dst[pos:], 0xFFFF)
 		}
