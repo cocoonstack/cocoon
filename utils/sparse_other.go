@@ -14,7 +14,7 @@ func SparseCopy(dst, src string, mode SyncMode) error {
 		if _, err := io.Copy(dstFile, srcFile); err != nil {
 			return err
 		}
-		if !mode {
+		if mode == NoSync {
 			return nil
 		}
 		return dstFile.Sync()

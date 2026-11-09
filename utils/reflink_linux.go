@@ -54,7 +54,6 @@ func tryFiclone(dst, src string, mode SyncMode) error {
 		if err := unix.IoctlFileClone(int(dstFile.Fd()), int(srcFile.Fd())); err != nil {
 			return fmt.Errorf("ficlone: %w", err)
 		}
-		// FICLONE only shares extents — still honor Sync, or the fast path silently drops durability.
 		if mode == Sync {
 			if err := dstFile.Sync(); err != nil {
 				return fmt.Errorf("sync dst: %w", err)
