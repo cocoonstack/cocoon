@@ -8,9 +8,6 @@
 
 set -uo pipefail
 
-# ---------------------------------------------------------------------------
-# Configuration (override via environment)
-# ---------------------------------------------------------------------------
 COCOON_ROOT_DIR="${COCOON_ROOT_DIR:-/var/lib/cocoon}"
 COCOON_RUN_DIR="${COCOON_RUN_DIR:-/var/lib/cocoon/run}"
 COCOON_BIN="${COCOON_BIN:-cocoon}"
@@ -34,7 +31,6 @@ CH_RELEASE_BASE="https://github.com/cocoonstack/cloud-hypervisor/releases/downlo
 FC_RELEASE_BASE="https://github.com/cocoonstack/firecracker/releases/download/${FC_REF}"
 FW_RELEASE_BASE="https://github.com/cocoonstack/rust-hypervisor-firmware/releases/download/${FW_REF}"
 
-# Architecture detection
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)  GO_ARCH="amd64" ;;
@@ -45,9 +41,6 @@ esac
 FIRMWARE_DIR="${COCOON_ROOT_DIR}/firmware"
 FIRMWARE_PATH="${FIRMWARE_DIR}/CLOUDHV.fd"
 
-# ---------------------------------------------------------------------------
-# Flags
-# ---------------------------------------------------------------------------
 FIX=false
 UPGRADE=false
 SUBNET=""
@@ -86,9 +79,6 @@ EOF
     esac
 done
 
-# ---------------------------------------------------------------------------
-# Output helpers
-# ---------------------------------------------------------------------------
 PASS=0; WARN=0; FAIL=0
 
 pass()   { PASS=$((PASS + 1)); printf "  \033[32m[PASS]\033[0m %s\n" "$1"; }
@@ -98,9 +88,6 @@ info()   { printf "  \033[36m[INFO]\033[0m %s\n" "$1"; }
 fixed()  { printf "  \033[32m[FIXED]\033[0m %s\n" "$1"; }
 header() { printf "\n\033[1m==> %s\033[0m\n" "$1"; }
 
-# ---------------------------------------------------------------------------
-# CNI conflist generator
-# ---------------------------------------------------------------------------
 generate_cni_conflist() {
     local subnet="${SUBNET:-10.88.0.0/16}"
 
@@ -108,7 +95,7 @@ generate_cni_conflist() {
     local network_part
     network_part=${subnet%/*}
     local gateway
-    gateway=$(echo "$network_part" | awk -F. '{printf "%s.%s.%s.1", $1, $2, $3}')
+    gateway=${network_part%.*}.1
 
     # Match the host egress MTU (GCP is 1460, not 1500) so the bridge and TAPs do not
     # blackhole large packets on the way out.
@@ -147,9 +134,6 @@ CNIEOF
     fixed "generated $CNI_CONFLIST (subnet: ${subnet})"
 }
 
-# ---------------------------------------------------------------------------
-# 1. Binary dependencies
-# ---------------------------------------------------------------------------
 header "Binary dependencies"
 
 # Map binary name → apt package name for auto-install.
@@ -202,11 +186,9 @@ check_binary() {
     if command -v "$name" &>/dev/null; then
         local ver=""
         case "$name" in
-            cloud-hypervisor) ver=$("$name" --version 2>/dev/null | head -1) || true ;;
-            firecracker)      ver=$("$name" --version 2>/dev/null | head -1) || true ;;
-            qemu-img)         ver=$("$name" --version 2>/dev/null | head -1) || true ;;
-            mkfs.ext4)        ver=$("$name" -V 2>&1 | head -1) || true ;;
-            mkfs.erofs)       ver=$("$name" --version 2>&1 | head -1) || true ;;
+            cloud-hypervisor|firecracker|qemu-img) ver=$("$name" --version 2>/dev/null | head -1) || true ;;
+            mkfs.ext4)                             ver=$("$name" -V 2>&1 | head -1) || true ;;
+            mkfs.erofs)                            ver=$("$name" --version 2>&1 | head -1) || true ;;
         esac
         if [ "$name" = "mkfs.erofs" ] && ! erofs_version_ok "$ver"; then
             fail "$name (${ver:-unknown}) is older than 1.8 — tar mode silently corrupts layers; apt ships 1.7.x, install erofs-utils >= 1.8 from source"
@@ -251,9 +233,6 @@ check_binary qemu-img
 check_binary mkfs.ext4
 check_binary mkfs.erofs
 
-# ---------------------------------------------------------------------------
-# 2. Firmware
-# ---------------------------------------------------------------------------
 header "Firmware"
 
 if [ -f "$FIRMWARE_PATH" ]; then
@@ -267,9 +246,6 @@ else
     fail "CLOUDHV.fd not found at $FIRMWARE_PATH"
 fi
 
-# ---------------------------------------------------------------------------
-# 3. KVM access
-# ---------------------------------------------------------------------------
 header "KVM"
 
 if [ -e /dev/kvm ]; then
@@ -296,9 +272,6 @@ if [ "$ARCH" = "x86_64" ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# 4. Runtime directories
-# ---------------------------------------------------------------------------
 header "Directories"
 
 check_dir() {
@@ -362,9 +335,6 @@ check_dir "${COCOON_ROOT_DIR}/snapshot/localfile"
 check_dir "${FIRMWARE_DIR}"
 check_dir /var/run/netns
 
-# ---------------------------------------------------------------------------
-# 5. Sysctl
-# ---------------------------------------------------------------------------
 header "Sysctl"
 
 check_sysctl() {
@@ -392,9 +362,6 @@ if ! sysctl -n net.bridge.bridge-nf-call-iptables &>/dev/null; then
 fi
 check_sysctl net.bridge.bridge-nf-call-iptables 1
 
-# ---------------------------------------------------------------------------
-# 6. iptables FORWARD rules for CNI bridge
-# ---------------------------------------------------------------------------
 header "iptables FORWARD (cni0)"
 
 check_iptables_rule() {
@@ -428,9 +395,6 @@ else
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# 7. CNI configuration
-# ---------------------------------------------------------------------------
 header "CNI configuration"
 
 CNI_CONFLIST="${COCOON_CNI_CONF_DIR}/10-cocoon.conflist"
@@ -460,9 +424,6 @@ if grep -q '"ipMasq": false' "$CNI_CONFLIST" 2>/dev/null; then
         POSTROUTING -t nat -s "$masq_subnet" ! -o cni0 -j MASQUERADE
 fi
 
-# ---------------------------------------------------------------------------
-# 8. CNI plugins
-# ---------------------------------------------------------------------------
 header "CNI plugins (${COCOON_CNI_BIN_DIR})"
 
 CNI_REQUIRED="bridge host-local loopback"
@@ -479,9 +440,6 @@ else
     fail "$COCOON_CNI_BIN_DIR does not exist"
 fi
 
-# ---------------------------------------------------------------------------
-# 9. Snapshot health
-# ---------------------------------------------------------------------------
 header "Snapshot health"
 
 if command -v "$COCOON_BIN" &>/dev/null && command -v jq &>/dev/null; then
@@ -495,14 +453,10 @@ else
     warn "$COCOON_BIN or jq not found — skipping snapshot inspection"
 fi
 
-# ---------------------------------------------------------------------------
-# 10. Upgrade / Install
-# ---------------------------------------------------------------------------
 if $UPGRADE; then
     tmpdir=$(mktemp -d)
     trap 'rm -rf "$tmpdir"' EXIT
 
-    # -- cloud-hypervisor --------------------------------------------------
     header "Install cloud-hypervisor (cocoonstack fork ${CH_REF})"
 
     ch_url="${CH_RELEASE_BASE}/cloud-hypervisor-${ARCH}"
@@ -519,7 +473,6 @@ if $UPGRADE; then
         fail "failed to download or verify cloud-hypervisor from ${ch_url}"
     fi
 
-    # -- firecracker --------------------------------------------------------
     header "Install firecracker (cocoonstack fork ${FC_REF})"
 
     fc_url="${FC_RELEASE_BASE}/firecracker-${ARCH}"
@@ -535,7 +488,6 @@ if $UPGRADE; then
         fail "failed to download or verify firecracker from ${fc_url}"
     fi
 
-    # -- firmware -----------------------------------------------------------
     mkdir -p "$FIRMWARE_DIR"
     if [ "$ARCH" = "x86_64" ]; then
         header "Install hypervisor-fw (cocoonstack fork ${FW_REF})"
@@ -564,7 +516,6 @@ if $UPGRADE; then
         fi
     fi
 
-    # -- CNI plugins --------------------------------------------------------
     header "Install CNI plugins ${CNI_VERSION}"
 
     cni_tarball="cni-plugins-linux-${GO_ARCH}-${CNI_VERSION}.tgz"
@@ -588,9 +539,6 @@ if $FIX; then
     exit
 fi
 
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
 printf "\n\033[1m--- Summary ---\033[0m\n"
 printf "  Pass: %d  Warn: %d  Fail: %d\n\n" "$PASS" "$WARN" "$FAIL"
 
