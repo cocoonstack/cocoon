@@ -583,13 +583,18 @@ if $UPGRADE; then
     fi
 fi
 
+if $FIX; then
+    "$BASH" "$0" ${SUBNET:+"--subnet=$SUBNET"}
+    exit
+fi
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 printf "\n\033[1m--- Summary ---\033[0m\n"
 printf "  Pass: %d  Warn: %d  Fail: %d\n\n" "$PASS" "$WARN" "$FAIL"
 
-if [ "$FAIL" -gt 0 ] && ! $FIX; then
+if [ "$FAIL" -gt 0 ]; then
     info "Run '$0 --fix' to attempt automatic fixes"
     info "Run '$0 --upgrade' to install/upgrade cloud-hypervisor, firecracker, firmware, and CNI plugins"
 fi
