@@ -7,12 +7,15 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -52,16 +55,16 @@ type tableStmts struct {
 
 var _ meta.Store = (*Store)(nil)
 
-// Store is the sqlite engine; statements are prepared per handle at Open, since the table set is static.
+// Store is the sqlite engine; statements are prepared per handle on a namespace's first transaction.
 type Store struct {
 	path          string
 	nss           map[string]Namespace
 	writerDurable *sql.DB
 	writerRelaxed *sql.DB
 	readers       *sql.DB
-	stmtsDurable  map[string]tableStmts
-	stmtsRelaxed  map[string]tableStmts
-	stmtsReaders  map[string]tableStmts
+	stmtsDurable  *stmtCache
+	stmtsRelaxed  *stmtCache
+	stmtsReaders  *stmtCache
 	cpDone        chan struct{}
 
 	mu       sync.Mutex // guards notifier lazy-init against concurrent Events/Close
@@ -113,15 +116,9 @@ func openStore(dbPath string, namespaces []Namespace) (*Store, error) {
 	if err = s.verifyIdentity(); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
-	if s.stmtsDurable, err = prepareStmts(s.writerDurable, s.nss, true); err != nil {
-		return nil, errors.Join(err, s.Close())
-	}
-	if s.stmtsRelaxed, err = prepareStmts(s.writerRelaxed, s.nss, true); err != nil {
-		return nil, errors.Join(err, s.Close())
-	}
-	if s.stmtsReaders, err = prepareStmts(s.readers, s.nss, false); err != nil {
-		return nil, errors.Join(err, s.Close())
-	}
+	s.stmtsDurable = newStmtCache(s.writerDurable, true)
+	s.stmtsRelaxed = newStmtCache(s.writerRelaxed, true)
+	s.stmtsReaders = newStmtCache(s.readers, false)
 	// A background PASSIVE checkpoint keeps the WAL short so committing writers rarely pay the autocheckpoint stall themselves.
 	s.cpDone = make(chan struct{})
 	go checkpointLoop(s.readers, dbPath, s.cpDone)
@@ -132,12 +129,16 @@ func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error 
 	if err := s.checkScope(nss); err != nil {
 		return err
 	}
+	sm, err := s.stmtsReaders.forScope(s.nss, nss)
+	if err != nil {
+		return err
+	}
 	tx, err := s.readers.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return mapErr(err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	return fn(&txHandle{tx: tx, sm: s.stmtsReaders, scope: scopeSet(nss)})
+	return fn(&txHandle{tx: tx, sm: sm, scope: scopeSet(nss)})
 }
 
 func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
@@ -148,9 +149,13 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 	if err := s.checkScope(nss); err != nil {
 		return err
 	}
-	writer, sm := s.writerDurable, s.stmtsDurable
+	writer, cache := s.writerDurable, s.stmtsDurable
 	if mode == meta.CommitRelaxed {
-		writer, sm = s.writerRelaxed, s.stmtsRelaxed
+		writer, cache = s.writerRelaxed, s.stmtsRelaxed
+	}
+	sm, err := cache.forScope(s.nss, nss)
+	if err != nil {
+		return err
 	}
 	start := time.Now()
 	tx, err := s.beginImmediate(ctx, writer)
@@ -357,6 +362,55 @@ func (h *txHandle) checkRead(ns string) error {
 	return nil
 }
 
+type stmtCache struct {
+	db     *sql.DB
+	writer bool
+	mu     sync.Mutex
+	cur    atomic.Pointer[stmtSnapshot]
+}
+
+func newStmtCache(db *sql.DB, writer bool) *stmtCache {
+	c := &stmtCache{db: db, writer: writer}
+	c.cur.Store(&stmtSnapshot{nss: map[string]struct{}{}, stmts: map[string]tableStmts{}})
+	return c
+}
+
+func (c *stmtCache) forScope(decls map[string]Namespace, scope []string) (map[string]tableStmts, error) {
+	if snap := c.cur.Load(); snap.covers(scope) {
+		return snap.stmts, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snap := c.cur.Load()
+	if snap.covers(scope) {
+		return snap.stmts, nil
+	}
+	next := &stmtSnapshot{nss: maps.Clone(snap.nss), stmts: maps.Clone(snap.stmts)}
+	for _, name := range scope {
+		if _, ok := next.nss[name]; ok {
+			continue
+		}
+		if err := prepareStmts(c.db, decls[name], c.writer, next.stmts); err != nil {
+			return nil, err
+		}
+		next.nss[name] = struct{}{}
+	}
+	c.cur.Store(next)
+	return next.stmts, nil
+}
+
+type stmtSnapshot struct {
+	nss   map[string]struct{}
+	stmts map[string]tableStmts
+}
+
+func (s *stmtSnapshot) covers(scope []string) bool {
+	return !slices.ContainsFunc(scope, func(name string) bool {
+		_, ok := s.nss[name]
+		return !ok
+	})
+}
+
 // RefuseManifest fails when a conversion manifest sits beside dbPath, meaning an offline conversion is unfinished.
 func RefuseManifest(dbPath string) error {
 	manifest := filepath.Join(filepath.Dir(dbPath), ManifestName)
@@ -400,31 +454,28 @@ func open(dbPath, synchronous string, writer bool) (*sql.DB, error) {
 	return db, nil
 }
 
-func prepareStmts(db *sql.DB, nss map[string]Namespace, writer bool) (map[string]tableStmts, error) {
-	m := map[string]tableStmts{}
-	for _, ns := range nss {
-		for _, tbl := range ns.Tables {
-			tn := tableName(ns.Name, tbl)
-			var ts tableStmts
-			var err error
-			if ts.get, err = db.Prepare("SELECT data FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-				return nil, mapErr(err)
-			}
-			if ts.scan, err = db.Prepare("SELECT id, data FROM " + tn + " ORDER BY rowid"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-				return nil, mapErr(err)
-			}
-			if writer {
-				if ts.put, err = db.Prepare("INSERT INTO " + tn + " (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-					return nil, mapErr(err)
-				}
-				if ts.del, err = db.Prepare("DELETE FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
-					return nil, mapErr(err)
-				}
-			}
-			m[ns.Name+"\x00"+tbl] = ts
+func prepareStmts(db *sql.DB, ns Namespace, writer bool, m map[string]tableStmts) error {
+	for _, tbl := range ns.Tables {
+		tn := tableName(ns.Name, tbl)
+		var ts tableStmts
+		var err error
+		if ts.get, err = db.Prepare("SELECT data FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+			return mapErr(err)
 		}
+		if ts.scan, err = db.Prepare("SELECT id, data FROM " + tn + " ORDER BY rowid"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+			return mapErr(err)
+		}
+		if writer {
+			if ts.put, err = db.Prepare("INSERT INTO " + tn + " (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+				return mapErr(err)
+			}
+			if ts.del, err = db.Prepare("DELETE FROM " + tn + " WHERE id = ?"); err != nil { //nolint:gosec // table name via quoteIdent from root declarations
+				return mapErr(err)
+			}
+		}
+		m[ns.Name+"\x00"+tbl] = ts
 	}
-	return m, nil
+	return nil
 }
 
 func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
