@@ -22,6 +22,8 @@ var (
 	ErrMigrateUnsupported = errors.New("backend does not support live migration")
 )
 
+type PersistFunc func(cfg *types.SnapshotConfig, srcDir string) error
+
 // Hypervisor manages VM lifecycle.
 type Hypervisor interface {
 	Supervisable
@@ -56,5 +58,3 @@ type Hypervisor interface {
 
 	RegisterGC(*gc.Orchestrator)
 }
-
-type PersistFunc func(cfg *types.SnapshotConfig, srcDir string) error
