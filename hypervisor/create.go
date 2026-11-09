@@ -95,7 +95,7 @@ func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM,
 // CreateSequence is the shared placeholder→finalize create skeleton.
 func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec) (_ *types.VM, err error) {
 	blobIDs := ExtractBlobIDs(spec.StorageConfigs, spec.BootConfig)
-	_, now, cleanup, err := b.reservePlaceholder(ctx, id, spec.VMCfg, blobIDs)
+	_, now, cleanup, err := b.reservePlaceholder(ctx, id, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 }
 
 // reservePlaceholder returns a nil cleanup on failure (already rolled back); on success the caller decides when to run it.
-func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}) (runDir string, now time.Time, cleanup func(), err error) {
+func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *types.VMConfig) (runDir string, now time.Time, cleanup func(), err error) {
 	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
 		return "", time.Time{}, nil, err
 	}
@@ -145,9 +145,6 @@ func (b *Backend) reservePlaceholder(ctx context.Context, id string, vmCfg *type
 		_ = RemoveVMDirs(runDir, logDir)
 	}
 
-	if err = b.ReserveVM(ctx, id, vmCfg, blobIDs, runDir, logDir); err != nil {
-		return "", time.Time{}, nil, fmt.Errorf("reserve VM record: %w", err)
-	}
 	if err = utils.EnsureDirs(runDir, logDir); err != nil {
 		cleanup()
 		return "", time.Time{}, nil, fmt.Errorf("ensure dirs: %w", err)
