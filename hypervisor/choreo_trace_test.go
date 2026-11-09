@@ -80,7 +80,6 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	cfgAlpha := &types.VMConfig{Name: "alpha", Image: "img:1", CPU: 2, Memory: 1 << 30, Storage: 10 << 30}
 	record("reserve-vm1", "", b.ReserveVM(ctx, "VM1", cfgAlpha, map[string]struct{}{"blobA": {}}, "/r/VM1", "/l/VM1"))
 	record("reserve-name-collision", "", b.ReserveVM(ctx, "VM2", cfgAlpha, nil, "/r/VM2", "/l/VM2"))
-	recordLoad("reserve-adopt", "VM1", b.ReserveVM(ctx, "VM1", cfgAlpha, map[string]struct{}{"blobA": {}, "blobB": {}}, "/r2/VM1", "/l2/VM1"))
 	cfgGamma := &types.VMConfig{Name: "gamma", CPU: 1}
 	record("reserve-id-collision", "", b.ReserveVM(ctx, "VM1", cfgGamma, nil, "/r/VM1", "/l/VM1"))
 	info := &types.VM{ID: "VM1", Hypervisor: typ, State: types.VMStateStopped, Config: *cfgAlpha}

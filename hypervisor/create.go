@@ -13,7 +13,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-// ReserveVM inserts a creating placeholder under id, adopting one this same create claimed via PrereserveVM.
+// ReserveVM inserts a creating placeholder under id.
 func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfig, blobIDs map[string]struct{}, runDir, logDir string) error {
 	now := timeNow()
 	// Relaxed: a placeholder rolled back by power failure only re-exposes resources the GC orphan sweep already reclaims.
@@ -23,13 +23,6 @@ func (b *Backend) ReserveVM(ctx context.Context, id string, vmCfg *types.VMConfi
 			return err
 		}
 		if existing != nil {
-			if existing.State == types.VMStateCreating && existing.Config.Name == vmCfg.Name {
-				existing.ImageBlobIDs = blobIDs
-				existing.RunDir = runDir
-				existing.LogDir = logDir
-				existing.UpdatedAt = now
-				return t.Put(id, existing, meta.RelaxedOK)
-			}
 			return fmt.Errorf("id collision %q (retry)", id)
 		}
 		if dup, ok, err := t.NameGet(vmCfg.Name); err != nil {
