@@ -126,7 +126,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	defer stream.Close() //nolint:errcheck
 	defer cmdcore.CloseOnCancel(ctx, stream)()
 
-	return h.runClone(ctx, cmd, conf, hyper, cfg, false, fmt.Sprintf("snapshot %s", snapID), logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
+	return h.runClone(ctx, cmd, conf, hyper, cfg, fmt.Sprintf("snapshot %s", snapID), logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
 		return hyper.Clone(ctx, vmID, vmCfg, netSetup, &cfg, stream)
 	})
 }
@@ -225,7 +225,7 @@ func (h Handler) cloneDirect(ctx context.Context, cmd *cobra.Command, conf *conf
 		return fmt.Errorf("open snapshot %s: %w", snapRef, err)
 	}
 	defer release()
-	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, false, dataDir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, dataDir,
 		fmt.Sprintf("snapshot %s (direct)", snapRef), logger)
 }
 
@@ -235,18 +235,18 @@ func (h Handler) cloneFromDir(ctx context.Context, cmd *cobra.Command, conf *con
 	if err != nil {
 		return err
 	}
-	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, true, dir,
+	return h.cloneFromSrcDir(ctx, cmd, conf, hyper, cfg, dir,
 		fmt.Sprintf("dir %s", dir), logger)
 }
 
-func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, envelope bool, srcDir, sourceLabel string, logger *log.Fields) error {
-	return h.runClone(ctx, cmd, conf, hyper, cfg, envelope, sourceLabel, logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
+func (h Handler) cloneFromSrcDir(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, srcDir, sourceLabel string, logger *log.Fields) error {
+	return h.runClone(ctx, cmd, conf, hyper, cfg, sourceLabel, logger, func(vmID string, vmCfg *types.VMConfig, netSetup types.NetSetup) (*types.VM, error) {
 		return hyper.DirectClone(ctx, vmID, vmCfg, netSetup, &cfg, srcDir)
 	})
 }
 
-func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, envelope bool, sourceLabel string, logger *log.Fields, do cloneFn) error {
-	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg, envelope)
+func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, sourceLabel string, logger *log.Fields, do cloneFn) error {
+	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func (h Handler) runClone(ctx context.Context, cmd *cobra.Command, conf *config.
 	return finishErr
 }
 
-func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig, envelope bool) (cloneSetup, error) {
+func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *config.Config, hyper hypervisor.Hypervisor, cfg types.SnapshotConfig) (cloneSetup, error) {
 	vmCfg, err := cmdcore.CloneVMConfigFromFlags(cmd, cfg)
 	if err != nil {
 		return cloneSetup{}, err
@@ -284,12 +284,8 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}
-	// Envelope pins share create's digest-lock window; a record-backed clone's source pin already protects these.
-	var pins map[string]struct{}
-	if envelope {
-		pins = cfg.ImageBlobIDs
-	}
-	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, pins)
+	// Envelope pins share create's digest-lock window, which image GC's VM-then-snapshot recheck needs even for a record-backed clone.
+	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
 		return cloneSetup{}, err
 	}

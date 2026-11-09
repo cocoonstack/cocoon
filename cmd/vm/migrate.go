@@ -56,7 +56,7 @@ func (h Handler) MigrateReceive(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("vm %s is busy: another operation owns it", id)
 		}
 	}
-	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg, true)
+	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
 	if err != nil {
 		return err
 	}
