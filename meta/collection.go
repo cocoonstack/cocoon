@@ -10,7 +10,7 @@ import (
 // ScanFunc receives each scanned record; an error aborts the scan.
 type ScanFunc[R any] func(id string, rec *R) error
 
-// Collection is a typed record set inside one namespace table; reads hand back detached values, persisting a change requires Replace.
+// Collection is a typed record set inside one namespace table; reads return detached values.
 type Collection[R any] struct {
 	ns    string
 	table string

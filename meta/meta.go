@@ -26,9 +26,9 @@ var (
 	ErrCorrupt  = errors.New("store corrupt")
 	ErrNoSpace  = errors.New("no space left on store")
 	ErrIO       = errors.New("store io error")
-	// ErrDurabilityContract reports a durable-default write inside a CommitRelaxed transaction (clause 5).
+	// ErrDurabilityContract reports a durable-default write inside a CommitRelaxed transaction.
 	ErrDurabilityContract = errors.New("durable-default write in relaxed transaction")
-	// ErrScope reports access to a namespace the transaction did not declare (clause 2).
+	// ErrScope reports access to a namespace the transaction did not declare.
 	ErrScope = errors.New("namespace not in transaction scope")
 )
 
@@ -76,7 +76,7 @@ type Writer interface {
 	DeleteRaw(ctx context.Context, ns, table, id string, relaxedOK bool) error
 }
 
-// CheckWriteScope enforces write scope (clause 2) and durability (clause 5) for one write.
+// CheckWriteScope enforces write scope and durability for one write.
 func CheckWriteScope(ns, write string, mode CommitMode, relaxedOK bool) error {
 	if ns != write {
 		return fmt.Errorf("write %s: %w", ns, ErrScope)

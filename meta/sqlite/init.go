@@ -15,7 +15,7 @@ import (
 
 const initLockName = "init.lock"
 
-// Init creates a fresh store — schema, identity pragmas and one meta_state row per namespace — in one transaction, so a crash mid-init leaves nothing or a complete store.
+// Init creates a fresh store — schema, identity pragmas and one meta_state row per namespace — in one transaction, so a crash mid-init leaves an empty database or a complete store.
 func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	if err := RefuseManifest(dbPath); err != nil {
 		return err
