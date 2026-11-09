@@ -48,7 +48,7 @@ type CNI struct {
 	loadErr     error
 }
 
-// New creates a CNI provider; conflist loading is best-effort, so Delete still tears down a 0-NIC VM when none is available and Add fails.
+// New creates a CNI provider; a missing conflist fails Add but still lets Delete tear down a 0-NIC VM.
 func New(conf *config.Config, store meta.Store) (*CNI, error) {
 	cfg := NewConfig(conf)
 	if err := utils.EnsureDirs(cfg.dbDir()); err != nil {

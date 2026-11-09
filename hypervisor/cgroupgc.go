@@ -43,7 +43,6 @@ func CgroupGCModule(parentDir string, vmInUse network.VMInUse) gc.Module[[]strin
 				} else if inUse {
 					continue
 				}
-				// EBUSY means members remain; GC never kills them.
 				err := removeScope(parentDir, id)
 				if errors.Is(err, syscall.EBUSY) {
 					logger.Infof(ctx, "skipped id=%s reason=populated", id)

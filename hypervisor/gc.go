@@ -216,7 +216,7 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 	return errs
 }
 
-// withOpsTryLock runs fn under the VM ops lock and reports false when another operation holds it; GC only try-locks, so lock order cannot deadlock.
+// withOpsTryLock runs fn under the VM ops lock, reporting false when another operation holds it and the error when locking fails; GC only try-locks, so lock order cannot deadlock.
 func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) (bool, error) {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil || !ok {

@@ -89,7 +89,7 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 	}
 }
 
-// gcStaleTemp removes temp entries older than StaleTempAge.
+// gcStaleTemp removes temp entries whose whole tree is older than StaleTempAge.
 func gcStaleTemp(ctx context.Context, dir string) []error {
 	cutoff := time.Now().Add(-utils.StaleTempAge)
 	return utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {

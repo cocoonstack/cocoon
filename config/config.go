@@ -26,7 +26,7 @@ const (
 	RestoreTAPPrefix = "rm"
 
 	defaultPullConns = 8
-	// maxPullConns caps it so a misconfigured pull_conns can't exhaust file descriptors.
+	// maxPullConns caps pull_conns so a misconfigured value cannot exhaust file descriptors.
 	maxPullConns = 64
 
 	legacyBridgeTAPPrefix = "bt"

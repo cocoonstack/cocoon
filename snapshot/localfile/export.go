@@ -49,7 +49,7 @@ func (lf *LocalFile) ExportToDir(ctx context.Context, ref, dir string) (err erro
 	if err != nil {
 		return err
 	}
-	// A partial tree would make the retry refuse the non-empty target
+	// A partial tree would make the retry refuse the non-empty target.
 	defer func() {
 		if err != nil {
 			for _, name := range names {

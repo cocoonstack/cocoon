@@ -285,7 +285,7 @@ func (c *CNI) cniDel(ctx context.Context, confList *libcni.NetworkConfigList, vm
 	return c.cniConf.DelNetworkList(ctx, confList, rt)
 }
 
-// reclaimStaleNIC releases a record left by a failed detach before its index is reused; any failure keeps the record so the next re-add retries (the teardown is idempotent).
+// reclaimStaleNIC releases a record left by a failed detach before its index is reused; any failure keeps the record so the next re-add retries.
 func (c *CNI) reclaimStaleNIC(ctx context.Context, vmID, nsPath string, rec networkRecord) error {
 	downIDs, err := c.tearDownNICs(ctx, vmID, nsPath, []networkRecord{rec}, true)
 	if err != nil {

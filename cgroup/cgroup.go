@@ -290,7 +290,7 @@ func ensureParent(parentDir, fence string, placed bool) error {
 	return reconcileFence(parentDir, fence)
 }
 
-// reconcileFence converges the parent's cpuset.cpus to the configured fence; a cleared config resets a stale fence once, and the cpuset controller is never disabled.
+// reconcileFence converges the parent's cpuset.cpus to cgroup_cpus, clearing it when cgroup_cpus is empty; the cpuset controller is never disabled.
 func reconcileFence(parentDir, fence string) error {
 	current, err := readControl(parentDir, cpusetName)
 	if fence == "" {
@@ -299,7 +299,7 @@ func reconcileFence(parentDir, fence string) error {
 		}
 		return nil
 	}
-	// The kernel echoes cpu lists canonicalized ("0-3,4-7" reads back "0-7"): compare parsed sets, or a non-canonical config string re-runs the scan and the serialized cpuset write on every launch.
+	// Compare parsed sets: the kernel canonicalizes cpu lists ("0-3,4-7" reads back "0-7"), so a string compare would rewrite the fence on every launch.
 	if sameCPUList(current, fence) {
 		return nil
 	}
@@ -369,7 +369,7 @@ func checkScopePlacements(parentDir, fence string) error {
 	return nil
 }
 
-// explainFenceWrite names the live VMs behind a rejected fence write: the kernel refuses to re-home populated cgroups and reports only ENOSPC, which reads as an unrelated disk-full error.
+// explainFenceWrite names the live VMs behind a rejected fence write, which the kernel reports only as ENOSPC.
 func explainFenceWrite(parentDir, current, fence string, err error) error {
 	if err == nil {
 		return nil
@@ -381,7 +381,7 @@ func explainFenceWrite(parentDir, current, fence string, err error) error {
 	return fmt.Errorf("cgroup_cpus %q -> %q rejected with %d VM(s) running; the fence is machine-wide, drain them first: %w", current, fence, len(ids), err)
 }
 
-// enableControllers reads before writing: subtree_control writes take the kernel's hierarchy-wide cgroup_mutex, so steady-state launches must not contend on a no-op write.
+// enableControllers reads before writing, since a subtree_control write takes the hierarchy-wide cgroup_mutex even as a no-op.
 func enableControllers(dir string, ctrls []string) error {
 	have, _ := readControl(dir, subtreeControlName)
 	enabled := strings.Fields(have)
@@ -410,7 +410,7 @@ func armQuota(dir string, k Knobs) error {
 	return nil
 }
 
-// burstFileMissing detects a kernel without cpu.max.burst (pre-5.14): the failed write opens with O_CREAT and reports EACCES on cgroupfs, so absence takes a stat.
+// burstFileMissing detects a kernel without cpu.max.burst (pre-5.14) by stat, since a write to the missing cgroupfs file reports EACCES.
 func burstFileMissing(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, burstName))
 	return errors.Is(err, fs.ErrNotExist)

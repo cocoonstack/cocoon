@@ -40,7 +40,7 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 	})
 }
 
-// InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard — the conversion tool creates its target while the manifest is necessarily present — and passes a completed one through.
+// InitForRecoveryIfNeeded creates or repairs the conversion target without the manifest guard, which the conversion necessarily trips, and passes a completed one through.
 func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...Namespace) error {
 	need, err := initNeeded(ctx, dbPath)
 	if err != nil || !need {
