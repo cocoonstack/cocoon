@@ -325,7 +325,7 @@ the printed command carries no `queue_affinity` whatever `--cpuset-cpus` says.
 | ---------------- | -------- | ------------------------------------------------- |
 | `--escape-char`  | `^]`     | Escape character (single char or `^X` caret notation) |
 
-For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start. The Firecracker relay serves one console client at a time. It also reports the resolved placement as `cpuset` and `queue_cpus`, both absent once the VM is stopped.
+For a running VM, `cocoon vm inspect` reports the console resolved at boot (start, clone, restore) as `console_path`: the `console.sock` UDS (UEFI serial, Firecracker relay) or the Cloud Hypervisor-allocated PTY (`/dev/pts/N`, direct-boot OCI). External supervisors can read the console from there without opening the owner-only API socket. A direct-boot VM booted by an older cocoon reports it from its next start. The Firecracker relay serves one console client at a time. It also reports the resolved placement as `cpuset` and `queue_cpus`, both absent once the VM is stopped, and, for a VM with a balloon device, the `balloon` block (`target`, `actual`, `default`; see [Runtime Balloon Target](vm.md#runtime-balloon-target)).
 
 ### Exec Flags
 
