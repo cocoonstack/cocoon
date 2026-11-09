@@ -109,11 +109,13 @@ func (b *Backend) gcRecover(ctx context.Context) []error {
 	}
 	var errs []error
 	for _, id := range ids {
-		b.withOpsTryLock(ctx, id, func() {
+		if _, lockErr := b.withOpsTryLock(ctx, id, func() {
 			if _, err := b.RecoverTombstone(ctx, id); err != nil {
 				errs = append(errs, fmt.Errorf("recover %s: %w", id, err))
 			}
-		})
+		}); lockErr != nil {
+			errs = append(errs, fmt.Errorf("lock %s: %w", id, lockErr))
+		}
 	}
 	return errs
 }
@@ -124,7 +126,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 	errs = append(errs, b.sweepStaleCloneLocks(ctx)...)
 	for _, id := range ids {
 		// Hold the ops lock: records are scanned before dirs, so an in-flight create's dirs read as orphans.
-		ok := b.withOpsTryLock(ctx, id, func() {
+		ok, lockErr := b.withOpsTryLock(ctx, id, func() {
 			rec, err := b.PeekRecord(ctx, id)
 			if err != nil {
 				errs = append(errs, err)
@@ -155,7 +157,10 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 			}
 			logger.Infof(ctx, "collected id=%s reason=%s", id, snap.reasons[id])
 		})
-		if !ok {
+		switch {
+		case lockErr != nil:
+			errs = append(errs, fmt.Errorf("lock %s: %w", id, lockErr))
+		case !ok:
 			logger.Warnf(ctx, "skip %s: ops lock busy (in-flight operation)", id)
 		}
 	}
@@ -168,7 +173,7 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 	var errs []error
 	for _, dir := range runDirs {
 		// The run dir's basename is its VM ID — the lock domain of everything inside it.
-		b.withOpsTryLock(ctx, filepath.Base(dir), func() {
+		if _, lockErr := b.withOpsTryLock(ctx, filepath.Base(dir), func() {
 			errs = append(errs, utils.RemoveMatching(ctx, dir, func(e os.DirEntry) bool {
 				if !e.IsDir() || (!strings.HasPrefix(e.Name(), captureDirPrefix) && e.Name() != restoreStagingName) {
 					return false
@@ -176,7 +181,9 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 				info, err := e.Info()
 				return err == nil && info.ModTime().Before(cutoff)
 			})...)
-		})
+		}); lockErr != nil {
+			errs = append(errs, fmt.Errorf("lock %s: %w", dir, lockErr))
+		}
 	}
 	return errs
 }
@@ -210,14 +217,14 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 }
 
 // withOpsTryLock runs fn under the VM ops lock and reports false when another operation holds it; GC only try-locks, so lock order cannot deadlock.
-func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) bool {
+func (b *Backend) withOpsTryLock(ctx context.Context, vmID string, fn func()) (bool, error) {
 	unlock, ok, err := b.TryLockVMOps(ctx, vmID)
 	if err != nil || !ok {
-		return false
+		return false, err
 	}
 	defer unlock()
 	fn()
-	return true
+	return true, nil
 }
 
 // ensureOrphanVMMDead kills any VMM on runDir's socket; the /proc scan covers a missing pidfile.
