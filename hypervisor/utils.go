@@ -399,7 +399,6 @@ func mergeDirInto(src, dst string) error {
 	return nil
 }
 
-// validateHostCPU rejects vCPU counts beyond the host's online cores.
 func validateHostCPU(cpu int) error {
 	maxCPU := HostCPUCount()
 	if cpu > maxCPU {

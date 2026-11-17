@@ -21,7 +21,7 @@ import (
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
 type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
 
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window, and persist runs under the ops lock because the capture dir lives in the run dir a vm rm deletes.
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window, and persist runs under the ops lock.
 func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec, persist PersistFunc) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {

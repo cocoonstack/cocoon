@@ -163,7 +163,6 @@ type Backend struct {
 	// Net converges host networking inside the VM ops lock; nil disables it.
 	Net VMNetwork
 
-	// RuntimeFiles names the run-dir entries a VMM leaves behind; CleanupRuntimeFiles expands glob patterns.
 	RuntimeFiles []string
 	// PinsQueues marks a backend that pins writable disk queue threads, so launch derives their host cpus.
 	PinsQueues bool
