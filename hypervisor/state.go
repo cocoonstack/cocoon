@@ -92,6 +92,8 @@ func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
 
 // MarkStarted flips id to VMStateRunning; a VM with an open compute interval is stale-running (close stop-crash, then open fresh).
 func (b *Backend) MarkStarted(ctx context.Context, id string) error {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
 	now := timeNow()
 	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
 		shape := shapeFromConfig(r.Config)

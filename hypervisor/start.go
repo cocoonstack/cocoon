@@ -63,9 +63,8 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 			return fmt.Errorf("configure VM: %w", err)
 		}
 	}
-	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
 	if err := b.MarkStarted(ctx, id); err != nil {
-		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
+		return fmt.Errorf("vm %s is up but its record is not: rerun vm start: %w", id, err)
 	}
 	return nil
 }

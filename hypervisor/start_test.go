@@ -198,6 +198,26 @@ func TestStartSequenceConvergesALiveVMMInsteadOfLaunching(t *testing.T) {
 	}
 }
 
+func TestStartSequenceLandsRunningWhenCanceledAfterLaunch(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	const id = "vm-cancel-after-launch"
+	seedStoppedVMWithDirs(t, b, id)
+
+	err := b.StartSequence(ctx, id, nil, StartSpec{
+		Launch: func(context.Context, *VMRecord, string) (int, error) {
+			cancel()
+			return 4242, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartSequence: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateRunning {
+		t.Fatalf("state = %s, want running: the VMM is up", rec.State)
+	}
+}
+
 func seedStoppedVMWithDirs(t *testing.T, b *Backend, id string) string {
 	t.Helper()
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
