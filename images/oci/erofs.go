@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/projecteru2/core/log"
 )
 
 const (
@@ -37,6 +39,7 @@ func runErofsConversion(ctx context.Context, src io.Reader, scanDir, namePrefix,
 	if err = checkErofsVersion(ctx); err != nil {
 		return "", "", err
 	}
+	log.WithFunc("oci.runErofsConversion").Debugf(ctx, "exec mkfs.erofs %s", outPath)
 	// Shell out because no Go EROFS writer library; mkfs.erofs is authoritative.
 	cmd := exec.CommandContext( //nolint:gosec
 		ctx, "mkfs.erofs",

@@ -19,7 +19,6 @@ func (ch *CloudHypervisor) Start(ctx context.Context, refs []string) ([]string, 
 
 func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
 	return ch.StartSequence(ctx, id, scan, hypervisor.StartSpec{
-		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			dns, err := ch.conf.DNSServers()
 			if err != nil {
@@ -41,7 +40,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.
 			return nil
 		},
 		ConvergeRunning: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
-			_, err := convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID)
+			_, err := convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, rec.RunDir)
 			return err
 		},
 	})

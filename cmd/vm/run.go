@@ -104,11 +104,7 @@ func (h Handler) Clone(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect snapshot %s: %w", snapRef, err)
 	}
-	if snapInfo.Hypervisor != "" {
-		conf.UseFirecracker = isFirecracker(snapInfo.Hypervisor)
-	}
-
-	hyper, err := cmdcore.InitHypervisor(ctx, conf)
+	hyper, err := snapshotHypervisor(ctx, conf, snapInfo.Hypervisor)
 	if err != nil {
 		return err
 	}
@@ -200,7 +196,7 @@ func (h Handler) restoreFromDir(ctx context.Context, cmd *cobra.Command, conf *c
 		return fmt.Errorf("find VM %s: %w", vmRef, err)
 	}
 	if _, owned := vm.SnapshotIDs[cfg.ID]; !owned {
-		force, _ := cmd.Flags().GetBool("force")
+		force := cliutil.FlagBool(cmd, "force")
 		if !force {
 			return fmt.Errorf("snapshot envelope id %s does not belong to VM %s; pass --force to override", cfg.ID, vmRef)
 		}
@@ -284,6 +280,14 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}
+	flagNICs := cliutil.FlagInt(cmd, "nics")
+	nics, resizeTo, err := cloneNICPlan(conf.UseFirecracker, cfg, cmd.Flags().Changed("nics"), flagNICs)
+	if err != nil {
+		return cloneSetup{}, err
+	}
+	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
+		return cloneSetup{}, fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend)
+	}
 	// Envelope pins share create's digest-lock window, which image GC's VM-then-snapshot recheck needs even for a record-backed clone.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
@@ -300,7 +304,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		return cloneSetup{}, err
 	}
 
-	if pull, _ := cmd.Flags().GetBool("pull"); pull && vmCfg.Image != "" && vmCfg.ImageType != "" {
+	if cliutil.FlagBool(cmd, "pull") && vmCfg.Image != "" && vmCfg.ImageType != "" {
 		backends, initErr := cmdcore.InitImageBackends(ctx, conf)
 		if initErr != nil {
 			return fail(fmt.Errorf("init image backends: %w", initErr))
@@ -308,15 +312,7 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 		cmdcore.EnsureImage(ctx, backends, vmCfg)
 	}
 
-	bridgeDev, _ := cmd.Flags().GetString("bridge")
-	flagNICs, _ := cmd.Flags().GetInt("nics")
-	nics, resizeTo, err := cloneNICPlan(conf.UseFirecracker, cfg, cmd.Flags().Changed("nics"), flagNICs)
-	if err != nil {
-		return fail(err)
-	}
-	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
-		return fail(fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend))
-	}
+	bridgeDev := cliutil.FlagStr(cmd, "bridge")
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		return fail(err)
@@ -366,6 +362,10 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf 
 }
 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
+	nics := cliutil.FlagInt(cmd, "nics")
+	if nics < 0 {
+		return nil, nil, nil, fmt.Errorf("--nics must be non-negative, got %d", nics)
+	}
 	ctx, conf := h.Init(cmd)
 
 	owner, vmCfg, storageConfigs, bootCfg, err := resolveCreateImage(ctx, cmd, conf, image)
@@ -391,8 +391,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	}
 	defer unlock()
 
-	nics, _ := cmd.Flags().GetInt("nics")
-	bridgeDev, _ := cmd.Flags().GetString("bridge")
+	bridgeDev := cliutil.FlagStr(cmd, "bridge")
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		rollbackReserve()
@@ -409,7 +408,7 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 }
 
 func resolveCreateImage(ctx context.Context, cmd *cobra.Command, conf *config.Config, image string) (imagebackend.Images, *types.VMConfig, []*types.StorageConfig, *types.BootConfig, error) {
-	if fc, _ := cmd.Flags().GetBool("fc"); fc {
+	if cliutil.FlagBool(cmd, "fc") {
 		conf.UseFirecracker = true
 	}
 	vmCfg, err := cmdcore.VMConfigFromFlags(cmd, image)
@@ -498,7 +497,7 @@ func prereserveVM(ctx context.Context, hyper hypervisor.Hypervisor, vmID string,
 }
 
 func snapshotSource(cmd *cobra.Command, args []string, baseArgs int) (fromDir, snapRef string, err error) {
-	fromDir, _ = cmd.Flags().GetString("from-dir")
+	fromDir = cliutil.FlagStr(cmd, "from-dir")
 	if fromDir != "" {
 		if len(args) > baseArgs {
 			return "", "", fmt.Errorf("--from-dir and positional SNAPSHOT are mutually exclusive")
@@ -516,14 +515,15 @@ func openSnapshotDir(ctx context.Context, conf *config.Config, dir string) (type
 	if err != nil {
 		return types.SnapshotConfig{}, nil, err
 	}
-	if cfg.Hypervisor != "" {
-		conf.UseFirecracker = isFirecracker(cfg.Hypervisor)
+	hyper, err := snapshotHypervisor(ctx, conf, cfg.Hypervisor)
+	return cfg, hyper, err
+}
+
+func snapshotHypervisor(ctx context.Context, conf *config.Config, typ string) (hypervisor.Hypervisor, error) {
+	if typ != "" {
+		conf.UseFirecracker = isFirecracker(typ)
 	}
-	hyper, err := cmdcore.InitHypervisor(ctx, conf)
-	if err != nil {
-		return types.SnapshotConfig{}, nil, err
-	}
-	return cfg, hyper, nil
+	return cmdcore.InitHypervisor(ctx, conf)
 }
 
 func readVerifiedEnvelope(dir string) (types.SnapshotConfig, error) {
@@ -534,7 +534,6 @@ func readVerifiedEnvelope(dir string) (types.SnapshotConfig, error) {
 	return envelope.Config, snapshot.VerifyCOWSize(dir, envelope.Config)
 }
 
-// tapQueues follows the transport: FC opens the TAP single-queue, CH per-vCPU.
 func tapQueues(cpu int, useFC bool) int {
 	if useFC {
 		return network.NetNumQueues(1)
@@ -543,9 +542,6 @@ func tapQueues(cpu int, useFC bool) int {
 }
 
 func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, bridgeDev string) (network.Network, types.NetSetup, error) {
-	if nics < 0 {
-		return nil, types.NetSetup{}, fmt.Errorf("--nics must be non-negative, got %d", nics)
-	}
 	var netProvider network.Network
 	var err error
 	if bridgeDev != "" {

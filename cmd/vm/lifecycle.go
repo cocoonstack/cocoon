@@ -91,7 +91,7 @@ func (h Handler) Console(cmd *cobra.Command, args []string) error {
 	defer conn.Close() //nolint:errcheck
 	defer cmdcore.CloseOnCancel(ctx, conn)()
 
-	escapeStr, _ := cmd.Flags().GetString("escape-char")
+	escapeStr := cliutil.FlagStr(cmd, "escape-char")
 	escapeChar, err := console.ParseEscapeChar(escapeStr)
 	if err != nil {
 		return err
@@ -139,14 +139,14 @@ func (h Handler) Logs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("logs: %w", err)
 	}
-	follow, _ := cmd.Flags().GetBool("follow")
-	tail, _ := cmd.Flags().GetInt("tail")
+	follow := cliutil.FlagBool(cmd, "follow")
+	tail := cliutil.FlagInt(cmd, "tail")
 	return streamLog(ctx, path, follow, tail)
 }
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	_, conf := h.Init(cmd)
-	force, _ := cmd.Flags().GetBool("force")
+	force := cliutil.FlagBool(cmd, "force")
 	applyStopFlags(conf, cmd)
 	return h.runRouted(cmd, args, "rm", "deleted", func(ctx context.Context, hyper hypervisor.Hypervisor, refs []string) ([]string, error) {
 		return hyper.Delete(ctx, refs, force)
@@ -168,8 +168,8 @@ func (h Handler) runRouted(cmd *cobra.Command, args []string, name, pastTense st
 
 // applyStopFlags maps --force to an immediate kill: #82 FC guests without i8042 never answer CtrlAltDel.
 func applyStopFlags(conf *config.Config, cmd *cobra.Command) {
-	force, _ := cmd.Flags().GetBool("force")
-	timeout, _ := cmd.Flags().GetInt("timeout")
+	force := cliutil.FlagBool(cmd, "force")
+	timeout := cliutil.FlagInt(cmd, "timeout")
 	switch {
 	case force:
 		conf.StopTimeoutSeconds = -1

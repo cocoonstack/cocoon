@@ -79,7 +79,7 @@ func (c *BaseConfig) LoadAndValidateMeta(dir string) (*snapshot.SnapshotMeta, er
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateMetaPaths(meta, c.RootDir, c.Config.RunDir); err != nil {
+	if err := validateMetaPaths(meta, c.RootDir, c.Config.RunDir); err != nil {
 		return nil, err
 	}
 	return meta, nil
@@ -94,7 +94,7 @@ func (c *BaseConfig) PreflightRestore(srcDir string, rec *VMRecord, integrity In
 	if err := integrity(srcDir, meta.StorageConfigs); err != nil {
 		return nil, err
 	}
-	return meta, ValidateRoleSequence(meta.StorageConfigs, rec.StorageConfigs)
+	return meta, validateRoleSequence(meta.StorageConfigs, rec.StorageConfigs)
 }
 
 func (c *BaseConfig) RootDirPath() string { return c.RootDir }
@@ -109,7 +109,7 @@ func (c *BaseConfig) ResolveExternalVolume(path string) (string, error) {
 		if r, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
 			dir = r
 		}
-		if IsUnderDir(resolved, dir) {
+		if isUnderDir(resolved, dir) {
 			return "", fmt.Errorf("external volume path %s is inside a cocoon-managed directory", path)
 		}
 	}

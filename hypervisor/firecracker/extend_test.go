@@ -144,6 +144,16 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	}
 }
 
+func TestSnapshotPauseLandsWhenCanceledMidRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	srv := newFCStub(t, fcVMConfig{})
+	srv.onPause = cancel
+
+	if err := (&Firecracker{}).snapshotSpec(ctx).Pause(&hypervisor.VMRecord{}, srv.client); err != nil {
+		t.Fatalf("Pause: %v, want success so the capture skeleton resumes the guest it paused", err)
+	}
+}
+
 func TestRemoveNICWaitsForGuestRelease(t *testing.T) {
 	srv := newFCStub(t, fcVMConfig{NetworkInterfaces: []fcNetworkInterface{{IfaceID: "eth0"}, {IfaceID: "eth1"}}})
 	srv.releaseAfter(2)
@@ -197,6 +207,7 @@ type fcStub struct {
 
 	release int
 	pending []string
+	onPause func()
 }
 
 func (s *fcStub) put(endpoint string) string {
@@ -299,6 +310,9 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 			s.resume++
 			s.state = "Running"
 			s.events = append(s.events, "resume")
+		}
+		if req["state"] == vmStatePaused && s.onPause != nil {
+			s.onPause()
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})

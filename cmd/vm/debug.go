@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/cloudhypervisor"
 	"github.com/cocoonstack/cocoon/hypervisor/firecracker"
@@ -111,10 +112,10 @@ func printFCDebug(configs []*types.StorageConfig, boot *types.BootConfig, vmCfg 
 }
 
 func buildCHDebugSpec(cmd *cobra.Command, storageConfigs []*types.StorageConfig, boot *types.BootConfig, vmCfg *types.VMConfig) chDebugSpec {
-	maxCPU, _ := cmd.Flags().GetInt("max-cpu")
-	balloon, _ := cmd.Flags().GetInt("balloon")
-	cowPath, _ := cmd.Flags().GetString("cow")
-	chBin, _ := cmd.Flags().GetString("ch")
+	maxCPU := cliutil.FlagInt(cmd, "max-cpu")
+	balloon := cliutil.FlagInt(cmd, "balloon")
+	cowPath := cliutil.FlagStr(cmd, "cow")
+	chBin := cliutil.FlagStr(cmd, "ch")
 	// Runtime gating wins over --balloon, so the printed command matches what cocoon would launch.
 	size, ok := hypervisor.BalloonSize(vmCfg.Config)
 	switch {

@@ -18,7 +18,7 @@ import (
 
 // StartAll runs startOne per ref over one /proc scan; each start flips its own state under its VM's ops lock.
 func (b *Backend) StartAll(ctx context.Context, refs []string, startOne StartOp) ([]string, error) {
-	ids, err := b.ResolveRefs(ctx, refs)
+	ids, err := b.resolveRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +26,7 @@ func (b *Backend) StartAll(ctx context.Context, refs []string, startOne StartOp)
 	if err != nil {
 		return nil, fmt.Errorf("refuse start: /proc scan errored: %w (resolve the host issue and retry)", err)
 	}
-	return b.ForEachVM(ctx, ids, "Start", func(ctx context.Context, id string) error {
+	return b.forEachVM(ctx, ids, "Start", func(ctx context.Context, id string) error {
 		return startOne(ctx, id, &procScan)
 	})
 }
@@ -38,7 +38,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 		return err
 	}
 	defer unlock()
-	rec, err := b.PrepareStart(ctx, id, scan, spec)
+	rec, err := b.prepareStart(ctx, id, scan, spec)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 		return nil
 	}
 	// Inside the ops lock so a concurrent stop's late quiesce cannot bring this VM's plumbing down after it is up.
-	if err = b.RecoverNetwork(ctx, rec); err != nil {
+	if err = b.recoverNetwork(ctx, rec); err != nil {
 		b.markFailedOperation(ctx, id, true)
 		return fmt.Errorf("recover network: %w", err)
 	}
@@ -58,73 +58,15 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 	}
 	if spec.PostLaunch != nil {
 		if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
-			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
+			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 			b.markFailedOperation(ctx, id, true)
 			return fmt.Errorf("configure VM: %w", err)
 		}
 	}
-	// Warn-and-continue: the VMM is up and self-heals the record on the next reconcile.
-	if err := b.MarkStarted(ctx, id); err != nil {
-		log.WithFunc(b.Typ+".StartSequence").Warnf(ctx, "mark started %s: %v", id, err)
+	if err := b.markStarted(ctx, id); err != nil {
+		return fmt.Errorf("vm %s is up but its record is not: rerun vm start: %w", id, err)
 	}
 	return nil
-}
-
-func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcScan, spec StartSpec) (*VMRecord, error) {
-	rec, err := b.EntryGuardLoad(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if rec.Quarantine != "" {
-		return nil, fmt.Errorf("vm %s is quarantined (%s); recover with vm restore or delete with vm rm", id, rec.Quarantine)
-	}
-	if rec.State == types.VMStateCreating {
-		return nil, fmt.Errorf("vm %s is still being created", id)
-	}
-	// Tombstone survives lost quarantine writes and process death mid-restore; the mixed run dir must not boot.
-	markerPath := filepath.Join(rec.RunDir, restoreDirtyName)
-	switch marker, statErr := os.Stat(markerPath); {
-	case statErr == nil && rec.StartedAt != nil && marker.ModTime().Before(*rec.StartedAt):
-		if err = os.Remove(markerPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("clear stale restore tombstone for %s: %w", id, err)
-		}
-	case statErr == nil:
-		return nil, fmt.Errorf("vm %s has an interrupted restore; recover with vm restore or delete with vm rm", id)
-	case !errors.Is(statErr, fs.ErrNotExist):
-		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
-	}
-
-	runErr := b.withRunningVM(ctx, &rec, scan, func(pid int) error {
-		if convergeErr := spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid); convergeErr != nil {
-			return convergeErr
-		}
-		if rec.State != types.VMStateRunning {
-			_, _ = b.ReconcileToRunning(ctx, id)
-		}
-		return nil
-	})
-	switch {
-	case runErr == nil:
-		return nil, nil
-	case errors.Is(runErr, ErrNotRunning):
-		b.convergeCrashedStart(ctx, &rec)
-	default:
-		return nil, fmt.Errorf("reconcile running VM %s: %w", id, runErr)
-	}
-
-	if err = utils.EnsureDirs(rec.RunDir, rec.LogDir); err != nil {
-		return nil, fmt.Errorf("ensure dirs: %w", err)
-	}
-	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
-	if err = validateRecordInvariants(&rec); err != nil {
-		b.MarkError(ctx, id)
-		return nil, err
-	}
-	placed, err := b.placeRecord(ctx, id, &rec.Config.Config)
-	if err != nil {
-		return nil, fmt.Errorf("place VM: %w", err)
-	}
-	return &placed, nil
 }
 
 // LaunchVMProcess starts spec.Cmd and waits for the API socket; exited closes when the VMM is reaped.
@@ -155,7 +97,7 @@ func (b *Backend) LaunchVMProcess(ctx context.Context, spec LaunchSpec) (pid int
 	setCmdCgroupFD(spec.Cmd, scope)
 
 	if spec.NetnsPath != "" {
-		restore, nsErr := EnterNetns(spec.NetnsPath)
+		restore, nsErr := enterNetns(spec.NetnsPath)
 		if nsErr != nil {
 			return 0, nil, fmt.Errorf("enter netns: %w", nsErr)
 		}
@@ -192,9 +134,70 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 	return nil
 }
 
-func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
+func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string) {
 	_ = utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod())
-	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+	CleanupRuntimeFiles(ctx, runDir, b.RuntimeFiles)
+}
+
+func (b *Backend) prepareStart(ctx context.Context, id string, scan *utils.ProcScan, spec StartSpec) (*VMRecord, error) {
+	rec, err := b.entryGuardLoad(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if rec.Quarantine != "" {
+		return nil, fmt.Errorf("vm %s is quarantined (%s); recover with vm restore or delete with vm rm", id, rec.Quarantine)
+	}
+	if rec.State == types.VMStateCreating {
+		return nil, fmt.Errorf("vm %s is still being created", id)
+	}
+	// Tombstone survives lost quarantine writes and process death mid-restore; the mixed run dir must not boot.
+	markerPath := filepath.Join(rec.RunDir, restoreDirtyName)
+	switch marker, statErr := os.Stat(markerPath); {
+	case statErr == nil && rec.StartedAt != nil && marker.ModTime().Before(*rec.StartedAt):
+		if err = os.Remove(markerPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("clear stale restore tombstone for %s: %w", id, err)
+		}
+	case statErr == nil:
+		return nil, fmt.Errorf("vm %s has an interrupted restore; recover with vm restore or delete with vm rm", id)
+	case !errors.Is(statErr, fs.ErrNotExist):
+		return nil, fmt.Errorf("check restore tombstone for %s: %w", id, statErr)
+	}
+
+	runErr := b.withRunningVM(ctx, &rec, scan, func(pid int) error {
+		if convergeErr := spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid); convergeErr != nil {
+			return convergeErr
+		}
+		if rec.State == types.VMStateRunning {
+			return nil
+		}
+		_, reconcileErr := b.ReconcileToRunning(ctx, id)
+		return reconcileErr
+	})
+	switch {
+	case runErr == nil:
+		return nil, nil
+	case errors.Is(runErr, ErrNotRunning):
+		b.convergeCrashedStart(ctx, &rec)
+		if err = RefuseFinalSeries(rec.RunDir); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("reconcile running VM %s: %w", id, runErr)
+	}
+
+	if err = utils.EnsureDirs(rec.RunDir, rec.LogDir); err != nil {
+		return nil, fmt.Errorf("ensure dirs: %w", err)
+	}
+	CleanupRuntimeFiles(ctx, rec.RunDir, b.RuntimeFiles)
+	if err = validateRecordInvariants(&rec); err != nil {
+		b.markError(ctx, id)
+		return nil, err
+	}
+	placed, err := b.placeRecord(ctx, id, &rec.Config.Config)
+	if err != nil {
+		return nil, fmt.Errorf("place VM: %w", err)
+	}
+	return &placed, nil
 }
 
 func raiseVMMRlimits(ctx context.Context) {

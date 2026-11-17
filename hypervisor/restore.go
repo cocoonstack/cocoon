@@ -26,13 +26,13 @@ type restoreRun struct {
 	afterExtract     AfterExtractHook
 }
 
-func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook, runtimeFiles []string) error {
+func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
 		b.failRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
-	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
+	CleanupRuntimeFiles(ctx, rec.RunDir, b.RuntimeFiles)
 	return nil
 }
 
@@ -57,21 +57,21 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 	info.Config = *vmCfg
 	info.State = types.VMStateRunning
 	info.PID = pid
-	SetRunningSockets(&info, rec.RunDir)
+	setRunningSockets(&info, rec.RunDir)
 	info.StartedAt = &now
 	info.UpdatedAt = now
 	return &info, nil
 }
 
 // RestoreSequence is the shared restore skeleton (preflight before kill).
-func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec) (*types.VM, error) {
+func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec, snapshot io.Reader) (*types.VM, error) {
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 
-	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, spec.Snapshot)
+	stagingDir, cleanupStaging, err := prepareStagingDir(rec.RunDir, snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -82,11 +82,11 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 	}
 	apply := func(rec *VMRecord) error {
 		if err := spec.Clean(rec.RunDir); err != nil {
-			b.QuarantineVM(ctx, vmID, "partial restore cleanup")
+			b.quarantineVM(ctx, vmID, "partial restore cleanup")
 			return err
 		}
-		if mergeErr := MergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
-			b.QuarantineVM(ctx, vmID, "partial snapshot merge")
+		if mergeErr := mergeDirInto(stagingDir, rec.RunDir); mergeErr != nil {
+			b.quarantineVM(ctx, vmID, "partial snapshot merge")
 			return fmt.Errorf("apply staged snapshot: %w", mergeErr)
 		}
 		return nil
@@ -95,20 +95,20 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
-func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec DirectRestoreSpec) (*types.VM, error) {
+func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec, srcDir string) (*types.VM, error) {
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 
-	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
+	if preflightErr := spec.Preflight(srcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
 	}
 	apply := func(rec *VMRecord) error {
-		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
+		if populateErr := populateFromSrc(rec.RunDir, srcDir, spec.Clean, spec.CloneFiles); populateErr != nil {
 			// Populate has no rollback; quarantine any origin on a partial run dir.
-			b.QuarantineVM(ctx, vmID, "partial restore populate")
+			b.quarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr
 		}
 		return nil
@@ -121,7 +121,7 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 	if origin == types.VMStateStopped {
 		return
 	}
-	b.MarkError(ctx, vmID)
+	b.markError(ctx, vmID)
 }
 
 func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, error) {
@@ -140,7 +140,7 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 			return err
 		}
 		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
-		if err := b.RecoverNetwork(ctx, run.rec); err != nil {
+		if err := b.recoverNetwork(ctx, run.rec); err != nil {
 			return fmt.Errorf("recover network: %w", err)
 		}
 		placed, err := b.placeRecord(ctx, run.vmID, &run.vmCfg.Config)
@@ -164,10 +164,10 @@ func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, e
 }
 
 func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig) (string, *VMRecord, func(), error) {
-	if err := ValidateHostCPU(vmCfg.CPU); err != nil {
+	if err := validateHostCPU(vmCfg.CPU); err != nil {
 		return "", nil, nil, err
 	}
-	vmID, err := b.ResolveRef(ctx, vmRef)
+	vmID, err := b.resolveRef(ctx, vmRef)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -180,7 +180,7 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 		return "", nil, nil, err
 	}
 	// Revalidate under the lock; the pre-lock record may predate a concurrent mutating verb.
-	rec, err := b.EntryGuardLoad(ctx, vmID)
+	rec, err := b.entryGuardLoad(ctx, vmID)
 	if err != nil {
 		return fail(err)
 	}
@@ -189,6 +189,9 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 	}
 	if vErr := validateRecordInvariants(&rec); vErr != nil {
 		return fail(vErr)
+	}
+	if fErr := RefuseFinalSeries(rec.RunDir); fErr != nil {
+		return fail(fErr)
 	}
 	if !sameImage(vmCfg, &rec.Config) {
 		return fail(fmt.Errorf("snapshot base image differs from vm %s; use vm clone instead", vmID))
@@ -224,8 +227,8 @@ func (b *Backend) emitRestoreComputeStop(ctx context.Context, vmID string, oldSh
 	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMComputeStop, vmID, sourceSnapshotID, metering.ReasonRestore, oldShape, now))
 }
 
-// PrepareStagingDir extracts inside the run dir; a top-level sibling would look like an orphan to the GC run-dir scan.
-func PrepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
+// prepareStagingDir extracts inside the run dir; a top-level sibling would look like an orphan to the GC run-dir scan.
+func prepareStagingDir(runDir string, snapshot io.Reader) (stagingDir string, cleanup func(), err error) {
 	stagingDir = filepath.Join(runDir, restoreStagingName)
 	if err = os.RemoveAll(stagingDir); err != nil {
 		return "", nil, fmt.Errorf("clear staging dir: %w", err)

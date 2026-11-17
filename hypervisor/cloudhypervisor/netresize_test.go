@@ -66,7 +66,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	})
 	hc := &http.Client{Transport: handlerTransport{mux}}
 
-	fresh, err := convergeOrphanedPause(t.Context(), hc, "vm1")
+	fresh, err := convergeOrphanedPause(t.Context(), hc, "vm1", t.TempDir())
 	if err != nil {
 		t.Fatalf("convergeOrphanedPause: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 	if fresh.State != "Running" {
 		t.Errorf("returned state = %q, want the refreshed Running", fresh.State)
 	}
-	if _, err = convergeOrphanedPause(t.Context(), hc, "vm1"); err != nil {
+	if _, err = convergeOrphanedPause(t.Context(), hc, "vm1", t.TempDir()); err != nil {
 		t.Fatalf("convergeOrphanedPause on a running VM: %v", err)
 	}
 	if resumes != 1 {

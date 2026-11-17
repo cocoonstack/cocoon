@@ -234,7 +234,6 @@ func ifName(index int) string {
 	return "eth" + strconv.Itoa(index)
 }
 
-// ifIndex parses the NIC index back out of an ifName-scheme guest interface name.
 func ifIndex(name string) (int, bool) {
 	rest, ok := strings.CutPrefix(name, "eth")
 	if !ok {

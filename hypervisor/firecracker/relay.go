@@ -226,10 +226,6 @@ func relaySession(ctx context.Context, master io.Writer, conn net.Conn, bc *broa
 	}
 }
 
-func waitRelayLeaseReady(ready *os.File) error {
-	return waitRelayLeaseResponse(ready, relayLeaseReadyCommand, "readiness")
-}
-
 func waitRelayLeaseResponse(response *os.File, want byte, phase string) error {
 	result := make(chan error, 1)
 	go func() {

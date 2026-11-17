@@ -1,6 +1,7 @@
 package cloudhypervisor
 
 import (
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -268,7 +269,7 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				hc := &http.Client{Transport: handlerTransport{mux}}
 				start := time.Now()
 
-				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc)
+				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{RunDir: t.TempDir()}, hc)
 				if err != nil {
 					t.Fatalf("pause: %v", err)
 				}
@@ -277,6 +278,23 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestSnapshotPauseLandsWhenCanceledMidRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.MarshalWrite(w, chVMInfoResponse{State: chStateRunning})
+	})
+	mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	hc := &http.Client{Transport: handlerTransport{mux}}
+
+	if err := (&CloudHypervisor{}).snapshotSpec(ctx).Pause(&hypervisor.VMRecord{}, hc); err != nil {
+		t.Fatalf("Pause: %v, want success so the capture skeleton resumes the guest it paused", err)
 	}
 }
 
@@ -297,5 +315,8 @@ type handlerTransport struct{ h http.Handler }
 func (ht handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	rec := httptest.NewRecorder()
 	ht.h.ServeHTTP(rec, r)
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
 	return rec.Result(), nil
 }

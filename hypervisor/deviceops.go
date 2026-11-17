@@ -40,7 +40,7 @@ func (b *Backend) LockedRunningOp(ctx context.Context, vmRef string) (*http.Clie
 	if err != nil {
 		return nil, VMRecord{}, nil, err
 	}
-	rec, err := b.EntryGuardLoad(ctx, vmID)
+	rec, err := b.entryGuardLoad(ctx, vmID)
 	if err == nil {
 		err = requireRunning(vmID, &rec)
 	}

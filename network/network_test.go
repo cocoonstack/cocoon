@@ -38,3 +38,48 @@ func TestAddRange(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTAPName(t *testing.T) {
+	tests := []struct {
+		tapPrefix  string
+		name       string
+		wantPrefix string
+		wantOK     bool
+	}{
+		{tapPrefix: "bt", name: "btAB234567-0", wantPrefix: "AB234567", wantOK: true},
+		{tapPrefix: "bt", name: "btAB234567-1", wantPrefix: "AB234567", wantOK: true},
+		{tapPrefix: "bt", name: "btZZZZZZZZ-15", wantPrefix: "ZZZZZZZZ", wantOK: true},
+		{tapPrefix: "mt", name: "mtAB234567-0", wantPrefix: "AB234567", wantOK: true},
+
+		{tapPrefix: "qv", name: "qvb1a2b3c4d-5e"},
+		{tapPrefix: "bt", name: "btabc-3"},
+		{tapPrefix: "bt", name: "btabc-def-5"},
+		{tapPrefix: "bt", name: "bt12345678-0"},
+		{tapPrefix: "bt", name: "btab234567-0"},
+		{tapPrefix: "bt", name: "btAB23456-0"},
+		{tapPrefix: "bt", name: "btAB2345677-0"},
+		{tapPrefix: "bt", name: "btAB234567-x"},
+		{tapPrefix: "bt", name: "btAB234567-+1"},
+		{tapPrefix: "bt", name: "btAB234567-01"},
+		{tapPrefix: "bt", name: "btAB234567-0-1"},
+		{tapPrefix: "bt", name: "btAB234567-"},
+		{tapPrefix: "bt", name: "wrong-prefix-0"},
+		{tapPrefix: "bt", name: "bt"},
+		{tapPrefix: "bt", name: "bt-0"},
+		{tapPrefix: "bt", name: "btAB234567"},
+		{tapPrefix: "bt", name: ""},
+		{tapPrefix: "mt", name: "btAB234567-0"},
+	}
+	for _, tt := range tests {
+		label := tt.tapPrefix + "/" + tt.name
+		t.Run(label, func(t *testing.T) {
+			gotPrefix, gotOK := ParseTAPName(tt.tapPrefix, tt.name)
+			if gotOK != tt.wantOK {
+				t.Errorf("ParseTAPName(%q, %q) ok = %v, want %v", tt.tapPrefix, tt.name, gotOK, tt.wantOK)
+			}
+			if gotPrefix != tt.wantPrefix {
+				t.Errorf("ParseTAPName(%q, %q) prefix = %q, want %q", tt.tapPrefix, tt.name, gotPrefix, tt.wantPrefix)
+			}
+		})
+	}
+}

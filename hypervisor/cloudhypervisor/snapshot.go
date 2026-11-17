@@ -27,8 +27,8 @@ const (
 	ejectRenotifyInterval = 5 * time.Second
 )
 
-func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
-	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
+func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
+	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx), persist)
 }
 
 func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
@@ -37,7 +37,6 @@ func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hy
 		Terminate: func(rec *hypervisor.VMRecord, pid int) error {
 			return ch.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 		},
-		RuntimeFiles: runtimeFiles,
 	}, persist)
 }
 
@@ -47,6 +46,11 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			info, err := getVMInfo(ctx, hc)
 			if err != nil {
 				return err
+			}
+			if info.State == chStatePaused {
+				if err := hypervisor.RefuseFinalSeries(rec.RunDir); err != nil {
+					return err
+				}
 			}
 			if err := hotAttachedError(info.Config.Fs, info.Config.Devices, info.Config.Disks); err != nil {
 				return err
@@ -60,7 +64,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := waitBalloonSettled(ctx, hc, rec.ID, info); err != nil {
 				return err
 			}
-			return pauseVM(ctx, hc)
+			return pauseVM(context.WithoutCancel(ctx), hc)
 		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		Capture: func(rec *hypervisor.VMRecord, hc *http.Client, tmpDir string) error {

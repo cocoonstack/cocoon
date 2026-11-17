@@ -66,7 +66,7 @@ cocoon
 
 `daemon` is optional: every other command works standalone with no daemon running. See [Daemon](daemon.md).
 
-The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the configured `meta_backend` (unset = sqlite). Stop the daemon and any `cocoon gc` timer first: convert refuses while the daemon runs, and it needs the store otherwise idle. Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
+The meta engine is selected by `meta_backend` in the config; unset auto-resolves — an existing store binds its engine (legacy json roots keep json), fresh roots get `sqlite` and bootstrap themselves. `meta convert` always converts TO the configured `meta_backend` (unset = sqlite). Stop the daemon, any `cocoon gc` timer and running commands first. Every process that opens the meta store holds a shared lock on `<root_dir>/meta/store.lock` until it exits, and convert refuses unless it can take that lock exclusively. It also refuses while a daemon holds its instance lock, which is the only lock a daemon started by an older binary holds. A command started during a conversion waits up to 10 seconds for it, then fails. Run `scripts/meta-upgrade.py --root-dir <root_dir>` (in the release archive next to the binary) once after a binary swap that raises the schema generation: it creates the tables the new generation declares, writes the placement rows for VMs the previous binary launched, and is safe to rerun. A sqlite store from an older generation is refused by name until then; a json root has no generation stamp, so it is not refused, but its running VMs stay out of the placement tally until the script has run.
 
 ## Global Flags
 
@@ -292,7 +292,7 @@ Applies to `cocoon vm status`:
 | `--interval`, `-n` | `5`     | Poll interval in seconds (only with `--watch` or `--event`) |
 | `--watch`, `-w`    | `false` | Refresh-loop mode (full-screen redraw each tick); omit for a one-shot snapshot |
 | `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
-| `--format`, `-o`   | `table` | Output format: `table` or `json` (one-shot and event modes; `--watch` always renders a table) |
+| `--format`, `-o`   | `table` | Output format: `table` or `json` (one-shot and event modes; `--watch` with `json` is rejected, use `--event` for a JSON stream) |
 
 `--event` and `--watch` are mutually exclusive; passing both fails with
 `--event and --watch are mutually exclusive`. With neither, `status` prints a

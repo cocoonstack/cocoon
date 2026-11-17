@@ -1,7 +1,9 @@
 package cloudimg
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -15,17 +17,18 @@ import (
 
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
-func TestDownloadToFileParallelRange(t *testing.T) {
+func TestDownloadBlobParallelRange(t *testing.T) {
 	data := testPayload(257 * 1024)
 	server := httptest.NewServer(rangeHandler(data, nil))
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadToFile(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -33,7 +36,29 @@ func TestDownloadToFileParallelRange(t *testing.T) {
 	assertFileContent(t, dst, data)
 }
 
-func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
+func TestDownloadBlobUsesTheCallerSuppliedClient(t *testing.T) {
+	data := testPayload(64 * 1024)
+	blob := rangeHandler(data, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		blob.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	dst := createTempFile(t)
+	digest, err := DownloadBlob(t.Context(), bearerDoer{}, server.URL, dst, 4, progress.Nop)
+	if err != nil {
+		t.Fatalf("DownloadBlob(): %v, want every request sent through the caller's client", err)
+	}
+	if want := sha256Hex(data); digest != want {
+		t.Errorf("digest = %s, want %s", digest, want)
+	}
+}
+
+func TestDownloadBlobFallsBackWhenRangeUnsupported(t *testing.T) {
 	data := testPayload(64 * 1024)
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -44,9 +69,9 @@ func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadToFile(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -57,7 +82,7 @@ func TestDownloadToFileFallsBackWhenRangeUnsupported(t *testing.T) {
 	}
 }
 
-func TestDownloadToFileRejectsNonImageBeforeWriting(t *testing.T) {
+func TestDownloadBlobRejectsNonImageBeforeWriting(t *testing.T) {
 	html := append([]byte("<!DOCTYPE html>"), testPayload(1<<20)...)
 	for name, handler := range map[string]http.Handler{
 		"range":    rangeHandler(html, nil),
@@ -67,8 +92,8 @@ func TestDownloadToFileRejectsNonImageBeforeWriting(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			dst := createTempFile(t)
-			if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil || !strings.Contains(err.Error(), "HTML") {
-				t.Fatalf("downloadToFile() = %v, want the HTML rejection", err)
+			if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil || !strings.Contains(err.Error(), "HTML") {
+				t.Fatalf("DownloadBlob() = %v, want the HTML rejection", err)
 			}
 			st, err := dst.Stat()
 			if err != nil {
@@ -81,7 +106,7 @@ func TestDownloadToFileRejectsNonImageBeforeWriting(t *testing.T) {
 	}
 }
 
-func TestDownloadToFileOneRangeFailureAbortsWhole(t *testing.T) {
+func TestDownloadBlobOneRangeFailureAbortsWhole(t *testing.T) {
 	data := testPayload(4096)
 	secondChunkStart := int64(len(data) / 2)
 	server := httptest.NewServer(rangeHandler(data, func(start, _ int64) bool {
@@ -90,12 +115,12 @@ func TestDownloadToFileOneRangeFailureAbortsWhole(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 2); err == nil {
-		t.Fatal("downloadToFile() = nil error, want failure from the broken range")
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 2, progress.Nop); err == nil {
+		t.Fatal("DownloadBlob() = nil error, want failure from the broken range")
 	}
 }
 
-func TestDownloadToFileRejectsOverCapSize(t *testing.T) {
+func TestDownloadBlobRejectsOverCapSize(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", maxDownloadBytes+1))
 		w.WriteHeader(http.StatusPartialContent)
@@ -104,12 +129,12 @@ func TestDownloadToFileRejectsOverCapSize(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil {
-		t.Fatal("downloadToFile() = nil error, want rejection for exceeding max size")
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
+		t.Fatal("DownloadBlob() = nil error, want rejection for exceeding max size")
 	}
 }
 
-func TestDownloadToFileEmitsFinalProgressEvent(t *testing.T) {
+func TestDownloadBlobEmitsFinalProgressEvent(t *testing.T) {
 	data := testPayload(64 * 1024)
 	server := httptest.NewServer(rangeHandler(data, nil))
 	defer server.Close()
@@ -118,23 +143,23 @@ func TestDownloadToFileEmitsFinalProgressEvent(t *testing.T) {
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) { lastEvent = e })
 
 	dst := createTempFile(t)
-	if _, err := downloadToFile(t.Context(), server.URL, dst, tracker, 4); err != nil {
-		t.Fatalf("downloadToFile(): %v", err)
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, tracker); err != nil {
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if lastEvent.BytesDone != int64(len(data)) || lastEvent.BytesTotal != int64(len(data)) {
 		t.Errorf("final event = %+v, want BytesDone=BytesTotal=%d", lastEvent, len(data))
 	}
 }
 
-func TestDownloadToFileUnevenLastRange(t *testing.T) {
+func TestDownloadBlobUnevenLastRange(t *testing.T) {
 	data := testPayload(257*1024 + 7)
 	server := httptest.NewServer(rangeHandler(data, nil))
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadToFile(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -142,7 +167,7 @@ func TestDownloadToFileUnevenLastRange(t *testing.T) {
 	assertFileContent(t, dst, data)
 }
 
-func TestDownloadToFileFollowsRedirectForRanges(t *testing.T) {
+func TestDownloadBlobFollowsRedirectForRanges(t *testing.T) {
 	data := testPayload(64 * 1024)
 	target := httptest.NewServer(rangeHandler(data, nil))
 	defer target.Close()
@@ -155,9 +180,9 @@ func TestDownloadToFileFollowsRedirectForRanges(t *testing.T) {
 	defer front.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadToFile(t.Context(), front.URL, dst, progress.Nop, 4)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, front.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadToFile(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -169,7 +194,7 @@ func TestDownloadToFileFollowsRedirectForRanges(t *testing.T) {
 	}
 }
 
-func TestDownloadToFileShortRangeBodyFails(t *testing.T) {
+func TestDownloadBlobShortRangeBodyFails(t *testing.T) {
 	data := testPayload(64 * 1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")
@@ -191,12 +216,12 @@ func TestDownloadToFileShortRangeBodyFails(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil {
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
 		t.Fatal("expected error for a short 206 body, got nil (zero-hole corruption)")
 	}
 }
 
-func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
+func TestDownloadBlobMismatchedContentRangeFails(t *testing.T) {
 	data := testPayload(64 * 1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")
@@ -215,7 +240,7 @@ func TestDownloadToFileMismatchedContentRangeFails(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadToFile(t.Context(), server.URL, dst, progress.Nop, 4); err == nil {
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
 		t.Fatal("expected error for mismatched content-range, got nil")
 	}
 }
@@ -239,6 +264,50 @@ func TestParseContentRangeSize(t *testing.T) {
 		if got != tt.want || ok != tt.ok {
 			t.Errorf("parseContentRangeSize(%q) = %d, %v; want %d, %v", tt.in, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+func TestPullRejectsUpstreamChangedMidDownload(t *testing.T) {
+	before := testPayload(64 * 1024)
+	clear(before[:32])
+	copy(before, utils.Qcow2Magic)
+	binary.BigEndian.PutUint32(before[4:8], 3)
+	after := bytes.Clone(before)
+	for i := 4096; i < len(after); i++ {
+		after[i] ^= 0xff
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start, end, ok := parseTestRange(r.Header.Get("Range"), int64(len(before)))
+		if !ok {
+			http.Error(w, "bad range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		data, etag := after, `"after"`
+		if start == 0 {
+			data, etag = before, `"before"`
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(data[start : end+1])
+	}))
+	defer server.Close()
+
+	c := newImportTestBackend(t)
+	c.conf.PullConns = 4
+	err := c.Pull(t.Context(), server.URL, false, progress.Nop)
+	if err == nil || !strings.Contains(err.Error(), "upstream object changed") {
+		t.Fatalf("Pull() = %v, want the upstream-changed rejection", err)
+	}
+	blobs, err := utils.ScanFileStems(c.conf.BlobsDir(), c.conf.BlobExt)
+	if err != nil {
+		t.Fatalf("ScanFileStems(): %v", err)
+	}
+	if len(blobs) != 0 {
+		t.Errorf("spliced download published blobs %v", blobs)
+	}
+	if img, err := c.Inspect(t.Context(), server.URL); err != nil || img != nil {
+		t.Errorf("spliced download indexed: img=%+v err=%v", img, err)
 	}
 }
 
@@ -325,4 +394,11 @@ func assertFileContent(t *testing.T, f *os.File, want []byte) {
 			t.Fatalf("file content mismatch at byte %d: got %d, want %d", i, got[i], want[i])
 		}
 	}
+}
+
+type bearerDoer struct{}
+
+func (bearerDoer) Do(r *http.Request) (*http.Response, error) {
+	r.Header.Set("Authorization", "Bearer token")
+	return http.DefaultClient.Do(r)
 }

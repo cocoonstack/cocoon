@@ -12,6 +12,7 @@ import (
 type Codec interface {
 	Decode(data []byte) (*Model, error)
 	Encode(m *Model) ([]byte, error)
+	Declares(table string) bool
 }
 
 type genericFile struct {
@@ -56,3 +57,5 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 	}
 	return append(data, '\n'), nil
 }
+
+func (GenericCodec) Declares(string) bool { return true }

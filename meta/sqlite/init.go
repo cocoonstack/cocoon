@@ -17,10 +17,9 @@ const initLockName = "init.lock"
 
 // Init creates a fresh store — schema, identity pragmas and one meta_state row per namespace — in one transaction, so a crash mid-init leaves an empty database or a complete store.
 func Init(ctx context.Context, dbPath string, namespaces ...Namespace) error {
-	if err := RefuseManifest(dbPath); err != nil {
-		return err
-	}
-	return initStore(ctx, dbPath, namespaces)
+	return withInitLock(ctx, dbPath, func() error {
+		return initStore(ctx, dbPath, namespaces)
+	})
 }
 
 // InitIfMissing bootstraps a fresh store or repairs a crashed one, serializing racing processes behind a transient flock.
@@ -28,15 +27,12 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 	if need, err := initNeeded(ctx, dbPath); err == nil && !need {
 		return nil
 	}
-	if merr := utils.EnsureDirs(filepath.Dir(dbPath)); merr != nil {
-		return merr
-	}
-	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), func() error {
+	return withInitLock(ctx, dbPath, func() error {
 		need, err := initNeeded(ctx, dbPath)
 		if err != nil || !need {
 			return err
 		}
-		return Init(ctx, dbPath, namespaces...)
+		return initStore(ctx, dbPath, namespaces)
 	})
 }
 
@@ -47,6 +43,16 @@ func InitForRecoveryIfNeeded(ctx context.Context, dbPath string, namespaces ...N
 		return err
 	}
 	return initStore(ctx, dbPath, namespaces)
+}
+
+func withInitLock(ctx context.Context, dbPath string, fn func() error) error {
+	if err := RefuseManifest(dbPath); err != nil {
+		return err
+	}
+	if err := utils.EnsureDirs(filepath.Dir(dbPath)); err != nil {
+		return err
+	}
+	return withFlock(ctx, flock.NewTransient(filepath.Join(filepath.Dir(dbPath), initLockName)), fn)
 }
 
 func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err error) {

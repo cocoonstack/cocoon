@@ -10,40 +10,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func TestParseTAPName(t *testing.T) {
-	tests := []struct {
-		tapPrefix  string
-		name       string
-		wantPrefix string
-		wantOK     bool
-	}{
-		{tapPrefix: "bt", name: "bt12345678-0", wantPrefix: "12345678", wantOK: true},
-		{tapPrefix: "bt", name: "bt12345678-1", wantPrefix: "12345678", wantOK: true},
-		{tapPrefix: "bt", name: "btabc-3", wantPrefix: "abc", wantOK: true},
-		{tapPrefix: "bt", name: "btabc-def-5", wantPrefix: "abc-def", wantOK: true},
-		{tapPrefix: "mt", name: "mt12345678-0", wantPrefix: "12345678", wantOK: true},
-
-		{tapPrefix: "bt", name: "wrong-prefix-0"},
-		{tapPrefix: "bt", name: "bt"},
-		{tapPrefix: "bt", name: "bt-0"},
-		{tapPrefix: "bt", name: "bt12345678"},
-		{tapPrefix: "bt", name: ""},
-		{tapPrefix: "mt", name: "bt12345678-0"},
-	}
-	for _, tt := range tests {
-		label := tt.tapPrefix + "/" + tt.name
-		t.Run(label, func(t *testing.T) {
-			gotPrefix, gotOK := parseTAPName(tt.tapPrefix, tt.name)
-			if gotOK != tt.wantOK {
-				t.Errorf("parseTAPName(%q, %q) ok = %v, want %v", tt.tapPrefix, tt.name, gotOK, tt.wantOK)
-			}
-			if gotPrefix != tt.wantPrefix {
-				t.Errorf("parseTAPName(%q, %q) prefix = %q, want %q", tt.tapPrefix, tt.name, gotPrefix, tt.wantPrefix)
-			}
-		})
-	}
-}
-
 func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 	oldList, oldDelete := listLinksFn, deleteLinkFn
 	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
@@ -68,6 +34,31 @@ func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 	}
 	if len(deleted) != 1 || deleted[0] != 2 {
 		t.Fatalf("deleted = %v, want only the orphan whose owner lookup succeeded", deleted)
+	}
+}
+
+func TestGCReportsAFailedTAPDelete(t *testing.T) {
+	oldList, oldDelete := listLinksFn, deleteLinkFn
+	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
+	listLinksFn = func() ([]netlink.Link, error) {
+		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}, &netlink.Dummy{Name: "btAAAAAAAA-1", Index: 2}}, nil
+	}
+	delErr := errors.New("link busy")
+	var deleted []int
+	deleteLinkFn = func(link netlink.Link) error {
+		deleted = append(deleted, link.Attrs().Index)
+		if link.Attrs().Index == 1 {
+			return delErr
+		}
+		return nil
+	}
+	m := GCModule("bt", func(context.Context, string) (bool, error) { return false, nil })
+	err := m.Collect(t.Context(), []string{"AAAAAAAA"}, bridgeSnapshot{})
+	if !errors.Is(err, delErr) {
+		t.Fatalf("collect error = %v, want the TAP delete failure reported", err)
+	}
+	if len(deleted) != 2 {
+		t.Fatalf("deleted = %v, want every orphan TAP attempted past the failure", deleted)
 	}
 }
 
@@ -103,7 +94,7 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 			lists, deletes, reads := 0, 0, 0
 			listLinksFn = func() ([]netlink.Link, error) {
 				lists++
-				return []netlink.Link{&netlink.Dummy{Name: "bt12345678-0", Index: 123}}, nil
+				return []netlink.Link{&netlink.Dummy{Name: "btAB234567-0", Index: 123}}, nil
 			}
 			deleteLinkFn = func(link netlink.Link) error {
 				deletes++
@@ -114,7 +105,7 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 			}
 			m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
 				reads++
-				if lists != 2 || id != "12345678" {
+				if lists != 2 || id != "AB234567" {
 					t.Fatalf("owner read before current TAP discovery: lists=%d ref=%q", lists, id)
 				}
 				return tt.inUse, tt.err

@@ -31,85 +31,6 @@ func (b *Backend) WithRunningVM(ctx context.Context, rec *VMRecord, fn PIDHook) 
 	return b.withRunningVM(ctx, rec, nil, fn)
 }
 
-// IsAPISocketLive dials the record's API socket: ENOENT and ECONNREFUSED are a clean false, any other dial error returns fail-closed.
-func (b *Backend) IsAPISocketLive(ctx context.Context, rec *VMRecord) (bool, error) {
-	sock := SocketPath(rec.RunDir)
-	dialCtx, cancel := context.WithTimeout(ctx, socketProbeTimeout)
-	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(dialCtx, "unix", sock)
-	if err == nil {
-		_ = conn.Close()
-		return true, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
-		return false, nil
-	}
-	return true, err
-}
-
-// UpdateState flips id to Stopped or Error; Running→Stopped emits compute.stop.
-func (b *Backend) UpdateState(ctx context.Context, id string, state types.VMState) error {
-	now := timeNow()
-	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
-		if state != types.VMStateStopped {
-			markTransition(r, state, types.TransitionError, now)
-			return nil
-		}
-		open := hasOpenComputeInterval(r)
-		wasUp := open || r.State == types.VMStateRunning
-		markTransition(r, state, types.TransitionStopUser, now)
-		r.QuiescePending = needsQuiesce(r)
-		if wasUp {
-			// A VM that was up gets a stop time even when its ledger interval was never opened.
-			r.StoppedAt = &now
-		}
-		if !open {
-			return nil
-		}
-		return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
-	})
-}
-
-func (b *Backend) MarkError(ctx context.Context, id string) {
-	if err := b.UpdateState(ctx, id, types.VMStateError); err != nil {
-		log.WithFunc(b.Typ+".MarkError").Errorf(ctx, err, "mark VM %s error", id)
-	}
-}
-
-// QuarantineVM marks the VM error and persists the quarantine reason (see VMRecord.Quarantine).
-func (b *Backend) QuarantineVM(ctx context.Context, id, reason string) {
-	ctx, cancel := detachedWrite(ctx)
-	defer cancel()
-	now := timeNow()
-	if err := b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
-		markTransition(r, types.VMStateError, types.TransitionError, now)
-		r.Quarantine = reason
-		return nil
-	}); err != nil {
-		log.WithFunc(b.Typ+".QuarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
-	}
-}
-
-// MarkStarted flips id to VMStateRunning; a VM with an open compute interval is stale-running (close stop-crash, then open fresh).
-func (b *Backend) MarkStarted(ctx context.Context, id string) error {
-	now := timeNow()
-	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
-		shape := shapeFromConfig(r.Config)
-		emitReason, transition := bootReasons(r.FirstBooted)
-		var staged []metering.Entry
-		if hasOpenComputeInterval(r) {
-			staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
-		}
-		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, emitReason, shape, now))
-		markTransition(r, types.VMStateRunning, transition, now)
-		r.StartedAt = &now
-		r.StoppedAt = nil
-		r.FirstBooted = true
-		r.QuiescePending = false
-		return staged
-	})
-}
-
 // ReconcileToRunning returns the committed generation (zero if unchanged) and emits a fresh compute.start when no interval is open.
 func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, error) {
 	now := timeNow()
@@ -153,6 +74,87 @@ func (b *Backend) ReconcileToRunning(ctx context.Context, id string) (uint64, er
 		b.Metering.Emit(ctx, b.makeEntry(metering.KindVMComputeStart, id, reason, shape, now))
 	}
 	return gen, nil
+}
+
+// isAPISocketLive dials the record's API socket: ENOENT and ECONNREFUSED are a clean false, any other dial error returns fail-closed.
+func (b *Backend) isAPISocketLive(ctx context.Context, rec *VMRecord) (bool, error) {
+	sock := SocketPath(rec.RunDir)
+	dialCtx, cancel := context.WithTimeout(ctx, socketProbeTimeout)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(dialCtx, "unix", sock)
+	if err == nil {
+		_ = conn.Close()
+		return true, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+		return false, nil
+	}
+	return true, err
+}
+
+// updateState flips id to Stopped or Error; Running→Stopped emits compute.stop.
+func (b *Backend) updateState(ctx context.Context, id string, state types.VMState) error {
+	now := timeNow()
+	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
+		if state != types.VMStateStopped {
+			markTransition(r, state, types.TransitionError, now)
+			return nil
+		}
+		open := hasOpenComputeInterval(r)
+		wasUp := open || r.State == types.VMStateRunning
+		markTransition(r, state, types.TransitionStopUser, now)
+		r.QuiescePending = needsQuiesce(r)
+		if wasUp {
+			// A VM that was up gets a stop time even when its ledger interval was never opened.
+			r.StoppedAt = &now
+		}
+		if !open {
+			return nil
+		}
+		return []metering.Entry{b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopUser, shapeFromConfig(r.Config), now)}
+	})
+}
+
+func (b *Backend) markError(ctx context.Context, id string) {
+	if err := b.updateState(ctx, id, types.VMStateError); err != nil {
+		log.WithFunc(b.Typ+".markError").Errorf(ctx, err, "mark VM %s error", id)
+	}
+}
+
+// quarantineVM marks the VM error and persists the quarantine reason (see VMRecord.Quarantine).
+func (b *Backend) quarantineVM(ctx context.Context, id, reason string) {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
+	now := timeNow()
+	if err := b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
+		markTransition(r, types.VMStateError, types.TransitionError, now)
+		r.Quarantine = reason
+		return nil
+	}); err != nil {
+		log.WithFunc(b.Typ+".quarantineVM").Errorf(ctx, err, "quarantine VM %s", id)
+	}
+}
+
+// markStarted flips id to VMStateRunning; a VM with an open compute interval is stale-running (close stop-crash, then open fresh).
+func (b *Backend) markStarted(ctx context.Context, id string) error {
+	ctx, cancel := detachedWrite(ctx)
+	defer cancel()
+	now := timeNow()
+	return b.updateVM(ctx, id, func(r *VMRecord) []metering.Entry {
+		shape := shapeFromConfig(r.Config)
+		emitReason, transition := bootReasons(r.FirstBooted)
+		var staged []metering.Entry
+		if hasOpenComputeInterval(r) {
+			staged = append(staged, b.makeEntry(metering.KindVMComputeStop, id, metering.ReasonStopCrash, shape, now))
+		}
+		staged = append(staged, b.makeEntry(metering.KindVMComputeStart, id, emitReason, shape, now))
+		markTransition(r, types.VMStateRunning, transition, now)
+		r.StartedAt = &now
+		r.StoppedAt = nil
+		r.FirstBooted = true
+		r.QuiescePending = false
+		return staged
+	})
 }
 
 // withRunningVM resolves liveness against the caller's /proc walk; a nil scan walks now, so batch callers turn N walks into one.

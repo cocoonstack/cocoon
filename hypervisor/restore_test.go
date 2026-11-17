@@ -50,18 +50,18 @@ func TestFailRestoreSparesStoppedOrigin(t *testing.T) {
 }
 
 func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
-	failAfterExtract := func(spec *DirectRestoreSpec) {
+	failAfterExtract := func(spec *RestoreSpec) {
 		spec.AfterExtract = func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
 			return nil, errors.New("launch boom")
 		}
 	}
-	failPopulate := func(spec *DirectRestoreSpec) {
-		spec.Populate = func(*VMRecord, string) error { return errors.New("populate boom") }
+	failPopulate := func(spec *RestoreSpec) {
+		spec.CloneFiles = func(string, string) error { return errors.New("populate boom") }
 	}
 	tests := []struct {
 		name   string
 		origin types.VMState
-		fail   func(*DirectRestoreSpec)
+		fail   func(*RestoreSpec)
 		want   types.VMState
 	}{
 		{"stopped origin survives a post-populate failure", types.VMStateStopped, failAfterExtract, types.VMStateStopped},
@@ -82,15 +82,15 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 				t.Fatalf("seed state: %v", err)
 			}
 
-			spec := DirectRestoreSpec{
-				VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
-				SrcDir:    t.TempDir(),
-				Preflight: func(string, *VMRecord) error { return nil },
-				Kill:      func(context.Context, string, *VMRecord) error { return nil },
-				Populate:  func(*VMRecord, string) error { return nil },
+			spec := RestoreSpec{
+				VMCfg:      &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
+				Preflight:  func(string, *VMRecord) error { return nil },
+				Kill:       func(context.Context, string, *VMRecord) error { return nil },
+				Clean:      func(string) error { return nil },
+				CloneFiles: func(string, string) error { return nil },
 			}
 			tt.fail(&spec)
-			if _, err := b.DirectRestoreSequence(t.Context(), id, spec); err == nil {
+			if _, err := b.DirectRestoreSequence(t.Context(), id, spec, t.TempDir()); err == nil {
 				t.Fatal("expected restore failure")
 			}
 			rec, err := b.LoadRecord(t.Context(), id)
@@ -126,16 +126,16 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 		return nil
 	}})
 
-	_, err := b.DirectRestoreSequence(ctx, id, DirectRestoreSpec{
-		VMCfg:     &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
-		SrcDir:    t.TempDir(),
-		Preflight: func(string, *VMRecord) error { return nil },
-		Kill:      func(context.Context, string, *VMRecord) error { return nil },
-		Populate:  func(*VMRecord, string) error { return nil },
+	_, err := b.DirectRestoreSequence(ctx, id, RestoreSpec{
+		VMCfg:      &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
+		Preflight:  func(string, *VMRecord) error { return nil },
+		Kill:       func(context.Context, string, *VMRecord) error { return nil },
+		Clean:      func(string) error { return nil },
+		CloneFiles: func(string, string) error { return nil },
 		AfterExtract: func(context.Context, string, *types.VMConfig, *VMRecord) (*types.VM, error) {
 			return nil, errors.New("launch boom")
 		},
-	})
+	}, t.TempDir())
 	if err == nil {
 		t.Fatal("expected restore failure")
 	}
@@ -189,12 +189,12 @@ func TestRestoreHasAQuiescePendingBeforeTheVMM(t *testing.T) {
 				return nil
 			}})
 
-			_, err := b.DirectRestoreSequence(ctx, id, DirectRestoreSpec{
+			_, err := b.DirectRestoreSequence(ctx, id, RestoreSpec{
 				VMCfg:     &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
-				SrcDir:    t.TempDir(),
 				Preflight: func(string, *VMRecord) error { return nil },
 				Kill:      func(context.Context, string, *VMRecord) error { return nil },
-				Populate: func(*VMRecord, string) error {
+				Clean:     func(string) error { return nil },
+				CloneFiles: func(string, string) error {
 					if got := pending(); got != tt.pendingInApply {
 						t.Errorf("pending during populate = %v, want %v", got, tt.pendingInApply)
 					}
@@ -206,7 +206,7 @@ func TestRestoreHasAQuiescePendingBeforeTheVMM(t *testing.T) {
 					}
 					return nil, errors.New("stop after the window")
 				},
-			})
+			}, t.TempDir())
 			if err == nil {
 				t.Fatal("expected the AfterExtract failure")
 			}
@@ -224,7 +224,6 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	}
 	spec := RestoreSpec{
 		VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
-		Snapshot:  tarWithFiles(t, "a", "b"),
 		Preflight: func(string, *VMRecord) error { return nil },
 		Kill:      func(context.Context, string, *VMRecord) error { return nil },
 		Clean:     func(string) error { return nil },
@@ -233,7 +232,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 			return nil, nil
 		},
 	}
-	if _, err := b.RestoreSequence(t.Context(), id, spec); err == nil {
+	if _, err := b.RestoreSequence(t.Context(), id, spec, tarWithFiles(t, "a", "b")); err == nil {
 		t.Fatal("expected merge failure")
 	}
 	rec, err := b.LoadRecord(t.Context(), id)
@@ -313,7 +312,7 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 				t.Fatalf("load record: %v", err)
 			}
 
-			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") }, nil)
+			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") })
 			if killErr == nil || !strings.Contains(killErr.Error(), "stop running VM") {
 				t.Fatalf("KillForRestore: %v, want stop running VM error", killErr)
 			}
@@ -371,7 +370,6 @@ func TestRestoreCleanFailureQuarantines(t *testing.T) {
 
 	spec := RestoreSpec{
 		VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
-		Snapshot:  tarWithFiles(t, "a"),
 		Preflight: func(string, *VMRecord) error { return nil },
 		Kill:      func(context.Context, string, *VMRecord) error { return nil },
 		Clean:     func(string) error { return errors.New("sweep boom") },
@@ -380,7 +378,7 @@ func TestRestoreCleanFailureQuarantines(t *testing.T) {
 			return nil, nil
 		},
 	}
-	if _, err := b.RestoreSequence(t.Context(), id, spec); err == nil {
+	if _, err := b.RestoreSequence(t.Context(), id, spec, tarWithFiles(t, "a")); err == nil {
 		t.Fatal("expected sweep failure")
 	}
 	rec, err := b.LoadRecord(t.Context(), id)
@@ -431,9 +429,9 @@ func TestRestoreRejectsDifferentImageBeforeStagingOrKill(t *testing.T) {
 					}
 					var err error
 					if direct {
-						_, err = b.DirectRestoreSequence(t.Context(), id, DirectRestoreSpec{VMCfg: cfg, SrcDir: t.TempDir(), Preflight: preflight, Kill: kill})
+						_, err = b.DirectRestoreSequence(t.Context(), id, RestoreSpec{VMCfg: cfg, Preflight: preflight, Kill: kill}, t.TempDir())
 					} else {
-						_, err = b.RestoreSequence(t.Context(), id, RestoreSpec{VMCfg: cfg, Snapshot: tarWithFiles(t, "snapshot"), Preflight: preflight, Kill: kill})
+						_, err = b.RestoreSequence(t.Context(), id, RestoreSpec{VMCfg: cfg, Preflight: preflight, Kill: kill}, tarWithFiles(t, "snapshot"))
 					}
 					if called != tt.wantPreflight {
 						t.Fatalf("preflight called=%v, want %v", called, tt.wantPreflight)

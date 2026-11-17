@@ -21,50 +21,11 @@ import (
 // IntegrityCheck verifies the snapshot files under srcDir against the sidecar's storage configs.
 type IntegrityCheck func(srcDir string, sidecar []*types.StorageConfig) error
 
-func (b *Backend) RecordSnapshot(ctx context.Context, vmID string) (string, error) {
-	snapID := utils.GenerateID()
-	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
-		if r.SnapshotIDs == nil {
-			r.SnapshotIDs = make(map[string]struct{})
-		}
-		r.SnapshotIDs[snapID] = struct{}{}
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("record snapshot on VM: %w", err)
-	}
-	return snapID, nil
-}
-
-// UnrecordSnapshot drops a snapshot id from the VM's record (persist-failure rollback); best-effort, a leftover id is cosmetic.
-func (b *Backend) UnrecordSnapshot(ctx context.Context, vmID, snapID string) {
-	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
-		delete(r.SnapshotIDs, snapID)
-		return nil
-	}); err != nil {
-		log.WithFunc(b.Typ+".UnrecordSnapshot").Warnf(ctx, "unrecord snapshot %s on %s: %v", snapID, vmID, err)
-	}
-}
-
-func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
-	nicMTUs := make([]int, len(rec.NetworkConfigs))
-	for i, nc := range rec.NetworkConfigs {
-		nicMTUs[i] = nc.MTU
-	}
-	return &types.SnapshotConfig{
-		ID:           snapID,
-		Hypervisor:   b.Typ,
-		NICs:         len(rec.NetworkConfigs),
-		NICMTUs:      nicMTUs,
-		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
-		Config:       rec.Config.Config,
-	}
-}
-
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window.
-func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ string, err error) {
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window, and persist runs under the ops lock.
+func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec, persist PersistFunc) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 	defer unlock()
 	defer func() {
@@ -81,13 +42,17 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 		defer func() { captureErr = errors.Join(captureErr, resumeAfterCapture(spec.Resume, &rec, hc)) }()
 		return spec.Capture(&rec, hc, tmpDir)
 	}); err != nil {
-		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
+		return fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
-	return cfg, tmpDir, nil
+	if err = persist(cfg, tmpDir); err != nil {
+		b.unrecordSnapshot(ctx, vmID, cfg.ID)
+		return fmt.Errorf("persist snapshot: %w", err)
+	}
+	return nil
 }
 
 // HibernateSequence persists inside the pause window and terminates instead of resuming.
@@ -103,9 +68,11 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		}
 	}()
 
-	logger := log.WithFunc(b.Typ + ".HibernateSequence")
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
-	var killFailed bool
+	var (
+		killFailed bool
+		snapID     string
+	)
 	err = b.WithRunningVM(ctx, &rec, func(pid int) error {
 		if pErr := spec.Pause(&rec, hc); pErr != nil {
 			return fmt.Errorf("pause: %w", pErr)
@@ -119,9 +86,10 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			return failResume(sErr)
 		}
 		if pErr := persist(cfg, tmpDir); pErr != nil {
-			b.UnrecordSnapshot(ctx, vmID, cfg.ID)
+			b.unrecordSnapshot(ctx, vmID, cfg.ID)
 			return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 		}
+		snapID = cfg.ID
 		if kErr := spec.Terminate(&rec, pid); kErr != nil {
 			killFailed = true
 			return fmt.Errorf("terminate: %w", kErr)
@@ -130,20 +98,54 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	})
 	if err != nil {
 		if killFailed {
-			b.MarkError(ctx, vmID)
+			b.markError(ctx, vmID)
 		}
 		return fmt.Errorf("hibernate VM %s: %w", vmID, err)
 	}
 
-	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
-	b.removeCgroupScope(ctx, vmID)
-	// Warn-and-continue like StopOneLocked: the VMM is dead and the flip self-heals; the snapshot is already durable.
-	uErr := b.UpdateState(ctx, vmID, types.VMStateStopped)
-	if uErr != nil {
-		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
+	if err = b.landStopped(ctx, vmID, &rec, false); err != nil {
+		return fmt.Errorf("hibernate VM %s: snapshot %s is saved and the VMM stopped, settle with vm stop: %w", vmID, snapID, err)
 	}
-	b.quiesceAfterStop(ctx, vmID, &rec, true, uErr == nil)
 	return nil
+}
+
+func (b *Backend) recordSnapshot(ctx context.Context, vmID string) (string, error) {
+	snapID := utils.GenerateID()
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
+		if r.SnapshotIDs == nil {
+			r.SnapshotIDs = make(map[string]struct{})
+		}
+		r.SnapshotIDs[snapID] = struct{}{}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("record snapshot on VM: %w", err)
+	}
+	return snapID, nil
+}
+
+// unrecordSnapshot drops a snapshot id from the VM's record (persist-failure rollback); best-effort, a leftover id is cosmetic.
+func (b *Backend) unrecordSnapshot(ctx context.Context, vmID, snapID string) {
+	if err := b.UpdateRecord(ctx, vmID, func(r *VMRecord) error {
+		delete(r.SnapshotIDs, snapID)
+		return nil
+	}); err != nil {
+		log.WithFunc(b.Typ+".unrecordSnapshot").Warnf(ctx, "unrecord snapshot %s on %s: %v", snapID, vmID, err)
+	}
+}
+
+func (b *Backend) buildSnapshotConfig(snapID string, rec *VMRecord) *types.SnapshotConfig {
+	nicMTUs := make([]int, len(rec.NetworkConfigs))
+	for i, nc := range rec.NetworkConfigs {
+		nicMTUs[i] = nc.MTU
+	}
+	return &types.SnapshotConfig{
+		ID:           snapID,
+		Hypervisor:   b.Typ,
+		NICs:         len(rec.NetworkConfigs),
+		NICMTUs:      nicMTUs,
+		ImageBlobIDs: maps.Clone(rec.ImageBlobIDs),
+		Config:       rec.Config.Config,
+	}
 }
 
 func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRecord, string, func(), error) {
@@ -160,7 +162,7 @@ func (b *Backend) prepareSnapshot(ctx context.Context, ref string) (string, VMRe
 }
 
 func (b *Backend) lockForCapture(ctx context.Context, ref string) (string, VMRecord, func(), error) {
-	vmID, err := b.ResolveRef(ctx, ref)
+	vmID, err := b.resolveRef(ctx, ref)
 	if err != nil {
 		return "", VMRecord{}, nil, err
 	}
@@ -168,7 +170,7 @@ func (b *Backend) lockForCapture(ctx context.Context, ref string) (string, VMRec
 	if err != nil {
 		return "", VMRecord{}, nil, err
 	}
-	rec, err := b.EntryGuardLoad(ctx, vmID)
+	rec, err := b.entryGuardLoad(ctx, vmID)
 	if err == nil {
 		err = validateRecordInvariants(&rec)
 	}
@@ -183,21 +185,11 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	if err := saveCaptureMeta(rec, spec, tmpDir); err != nil {
 		return nil, err
 	}
-	snapID, err := b.RecordSnapshot(ctx, vmID)
+	snapID, err := b.recordSnapshot(ctx, vmID)
 	if err != nil {
 		return nil, err
 	}
-	return b.BuildSnapshotConfig(snapID, rec), nil
-}
-
-func PopulateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
-	if err := clean(runDir); err != nil {
-		return fmt.Errorf("clean old snapshot files: %w", err)
-	}
-	if err := clone(runDir, srcDir); err != nil {
-		return fmt.Errorf("clone snapshot files: %w", err)
-	}
-	return nil
+	return b.buildSnapshotConfig(snapID, rec), nil
 }
 
 func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.StorageConfig {
@@ -211,14 +203,26 @@ func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.Storage
 	return out
 }
 
-func IsUnderDir(path, dir string) bool {
+// ReverseLayers projects layer entries through project, topmost layer first (overlayfs lowerdir order).
+func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(idx int, sc *types.StorageConfig) T) []T {
+	var out []T
+	for _, sc := range storageConfigs {
+		if sc.Role == types.StorageRoleLayer {
+			out = append(out, project(len(out), sc))
+		}
+	}
+	slices.Reverse(out)
+	return out
+}
+
+func isUnderDir(path, dir string) bool {
 	cleaned := filepath.Clean(path)
 	root := filepath.Clean(dir)
 	return strings.HasPrefix(cleaned, root+string(filepath.Separator))
 }
 
-// ValidateMetaPaths treats an imported cocoon.json as untrusted; snapshot-resident paths are provenance only.
-func ValidateMetaPaths(meta *snapshot.SnapshotMeta, rootDir, runDir string) error {
+// validateMetaPaths treats an imported cocoon.json as untrusted; snapshot-resident paths are provenance only.
+func validateMetaPaths(meta *snapshot.SnapshotMeta, rootDir, runDir string) error {
 	for i, sc := range meta.StorageConfigs {
 		if sc == nil {
 			return fmt.Errorf("nil storage config %d in snapshot metadata", i)
@@ -230,31 +234,29 @@ func ValidateMetaPaths(meta *snapshot.SnapshotMeta, rootDir, runDir string) erro
 		if snapshotResidentBasename(sc) != "" {
 			continue
 		}
-		if !IsUnderDir(sc.Path, rootDir) && !IsUnderDir(sc.Path, runDir) {
+		if !isUnderDir(sc.Path, rootDir) && !isUnderDir(sc.Path, runDir) {
 			return fmt.Errorf("untrusted storage path in snapshot metadata: %s", sc.Path)
 		}
 	}
 	if b := meta.BootConfig; b != nil {
-		if b.KernelPath != "" && !IsUnderDir(b.KernelPath, rootDir) {
+		if b.KernelPath != "" && !isUnderDir(b.KernelPath, rootDir) {
 			return fmt.Errorf("untrusted kernel path in snapshot metadata: %s", b.KernelPath)
 		}
-		if b.InitrdPath != "" && !IsUnderDir(b.InitrdPath, rootDir) {
+		if b.InitrdPath != "" && !isUnderDir(b.InitrdPath, rootDir) {
 			return fmt.Errorf("untrusted initrd path in snapshot metadata: %s", b.InitrdPath)
 		}
 	}
 	return nil
 }
 
-// ReverseLayers projects layer entries through project, topmost layer first (overlayfs lowerdir order).
-func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(idx int, sc *types.StorageConfig) T) []T {
-	var out []T
-	for _, sc := range storageConfigs {
-		if sc.Role == types.StorageRoleLayer {
-			out = append(out, project(len(out), sc))
-		}
+func populateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
+	if err := clean(runDir); err != nil {
+		return fmt.Errorf("clean old snapshot files: %w", err)
 	}
-	slices.Reverse(out)
-	return out
+	if err := clone(runDir, srcDir); err != nil {
+		return fmt.Errorf("clone snapshot files: %w", err)
+	}
+	return nil
 }
 
 func saveCaptureMeta(rec *VMRecord, spec SnapshotSpec, tmpDir string) error {

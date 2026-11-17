@@ -23,7 +23,7 @@ import (
 
 func (h Handler) Import(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
-	logger := log.WithFunc("cmd.images.Import")
+	logger := log.WithFunc("cmd.images.import")
 
 	name := args[0]
 	files := args[1:]
@@ -37,7 +37,7 @@ func (h Handler) Import(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name string, files ...string) error {
-	logger := log.WithFunc("cmd.images.importLocalFiles")
+	logger := log.WithFunc("cmd.images.import")
 
 	kind, err := planLocalImport(files)
 	if err != nil {
@@ -79,7 +79,7 @@ func (h Handler) importLocalStream(ctx context.Context, conf *config.Config, nam
 	}
 	defer f.Close() //nolint:errcheck
 
-	logger := log.WithFunc("cmd.images.importLocalStream")
+	logger := log.WithFunc("cmd.images.import")
 	logger.Infof(ctx, "importing from %s ...", filePath)
 	return h.importFromReader(ctx, conf, name, f)
 }
@@ -107,7 +107,7 @@ func importCloudimg(ctx context.Context, conf *config.Config, name, downloadMsg 
 	if err != nil {
 		return err
 	}
-	if err := do(store, cloudimgImportTracker(ctx, log.WithFunc("cmd.images.importCloudimg"), name, downloadMsg)); err != nil {
+	if err := do(store, cloudimgImportTracker(ctx, log.WithFunc("cmd.images.import"), name, downloadMsg)); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil
@@ -118,7 +118,7 @@ func importOCI(ctx context.Context, conf *config.Config, name string, pullMsg pu
 	if err != nil {
 		return err
 	}
-	if err := do(store, ociTracker(ctx, log.WithFunc("cmd.images.importOCI"), name, pullMsg)); err != nil {
+	if err := do(store, ociTracker(ctx, log.WithFunc("cmd.images.import"), name, pullMsg)); err != nil {
 		return fmt.Errorf("import %s: %w", name, err)
 	}
 	return nil

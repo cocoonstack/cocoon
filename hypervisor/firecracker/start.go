@@ -36,7 +36,6 @@ func (fc *Firecracker) ReconcileToRunning(ctx context.Context, id string) (uint6
 
 func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
 	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
-		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)
 		},
@@ -143,10 +142,11 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 
 	fcLog := fc.LogFilePath(rec.LogDir)
 	// FC opens its log O_WRONLY|O_APPEND without O_CREATE, so cocoon creates it; appending keeps the previous launch's tail.
-	logFile, createErr := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec
-	if createErr == nil {
-		defer logFile.Close() //nolint:errcheck
+	logFile, err := os.OpenFile(fcLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec
+	if err != nil {
+		return 0, nil, fmt.Errorf("create fc log: %w", err)
 	}
+	defer logFile.Close() //nolint:errcheck
 
 	master, slave, err := pty.Open()
 	if err != nil {
@@ -159,9 +159,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	fcCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	fcCmd.Stdin = slave
 	fcCmd.Stdout = slave
-	if logFile != nil {
-		fcCmd.Stderr = logFile
-	}
+	fcCmd.Stderr = logFile
 	pid, exited, err := fc.LaunchVMProcess(ctx, hypervisor.LaunchSpec{
 		Cmd:           fcCmd,
 		NetnsPath:     netnsPath,
@@ -178,7 +176,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	switch {
 	case relayErr == nil:
 	case len(leaseFiles) > 0:
-		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 		_ = fcCmd.Process.Kill()
 		<-exited
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)
@@ -256,7 +254,7 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 	}
 	_ = controlReader.Close()
 	_ = readyWriter.Close()
-	if readyErr := waitRelayLeaseReady(readyReader); readyErr != nil {
+	if readyErr := waitRelayLeaseResponse(readyReader, relayLeaseReadyCommand, "readiness"); readyErr != nil {
 		_ = controlWriter.Close()
 		_ = readyReader.Close()
 		_ = relayCmd.Process.Kill()

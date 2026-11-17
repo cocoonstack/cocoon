@@ -53,7 +53,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 		})
 	}
 	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, func(info *chVMInfoResponse) (string, error) {
-		return diskAttached(info, id, spec.Name, path, spec.ReadOnly)
+		return findAttachedDisk(info, id, spec.Name, path, spec.ReadOnly)
 	})
 }
 
@@ -80,7 +80,7 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 		return "", "", err
 	}
 	path := snapshotDiskPath(rec.RunDir, src.Name, format)
-	existing, err := diskAttached(info, id, src.Name, path, false)
+	existing, err := findAttachedDisk(info, id, src.Name, path, false)
 	if err != nil || existing != "" {
 		return existing, format, err
 	}
@@ -220,7 +220,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
-	info, err := convergeOrphanedPause(ctx, hc, rec.ID)
+	info, err := convergeOrphanedPause(ctx, hc, rec.ID, rec.RunDir)
 	if err != nil {
 		unlock()
 		return nil, hypervisor.VMRecord{}, nil, nil, err
@@ -333,7 +333,7 @@ func hotDisk(rec *hypervisor.VMRecord, id string, sc *types.StorageConfig) chDis
 	return d
 }
 
-func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
+func findAttachedDisk(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
 	for _, ex := range info.Config.Disks {
 		if ex.ID == id {
 			if ex.Path == path && ex.ReadOnly == readOnly {
@@ -352,14 +352,17 @@ func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) 
 	return "", nil
 }
 
-// convergeOrphanedPause resumes a pause no capture holds, including a final-round or received migration.
-func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*chVMInfoResponse, error) {
+// convergeOrphanedPause resumes a pause no capture holds, including a received migration; a final-round source stays paused.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID, runDir string) (*chVMInfoResponse, error) {
 	info, err := getVMInfo(ctx, hc)
 	if err != nil {
 		return nil, err
 	}
 	if info.State != chStatePaused {
 		return info, nil
+	}
+	if err := hypervisor.RefuseFinalSeries(runDir); err != nil {
+		return nil, err
 	}
 	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
 		Warnf(ctx, "vm %s is paused with no capture in flight, resuming", vmID)

@@ -41,29 +41,34 @@ func TestSplitRanges(t *testing.T) {
 func TestCopyRangeBody(t *testing.T) {
 	const start, end = 10, 19
 	body := "0123456789"
+	ver := objectVersion{size: 100, validator: `"v1"`}
 	tests := []struct {
 		name         string
 		status       int
 		contentRange string
+		etag         string
 		body         string
 		wantErr      string
 	}{
-		{"ok", http.StatusPartialContent, "bytes 10-19/100", body, ""},
-		{"extra bytes beyond span are not copied", http.StatusPartialContent, "bytes 10-19/100", body + "EXTRA", ""},
-		{"non-206 status", http.StatusOK, "", body, "unexpected status"},
-		{"mismatched span", http.StatusPartialContent, "bytes 0-9/100", body, "mismatched content-range"},
-		{"short body", http.StatusPartialContent, "bytes 10-19/100", "0123", "short body"},
+		{"ok", http.StatusPartialContent, "bytes 10-19/100", `"v1"`, body, ""},
+		{"extra bytes beyond span are not copied", http.StatusPartialContent, "bytes 10-19/100", `"v1"`, body + "EXTRA", ""},
+		{"non-206 status", http.StatusOK, "", `"v1"`, body, "unexpected status"},
+		{"mismatched span", http.StatusPartialContent, "bytes 0-9/100", `"v1"`, body, "mismatched content-range"},
+		{"total size changed", http.StatusPartialContent, "bytes 10-19/101", `"v1"`, body, "upstream object changed"},
+		{"validator changed", http.StatusPartialContent, "bytes 10-19/100", `"v2"`, body, "upstream object changed"},
+		{"validator dropped", http.StatusPartialContent, "bytes 10-19/100", "", body, "upstream object changed"},
+		{"short body", http.StatusPartialContent, "bytes 10-19/100", `"v1"`, "0123", "short body"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := &http.Response{
 				StatusCode: tt.status,
 				Status:     fmt.Sprintf("%d %s", tt.status, http.StatusText(tt.status)),
-				Header:     http.Header{"Content-Range": {tt.contentRange}},
+				Header:     http.Header{"Content-Range": {tt.contentRange}, "Etag": {tt.etag}},
 				Body:       io.NopCloser(strings.NewReader(tt.body)),
 			}
 			var buf bytes.Buffer
-			err := copyRangeBody(resp, &buf, start, end)
+			err := copyRangeBody(resp, &buf, start, end, ver)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got %v, want nil", err)

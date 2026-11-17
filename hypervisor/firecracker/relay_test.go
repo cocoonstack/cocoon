@@ -63,8 +63,8 @@ func TestWaitRelayLeaseReady(t *testing.T) {
 				}
 				_ = writer.Close()
 			}()
-			if err := waitRelayLeaseReady(reader); (err != nil) != tt.wantErr {
-				t.Fatalf("waitRelayLeaseReady() error = %v, wantErr %v", err, tt.wantErr)
+			if err := waitRelayLeaseResponse(reader, relayLeaseReadyCommand, "readiness"); (err != nil) != tt.wantErr {
+				t.Fatalf("waitRelayLeaseResponse() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			_ = reader.Close()
 		})

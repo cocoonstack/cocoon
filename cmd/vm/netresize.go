@@ -6,6 +6,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/netresize"
@@ -28,7 +29,7 @@ func (h Handler) NetResize(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("vm net: %w", err)
 	}
-	target, _ := cmd.Flags().GetInt("nics")
+	target := cliutil.FlagInt(cmd, "nics")
 	res, err := hyper.NetResize(ctx, vm.ID, netresize.Spec{Target: target}, plumbing)
 	if err != nil {
 		return err

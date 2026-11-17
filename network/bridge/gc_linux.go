@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/projecteru2/core/log"
 	"github.com/vishvananda/netlink"
@@ -39,7 +38,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 				return snap, err
 			}
 			for _, l := range links {
-				if prefix, ok := parseTAPName(tapPrefix, l.Attrs().Name); ok {
+				if prefix, ok := network.ParseTAPName(tapPrefix, l.Attrs().Name); ok {
 					snap.prefixes[prefix] = struct{}{}
 				}
 			}
@@ -68,7 +67,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 			// Group first: one owner lookup per VM, not per TAP — each is a meta transaction holding the namespace lock.
 			orphans := make(map[string][]netlink.Link, len(prefixes))
 			for _, l := range links {
-				if prefix, ok := parseTAPName(tapPrefix, l.Attrs().Name); ok && slices.Contains(prefixes, prefix) {
+				if prefix, ok := network.ParseTAPName(tapPrefix, l.Attrs().Name); ok && slices.Contains(prefixes, prefix) {
 					orphans[prefix] = append(orphans[prefix], l)
 				}
 			}
@@ -85,7 +84,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 				for _, l := range orphans[prefix] {
 					name := l.Attrs().Name
 					if err := deleteLinkFn(l); err != nil {
-						logger.Warnf(ctx, "delete orphan TAP %s: %v", name, err)
+						errs = append(errs, fmt.Errorf("delete orphan TAP %s: %w", name, err))
 					} else {
 						logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
 					}
@@ -102,17 +101,4 @@ func listLinks() ([]netlink.Link, error) {
 		return links, nil
 	}
 	return links, err
-}
-
-// parseTAPName extracts the vmID prefix from a bridge TAP name "<tapPrefix><vmid8>-<nic>".
-func parseTAPName(tapPrefix, name string) (string, bool) {
-	rest, ok := strings.CutPrefix(name, tapPrefix)
-	if !ok {
-		return "", false
-	}
-	prefix, _, ok := strings.CutLast(rest, "-")
-	if !ok || prefix == "" {
-		return "", false
-	}
-	return prefix, true
 }

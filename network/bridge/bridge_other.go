@@ -1,6 +1,5 @@
 //go:build !linux
 
-// Package bridge stubs the bridge provider on non-Linux hosts.
 package bridge
 
 import (
@@ -21,7 +20,7 @@ func New(_ *config.Config, _ string) (*Bridge, error) {
 	return nil, errUnsupported
 }
 
-func (b *Bridge) Type() string { return "bridge" }
+func (b *Bridge) Type() string { return typ }
 func (b *Bridge) Verify(_ context.Context, _ string, _ []*types.NetworkConfig) error {
 	return errUnsupported
 }

@@ -20,19 +20,7 @@ func (fc *Firecracker) DirectClone(ctx context.Context, vmID string, vmCfg *type
 }
 
 func (fc *Firecracker) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
-	return fc.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
-		VMCfg:            vmCfg,
-		SrcDir:           srcDir,
-		SourceSnapshotID: sourceSnapshotID,
-		Preflight:        fc.preflightRestore,
-		Kill:             fc.killForRestore,
-		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
-			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, func(dstDir, srcDir string) error {
-				return cloneSnapshotFiles(ctx, dstDir, srcDir)
-			})
-		},
-		AfterExtract: fc.restoreAfterExtract,
-	})
+	return fc.DirectRestoreSequence(ctx, vmRef, fc.restoreSpec(ctx, vmCfg, sourceSnapshotID), srcDir)
 }
 
 func cloneSnapshotFiles(ctx context.Context, dstDir, srcDir string) error {

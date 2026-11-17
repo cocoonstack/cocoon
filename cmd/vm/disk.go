@@ -7,6 +7,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/disk"
@@ -23,8 +24,8 @@ type diskResult struct {
 }
 
 func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
-	fromSnapshot, _ := cmd.Flags().GetString("from-snapshot")
-	fromDir, _ := cmd.Flags().GetString("from-dir")
+	fromSnapshot := cliutil.FlagStr(cmd, "from-snapshot")
+	fromDir := cliutil.FlagStr(cmd, "from-dir")
 	if fromSnapshot != "" || fromDir != "" {
 		return h.diskAttachSnapshot(cmd, args, fromSnapshot, fromDir)
 	}
@@ -32,10 +33,10 @@ func (h Handler) DiskAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	path, _ := cmd.Flags().GetString("path")
-	name, _ := cmd.Flags().GetString("name")
-	readonly, _ := cmd.Flags().GetBool("readonly")
-	dioVal, _ := cmd.Flags().GetString("directio")
+	path := cliutil.FlagStr(cmd, "path")
+	name := cliutil.FlagStr(cmd, "name")
+	readonly := cliutil.FlagBool(cmd, "readonly")
+	dioVal := cliutil.FlagStr(cmd, "directio")
 	directIO, err := types.ParseDirectIO(dioVal)
 	if err != nil {
 		return err
@@ -59,7 +60,7 @@ func (h Handler) DiskDetach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name, _ := cmd.Flags().GetString("name")
+	name := cliutil.FlagStr(cmd, "name")
 	if err := a.DiskDetach(ctx, args[0], name); err != nil {
 		return err
 	}

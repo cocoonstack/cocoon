@@ -21,6 +21,31 @@ import (
 
 var testTables = []string{"records", "names", "tombstones"}
 
+func TestConvertRefusesARunningDaemon(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	if err := os.MkdirAll(filepath.Dir(spec.DaemonLock), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	daemon := flock.New(spec.DaemonLock)
+	if ok, err := daemon.TryLock(t.Context()); err != nil || !ok {
+		t.Fatalf("hold daemon lock: ok=%v err=%v", ok, err)
+	}
+	err := Run(t.Context(), spec, "sqlite")
+	if err == nil || !strings.Contains(err.Error(), "hold the meta store") {
+		t.Fatalf("want refusal while a daemon holds only its instance lock, got %v", err)
+	}
+	if !utils.FileExists(spec.JSON[0].FilePath) || utils.FileExists(spec.DBPath) {
+		t.Fatal("the refused convert touched the stores")
+	}
+	if err := daemon.Unlock(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("convert after the daemon stopped: %v", err)
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	spec := testSpec(t, "vms", "images")
@@ -155,8 +180,8 @@ func TestSourceChangedRefused(t *testing.T) {
 	_ = src.Close()
 
 	err = Run(ctx, spec, "sqlite")
-	if err == nil || !strings.Contains(err.Error(), "source changed") {
-		t.Fatalf("want source-changed refusal, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "source changed") || !strings.Contains(err.Error(), spec.DBPath) {
+		t.Fatalf("want source-changed refusal naming the partial target, got %v", err)
 	}
 }
 
@@ -195,8 +220,36 @@ func TestTargetNotFreshRefused(t *testing.T) {
 	_ = sq.Close()
 
 	err = Run(ctx, spec, "sqlite")
-	if err == nil || !strings.Contains(err.Error(), "target was not fresh") {
-		t.Fatalf("want not-fresh refusal, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want existing-target refusal, got %v", err)
+	}
+	if utils.FileExists(filepath.Join(spec.MetaRoot, metasqlite.ManifestName)) {
+		t.Fatal("manifest written for a refused target")
+	}
+	sq, err = metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("reopen target: %v", err)
+	}
+	defer sq.Close()
+	if got := scanAll(t, sq, "vms"); len(got) != 1 || got["records/foreign"] != `{}` {
+		t.Fatalf("refused convert wrote into the target: %v", got)
+	}
+}
+
+func TestJSONTargetNotFreshRefused(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("forward convert: %v", err)
+	}
+	seedJSON(t, spec, "vms")
+
+	err := Run(t.Context(), spec, "json")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want existing-target refusal, got %v", err)
+	}
+	if utils.FileExists(filepath.Join(spec.MetaRoot, metasqlite.ManifestName)) {
+		t.Fatal("manifest written for a refused target")
 	}
 }
 
@@ -229,31 +282,6 @@ func TestConvertRefusesUnsupportedFS(t *testing.T) {
 	}
 	if err := metasqlite.RefuseManifest(spec.DBPath); err != nil {
 		t.Fatalf("the refused convert locked the root: %v", err)
-	}
-}
-
-func TestConvertRefusesARunningDaemon(t *testing.T) {
-	spec := testSpec(t, "vms")
-	seedJSON(t, spec, "vms")
-	if err := os.MkdirAll(filepath.Dir(spec.DaemonLock), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	daemon := flock.New(spec.DaemonLock)
-	if ok, err := daemon.TryLock(t.Context()); err != nil || !ok {
-		t.Fatalf("hold daemon lock: ok=%v err=%v", ok, err)
-	}
-	err := Run(t.Context(), spec, "sqlite")
-	if err == nil || !strings.Contains(err.Error(), "daemon is running") {
-		t.Fatalf("want daemon refusal, got %v", err)
-	}
-	if !utils.FileExists(spec.JSON[0].FilePath) || utils.FileExists(spec.DBPath) {
-		t.Fatal("the refused convert touched the stores")
-	}
-	if err := daemon.Unlock(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if err := Run(t.Context(), spec, "sqlite"); err != nil {
-		t.Fatalf("convert after the daemon stopped: %v", err)
 	}
 }
 

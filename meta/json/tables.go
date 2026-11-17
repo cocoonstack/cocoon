@@ -81,6 +81,10 @@ func (c TableCodec) Encode(m *Model) ([]byte, error) {
 	return append(buf, '}', '\n'), nil
 }
 
+func (c TableCodec) Declares(table string) bool {
+	return slices.ContainsFunc(c.Specs, func(sp TableSpec) bool { return sp.Table == table })
+}
+
 func appendKey(buf []byte, key string) []byte {
 	if len(buf) > 1 {
 		buf = append(buf, ',')

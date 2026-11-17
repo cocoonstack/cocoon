@@ -143,7 +143,7 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		return b.UpdateState(ctx, "vm1", types.VMStateStopped)
+		return b.updateState(ctx, "vm1", types.VMStateStopped)
 	}})
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs["vm1"].QuiescePending = true
@@ -152,8 +152,8 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 		t.Fatalf("seed pending: %v", err)
 	}
 
-	if err := b.QuiesceIfPending(ctx, "vm1"); err != nil {
-		t.Fatalf("QuiesceIfPending: %v", err)
+	if err := b.quiesceIfPending(ctx, "vm1"); err != nil {
+		t.Fatalf("quiesceIfPending: %v", err)
 	}
 	if !recordOf(t, b, "vm1").QuiescePending {
 		t.Error("stale clear won: the newer transition's pending work was dropped")
@@ -171,8 +171,8 @@ func TestMarkStartedClearsQuiescePending(t *testing.T) {
 		t.Fatalf("seed pending: %v", err)
 	}
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 	if recordOf(t, b, "vm1").QuiescePending {
 		t.Error("a start left stale pending quiesce work that would down its own plumbing")
@@ -184,8 +184,8 @@ func TestUpdateStateStoppedSchedulesQuiesce(t *testing.T) {
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState: %v", err)
 	}
 	got := recordOf(t, b, "vm1")
 	if !got.QuiescePending {
@@ -201,8 +201,8 @@ func TestUpdateStateStoppedSkipsQuiesceWithoutPlumbing(t *testing.T) {
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 1, 1<<30, 10<<30)
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState: %v", err)
 	}
 	if recordOf(t, b, "vm1").QuiescePending {
 		t.Error("scheduled a quiesce for a VM with no host plumbing")
@@ -247,7 +247,7 @@ func TestReconcileStaleCreateCollectsAndFreesTheName(t *testing.T) {
 	if rec, err := b.PeekRecord(ctx, "vm1"); err != nil || rec != nil {
 		t.Errorf("got record %v (err %v), want it collected", rec, err)
 	}
-	if _, err := b.ResolveRef(ctx, "alpha"); err == nil {
+	if _, err := b.resolveRef(ctx, "alpha"); err == nil {
 		t.Error("the name is still reserved; a retry would be blocked until GC")
 	}
 }
@@ -352,8 +352,8 @@ func TestUpdateStateDatesAStoppedRecordThatWasRunning(t *testing.T) {
 		t.Fatalf("seed legacy running: %v", err)
 	}
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState: %v", err)
 	}
 	if recordOf(t, b, "vm1").StoppedAt == nil {
 		t.Error("a running record stopped by the user got no stop time")
@@ -365,8 +365,8 @@ func TestUpdateStateLeavesACreatedRecordUndated(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState: %v", err)
 	}
 	if got := recordOf(t, b, "vm1"); got.StoppedAt != nil {
 		t.Errorf("got StoppedAt %v for a VM that never ran, want nil", got.StoppedAt)

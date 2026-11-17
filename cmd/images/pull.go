@@ -39,7 +39,7 @@ func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 }
 
 func (h Handler) pullOCI(ctx context.Context, store *oci.OCI, image string) error {
-	logger := log.WithFunc("cmd.images.pullOCI")
+	logger := log.WithFunc("cmd.images.pull")
 	tracker := ociTracker(ctx, logger, image, func(total int) string {
 		return fmt.Sprintf("pulling OCI image %s (%d layers)", image, total)
 	})
@@ -50,7 +50,7 @@ func (h Handler) pullOCI(ctx context.Context, store *oci.OCI, image string) erro
 }
 
 func (h Handler) pullCloudimg(ctx context.Context, store *cloudimg.CloudImg, url string, force bool) error {
-	logger := log.WithFunc("cmd.images.pullCloudimg")
+	logger := log.WithFunc("cmd.images.pull")
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) {
 		switch e.Phase {
 		case cloudimgProgress.PhaseDownload:

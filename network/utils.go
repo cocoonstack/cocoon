@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 const (
@@ -33,6 +35,19 @@ func VMIDPrefix(vmID string) string {
 
 func TAPName(prefix, vmID string, nic int) string {
 	return fmt.Sprintf("%s%s-%d", prefix, VMIDPrefix(vmID), nic)
+}
+
+func ParseTAPName(tapPrefix, name string) (string, bool) {
+	rest, ok := strings.CutPrefix(name, tapPrefix)
+	if !ok {
+		return "", false
+	}
+	vmPrefix, _, _ := strings.Cut(rest, "-")
+	nic, ok := TAPIndex(rest)
+	if !ok || len(vmPrefix) != vmIDPrefixLen || !utils.ValidIDPrefix(vmPrefix) || TAPName(tapPrefix, vmPrefix, nic) != name {
+		return "", false
+	}
+	return vmPrefix, true
 }
 
 func TAPIndex(tapName string) (int, bool) {

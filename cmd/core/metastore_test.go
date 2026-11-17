@@ -3,12 +3,15 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/cocoonstack/cocoon/cmd/meta/convert"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -112,6 +115,49 @@ func TestMetaStoreRefusesJSONOverSQLiteData(t *testing.T) {
 	resetMetaStore()
 }
 
+func TestConvertRefusesWhileMetaStoreOpen(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	writeLegacyJSON(t, conf)
+	if _, err := MetaStore(conf); err != nil {
+		t.Fatalf("open legacy root: %v", err)
+	}
+	dbPath := MetaDBPath(conf)
+	spec := convert.Spec{
+		MetaRoot:   filepath.Dir(dbPath),
+		DBPath:     dbPath,
+		DaemonLock: filepath.Join(conf.RootDir, "locks", "daemon.lock"),
+		Decls:      MetaNamespaces(),
+		JSON:       MetaJSONNamespaces(conf),
+	}
+	err := convert.Run(t.Context(), spec, config.MetaBackendSQLite)
+	if err == nil || !strings.Contains(err.Error(), "hold the meta store") {
+		t.Fatalf("want refusal while a store handle is open, got %v", err)
+	}
+	if !utils.FileExists(MetaJSONNamespaces(conf)[0].FilePath) || utils.FileExists(dbPath) {
+		t.Fatal("the refused convert touched the stores")
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+	if err := convert.Run(t.Context(), spec, config.MetaBackendSQLite); err != nil {
+		t.Fatalf("convert after the store closed: %v", err)
+	}
+}
+
+func TestMetaStoreBlamesConvertOnlyForATimeout(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(MetaDBPath(conf)), metasqlite.StoreLockName), 0o750); err != nil {
+		t.Fatalf("block the store lock path: %v", err)
+	}
+	_, err := MetaStore(conf)
+	if err == nil || strings.Contains(err.Error(), "meta convert") {
+		t.Fatalf("MetaStore = %v, want the lock open failure itself", err)
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
+}
+
 func TestResolveMetaBackend(t *testing.T) {
 	conf := testConf(t)
 	if b := ResolveMetaBackend(conf); b != "sqlite" {
@@ -139,6 +185,7 @@ func TestResolveMetaBackend(t *testing.T) {
 func resetMetaStore() {
 	metaOnce = sync.Once{}
 	metaStore = nil
+	metaLease = nil
 	metaErr = nil
 }
 

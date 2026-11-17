@@ -18,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/lock/vmlock"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -311,6 +312,28 @@ func TestRedirectBinds(t *testing.T) {
 	}
 }
 
+func TestRebuildCloneStorageRequiresOneCOW(t *testing.T) {
+	layer := &types.StorageConfig{Path: "/blobs/a.erofs", RO: true, Role: types.StorageRoleLayer}
+	cow := &types.StorageConfig{Path: "/run/src/cow.raw", Role: types.StorageRoleCOW}
+	tests := []struct {
+		name    string
+		sidecar []*types.StorageConfig
+		wantErr bool
+	}{
+		{"one cow", []*types.StorageConfig{layer, cow}, false},
+		{"no cow", []*types.StorageConfig{layer}, true},
+		{"two cows", []*types.StorageConfig{layer, cow, cow}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := rebuildCloneStorage(&snapshot.SnapshotMeta{StorageConfigs: tt.sidecar}, "/run/dst/cow.raw")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestHoldBindableRedirectsRejectsSymlinkSource(t *testing.T) {
 	fc := newTestFC(t)
 	srcDir := fc.Conf.VMRunDir("SRC")
@@ -350,6 +373,7 @@ func newTestFC(t *testing.T) *Firecracker {
 			{Key: "vms", Table: hypervisor.TableRecords},
 			{Key: "names", Table: hypervisor.TableNames},
 			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+			{Key: "placements", Table: hypervisor.TablePlacements, Optional: true},
 		}},
 	})
 	if err != nil {

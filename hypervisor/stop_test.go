@@ -138,8 +138,9 @@ func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 	if err := ln.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
-		return b.StopOneLocked(ctx, id, StopSpec{RuntimeFiles: []string{APISocketName}})
+		return b.StopOneLocked(ctx, id, StopSpec{})
 	}
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
@@ -252,6 +253,63 @@ func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	}
 }
 
+func TestStopSequenceFailsWhenTheStoppedFlipFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	store := b.Meta
+
+	err := b.stopOneSequence(t.Context(), id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+		b.Meta = busyStore{store}
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
+	}})
+	b.Meta = store
+	if err == nil || !strings.Contains(err.Error(), "mark stopped") {
+		t.Fatalf("stopOneSequence = %v, want the failed flip reported", err)
+	}
+	if err := b.stopOneSequence(t.Context(), id, StopSpec{}); err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped {
+		t.Fatalf("state = %s, want the rerun to settle it stopped", rec.State)
+	}
+}
+
+func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	fail := true
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		if fail {
+			return errors.New("netlink down")
+		}
+		return nil
+	}})
+	shutdown := StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
+	}}
+
+	if err := b.stopOneSequence(t.Context(), id, shutdown); err == nil || !strings.Contains(err.Error(), "quiesce network") {
+		t.Fatalf("stopOneSequence = %v, want the failed quiesce reported", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped || !rec.QuiescePending {
+		t.Fatalf("state = %s pending = %v, want stopped with the quiesce still pending", rec.State, rec.QuiescePending)
+	}
+	fail = false
+	if err := b.stopOneSequence(t.Context(), id, shutdown); err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.QuiescePending {
+		t.Fatal("the rerun must clear the pending quiesce")
+	}
+}
+
 func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
@@ -306,9 +364,9 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 		t.Fatalf("DeleteAll without force: %v, want running-requires-force error", err)
 	}
 
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
 		return b.StopOneLocked(ctx, id, StopSpec{
-			RuntimeFiles: []string{APISocketName},
 			Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 				return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 			},
@@ -351,14 +409,14 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	ctx := t.Context()
 	rec := meteringcapture.New()
 	b.Metering = rec
-	if err := b.MarkStarted(ctx, id); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, id); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
 		return b.StopOneLocked(ctx, id, StopSpec{
-			RuntimeFiles: []string{APISocketName},
-			Shutdown:     func(context.Context, *VMRecord, string, int) error { return nil },
+			Shutdown: func(context.Context, *VMRecord, string, int) error { return nil },
 		})
 	}
 	if _, err := b.DeleteAll(ctx, []string{id}, true, stopLocked); err != nil {

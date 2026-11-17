@@ -16,27 +16,7 @@ func (ch *CloudHypervisor) DirectClone(ctx context.Context, vmID string, vmCfg *
 }
 
 func (ch *CloudHypervisor) DirectRestore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, srcDir, sourceSnapshotID string) (*types.VM, error) {
-	var meta *snapshot.SnapshotMeta
-	return ch.DirectRestoreSequence(ctx, vmRef, hypervisor.DirectRestoreSpec{
-		VMCfg:            vmCfg,
-		SrcDir:           srcDir,
-		SourceSnapshotID: sourceSnapshotID,
-		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
-			var err error
-			meta, err = ch.preflightRestore(ctx, srcDir, rec, vmCfg)
-			return err
-		},
-		Kill: ch.killForRestore,
-		Populate: func(rec *hypervisor.VMRecord, srcDir string) error {
-			return hypervisor.PopulateFromSrc(rec.RunDir, srcDir, cleanSnapshotFiles, func(dstDir, srcDir string) error {
-				_, err := cloneSnapshotFiles(ctx, dstDir, srcDir)
-				return err
-			})
-		},
-		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
-			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, meta)
-		},
-	})
+	return ch.DirectRestoreSequence(ctx, vmRef, ch.restoreSpec(ctx, vmCfg, sourceSnapshotID), srcDir)
 }
 
 func (ch *CloudHypervisor) directClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string, migrate bool) (*types.VM, error) {

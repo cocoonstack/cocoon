@@ -16,7 +16,7 @@ func TestBuildSnapshotConfigRecordsNICMTUs(t *testing.T) {
 		{MTU: 9000},
 		{MTU: 1500},
 	}}
-	got := b.BuildSnapshotConfig("snap", rec)
+	got := b.buildSnapshotConfig("snap", rec)
 	if want := []int{9000, 1500}; !slices.Equal(got.NICMTUs, want) {
 		t.Errorf("NICMTUs = %v, want %v", got.NICMTUs, want)
 	}
@@ -39,8 +39,8 @@ func TestIsUnderDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsUnderDir(tt.path, tt.dir); got != tt.want {
-				t.Errorf("IsUnderDir(%q, %q) = %v, want %v", tt.path, tt.dir, got, tt.want)
+			if got := isUnderDir(tt.path, tt.dir); got != tt.want {
+				t.Errorf("isUnderDir(%q, %q) = %v, want %v", tt.path, tt.dir, got, tt.want)
 			}
 		})
 	}
@@ -59,8 +59,8 @@ func TestValidateMetaPaths_Accepts(t *testing.T) {
 			InitrdPath: filepath.Join(rootDir, "oci/.../boot/initrd"),
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err != nil {
-		t.Fatalf("ValidateMetaPaths: %v", err)
+	if err := validateMetaPaths(meta, rootDir, runDir); err != nil {
+		t.Fatalf("validateMetaPaths: %v", err)
 	}
 }
 
@@ -72,8 +72,8 @@ func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
 			{Path: "/etc/shadow"},
 		},
 	}
-	if err := ValidateMetaPaths(meta, rootDir, runDir); err == nil {
-		t.Fatal("expected ValidateMetaPaths to reject /etc/shadow")
+	if err := validateMetaPaths(meta, rootDir, runDir); err == nil {
+		t.Fatal("expected validateMetaPaths to reject /etc/shadow")
 	}
 }
 
@@ -81,7 +81,7 @@ func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
 	meta := &snapshot.SnapshotMeta{
 		BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("expected kernel path outside rootDir to be rejected")
 	}
 }
@@ -93,14 +93,14 @@ func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
 			InitrdPath: "/etc/passwd",
 		},
 	}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("expected initrd path outside rootDir to be rejected")
 	}
 }
 
 func TestValidateMetaPaths_RejectsNilStorage(t *testing.T) {
 	meta := &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}
-	if err := ValidateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
 		t.Fatal("nil storage config in an imported snapshot must be rejected, not panic")
 	}
 }
@@ -166,20 +166,20 @@ func TestValidateMetaPathsResidentExemption(t *testing.T) {
 	meta := &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{
 		{Path: "/old-run/firecracker/vm1/cow.raw", RO: false, Role: types.StorageRoleCOW, Serial: "cow"},
 	}}
-	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
+	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err != nil {
 		t.Fatalf("resident path must be provenance-only: %v", err)
 	}
 
 	for _, bad := range []string{"", ".", "..", "/", "/old-run/.."} {
 		meta.StorageConfigs[0].Path = bad
-		if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+		if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
 			t.Fatalf("degenerate storage path %q must be rejected", bad)
 		}
 	}
 	meta.StorageConfigs[0].Path = "/old-run/firecracker/vm1/cow.raw"
 
 	meta.StorageConfigs = append(meta.StorageConfigs, &types.StorageConfig{Path: "/elsewhere/layer.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"})
-	if err := ValidateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
+	if err := validateMetaPaths(meta, "/var/lib/cocoon", "/new-run"); err == nil {
 		t.Fatal("a layer outside the blob store must stay untrusted")
 	}
 }

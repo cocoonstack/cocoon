@@ -20,18 +20,6 @@ type vmCleanup struct {
 	LogDir string `json:"log_dir,omitempty"`
 }
 
-// EntryGuardLoad returns the record from the guard's own transaction, so entry paths skip a second namespace read.
-func (b *Backend) EntryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
-	rec, err := b.entryGuard(ctx, id)
-	if err != nil {
-		return VMRecord{}, err
-	}
-	if rec == nil {
-		return VMRecord{}, fmt.Errorf("vm %s: %w", id, ErrNotFound)
-	}
-	return *rec, nil
-}
-
 // RecoverTombstone drives id's tombstone to completion under the held ops lock.
 func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, err error) {
 	ts := b.tombstones()
@@ -62,6 +50,18 @@ func (b *Backend) RecoverTombstone(ctx context.Context, id string) (done bool, e
 	}
 	log.WithFunc(b.Typ+".RecoverTombstone").Warnf(ctx, "rolled forward interrupted delete of VM %s", id)
 	return true, nil
+}
+
+// entryGuardLoad returns the record from the guard's own transaction, so entry paths skip a second namespace read.
+func (b *Backend) entryGuardLoad(ctx context.Context, id string) (VMRecord, error) {
+	rec, err := b.entryGuard(ctx, id)
+	if err != nil {
+		return VMRecord{}, err
+	}
+	if rec == nil {
+		return VMRecord{}, fmt.Errorf("vm %s: %w", id, ErrNotFound)
+	}
+	return *rec, nil
 }
 
 func (b *Backend) tombstones() *tombstone.Table {
@@ -109,7 +109,7 @@ func (b *Backend) finishVMTeardown(ctx context.Context, id, leaseID string, cl v
 	if err := b.cleanupNetwork(ctx, id); err != nil {
 		return fmt.Errorf("vm %s network teardown (tombstone kept, retry or gc resumes): %w", id, err)
 	}
-	if err := RemoveVMDirs(cl.RunDir, cl.LogDir); err != nil {
+	if err := removeVMDirs(cl.RunDir, cl.LogDir); err != nil {
 		return fmt.Errorf("cleanup VM dirs (tombstone kept, retry or gc resumes): %w", err)
 	}
 	b.removeCgroupScope(ctx, id)

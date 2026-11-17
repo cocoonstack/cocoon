@@ -105,32 +105,7 @@ func (b *Backend) ConvergeDead(ctx context.Context, id string, gen uint64, obser
 		return err
 	}
 	b.removeCgroupScope(ctx, id)
-	return b.QuiesceIfPending(ctx, id)
-}
-
-// QuiesceIfPending runs a scheduled quiesce and clears the flag fenced on the generation it read; the caller holds the ops lock with no VMM live.
-func (b *Backend) QuiesceIfPending(ctx context.Context, id string) error {
-	if b.Net == nil {
-		return nil
-	}
-	var (
-		vm  *types.VM
-		gen uint64
-	)
-	if err := b.view(ctx, func(t *vmTx) error {
-		r, err := t.Get(id)
-		if err != nil || r == nil || !r.QuiescePending {
-			return err
-		}
-		vm, gen = &r.VM, r.TransitionGeneration
-		return nil
-	}); err != nil || vm == nil {
-		return err
-	}
-	if err := b.quiesceNetwork(ctx, vm); err != nil {
-		return fmt.Errorf("quiesce network for VM %s (pending kept): %w", id, err)
-	}
-	return b.clearQuiescePending(ctx, id, gen)
+	return b.quiesceIfPending(ctx, id)
 }
 
 // ReconcileStaleCreate reclaims an ownerless creating placeholder; a free ops lock proves ownerlessness.
@@ -157,6 +132,31 @@ func (b *Backend) ReconcileStaleCreate(ctx context.Context, id string) (StaleCre
 		return "", err
 	}
 	return StaleCreateCollected, nil
+}
+
+// quiesceIfPending runs a scheduled quiesce and clears the flag fenced on the generation it read; the caller holds the ops lock with no VMM live.
+func (b *Backend) quiesceIfPending(ctx context.Context, id string) error {
+	if b.Net == nil {
+		return nil
+	}
+	var (
+		vm  *types.VM
+		gen uint64
+	)
+	if err := b.view(ctx, func(t *vmTx) error {
+		r, err := t.Get(id)
+		if err != nil || r == nil || !r.QuiescePending {
+			return err
+		}
+		vm, gen = &r.VM, r.TransitionGeneration
+		return nil
+	}); err != nil || vm == nil {
+		return err
+	}
+	if err := b.quiesceNetwork(ctx, vm); err != nil {
+		return fmt.Errorf("quiesce network for VM %s (pending kept): %w", id, err)
+	}
+	return b.clearQuiescePending(ctx, id, gen)
 }
 
 func (b *Backend) observe(ctx context.Context, rec *VMRecord, scan *utils.ProcScan) (utils.ProcRef, error) {

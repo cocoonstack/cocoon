@@ -83,22 +83,22 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	cfgGamma := &types.VMConfig{Name: "gamma", CPU: 1}
 	record("reserve-id-collision", "", b.ReserveVM(ctx, "VM1", cfgGamma, nil, "/r/VM1", "/l/VM1"))
 	info := &types.VM{ID: "VM1", Hypervisor: typ, State: types.VMStateStopped, Config: *cfgAlpha}
-	recordLoad("finalize", "VM1", b.FinalizeCreate(ctx, "VM1", info, nil, map[string]struct{}{"blobA": {}, "blobB": {}}))
-	id, err := b.ResolveRef(ctx, "alpha")
+	recordLoad("finalize", "VM1", b.finalizeCreate(ctx, "VM1", info, nil, map[string]struct{}{"blobA": {}, "blobB": {}}))
+	id, err := b.resolveRef(ctx, "alpha")
 	record("resolve-name", id, err)
-	_, err = b.ResolveRef(ctx, "ghost")
+	_, err = b.resolveRef(ctx, "ghost")
 	record("resolve-missing", "", err)
 	recordLoad("resize", "VM1", b.UpdateRecord(ctx, "VM1", func(r *VMRecord) error {
 		r.Config.CPU = 4
 		r.Config.Storage = 20 << 30
 		return nil
 	}))
-	recordLoad("mark-started", "VM1", b.MarkStarted(ctx, "VM1"))
-	recordLoad("update-stopped", "VM1", b.UpdateState(ctx, "VM1", types.VMStateStopped))
+	recordLoad("mark-started", "VM1", b.markStarted(ctx, "VM1"))
+	recordLoad("update-stopped", "VM1", b.updateState(ctx, "VM1", types.VMStateStopped))
 	cfgBeta := &types.VMConfig{Name: "beta", CPU: 1}
 	record("reserve-vm3", "", b.ReserveVM(ctx, "VM3", cfgBeta, nil, "/r/VM3", "/l/VM3"))
 	b.RollbackCreate(ctx, "VM3", "beta")
-	_, err = b.ResolveRef(ctx, "beta")
+	_, err = b.resolveRef(ctx, "beta")
 	record("rollback-then-resolve", "", err)
 
 	vm1, err := b.LoadRecord(ctx, "VM1")
@@ -106,7 +106,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		t.Fatalf("load VM1 pre-delete: %v", err)
 	}
 	record("delete", "", b.deleteVMProtocol(ctx, "VM1", &vm1))
-	_, err = b.ResolveRef(ctx, "alpha")
+	_, err = b.resolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 
 	cfgDelta := &types.VMConfig{Name: "delta", CPU: 1}
@@ -115,7 +115,7 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	orch := gc.New()
 	b.RegisterGC(orch)
 	record("gc-pass", "", orch.Run(ctx))
-	_, err = b.ResolveRef(ctx, "delta")
+	_, err = b.resolveRef(ctx, "delta")
 	record("gc-pass-then-resolve", "", err)
 
 	cfgEps := &types.VMConfig{Name: "epsilon", Image: "img:2", CPU: 1, Memory: 1 << 29, Storage: 5 << 30}

@@ -200,7 +200,7 @@ func (c *CNI) stageNICIntents(ctx context.Context, confList *libcni.NetworkConfi
 			continue
 		}
 		if recorded {
-			// The index is reusable only after a full reclaim: proceeding would double-allocate on lenient IPAM plugins or bury the root cause on strict ones.
+			// Reuse of an unreclaimed index double-allocates on lenient IPAM plugins.
 			if rcErr := c.reclaimStaleNIC(ctx, vmID, nsPath, rec); rcErr != nil {
 				return nil, fmt.Errorf("reclaim stale NIC %s/%s: %w", vmID, ifn, rcErr)
 			}

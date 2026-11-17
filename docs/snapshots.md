@@ -146,7 +146,7 @@ cocoon vm hibernate my-vm --name nap
 cocoon vm restore my-vm nap
 ```
 
-Pause, capture, persist, and VMM termination share one pause window: the snapshot point and the stop coincide (nothing the guest does can be lost in between), and the VMM dies only after the snapshot is durably saved — if saving fails (disk full, snapshot DB error), the VM simply resumes running and the command fails. Restore of the hibernated VM preserves machine identity (entropy-only reseed): running processes, sessions, and tmpfs contents continue where they stopped. The hibernate snapshot outlives the restore and keeps its `--name` and disk space until `snapshot rm`; `vm start` on a hibernated VM cold-boots from disk and leaves the snapshot unused.
+Pause, capture, persist, and VMM termination share one pause window: the snapshot point and the stop coincide (nothing the guest does can be lost in between), and the VMM dies only after the snapshot is durably saved — if saving fails (disk full, snapshot DB error), the VM simply resumes running and the command fails. If the VMM stopped but the record or the network could not be settled, the command fails and names the saved snapshot; `vm stop` settles the VM. Restore of the hibernated VM preserves machine identity (entropy-only reseed): running processes, sessions, and tmpfs contents continue where they stopped. The hibernate snapshot outlives the restore and keeps its `--name` and disk space until `snapshot rm`; `vm start` on a hibernated VM cold-boots from disk and leaves the snapshot unused.
 
 A canceled or timed-out `vm hibernate` or `snapshot save` waits for the hypervisor to end its memory dump, up to 10 minutes, then resumes the guest, so SIGTERM can take that long to end the command. SIGKILL skips the resume; see [known issues](known-issues.md#a-killed-capture-leaves-the-guest-paused).
 
@@ -169,7 +169,7 @@ cocoon vm start my-vm                                                # resumes t
 cocoon vm rm --force my-vm
 ```
 
-To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. Once the directory is gone, a repeat or an old series ID does nothing, so it cannot resume a guest paused for a newer series. After `--final`, receive the series or abort it: resuming the guest with `vm start` and capturing again leaves a delta that misses blocks the guest discarded.
+To give up at any point before that, run `cocoon vm migrate abort my-vm --series 123`: it ends the series, resumes the guest and deletes the directory. Once the directory is gone, a repeat or an old series ID does nothing, so it cannot resume a guest paused for a newer series. After `--final`, receive the series or abort it. The final round writes `series.final` into the series directory and lists it with the round's files. While that file is in the source's run dir, cocoon refuses everything that would run this guest again or capture it again: `vm start` (a resume of the paused VMM and a cold boot after a stop, a crash or a host reboot alike), `vm restore`, `snapshot save`, `vm hibernate`, a disk, share or device attach or detach, `vm net`, and another `vm migrate capture`. Only `vm migrate abort` and `vm rm` lift the refusal, and `gc` keeps a series directory that holds the file.
 
 Requirements:
 
@@ -180,14 +180,15 @@ Requirements:
 
 Rules for the caller:
 
-- Copy every file a round lists, in the listed round order. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
+- Copy the files before the source host can lose power: a capture does not fsync its disk deltas, so a copy taken after a source crash or reboot can carry a stale delta that `vm migrate receive` accepts.
+- Copy every file a round lists, in the listed round order. `vm migrate receive` refuses a directory without `series.final`: the source could still resume that guest. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
 - A VM has one series. A new baseline ends the previous one and deletes its directory; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
 - A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A capture killed mid-round makes the next round fail the same way; a gap in `round` means a capture died after it finished, so copy every non-`.ref` file of the directory or start again. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
 - A VM cloned or received seconds ago may still eject its old NICs. A capture waits up to 30 seconds for that, then goes on with a warning; if an eject lands during a series, the next delta fails, so start again.
 - Pull the image on the target before `--final`. A receive that has to pull does it during the pause.
 - The receive uses the source's CNI network name. When the target has no conflist of that name, pass `--network`.
 - Once the target runs, remove the source with `vm rm --force`; never `vm migrate abort` it, even when the target cold-booted, or the same guest runs twice.
-- Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `id collision`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
+- Without `--id` the receive generates an ID. With `--id`, a retry after a killed receive reclaims what it left. A retry after a finished receive fails with `vm <id> already exists`; `vm inspect` shows the VM. Only `vm migrate receive` reads a series directory: `vm clone --from-dir` would pair the last memory with the baseline disks.
 
 The received VM gets fresh NICs like a clone, with new MACs, so the guest needs the [post-clone network setup](#post-clone-guest-setup). No reseed runs: the guest state is the same one, not a copy. If the target VMM dies before `vm start`, the start cold-boots from the disk and still succeeds, so check the guest before removing the source. `--restore-mode ondemand` is rejected by the hypervisor for a series with deltas. The replayed disk ranges are still dirty in the target's page cache, so the guest's first flush after `vm start`, usually a journal commit about 5 s in, waits for them (about 3 s for 36k ranges). Metering opens the new intervals with reason `migrate`.
 

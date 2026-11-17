@@ -3,7 +3,6 @@ package hypervisor
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os/exec"
 	"sync"
@@ -76,7 +75,7 @@ type LaunchSpec struct {
 	DeferCPUQuota bool
 }
 
-// VMOp is one backend's per-VM lifecycle step, run by ForEachVM under the batch fan-out.
+// VMOp is one backend's per-VM lifecycle step, run by forEachVM under the batch fan-out.
 type VMOp func(context.Context, string) error
 
 // StartOp is a backend's per-VM start, handed the batch's one /proc scan for its liveness check.
@@ -106,40 +105,27 @@ type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid i
 
 type TransitionHook func(rec *VMRecord, hc *http.Client) error
 
-// RestoreSpec carries backend hooks for Backend.RestoreSequence.
+// RestoreSpec carries backend hooks for RestoreSequence and DirectRestoreSequence; only the direct form calls CloneFiles.
 type RestoreSpec struct {
 	VMCfg            *types.VMConfig
-	Snapshot         io.Reader
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
 	Clean            RunDirHook
-	AfterExtract     AfterExtractHook
-}
-
-// DirectRestoreSpec is RestoreSpec for a local srcDir; Populate replaces staging+merge.
-type DirectRestoreSpec struct {
-	VMCfg            *types.VMConfig
-	SrcDir           string
-	SourceSnapshotID string
-	Preflight        PreflightHook
-	Kill             KillHook
-	Populate         DirHook
+	CloneFiles       CloneFilesFunc
 	AfterExtract     AfterExtractHook
 }
 
 // StartSpec carries StartSequence inputs.
 type StartSpec struct {
-	RuntimeFiles    []string
 	Launch          func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
 	PostLaunch      ProcessHook
 	ConvergeRunning ProcessHook
 }
 
-// StopSpec carries StopOneSequence inputs.
+// StopSpec carries stopOneSequence inputs.
 type StopSpec struct {
-	RuntimeFiles []string
-	Shutdown     ProcessHook
+	Shutdown ProcessHook
 }
 
 // CreateSpec carries CreateSequence inputs.
@@ -160,11 +146,10 @@ type SnapshotSpec struct {
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error)
 }
 
-// HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.
+// HibernateSpec extends SnapshotSpec with the pause-window terminate hook.
 type HibernateSpec struct {
 	SnapshotSpec
-	Terminate    func(rec *VMRecord, pid int) error
-	RuntimeFiles []string
+	Terminate func(rec *VMRecord, pid int) error
 }
 
 // Backend provides shared store operations for hypervisor backends.
@@ -178,6 +163,7 @@ type Backend struct {
 	// Net converges host networking inside the VM ops lock; nil disables it.
 	Net VMNetwork
 
+	RuntimeFiles []string
 	// PinsQueues marks a backend that pins writable disk queue threads, so launch derives their host cpus.
 	PinsQueues bool
 	// PeerNS lists the other backends' VM namespaces; placement counts their placements too.

@@ -57,7 +57,7 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
-	unlock, err := lockOutDaemon(ctx, spec.DaemonLock)
+	unlock, err := lockStore(ctx, spec)
 	if err != nil {
 		return err
 	}
@@ -80,19 +80,30 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	return finishManifest(spec.MetaRoot)
 }
 
-func lockOutDaemon(ctx context.Context, path string) (func(), error) {
-	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
+// lockStore takes the lock every store opener shares, then the instance lock, which is all a daemon from an older binary holds.
+func lockStore(ctx context.Context, spec Spec) (func(), error) {
+	if err := utils.EnsureDirs(spec.MetaRoot, filepath.Dir(spec.DaemonLock)); err != nil {
 		return nil, err
 	}
-	l := flock.New(path)
-	ok, err := l.TryLock(ctx)
-	if err != nil {
-		return nil, err
+	var held []*flock.Lock
+	unlock := func() {
+		for _, l := range held {
+			_ = l.Unlock(ctx)
+		}
 	}
-	if !ok {
-		return nil, errors.New("a cocoon daemon is running; stop it before converting")
+	for _, path := range []string{filepath.Join(spec.MetaRoot, metasqlite.StoreLockName), spec.DaemonLock} {
+		l := flock.New(path)
+		ok, err := l.TryLock(ctx)
+		if err == nil && !ok {
+			err = errors.New("cocoon processes hold the meta store; stop the daemon, any gc timer and running commands")
+		}
+		if err != nil {
+			unlock()
+			return nil, err
+		}
+		held = append(held, l)
 	}
-	return func() { _ = l.Unlock(ctx) }, nil
+	return unlock, nil
 }
 
 func crashStep(step string) error {
@@ -111,11 +122,8 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		return err
 	}
 	defer src.Close() //nolint:errcheck
-	if qerr := checkQuiesced(ctx, spec, target, src); qerr != nil {
-		return qerr
-	}
 	if m == nil {
-		if ferr := checkTargetFS(spec, target); ferr != nil {
+		if ferr := checkFreshTarget(spec, target); ferr != nil {
 			return ferr
 		}
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
@@ -152,9 +160,15 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 	return nil
 }
 
-func checkTargetFS(spec Spec, target string) error {
-	if target != config.MetaBackendSQLite {
+func checkFreshTarget(spec Spec, target string) error {
+	if target == config.MetaBackendJSON {
+		if jsonPresent(spec) {
+			return errors.New("json target already exists; move its namespace files aside before converting")
+		}
 		return nil
+	}
+	if utils.FileExists(spec.DBPath) {
+		return fmt.Errorf("%s already exists; move it aside with its -wal and -shm before converting", spec.DBPath)
 	}
 	if err := utils.EnsureDirs(filepath.Dir(spec.DBPath)); err != nil {
 		return err
@@ -174,35 +188,6 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 	return m, nil
 }
 
-// checkQuiesced refuses conversion while a live process holds the source.
-func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
-	if target == config.MetaBackendJSON {
-		// sqlite source: an empty durable transaction fails ErrBusy while a writer is mid-flight.
-		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		err := src.Update(probeCtx, meta.Scope{Write: spec.Decls[0].Name}, meta.CommitDurable, func(meta.Writer) error { return nil })
-		if err != nil {
-			return fmt.Errorf("sqlite store busy; stop cocoon activity before converting: %w", err)
-		}
-		return nil
-	}
-	for _, jns := range spec.JSON {
-		// Persistent form: the engine's own locks are persistent, and a transient probe would delete the shared lock file on release.
-		l := flock.New(jns.LockPath)
-		ok, err := l.TryLock(ctx)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("namespace %s lock is held; stop cocoon activity before converting", jns.Name)
-		}
-		if err := l.Unlock(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ensureJSONDirs creates namespace dirs for subsystems that never ran; flock needs them.
 func ensureJSONDirs(spec Spec) error {
 	dirs := make([]string, 0, len(spec.JSON))
@@ -215,7 +200,7 @@ func ensureJSONDirs(spec Spec) error {
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == config.MetaBackendSQLite {
-		if !slices.ContainsFunc(spec.JSON, func(ns metajson.Namespace) bool { return utils.FileExists(ns.FilePath) }) {
+		if !jsonPresent(spec) {
 			return nil, fmt.Errorf("no json store under %s to convert from", spec.MetaRoot)
 		}
 		return metajson.Open(spec.JSON...)
@@ -244,7 +229,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 		return err
 	}
 	if dstDigest != rec.SHA256 || dstCount != rec.Records {
-		if err := copyAndVerify(ctx, src, dst, ns, rec); err != nil {
+		if err := copyAndVerify(ctx, src, dst, ns, rec, partialTarget(spec, m.Target)); err != nil {
 			return err
 		}
 	}
@@ -284,6 +269,10 @@ func duplicateGeneration(spec Spec, nsName string) error {
 	return utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644, utils.Sync)
 }
 
+func jsonPresent(spec Spec) bool {
+	return slices.ContainsFunc(spec.JSON, func(ns metajson.Namespace) bool { return utils.FileExists(ns.FilePath) })
+}
+
 func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
 	i := slices.IndexFunc(spec.JSON, func(j metajson.Namespace) bool { return j.Name == nsName })
 	if i < 0 {
@@ -292,13 +281,20 @@ func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
 	return spec.JSON[i], true
 }
 
-func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord) error {
+func partialTarget(spec Spec, target string) string {
+	if target == config.MetaBackendJSON {
+		return "the json namespace files it wrote"
+	}
+	return spec.DBPath + " with its -wal and -shm"
+}
+
+func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, partial string) error {
 	srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
 	if err != nil {
 		return err
 	}
 	if srcDigest != rec.SHA256 || srcCount != rec.Records {
-		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and restart", rec.Records, srcCount)
+		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and the partial target (%s), then restart", rec.Records, srcCount, partial)
 	}
 	if verr := verifyNames(ctx, src, ns); verr != nil {
 		return verr

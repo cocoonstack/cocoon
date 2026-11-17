@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/cgroup"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	"github.com/cocoonstack/cocoon/cmd/cliutil/clitest"
+	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
@@ -278,6 +280,33 @@ func TestStatusWatchSkipsATickWhoseListFailed(t *testing.T) {
 	}
 	if got := strings.Count(out, "\033[H\033[2J"); got != 2 {
 		t.Errorf("screen redraws = %d, want 2", got)
+	}
+}
+
+func TestStatusRejectsWatchWithJSON(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	dir := t.TempDir()
+	conf := &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
+	h := Handler{ConfProvider: func() *config.Config { return conf }}
+	status, _, err := Command(h).Find([]string{"status"})
+	if err != nil {
+		t.Fatalf("find status: %v", err)
+	}
+	status.SetContext(ctx)
+	if err := status.Flags().Set("watch", "true"); err != nil {
+		t.Fatalf("set watch: %v", err)
+	}
+	if err := status.Flags().Set("format", cliutil.FormatJSON); err != nil {
+		t.Fatalf("set format: %v", err)
+	}
+	var runErr error
+	out := clitest.CaptureStdout(t, func() { runErr = h.Status(status, nil) })
+	if runErr == nil || !strings.Contains(runErr.Error(), "--event") {
+		t.Fatalf("err = %v, want a rejection naming --event", runErr)
+	}
+	if out != "" {
+		t.Errorf("rejected status printed %q, want nothing", out)
 	}
 }
 

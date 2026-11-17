@@ -21,8 +21,8 @@ func TestMarkStartedEmitsComputeStart(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 4<<30, 10<<30, false)
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 {
@@ -48,8 +48,8 @@ func TestMarkStartedReasonRestartWhenAlreadyBooted(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Reason != metering.ReasonRestart {
@@ -62,32 +62,32 @@ func TestUpdateStateEmitsOnlyOnRunningToStopped(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState(stopped from created): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState(stopped from created): %v", err)
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("Created→Stopped emitted %d; want 0", len(got))
 	}
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 	rec.Reset()
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState(stopped): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState(stopped): %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopUser {
 		t.Fatalf("Running→Stopped: got %+v, want one compute.stop reason=user", entries)
 	}
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted (relaunch): %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted (relaunch): %v", err)
 	}
 	rec.Reset()
-	if err := b.UpdateState(ctx, "vm1", types.VMStateError); err != nil {
-		t.Fatalf("UpdateState(error): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateError); err != nil {
+		t.Fatalf("updateState(error): %v", err)
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("Running→Error must not emit; got %d entries", len(got))
@@ -107,21 +107,21 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 		t.Fatalf("set dirs: %v", err)
 	}
 
-	b.MarkError(ctx, "vm1")
+	b.markError(ctx, "vm1")
 	if got := rec.Entries(); len(got) != 0 {
-		t.Fatalf("MarkError emitted %d; want 0", len(got))
+		t.Fatalf("markError emitted %d; want 0", len(got))
 	}
 	loaded := recordOf(t, b, "vm1")
 	if loaded.StoppedAt != nil {
-		t.Errorf("MarkError must not write StoppedAt; got %v", loaded.StoppedAt)
+		t.Errorf("markError must not write StoppedAt; got %v", loaded.StoppedAt)
 	}
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{})
+	prep, err := b.prepareStart(ctx, "vm1", nil, StartSpec{})
 	if err != nil {
-		t.Fatalf("PrepareStart: %v", err)
+		t.Fatalf("prepareStart: %v", err)
 	}
 	if prep == nil {
-		t.Fatal("PrepareStart returned nil")
+		t.Fatal("prepareStart returned nil")
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopCrash {
@@ -133,11 +133,11 @@ func TestStopAfterMarkErrorEmitsComputeStop(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	b.MarkError(ctx, "vm1")
+	b.markError(ctx, "vm1")
 	rec.Reset()
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState(stopped): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState(stopped): %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopUser {
@@ -153,12 +153,12 @@ func TestEmitDeleteCloseClosesIntervalAfterMarkError(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	b.MarkError(ctx, "vm1")
+	b.markError(ctx, "vm1")
 	rec.Reset()
 
 	loaded := recordOf(t, b, "vm1")
 	if !hasOpenComputeInterval(loaded) {
-		t.Fatal("interval should still be open after MarkError")
+		t.Fatal("interval should still be open after markError")
 	}
 
 	b.emitDeleteClose(ctx, "vm1", shapeFromConfig(loaded.Config), metering.ReasonStopCrash, hasOpenComputeInterval(loaded))
@@ -182,12 +182,12 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	}
 	rec.Reset()
 
-	prep, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{})
+	prep, err := b.prepareStart(ctx, "vm1", nil, StartSpec{})
 	if err != nil {
-		t.Fatalf("PrepareStart: %v", err)
+		t.Fatalf("prepareStart: %v", err)
 	}
 	if prep == nil {
-		t.Fatal("PrepareStart returned nil (treated as already-running)")
+		t.Fatal("prepareStart returned nil (treated as already-running)")
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopCrash {
@@ -242,18 +242,18 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
 	newCfg := &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}
-	spec := DirectRestoreSpec{
+	spec := RestoreSpec{
 		VMCfg:            newCfg,
-		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
 		Kill:             func(context.Context, string, *VMRecord) error { return nil },
-		Populate:         func(*VMRecord, string) error { return nil },
+		Clean:            func(string) error { return nil },
+		CloneFiles:       func(string, string) error { return nil },
 		AfterExtract: func(_ context.Context, vmID string, vmCfg *types.VMConfig, _ *VMRecord) (*types.VM, error) {
 			return &types.VM{ID: vmID, Hypervisor: b.Typ, State: types.VMStateRunning, Config: *vmCfg}, nil
 		},
 	}
-	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec); err != nil {
+	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec, t.TempDir()); err != nil {
 		t.Fatalf("DirectRestoreSequence: %v", err)
 	}
 
@@ -295,19 +295,19 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
-	spec := DirectRestoreSpec{
+	spec := RestoreSpec{
 		VMCfg:            &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30},
-		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
 		Kill:             func(context.Context, string, *VMRecord) error { return nil },
-		Populate:         func(*VMRecord, string) error { return errors.New("populate boom") },
+		Clean:            func(string) error { return nil },
+		CloneFiles:       func(string, string) error { return errors.New("populate boom") },
 		AfterExtract: func(_ context.Context, _ string, _ *types.VMConfig, _ *VMRecord) (*types.VM, error) {
 			t.Fatal("AfterExtract should not run when Populate fails")
 			return nil, nil
 		},
 	}
-	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec); err == nil {
+	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec, t.TempDir()); err == nil {
 		t.Fatal("expected error from populate failure")
 	}
 	entries := rec.Entries()
@@ -379,8 +379,8 @@ func TestFinalizeCreateEmitsStorageStart(t *testing.T) {
 		Hypervisor: b.Typ,
 		Config:     types.VMConfig{CPU: 2, Memory: 2 << 30, Storage: 20 << 30},
 	}
-	if err := b.FinalizeCreate(ctx, "vm1", info, nil, nil); err != nil {
-		t.Fatalf("FinalizeCreate: %v", err)
+	if err := b.finalizeCreate(ctx, "vm1", info, nil, nil); err != nil {
+		t.Fatalf("finalizeCreate: %v", err)
 	}
 	entries := rec.Entries()
 	if len(entries) != 1 {
@@ -399,14 +399,14 @@ func TestDeleteAfterErrorEmitsOnlyStorageStop(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 2<<30, 20<<30, true)
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState(stopped): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState(stopped): %v", err)
 	}
-	if err := b.UpdateState(ctx, "vm1", types.VMStateError); err != nil {
-		t.Fatalf("UpdateState(error): %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateError); err != nil {
+		t.Fatalf("updateState(error): %v", err)
 	}
 	rec.Reset()
 
@@ -421,7 +421,7 @@ func TestReconcileToRunningFromError(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	b.MarkError(ctx, "vm1")
+	b.markError(ctx, "vm1")
 	rec.Reset()
 
 	b.ReconcileToRunning(ctx, "vm1")
@@ -448,7 +448,7 @@ func TestReconcileToRunningLeavesAnUncommittedRestore(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	b.MarkError(ctx, "vm1")
+	b.markError(ctx, "vm1")
 	runDir := t.TempDir()
 	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
 		idx.VMs["vm1"].RunDir = runDir
@@ -539,8 +539,8 @@ func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
 	}
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, false)
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Errorf("MarkStarted with NopRecorder: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Errorf("markStarted with NopRecorder: %v", err)
 	}
 }
 
@@ -549,16 +549,16 @@ func TestPrepareStartRefusesQuarantined(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
 
-	b.QuarantineVM(ctx, "vm1", "partial snapshot merge")
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
-		t.Fatalf("PrepareStart = %v, want the quarantine refusal", err)
+	b.quarantineVM(ctx, "vm1", "partial snapshot merge")
+	if _, err := b.prepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
+		t.Fatalf("prepareStart = %v, want the quarantine refusal", err)
 	}
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
-		t.Fatalf("PrepareStart = %v, want the quarantine refusal after stop rewrote the state", err)
+	if _, err := b.prepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "quarantined") {
+		t.Fatalf("prepareStart = %v, want the quarantine refusal after stop rewrote the state", err)
 	}
 }
 
@@ -579,8 +579,8 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "interrupted restore") {
-		t.Fatalf("PrepareStart = %v, want the interrupted-restore refusal", err)
+	if _, err := b.prepareStart(ctx, id, nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "interrupted restore") {
+		t.Fatalf("prepareStart = %v, want the interrupted-restore refusal", err)
 	}
 }
 
@@ -607,8 +607,8 @@ func TestPrepareStartClearsATombstoneOlderThanTheCommittedRestore(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, id, nil, StartSpec{}); err != nil && strings.Contains(err.Error(), "interrupted restore") {
-		t.Fatalf("PrepareStart refused a tombstone older than the committed restore: %v", err)
+	if _, err := b.prepareStart(ctx, id, nil, StartSpec{}); err != nil && strings.Contains(err.Error(), "interrupted restore") {
+		t.Fatalf("prepareStart refused a tombstone older than the committed restore: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("stale tombstone still present: %v", err)
@@ -621,8 +621,8 @@ func TestPrepareStartRefusesCreating(t *testing.T) {
 	if err := b.ReserveVM(ctx, "vm1", &types.VMConfig{Name: "n1"}, nil, t.TempDir(), t.TempDir()); err != nil {
 		t.Fatalf("ReserveVM: %v", err)
 	}
-	if _, err := b.PrepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "still being created") {
-		t.Fatalf("PrepareStart = %v, want the creating-placeholder refusal", err)
+	if _, err := b.prepareStart(ctx, "vm1", nil, StartSpec{}); err == nil || !strings.Contains(err.Error(), "still being created") {
+		t.Fatalf("prepareStart = %v, want the creating-placeholder refusal", err)
 	}
 }
 
@@ -640,16 +640,16 @@ func TestForcedRetryStateOps(t *testing.T) {
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 2, 1<<30, 10<<30, false)
 
-	if err := b.MarkStarted(ctx, "vm1"); err != nil {
-		t.Fatalf("MarkStarted under forced retry: %v", err)
+	if err := b.markStarted(ctx, "vm1"); err != nil {
+		t.Fatalf("markStarted under forced retry: %v", err)
 	}
 	if starts := rec.Entries(); len(starts) != 1 || starts[0].Kind != metering.KindVMComputeStart {
 		t.Fatalf("want exactly one compute.start, got %+v", starts)
 	}
 	rec.Reset()
 
-	if err := b.UpdateState(ctx, "vm1", types.VMStateStopped); err != nil {
-		t.Fatalf("UpdateState under forced retry: %v", err)
+	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
+		t.Fatalf("updateState under forced retry: %v", err)
 	}
 	if stops := rec.Entries(); len(stops) != 1 || stops[0].Kind != metering.KindVMComputeStop {
 		t.Fatalf("want exactly one compute.stop, got %+v", stops)
