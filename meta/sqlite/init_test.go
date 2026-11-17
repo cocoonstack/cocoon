@@ -293,6 +293,31 @@ func TestInitIfMissingRetriesABusyLockedRecheck(t *testing.T) {
 	}
 }
 
+func TestInitIfMissingRepairsInPlaceUnderAnOpenProbe(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), DBFileName)
+	probe, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = probe.Close() })
+	conn, err := probe.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	var tables int
+	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&tables); err != nil || tables != 0 {
+		t.Fatalf("empty probe: tables=%d err=%v", tables, err)
+	}
+	if err := InitIfMissing(ctx, path, testDecls()...); err != nil {
+		t.Fatalf("bootstrap over an empty store a probe holds open: %v", err)
+	}
+	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables); err != nil || tables == 0 {
+		t.Fatalf("probe after bootstrap: tables=%d err=%v, want the probe's file to be the bootstrapped store", tables, err)
+	}
+}
+
 func testDecls() []Namespace {
 	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
 }

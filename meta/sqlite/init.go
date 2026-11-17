@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/cocoonstack/cocoon/lock/flock"
@@ -71,9 +70,6 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 		}
 		if !partial {
 			return fmt.Errorf("%s already exists; refusing to reinitialize", dbPath)
-		}
-		if rerr := os.Remove(dbPath); rerr != nil { //nolint:gosec // dbPath is root-declared, not caller input
-			return rerr
 		}
 	}
 	db, err := open(dbPath, "FULL", true)
