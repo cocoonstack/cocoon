@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/http"
 	"os"
@@ -234,7 +235,7 @@ func IsMigrateDeltaFile(name string) bool {
 
 func RefuseFinalSeries(runDir string) error {
 	entries, err := os.ReadDir(runDir)
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read run dir: %w", err)
 	}
 	for _, e := range entries {
@@ -242,7 +243,7 @@ func RefuseFinalSeries(runDir string) error {
 			continue
 		}
 		series := strings.TrimPrefix(e.Name(), seriesDirPrefix)
-		return fmt.Errorf("series %s took its final round and the guest stays paused for the target: vm migrate abort --series %s resumes it here, vm rm --force removes it once the target runs", series, series)
+		return fmt.Errorf("series %s took its final round and handed this guest to the target: vm migrate abort --series %s keeps it here, vm rm --force removes it once the target runs", series, series)
 	}
 	return nil
 }

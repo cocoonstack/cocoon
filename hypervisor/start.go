@@ -177,6 +177,9 @@ func (b *Backend) prepareStart(ctx context.Context, id string, scan *utils.ProcS
 		return nil, nil
 	case errors.Is(runErr, ErrNotRunning):
 		b.convergeCrashedStart(ctx, &rec)
+		if err = RefuseFinalSeries(rec.RunDir); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("reconcile running VM %s: %w", id, runErr)
 	}

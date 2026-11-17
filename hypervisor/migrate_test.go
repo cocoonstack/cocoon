@@ -1,6 +1,7 @@
 package hypervisor
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
@@ -97,6 +99,62 @@ func TestMigrateCaptureRefusesARoundAfterTheFinal(t *testing.T) {
 	}
 	if !utils.FileExists(dir) {
 		t.Error("a refused capture deleted the final series")
+	}
+}
+
+func TestAFinalSeriesFencesAColdStartAndARestore(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	const id = "vm-handed-off"
+	seedFinalSeries(t, seedStoppedVMWithDirs(t, b, id))
+
+	launched := false
+	err := b.StartSequence(t.Context(), id, nil, StartSpec{
+		Launch: func(context.Context, *VMRecord, string) (int, error) {
+			launched = true
+			return 4242, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "took its final round") || launched {
+		t.Errorf("StartSequence = %v, launched = %t; want the handed-off guest left stopped", err, launched)
+	}
+
+	killed := false
+	_, err = b.DirectRestoreSequence(t.Context(), id, RestoreSpec{
+		VMCfg:     &types.VMConfig{CPU: 1, Memory: 512, Storage: 1024},
+		Preflight: func(string, *VMRecord) error { return nil },
+		Kill: func(context.Context, string, *VMRecord) error {
+			killed = true
+			return nil
+		},
+	}, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "took its final round") || killed {
+		t.Errorf("DirectRestoreSequence = %v, killed = %t; want the handed-off guest left alone", err, killed)
+	}
+}
+
+func TestSweepStaleCaptureDirsKeepsAFinalSeries(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	runDir := t.TempDir()
+	final := seedFinalSeries(t, runDir)
+	abandoned := filepath.Join(runDir, seriesDirPrefix+"s0")
+	if err := os.Mkdir(abandoned, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	past := time.Now().Add(-StaleArtifactGCGrace - time.Hour)
+	for _, dir := range []string{final, abandoned} {
+		if err := os.Chtimes(dir, past, past); err != nil {
+			t.Fatalf("age %s: %v", dir, err)
+		}
+	}
+
+	for _, err := range b.sweepStaleCaptureDirs(t.Context(), []string{runDir}) {
+		t.Fatalf("sweep: %v", err)
+	}
+	if !utils.FileExists(final) {
+		t.Error("gc removed the series that fences a handed-off guest")
+	}
+	if utils.FileExists(abandoned) {
+		t.Error("an abandoned series survived the sweep")
 	}
 }
 
@@ -388,6 +446,18 @@ func seedSeries(t *testing.T, rec *VMRecord) string {
 		t.Fatalf("mkdir: %v", err)
 	}
 	writeSparse(t, filepath.Join(dir, types.COWRawFileName), 1<<20, map[int64]string{0: "base"})
+	return dir
+}
+
+func seedFinalSeries(t *testing.T, runDir string) string {
+	t.Helper()
+	dir := filepath.Join(runDir, seriesDirPrefix+"s1")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, seriesFinalFile), nil, 0o600); err != nil {
+		t.Fatalf("seed final marker: %v", err)
+	}
 	return dir
 }
 

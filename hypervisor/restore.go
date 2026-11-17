@@ -190,6 +190,9 @@ func (b *Backend) prepareRestore(ctx context.Context, vmRef string, vmCfg *types
 	if vErr := validateRecordInvariants(&rec); vErr != nil {
 		return fail(vErr)
 	}
+	if fErr := RefuseFinalSeries(rec.RunDir); fErr != nil {
+		return fail(fErr)
+	}
 	if !sameImage(vmCfg, &rec.Config) {
 		return fail(fmt.Errorf("snapshot base image differs from vm %s; use vm clone instead", vmID))
 	}

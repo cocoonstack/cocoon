@@ -180,7 +180,7 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 					return false
 				}
 				info, err := e.Info()
-				return err == nil && info.ModTime().Before(cutoff)
+				return err == nil && info.ModTime().Before(cutoff) && !utils.FileExists(filepath.Join(dir, e.Name(), seriesFinalFile))
 			})...)
 		}); lockErr != nil {
 			errs = append(errs, fmt.Errorf("lock %s: %w", dir, lockErr))
