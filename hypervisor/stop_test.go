@@ -22,10 +22,10 @@ func TestDeleteAllStoppedVM(t *testing.T) {
 	const id = "vm-del"
 	seedVMRecord(t, b, id, 2, 1<<30, 10<<30, true)
 	runDir, logDir := shortTempDir(t), shortTempDir(t)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = logDir
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		r.RunDir = runDir
+		r.LogDir = logDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed dirs: %v", err)
@@ -60,8 +60,7 @@ func TestStopAfterUnexpectedExitIsIdempotent(t *testing.T) {
 	ctx := t.Context()
 	const id = "vm-stop-race"
 	seedStoppedVMWithDirs(t, b, id)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
 		r.TransitionGeneration = 7
 		r.LastTransitionReason = types.TransitionUnexpectedExit
 		r.QuiescePending = true
@@ -73,11 +72,7 @@ func TestStopAfterUnexpectedExitIsIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed unexpected exit: %v", err)
 	}
-	quiesced := 0
-	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		quiesced++
-		return nil
-	}})
+	quiesced := countQuiesces(b)
 
 	if err := b.StopOneLocked(ctx, id, StopSpec{}); err != nil {
 		t.Fatalf("StopOneLocked: %v", err)
@@ -86,8 +81,8 @@ func TestStopAfterUnexpectedExitIsIdempotent(t *testing.T) {
 	if rec.TransitionGeneration != 7 || rec.LastTransitionReason != types.TransitionUnexpectedExit {
 		t.Fatalf("generation = %d, reason = %s; want 7/unexpected-exit", rec.TransitionGeneration, rec.LastTransitionReason)
 	}
-	if quiesced != 1 || rec.QuiescePending {
-		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, rec.QuiescePending)
+	if *quiesced != 1 || rec.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", *quiesced, rec.QuiescePending)
 	}
 }
 
@@ -96,12 +91,7 @@ func TestStopRefusesACreatingPlaceholder(t *testing.T) {
 	ctx := t.Context()
 	const id = "vm-creating"
 	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, false)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateCreating
-		return nil
-	}); err != nil {
-		t.Fatalf("seed creating: %v", err)
-	}
+	setVMState(t, b, id, types.VMStateCreating)
 
 	err := b.StopOneLocked(ctx, id, StopSpec{})
 	if err == nil || !strings.Contains(err.Error(), "still being created") {
@@ -115,12 +105,7 @@ func TestStopRefusesACreatingPlaceholder(t *testing.T) {
 func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateCreating
-		return nil
-	}); err != nil {
-		t.Fatalf("seed creating: %v", err)
-	}
+	setVMState(t, b, id, types.VMStateCreating)
 	rec := recordOf(t, b, id)
 	pid, err := utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 	if err != nil {
@@ -139,9 +124,7 @@ func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 		t.Fatalf("close listener: %v", err)
 	}
 	b.RuntimeFiles = []string{APISocketName}
-	stopLocked := func(ctx context.Context, id string) error {
-		return b.StopOneLocked(ctx, id, StopSpec{})
-	}
+	stopLocked := stopLockedWith(b, StopSpec{})
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
 	if err != nil {
@@ -166,12 +149,7 @@ func TestDeleteCreatingPlaceholderEmitsNoMetering(t *testing.T) {
 	ctx := t.Context()
 	const id = "vm-creating-rm"
 	seedStoppedVMWithDirs(t, b, id)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateCreating
-		return nil
-	}); err != nil {
-		t.Fatalf("seed creating: %v", err)
-	}
+	setVMState(t, b, id, types.VMStateCreating)
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, false, func(context.Context, string) error {
 		t.Error("stopLocked must not run for a placeholder without a VMM")
@@ -188,8 +166,7 @@ func TestDeleteCreatingPlaceholderEmitsNoMetering(t *testing.T) {
 func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		r := idx.VMs[id]
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
 		r.State = types.VMStateStopped
 		r.TransitionGeneration = 7
 		r.NetSetup = types.NetSetup{
@@ -200,15 +177,9 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed stale stopped record: %v", err)
 	}
-	quiesced := 0
-	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		quiesced++
-		return nil
-	}})
+	quiesced := countQuiesces(b)
 
-	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
-		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
-	}})
+	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: terminateVMM})
 	if err != nil {
 		t.Fatalf("StopOneLocked: %v", err)
 	}
@@ -216,28 +187,16 @@ func TestStopStaleStoppedRecordWithLiveVMMStillTransitions(t *testing.T) {
 	if rec.TransitionGeneration != 8 || rec.LastTransitionReason != types.TransitionStopUser {
 		t.Fatalf("generation = %d, reason = %s; want 8/stop-user", rec.TransitionGeneration, rec.LastTransitionReason)
 	}
-	if quiesced != 1 || rec.QuiescePending {
-		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, rec.QuiescePending)
+	if *quiesced != 1 || rec.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", *quiesced, rec.QuiescePending)
 	}
 }
 
 func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].NetSetup = types.NetSetup{
-			NetBackend:     types.BackendCNI,
-			NetworkConfigs: []*types.NetworkConfig{{}},
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed network: %v", err)
-	}
-	quiesced := 0
-	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		quiesced++
-		return nil
-	}})
+	seedCNINetSetup(t, b, id)
+	quiesced := countQuiesces(b)
 	store := b.Meta
 
 	err := b.StopOneLocked(ctx, id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
@@ -248,8 +207,8 @@ func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StopOneLocked: %v", err)
 	}
-	if quiesced != 1 {
-		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)
+	if *quiesced != 1 {
+		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", *quiesced)
 	}
 }
 
@@ -275,15 +234,7 @@ func TestStopSequenceFailsWhenTheStoppedFlipFails(t *testing.T) {
 
 func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
 	b, id := newHibernateTestVM(t)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].NetSetup = types.NetSetup{
-			NetBackend:     types.BackendCNI,
-			NetworkConfigs: []*types.NetworkConfig{{}},
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed network: %v", err)
-	}
+	seedCNINetSetup(t, b, id)
 	fail := true
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
 		if fail {
@@ -291,9 +242,7 @@ func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
 		}
 		return nil
 	}})
-	shutdown := StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
-		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
-	}}
+	shutdown := StopSpec{Shutdown: terminateVMM}
 
 	if err := b.stopOneSequence(t.Context(), id, shutdown); err == nil || !strings.Contains(err.Error(), "quiesce network") {
 		t.Fatalf("stopOneSequence = %v, want the failed quiesce reported", err)
@@ -313,27 +262,13 @@ func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
 func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].CPUSet, idx.VMs[id].QueueCPUs = "8-15", "8-9"
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		r.CPUSet, r.QueueCPUs = "8-15", "8-9"
 		return nil
 	}); err != nil {
 		t.Fatalf("seed placement: %v", err)
 	}
-	rows := func() string {
-		var got string
-		if err := b.view(ctx, func(tx *vmTx) error {
-			return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
-				if cpus != nil {
-					got += id + "=" + *cpus + ";"
-				}
-				return nil
-			})
-		}); err != nil {
-			t.Fatalf("scan placements: %v", err)
-		}
-		return got
-	}
-	if got := rows(); got != id+"=8-9;" {
+	if got := placementRows(t, b); got != id+"=8-9;" {
 		t.Fatalf("placement rows before stop = %q, want %s=8-9;", got, id)
 	}
 
@@ -350,7 +285,7 @@ func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 	if rec.CPUSet != "8-15" || rec.QueueCPUs != "8-9" {
 		t.Fatalf("cpuset %q queue_cpus %q after a failed stop of a live VMM, want 8-15/8-9 kept", rec.CPUSet, rec.QueueCPUs)
 	}
-	if got := rows(); got != id+"=8-9;" {
+	if got := placementRows(t, b); got != id+"=8-9;" {
 		t.Fatalf("placement rows after a failed stop = %q, want the live VMM's row kept", got)
 	}
 }
@@ -365,13 +300,7 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 	}
 
 	b.RuntimeFiles = []string{APISocketName}
-	stopLocked := func(ctx context.Context, id string) error {
-		return b.StopOneLocked(ctx, id, StopSpec{
-			Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
-				return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
-			},
-		})
-	}
+	stopLocked := stopLockedWith(b, StopSpec{Shutdown: terminateVMM})
 	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
 	if err != nil {
 		t.Fatalf("DeleteAll --force: %v", err)
@@ -414,11 +343,7 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	}
 
 	b.RuntimeFiles = []string{APISocketName}
-	stopLocked := func(ctx context.Context, id string) error {
-		return b.StopOneLocked(ctx, id, StopSpec{
-			Shutdown: func(context.Context, *VMRecord, string, int) error { return nil },
-		})
-	}
+	stopLocked := stopLockedWith(b, StopSpec{Shutdown: func(context.Context, *VMRecord, string, int) error { return nil }})
 	if _, err := b.DeleteAll(ctx, []string{id}, true, stopLocked); err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
@@ -442,4 +367,12 @@ func shortTempDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+func terminateVMM(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+	return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
+}
+
+func stopLockedWith(b *Backend, spec StopSpec) VMOp {
+	return func(ctx context.Context, id string) error { return b.StopOneLocked(ctx, id, spec) }
 }

@@ -11,40 +11,25 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
-func TestResolveKnobsDefaults(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 2})
-	want := Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true}
-	if k != want {
-		t.Errorf("got %+v, want %+v", k, want)
+func TestResolveKnobs(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  types.Config
+		want Knobs
+	}{
+		{"defaults", types.Config{CPU: 2}, Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true}},
+		{"default burst follows explicit quota", types.Config{CPU: 4, CPUQuotaUs: 50000}, Knobs{Weight: 4, QuotaUs: 50000, PeriodUs: 100000, BurstUs: 50000, BurstDefaulted: true}},
+		{"burst none", types.Config{CPU: 2, CPUBurstUs: -1}, Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000}},
+		{"overrides", types.Config{CPU: 4, CPUWeight: 100, CPUQuotaUs: 50000, CPUPeriodUs: 20000, CPUBurstUs: 10000}, Knobs{Weight: 100, QuotaUs: 50000, PeriodUs: 20000, BurstUs: 10000}},
+		{"default quota uses explicit period", types.Config{CPU: 2, CPUPeriodUs: 50000}, Knobs{Weight: 2, QuotaUs: 100000, PeriodUs: 50000, BurstUs: 100000, BurstDefaulted: true}},
+		{"auto cpuset passes through", types.Config{CPU: 2, CPUSetCPUs: AutoCPUSet}, Knobs{Weight: 2, QuotaUs: 200000, PeriodUs: 100000, BurstUs: 200000, BurstDefaulted: true, CPUSet: AutoCPUSet}},
 	}
-}
-
-func TestResolveKnobsDefaultBurstFollowsExplicitQuota(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 4, CPUQuotaUs: 50000})
-	if k.BurstUs != 50000 || !k.BurstDefaulted {
-		t.Errorf("got burst %d defaulted %v, want 50000 true", k.BurstUs, k.BurstDefaulted)
-	}
-}
-
-func TestResolveKnobsBurstNone(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 2, CPUBurstUs: -1})
-	if k.BurstUs != 0 || k.BurstDefaulted {
-		t.Errorf("got burst %d defaulted %v, want 0 false", k.BurstUs, k.BurstDefaulted)
-	}
-}
-
-func TestResolveKnobsOverrides(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 4, CPUWeight: 100, CPUQuotaUs: 50000, CPUPeriodUs: 20000, CPUBurstUs: 10000})
-	want := Knobs{Weight: 100, QuotaUs: 50000, PeriodUs: 20000, BurstUs: 10000}
-	if k != want {
-		t.Errorf("got %+v, want %+v", k, want)
-	}
-}
-
-func TestResolveKnobsDefaultQuotaUsesExplicitPeriod(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 2, CPUPeriodUs: 50000})
-	if k.QuotaUs != 100000 {
-		t.Errorf("quota %d, want CPU x period = 100000", k.QuotaUs)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveKnobs(&tt.cfg); got != tt.want {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -63,6 +48,8 @@ func TestKnobsValidate(t *testing.T) {
 		{"quota below kernel min", Knobs{Weight: 1, QuotaUs: 999, PeriodUs: 100000}, true},
 		{"burst above quota", Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, BurstUs: 100001}, true},
 		{"negative burst", Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, BurstUs: -1}, true},
+		{"auto cpuset", Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, CPUSet: AutoCPUSet}, false},
+		{"bad cpuset", Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, CPUSet: "9-1"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -76,13 +63,9 @@ func TestKnobsValidate(t *testing.T) {
 func TestListScopeVMIDs(t *testing.T) {
 	parent := t.TempDir()
 	for _, dir := range []string{"vm-A.scope", "vm-B.scope", "other-dir"} {
-		if err := os.Mkdir(filepath.Join(parent, dir), 0o755); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+		mkdir(t, filepath.Join(parent, dir))
 	}
-	if err := os.WriteFile(filepath.Join(parent, "vm-C.scope"), nil, 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	writeFile(t, filepath.Join(parent, "vm-C.scope"), "")
 
 	ids, err := ListScopeVMIDs(parent)
 	if err != nil {
@@ -101,9 +84,7 @@ func TestListScopeVMIDs(t *testing.T) {
 
 func TestRemoveEmpty(t *testing.T) {
 	parent := t.TempDir()
-	if err := os.Mkdir(ScopeDir(parent, "X"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	mkdir(t, ScopeDir(parent, "X"))
 	if err := RemoveEmpty(parent, "X"); err != nil {
 		t.Errorf("empty scope: %v", err)
 	}
@@ -111,9 +92,7 @@ func TestRemoveEmpty(t *testing.T) {
 		t.Errorf("missing scope: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(ScopeDir(parent, "Y"), "child"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	mkdir(t, filepath.Join(ScopeDir(parent, "Y"), "child"))
 	if err := RemoveEmpty(parent, "Y"); err == nil {
 		t.Error("populated scope: want error, got nil")
 	}
@@ -177,25 +156,9 @@ func TestFormatCPUList(t *testing.T) {
 	}
 }
 
-func TestKnobsValidateAcceptsAutoCPUSet(t *testing.T) {
-	k := ResolveKnobs(&types.Config{CPU: 2, CPUSetCPUs: AutoCPUSet})
-	if err := k.Validate(); err != nil {
-		t.Errorf("auto cpuset: %v", err)
-	}
-}
-
-func TestKnobsValidateRejectsBadCPUSet(t *testing.T) {
-	k := Knobs{Weight: 1, QuotaUs: 100000, PeriodUs: 100000, CPUSet: "9-1"}
-	if err := k.Validate(); err == nil {
-		t.Error("want error for invalid cpu list")
-	}
-}
-
 func TestCheckSubset(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus.effective"), []byte("0-14\n"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	writeFile(t, filepath.Join(dir, "cpuset.cpus.effective"), "0-14\n")
 	if err := checkSubset("2-4", dir, "fence"); err != nil {
 		t.Errorf("subset rejected: %v", err)
 	}
@@ -208,12 +171,8 @@ func TestCheckScopePlacements(t *testing.T) {
 	parent := t.TempDir()
 	mk := func(id, placement string) {
 		dir := ScopeDir(parent, id)
-		if err := os.Mkdir(dir, 0o755); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "cpuset.cpus"), []byte(placement+"\n"), 0o600); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+		mkdir(t, dir)
+		writeFile(t, filepath.Join(dir, "cpuset.cpus"), placement+"\n")
 	}
 	mk("A", "")
 	mk("B", "2-3")
@@ -229,9 +188,7 @@ func TestCheckScopePlacements(t *testing.T) {
 func TestReconcileFenceClearsStaleValue(t *testing.T) {
 	parent := t.TempDir()
 	path := filepath.Join(parent, "cpuset.cpus")
-	if err := os.WriteFile(path, []byte("0-14\n"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	writeFile(t, path, "0-14\n")
 	if err := reconcileFence(parent, ""); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -246,9 +203,7 @@ func TestReconcileFenceClearsStaleValue(t *testing.T) {
 
 func TestReconcileFenceCanonicalEquality(t *testing.T) {
 	parent := t.TempDir()
-	if err := os.WriteFile(filepath.Join(parent, "cpuset.cpus"), []byte("0-7\n"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	writeFile(t, filepath.Join(parent, "cpuset.cpus"), "0-7\n")
 
 	if err := reconcileFence(parent, "0-3,4-7"); err != nil {
 		t.Errorf("canonically-equal fence rewrote: %v", err)
@@ -266,9 +221,7 @@ func TestExplainFenceWriteNamesLiveVMs(t *testing.T) {
 		t.Errorf("successful write: got %v, want nil", got)
 	}
 
-	if err := os.Mkdir(ScopeDir(parent, "X"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	mkdir(t, ScopeDir(parent, "X"))
 	got := explainFenceWrite(parent, "0-14", "", enospc)
 	if !errors.Is(got, enospc) {
 		t.Fatalf("wrapped error dropped the cause: %v", got)
@@ -281,13 +234,9 @@ func TestExplainFenceWriteNamesLiveVMs(t *testing.T) {
 func TestArmWritesQuotaAndBurst(t *testing.T) {
 	parent := t.TempDir()
 	dir := ScopeDir(parent, "A")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	mkdir(t, dir)
 	for _, f := range []string{"cpu.max", "cpu.max.burst"} {
-		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+		writeFile(t, filepath.Join(dir, f), "")
 	}
 	if err := Arm(parent, "A", Knobs{QuotaUs: 150000, PeriodUs: 100000, BurstUs: 50000}); err != nil {
 		t.Fatalf("Arm: %v", err)
@@ -322,13 +271,23 @@ func TestArmExplicitBurstFailsWhenKernelLacksBurst(t *testing.T) {
 
 func danglingBurstFile(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "cpu.max"), nil, 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	mkdir(t, dir)
+	writeFile(t, filepath.Join(dir, "cpu.max"), "")
 	if err := os.Symlink(filepath.Join(dir, "gone", "cpu.max.burst"), filepath.Join(dir, "cpu.max.burst")); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+}
+
+func mkdir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 }

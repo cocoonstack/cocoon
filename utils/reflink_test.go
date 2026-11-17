@@ -7,145 +7,65 @@ import (
 	"testing"
 )
 
-func TestReflinkCopy_BasicContent(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	want := []byte("hello reflink test content")
-	if err := os.WriteFile(src, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
-		t.Fatalf("ReflinkCopy: %v", err)
-	}
-
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("read dst: %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("content mismatch: got %q, want %q", got, want)
-	}
+func TestReflinkCopy(t *testing.T) {
+	testFileCopy(t, func(dst, src string, mode SyncMode) error {
+		return ReflinkCopy(t.Context(), dst, src, mode)
+	})
 }
 
-func TestReflinkCopy_EmptyFile(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	if err := os.WriteFile(src, nil, 0o644); err != nil {
-		t.Fatal(err)
+func testFileCopy(t *testing.T, copyFn func(dst, src string, mode SyncMode) error) {
+	t.Helper()
+	tests := []struct {
+		name     string
+		content  []byte
+		existing []byte
+		mode     SyncMode
+	}{
+		{name: "basic content", content: []byte("hello copy test content"), mode: Sync},
+		{name: "empty file", mode: Sync},
+		{name: "large file", content: bytes.Repeat([]byte("ABCDEFGHIJKLMNOP"), 16384), mode: Sync},
+		{name: "overwrites existing", content: []byte("new content"), existing: []byte("old content that should be overwritten"), mode: NoSync},
+		{name: "preserves size", content: bytes.Repeat([]byte{0x42}, 65536), mode: Sync},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src")
+			dst := filepath.Join(dir, "dst")
+			if err := os.WriteFile(src, tt.content, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tt.existing != nil {
+				if err := os.WriteFile(dst, tt.existing, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
-		t.Fatalf("ReflinkCopy: %v", err)
-	}
+			if err := copyFn(dst, src, tt.mode); err != nil {
+				t.Fatalf("copy: %v", err)
+			}
 
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Size() != 0 {
-		t.Errorf("size: got %d, want 0", info.Size())
-	}
-}
-
-func TestReflinkCopy_LargeFile(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	want := bytes.Repeat([]byte("REFLINK"), 32768)
-	if err := os.WriteFile(src, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
-		t.Fatalf("ReflinkCopy: %v", err)
-	}
-
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Error("content mismatch for large file")
-	}
-}
-
-func TestReflinkCopy_OverwritesExisting(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	if err := os.WriteFile(dst, []byte("old data"), 0o644); err != nil {
-		t.Fatal(err)
+			if got := readFull(t, dst); !bytes.Equal(got, tt.content) {
+				t.Errorf("content mismatch: got %d bytes, want %d bytes", len(got), len(tt.content))
+			}
+		})
 	}
 
-	want := []byte("new data")
-	if err := os.WriteFile(src, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	t.Run("src not exist", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := copyFn(filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync); err == nil {
+			t.Fatal("expected error for nonexistent src")
+		}
+	})
 
-	if err := ReflinkCopy(t.Context(), dst, src, NoSync); err != nil {
-		t.Fatalf("ReflinkCopy: %v", err)
-	}
-
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("content: got %q, want %q", got, want)
-	}
-}
-
-func TestReflinkCopy_SrcNotExist(t *testing.T) {
-	dir := t.TempDir()
-	err := ReflinkCopy(t.Context(), filepath.Join(dir, "dst"), filepath.Join(dir, "nonexistent"), Sync)
-	if err == nil {
-		t.Fatal("expected error for nonexistent src")
-	}
-}
-
-func TestReflinkCopy_DstDirNotExist(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	err := ReflinkCopy(t.Context(), filepath.Join(dir, "nodir", "dst"), src, Sync)
-	if err == nil {
-		t.Fatal("expected error for nonexistent dst directory")
-	}
-}
-
-func TestReflinkCopy_PreservesSize(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	want := bytes.Repeat([]byte{0x42}, 65536)
-	if err := os.WriteFile(src, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ReflinkCopy(t.Context(), dst, src, Sync); err != nil {
-		t.Fatal(err)
-	}
-
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		t.Fatalf("stat src: %v", err)
-	}
-	dstInfo, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat dst: %v", err)
-	}
-	if srcInfo.Size() != dstInfo.Size() {
-		t.Errorf("size mismatch: src=%d dst=%d", srcInfo.Size(), dstInfo.Size())
-	}
+	t.Run("dst dir not exist", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "src")
+		if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := copyFn(filepath.Join(dir, "nodir", "dst"), src, Sync); err == nil {
+			t.Fatal("expected error for nonexistent dst directory")
+		}
+	})
 }

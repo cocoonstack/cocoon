@@ -3,9 +3,7 @@ package firecracker
 import (
 	"encoding/json/v2"
 	"fmt"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"slices"
@@ -43,7 +41,8 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 			liveState := vmStateNotStarted
 			fail := true
 			var puts []string
-			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sock := hypervisor.SocketPath(runDir)
+			serveOnSocket(t, sock, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				defer mu.Unlock()
 				if r.Method == http.MethodGet && r.URL.Path == "/" {
@@ -65,18 +64,10 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 						http.Error(w, "expected InstanceStart", http.StatusBadRequest)
 						return
 					}
-					liveState = "Running"
+					liveState = vmStateRunning
 				}
 				w.WriteHeader(http.StatusNoContent)
 			}))
-			_ = srv.Listener.Close()
-			sock := hypervisor.SocketPath(runDir)
-			srv.Listener, err = net.Listen("unix", sock)
-			if err != nil {
-				t.Fatal(err)
-			}
-			srv.Start()
-			t.Cleanup(srv.Close)
 			cmd := exec.Command("bash", "-c", fmt.Sprintf("exec -a %s tail -f /dev/null %q", fc.Conf.BinaryName(), sock))
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
@@ -119,7 +110,7 @@ func TestStartCompletesInterruptedConfiguration(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			want := []string{"/machine-config", "/entropy", "/vsock", "/machine-config", "/entropy", "/vsock", "/actions"}
-			if liveState != "Running" || !slices.Equal(puts, want) {
+			if liveState != vmStateRunning || !slices.Equal(puts, want) {
 				t.Fatalf("state=%s requests=%v, want running and %v", liveState, puts, want)
 			}
 		})

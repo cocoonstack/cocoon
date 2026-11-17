@@ -98,14 +98,6 @@ func TestPrepareStartClosesIntervalAfterMarkError(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	dir := t.TempDir()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].RunDir = dir
-		idx.VMs["vm1"].LogDir = dir
-		return nil
-	}); err != nil {
-		t.Fatalf("set dirs: %v", err)
-	}
 
 	b.markError(ctx, "vm1")
 	if got := rec.Entries(); len(got) != 0 {
@@ -172,14 +164,6 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
-	dir := t.TempDir()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].RunDir = dir
-		idx.VMs["vm1"].LogDir = dir
-		return nil
-	}); err != nil {
-		t.Fatalf("set dirs: %v", err)
-	}
 	rec.Reset()
 
 	prep, err := b.prepareStart(ctx, "vm1", nil, StartSpec{})
@@ -193,10 +177,7 @@ func TestPrepareStartClosesStaleInterval(t *testing.T) {
 	if len(entries) != 1 || entries[0].Kind != metering.KindVMComputeStop || entries[0].Reason != metering.ReasonStopCrash {
 		t.Fatalf("got %+v, want one compute.stop reason=stop-crash", entries)
 	}
-	loaded, err := b.LoadRecord(ctx, "vm1")
-	if err != nil {
-		t.Fatalf("LoadRecord: %v", err)
-	}
+	loaded := recordOf(t, b, "vm1")
 	if loaded.State != types.VMStateStopped {
 		t.Errorf("State=%s, want Stopped", loaded.State)
 	}
@@ -426,17 +407,14 @@ func TestReconcileToRunningFromError(t *testing.T) {
 
 	b.ReconcileToRunning(ctx, "vm1")
 
-	loaded, err := b.LoadRecord(ctx, "vm1")
-	if err != nil {
-		t.Fatalf("LoadRecord: %v", err)
-	}
+	loaded := recordOf(t, b, "vm1")
 	if loaded.State != types.VMStateRunning {
 		t.Errorf("State=%s, want Running", loaded.State)
 	}
 	if loaded.StoppedAt != nil {
 		t.Errorf("StoppedAt=%v, want nil", loaded.StoppedAt)
 	}
-	if !hasOpenComputeInterval(&loaded) {
+	if !hasOpenComputeInterval(loaded) {
 		t.Error("compute interval should be open after reconcile")
 	}
 	if got := rec.Entries(); len(got) != 0 {
@@ -450,8 +428,8 @@ func TestReconcileToRunningLeavesAnUncommittedRestore(t *testing.T) {
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 	b.markError(ctx, "vm1")
 	runDir := t.TempDir()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].RunDir = runDir
+	if err := b.UpdateRecord(ctx, "vm1", func(r *VMRecord) error {
+		r.RunDir = runDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -459,17 +437,11 @@ func TestReconcileToRunningLeavesAnUncommittedRestore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
-	before, err := b.LoadRecord(ctx, "vm1")
-	if err != nil {
-		t.Fatalf("LoadRecord: %v", err)
-	}
+	before := recordOf(t, b, "vm1")
 
 	b.ReconcileToRunning(ctx, "vm1")
 
-	loaded, err := b.LoadRecord(ctx, "vm1")
-	if err != nil {
-		t.Fatalf("LoadRecord: %v", err)
-	}
+	loaded := recordOf(t, b, "vm1")
 	if loaded.State != types.VMStateError || !loaded.StartedAt.Equal(*before.StartedAt) {
 		t.Errorf("state %s started %v, want the uncommitted restore left as %s started %v", loaded.State, loaded.StartedAt, before.State, before.StartedAt)
 	}
@@ -529,11 +501,7 @@ func TestReconcileToRunningIdempotent(t *testing.T) {
 }
 
 func TestNewBackendNilRecorderDefaultsToNop(t *testing.T) {
-	cfg := newDiskStubConfig(t)
-	b, err := NewBackend("test-hv", cfg, nil, newTestMetaStore(t, "test-hv", cfg.indexFile, cfg.indexLock))
-	if err != nil {
-		t.Fatalf("NewBackend(rec=nil): %v", err)
-	}
+	b := newNetTestBackend(t)
 	if _, ok := b.Metering.(metering.NopRecorder); !ok {
 		t.Fatalf("nil recorder should default to NopRecorder, got %T", b.Metering)
 	}
@@ -566,16 +534,7 @@ func TestPrepareStartRefusesInterruptedRestore(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-staging"
-	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
-	runDir := t.TempDir()
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = runDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	runDir := seedStoppedVMWithDirs(t, b, id)
 	if err := os.WriteFile(filepath.Join(runDir, restoreDirtyName), nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
 	}
@@ -588,8 +547,7 @@ func TestPrepareStartClearsATombstoneOlderThanTheCommittedRestore(t *testing.T) 
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-restored"
-	seedVMRecord(t, b, id, 1, 1<<30, 10<<30, true)
-	runDir := t.TempDir()
+	runDir := seedStoppedVMWithDirs(t, b, id)
 	marker := filepath.Join(runDir, restoreDirtyName)
 	if err := os.WriteFile(marker, nil, 0o600); err != nil {
 		t.Fatalf("mk tombstone: %v", err)
@@ -598,11 +556,8 @@ func TestPrepareStartClearsATombstoneOlderThanTheCommittedRestore(t *testing.T) 
 	if err := os.Chtimes(marker, written, written); err != nil {
 		t.Fatalf("age tombstone: %v", err)
 	}
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateStopped
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = runDir
-		idx.VMs[id].StartedAt = new(written.Add(time.Second))
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		r.StartedAt = new(written.Add(time.Second))
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -725,8 +680,8 @@ func newMeteringTestBackend(t *testing.T) (*Backend, *meteringcapture.Recorder) 
 
 func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int64, firstBooted bool) {
 	t.Helper()
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id] = &VMRecord{
+	if err := b.update(t.Context(), func(tx *vmTx) error {
+		return tx.Put(id, &VMRecord{
 			ID:          id,
 			Hypervisor:  b.Typ,
 			Config:      types.VMConfig{CPU: cpu, Memory: mem, Storage: storage},
@@ -734,8 +689,7 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 
 			RunDir: t.TempDir(),
 			LogDir: t.TempDir(),
-		}
-		return nil
+		})
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -744,11 +698,21 @@ func seedVMRecord(t *testing.T, b *Backend, id string, cpu int, mem, storage int
 func seedRunningVM(t *testing.T, b *Backend, id string, cpu int, mem, storage int64) {
 	t.Helper()
 	seedVMRecord(t, b, id, cpu, mem, storage, true)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateRunning
-		idx.VMs[id].StartedAt = new(time.Now())
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateRunning
+		r.StartedAt = new(time.Now())
 		return nil
 	}); err != nil {
 		t.Fatalf("set running: %v", err)
+	}
+}
+
+func setVMState(t *testing.T, b *Backend, id string, state types.VMState) {
+	t.Helper()
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.State = state
+		return nil
+	}); err != nil {
+		t.Fatalf("set %s state %s: %v", id, state, err)
 	}
 }

@@ -48,6 +48,10 @@ func TestListPrintsAnEmptyJSONArrayForAnEmptyStore(t *testing.T) {
 func TestDetectReader(t *testing.T) {
 	qcow2Data := slices.Concat(utils.Qcow2Magic, make([]byte, 100))
 	tarData := []byte("this is a tar-like stream of data, not really tar but not qcow2 either")
+	patterned := make([]byte, 16384)
+	for i := range patterned {
+		patterned[i] = byte(i % 251)
+	}
 
 	tests := []struct {
 		name     string
@@ -79,6 +83,12 @@ func TestDetectReader(t *testing.T) {
 			wantType: importSourceTar,
 			wantData: tarData,
 		},
+		{
+			name:     "gzip tar larger than the sniff window",
+			input:    gzipWrap(t, patterned),
+			wantType: importSourceTar,
+			wantData: patterned,
+		},
 	}
 
 	for _, tt := range tests {
@@ -108,32 +118,6 @@ func TestDetectReader_TooShort(t *testing.T) {
 	_, _, _, err := detectReader(bytes.NewReader([]byte{0x00}))
 	if err == nil {
 		t.Fatal("expected error for 1-byte input")
-	}
-}
-
-func TestDetectReader_GzipPreservesFullContent(t *testing.T) {
-	original := make([]byte, 16384)
-	for i := range original {
-		original[i] = byte(i % 251)
-	}
-
-	gz := gzipWrap(t, original)
-	r, typ, cleanup, err := detectReader(bytes.NewReader(gz))
-	if err != nil {
-		t.Fatalf("detectReader: %v", err)
-	}
-	defer cleanup()
-
-	if typ != importSourceTar {
-		t.Errorf("type: got %d, want importSourceTar", typ)
-	}
-
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if !bytes.Equal(got, original) {
-		t.Errorf("content mismatch: got %d bytes, want %d", len(got), len(original))
 	}
 }
 

@@ -317,8 +317,8 @@ func TestMigrateRoundOutOfStepDiscardsTheSeries(t *testing.T) {
 func TestMigrateRoundRewritesTheEnvelope(t *testing.T) {
 	b, id, rec := newMigrateTestVM(t)
 	dir := seedSeries(t, rec)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{{MTU: 1500}, {MTU: 1500}}
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.NetworkConfigs = []*types.NetworkConfig{{MTU: 1500}, {MTU: 1500}}
 		return nil
 	}); err != nil {
 		t.Fatalf("seed nics: %v", err)
@@ -356,13 +356,10 @@ func TestIsSeriesDirLeavesASnapshotBeingPersisted(t *testing.T) {
 func TestMigrateAbortOfAStoppedVMDeletesTheSeries(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	seedVMRecord(t, b, "stopped", 1, 512, 1024, true)
-	rec, err := b.LoadRecord(t.Context(), "stopped")
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	dir := seedSeries(t, &rec)
+	rec := recordOf(t, b, "stopped")
+	dir := seedSeries(t, rec)
 	calls := &migrateCalls{}
-	if err = b.MigrateAbortSequence(t.Context(), "stopped", "s1", migrateStubSpec(calls)); err != nil {
+	if err := b.MigrateAbortSequence(t.Context(), "stopped", "s1", migrateStubSpec(calls)); err != nil {
 		t.Fatalf("abort: %v", err)
 	}
 	if calls.resumed != 0 || utils.FileExists(dir) {
@@ -424,19 +421,16 @@ func migrateStubSpec(calls *migrateCalls) MigrateSpec {
 func newMigrateTestVM(t *testing.T) (*Backend, string, *VMRecord) {
 	t.Helper()
 	b, id := newHibernateTestVM(t)
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	cow := filepath.Join(rec.RunDir, types.COWRawFileName)
 	writeSparse(t, cow, 1<<20, map[int64]string{0: "live"})
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].StorageConfigs = []*types.StorageConfig{{Path: cow, Serial: CowSerial, Role: types.StorageRoleCOW}}
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.StorageConfigs = []*types.StorageConfig{{Path: cow, Serial: CowSerial, Role: types.StorageRoleCOW}}
 		return nil
 	}); err != nil {
 		t.Fatalf("seed disks: %v", err)
 	}
-	return b, id, &rec
+	return b, id, rec
 }
 
 func seedSeries(t *testing.T, rec *VMRecord) string {

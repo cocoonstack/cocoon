@@ -35,11 +35,7 @@ var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 }}
 
 func TestNew(t *testing.T) {
-	dir := t.TempDir()
-	lf, err := New(&config.Config{RootDir: dir}, metering.NopRecorder{}, newTestMetaStore(t, &config.Config{RootDir: dir}))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	lf := newTestLFAt(t, t.TempDir(), metering.NopRecorder{})
 	if lf == nil {
 		t.Fatal("expected non-nil LocalFile")
 	}
@@ -185,11 +181,15 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 		t.Errorf("srcDir removed on EXDEV fallback: %v", statErr)
 	}
 
-	if err := lf.dbRead(ctx, func(idx *snapshotIndex) error {
-		if _, stale := idx.Snapshots[id]; stale {
+	if err := lf.view(ctx, func(tx *snapTx) error {
+		if rec, err := tx.Get(id); err != nil {
+			return err
+		} else if rec != nil {
 			return fmt.Errorf("pending record %s still in index", id)
 		}
-		if _, stale := idx.Names["exdev-snap"]; stale {
+		if _, stale, err := tx.NameGet("exdev-snap"); err != nil {
+			return err
+		} else if stale {
 			return fmt.Errorf("name %q still reserved", "exdev-snap")
 		}
 		return nil
@@ -406,67 +406,41 @@ func TestList(t *testing.T) {
 	}
 }
 
-func TestInspect_ByID(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
+func TestInspect_ByRef(t *testing.T) {
+	tests := []struct {
+		name string
+		ref  func(id string) string
+	}{
+		{"ByID", func(id string) string { return id }},
+		{"ByName", func(string) string { return "byref" }},
+		{"ByPrefix", func(id string) string { return id[:5] }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := newTestLF(t)
+			ctx := t.Context()
 
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "byid", Description: "desc"}, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
+			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
+			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "byref", Description: "desc"}, stream)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	s, err := lf.Inspect(ctx, id)
-	if err != nil {
-		t.Fatalf("Inspect by ID: %v", err)
-	}
-	if s.ID != id {
-		t.Errorf("ID: got %q, want %q", s.ID, id)
-	}
-	if s.Name != "byid" {
-		t.Errorf("Name: got %q, want %q", s.Name, "byid")
-	}
-	if s.Description != "desc" {
-		t.Errorf("Description: got %q, want %q", s.Description, "desc")
-	}
-}
-
-func TestInspect_ByName(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "byname"}, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := lf.Inspect(ctx, "byname")
-	if err != nil {
-		t.Fatalf("Inspect by name: %v", err)
-	}
-	if s.ID != id {
-		t.Errorf("ID: got %q, want %q", s.ID, id)
-	}
-}
-
-func TestInspect_ByPrefix(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "pfx"}, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	prefix := id[:5]
-	s, err := lf.Inspect(ctx, prefix)
-	if err != nil {
-		t.Fatalf("Inspect by prefix %q: %v", prefix, err)
-	}
-	if s.ID != id {
-		t.Errorf("ID: got %q, want %q", s.ID, id)
+			ref := tt.ref(id)
+			s, err := lf.Inspect(ctx, ref)
+			if err != nil {
+				t.Fatalf("Inspect by %q: %v", ref, err)
+			}
+			if s.ID != id {
+				t.Errorf("ID: got %q, want %q", s.ID, id)
+			}
+			if s.Name != "byref" {
+				t.Errorf("Name: got %q, want %q", s.Name, "byref")
+			}
+			if s.Description != "desc" {
+				t.Errorf("Description: got %q, want %q", s.Description, "desc")
+			}
+		})
 	}
 }
 
@@ -518,25 +492,6 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestDelete_ByID(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "delid"}, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	deleted, err := lf.Delete(ctx, []string{id})
-	if err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if len(deleted) != 1 || deleted[0] != id {
-		t.Errorf("deleted: got %v, want [%s]", deleted, id)
-	}
-}
-
 func TestDelete_Multiple(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -562,22 +517,33 @@ func TestDelete_Multiple(t *testing.T) {
 	}
 }
 
-func TestDelete_DuplicateRefs(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "dedup"}, stream)
-	if err != nil {
-		t.Fatal(err)
+func TestDelete_ByIDAndDuplicateRefs(t *testing.T) {
+	tests := []struct {
+		name string
+		refs func(id string) []string
+	}{
+		{"ByID", func(id string) []string { return []string{id} }},
+		{"DuplicateRefs", func(id string) []string { return []string{id, "delref"} }},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := newTestLF(t)
+			ctx := t.Context()
 
-	deleted, err := lf.Delete(ctx, []string{id, "dedup"})
-	if err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if len(deleted) != 1 {
-		t.Errorf("expected 1 deleted (deduped), got %d", len(deleted))
+			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
+			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "delref"}, stream)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			deleted, err := lf.Delete(ctx, tt.refs(id))
+			if err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if len(deleted) != 1 || deleted[0] != id {
+				t.Errorf("deleted: got %v, want [%s]", deleted, id)
+			}
+		})
 	}
 }
 
@@ -705,39 +671,6 @@ func TestDataDir_NotFound(t *testing.T) {
 	}
 }
 
-func TestDataDir_ImageBlobIDsIsolation(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
-		Name:         "iso",
-		ImageBlobIDs: map[string]struct{}{"original": {}},
-	}
-	id, err := lf.Create(ctx, cfg, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, got1, _, err := lf.DataDir(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got1.ImageBlobIDs["injected"] = struct{}{}
-
-	_, got2, _, err := lf.DataDir(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := got2.ImageBlobIDs["injected"]; ok {
-		t.Error("ImageBlobIDs mutation leaked: deep copy is broken")
-	}
-	if _, ok := got2.ImageBlobIDs["original"]; !ok {
-		t.Error("ImageBlobIDs missing 'original' after re-read")
-	}
-}
-
 func TestRestore_ConfigRoundtrip(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
@@ -854,38 +787,53 @@ func TestRestore_DoubleCloseNoPanic(t *testing.T) {
 	rc.Close()
 }
 
-func TestRestore_ImageBlobIDsIsolation(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
+func TestImageBlobIDsIsolation(t *testing.T) {
+	tests := []struct {
+		name string
+		get  func(t *testing.T, lf *LocalFile, id string) types.SnapshotConfig
+	}{
+		{"DataDir", func(t *testing.T, lf *LocalFile, id string) types.SnapshotConfig {
+			_, got, _, err := lf.DataDir(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return got
+		}},
+		{"Restore", func(t *testing.T, lf *LocalFile, id string) types.SnapshotConfig {
+			got, rc, err := lf.Restore(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc.Close()
+			return got
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := newTestLF(t)
 
-	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
-		Name:         "riso",
-		ImageBlobIDs: map[string]struct{}{"orig": {}},
-	}
-	id, err := lf.Create(ctx, cfg, stream)
-	if err != nil {
-		t.Fatal(err)
-	}
+			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
+			cfg := &types.SnapshotConfig{
+				ID:           testID(t),
+				Name:         "iso",
+				ImageBlobIDs: map[string]struct{}{"original": {}},
+			}
+			id, err := lf.Create(t.Context(), cfg, stream)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	got1, rc1, err := lf.Restore(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rc1.Close()
-	got1.ImageBlobIDs["injected"] = struct{}{}
+			got1 := tt.get(t, lf, id)
+			got1.ImageBlobIDs["injected"] = struct{}{}
 
-	got2, rc2, err := lf.Restore(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rc2.Close()
-	if _, ok := got2.ImageBlobIDs["injected"]; ok {
-		t.Error("ImageBlobIDs mutation leaked through Restore: deep copy is broken")
-	}
-	if _, ok := got2.ImageBlobIDs["orig"]; !ok {
-		t.Error("ImageBlobIDs missing 'orig' after re-read")
+			got2 := tt.get(t, lf, id)
+			if _, ok := got2.ImageBlobIDs["injected"]; ok {
+				t.Error("ImageBlobIDs mutation leaked: deep copy is broken")
+			}
+			if _, ok := got2.ImageBlobIDs["original"]; !ok {
+				t.Error("ImageBlobIDs missing 'original' after re-read")
+			}
+		})
 	}
 }
 
@@ -931,97 +879,25 @@ func TestExportImport_Roundtrip(t *testing.T) {
 		t.Errorf("Memory: got %d, want %d", s.Memory, int64(1<<30))
 	}
 
-	dataDir := lf.conf.SnapshotDataDir(importedID)
-	for name, wantContent := range origFiles {
-		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
-		if readErr != nil {
-			t.Errorf("read %s: %v", name, readErr)
-			continue
-		}
-		if !bytes.Equal(got, wantContent) {
-			t.Errorf("file %s: got %q, want %q", name, got, wantContent)
-		}
-	}
-}
-
-func TestExportImport_ViaBuffer(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	makeExportableSnapshot(t, lf, "buf-src", map[string][]byte{"data.bin": []byte("hello")})
-
-	exportStream, err := lf.Export(ctx, "buf-src")
-	if err != nil {
-		t.Fatalf("Export: %v", err)
-	}
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, exportStream); err != nil {
-		t.Fatalf("copy export to buffer: %v", err)
-	}
-	exportStream.Close()
-
-	importedID, err := lf.Import(ctx, &buf, "buf-imported", "new desc")
-	if err != nil {
-		t.Fatalf("Import: %v", err)
-	}
-
-	s, err := lf.Inspect(ctx, importedID)
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
-	}
-	if s.Name != "buf-imported" {
-		t.Errorf("Name: got %q, want %q", s.Name, "buf-imported")
-	}
-	if s.Description != "new desc" {
-		t.Errorf("Description: got %q, want %q", s.Description, "new desc")
-	}
+	assertDirFiles(t, lf.conf.SnapshotDataDir(importedID), origFiles)
 }
 
 func TestImport_FromGzipTarReader(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	wantCfg := types.SnapshotExport{
-		Version: 1,
-		Config: types.SnapshotConfig{
+	dataContent := []byte("state data")
+	stream := gzipTar(t, map[string][]byte{
+		"snapshot.json": exportEnvelope(t, types.SnapshotConfig{
 			Name:        "stream-snap",
 			Description: "from reader",
 			CPU:         2,
 			Memory:      512 << 20,
-		},
-	}
-	jsonData, err := json.Marshal(wantCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+		}),
+		"state.json": dataContent,
+	})
 
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(jsonData); err != nil {
-		t.Fatal(err)
-	}
-
-	dataContent := []byte("state data")
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "state.json", Size: int64(len(dataContent)), Mode: 0o644, Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(dataContent); err != nil {
-		t.Fatal(err)
-	}
-
-	tw.Close()
-	gw.Close()
-
-	importedID, err := lf.Import(ctx, &buf, "", "")
+	importedID, err := lf.Import(ctx, stream, "", "")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -1037,41 +913,15 @@ func TestImport_FromGzipTarReader(t *testing.T) {
 		t.Errorf("CPU: got %d, want 2", s.CPU)
 	}
 
-	dataDir := lf.conf.SnapshotDataDir(importedID)
-	got, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
-	if err != nil {
-		t.Fatalf("read state.json: %v", err)
-	}
-	if !bytes.Equal(got, dataContent) {
-		t.Errorf("state.json: got %q, want %q", got, dataContent)
-	}
+	assertDirFiles(t, lf.conf.SnapshotDataDir(importedID), map[string][]byte{"state.json": dataContent})
 }
 
 func TestImport_CorruptGzipTrailerRejected(t *testing.T) {
 	lf := newTestLF(t)
 
-	jsonData, err := json.Marshal(types.SnapshotExport{
-		Version: 1,
-		Config:  types.SnapshotConfig{Name: "corrupt-snap", CPU: 1, Memory: 256 << 20},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(jsonData); err != nil {
-		t.Fatal(err)
-	}
-	tw.Close()
-	gw.Close()
-
-	raw := buf.Bytes()
+	raw := gzipTar(t, map[string][]byte{
+		"snapshot.json": exportEnvelope(t, types.SnapshotConfig{Name: "corrupt-snap", CPU: 1, Memory: 256 << 20}),
+	}).Bytes()
 	raw[len(raw)-1] ^= 0xff
 
 	if _, err := lf.Import(t.Context(), bytes.NewReader(raw), "", ""); err == nil {
@@ -1083,42 +933,13 @@ func TestImport_FromRawTarReader(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	wantCfg := types.SnapshotExport{
-		Version: 1,
-		Config: types.SnapshotConfig{
-			Name: "raw-snap",
-			CPU:  8,
-		},
-	}
-	jsonData, err := json.Marshal(wantCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "snapshot.json", Size: int64(len(jsonData)), Mode: 0o644, Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(jsonData); err != nil {
-		t.Fatal(err)
-	}
-
 	dataContent := []byte("raw disk data")
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "cow.raw", Size: int64(len(dataContent)), Mode: 0o644, Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(dataContent); err != nil {
-		t.Fatal(err)
-	}
-	tw.Close()
+	stream := makeTar(t, map[string][]byte{
+		"snapshot.json": exportEnvelope(t, types.SnapshotConfig{Name: "raw-snap", CPU: 8}),
+		"cow.raw":       dataContent,
+	})
 
-	importedID, err := lf.Import(ctx, &buf, "", "")
+	importedID, err := lf.Import(ctx, stream, "", "")
 	if err != nil {
 		t.Fatalf("Import raw tar: %v", err)
 	}
@@ -1134,25 +955,15 @@ func TestImport_FromRawTarReader(t *testing.T) {
 		t.Errorf("CPU: got %d, want 8", s.CPU)
 	}
 
-	dataDir := lf.conf.SnapshotDataDir(importedID)
-	got, err := os.ReadFile(filepath.Join(dataDir, "cow.raw"))
-	if err != nil {
-		t.Fatalf("read cow.raw: %v", err)
-	}
-	if !bytes.Equal(got, dataContent) {
-		t.Errorf("cow.raw: got %q, want %q", got, dataContent)
-	}
+	assertDirFiles(t, lf.conf.SnapshotDataDir(importedID), map[string][]byte{"cow.raw": dataContent})
 }
 
 func TestImport_RefusesAShortCOW(t *testing.T) {
 	lf := newTestLF(t)
-	envelope, err := json.Marshal(types.SnapshotExport{Version: 1, Config: types.SnapshotConfig{Name: "repacked", Storage: 8 << 20}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	envelope := exportEnvelope(t, types.SnapshotConfig{Name: "repacked", Storage: 8 << 20})
 	stream := makeTar(t, map[string][]byte{"snapshot.json": envelope, "cow.raw": make([]byte, 12<<10)})
 
-	_, err = lf.Import(t.Context(), stream, "", "")
+	_, err := lf.Import(t.Context(), stream, "", "")
 
 	if err == nil || !strings.Contains(err.Error(), "envelope records") {
 		t.Fatalf("err = %v, want the short cow.raw refused", err)
@@ -1192,17 +1003,7 @@ func TestExportCompressed_ImportRoundtrip(t *testing.T) {
 		t.Errorf("Name: got %q, want %q", s.Name, "gz-imported")
 	}
 
-	dataDir := lf.conf.SnapshotDataDir(importedID)
-	for name, want := range origFiles {
-		got, readErr := os.ReadFile(filepath.Join(dataDir, name))
-		if readErr != nil {
-			t.Errorf("read %s: %v", name, readErr)
-			continue
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("file %s: got %q, want %q", name, got, want)
-		}
-	}
+	assertDirFiles(t, lf.conf.SnapshotDataDir(importedID), origFiles)
 }
 
 func TestImport_InvalidStream(t *testing.T) {
@@ -1218,32 +1019,52 @@ func TestImport_InvalidStream(t *testing.T) {
 	}
 }
 
-func TestImport_NameOverride(t *testing.T) {
-	lf := newTestLF(t)
-	ctx := t.Context()
-
-	makeExportableSnapshot(t, lf, "orig-name", map[string][]byte{"f.txt": []byte("x")})
-
-	exportStream, err := lf.Export(ctx, "orig-name")
-	if err != nil {
-		t.Fatalf("Export: %v", err)
+func TestExportImport_NameOverrideDirectAndViaBuffer(t *testing.T) {
+	tests := []struct {
+		name     string
+		buffered bool
+	}{
+		{"direct stream", false},
+		{"via buffer", true},
 	}
-	defer exportStream.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := newTestLF(t)
+			ctx := t.Context()
 
-	importedID, err := lf.Import(ctx, exportStream, "override-name", "override-desc")
-	if err != nil {
-		t.Fatalf("Import: %v", err)
-	}
+			makeExportableSnapshot(t, lf, "orig-name", map[string][]byte{"f.txt": []byte("x")})
 
-	s, err := lf.Inspect(ctx, importedID)
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
-	}
-	if s.Name != "override-name" {
-		t.Errorf("Name: got %q, want %q", s.Name, "override-name")
-	}
-	if s.Description != "override-desc" {
-		t.Errorf("Description: got %q, want %q", s.Description, "override-desc")
+			exportStream, err := lf.Export(ctx, "orig-name")
+			if err != nil {
+				t.Fatalf("Export: %v", err)
+			}
+			defer exportStream.Close()
+
+			var in io.Reader = exportStream
+			if tt.buffered {
+				var buf bytes.Buffer
+				if _, err := io.Copy(&buf, exportStream); err != nil {
+					t.Fatalf("copy export to buffer: %v", err)
+				}
+				in = &buf
+			}
+
+			importedID, err := lf.Import(ctx, in, "override-name", "override-desc")
+			if err != nil {
+				t.Fatalf("Import: %v", err)
+			}
+
+			s, err := lf.Inspect(ctx, importedID)
+			if err != nil {
+				t.Fatalf("Inspect: %v", err)
+			}
+			if s.Name != "override-name" {
+				t.Errorf("Name: got %q, want %q", s.Name, "override-name")
+			}
+			if s.Description != "override-desc" {
+				t.Errorf("Description: got %q, want %q", s.Description, "override-desc")
+			}
+		})
 	}
 }
 
@@ -1273,16 +1094,7 @@ func TestExportToDir_RoundTrip(t *testing.T) {
 		t.Errorf("envelope files = %v, want the %d exported files", envelope.Files, len(origFiles))
 	}
 
-	for name, want := range origFiles {
-		got, readErr := os.ReadFile(filepath.Join(dst, name))
-		if readErr != nil {
-			t.Errorf("read %s: %v", name, readErr)
-			continue
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("%s: got %q, want %q", name, got, want)
-		}
-	}
+	assertDirFiles(t, dst, origFiles)
 }
 
 func TestExportToDir_RejectNonEmpty(t *testing.T) {
@@ -1362,16 +1174,11 @@ func TestImportPinsEnvelopeBlobs(t *testing.T) {
 
 	var pinned []string
 	released := false
-	dir := t.TempDir()
-	conf := &config.Config{RootDir: dir}
-	dst, err := New(conf, metering.NopRecorder{}, newTestMetaStore(t, conf),
+	dst := newTestLFAt(t, t.TempDir(), metering.NopRecorder{},
 		WithBlobPinner(func(_ context.Context, blobIDs map[string]struct{}) (func(), error) {
 			pinned = slices.Sorted(maps.Keys(blobIDs))
 			return func() { released = true }, nil
 		}))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 
 	if _, err := dst.Import(ctx, stream, "pin-dst", ""); err != nil {
 		t.Fatalf("import: %v", err)
@@ -1480,9 +1287,13 @@ func newTestLF(t *testing.T) *LocalFile {
 
 func newTestLFWithRecorder(t *testing.T, rec metering.Recorder) *LocalFile {
 	t.Helper()
-	dir := t.TempDir()
-	conf := &config.Config{RootDir: dir}
-	lf, err := New(conf, rec, newTestMetaStore(t, conf))
+	return newTestLFAt(t, t.TempDir(), rec)
+}
+
+func newTestLFAt(t *testing.T, root string, rec metering.Recorder, opts ...Option) *LocalFile {
+	t.Helper()
+	conf := &config.Config{RootDir: root}
+	lf, err := New(conf, rec, newTestMetaStore(t, conf), opts...)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -1500,6 +1311,42 @@ func writeCaptureDir(t *testing.T, dir string, files map[string][]byte) string {
 		}
 	}
 	return dir
+}
+
+func assertDirFiles(t *testing.T, dir string, want map[string][]byte) {
+	t.Helper()
+	for name, content := range want {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Errorf("read %s: %v", name, err)
+			continue
+		}
+		if !bytes.Equal(got, content) {
+			t.Errorf("file %s: got %q, want %q", name, got, content)
+		}
+	}
+}
+
+func exportEnvelope(t *testing.T, cfg types.SnapshotConfig) []byte {
+	t.Helper()
+	envelope, err := json.Marshal(types.SnapshotExport{Version: 1, Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return envelope
+}
+
+func gzipTar(t *testing.T, files map[string][]byte) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(makeTar(t, files).Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf
 }
 
 func readDirFiles(t *testing.T, dir string) map[string]string {

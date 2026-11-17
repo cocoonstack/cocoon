@@ -1,8 +1,6 @@
 package core
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -177,7 +175,7 @@ func TestEnsureFirmwarePath(t *testing.T) {
 			conf := &config.Config{RootDir: t.TempDir(), UseFirecracker: tt.firecracker}
 			firmwarePath := images.FirmwarePath(conf.RootDir)
 			if tt.haveFirmware {
-				writeFirmware(t, firmwarePath)
+				writeFile(t, firmwarePath, "fw")
 			}
 			boot := tt.boot
 			err := EnsureFirmwarePath(conf, &boot)
@@ -201,15 +199,5 @@ func TestEnsureFirmwarePath(t *testing.T) {
 				t.Errorf("boot = %+v, want %+v", boot, want)
 			}
 		})
-	}
-}
-
-func writeFirmware(t *testing.T, path string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("fw"), 0o644); err != nil {
-		t.Fatalf("setup: %v", err)
 	}
 }

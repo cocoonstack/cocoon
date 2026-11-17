@@ -10,22 +10,19 @@ import (
 func TestToVMClearsPersistedRuntimeFieldsWhenStopped(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs["vm1"].State = types.VMStateStopped
-		idx.VMs["vm1"].SocketPath = "/stale/api.sock"
-		idx.VMs["vm1"].VsockSocket = "/stale/vsock.uds"
-		idx.VMs["vm1"].ConsolePath = "/dev/pts/9"
-		idx.VMs["vm1"].PID = 4242
+	if err := b.UpdateRecord(t.Context(), "vm1", func(r *VMRecord) error {
+		r.State = types.VMStateStopped
+		r.SocketPath = "/stale/api.sock"
+		r.VsockSocket = "/stale/vsock.uds"
+		r.ConsolePath = "/dev/pts/9"
+		r.PID = 4242
 		return nil
 	}); err != nil {
 		t.Fatalf("seed runtime fields: %v", err)
 	}
 
-	rec, err := b.LoadRecord(t.Context(), "vm1")
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
-	info := b.ToVM(&rec)
+	rec := recordOf(t, b, "vm1")
+	info := b.ToVM(rec)
 	if info.PID != 0 || info.SocketPath != "" || info.VsockSocket != "" || info.ConsolePath != "" {
 		t.Errorf("stopped VM leaks runtime fields: pid=%d socket=%q vsock=%q console=%q",
 			info.PID, info.SocketPath, info.VsockSocket, info.ConsolePath)
@@ -58,13 +55,10 @@ func TestToVMRunningConsolePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b, _ := newMeteringTestBackend(t)
 			seedRunningVM(t, b, "vm1", 1, 1<<30, 10<<30)
-			rec, err := b.LoadRecord(t.Context(), "vm1")
-			if err != nil {
-				t.Fatalf("load record: %v", err)
-			}
+			rec := recordOf(t, b, "vm1")
 			tt.setup(t, rec.RunDir)
 
-			info := b.ToVM(&rec)
+			info := b.ToVM(rec)
 			if want := tt.want(rec.RunDir); info.ConsolePath != want {
 				t.Errorf("ConsolePath = %q, want %q", info.ConsolePath, want)
 			}

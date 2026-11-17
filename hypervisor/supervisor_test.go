@@ -79,12 +79,7 @@ func TestConvergeDeadStopsLegacyRunningWithoutInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].State = types.VMStateRunning
-		return nil
-	}); err != nil {
-		t.Fatalf("seed legacy running: %v", err)
-	}
+	setVMState(t, b, "vm1", types.VMStateRunning)
 
 	if err := b.ConvergeDead(ctx, "vm1", recordOf(t, b, "vm1").TransitionGeneration, timeNow()); err != nil {
 		t.Fatalf("ConvergeDead: %v", err)
@@ -145,8 +140,8 @@ func TestQuiesceIfPendingFencedByGeneration(t *testing.T) {
 	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
 		return b.updateState(ctx, "vm1", types.VMStateStopped)
 	}})
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].QuiescePending = true
+	if err := b.UpdateRecord(ctx, "vm1", func(r *VMRecord) error {
+		r.QuiescePending = true
 		return nil
 	}); err != nil {
 		t.Fatalf("seed pending: %v", err)
@@ -164,8 +159,8 @@ func TestMarkStartedClearsQuiescePending(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedPlumbedVM(t, b, "vm1")
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].QuiescePending = true
+	if err := b.UpdateRecord(ctx, "vm1", func(r *VMRecord) error {
+		r.QuiescePending = true
 		return nil
 	}); err != nil {
 		t.Fatalf("seed pending: %v", err)
@@ -321,12 +316,7 @@ func TestConvergeDeadDatesARecordWithNoOpenInterval(t *testing.T) {
 	b, rec := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].State = types.VMStateRunning
-		return nil
-	}); err != nil {
-		t.Fatalf("seed legacy running: %v", err)
-	}
+	setVMState(t, b, "vm1", types.VMStateRunning)
 	observed := time.Date(2026, 7, 21, 11, 0, 0, 0, time.UTC)
 
 	if err := b.ConvergeDead(ctx, "vm1", recordOf(t, b, "vm1").TransitionGeneration, observed); err != nil {
@@ -345,12 +335,7 @@ func TestUpdateStateDatesAStoppedRecordThatWasRunning(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	seedVMRecord(t, b, "vm1", 1, 1<<30, 10<<30, true)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs["vm1"].State = types.VMStateRunning
-		return nil
-	}); err != nil {
-		t.Fatalf("seed legacy running: %v", err)
-	}
+	setVMState(t, b, "vm1", types.VMStateRunning)
 
 	if err := b.updateState(ctx, "vm1", types.VMStateStopped); err != nil {
 		t.Fatalf("updateState: %v", err)
@@ -376,8 +361,13 @@ func TestUpdateStateLeavesACreatedRecordUndated(t *testing.T) {
 func seedPlumbedVM(t *testing.T, b *Backend, id string) {
 	t.Helper()
 	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].NetSetup = types.NetSetup{
+	seedCNINetSetup(t, b, id)
+}
+
+func seedCNINetSetup(t *testing.T, b *Backend, id string) {
+	t.Helper()
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.NetSetup = types.NetSetup{
 			NetBackend:     types.BackendCNI,
 			NetworkConfigs: []*types.NetworkConfig{{}},
 		}

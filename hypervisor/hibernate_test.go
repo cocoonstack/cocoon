@@ -36,10 +36,7 @@ func TestHibernateSequencePersistFailureResumesAndRollsBack(t *testing.T) {
 		t.Error("VMM was terminated despite persist failure")
 	}
 
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.State != types.VMStateRunning {
 		t.Errorf("state %s, want running", rec.State)
 	}
@@ -73,10 +70,7 @@ func TestHibernateSequenceSuccess(t *testing.T) {
 		t.Fatalf("persist got cfg %+v, want a snapshot id", gotCfg)
 	}
 
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.State != types.VMStateStopped {
 		t.Errorf("state %s, want stopped", rec.State)
 	}
@@ -101,10 +95,7 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 		t.Error("VM was resumed after the snapshot was already persisted")
 	}
 
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.State != types.VMStateError {
 		t.Errorf("state %s, want error", rec.State)
 	}
@@ -115,20 +106,8 @@ func TestHibernateSequenceTerminateFailureMarksError(t *testing.T) {
 
 func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	b, id := newHibernateTestVM(t)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].NetSetup = types.NetSetup{
-			NetBackend:     types.BackendCNI,
-			NetworkConfigs: []*types.NetworkConfig{{}},
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed network: %v", err)
-	}
-	quiesced := 0
-	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		quiesced++
-		return nil
-	}})
+	seedCNINetSetup(t, b, id)
+	quiesced := countQuiesces(b)
 	store := b.Meta
 	spec := hibernateStubSpec(&hibernateCalls{})
 	spec.Terminate = func(*VMRecord, int) error {
@@ -145,8 +124,8 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "mark stopped") || !strings.Contains(err.Error(), snapID) {
 		t.Fatalf("HibernateSequence = %v, want the failed flip reported with snapshot %s", err, snapID)
 	}
-	if quiesced != 1 {
-		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)
+	if *quiesced != 1 {
+		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", *quiesced)
 	}
 }
 
@@ -235,9 +214,9 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 	const id = "vm-hibernate-test"
 	runDir := shortTempDir(t)
 	seedVMRecord(t, b, id, 1, 512, 1024, true)
-	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateRunning
-		idx.VMs[id].RunDir = runDir
+	if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+		r.State = types.VMStateRunning
+		r.RunDir = runDir
 		return nil
 	}); err != nil {
 		t.Fatalf("seed state: %v", err)
@@ -248,16 +227,7 @@ func newHibernateTestVM(t *testing.T) (*Backend, string) {
 		t.Fatalf("touch sock: %v", err)
 	}
 	cmd := startFakeVMM(t, b.Conf.BinaryName(), sock)
-
-	waitDone := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		<-waitDone
-	})
+	reapOnCleanup(t, cmd)
 
 	if err := os.WriteFile(b.PIDFilePath(runDir), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 		t.Fatalf("write pidfile: %v", err)
@@ -281,6 +251,20 @@ func startFakeVMM(t *testing.T, argv0, sock string) *exec.Cmd {
 		t.Fatalf("fake VMM never execed: %v", err)
 	}
 	return cmd
+}
+
+func reapOnCleanup(t *testing.T, cmd *exec.Cmd) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+	})
+	return done
 }
 
 func hibernateStubSpec(calls *hibernateCalls) HibernateSpec {

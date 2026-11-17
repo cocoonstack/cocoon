@@ -23,22 +23,15 @@ import (
 )
 
 func TestRedirectedDriveIndices(t *testing.T) {
-	sc := func(paths ...string) []*types.StorageConfig {
-		configs := make([]*types.StorageConfig, len(paths))
-		for i, p := range paths {
-			configs[i] = &types.StorageConfig{Path: p}
-		}
-		return configs
-	}
 	tests := []struct {
 		name     string
 		src, dst []*types.StorageConfig
 		want     []int
 	}{
-		{"all equal", sc("/a", "/b"), sc("/a", "/b"), nil},
-		{"one differs", sc("/a", "/b", "/c"), sc("/a", "/B", "/c"), []int{1}},
-		{"all differ", sc("/a", "/b"), sc("/A", "/B"), []int{0, 1}},
-		{"dst shorter", sc("/a", "/b"), sc("/A"), []int{0}},
+		{"all equal", storagePaths("/a", "/b"), storagePaths("/a", "/b"), nil},
+		{"one differs", storagePaths("/a", "/b", "/c"), storagePaths("/a", "/B", "/c"), []int{1}},
+		{"all differ", storagePaths("/a", "/b"), storagePaths("/A", "/B"), []int{0, 1}},
+		{"dst shorter", storagePaths("/a", "/b"), storagePaths("/A"), []int{0}},
 		{"empty", nil, nil, nil},
 	}
 	for _, tt := range tests {
@@ -51,11 +44,7 @@ func TestRedirectedDriveIndices(t *testing.T) {
 }
 
 func TestPlaceholderCoalescesConcurrentRecordReads(t *testing.T) {
-	rootDir := t.TempDir()
-	runRoot := filepath.Join(rootDir, "run", "firecracker")
-	if err := os.MkdirAll(runRoot, 0o750); err != nil {
-		t.Fatalf("setup run root: %v", err)
-	}
+	rootDir, runRoot := newRunRoot(t)
 	src := []*types.StorageConfig{{Path: filepath.Join(runRoot, "gone", "cow.raw")}}
 	dst := []*types.StorageConfig{{Path: writeTestFile(t, rootDir, "clone-cow.raw")}}
 	var recordReads atomic.Int64
@@ -93,11 +82,7 @@ func TestPlaceholderCoalescesConcurrentRecordReads(t *testing.T) {
 }
 
 func TestHoldBindableRedirectsCreatesPlaceholderAndSharesVMLock(t *testing.T) {
-	rootDir := t.TempDir()
-	runRoot := filepath.Join(rootDir, "run", "firecracker")
-	if err := os.MkdirAll(runRoot, 0o750); err != nil {
-		t.Fatalf("setup run root: %v", err)
-	}
+	rootDir, runRoot := newRunRoot(t)
 	gone := filepath.Join(runRoot, "gone")
 	src := []*types.StorageConfig{
 		{Path: filepath.Join(gone, "cow.raw")},
@@ -164,11 +149,7 @@ func TestHoldBindableRedirectsCreatesPlaceholderAndSharesVMLock(t *testing.T) {
 }
 
 func TestHoldBindableRedirectsRejectsMissingLiveSource(t *testing.T) {
-	rootDir := t.TempDir()
-	runRoot := filepath.Join(rootDir, "run", "firecracker")
-	if err := os.MkdirAll(runRoot, 0o750); err != nil {
-		t.Fatalf("setup run root: %v", err)
-	}
+	rootDir, runRoot := newRunRoot(t)
 	source := filepath.Join(runRoot, "live", "cow.raw")
 	destination := writeTestFile(t, rootDir, "clone-cow.raw")
 	src := []*types.StorageConfig{{Path: source}}
@@ -196,11 +177,7 @@ func TestHoldBindableRedirectsRejectsMissingLiveSource(t *testing.T) {
 }
 
 func TestHoldBindableRedirectsRejectsUnmanagedMissingSource(t *testing.T) {
-	rootDir := t.TempDir()
-	runRoot := filepath.Join(rootDir, "run", "firecracker")
-	if err := os.MkdirAll(runRoot, 0o750); err != nil {
-		t.Fatalf("setup run root: %v", err)
-	}
+	rootDir, runRoot := newRunRoot(t)
 	destination := writeTestFile(t, rootDir, "clone-cow.raw")
 	tests := []struct {
 		name   string
@@ -273,7 +250,6 @@ func TestRedirectBinds(t *testing.T) {
 	regular := writeTestFile(t, dir, "cow.raw")
 	dst := writeTestFile(t, dir, "clone-cow.raw")
 	regular2 := writeTestFile(t, dir, "data.raw")
-	sc := func(p string) []*types.StorageConfig { return []*types.StorageConfig{{Path: p}} }
 
 	tests := []struct {
 		name     string
@@ -281,23 +257,11 @@ func TestRedirectBinds(t *testing.T) {
 		want     [][2]string
 		wantErr  bool
 	}{
-		{"regular source", sc(regular), sc(dst), [][2]string{{regular, dst}}, false},
-		{"missing source is planned", sc(filepath.Join(dir, "gone.raw")), sc(dst), [][2]string{{filepath.Join(dir, "gone.raw"), dst}}, false},
-		{"no redirects", sc(regular), sc(regular), nil, false},
-		{
-			"duplicate src",
-			[]*types.StorageConfig{{Path: regular}, {Path: regular}},
-			[]*types.StorageConfig{{Path: dst}, {Path: regular2}},
-			nil,
-			true,
-		},
-		{
-			"duplicate dst",
-			[]*types.StorageConfig{{Path: regular}, {Path: regular2}},
-			[]*types.StorageConfig{{Path: dst}, {Path: dst}},
-			nil,
-			true,
-		},
+		{"regular source", storagePaths(regular), storagePaths(dst), [][2]string{{regular, dst}}, false},
+		{"missing source is planned", storagePaths(filepath.Join(dir, "gone.raw")), storagePaths(dst), [][2]string{{filepath.Join(dir, "gone.raw"), dst}}, false},
+		{"no redirects", storagePaths(regular), storagePaths(regular), nil, false},
+		{"duplicate src", storagePaths(regular, regular), storagePaths(dst, regular2), nil, true},
+		{"duplicate dst", storagePaths(regular, regular2), storagePaths(dst, dst), nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -385,6 +349,24 @@ func newTestFC(t *testing.T) *Firecracker {
 		t.Fatalf("new firecracker: %v", err)
 	}
 	return fc
+}
+
+func newRunRoot(t *testing.T) (rootDir, runRoot string) {
+	t.Helper()
+	rootDir = t.TempDir()
+	runRoot = filepath.Join(rootDir, "run", "firecracker")
+	if err := os.MkdirAll(runRoot, 0o750); err != nil {
+		t.Fatalf("setup run root: %v", err)
+	}
+	return rootDir, runRoot
+}
+
+func storagePaths(paths ...string) []*types.StorageConfig {
+	configs := make([]*types.StorageConfig, len(paths))
+	for i, p := range paths {
+		configs[i] = &types.StorageConfig{Path: p}
+	}
+	return configs
 }
 
 func writeTestFile(t *testing.T, dir, name string) string {

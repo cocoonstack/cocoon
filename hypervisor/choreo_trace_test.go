@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cocoonstack/cocoon/gc"
-	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -24,16 +23,8 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 		t.Fatalf("golden decode: %v", err)
 	}
 
-	const typ = "test-hv"
-	dir := t.TempDir()
-	rec := meteringcapture.New()
-	b := &Backend{
-		Typ:      typ,
-		NS:       VMNamespaceName(typ),
-		Conf:     meteringStubConfig{rootDir: dir, vmRunRoot: dir},
-		Meta:     testNamespace(t, typ, dir),
-		Metering: rec,
-	}
+	b, rec := newMeteringTestBackend(t)
+	dir, typ := b.Conf.RootDirPath(), b.Typ
 	ctx := t.Context()
 
 	clock := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -101,11 +92,8 @@ func TestLegacyChoreographyTrace(t *testing.T) {
 	_, err = b.resolveRef(ctx, "beta")
 	record("rollback-then-resolve", "", err)
 
-	vm1, err := b.LoadRecord(ctx, "VM1")
-	if err != nil {
-		t.Fatalf("load VM1 pre-delete: %v", err)
-	}
-	record("delete", "", b.deleteVMProtocol(ctx, "VM1", &vm1))
+	vm1 := recordOf(t, b, "VM1")
+	record("delete", "", b.deleteVMProtocol(ctx, "VM1", vm1))
 	_, err = b.resolveRef(ctx, "alpha")
 	record("delete-then-resolve", "", err)
 

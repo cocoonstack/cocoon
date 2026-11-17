@@ -23,14 +23,7 @@ func TestAPIError_Error(t *testing.T) {
 }
 
 func TestNewSocketHTTPClient_DialsSocket(t *testing.T) {
-	sockPath := filepath.Join("/tmp", fmt.Sprintf("cocoon-test-%d.sock", os.Getpid()))
-	t.Cleanup(func() { os.Remove(sockPath) })
-
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer ln.Close()
+	sockPath, ln := listenUnix(t, "test")
 
 	go func() {
 		conn, err := ln.Accept()
@@ -71,6 +64,9 @@ func TestDoAPI_Success_GET(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			t.Errorf("expected no Content-Type for GET without body, got %q", ct)
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -119,22 +115,6 @@ func TestDoAPI_PUT_WithBody_SetsContentType(t *testing.T) {
 	defer srv.Close()
 
 	_, err := DoAPI(t.Context(), srv.Client(), http.MethodPut, srv.URL+"/test", []byte(`{"key":"val"}`), http.StatusNoContent)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestDoAPI_GET_NoContentType(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ct := r.Header.Get("Content-Type")
-		if ct != "" {
-			t.Errorf("expected no Content-Type for GET without body, got %q", ct)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	_, err := DoAPI(t.Context(), srv.Client(), http.MethodGet, srv.URL+"/test", nil, http.StatusOK)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,13 +178,7 @@ func TestDoAPI_ContextCanceled(t *testing.T) {
 }
 
 func TestCheckSocket_Success(t *testing.T) {
-	sockPath := filepath.Join("/tmp", fmt.Sprintf("cocoon-check-%d.sock", os.Getpid()))
-	t.Cleanup(func() { os.Remove(sockPath) })
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer ln.Close()
+	sockPath, _ := listenUnix(t, "check")
 
 	if err := CheckSocket(sockPath); err != nil {
 		t.Errorf("expected success, got: %v", err)
@@ -230,40 +204,37 @@ func TestCheckSocket_NotSocket(t *testing.T) {
 	}
 }
 
-func TestDoWithRetry_SuccessOnFirstAttempt(t *testing.T) {
-	calls := 0
-	result, err := DoWithRetry(t.Context(), func() (string, error) {
-		calls++
-		return "ok", nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestDoWithRetry_SucceedsAfterFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		failures int
+		err      error
+	}{
+		{"first attempt", 0, nil},
+		{"transient error", 2, fmt.Errorf("transient error")},
+		{"retryable API error", 2, &APIError{Code: 500, Message: "server error"}},
+		{"429 is retryable", 1, &APIError{Code: 429, Message: "rate limited"}},
 	}
-	if result != "ok" {
-		t.Errorf("expected %q, got %q", "ok", result)
-	}
-	if calls != 1 {
-		t.Errorf("expected 1 call, got %d", calls)
-	}
-}
-
-func TestDoWithRetry_SuccessAfterRetries(t *testing.T) {
-	calls := 0
-	result, err := DoWithRetry(t.Context(), func() (int, error) {
-		calls++
-		if calls < 3 {
-			return 0, fmt.Errorf("transient error")
-		}
-		return 42, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != 42 {
-		t.Errorf("expected 42, got %d", result)
-	}
-	if calls != 3 {
-		t.Errorf("expected 3 calls, got %d", calls)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			result, err := DoWithRetry(t.Context(), func() (int, error) {
+				calls++
+				if calls <= tt.failures {
+					return 0, tt.err
+				}
+				return 42, nil
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result != 42 {
+				t.Errorf("expected 42, got %d", result)
+			}
+			if calls != tt.failures+1 {
+				t.Errorf("expected %d calls, got %d", tt.failures+1, calls)
+			}
+		})
 	}
 }
 
@@ -298,50 +269,11 @@ func TestDoWithRetry_NonRetryableError_StopsImmediately(t *testing.T) {
 	}
 }
 
-func TestDoWithRetry_RetryableAPIError(t *testing.T) {
-	calls := 0
-	_, err := DoWithRetry(t.Context(), func() (string, error) {
-		calls++
-		if calls < 3 {
-			return "", &APIError{Code: 500, Message: "server error"}
-		}
-		return "recovered", nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if calls != 3 {
-		t.Errorf("expected 3 calls, got %d", calls)
-	}
-}
-
-func TestDoWithRetry_429_IsRetryable(t *testing.T) {
-	calls := 0
-	_, err := DoWithRetry(t.Context(), func() (string, error) {
-		calls++
-		if calls == 1 {
-			return "", &APIError{Code: 429, Message: "rate limited"}
-		}
-		return "ok", nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if calls != 2 {
-		t.Errorf("expected 2 calls, got %d", calls)
-	}
-}
-
 func TestDoWithRetry_ContextCanceled_DuringBackoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	calls := 0
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	time.AfterFunc(50*time.Millisecond, cancel)
 
 	_, err := DoWithRetry(ctx, func() (string, error) {
-		calls++
 		return "", fmt.Errorf("transient")
 	})
 	if !errors.Is(err, context.Canceled) {
@@ -349,39 +281,42 @@ func TestDoWithRetry_ContextCanceled_DuringBackoff(t *testing.T) {
 	}
 }
 
-func TestIsRetryable_APIError_4xx_NotRetryable(t *testing.T) {
-	cases := []int{400, 401, 403, 404, 409, 422}
-	for _, code := range cases {
-		if isRetryable(&APIError{Code: code}) {
-			t.Errorf("expected %d to be non-retryable", code)
-		}
+func TestIsRetryable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"400", &APIError{Code: 400}, false},
+		{"401", &APIError{Code: 401}, false},
+		{"403", &APIError{Code: 403}, false},
+		{"404", &APIError{Code: 404}, false},
+		{"409", &APIError{Code: 409}, false},
+		{"422", &APIError{Code: 422}, false},
+		{"500", &APIError{Code: 500}, true},
+		{"502", &APIError{Code: 502}, true},
+		{"503", &APIError{Code: 503}, true},
+		{"504", &APIError{Code: 504}, true},
+		{"429", &APIError{Code: 429}, true},
+		{"non-APIError", fmt.Errorf("connection refused"), true},
+		{"wrapped 404", fmt.Errorf("outer: %w", &APIError{Code: 404}), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRetryable(tt.err); got != tt.want {
+				t.Errorf("isRetryable = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestIsRetryable_APIError_5xx_Retryable(t *testing.T) {
-	cases := []int{500, 502, 503, 504}
-	for _, code := range cases {
-		if !isRetryable(&APIError{Code: code}) {
-			t.Errorf("expected %d to be retryable", code)
-		}
+func listenUnix(t *testing.T, name string) (string, net.Listener) {
+	t.Helper()
+	path := filepath.Join("/tmp", fmt.Sprintf("cocoon-%s-%d.sock", name, os.Getpid()))
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
 	}
-}
-
-func TestIsRetryable_APIError_429_Retryable(t *testing.T) {
-	if !isRetryable(&APIError{Code: 429}) {
-		t.Error("expected 429 to be retryable")
-	}
-}
-
-func TestIsRetryable_NonAPIError_Retryable(t *testing.T) {
-	if !isRetryable(fmt.Errorf("connection refused")) {
-		t.Error("expected non-APIError to be retryable")
-	}
-}
-
-func TestIsRetryable_WrappedAPIError(t *testing.T) {
-	wrapped := fmt.Errorf("outer: %w", &APIError{Code: 404})
-	if isRetryable(wrapped) {
-		t.Error("expected wrapped 404 APIError to be non-retryable")
-	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return path, ln
 }

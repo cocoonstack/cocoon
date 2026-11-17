@@ -16,98 +16,98 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
+	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"a": agedMeta(1, 100),
-		"b": agedMeta(2, 100),
-		"c": agedMeta(3, 100),
+func TestPickLRU(t *testing.T) {
+	tests := []struct {
+		name    string
+		records map[string]snapshotMeta
+		policy  EvictionPolicy
+		want    []string
+		reason  string
+	}{
+		{
+			name: "NoCriteriaEvictsAll",
+			records: map[string]snapshotMeta{
+				"a": agedMeta(1, 100),
+				"b": agedMeta(2, 100),
+				"c": agedMeta(3, 100),
+			},
+			policy: EvictionPolicy{Enabled: true},
+			want:   []string{"a", "b", "c"},
+			reason: "lru-all",
+		},
+		{
+			name: "KeepLast",
+			records: map[string]snapshotMeta{
+				"newest":   agedMeta(1, 10),
+				"middle":   agedMeta(5, 10),
+				"oldest":   agedMeta(10, 10),
+				"oldester": agedMeta(20, 10),
+			},
+			policy: EvictionPolicy{Enabled: true, KeepLast: 2},
+			want:   []string{"oldest", "oldester"},
+			reason: "lru-keep",
+		},
+		{
+			name:    "KeepLastExceedsAll",
+			records: map[string]snapshotMeta{"a": agedMeta(1, 10), "b": agedMeta(2, 10)},
+			policy:  EvictionPolicy{Enabled: true, KeepLast: 10},
+		},
+		{
+			name: "MaxAge",
+			records: map[string]snapshotMeta{
+				"fresh": agedMeta(1, 10),
+				"stale": agedMeta(48, 10),
+			},
+			policy: EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour},
+			want:   []string{"stale"},
+			reason: "lru-age",
+		},
+		{
+			name: "MaxSize",
+			records: map[string]snapshotMeta{
+				"a": agedMeta(1, 30),
+				"b": agedMeta(2, 30),
+				"c": agedMeta(3, 30),
+				"d": agedMeta(4, 30),
+			},
+			policy: EvictionPolicy{Enabled: true, MaxSize: 60},
+			want:   []string{"c", "d"},
+		},
+		{
+			name: "UnionOfCriteria",
+			records: map[string]snapshotMeta{
+				"fresh-small": agedMeta(1, 10),
+				"fresh-big":   agedMeta(2, 100),
+				"old-small":   agedMeta(48, 10),
+			},
+			policy: EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour, MaxSize: 50},
+			want:   []string{"fresh-big", "old-small"},
+		},
+		{
+			name: "ZeroTimeIsOldest",
+			records: map[string]snapshotMeta{
+				"recent": agedMeta(1, 10),
+				"zero":   {lastAccessed: time.Time{}, sizeBytes: 10},
+			},
+			policy: EvictionPolicy{Enabled: true, KeepLast: 1},
+			want:   []string{"zero"},
+		},
 	}
-	got := pickLRU(records, EvictionPolicy{Enabled: true})
-	if len(got) != 3 {
-		t.Fatalf("want 3 evictions, got %v", got)
-	}
-	if got["a"] != "lru-all" {
-		t.Errorf("reason: got %q, want lru-all", got["a"])
-	}
-}
-
-func TestPickLRU_KeepLast(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"newest":   agedMeta(1, 10),
-		"middle":   agedMeta(5, 10),
-		"oldest":   agedMeta(10, 10),
-		"oldester": agedMeta(20, 10),
-	}
-	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 2})
-	if !slices.Equal(sortedKeys(got), []string{"oldest", "oldester"}) {
-		t.Errorf("KeepLast=2: got %v", got)
-	}
-	if got["oldest"] != "lru-keep" {
-		t.Errorf("reason: got %q, want lru-keep", got["oldest"])
-	}
-}
-
-func TestPickLRU_KeepLastExceedsAll(t *testing.T) {
-	records := map[string]snapshotMeta{"a": agedMeta(1, 10), "b": agedMeta(2, 10)}
-	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 10})
-	if len(got) != 0 {
-		t.Errorf("KeepLast>len: got %v, want empty", got)
-	}
-}
-
-func TestPickLRU_MaxAge(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"fresh": agedMeta(1, 10),
-		"stale": agedMeta(48, 10),
-	}
-	got := pickLRU(records, EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour})
-	if !slices.Equal(sortedKeys(got), []string{"stale"}) {
-		t.Errorf("MaxAge=24h: got %v", got)
-	}
-	if got["stale"] != "lru-age" {
-		t.Errorf("reason: got %q, want lru-age", got["stale"])
-	}
-}
-
-func TestPickLRU_MaxSize(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"a": agedMeta(1, 30),
-		"b": agedMeta(2, 30),
-		"c": agedMeta(3, 30),
-		"d": agedMeta(4, 30),
-	}
-	got := pickLRU(records, EvictionPolicy{Enabled: true, MaxSize: 60})
-	if !slices.Equal(sortedKeys(got), []string{"c", "d"}) {
-		t.Errorf("MaxSize=60: got %v", got)
-	}
-}
-
-func TestPickLRU_UnionOfCriteria(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"fresh-small": agedMeta(1, 10),
-		"fresh-big":   agedMeta(2, 100),
-		"old-small":   agedMeta(48, 10),
-	}
-	got := pickLRU(records, EvictionPolicy{
-		Enabled: true, MaxAge: 24 * time.Hour, MaxSize: 50,
-	})
-	if !slices.Equal(sortedKeys(got), []string{"fresh-big", "old-small"}) {
-		t.Errorf("union: got %v", got)
-	}
-}
-
-func TestPickLRU_ZeroTimeIsOldest(t *testing.T) {
-	records := map[string]snapshotMeta{
-		"recent": agedMeta(1, 10),
-		"zero":   {lastAccessed: time.Time{}, sizeBytes: 10},
-	}
-	got := pickLRU(records, EvictionPolicy{Enabled: true, KeepLast: 1})
-	if !slices.Equal(sortedKeys(got), []string{"zero"}) {
-		t.Errorf("zero time should be evicted first: got %v", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pickLRU(tt.records, tt.policy)
+			if keys := slices.Sorted(maps.Keys(got)); !slices.Equal(keys, tt.want) {
+				t.Errorf("evicted %v, want %v", keys, tt.want)
+			}
+			if tt.reason != "" && got[tt.want[0]] != tt.reason {
+				t.Errorf("reason: got %q, want %q", got[tt.want[0]], tt.reason)
+			}
+		})
 	}
 }
 
@@ -115,40 +115,12 @@ func TestGCModule_LRUEndToEnd(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	for _, name := range []string{"old1", "old2", "fresh"} {
-		id := testID(t)
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name},
-			makeTar(t, map[string][]byte{"cow.raw": []byte("x")})); err != nil {
-			t.Fatalf("Create %s: %v", name, err)
-		}
-	}
+	createSnaps(t, lf, map[string][]byte{"cow.raw": []byte("x")}, "old1", "old2", "fresh")
+	setLastAccessed(t, lf, time.Now().Add(-72*time.Hour), "old1", "old2")
 
-	pastAccess := time.Now().Add(-72 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		for _, name := range []string{"old1", "old2"} {
-			r := idx.Snapshots[idx.Names[name]]
-			if r == nil {
-				return fmt.Errorf("setup: %s record missing", name)
-			}
-			r.LastAccessedAt = pastAccess
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	policy := EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour}
-	mod := gcModule(lf, policy)
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatalf("ReadDB: %v", err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
+	ids := collectGC(t, lf, EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour})
 	if len(ids) != 2 {
 		t.Errorf("want 2 evictions, got %v", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatalf("Collect: %v", err)
 	}
 
 	remaining, err := lf.List(ctx)
@@ -169,26 +141,8 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	for _, name := range []string{"old1", "old2"} {
-		id := testID(t)
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name},
-			makeTar(t, map[string][]byte{"cow.raw": []byte("x")})); err != nil {
-			t.Fatalf("Create %s: %v", name, err)
-		}
-	}
-	pastAccess := time.Now().Add(-72 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		for _, name := range []string{"old1", "old2"} {
-			rec := idx.Snapshots[idx.Names[name]]
-			if rec == nil {
-				return fmt.Errorf("snapshot %q missing", name)
-			}
-			rec.LastAccessedAt = pastAccess
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	createSnaps(t, lf, map[string][]byte{"cow.raw": []byte("x")}, "old1", "old2")
+	setLastAccessed(t, lf, time.Now().Add(-72*time.Hour), "old1", "old2")
 
 	mod := gcModule(lf, EvictionPolicy{Enabled: true, MaxAge: 24 * time.Hour})
 	snap, err := mod.ReadDB(ctx)
@@ -200,16 +154,7 @@ func TestGCModule_LRURevalidatesAccess(t *testing.T) {
 		t.Fatalf("want 2 candidates, got %v", ids)
 	}
 
-	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		rec := idx.Snapshots[idx.Names["old1"]]
-		if rec == nil {
-			return fmt.Errorf("snapshot \"old1\" missing")
-		}
-		rec.LastAccessedAt = time.Now()
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	setLastAccessed(t, lf, time.Now(), "old1")
 
 	if err := mod.Collect(ctx, ids, snap); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -230,13 +175,7 @@ func TestGCModule_DryRunNoEviction(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	for _, name := range []string{"a", "b"} {
-		id := testID(t)
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name},
-			makeTar(t, map[string][]byte{"x": []byte("x")})); err != nil {
-			t.Fatal(err)
-		}
-	}
+	createSnaps(t, lf, map[string][]byte{"x": []byte("x")}, "a", "b")
 
 	policy := EvictionPolicy{Enabled: true, DryRun: true}
 	mod := gcModule(lf, policy)
@@ -254,23 +193,8 @@ func TestGCModule_BareSnapshotEvictsAll(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	for _, name := range []string{"a", "b", "c"} {
-		id := testID(t)
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name},
-			makeTar(t, map[string][]byte{"x": []byte("x")})); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	mod := gcModule(lf, EvictionPolicy{Enabled: true})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
-	}
+	createSnaps(t, lf, map[string][]byte{"x": []byte("x")}, "a", "b", "c")
+	collectGC(t, lf, EvictionPolicy{Enabled: true})
 
 	remaining, err := lf.List(ctx)
 	if err != nil {
@@ -319,16 +243,7 @@ func TestRestoreUpdatesLastAccessedAt(t *testing.T) {
 	}
 
 	original := time.Now().Add(-48 * time.Hour)
-	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		r := idx.Snapshots[id]
-		if r == nil {
-			return fmt.Errorf("setup: %s missing", id)
-		}
-		r.LastAccessedAt = original
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	setLastAccessed(t, lf, original, "touched")
 
 	if _, rc, err := lf.Restore(ctx, "touched"); err != nil {
 		t.Fatal(err)
@@ -352,13 +267,7 @@ func TestGCModule_RemovalFailureKeepsDBRecord(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	ids := []string{testID(t), testID(t)}
-	for i, name := range []string{"a", "b"} {
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: ids[i], Name: name},
-			makeTar(t, map[string][]byte{"x": []byte("x")})); err != nil {
-			t.Fatal(err)
-		}
-	}
+	ids := createSnaps(t, lf, map[string][]byte{"x": []byte("x")}, "a", "b")
 
 	mod := gcModule(lf, EvictionPolicy{Enabled: true})
 	snap, err := mod.ReadDB(ctx)
@@ -390,24 +299,15 @@ func TestGCModule_RemovalFailureKeepsDBRecord(t *testing.T) {
 
 func TestGCModule_OrphanDirCleaned(t *testing.T) {
 	lf := newTestLF(t)
-	ctx := t.Context()
 
 	orphanDir := filepath.Join(lf.conf.DataDir(), "ORPHAN_ID_NO_DB")
 	if err := os.MkdirAll(orphanDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
+	ids := collectGC(t, lf, EvictionPolicy{})
 	if !slices.Contains(ids, "ORPHAN_ID_NO_DB") {
 		t.Errorf("orphan dir should be picked, got %v", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
 	}
 	if _, err := os.Stat(orphanDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("orphan dir should be removed, stat err: %v", err)
@@ -427,17 +327,8 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 	}
 
 	rec := meteringcapture.New()
-	mod := gcModule(withRecorder(lf, rec), EvictionPolicy{Enabled: true})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
-	if len(ids) != 2 {
+	if ids := collectGC(t, withRecorder(lf, rec), EvictionPolicy{Enabled: true}); len(ids) != 2 {
 		t.Fatalf("want 2 ids to evict, got %v", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
 	}
 
 	entries := rec.Entries()
@@ -466,29 +357,20 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 		t.Fatal(err)
 	}
 	stalePendingID := testID(t)
-	if err := lf.dbUpdate(ctx, func(idx *snapshotIndex) error {
-		idx.Snapshots[stalePendingID] = &snapshotRecord{
+	if err := lf.update(ctx, func(tx *snapTx) error {
+		return tx.Put(stalePendingID, &snapshotRecord{
 			ID:        stalePendingID,
 			CreatedAt: time.Now().Add(-48 * time.Hour),
 			Pending:   true,
-		}
-		return nil
+		})
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	rec := meteringcapture.New()
-	mod := gcModule(withRecorder(lf, rec), EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
+	ids := collectGC(t, withRecorder(lf, rec), EvictionPolicy{})
 	if !slices.Contains(ids, "ORPHAN_ID") || !slices.Contains(ids, stalePendingID) {
 		t.Fatalf("want both orphan and stale-pending picked, got %v", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
 	}
 	if got := rec.Entries(); len(got) != 0 {
 		t.Errorf("got %d entries; orphan/stale-pending must not emit stop", len(got))
@@ -506,17 +388,8 @@ func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
-	if !slices.Contains(ids, id) {
+	if ids := collectGC(t, lf, EvictionPolicy{}); !slices.Contains(ids, id) {
 		t.Fatalf("candidates = %v, want the fresh pending record picked", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
 	}
 	if _, held, err := lf.NameOwner(ctx, "fresh-pending"); err != nil || held {
 		t.Fatalf("NameOwner = (%v, %v), want the dead save's name freed", err, held)
@@ -539,14 +412,7 @@ func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 		t.Fatalf("beginCreate: %v", err)
 	}
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
-		t.Fatal(err)
-	}
+	collectGC(t, lf, EvictionPolicy{})
 	if owner, held, err := lf.NameOwner(ctx, "live-build"); err != nil || !held || owner != id {
 		t.Fatalf("NameOwner = (%q, %v, %v), want the live build's record untouched", owner, held, err)
 	}
@@ -572,20 +438,12 @@ func TestDeleteReclaimsTheLeaseFile(t *testing.T) {
 
 func TestGCSweepsALeaseWithNoRecordOrDataDir(t *testing.T) {
 	lf := newTestLF(t)
-	ctx := t.Context()
 	stale := lf.conf.LeasePath("GONE_ID")
 	if err := os.WriteFile(stale, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
-		t.Fatal(err)
-	}
+	collectGC(t, lf, EvictionPolicy{})
 	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("stale lease survived GC: stat err = %v", err)
 	}
@@ -593,7 +451,6 @@ func TestGCSweepsALeaseWithNoRecordOrDataDir(t *testing.T) {
 
 func TestGCCollectsACrashedBuildAndItsLeaseInOnePass(t *testing.T) {
 	lf := newTestLF(t)
-	ctx := t.Context()
 	id := testID(t)
 	dataDir := lf.conf.SnapshotDataDir(id)
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
@@ -606,14 +463,7 @@ func TestGCCollectsACrashedBuildAndItsLeaseInOnePass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
-		t.Fatal(err)
-	}
+	collectGC(t, lf, EvictionPolicy{})
 	if _, err := os.Stat(dataDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("orphan data dir survived GC: stat err = %v", err)
 	}
@@ -632,14 +482,7 @@ func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
 	}
 	defer release()
 
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := mod.Collect(ctx, mod.Resolve(ctx, snap, map[string]any{}), snap); err != nil {
-		t.Fatal(err)
-	}
+	collectGC(t, lf, EvictionPolicy{})
 	if _, err := os.Stat(lf.conf.LeasePath(id)); err != nil {
 		t.Fatalf("GC swept a lease held by a live build: %v", err)
 	}
@@ -648,16 +491,12 @@ func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
 func TestGCKeepsSnapshotsAfterTheRootMoved(t *testing.T) {
 	ctx := t.Context()
 	base := t.TempDir()
-	oldConf := &config.Config{RootDir: filepath.Join(base, "old")}
-	oldLF, err := New(oldConf, metering.NopRecorder{}, newTestMetaStore(t, oldConf))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	oldLF := newTestLFAt(t, filepath.Join(base, "old"), metering.NopRecorder{})
 	id := makeExportableSnapshot(t, oldLF, "moved", map[string][]byte{"disk.raw": []byte("data")})
 	staleDir := oldLF.conf.SnapshotDataDir(id)
 
 	conf := &config.Config{RootDir: filepath.Join(base, "new")}
-	if err := os.Rename(oldConf.RootDir, conf.RootDir); err != nil {
+	if err := os.Rename(oldLF.conf.RootDir, conf.RootDir); err != nil {
 		t.Fatal(err)
 	}
 	indexPath := NewConfig(conf).IndexFile()
@@ -685,17 +524,8 @@ func TestGCKeepsSnapshotsAfterTheRootMoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	mod := gcModule(lf, EvictionPolicy{})
-	snap, err := mod.ReadDB(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := mod.Resolve(ctx, snap, map[string]any{})
-	if len(ids) != 0 {
+	if ids := collectGC(t, lf, EvictionPolicy{}); len(ids) != 0 {
 		t.Errorf("GC candidates = %v, want none", ids)
-	}
-	if err := mod.Collect(ctx, ids, snap); err != nil {
-		t.Fatal(err)
 	}
 
 	dir, _, release, err := lf.DataDir(ctx, id)
@@ -716,8 +546,58 @@ func agedMeta(ageHours int, size int64) snapshotMeta {
 	return snapshotMeta{lastAccessed: accessedAt, sizeBytes: size}
 }
 
-func sortedKeys(m map[string]string) []string {
-	return slices.Sorted(maps.Keys(m))
+func collectGC(t *testing.T, lf *LocalFile, policy EvictionPolicy) []string {
+	t.Helper()
+	ctx := t.Context()
+	mod := gcModule(lf, policy)
+	snap, err := mod.ReadDB(ctx)
+	if err != nil {
+		t.Fatalf("ReadDB: %v", err)
+	}
+	ids := mod.Resolve(ctx, snap, map[string]any{})
+	if err := mod.Collect(ctx, ids, snap); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	return ids
+}
+
+func createSnaps(t *testing.T, lf *LocalFile, files map[string][]byte, names ...string) []string {
+	t.Helper()
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		id, err := lf.Create(t.Context(), &types.SnapshotConfig{ID: testID(t), Name: name}, makeTar(t, files))
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func setLastAccessed(t *testing.T, lf *LocalFile, at time.Time, refs ...string) {
+	t.Helper()
+	if err := lf.update(t.Context(), func(tx *snapTx) error {
+		for _, ref := range refs {
+			id, err := tx.Resolve(ref, snapshot.ErrNotFound)
+			if err != nil {
+				return err
+			}
+			rec, err := tx.Get(id)
+			if err != nil {
+				return err
+			}
+			if rec == nil {
+				return fmt.Errorf("snapshot %q missing", ref)
+			}
+			rec.LastAccessedAt = at
+			if err := tx.Put(id, rec); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func withRecorder(lf *LocalFile, rec metering.Recorder) *LocalFile {

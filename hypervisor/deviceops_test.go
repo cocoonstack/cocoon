@@ -25,12 +25,7 @@ func TestLockedRunningOpRefusesAVMThatStoppedWhileItWaited(t *testing.T) {
 			done <- opErr
 		}()
 		synctest.Wait()
-		if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-			idx.VMs[id].State = types.VMStateStopped
-			return nil
-		}); err != nil {
-			t.Fatalf("flip state: %v", err)
-		}
+		setVMState(t, b, id, types.VMStateStopped)
 		select {
 		case err := <-done:
 			t.Fatalf("LockedRunningOp returned %v before the lock was released, want it blocked on the lock", err)

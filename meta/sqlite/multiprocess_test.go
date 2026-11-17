@@ -1,13 +1,11 @@
 package sqlite
 
 import (
-	"bufio"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,9 +30,9 @@ func TestMultiProcessCorrectness(t *testing.T) {
 	}
 	dir := t.TempDir()
 	_ = newStore(t, dir, "alpha")
-	workers := stormWorkers()
-	cmds := contracttest.SpawnWorkers(t, workers, "TestMultiProcessWorker", func(w int) []string {
-		return []string{"META_MP_DIR=" + dir, "META_MP_WORKER=" + strconv.Itoa(w), fmt.Sprintf("META_MP_OPS=%d", mpOps)}
+	workers := contracttest.StormWorkers()
+	cmds := contracttest.SpawnWorkers(t, workers, "TestMultiProcessWorker", dir, func(int) []string {
+		return []string{fmt.Sprintf("META_MP_OPS=%d", mpOps)}
 	})
 	contracttest.WaitWorkers(t, cmds, "failed")
 
@@ -72,11 +70,7 @@ func TestMultiProcessCorrectness(t *testing.T) {
 }
 
 func TestMultiProcessWorker(t *testing.T) {
-	dir := os.Getenv("META_MP_DIR")
-	if dir == "" {
-		t.Skip("helper process only")
-	}
-	worker := os.Getenv("META_MP_WORKER")
+	dir, worker := contracttest.HelperEnv(t)
 	ops, err := strconv.Atoi(os.Getenv("META_MP_OPS"))
 	if err != nil {
 		t.Fatal(err)
@@ -101,33 +95,20 @@ func TestInverseScopeNoDeadlock(t *testing.T) {
 	dir := t.TempDir()
 	_ = newStore(t, dir, "alpha", "beta")
 	scopes := []string{"alpha:beta", "beta:alpha"}
-	cmds := contracttest.SpawnWorkers(t, 2*inverseWorkers, "TestInverseScopeWorker", func(w int) []string {
-		return []string{"META_MP_DIR=" + dir, "META_MP_WORKER=" + strconv.Itoa(w), "META_MP_SCOPE=" + scopes[w%2]}
+	cmds := contracttest.SpawnWorkers(t, 2*inverseWorkers, "TestInverseScopeWorker", dir, func(w int) []string {
+		return []string{"META_MP_SCOPE=" + scopes[w%2]}
 	})
 	contracttest.WaitWorkers(t, cmds, "failed (deadlock or error)")
 	s := newStore(t, dir, "alpha", "beta")
 	for _, ns := range []string{"alpha", "beta"} {
-		total := 0
-		if err := s.View(t.Context(), []string{ns}, func(r meta.Reader) error {
-			return r.ScanRaw(t.Context(), ns, "records", func(string, jsontext.Value) error {
-				total++
-				return nil
-			})
-		}); err != nil {
-			t.Fatalf("reopen %s: %v", ns, err)
-		}
-		if want := inverseWorkers * inverseOps; total != want {
+		if total, want := contracttest.CountRaw(t, s, ns, "records"), inverseWorkers*inverseOps; total != want {
 			t.Fatalf("%s lost writes: %d records, want %d", ns, total, want)
 		}
 	}
 }
 
 func TestInverseScopeWorker(t *testing.T) {
-	dir := os.Getenv("META_MP_DIR")
-	if dir == "" {
-		t.Skip("helper process only")
-	}
-	worker := os.Getenv("META_MP_WORKER")
+	dir, worker := contracttest.HelperEnv(t)
 	write, read, _ := strings.Cut(os.Getenv("META_MP_SCOPE"), ":")
 	s := newStore(t, dir, "alpha", "beta")
 	ctx := t.Context()
@@ -154,33 +135,13 @@ func TestKillStormAtomicity(t *testing.T) {
 	_ = newStore(t, dir, "alpha")
 	acked := map[string]struct{}{}
 	for round := range killRounds {
-		cmd := exec.Command(os.Args[0], "-test.run=TestKillStormWorker$", "-test.count=1")
-		cmd.Env = append(os.Environ(), "META_MP_DIR="+dir, "META_MP_WORKER="+strconv.Itoa(round))
-		pipe, err := cmd.StdoutPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := cmd.Start(); err != nil {
-			t.Fatal(err)
-		}
-		sc := bufio.NewScanner(pipe)
 		want := 3 + round*2
-		got := 0
-		for sc.Scan() {
-			if id, ok := strings.CutPrefix(sc.Text(), "ACK "); ok {
-				acked[id] = struct{}{}
-				got++
-				if got >= want {
-					break
-				}
-			}
+		ids := contracttest.CollectAcks(t, contracttest.WorkerCmd("TestKillStormWorker", "META_MP_DIR="+dir, "META_MP_WORKER="+strconv.Itoa(round)), want)
+		if len(ids) < want {
+			t.Fatalf("round %d: worker acked %d transactions, want at least %d", round, len(ids), want)
 		}
-		if err := cmd.Process.Kill(); err != nil {
-			t.Fatalf("kill worker: %v", err)
-		}
-		_ = cmd.Wait()
-		if got < want {
-			t.Fatalf("round %d: worker acked %d transactions, want at least %d", round, got, want)
+		for _, id := range ids {
+			acked[id] = struct{}{}
 		}
 	}
 
@@ -246,13 +207,6 @@ func updateRetry(t *testing.T, s *Store, sc meta.Scope, fn meta.UpdateFunc) {
 			t.Fatalf("update: %v", err)
 		}
 	}
-}
-
-func stormWorkers() int {
-	if v, err := strconv.Atoi(os.Getenv("COCOON_STORM_WORKERS")); err == nil && v > 0 {
-		return v
-	}
-	return 256
 }
 
 func integrityCheck(t *testing.T, dir string) {

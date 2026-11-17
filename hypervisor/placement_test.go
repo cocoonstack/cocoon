@@ -126,20 +126,6 @@ func TestPlacementRowFollowsTheRecord(t *testing.T) {
 		t.Run(engine, func(t *testing.T) {
 			b := &Backend{NS: VMNamespaceName("test-hv"), Meta: open(t, "test-hv", t.TempDir())}
 			ctx := t.Context()
-			row := func() string {
-				var got string
-				if err := b.view(ctx, func(tx *vmTx) error {
-					return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
-						if cpus != nil {
-							got += id + "=" + *cpus + ";"
-						}
-						return nil
-					})
-				}); err != nil {
-					t.Fatalf("scan placements: %v", err)
-				}
-				return got
-			}
 			put := func(rec *VMRecord) {
 				t.Helper()
 				if err := b.update(ctx, func(tx *vmTx) error { return tx.Put(rec.ID, rec) }); err != nil {
@@ -149,14 +135,14 @@ func TestPlacementRowFollowsTheRecord(t *testing.T) {
 			put(&VMRecord{ID: "a", State: types.VMStateRunning, QueueCPUs: "0-3"})
 			put(&VMRecord{ID: "f", State: types.VMStateRunning, CPUSet: "4-7"})
 			put(&VMRecord{ID: "n", State: types.VMStateRunning})
-			if got := row(); got != "a=0-3;f=4-7;" {
+			if got := placementRows(t, b); got != "a=0-3;f=4-7;" {
 				t.Errorf("rows after placements = %q, want a=0-3;f=4-7;", got)
 			}
 			put(&VMRecord{ID: "a", State: types.VMStateStopped})
 			if err := b.update(ctx, func(tx *vmTx) error { return tx.Del("f") }); err != nil {
 				t.Fatalf("del: %v", err)
 			}
-			if got := row(); got != "" {
+			if got := placementRows(t, b); got != "" {
 				t.Errorf("rows after a cleared placement and a delete = %q, want none", got)
 			}
 		})
@@ -243,4 +229,21 @@ func TestLeavingRunningClearsPlacement(t *testing.T) {
 			t.Errorf("%s: cpuset %q queue_cpus %q survived leaving running", id, rec.CPUSet, rec.QueueCPUs)
 		}
 	}
+}
+
+func placementRows(t *testing.T, b *Backend) string {
+	t.Helper()
+	ctx := t.Context()
+	var got string
+	if err := b.view(ctx, func(tx *vmTx) error {
+		return tx.placements.Scan(ctx, tx.r, func(id string, cpus *string) error {
+			if cpus != nil {
+				got += id + "=" + *cpus + ";"
+			}
+			return nil
+		})
+	}); err != nil {
+		t.Fatalf("scan placements: %v", err)
+	}
+	return got
 }

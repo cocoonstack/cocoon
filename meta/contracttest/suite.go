@@ -6,7 +6,6 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +48,16 @@ func (r *retryStore) Update(ctx context.Context, sc meta.Scope, mode meta.Commit
 
 // Run executes the full contract suite against factory.
 func Run(t *testing.T, factory Factory) {
+	runSuite(t, factory)
+	t.Run("ForcedRetryEngine", func(t *testing.T) {
+		runSuite(t, func(t *testing.T, namespaces []string) meta.Store { return ForcedRetry(factory(t, namespaces)) })
+	})
+}
+
+// ForcedRetry wraps s so every Update closure runs twice — once rolled back, once for real — enforcing pure retryable closures.
+func ForcedRetry(s meta.Store) meta.Store { return &retryStore{Store: s} }
+
+func runSuite(t *testing.T, factory Factory) {
 	t.Run("CRUD", func(t *testing.T) { testCRUD(t, factory) })
 	t.Run("DetachedValues", func(t *testing.T) { testDetached(t, factory) })
 	t.Run("Scope", func(t *testing.T) { testScope(t, factory) })
@@ -61,9 +70,6 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("Events", func(t *testing.T) { testEvents(t, factory) })
 	t.Run("LogCursor", func(t *testing.T) { testLogCursor(t, factory) })
 }
-
-// ForcedRetry wraps s so every Update closure runs twice — once rolled back, once for real — enforcing pure retryable closures.
-func ForcedRetry(s meta.Store) meta.Store { return &retryStore{Store: s} }
 
 func testCRUD(t *testing.T, factory Factory) {
 	ctx := t.Context()
@@ -279,28 +285,9 @@ func testCtxVsHeldWriter(t *testing.T, factory Factory) {
 	s := factory(t, []string{nsAlpha})
 	c := meta.NewCollection[record](nsAlpha, "records")
 
-	held := make(chan struct{})
-	release := make(chan struct{})
-	holderErr := make(chan error, 1)
-	var heldOnce sync.Once
-	go func() {
-		holderErr <- s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, func(w meta.Writer) error {
-			heldOnce.Do(func() { close(held) })
-			<-release
-			return c.Insert(ctx, w, "holder", &record{})
-		})
-	}()
-	select {
-	case <-held:
-	case err := <-holderErr:
-		t.Fatalf("holder update ended before holding the writer: %v", err)
-	}
-	defer func() {
-		if err := <-holderErr; err != nil {
-			t.Errorf("holder update: %v", err)
-		}
-	}()
-	defer close(release)
+	defer HoldWriter(t, s, meta.Scope{Write: nsAlpha}, func(w meta.Writer) error {
+		return c.Insert(ctx, w, "holder", &record{})
+	})()
 
 	dctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
@@ -408,11 +395,7 @@ func testEvents(t *testing.T, factory Factory) {
 	defer release()
 
 	update(t, s, nsAlpha, func(w meta.Writer) error { return c.Insert(ctx, w, "a", &record{}) })
-	select {
-	case <-ch:
-	case <-time.After(10 * time.Second):
-		t.Fatal("no event after same-process commit")
-	}
+	WaitEvent(t, ch, 10*time.Second, "same-process commit")
 }
 
 func testLogCursor(t *testing.T, factory Factory) {

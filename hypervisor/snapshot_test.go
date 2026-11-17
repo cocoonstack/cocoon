@@ -64,44 +64,22 @@ func TestValidateMetaPaths_Accepts(t *testing.T) {
 	}
 }
 
-func TestValidateMetaPaths_RejectsTraversal(t *testing.T) {
-	rootDir := "/srv/cocoon"
-	runDir := "/run/cocoon"
-	meta := &snapshot.SnapshotMeta{
-		StorageConfigs: []*types.StorageConfig{
-			{Path: "/etc/shadow"},
-		},
+func TestValidateMetaPathsRejects(t *testing.T) {
+	tests := []struct {
+		name string
+		meta *snapshot.SnapshotMeta
+	}{
+		{name: "storage path outside rootDir and runDir", meta: &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{{Path: "/etc/shadow"}}}},
+		{name: "kernel path outside rootDir", meta: &snapshot.SnapshotMeta{BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"}}},
+		{name: "initrd path outside rootDir", meta: &snapshot.SnapshotMeta{BootConfig: &types.BootConfig{KernelPath: "/srv/cocoon/oci/k", InitrdPath: "/etc/passwd"}}},
+		{name: "nil storage config must be rejected, not panic", meta: &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}},
 	}
-	if err := validateMetaPaths(meta, rootDir, runDir); err == nil {
-		t.Fatal("expected validateMetaPaths to reject /etc/shadow")
-	}
-}
-
-func TestValidateMetaPaths_RejectsKernelEscape(t *testing.T) {
-	meta := &snapshot.SnapshotMeta{
-		BootConfig: &types.BootConfig{KernelPath: "/usr/bin/sudo"},
-	}
-	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
-		t.Fatal("expected kernel path outside rootDir to be rejected")
-	}
-}
-
-func TestValidateMetaPaths_RejectsInitrdEscape(t *testing.T) {
-	meta := &snapshot.SnapshotMeta{
-		BootConfig: &types.BootConfig{
-			KernelPath: "/srv/cocoon/oci/k",
-			InitrdPath: "/etc/passwd",
-		},
-	}
-	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
-		t.Fatal("expected initrd path outside rootDir to be rejected")
-	}
-}
-
-func TestValidateMetaPaths_RejectsNilStorage(t *testing.T) {
-	meta := &snapshot.SnapshotMeta{StorageConfigs: []*types.StorageConfig{nil}}
-	if err := validateMetaPaths(meta, "/srv/cocoon", "/run/cocoon"); err == nil {
-		t.Fatal("nil storage config in an imported snapshot must be rejected, not panic")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateMetaPaths(tt.meta, "/srv/cocoon", "/run/cocoon"); err == nil {
+				t.Fatal("validateMetaPaths accepted the meta, want it rejected")
+			}
+		})
 	}
 }
 
@@ -189,8 +167,8 @@ func TestPrepareSnapshotRejectsNilNIC(t *testing.T) {
 	ctx := t.Context()
 	const id = "vm-snap-nil-nic"
 	seedStoppedVMWithDirs(t, b, id)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].NetworkConfigs = []*types.NetworkConfig{nil}
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		r.NetworkConfigs = []*types.NetworkConfig{nil}
 		return nil
 	}); err != nil {
 		t.Fatalf("seed nil NIC: %v", err)

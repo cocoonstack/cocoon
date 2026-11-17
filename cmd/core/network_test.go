@@ -24,11 +24,10 @@ func TestRecoverRetriesAnAddThatFinishedAnInterruptedTeardown(t *testing.T) {
 }
 
 type recoverNetwork struct {
+	network.Network
 	addErrs []error
 	adds    int
 }
-
-func (f *recoverNetwork) Type() string { return "fake" }
 
 func (f *recoverNetwork) Verify(context.Context, string, []*types.NetworkConfig) error {
 	return fmt.Errorf("teardown pending")
@@ -47,11 +46,3 @@ func (f *recoverNetwork) Add(context.Context, string, *types.VMConfig, ...networ
 	f.addErrs = f.addErrs[1:]
 	return nil, err
 }
-
-func (f *recoverNetwork) Remove(context.Context, string, int) error { return nil }
-
-func (f *recoverNetwork) Quiesce(context.Context, string) error { return nil }
-
-func (f *recoverNetwork) Unquiesce(context.Context, string) error { return nil }
-
-func (f *recoverNetwork) Delete(context.Context, string) error { return nil }

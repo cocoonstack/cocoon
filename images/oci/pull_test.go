@@ -41,11 +41,7 @@ func TestMoveBootFileAndIsUpToDate(t *testing.T) {
 	}
 
 	digestHex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	srcDir := filepath.Join(root, "src")
-	if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(): %v", err)
-	}
-	src := filepath.Join(srcDir, "vmlinuz")
+	src := filepath.Join(t.TempDir(), "vmlinuz")
 	if err := os.WriteFile(src, []byte("kernel"), 0o644); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
@@ -58,16 +54,10 @@ func TestMoveBootFileAndIsUpToDate(t *testing.T) {
 	}
 
 	blobPath := conf.BlobPath(digestHex)
-	if err := os.MkdirAll(filepath.Dir(blobPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll(blob): %v", err)
-	}
 	if err := os.WriteFile(blobPath, []byte("blob"), 0o644); err != nil {
 		t.Fatalf("WriteFile(blob): %v", err)
 	}
 	initrdPath := conf.InitrdPath(digestHex)
-	if err := os.MkdirAll(filepath.Dir(initrdPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll(initrd): %v", err)
-	}
 	if err := os.WriteFile(initrdPath, []byte("initrd"), 0o644); err != nil {
 		t.Fatalf("WriteFile(initrd): %v", err)
 	}

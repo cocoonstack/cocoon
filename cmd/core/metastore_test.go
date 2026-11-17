@@ -16,7 +16,6 @@ import (
 )
 
 func TestMetaStoreOpenErrorThenCloseNoPanic(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	conf.MetaBackend = "sqlite"
 	writeLegacyJSON(t, conf)
@@ -28,7 +27,6 @@ func TestMetaStoreOpenErrorThenCloseNoPanic(t *testing.T) {
 }
 
 func TestMetaStoreBootstrapsFreshRoot(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	s, err := MetaStore(conf)
 	if err != nil {
@@ -40,12 +38,9 @@ func TestMetaStoreBootstrapsFreshRoot(t *testing.T) {
 	if !utils.FileExists(MetaDBPath(conf)) {
 		t.Fatal("meta.db not created")
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestMetaStoreJSONFreshRootLocksPeerNamespace(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	conf.MetaBackend = config.MetaBackendJSON
 	s, err := MetaStore(conf)
@@ -57,12 +52,9 @@ func TestMetaStoreJSONFreshRootLocksPeerNamespace(t *testing.T) {
 	if err := s.Update(t.Context(), meta.Scope{Write: ch, Read: []string{fc}}, meta.CommitDurable, func(meta.Writer) error { return nil }); err != nil {
 		t.Fatalf("placement-shaped update on a fresh json root: %v", err)
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestMetaStoreKeepsLegacyJSON(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	writeLegacyJSON(t, conf)
 	s, err := MetaStore(conf)
@@ -75,19 +67,11 @@ func TestMetaStoreKeepsLegacyJSON(t *testing.T) {
 	if utils.FileExists(MetaDBPath(conf)) {
 		t.Fatal("legacy root must not grow a sqlite store")
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestMetaStoreRepairsCrashedBootstrap(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
-	if err := os.MkdirAll(filepath.Dir(MetaDBPath(conf)), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(MetaDBPath(conf), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, MetaDBPath(conf), "")
 	s, err := MetaStore(conf)
 	if err != nil {
 		t.Fatalf("repair crashed bootstrap: %v", err)
@@ -95,12 +79,9 @@ func TestMetaStoreRepairsCrashedBootstrap(t *testing.T) {
 	if s == nil {
 		t.Fatal("nil store")
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestMetaStoreRefusesJSONOverSQLiteData(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	if _, err := MetaStore(conf); err != nil {
 		t.Fatalf("bootstrap sqlite root: %v", err)
@@ -111,12 +92,9 @@ func TestMetaStoreRefusesJSONOverSQLiteData(t *testing.T) {
 	if _, err := MetaStore(conf); err == nil {
 		t.Fatal("json backend opened over a live meta.db and would hide its records")
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestConvertRefusesWhileMetaStoreOpen(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	writeLegacyJSON(t, conf)
 	if _, err := MetaStore(conf); err != nil {
@@ -145,7 +123,6 @@ func TestConvertRefusesWhileMetaStoreOpen(t *testing.T) {
 }
 
 func TestMetaStoreBlamesConvertOnlyForATimeout(t *testing.T) {
-	resetMetaStore()
 	conf := testConf(t)
 	if err := os.MkdirAll(filepath.Join(filepath.Dir(MetaDBPath(conf)), metasqlite.StoreLockName), 0o750); err != nil {
 		t.Fatalf("block the store lock path: %v", err)
@@ -154,8 +131,6 @@ func TestMetaStoreBlamesConvertOnlyForATimeout(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "meta convert") {
 		t.Fatalf("MetaStore = %v, want the lock open failure itself", err)
 	}
-	CloseMetaStore(t.Context())
-	resetMetaStore()
 }
 
 func TestResolveMetaBackend(t *testing.T) {
@@ -167,12 +142,7 @@ func TestResolveMetaBackend(t *testing.T) {
 	if b := ResolveMetaBackend(conf); b != "json" {
 		t.Fatalf("legacy root: want json, got %q", b)
 	}
-	if err := os.MkdirAll(filepath.Dir(MetaDBPath(conf)), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(MetaDBPath(conf), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, MetaDBPath(conf), "x")
 	if b := ResolveMetaBackend(conf); b != "sqlite" {
 		t.Fatalf("meta.db present: want sqlite, got %q", b)
 	}
@@ -190,16 +160,25 @@ func resetMetaStore() {
 }
 
 func testConf(t *testing.T) *config.Config {
+	resetMetaStore()
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		CloseMetaStore(t.Context())
+		resetMetaStore()
+	})
 	return &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
 }
 
 func writeLegacyJSON(t *testing.T, conf *config.Config) {
-	p := MetaJSONNamespaces(conf)[0].FilePath
-	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+	writeFile(t, MetaJSONNamespaces(conf)[0].FilePath, `{"vms":{},"names":{}}`)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(`{"vms":{},"names":{}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

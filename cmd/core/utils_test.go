@@ -108,10 +108,7 @@ func TestNormalizeDataDiskSpecs(t *testing.T) {
 }
 
 func TestPersistSnapshotDirCleansCaptureOnDirectError(t *testing.T) {
-	srcDir, err := os.MkdirTemp(t.TempDir(), "capture-*")
-	if err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	srcDir := t.TempDir()
 	if _, err := PersistSnapshotDir(t.Context(), directErrSnap{}, &types.SnapshotConfig{}, srcDir, "s", ""); err == nil {
 		t.Fatal("want error from a failed direct save")
 	}

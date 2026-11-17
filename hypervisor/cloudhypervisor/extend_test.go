@@ -2,7 +2,6 @@ package cloudhypervisor
 
 import (
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -146,9 +145,7 @@ func TestRuntimeFilesSweepSnapshotDisks(t *testing.T) {
 func writeRunFiles(t *testing.T, dir string, names ...string) {
 	t.Helper()
 	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+		writeMigrateFile(t, dir, name, "")
 	}
 }
 

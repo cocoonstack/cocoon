@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
+	"slices"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/gc"
 	imagebackend "github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/progress"
 	"github.com/cocoonstack/cocoon/types"
@@ -17,10 +17,9 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 	)
 
 	tests := []struct {
-		name        string
-		vmCfg       *types.VMConfig
-		wantPullRef string
-		wantForce   bool
+		name      string
+		vmCfg     *types.VMConfig
+		wantForce bool
 	}{
 		{
 			name: "digest pinned -> force=true",
@@ -29,8 +28,7 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 				ImageDigest: digest,
 				ImageType:   types.ImageTypeCloudImg,
 			},
-			wantPullRef: url,
-			wantForce:   true,
+			wantForce: true,
 		},
 		{
 			name: "no digest -> force=false",
@@ -38,8 +36,7 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 				Image:     url,
 				ImageType: types.ImageTypeCloudImg,
 			},
-			wantPullRef: url,
-			wantForce:   false,
+			wantForce: false,
 		},
 	}
 
@@ -50,8 +47,8 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 			if len(f.pullRefs) != 1 {
 				t.Fatalf("Pull invocations = %d, want 1", len(f.pullRefs))
 			}
-			if f.pullRefs[0] != tt.wantPullRef {
-				t.Errorf("Pull ref = %q, want %q", f.pullRefs[0], tt.wantPullRef)
+			if f.pullRefs[0] != url {
+				t.Errorf("Pull ref = %q, want %q", f.pullRefs[0], url)
 			}
 			if f.pullForce[0] != tt.wantForce {
 				t.Errorf("Pull force = %v, want %v", f.pullForce[0], tt.wantForce)
@@ -60,45 +57,30 @@ func TestEnsureImage_ForceWhenDigestPinned(t *testing.T) {
 	}
 }
 
-func TestEnsureImage_SkipsBadShape(t *testing.T) {
+func TestEnsureImage_PullsOnlyGoodShape(t *testing.T) {
 	tests := []struct {
 		name      string
 		image     string
 		imageType string
+		wantPull  bool
 	}{
-		{"cloudimg bare OCI ref", "simular/win10:22h2-20260510", types.ImageTypeCloudImg},
-		{"cloudimg local name", "win11", types.ImageTypeCloudImg},
-		{"cloudimg non-http scheme", "file:///foo.img", types.ImageTypeCloudImg},
-		{"oci malformed ref", "::bad::", types.ImageTypeOCI},
+		{"cloudimg bare OCI ref", "simular/win10:22h2-20260510", types.ImageTypeCloudImg, false},
+		{"cloudimg local name", "win11", types.ImageTypeCloudImg, false},
+		{"cloudimg non-http scheme", "file:///foo.img", types.ImageTypeCloudImg, false},
+		{"oci malformed ref", "::bad::", types.ImageTypeOCI, false},
+		{"cloudimg https url", "https://cloud-images.ubuntu.com/x.img", types.ImageTypeCloudImg, true},
+		{"oci tagged ref", "ghcr.io/cocoonstack/cocoon/ubuntu:24.04", types.ImageTypeOCI, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &fakeImageBackend{typ: tt.imageType}
 			EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{Image: tt.image, ImageType: tt.imageType})
-			if len(f.pullRefs) != 0 {
-				t.Errorf("Pull called %d time(s) with %v, want 0 (shape should have failed)", len(f.pullRefs), f.pullRefs)
+			var want []string
+			if tt.wantPull {
+				want = []string{tt.image}
 			}
-		})
-	}
-}
-
-func TestEnsureImage_AcceptsGoodShape(t *testing.T) {
-	tests := []struct {
-		name      string
-		image     string
-		imageType string
-	}{
-		{"cloudimg https url", "https://cloud-images.ubuntu.com/x.img", types.ImageTypeCloudImg},
-		{"oci tagged ref", "ghcr.io/cocoonstack/cocoon/ubuntu:24.04", types.ImageTypeOCI},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeImageBackend{typ: tt.imageType}
-			EnsureImage(t.Context(), []imagebackend.Images{f}, &types.VMConfig{
-				Image: tt.image, ImageType: tt.imageType,
-			})
-			if len(f.pullRefs) != 1 || f.pullRefs[0] != tt.image {
-				t.Errorf("Pull = %v, want one call for %q", f.pullRefs, tt.image)
+			if !slices.Equal(f.pullRefs, want) {
+				t.Errorf("Pull = %v, want %v", f.pullRefs, want)
 			}
 		})
 	}
@@ -123,6 +105,7 @@ func TestEnsureImage_SkipsPullWhenDigestLocal(t *testing.T) {
 }
 
 type fakeImageBackend struct {
+	imagebackend.Images
 	typ          string
 	inspectByRef map[string]*types.Image
 	pullRefs     []string
@@ -130,10 +113,6 @@ type fakeImageBackend struct {
 }
 
 func (f *fakeImageBackend) Type() string { return f.typ }
-
-func (f *fakeImageBackend) PinBlobs(context.Context, map[string]struct{}) (func(), error) {
-	return func() {}, nil
-}
 
 func (f *fakeImageBackend) Pull(_ context.Context, ref string, force bool, _ progress.Tracker) error {
 	f.pullRefs = append(f.pullRefs, ref)
@@ -143,17 +122,4 @@ func (f *fakeImageBackend) Pull(_ context.Context, ref string, force bool, _ pro
 
 func (f *fakeImageBackend) Inspect(_ context.Context, ref string) (*types.Image, error) {
 	return f.inspectByRef[ref], nil
-}
-
-func (f *fakeImageBackend) Import(context.Context, string, progress.Tracker, ...string) error {
-	return nil
-}
-
-func (f *fakeImageBackend) List(context.Context) ([]*types.Image, error) { return nil, nil }
-func (f *fakeImageBackend) Delete(context.Context, []string) ([]string, error) {
-	return nil, nil
-}
-func (f *fakeImageBackend) RegisterGC(*gc.Orchestrator) {}
-func (f *fakeImageBackend) Config(context.Context, *types.VMConfig) ([]*types.StorageConfig, *types.BootConfig, error) {
-	return nil, nil, nil
 }

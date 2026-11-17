@@ -293,7 +293,7 @@ func (s *fcStub) serveConfig(w http.ResponseWriter, _ *http.Request) {
 
 func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 	t.Helper()
-	s := &fcStub{cfg: cfg, state: "Running", puts: map[string]string{}}
+	s := &fcStub{cfg: cfg, state: vmStateRunning, puts: map[string]string{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.Lock()
@@ -308,7 +308,7 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 		_ = json.UnmarshalRead(r.Body, &req)
 		if req["state"] == vmStateResumed {
 			s.resume++
-			s.state = "Running"
+			s.state = vmStateRunning
 			s.events = append(s.events, "resume")
 		}
 		if req["state"] == vmStatePaused && s.onPause != nil {
@@ -333,15 +333,20 @@ func newFCStub(t *testing.T, cfg fcVMConfig) *fcStub {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	s.sock = filepath.Join(dir, "api.sock")
-	ln, err := net.Listen("unix", s.sock)
-	if err != nil {
-		t.Fatalf("listen %s: %v", s.sock, err)
-	}
-	srv := httptest.NewUnstartedServer(mux)
+	serveOnSocket(t, s.sock, mux)
+	s.client = utils.NewSocketHTTPClient(s.sock)
+	return s
+}
+
+func serveOnSocket(t *testing.T, sock string, h http.Handler) {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(h)
 	_ = srv.Listener.Close()
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen %s: %v", sock, err)
+	}
 	srv.Listener = ln
 	srv.Start()
 	t.Cleanup(srv.Close)
-	s.client = utils.NewSocketHTTPClient(s.sock)
-	return s
 }

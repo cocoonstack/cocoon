@@ -15,19 +15,27 @@ import (
 )
 
 func TestWriteReadPIDFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.pid")
-
-	if err := WritePIDFile(path, 12345); err != nil {
-		t.Fatalf("WritePIDFile: %v", err)
+	tests := []struct {
+		name string
+		pid  int
+	}{
+		{"typical", 12345},
+		{"linux max pid", 4194304},
 	}
-
-	got, err := ReadPIDFile(path)
-	if err != nil {
-		t.Fatalf("ReadPIDFile: %v", err)
-	}
-	if got != 12345 {
-		t.Errorf("PID: got %d, want 12345", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "test.pid")
+			if err := WritePIDFile(path, tt.pid); err != nil {
+				t.Fatalf("WritePIDFile: %v", err)
+			}
+			got, err := ReadPIDFile(path)
+			if err != nil {
+				t.Fatalf("ReadPIDFile: %v", err)
+			}
+			if got != tt.pid {
+				t.Errorf("PID: got %d, want %d", got, tt.pid)
+			}
+		})
 	}
 }
 
@@ -38,15 +46,30 @@ func TestReadPIDFile_NotExist(t *testing.T) {
 	}
 }
 
-func TestReadPIDFile_InvalidContent(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "bad.pid")
-	if err := os.WriteFile(path, []byte("not-a-number\n"), 0o600); err != nil {
-		t.Fatal(err)
+func TestReadPIDFile_Content(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    int
+		wantErr bool
+	}{
+		{"invalid content", "not-a-number\n", 0, true},
+		{"whitespace handling", "  42  \n", 42, false},
 	}
-	_, err := ReadPIDFile(path)
-	if err == nil {
-		t.Fatal("expected error for invalid content")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "content.pid")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ReadPIDFile(path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReadPIDFile err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("PID: got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -62,38 +85,6 @@ func TestWritePIDFile_Permissions(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("permissions: got %o, want 0600", fi.Mode().Perm())
-	}
-}
-
-func TestWriteReadPIDFile_Roundtrip_LargePID(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "large.pid")
-
-	const linuxMaxPID = 4194304
-	if err := WritePIDFile(path, linuxMaxPID); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadPIDFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != linuxMaxPID {
-		t.Errorf("PID: got %d, want %d", got, linuxMaxPID)
-	}
-}
-
-func TestReadPIDFile_WhitespaceHandling(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "ws.pid")
-	if err := os.WriteFile(path, []byte("  42  \n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadPIDFile(path)
-	if err != nil {
-		t.Fatalf("ReadPIDFile: %v", err)
-	}
-	if got != 42 {
-		t.Errorf("PID: got %d, want 42", got)
 	}
 }
 
@@ -122,24 +113,16 @@ func TestIsProcessAlive_InvalidPID(t *testing.T) {
 }
 
 func TestIsProcessAlive_DeadProcess(t *testing.T) {
-	cmd := exec.Command("true")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	pid := cmd.Process.Pid
-	_ = cmd.Wait()
-
-	if IsProcessAlive(pid) {
+	if pid := deadPID(t); IsProcessAlive(pid) {
 		t.Errorf("reaped pid %d reported alive", pid)
 	}
 }
 
 func TestVerifyProcessCmdline_InvalidPID(t *testing.T) {
-	if VerifyProcessCmdline(0, "y") {
-		t.Error("expected false for PID 0")
-	}
-	if VerifyProcessCmdline(-1, "y") {
-		t.Error("expected false for PID -1")
+	for _, pid := range []int{0, -1} {
+		if VerifyProcessCmdline(pid, "y") {
+			t.Errorf("expected false for PID %d", pid)
+		}
 	}
 }
 
@@ -157,8 +140,7 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 		t.Fatal("sleep process should be alive")
 	}
 
-	ctx := t.Context()
-	err := TerminateProcess(ctx, pid, "60", 2*time.Second)
+	err := TerminateProcess(t.Context(), pid, "60", 2*time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess: %v", err)
 	}
@@ -167,29 +149,17 @@ func TestTerminateProcess_SleepProcess(t *testing.T) {
 }
 
 func TestTerminateProcess_AlreadyDead(t *testing.T) {
-	cmd := exec.Command("true")
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	pid := cmd.Process.Pid
-	_ = cmd.Wait()
-
-	ctx := t.Context()
-
-	err := TerminateProcess(ctx, pid, "true", time.Second)
+	err := TerminateProcess(t.Context(), deadPID(t), "true", time.Second)
 	if err != nil {
 		t.Fatalf("TerminateProcess on dead process: %v", err)
 	}
 }
 
 func TestTerminateProcess_InvalidPID(t *testing.T) {
-	ctx := t.Context()
-
-	if err := TerminateProcess(ctx, 0, "x", time.Second); err != nil {
-		t.Errorf("expected nil for PID 0, got %v", err)
-	}
-	if err := TerminateProcess(ctx, -1, "x", time.Second); err != nil {
-		t.Errorf("expected nil for PID -1, got %v", err)
+	for _, pid := range []int{0, -1} {
+		if err := TerminateProcess(t.Context(), pid, "x", time.Second); err != nil {
+			t.Errorf("expected nil for PID %d, got %v", pid, err)
+		}
 	}
 }
 
@@ -234,10 +204,7 @@ func TestFindVMMByCmdline(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
+	reapChild(t, cmd)
 
 	var pids []int
 	if err := WaitFor(t.Context(), 500*time.Millisecond, 10*time.Millisecond, func() (bool, error) {
@@ -305,10 +272,7 @@ func TestWaitProcessExitTimesOutOnALiveProcess(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sleep: %v", err)
 	}
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
+	reapChild(t, cmd)
 
 	err := WaitProcessExit(t.Context(), cmd.Process.Pid, 50*time.Millisecond)
 	if err == nil {
@@ -337,4 +301,13 @@ func waitForExec(t *testing.T, pid int, expectArg string) {
 	}); err != nil {
 		t.Fatalf("child never execed into %s, so TerminateProcess would decline the mismatched cmdline (#87): %v", expectArg, err)
 	}
+}
+
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	return cmd.Process.Pid
 }

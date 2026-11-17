@@ -1,6 +1,8 @@
 package sqlite
 
 import (
+	"context"
+	"encoding/json/jsontext"
 	"path/filepath"
 	"testing"
 
@@ -12,12 +14,6 @@ import (
 func TestContract(t *testing.T) {
 	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
 		return newStore(t, t.TempDir(), nss...)
-	})
-}
-
-func TestContractForcedRetryEngine(t *testing.T) {
-	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
-		return contracttest.ForcedRetry(newStore(t, t.TempDir(), nss...))
 	})
 }
 
@@ -52,4 +48,10 @@ func newStore(t *testing.T, dir string, nss ...string) *Store {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
+}
+
+func putRecord(ctx context.Context, s *Store, ns, id, val string) error {
+	return s.Update(ctx, meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
+		return w.PutRaw(ctx, ns, "records", id, jsontext.Value(val), false)
+	})
 }

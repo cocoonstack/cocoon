@@ -27,11 +27,7 @@ var testImageTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 func TestGCCollectSkipsRepublishedBlob(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	engine, err := metajson.Open(metajson.Namespace{Name: "images_test", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = engine.Close() })
+	engine := openTestEngine(t, dir, "images_test")
 	store := NewMetaStore[gcTestEntry](engine, "images_test")
 
 	var removed []string
@@ -133,11 +129,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 func TestGCCollectRespectsExternalPins(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	engine, err := metajson.Open(metajson.Namespace{Name: "images_pins", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = engine.Close() })
+	engine := openTestEngine(t, dir, "images_pins")
 	store := NewMetaStore[gcTestEntry](engine, "images_pins")
 
 	pins := map[string]struct{}{"deadbeef": {}}
@@ -208,11 +200,7 @@ func TestGCCollectLogsUnreferencedReason(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = log.SetupLog(ctx, &coretypes.ServerLogConfig{Level: "info"}, "") })
 
-	engine, err := metajson.Open(metajson.Namespace{Name: "images_reason", FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = engine.Close() })
+	engine := openTestEngine(t, dir, "images_reason")
 
 	mod := BuildGCModule(GCModuleConfig[gcTestEntry]{
 		Name:     "oci",
@@ -266,6 +254,16 @@ func TestGCStaleTempKeepsAWorkDirWithFreshContent(t *testing.T) {
 	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("stale work dir kept: %v", err)
 	}
+}
+
+func openTestEngine(t *testing.T, dir, name string) *metajson.Store {
+	t.Helper()
+	engine, err := metajson.Open(metajson.Namespace{Name: name, FilePath: filepath.Join(dir, "images.json"), LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	return engine
 }
 
 type gcTestEntry struct {

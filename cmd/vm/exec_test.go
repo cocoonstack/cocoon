@@ -1,8 +1,10 @@
 package vm
 
 import (
+	"maps"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -34,13 +36,8 @@ func TestParseExecEnv(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
-			if len(got) != len(tt.want) {
+			if !maps.Equal(got, tt.want) {
 				t.Fatalf("got %v, want %v", got, tt.want)
-			}
-			for k, v := range tt.want {
-				if got[k] != v {
-					t.Errorf("got[%q]=%q, want %q", k, got[k], v)
-				}
 			}
 		})
 	}
@@ -78,14 +75,7 @@ func TestReadHybridVsockReply(t *testing.T) {
 }
 
 func TestDialHybridVsock_ConnectHandshake(t *testing.T) {
-	f, err := os.CreateTemp("", "vsock-*.uds")
-	if err != nil {
-		t.Fatalf("create temp: %v", err)
-	}
-	sockPath := f.Name()
-	_ = f.Close()
-	_ = os.Remove(sockPath)
-	defer os.Remove(sockPath)
+	sockPath := shortSockPath(t, "vsock.uds")
 
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -135,4 +125,14 @@ func TestDialHybridVsock_ConnectHandshake(t *testing.T) {
 			<-done
 		})
 	}
+}
+
+func shortSockPath(t *testing.T, name string) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "cocoon-")
+	if err != nil {
+		t.Fatalf("temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, name)
 }

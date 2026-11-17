@@ -6,13 +6,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/meta/contracttest"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -20,13 +20,8 @@ func TestBackupFidelity(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
-	write := func(id, val string) error {
-		return s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", id, jsontext.Value(val), false)
-		})
-	}
 	put := func(id, val string) {
-		if err := write(id, val); err != nil {
+		if err := putRecord(ctx, s, "vms", id, val); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -43,7 +38,7 @@ func TestBackupFidelity(t *testing.T) {
 				return
 			default:
 			}
-			err := write("churn", `{"i":`+string(rune('0'+i%10))+`}`)
+			err := putRecord(ctx, s, "vms", "churn", `{"i":`+string(rune('0'+i%10))+`}`)
 			if i == 0 {
 				close(started)
 			}
@@ -81,10 +76,7 @@ func TestBackupCrashSteps(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	s := newStore(t, dir, "vms")
-	err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"v":1}`), false)
-	})
-	if err != nil {
+	if err := putRecord(ctx, s, "vms", "id1", `{"v":1}`); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	dest := filepath.Join(dir, "backup", "meta.db")
@@ -102,15 +94,13 @@ func TestBackupCrashSteps(t *testing.T) {
 			return nil
 		}
 		err := Backup(ctx, filepath.Join(dir, DBFileName), dest)
+		if !errors.Is(err, errCrash) {
+			t.Fatalf("step %s: want injected crash, got %v", step, err)
+		}
 		if step != "renamed" {
-			if !errors.Is(err, errCrash) {
-				t.Fatalf("step %s: want injected crash, got %v", step, err)
-			}
 			if raw, ok := backupGet(t, dest, "id1"); !ok || raw != `{"v":1}` {
 				t.Fatalf("step %s: published backup damaged: %q ok=%v", step, raw, ok)
 			}
-		} else if !errors.Is(err, errCrash) {
-			t.Fatalf("step renamed: want injected crash, got %v", err)
 		}
 
 		testBackupStep = nil
@@ -123,27 +113,21 @@ func TestBackupCrashSteps(t *testing.T) {
 func TestBackupRefusals(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, DBFileName)
-	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "no sqlite store") {
-		t.Fatalf("want missing-store refusal, got %v", err)
-	}
+	requireErrContains(t, Backup(t.Context(), missing, filepath.Join(dir, "out.db")), "no sqlite store")
 	if utils.FileExists(missing) {
 		t.Fatal("backup created the missing source")
 	}
 	if err := os.WriteFile(missing, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "uninitialized store") {
-		t.Fatalf("want uninitialized refusal, got %v", err)
-	}
+	requireErrContains(t, Backup(t.Context(), missing, filepath.Join(dir, "out.db")), "uninitialized store")
 	if err := Init(t.Context(), missing, testDecls()...); err != nil {
 		t.Fatalf("init over crashed file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Backup(t.Context(), missing, filepath.Join(dir, "out.db")); err == nil || !strings.Contains(err.Error(), "conversion is in flight") {
-		t.Fatalf("want manifest refusal, got %v", err)
-	}
+	requireErrContains(t, Backup(t.Context(), missing, filepath.Join(dir, "out.db")), "conversion is in flight")
 }
 
 func TestBusyCtxDeadline(t *testing.T) {
@@ -151,27 +135,7 @@ func TestBusyCtxDeadline(t *testing.T) {
 	s1 := newStore(t, dir, "vms")
 	s2 := newStore(t, dir, "vms")
 
-	held := make(chan struct{})
-	release := make(chan struct{})
-	holderErr := make(chan error, 1)
-	go func() {
-		holderErr <- s1.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(meta.Writer) error {
-			close(held)
-			<-release
-			return nil
-		})
-	}()
-	select {
-	case <-held:
-	case err := <-holderErr:
-		t.Fatalf("holder update ended before holding the writer: %v", err)
-	}
-	defer func() {
-		if err := <-holderErr; err != nil {
-			t.Errorf("holder update: %v", err)
-		}
-	}()
-	defer close(release)
+	defer contracttest.HoldWriter(t, s1, meta.Scope{Write: "vms"}, func(meta.Writer) error { return nil })()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
@@ -191,10 +155,7 @@ func TestBackupConcurrentSameDest(t *testing.T) {
 		ctx := t.Context()
 		dir := t.TempDir()
 		s := newStore(t, dir, "vms")
-		err := s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"v":1}`), false)
-		})
-		if err != nil {
+		if err := putRecord(ctx, s, "vms", "id1", `{"v":1}`); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 		dest := filepath.Join(dir, "backup", "meta.db")

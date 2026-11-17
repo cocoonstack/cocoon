@@ -25,15 +25,7 @@ func TestForceDeleteStopsAVMMStartedUnderAnotherBinaryName(t *testing.T) {
 	sockPath := SocketPath(dir)
 
 	vmm := startFakeVMM(t, "previous-"+b.Conf.BinaryName(), sockPath)
-	exited := make(chan struct{})
-	go func() {
-		_ = vmm.Wait()
-		close(exited)
-	}()
-	t.Cleanup(func() {
-		_ = vmm.Process.Kill()
-		<-exited
-	})
+	exited := reapOnCleanup(t, vmm)
 	if err := utils.WritePIDFile(b.PIDFilePath(dir), vmm.Process.Pid); err != nil {
 		t.Fatalf("write pidfile: %v", err)
 	}

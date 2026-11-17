@@ -10,113 +10,50 @@ import (
 	"testing"
 )
 
-func TestSparseCopy_AllSparse(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	f, err := os.Create(src)
-	if err != nil {
-		t.Fatal(err)
+func TestSparseCopy(t *testing.T) {
+	type segment struct {
+		off  int64
+		data []byte
 	}
-	const size = 1 << 20
-	if err := f.Truncate(size); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name      string
+		size      int64
+		segs      []segment
+		maxBlocks int64
+	}{
+		{"all sparse", 1 << 20, nil, 16},
+		{"partial data", 1 << 20, []segment{{4096, []byte("hello sparse world!")}}, 1<<20/512/2 - 1},
+		{"multi segment", 256 * 1024, []segment{{64 * 1024, bytes.Repeat([]byte("A"), 4096)}, {128 * 1024, bytes.Repeat([]byte("B"), 4096)}}, 256*1024/512/2 - 1},
 	}
-	f.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src")
+			dst := filepath.Join(dir, "dst")
 
-	if err := SparseCopy(dst, src, Sync); err != nil {
-		t.Fatalf("SparseCopy: %v", err)
-	}
+			f, err := os.Create(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Truncate(tt.size); err != nil {
+				t.Fatal(err)
+			}
+			for _, seg := range tt.segs {
+				writeAt(t, f, seg.off, seg.data)
+			}
+			f.Close()
 
-	dstInfo, err := os.Stat(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dstInfo.Size() != size {
-		t.Errorf("size: got %d, want %d", dstInfo.Size(), size)
-	}
+			if err := SparseCopy(dst, src, Sync); err != nil {
+				t.Fatalf("SparseCopy: %v", err)
+			}
 
-	got := readFull(t, dst)
-	if !bytes.Equal(got, make([]byte, size)) {
-		t.Error("content mismatch: expected all zeros")
-	}
-
-	blocks := fileBlocks(t, dst)
-	if blocks > 16 {
-		t.Errorf("expected sparse dst, got %d blocks", blocks)
-	}
-}
-
-func TestSparseCopy_PartialData(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	const size = 1 << 20
-	f, err := os.Create(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Truncate(size); err != nil {
-		t.Fatal(err)
-	}
-
-	data := []byte("hello sparse world!")
-	writeAt(t, f, 4096, data)
-	f.Close()
-
-	if err := SparseCopy(dst, src, Sync); err != nil {
-		t.Fatalf("SparseCopy: %v", err)
-	}
-
-	srcData := readFull(t, src)
-	dstData := readFull(t, dst)
-	if !bytes.Equal(srcData, dstData) {
-		t.Error("content mismatch")
-	}
-
-	blocks := fileBlocks(t, dst)
-	fullBlocks := int64(size / 512)
-	if blocks >= fullBlocks/2 {
-		t.Errorf("expected sparse dst: got %d blocks, full would be %d", blocks, fullBlocks)
-	}
-}
-
-func TestSparseCopy_MultiSegment(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src")
-	dst := filepath.Join(dir, "dst")
-
-	const size = 256 * 1024
-	f, err := os.Create(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Truncate(size); err != nil {
-		t.Fatal(err)
-	}
-
-	seg1 := bytes.Repeat([]byte("A"), 4096)
-	seg2 := bytes.Repeat([]byte("B"), 4096)
-	writeAt(t, f, 64*1024, seg1)
-	writeAt(t, f, 128*1024, seg2)
-	f.Close()
-
-	if err := SparseCopy(dst, src, Sync); err != nil {
-		t.Fatalf("SparseCopy: %v", err)
-	}
-
-	srcData := readFull(t, src)
-	dstData := readFull(t, dst)
-	if !bytes.Equal(srcData, dstData) {
-		t.Error("content mismatch")
-	}
-
-	blocks := fileBlocks(t, dst)
-	fullBlocks := int64(size / 512)
-	if blocks >= fullBlocks/2 {
-		t.Errorf("expected sparse dst: got %d blocks, full would be %d", blocks, fullBlocks)
+			if !bytes.Equal(readFull(t, src), readFull(t, dst)) {
+				t.Error("content mismatch")
+			}
+			if blocks := fileBlocks(t, dst); blocks > tt.maxBlocks {
+				t.Errorf("expected sparse dst: got %d blocks, want at most %d", blocks, tt.maxBlocks)
+			}
+		})
 	}
 }
 
@@ -175,13 +112,4 @@ func fileBlocks(t *testing.T, path string) int64 {
 		t.Fatal("Stat_t not available")
 	}
 	return st.Blocks
-}
-
-func readFull(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return data
 }

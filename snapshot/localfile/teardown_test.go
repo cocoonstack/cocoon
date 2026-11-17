@@ -3,6 +3,7 @@ package localfile
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"testing"
@@ -47,7 +48,7 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 	if snapTombstonePresent(t, lf, id) {
 		t.Error("deleting tombstone not finalized")
 	}
-	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !os.IsNotExist(err) {
+	if _, err := os.Stat(lf.conf.SnapshotDataDir(id)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("data dir survived roll-forward: %v", err)
 	}
 	var gone bool

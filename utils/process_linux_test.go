@@ -41,12 +41,7 @@ func TestScanProcsByBinaryReadErrors(t *testing.T) {
 	}
 
 	t.Run("matches survive skipped entries", func(t *testing.T) {
-		readFile := func(path string) ([]byte, error) {
-			if path == selfPath {
-				return []byte("/bin/testvmm\x00--api-socket\x00/run/x.sock"), nil
-			}
-			return nil, os.ErrNotExist
-		}
+		readFile := fakeProc(map[string]string{selfPath: "/bin/testvmm\x00--api-socket\x00/run/x.sock"})
 		scan, err := scanProcsByBinary("testvmm", readFile, func(int) bool { return false })
 		if err != nil {
 			t.Fatalf("scanProcsByBinary: %v", err)
@@ -127,10 +122,7 @@ func TestVerifyProcessCmdlineIgnoresTheBinaryName(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
+	reapChild(t, cmd)
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
 		return VerifyProcessCmdline(cmd.Process.Pid, sock), nil
 	}); err != nil {
@@ -145,10 +137,7 @@ func TestVerifyProcessCmdlineRejectsTheArgumentInsideAShellCommand(t *testing.T)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
+	reapChild(t, cmd)
 	if err := WaitFor(t.Context(), 5*time.Second, time.Millisecond, func() (bool, error) {
 		return VerifyProcessCmdline(cmd.Process.Pid, script), nil
 	}); err != nil {

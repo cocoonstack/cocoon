@@ -236,15 +236,7 @@ func TestStatusWatchRefreshesThrottlingWithoutVMChanges(t *testing.T) {
 func TestStatusEventSkipsATickWhoseListFailed(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	h := &statusWatchHypervisor{
-		vm:     &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
-		failOn: 2,
-		onList: func(n int) {
-			if n == 3 {
-				cancel()
-			}
-		},
-	}
+	h := failingListHypervisor(cancel)
 	var events []string
 	statusEventDiffLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, twoTicks(), eventEmitter{
 		emit: func(event string, snap vmSnapshot, _ vmOutput) { events = append(events, event+" "+snap.id) },
@@ -260,15 +252,7 @@ func TestStatusEventSkipsATickWhoseListFailed(t *testing.T) {
 func TestStatusWatchSkipsATickWhoseListFailed(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	h := &statusWatchHypervisor{
-		vm:     &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
-		failOn: 2,
-		onList: func(n int) {
-			if n == 3 {
-				cancel()
-			}
-		},
-	}
+	h := failingListHypervisor(cancel)
 	out := clitest.CaptureStdout(t, func() {
 		statusRefreshLoop(ctx, []hypervisor.Hypervisor{h}, nil, nil, twoTicks(), true, t.TempDir())
 	})
@@ -289,17 +273,8 @@ func TestStatusRejectsWatchWithJSON(t *testing.T) {
 	dir := t.TempDir()
 	conf := &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
 	h := Handler{ConfProvider: func() *config.Config { return conf }}
-	status, _, err := Command(h).Find([]string{"status"})
-	if err != nil {
-		t.Fatalf("find status: %v", err)
-	}
+	status := vmSubcommand(t, h, "status", "--watch", "--format", cliutil.FormatJSON)
 	status.SetContext(ctx)
-	if err := status.Flags().Set("watch", "true"); err != nil {
-		t.Fatalf("set watch: %v", err)
-	}
-	if err := status.Flags().Set("format", cliutil.FormatJSON); err != nil {
-		t.Fatalf("set format: %v", err)
-	}
 	var runErr error
 	out := clitest.CaptureStdout(t, func() { runErr = h.Status(status, nil) })
 	if runErr == nil || !strings.Contains(runErr.Error(), "--event") {
@@ -327,6 +302,18 @@ func (h *statusWatchHypervisor) List(context.Context) ([]*types.VM, error) {
 		return nil, errors.New("database is locked")
 	}
 	return []*types.VM{h.vm}, nil
+}
+
+func failingListHypervisor(cancel context.CancelFunc) *statusWatchHypervisor {
+	return &statusWatchHypervisor{
+		vm:     &types.VM{ID: "vm-1", State: types.VMStateRunning, PID: os.Getpid()},
+		failOn: 2,
+		onList: func(n int) {
+			if n == 3 {
+				cancel()
+			}
+		},
+	}
 }
 
 func twoTicks() <-chan time.Time {

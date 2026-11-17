@@ -36,9 +36,7 @@ func TestReadTopologyFence(t *testing.T) {
 
 func TestReadTopologyWithoutCacheSysfs(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "online"), []byte("0-3\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(root, "online"), "0-3\n")
 	topo, err := ReadTopology(root, nil)
 	if err != nil {
 		t.Fatalf("ReadTopology: %v", err)

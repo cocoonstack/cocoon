@@ -58,19 +58,11 @@ func TestRoundTrip(t *testing.T) {
 	if utils.FileExists(spec.JSON[0].FilePath) {
 		t.Fatal("json source not retired aside")
 	}
-	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("open sqlite after convert: %v", err)
-	}
+	sq := openSQLite(t, spec)
 	if got := scanAll(t, sq, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` || got["names/alpha"] != `"id1"` {
 		t.Fatalf("sqlite content: %v", got)
 	}
-	err = sq.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "id3", jsontext.Value(`{"v":3}`), false)
-	})
-	if err != nil {
-		t.Fatalf("write in sqlite: %v", err)
-	}
+	putRaw(t, sq, "vms", "records", "id3", `{"v":3}`)
 	if err := sq.Close(); err != nil {
 		t.Fatalf("close sqlite: %v", err)
 	}
@@ -81,11 +73,7 @@ func TestRoundTrip(t *testing.T) {
 	if utils.FileExists(spec.DBPath) {
 		t.Fatal("sqlite source not retired aside")
 	}
-	js, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatalf("open json after convert: %v", err)
-	}
-	defer js.Close()
+	js := openJSON(t, spec)
 	got := scanAll(t, js, "vms")
 	if len(got) != 5 || got["records/id3"] != `{"v":3}` || got["tombstones/id9"] != `{"dead":true}` {
 		t.Fatalf("json content after round trip: %v", got)
@@ -94,18 +82,10 @@ func TestRoundTrip(t *testing.T) {
 
 func TestDanglingNameRefused(t *testing.T) {
 	spec := testSpec(t, "vms")
-	s, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatalf("open json: %v", err)
-	}
-	err = s.Update(t.Context(), meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(t.Context(), "vms", "names", "ghost", jsontext.Value(`"missing"`), false)
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	s := openJSON(t, spec)
+	putRaw(t, s, "vms", "names", "ghost", `"missing"`)
 	_ = s.Close()
-	err = Run(t.Context(), spec, "sqlite")
+	err := Run(t.Context(), spec, "sqlite")
 	if err == nil || !strings.Contains(err.Error(), "missing record") {
 		t.Fatalf("want dangling-name refusal, got %v", err)
 	}
@@ -116,17 +96,7 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")
 
-	src, err := openSource(spec, "sqlite")
-	if err != nil {
-		t.Fatalf("open source: %v", err)
-	}
-	m, err := newManifest(ctx, spec, "sqlite", src)
-	if err != nil {
-		t.Fatalf("manifest: %v", err)
-	}
-	if err := saveManifest(spec.MetaRoot, m); err != nil {
-		t.Fatalf("save manifest: %v", err)
-	}
+	src := beginConversion(t, spec)
 	dst, err := openTarget(ctx, spec, "sqlite")
 	if err != nil {
 		t.Fatalf("open target: %v", err)
@@ -134,22 +104,14 @@ func TestResumeClaimsCommittedTarget(t *testing.T) {
 	if err := copyNamespace(ctx, src, dst, spec.Decls[0]); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
-	if err := src.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "late", jsontext.Value(`{}`), false)
-	}); err != nil {
-		t.Fatalf("mutate source: %v", err)
-	}
+	putRaw(t, src, "vms", "records", "late", `{}`)
 	_ = src.Close()
 	_ = dst.Close()
 
 	if err := Run(ctx, spec, "sqlite"); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
-	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("open after resume: %v", err)
-	}
-	defer sq.Close()
+	sq := openSQLite(t, spec)
 	if got := scanAll(t, sq, "vms"); len(got) != 4 {
 		t.Fatalf("content after resume: %v", got)
 	}
@@ -160,26 +122,11 @@ func TestSourceChangedRefused(t *testing.T) {
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")
 
-	src, err := openSource(spec, "sqlite")
-	if err != nil {
-		t.Fatalf("open source: %v", err)
-	}
-	m, err := newManifest(ctx, spec, "sqlite", src)
-	if err != nil {
-		t.Fatalf("manifest: %v", err)
-	}
-	if err := saveManifest(spec.MetaRoot, m); err != nil {
-		t.Fatalf("save manifest: %v", err)
-	}
-	err = src.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "late", jsontext.Value(`{}`), false)
-	})
-	if err != nil {
-		t.Fatalf("mutate source: %v", err)
-	}
+	src := beginConversion(t, spec)
+	putRaw(t, src, "vms", "records", "late", `{}`)
 	_ = src.Close()
 
-	err = Run(ctx, spec, "sqlite")
+	err := Run(ctx, spec, "sqlite")
 	if err == nil || !strings.Contains(err.Error(), "source changed") || !strings.Contains(err.Error(), spec.DBPath) {
 		t.Fatalf("want source-changed refusal naming the partial target, got %v", err)
 	}
@@ -207,30 +154,18 @@ func TestTargetNotFreshRefused(t *testing.T) {
 	if err := metasqlite.Init(ctx, spec.DBPath, spec.Decls...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	err = sq.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "foreign", jsontext.Value(`{}`), false)
-	})
-	if err != nil {
-		t.Fatalf("pollute target: %v", err)
-	}
+	sq := openSQLite(t, spec)
+	putRaw(t, sq, "vms", "records", "foreign", `{}`)
 	_ = sq.Close()
 
-	err = Run(ctx, spec, "sqlite")
+	err := Run(ctx, spec, "sqlite")
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("want existing-target refusal, got %v", err)
 	}
 	if utils.FileExists(filepath.Join(spec.MetaRoot, metasqlite.ManifestName)) {
 		t.Fatal("manifest written for a refused target")
 	}
-	sq, err = metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("reopen target: %v", err)
-	}
-	defer sq.Close()
+	sq = openSQLite(t, spec)
 	if got := scanAll(t, sq, "vms"); len(got) != 1 || got["records/foreign"] != `{}` {
 		t.Fatalf("refused convert wrote into the target: %v", got)
 	}
@@ -286,7 +221,6 @@ func TestConvertRefusesUnsupportedFS(t *testing.T) {
 }
 
 func TestCrashRerunMatrix(t *testing.T) {
-	errCrash := errors.New("injected crash")
 	forward := []string{"manifest-saved", "target-opened", "ns-copied", "ns-marked", "ns-done", "source-renamed"}
 	reverse := []string{"manifest-saved", "target-opened", "ns-copied", "ns-done", "checkpointed", "source-renamed"}
 
@@ -300,31 +234,15 @@ func TestCrashRerunMatrix(t *testing.T) {
 						t.Fatalf("forward convert: %v", err)
 					}
 				}
-				testCrashStep = func(at string) error {
-					if at == step {
-						return errCrash
-					}
-					return nil
-				}
-				err := Run(t.Context(), spec, target)
-				testCrashStep = nil
-				if !errors.Is(err, errCrash) {
-					t.Fatalf("step %s: want injected crash, got %v", step, err)
-				}
+				runCrashingAt(t, spec, target, step)
 				if rerr := Run(t.Context(), spec, target); rerr != nil {
 					t.Fatalf("rerun after crash at %s: %v", step, rerr)
 				}
-				var store meta.Store
-				var oerr error
+				open := openJSON
 				if target == "sqlite" {
-					store, oerr = metasqlite.Open(spec.DBPath, spec.Decls...)
-				} else {
-					store, oerr = metajson.Open(spec.JSON...)
+					open = openSQLite
 				}
-				if oerr != nil {
-					t.Fatalf("open target after rerun: %v", oerr)
-				}
-				defer store.Close()
+				store := open(t, spec)
 				if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
 					t.Fatalf("content after rerun at %s: %v", step, got)
 				}
@@ -339,17 +257,9 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	spec := testSpec(t, "vms")
 
-	js, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	js := openJSON(t, spec)
 	for gen := 1; gen <= 2; gen++ {
-		err = js.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "vms", "records", "id1", jsontext.Value(`{"gen":`+strconv.Itoa(gen)+`}`), false)
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		putRaw(t, js, "vms", "records", "id1", `{"gen":`+strconv.Itoa(gen)+`}`)
 	}
 	_ = js.Close()
 	if !utils.FileExists(spec.JSON[0].FilePath + ".prev") {
@@ -375,11 +285,7 @@ func TestDistinctGenerationsRoundTrip(t *testing.T) {
 	if err := os.WriteFile(spec.JSON[0].FilePath, append(main, []byte("garbage")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	js2, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer js2.Close()
+	js2 := openJSON(t, spec)
 	if got := scanAll(t, js2, "vms"); got["records/id1"] != `{"gen":2}` {
 		t.Fatalf("served generation after torn main: %v", got)
 	}
@@ -424,11 +330,7 @@ func TestUncheckpointedWALReverseConversion(t *testing.T) {
 	if err := Run(t.Context(), spec, "json"); err != nil {
 		t.Fatalf("reverse convert: %v", err)
 	}
-	js, err := metajson.Open(spec.JSON...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer js.Close()
+	js := openJSON(t, spec)
 	if got := scanAll(t, js, "vms"); got["records/walrec"] != `{"wal":1}` {
 		t.Fatalf("WAL-stranded commit lost across reverse conversion: %v", got)
 	}
@@ -444,13 +346,7 @@ func TestWALWriterWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := t.Context()
-	err = s.Update(ctx, meta.Scope{Write: "vms"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "vms", "records", "walrec", jsontext.Value(`{"wal":1}`), false)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	putRaw(t, s, "vms", "records", "walrec", `{"wal":1}`)
 	fmt.Println("ACK")
 	select {}
 }
@@ -469,11 +365,7 @@ func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 	if err := Run(t.Context(), spec, "sqlite"); err != nil {
 		t.Fatalf("convert with never-written namespace: %v", err)
 	}
-	sq, err := metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("open after convert: %v", err)
-	}
-	defer sq.Close()
+	sq := openSQLite(t, spec)
 	if got := scanAll(t, sq, "vms"); len(got) != 4 {
 		t.Fatalf("content: %v", got)
 	}
@@ -484,20 +376,9 @@ func TestConvertSkipsNeverWrittenNamespace(t *testing.T) {
 }
 
 func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
-	errCrash := errors.New("injected crash")
 	spec := testSpec(t, "vms")
 	seedJSON(t, spec, "vms")
-	testCrashStep = func(at string) error {
-		if at == "manifest-saved" {
-			return errCrash
-		}
-		return nil
-	}
-	err := Run(t.Context(), spec, "sqlite")
-	testCrashStep = nil
-	if !errors.Is(err, errCrash) {
-		t.Fatalf("want injected crash, got %v", err)
-	}
+	runCrashingAt(t, spec, "sqlite", "manifest-saved")
 	if err := os.MkdirAll(filepath.Dir(spec.DBPath), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -507,11 +388,7 @@ func TestConvertRerunsAfterCrashedTargetInit(t *testing.T) {
 	if err := Run(t.Context(), spec, "sqlite"); err != nil {
 		t.Fatalf("rerun over crashed target init: %v", err)
 	}
-	store, err := metasqlite.Open(spec.DBPath, spec.Decls...)
-	if err != nil {
-		t.Fatalf("open target: %v", err)
-	}
-	defer store.Close()
+	store := openSQLite(t, spec)
 	if got := scanAll(t, store, "vms"); len(got) != 4 || got["records/id1"] != `{"v":1}` {
 		t.Fatalf("content after rerun: %v", got)
 	}
@@ -535,6 +412,68 @@ func testSpec(t *testing.T, nss ...string) Spec {
 		})
 	}
 	return spec
+}
+
+func putRaw(t *testing.T, s meta.Store, ns, table, id, raw string) {
+	t.Helper()
+	err := s.Update(t.Context(), meta.Scope{Write: ns}, meta.CommitDurable, func(w meta.Writer) error {
+		return w.PutRaw(t.Context(), ns, table, id, jsontext.Value(raw), false)
+	})
+	if err != nil {
+		t.Fatalf("put %s/%s/%s: %v", ns, table, id, err)
+	}
+}
+
+func openSQLite(t *testing.T, spec Spec) meta.Store {
+	t.Helper()
+	s, err := metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func openJSON(t *testing.T, spec Spec) meta.Store {
+	t.Helper()
+	s, err := metajson.Open(spec.JSON...)
+	if err != nil {
+		t.Fatalf("open json: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func beginConversion(t *testing.T, spec Spec) meta.Store {
+	t.Helper()
+	src, err := openSource(spec, "sqlite")
+	if err != nil {
+		t.Fatalf("open source: %v", err)
+	}
+	m, err := newManifest(t.Context(), spec, "sqlite", src)
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	if err := saveManifest(spec.MetaRoot, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+	return src
+}
+
+func runCrashingAt(t *testing.T, spec Spec, target, step string) {
+	t.Helper()
+	errCrash := errors.New("injected crash")
+	testCrashStep = func(at string) error {
+		if at == step {
+			return errCrash
+		}
+		return nil
+	}
+	err := Run(t.Context(), spec, target)
+	testCrashStep = nil
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("step %s: want injected crash, got %v", step, err)
+	}
 }
 
 func seedJSON(t *testing.T, spec Spec, ns string) {

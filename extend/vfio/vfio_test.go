@@ -28,21 +28,7 @@ func TestNormalizePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := normalizePath(tt.in)
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("want error containing %q, got nil", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("want error containing %q, got %v", tt.wantErr, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
+			assertNormalized(t, got, err, tt.want, tt.wantErr)
 		})
 	}
 }
@@ -64,21 +50,26 @@ func TestSpecNormalizedPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.spec.NormalizedPath()
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("want error containing %q, got nil", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("want error containing %q, got %v", tt.wantErr, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
+			assertNormalized(t, got, err, tt.want, tt.wantErr)
 		})
+	}
+}
+
+func assertNormalized(t *testing.T, got string, err error, want, wantErr string) {
+	t.Helper()
+	if wantErr != "" {
+		if err == nil {
+			t.Fatalf("want error containing %q, got nil", wantErr)
+		}
+		if !strings.Contains(err.Error(), wantErr) {
+			t.Fatalf("want error containing %q, got %v", wantErr, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

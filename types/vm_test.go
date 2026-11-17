@@ -194,20 +194,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(&cfg)
-			err := cfg.Validate()
-
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Errorf("expected no error, got %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
-			}
+			assertErrContains(t, cfg.Validate(), tt.wantErr)
 		})
 	}
 }
@@ -273,5 +260,21 @@ func validConfig() VMConfig {
 		CPU:     2,
 		Memory:  1 << 30,
 		Storage: 20 << 30,
+	}
+}
+
+func assertErrContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if want == "" {
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("expected error containing %q, got nil", want)
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not contain %q", err.Error(), want)
 	}
 }

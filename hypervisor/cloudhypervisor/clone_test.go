@@ -19,14 +19,7 @@ import (
 )
 
 func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
-	dir := t.TempDir()
-	path := writeCHConfig(t, dir, baseCHConfig())
-
-	if err := patchCHConfig(path, basePatchOpts()); err != nil {
-		t.Fatalf("patchCHConfig: %v", err)
-	}
-
-	result := readRawJSON(t, path)
+	result := patchAndRead(t, baseCHConfig(), basePatchOpts())
 
 	platform, ok := result["platform"].(map[string]any)
 	if !ok {
@@ -74,15 +67,7 @@ func TestPatchCHConfig_PreservesUnknownFields(t *testing.T) {
 }
 
 func TestPatchCHConfig_UpdatesDiskPaths(t *testing.T) {
-	dir := t.TempDir()
-	path := writeCHConfig(t, dir, baseCHConfig())
-
-	opts := basePatchOpts()
-	if err := patchCHConfig(path, opts); err != nil {
-		t.Fatal(err)
-	}
-
-	result := readRawJSON(t, path)
+	result := patchAndRead(t, baseCHConfig(), basePatchOpts())
 	disks := result["disks"].([]any)
 
 	disk0 := disks[0].(map[string]any)
@@ -102,16 +87,7 @@ func TestPatchCHConfig_UpdatesDiskPaths(t *testing.T) {
 
 func TestPatchCHConfig_SerialConsole(t *testing.T) {
 	t.Run("direct_boot", func(t *testing.T) {
-		dir := t.TempDir()
-		path := writeCHConfig(t, dir, baseCHConfig())
-
-		opts := basePatchOpts()
-		opts.directBoot = true
-		if err := patchCHConfig(path, opts); err != nil {
-			t.Fatal(err)
-		}
-
-		result := readRawJSON(t, path)
+		result := patchAndRead(t, baseCHConfig(), basePatchOpts())
 		serial := result["serial"].(map[string]any)
 		if serial["mode"] != "Off" {
 			t.Errorf("serial.mode: got %v, want Off", serial["mode"])
@@ -123,19 +99,12 @@ func TestPatchCHConfig_SerialConsole(t *testing.T) {
 	})
 
 	t.Run("uefi_boot", func(t *testing.T) {
-		dir := t.TempDir()
 		cfg := baseCHConfig()
 		cfg["payload"] = map[string]any{"firmware": "/boot/OVMF.fd"}
-		path := writeCHConfig(t, dir, cfg)
 
 		opts := basePatchOpts()
 		opts.directBoot = false
-		opts.consoleSock = "/new/console.sock"
-		if err := patchCHConfig(path, opts); err != nil {
-			t.Fatal(err)
-		}
-
-		result := readRawJSON(t, path)
+		result := patchAndRead(t, cfg, opts)
 		serial := result["serial"].(map[string]any)
 		if serial["mode"] != "Socket" {
 			t.Errorf("serial.mode: got %v, want Socket", serial["mode"])
@@ -151,8 +120,7 @@ func TestPatchCHConfig_SerialConsole(t *testing.T) {
 }
 
 func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
-	dir := t.TempDir()
-	path := writeCHConfig(t, dir, baseCHConfig())
+	path := writeCHConfig(t, baseCHConfig())
 
 	opts := basePatchOpts()
 
@@ -167,21 +135,15 @@ func TestPatchCHConfig_DiskCountMismatch(t *testing.T) {
 }
 
 func TestPatchCHConfig_RetargetsNetTAPs(t *testing.T) {
-	dir := t.TempDir()
 	cfg := baseCHConfig()
 	cfg["net"] = []any{
 		map[string]any{"id": "_net2", "tap": "btSOURCE00-0", "mac": "96:39:e0:7e:03:6d", "num_queues": 2},
 		map[string]any{"id": "_net3", "tap": "btSOURCE00-1", "mac": "96:39:e0:7e:03:6e", "num_queues": 2},
 	}
-	path := writeCHConfig(t, dir, cfg)
 
 	opts := basePatchOpts()
 	opts.netTAPs = []string{"btCLONE000-0", "rmCLONE000-1"}
-	if err := patchCHConfig(path, opts); err != nil {
-		t.Fatalf("patchCHConfig: %v", err)
-	}
-
-	result := readRawJSON(t, path)
+	result := patchAndRead(t, cfg, opts)
 	nets := result["net"].([]any)
 	for i, want := range opts.netTAPs {
 		n := nets[i].(map[string]any)
@@ -212,7 +174,6 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
 			cfg := baseCHConfig()
 			sourceAffinity := []any{
 				map[string]any{"queue_index": 0, "host_cpus": []any{0}},
@@ -220,7 +181,7 @@ func TestPatchCHConfig_QueueAffinity(t *testing.T) {
 			}
 			cfg["disks"].([]any)[0].(map[string]any)["queue_affinity"] = sourceAffinity
 			cfg["disks"].([]any)[1].(map[string]any)["queue_affinity"] = sourceAffinity
-			path := writeCHConfig(t, dir, cfg)
+			path := writeCHConfig(t, cfg)
 
 			opts := basePatchOpts()
 			opts.cpu = 2
@@ -338,24 +299,14 @@ func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 		{Path: "/run/cidata.img", RO: true, Role: types.StorageRoleCidata},
 		{Path: "/run/extra.raw", Role: types.StorageRoleData, Serial: "extra"},
 	}
-	scopeParent := t.TempDir()
-	if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	ch := &CloudHypervisor{
-		Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
-		conf:    NewConfig(&config.Config{}),
-	}
-	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+	restoreTestClone(t, sock, &cloneResumeOpts{
 		vmID:           "T",
 		vmCfg:          &types.VMConfig{CPU: 2},
 		storageConfigs: storageConfigs,
 		dataDisks:      storageConfigs[2:],
 		snapshotCfg:    &chVMConfig{},
 		queueCPUs:      []int{8, 9},
-	}); err != nil {
-		t.Fatalf("restoreAndResumeClone: %v", err)
-	}
+	})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -380,9 +331,9 @@ func sameQueueAffinity(a, b chQueueAffinity) bool {
 	return a.QueueIndex == b.QueueIndex && slices.Equal(a.HostCPUs, b.HostCPUs)
 }
 
-func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
+func writeCHConfig(t *testing.T, cfg map[string]any) string {
 	t.Helper()
-	path := filepath.Join(dir, "config.json")
+	path := filepath.Join(t.TempDir(), "config.json")
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -391,6 +342,15 @@ func writeCHConfig(t *testing.T, dir string, cfg map[string]any) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func patchAndRead(t *testing.T, cfg map[string]any, opts *patchOptions) map[string]any {
+	t.Helper()
+	path := writeCHConfig(t, cfg)
+	if err := patchCHConfig(path, opts); err != nil {
+		t.Fatalf("patchCHConfig: %v", err)
+	}
+	return readRawJSON(t, path)
 }
 
 func readRawJSON(t *testing.T, path string) map[string]any {
@@ -500,6 +460,21 @@ type tmpScopeConf struct {
 }
 
 func (c tmpScopeConf) CgroupParentDir() string { return c.parent }
+
+func restoreTestClone(t *testing.T, sock string, opts *cloneResumeOpts) {
+	t.Helper()
+	scopeParent := t.TempDir()
+	if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	ch := &CloudHypervisor{
+		Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
+		conf:    NewConfig(&config.Config{}),
+	}
+	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), opts); err != nil {
+		t.Fatalf("restoreAndResumeClone: %v", err)
+	}
+}
 
 func writeQcow2(t *testing.T, path, backing string) {
 	t.Helper()

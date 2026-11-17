@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -16,56 +17,42 @@ import (
 
 func TestInitRefusesExisting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := Init(t.Context(), path, testDecls()...); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "refusing to reinitialize") {
-		t.Fatalf("want reinit refusal, got %v", err)
-	}
+	mustInit(t, path)
+	requireErrContains(t, Init(t.Context(), path, testDecls()...), "refusing to reinitialize")
 }
 
-func TestFailedInitRestarts(t *testing.T) {
-	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := Init(t.Context(), path, testDecls()...); err != nil {
-		t.Fatalf("init over crashed init: %v", err)
-	}
-	if _, err := Open(path, testDecls()...); err != nil {
-		t.Fatalf("open: %v", err)
+func TestCrashedInitRepaired(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		fn   func(context.Context, string, ...Namespace) error
+	}{
+		{"Init", Init},
+		{"InitIfMissing", InitIfMissing},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), DBFileName)
+			if err := os.WriteFile(path, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := tt.fn(t.Context(), path, testDecls()...); err != nil {
+				t.Fatalf("%s over crashed init: %v", tt.name, err)
+			}
+			mustOpen(t, path)
+		})
 	}
 }
 
 func TestInitIdentityAtomicWithSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
 
-	db, err := open(path, "FULL", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL, source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT)"); err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Close()
-	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
-		t.Fatalf("want loud refusal on half-identified db, got %v", err)
-	}
+	execRaw(t, path, "CREATE TABLE meta_state (namespace TEXT NOT NULL PRIMARY KEY, state TEXT NOT NULL, source TEXT, sha256 TEXT, records INTEGER, applied_at TEXT)")
+	requireErrContains(t, Init(t.Context(), path, testDecls()...), "move it aside")
 }
 
 func TestForeignPopulatedDBRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	db, err := open(path, "FULL", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("CREATE TABLE somebody_elses (id INTEGER PRIMARY KEY)"); err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Close()
-	if err := Init(t.Context(), path, testDecls()...); err == nil || !strings.Contains(err.Error(), "move it aside") {
-		t.Fatalf("want foreign-db refusal, got %v", err)
-	}
+	execRaw(t, path, "CREATE TABLE somebody_elses (id INTEGER PRIMARY KEY)")
+	requireErrContains(t, Init(t.Context(), path, testDecls()...), "move it aside")
 	if !utils.FileExists(path) {
 		t.Fatal("foreign db was deleted")
 	}
@@ -80,33 +67,20 @@ func TestIdentityFailClosed(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), DBFileName)
-			if err := Init(t.Context(), path, testDecls()...); err != nil {
-				t.Fatalf("init: %v", err)
-			}
-			db, err := open(path, "FULL", true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec(tt.pragma); err != nil {
-				t.Fatal(err)
-			}
-			_ = db.Close()
-			if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("want %q, got %v", tt.want, err)
-			}
+			mustInit(t, path)
+			execRaw(t, path, tt.pragma)
+			_, err := Open(path, testDecls()...)
+			requireErrContains(t, err, tt.want)
 		})
 	}
 }
 
 func TestUninitializedNamespaceRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := Init(t.Context(), path, testDecls()...); err != nil {
-		t.Fatalf("init: %v", err)
-	}
+	mustInit(t, path)
 	extra := append(testDecls(), Namespace{Name: "late", Tables: []string{"records"}})
-	if _, err := Open(path, extra...); err == nil || !strings.Contains(err.Error(), "uninitialized") {
-		t.Fatalf("want uninitialized refusal, got %v", err)
-	}
+	_, err := Open(path, extra...)
+	requireErrContains(t, err, "uninitialized")
 }
 
 func TestInitIfMissingRaces(t *testing.T) {
@@ -127,46 +101,19 @@ func TestInitIfMissingRaces(t *testing.T) {
 	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
 		t.Fatalf("idempotent recheck: %v", err)
 	}
-	s, err := Open(path, testDecls()...)
-	if err != nil {
-		t.Fatalf("open bootstrapped store: %v", err)
-	}
-	_ = s.Close()
+	mustOpen(t, path)
 	if utils.FileExists(filepath.Join(filepath.Dir(path), initLockName)) {
 		t.Fatal("transient init lock left behind")
-	}
-}
-
-func TestInitIfMissingRepairsCrashedInit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := InitIfMissing(t.Context(), path, testDecls()...); err != nil {
-		t.Fatalf("bootstrap over crashed init: %v", err)
-	}
-	if _, err := Open(path, testDecls()...); err != nil {
-		t.Fatalf("open repaired store: %v", err)
 	}
 }
 
 func TestOpenRefusesOlderGeneration(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if err := Init(ctx, path, testDecls()...); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	db, err := open(path, "FULL", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", UserVersion-1)); err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Close()
-	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta-upgrade.py") {
-		t.Fatalf("open of an older generation = %v; want a refusal naming the upgrade script", err)
-	}
+	mustInit(t, path)
+	execRaw(t, path, fmt.Sprintf("PRAGMA user_version = %d", UserVersion-1))
+	_, err := Open(path, testDecls()...)
+	requireErrContains(t, err, "meta-upgrade.py")
 	if err := InitIfMissing(ctx, path, testDecls()...); err != nil {
 		t.Fatalf("bootstrap must pass an initialized store through untouched: %v", err)
 	}
@@ -174,9 +121,8 @@ func TestOpenRefusesOlderGeneration(t *testing.T) {
 
 func TestOpenDoesNotCreate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DBFileName)
-	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "meta init") {
-		t.Fatalf("want missing-store refusal, got %v", err)
-	}
+	_, err := Open(path, testDecls()...)
+	requireErrContains(t, err, "meta init")
 	if utils.FileExists(path) {
 		t.Fatal("Open created a file")
 	}
@@ -185,17 +131,12 @@ func TestOpenDoesNotCreate(t *testing.T) {
 func TestUnsupportedFSRefused(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, DBFileName)
-	if err := Init(t.Context(), path, testDecls()...); err != nil {
-		t.Fatalf("init: %v", err)
-	}
+	mustInit(t, path)
 	t.Setenv("COCOON_TEST_UNSUPPORTED_FS", "nfs")
-	if _, err := Open(path, testDecls()...); err == nil || !strings.Contains(err.Error(), "unsupported filesystem") {
-		t.Fatalf("open: want fs refusal, got %v", err)
-	}
+	_, err := Open(path, testDecls()...)
+	requireErrContains(t, err, "unsupported filesystem")
 	fresh := filepath.Join(dir, "sub", DBFileName)
-	if err := Init(t.Context(), fresh, testDecls()...); err == nil || !strings.Contains(err.Error(), "unsupported filesystem") {
-		t.Fatalf("init: want fs refusal, got %v", err)
-	}
+	requireErrContains(t, Init(t.Context(), fresh, testDecls()...), "unsupported filesystem")
 	if utils.FileExists(fresh) {
 		t.Fatal("init created WAL state on refused filesystem")
 	}
@@ -208,34 +149,18 @@ func TestInitIfMissingWaitsOutABusyBootstrap(t *testing.T) {
 	if err := initLock.Lock(ctx); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := sql.Open("sqlite", "file:"+path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := raw.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
-		t.Fatal(err)
-	}
+	release := holdExclusive(t, path)
 	done := make(chan error, 1)
 	go func() { done <- InitIfMissing(ctx, path, testDecls()...) }()
 	time.Sleep(500 * time.Millisecond)
-	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.Close()
-	_ = raw.Close()
+	release()
 	if err := initLock.Unlock(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("bootstrap behind a busy racer: %v", err)
 	}
-	if _, err := Open(path, testDecls()...); err != nil {
-		t.Fatalf("open bootstrapped store: %v", err)
-	}
+	mustOpen(t, path)
 }
 
 func TestInitWaitsForTheInitLock(t *testing.T) {
@@ -258,39 +183,21 @@ func TestInitWaitsForTheInitLock(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Init after the bootstrap released the lock: %v", err)
 	}
-	if _, err := Open(path, testDecls()...); err != nil {
-		t.Fatalf("open initialized store: %v", err)
-	}
+	mustOpen(t, path)
 }
 
 func TestInitIfMissingRetriesABusyLockedRecheck(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), DBFileName)
-	raw, err := sql.Open("sqlite", "file:"+path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := raw.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
-		t.Fatal(err)
-	}
+	release := holdExclusive(t, path)
 	done := make(chan error, 1)
 	go func() { done <- InitIfMissing(ctx, path, testDecls()...) }()
 	time.Sleep(300 * time.Millisecond)
-	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.Close()
-	_ = raw.Close()
+	release()
 	if err := <-done; err != nil {
 		t.Fatalf("bootstrap whose locked recheck met a busy database: %v", err)
 	}
-	if _, err := Open(path, testDecls()...); err != nil {
-		t.Fatalf("open bootstrapped store: %v", err)
-	}
+	mustOpen(t, path)
 }
 
 func TestInitIfMissingRepairsInPlaceUnderAnOpenProbe(t *testing.T) {
@@ -320,4 +227,63 @@ func TestInitIfMissingRepairsInPlaceUnderAnOpenProbe(t *testing.T) {
 
 func testDecls() []Namespace {
 	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
+}
+
+func mustInit(t *testing.T, path string) {
+	t.Helper()
+	if err := Init(t.Context(), path, testDecls()...); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+}
+
+func mustOpen(t *testing.T, path string) *Store {
+	t.Helper()
+	s, err := Open(path, testDecls()...)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func execRaw(t *testing.T, path, stmt string) {
+	t.Helper()
+	db, err := open(path, "FULL", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+}
+
+func holdExclusive(t *testing.T, path string) (release func()) {
+	t.Helper()
+	ctx := t.Context()
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := raw.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+		_ = raw.Close()
+	}
+}
+
+func requireErrContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want error containing %q", err, want)
+	}
 }

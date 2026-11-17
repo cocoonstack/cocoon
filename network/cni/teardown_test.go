@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/cocoonstack/cocoon/meta"
-	metajson "github.com/cocoonstack/cocoon/meta/json"
 	"github.com/cocoonstack/cocoon/meta/tombstone"
 	"github.com/cocoonstack/cocoon/network"
 )
@@ -20,11 +19,8 @@ func TestSubsetTeardownRecovery(t *testing.T) {
 	stubLifecycleSeams(t)
 	netnsRemoved := 0
 	var tapsDeleted []string
-	origNetns, origTAP, origStat := deleteNetnsFn, deleteTAPFn, statNetnsFn
-	deleteNetnsFn = func(context.Context, string) error { netnsRemoved++; return nil }
-	deleteTAPFn = func(_, tap string) error { tapsDeleted = append(tapsDeleted, tap); return nil }
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
-	t.Cleanup(func() { deleteNetnsFn, deleteTAPFn, statNetnsFn = origNetns, origTAP, origStat })
+	swap(t, &deleteNetnsFn, func(context.Context, string) error { netnsRemoved++; return nil })
+	swap(t, &deleteTAPFn, func(_, tap string) error { tapsDeleted = append(tapsDeleted, tap); return nil })
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 
@@ -67,10 +63,8 @@ func TestAggregateRecoveryAfterNetnsGone(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
 	tapDeletes := 0
-	origTAP, origStat := deleteTAPFn, statNetnsFn
-	deleteTAPFn = func(string, string) error { tapDeletes++; return nil }
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
-	t.Cleanup(func() { deleteTAPFn, statNetnsFn = origTAP, origStat })
+	swap(t, &deleteTAPFn, func(string, string) error { tapDeletes++; return nil })
+	swap(t, &statNetnsFn, func(string) (os.FileInfo, error) { return nil, os.ErrNotExist })
 	ctx := t.Context()
 	seedRecords(t, c, "vm5", "eth0")
 
@@ -128,14 +122,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	if err := os.WriteFile(path, baseline, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store, err := metajson.Open(metajson.Namespace{
-		Name: NamespaceName, FilePath: path, LockPath: filepath.Join(dir, "networks.lock"), Codec: testNetTables,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	c := &CNI{meta: store}
+	c := &CNI{meta: openNetStore(t, dir, "networks")}
 
 	if err := c.update(ctx, func(*netTx) error { return nil }); err != nil {
 		t.Fatal(err)
@@ -188,59 +175,39 @@ func TestAddRefusesAfterAggregateRollForward(t *testing.T) {
 	}
 }
 
-func TestDeleteRefusesAfterSubsetRollForward(t *testing.T) {
-	c, _ := newTestCNIWithStore(t)
-	stubLifecycleSeams(t)
-	ctx := t.Context()
-	seedRecords(t, c, "vm8", "eth0", "eth1")
+func TestOpsRefuseAfterSubsetRollForward(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		op         func(context.Context, *CNI) error
+		checkRetry bool
+	}{
+		{"Delete over a subset tombstone", func(ctx context.Context, c *CNI) error { return c.Delete(ctx, "vm1") }, true},
+		{"Add after subset roll-forward", func(ctx context.Context, c *CNI) error {
+			_, err := c.Add(ctx, "vm1", testVMCfg(), network.AddSpec{Index: 2})
+			return err
+		}, false},
+		{"Remove of eth0 over an eth1 tombstone", func(ctx context.Context, c *CNI) error { return c.Remove(ctx, "vm1", 0) }, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := newTestCNIWithStore(t)
+			stubLifecycleSeams(t)
+			ctx := t.Context()
+			seedRecords(t, c, "vm1", "eth0", "eth1")
+			markDeleting(t, c, "vm1", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
 
-	markDeleting(t, c, "vm8", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
+			if err := tt.op(ctx, c); !errors.Is(err, meta.ErrConflict) {
+				t.Fatalf("%s must finish it and refuse with ErrConflict, got %v", tt.name, err)
+			}
+			assertRecordIDs(t, c, []string{"n-eth0"})
 
-	if err := c.Delete(ctx, "vm8"); !errors.Is(err, meta.ErrConflict) {
-		t.Fatalf("Delete over a subset tombstone must finish it and refuse with ErrConflict, got %v", err)
+			if err := tt.op(ctx, c); err != nil {
+				t.Fatalf("retry after recovery: %v", err)
+			}
+			if tt.checkRetry {
+				assertRecordIDs(t, c, nil)
+			}
+		})
 	}
-	assertRecordIDs(t, c, []string{"n-eth0"})
-
-	if err := c.Delete(ctx, "vm8"); err != nil {
-		t.Fatalf("retry after recovery: %v", err)
-	}
-	assertRecordIDs(t, c, nil)
-}
-
-func TestAddRefusesAfterSubsetRollForward(t *testing.T) {
-	c, _ := newTestCNIWithStore(t)
-	stubLifecycleSeams(t)
-	ctx := t.Context()
-	seedRecords(t, c, "vm7", "eth0", "eth1")
-
-	markDeleting(t, c, "vm7", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
-
-	if _, err := c.Add(ctx, "vm7", testVMCfg(), network.AddSpec{Index: 2}); !errors.Is(err, meta.ErrConflict) {
-		t.Fatalf("Add after subset roll-forward must refuse with ErrConflict, got %v", err)
-	}
-	assertRecordIDs(t, c, []string{"n-eth0"})
-
-	if _, err := c.Add(ctx, "vm7", testVMCfg(), network.AddSpec{Index: 2}); err != nil {
-		t.Fatalf("retry after recovery: %v", err)
-	}
-}
-
-func TestRemoveRefusesAfterDifferentSubsetRollForward(t *testing.T) {
-	c, _ := newTestCNIWithStore(t)
-	stubLifecycleSeams(t)
-	ctx := t.Context()
-	seedRecords(t, c, "vm9", "eth0", "eth1")
-	markDeleting(t, c, "vm9", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
-
-	if err := c.Remove(ctx, "vm9", 0); !errors.Is(err, meta.ErrConflict) {
-		t.Fatalf("Remove of eth0 over an eth1 tombstone must finish it and refuse with ErrConflict, got %v", err)
-	}
-	assertRecordIDs(t, c, []string{"n-eth0"})
-
-	if err := c.Remove(ctx, "vm9", 0); err != nil {
-		t.Fatalf("retry after recovery: %v", err)
-	}
-	assertRecordIDs(t, c, nil)
 }
 
 func tombstoneOf(t *testing.T, c *CNI, vmID string) *tombstone.Record {

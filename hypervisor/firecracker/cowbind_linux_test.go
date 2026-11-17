@@ -10,10 +10,7 @@ import (
 
 func TestVerifyDriveFDs(t *testing.T) {
 	dir := t.TempDir()
-	dst := filepath.Join(dir, "clone-cow.raw")
-	if err := os.WriteFile(dst, []byte("x"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	dst := writeTestFile(t, dir, "clone-cow.raw")
 	binds := [][2]string{{filepath.Join(dir, "src.raw"), dst}}
 
 	if err := verifyDriveFDs(os.Getpid(), binds); err == nil {

@@ -112,9 +112,7 @@ func TestLaunchArgsEnablePCI(t *testing.T) {
 }
 
 func fakeELF() []byte {
-	out := slices.Clone(elfMagic)
-	out = append(out, bytes.Repeat([]byte{0x00}, 60)...)
-	return out
+	return slices.Concat(elfMagic, make([]byte, 60))
 }
 
 func gzipCompress(t *testing.T, data []byte) []byte {

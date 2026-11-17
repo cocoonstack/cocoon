@@ -47,21 +47,16 @@ func TestCHNICOpsRemoveNICWaitsForEject(t *testing.T) {
 
 func TestConvergeOrphanedPause(t *testing.T) {
 	var (
-		mu      sync.Mutex
 		resumes int
 		state   = chStatePaused
 	)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/vm.resume", func(w http.ResponseWriter, _ *http.Request) {
-		mu.Lock()
 		resumes++
-		state = "Running"
-		mu.Unlock()
+		state = chStateRunning
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
 		_ = json.MarshalWrite(w, chVMInfoResponse{State: state})
 	})
 	hc := &http.Client{Transport: handlerTransport{mux}}
@@ -74,7 +69,7 @@ func TestConvergeOrphanedPause(t *testing.T) {
 		t.Fatalf("resumes = %d, want the orphaned pause resumed once", resumes)
 	}
 
-	if fresh.State != "Running" {
+	if fresh.State != chStateRunning {
 		t.Errorf("returned state = %q, want the refreshed Running", fresh.State)
 	}
 	if _, err = convergeOrphanedPause(t.Context(), hc, "vm1", t.TempDir()); err != nil {

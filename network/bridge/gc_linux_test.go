@@ -11,16 +11,14 @@ import (
 )
 
 func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
-	oldList, oldDelete := listLinksFn, deleteLinkFn
-	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
-	listLinksFn = func() ([]netlink.Link, error) {
+	swap(t, &listLinksFn, func() ([]netlink.Link, error) {
 		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}, &netlink.Dummy{Name: "btBBBBBBBB-0", Index: 2}}, nil
-	}
+	})
 	var deleted []int
-	deleteLinkFn = func(link netlink.Link) error {
+	swap(t, &deleteLinkFn, func(link netlink.Link) error {
 		deleted = append(deleted, link.Attrs().Index)
 		return nil
-	}
+	})
 	readErr := errors.New("owner read failed")
 	m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
 		if id == "AAAAAAAA" {
@@ -38,20 +36,18 @@ func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 }
 
 func TestGCReportsAFailedTAPDelete(t *testing.T) {
-	oldList, oldDelete := listLinksFn, deleteLinkFn
-	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
-	listLinksFn = func() ([]netlink.Link, error) {
+	swap(t, &listLinksFn, func() ([]netlink.Link, error) {
 		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}, &netlink.Dummy{Name: "btAAAAAAAA-1", Index: 2}}, nil
-	}
+	})
 	delErr := errors.New("link busy")
 	var deleted []int
-	deleteLinkFn = func(link netlink.Link) error {
+	swap(t, &deleteLinkFn, func(link netlink.Link) error {
 		deleted = append(deleted, link.Attrs().Index)
 		if link.Attrs().Index == 1 {
 			return delErr
 		}
 		return nil
-	}
+	})
 	m := GCModule("bt", func(context.Context, string) (bool, error) { return false, nil })
 	err := m.Collect(t.Context(), []string{"AAAAAAAA"}, bridgeSnapshot{})
 	if !errors.Is(err, delErr) {
@@ -63,11 +59,9 @@ func TestGCReportsAFailedTAPDelete(t *testing.T) {
 }
 
 func TestGCReadsAnInterruptedLinkDump(t *testing.T) {
-	oldList := listLinksFn
-	t.Cleanup(func() { listLinksFn = oldList })
-	listLinksFn = func() ([]netlink.Link, error) {
+	swap(t, &listLinksFn, func() ([]netlink.Link, error) {
 		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}}, netlink.ErrDumpInterrupted
-	}
+	})
 	snap, err := GCModule("bt", nil).ReadDB(t.Context())
 	if err != nil {
 		t.Fatalf("ReadDB: %v, want an interrupted dump read as its partial list", err)
@@ -89,20 +83,18 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 		{name: "read failure", err: readErr},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			oldList, oldDelete := listLinksFn, deleteLinkFn
-			t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
 			lists, deletes, reads := 0, 0, 0
-			listLinksFn = func() ([]netlink.Link, error) {
+			swap(t, &listLinksFn, func() ([]netlink.Link, error) {
 				lists++
 				return []netlink.Link{&netlink.Dummy{Name: "btAB234567-0", Index: 123}}, nil
-			}
-			deleteLinkFn = func(link netlink.Link) error {
+			})
+			swap(t, &deleteLinkFn, func(link netlink.Link) error {
 				deletes++
 				if link.Attrs().Index != 123 {
 					t.Errorf("delete index = %d", link.Attrs().Index)
 				}
 				return nil
-			}
+			})
 			m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
 				reads++
 				if lists != 2 || id != "AB234567" {
@@ -130,4 +122,11 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func swap[T any](t *testing.T, p *T, v T) {
+	t.Helper()
+	old := *p
+	*p = v
+	t.Cleanup(func() { *p = old })
 }

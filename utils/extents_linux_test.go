@@ -18,9 +18,7 @@ func TestFileExtentsReportsDataAndSkipsHoles(t *testing.T) {
 	if err = f.Truncate(1 << 22); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	if _, err = f.WriteAt(make([]byte, 4096), 1<<21); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	writeAt(t, f, 1<<21, make([]byte, 4096))
 	extents, err := FileExtents(f)
 	if err != nil {
 		t.Skipf("filesystem has no FIEMAP: %v", err)
@@ -44,9 +42,7 @@ func TestPunchHoleKeepsSize(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	defer f.Close()
-	if _, err = f.WriteAt([]byte{1, 2, 3, 4}, 0); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	writeAt(t, f, 0, []byte{1, 2, 3, 4})
 	if err = PunchHole(f, 0, 2); err != nil {
 		t.Skipf("filesystem has no hole punch: %v", err)
 	}

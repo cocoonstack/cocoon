@@ -3,6 +3,7 @@ package oci
 import (
 	"archive/tar"
 	"bytes"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -88,14 +89,8 @@ func TestRunErofsConversionWhiteouts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got := listErofsDir(t, image, tt.path)
-		if len(got) != len(tt.want) {
+		if !maps.Equal(got, tt.want) {
 			t.Errorf("%s entries = %v, want %v", tt.path, got, tt.want)
-			continue
-		}
-		for name, typ := range tt.want {
-			if got[name] != typ {
-				t.Errorf("%s type = %q, want %q (entries %v)", filepath.Join(tt.path, name), got[name], typ, got)
-			}
 		}
 	}
 }

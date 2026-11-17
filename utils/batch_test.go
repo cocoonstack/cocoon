@@ -3,56 +3,44 @@ package utils
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestForEach_AllSucceed(t *testing.T) {
-	result := ForEach(t.Context(), []string{"a", "b", "c"}, func(_ context.Context, _ string) error {
-		return nil
-	})
+func TestForEach(t *testing.T) {
+	tests := []struct {
+		name    string
+		ids     []string
+		fail    map[string]bool
+		wantOK  int
+		wantErr int
+	}{
+		{"all succeed", []string{"a", "b", "c"}, nil, 3, 0},
+		{"all fail", []string{"x", "y"}, map[string]bool{"x": true, "y": true}, 0, 2},
+		{"partial failure", []string{"ok", "fail", "ok2"}, map[string]bool{"fail": true}, 2, 1},
+		{"single id", []string{"only"}, nil, 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ForEach(t.Context(), tt.ids, func(_ context.Context, id string) error {
+				if tt.fail[id] {
+					return fmt.Errorf("fail %s", id)
+				}
+				return nil
+			})
 
-	if len(result.Succeeded) != 3 {
-		t.Errorf("succeeded: got %d, want 3", len(result.Succeeded))
-	}
-	if len(result.Errors) != 0 {
-		t.Errorf("errors: got %d, want 0", len(result.Errors))
-	}
-	if result.Err() != nil {
-		t.Errorf("Err(): got %v, want nil", result.Err())
-	}
-}
-
-func TestForEach_AllFail(t *testing.T) {
-	result := ForEach(t.Context(), []string{"x", "y"}, func(_ context.Context, id string) error {
-		return fmt.Errorf("fail %s", id)
-	})
-
-	if len(result.Succeeded) != 0 {
-		t.Errorf("succeeded: got %d, want 0", len(result.Succeeded))
-	}
-	if len(result.Errors) != 2 {
-		t.Errorf("errors: got %d, want 2", len(result.Errors))
-	}
-	if result.Err() == nil {
-		t.Error("Err(): expected non-nil")
-	}
-}
-
-func TestForEach_PartialFailure(t *testing.T) {
-	result := ForEach(t.Context(), []string{"ok", "fail", "ok2"}, func(_ context.Context, id string) error {
-		if id == "fail" {
-			return fmt.Errorf("error on %s", id)
-		}
-		return nil
-	})
-
-	if len(result.Succeeded) != 2 {
-		t.Errorf("succeeded: got %v, want 2", result.Succeeded)
-	}
-	if len(result.Errors) != 1 {
-		t.Errorf("errors: got %d, want 1", len(result.Errors))
+			if len(result.Succeeded) != tt.wantOK {
+				t.Errorf("succeeded: got %d, want %d", len(result.Succeeded), tt.wantOK)
+			}
+			if len(result.Errors) != tt.wantErr {
+				t.Errorf("errors: got %d, want %d", len(result.Errors), tt.wantErr)
+			}
+			if (result.Err() != nil) != (tt.wantErr > 0) {
+				t.Errorf("Err(): got %v, want non-nil=%v", result.Err(), tt.wantErr > 0)
+			}
+		})
 	}
 }
 
@@ -74,18 +62,6 @@ func TestBatchResult_Err_NilForNoErrors(t *testing.T) {
 	r := BatchResult[string]{Succeeded: []string{"a"}}
 	if r.Err() != nil {
 		t.Errorf("expected nil, got %v", r.Err())
-	}
-}
-
-func TestForEach_SingleID(t *testing.T) {
-	result := ForEach(t.Context(), []string{"only"}, func(_ context.Context, id string) error {
-		if id != "only" {
-			t.Errorf("unexpected id: %s", id)
-		}
-		return nil
-	})
-	if len(result.Succeeded) != 1 {
-		t.Errorf("succeeded: got %d, want 1", len(result.Succeeded))
 	}
 }
 
@@ -154,14 +130,8 @@ func TestMap_AllSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"v1", "v2", "v3"}
-	if len(results) != len(want) {
-		t.Fatalf("results: got %d, want %d", len(results), len(want))
-	}
-	for i, got := range results {
-		if got != want[i] {
-			t.Errorf("results[%d]: got %q, want %q", i, got, want[i])
-		}
+	if want := []string{"v1", "v2", "v3"}; !slices.Equal(results, want) {
+		t.Errorf("got %v, want %v", results, want)
 	}
 }
 
@@ -202,17 +172,13 @@ func TestMap_PreservesOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []int{20, 40, 60, 80, 100}
-	for i, got := range results {
-		if got != want[i] {
-			t.Errorf("results[%d]: got %d, want %d", i, got, want[i])
-		}
+	if want := []int{20, 40, 60, 80, 100}; !slices.Equal(results, want) {
+		t.Errorf("got %v, want %v", results, want)
 	}
 }
 
 func TestMap_WithConcurrencyLimit(t *testing.T) {
-	var peak atomic.Int32
-	var cur atomic.Int32
+	var peak, cur atomic.Int32
 
 	results, err := Map(t.Context(), []int{1, 2, 3, 4, 5}, func(_ context.Context, _, n int) (int, error) {
 		raisePeak(&peak, cur.Add(1))
@@ -239,11 +205,8 @@ func TestMap_IndexPassedCorrectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"0:a", "1:b", "2:c"}
-	for i, got := range results {
-		if got != want[i] {
-			t.Errorf("results[%d]: got %q, want %q", i, got, want[i])
-		}
+	if want := []string{"0:a", "1:b", "2:c"}; !slices.Equal(results, want) {
+		t.Errorf("got %v, want %v", results, want)
 	}
 }
 

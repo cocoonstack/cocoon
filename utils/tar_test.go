@@ -15,76 +15,58 @@ import (
 )
 
 func TestTarFile(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "hello.txt")
-	content := []byte("hello tar world")
-	if err := os.WriteFile(src, content, 0o644); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name      string
+		srcName   string
+		nameInTar string
+		content   []byte
+	}{
+		{"renamed", "hello.txt", "custom-name.txt", []byte("hello tar world")},
+		{"empty file", "empty.txt", "empty.txt", nil},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := filepath.Join(t.TempDir(), tt.srcName)
+			if err := os.WriteFile(src, tt.content, 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := openAndTarFile(tw, src, "custom-name.txt"); err != nil {
-		t.Fatalf("openAndTarFile: %v", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			if err := openAndTarFile(tw, src, tt.nameInTar); err != nil {
+				t.Fatalf("openAndTarFile: %v", err)
+			}
+			if err := tw.Close(); err != nil {
+				t.Fatal(err)
+			}
 
-	tr := tar.NewReader(&buf)
-	hdr, err := tr.Next()
-	if err != nil {
-		t.Fatalf("tar.Next: %v", err)
-	}
-	if hdr.Name != "custom-name.txt" {
-		t.Errorf("name: got %q, want %q", hdr.Name, "custom-name.txt")
-	}
-	if hdr.Size != int64(len(content)) {
-		t.Errorf("size: got %d, want %d", hdr.Size, len(content))
-	}
-	got, err := io.ReadAll(tr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, content) {
-		t.Errorf("content mismatch: got %q, want %q", got, content)
-	}
-	if _, err := tr.Next(); !errors.Is(err, io.EOF) {
-		t.Errorf("expected EOF, got %v", err)
-	}
-}
-
-func TestTarFile_EmptyFile(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "empty.txt")
-	if err := os.WriteFile(src, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := openAndTarFile(tw, src, "empty.txt"); err != nil {
-		t.Fatalf("openAndTarFile: %v", err)
-	}
-	tw.Close()
-
-	tr := tar.NewReader(&buf)
-	hdr, err := tr.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hdr.Size != 0 {
-		t.Errorf("expected size 0, got %d", hdr.Size)
-	}
-	data, _ := io.ReadAll(tr)
-	if len(data) != 0 {
-		t.Errorf("expected empty data, got %d bytes", len(data))
+			tr := tar.NewReader(&buf)
+			hdr, err := tr.Next()
+			if err != nil {
+				t.Fatalf("tar.Next: %v", err)
+			}
+			if hdr.Name != tt.nameInTar {
+				t.Errorf("name: got %q, want %q", hdr.Name, tt.nameInTar)
+			}
+			if hdr.Size != int64(len(tt.content)) {
+				t.Errorf("size: got %d, want %d", hdr.Size, len(tt.content))
+			}
+			got, err := io.ReadAll(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, tt.content) {
+				t.Errorf("content mismatch: got %q, want %q", got, tt.content)
+			}
+			if _, err := tr.Next(); !errors.Is(err, io.EOF) {
+				t.Errorf("expected EOF, got %v", err)
+			}
+		})
 	}
 }
 
 func TestTarFile_NotExist(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+	tw := tar.NewWriter(io.Discard)
 	if err := openAndTarFile(tw, "/nonexistent/file.txt", "file.txt"); err == nil {
 		t.Fatal("expected error for nonexistent file")
 	}
@@ -162,8 +144,7 @@ func TestTarDir_Empty(t *testing.T) {
 }
 
 func TestTarDir_NotExist(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+	tw := tar.NewWriter(io.Discard)
 	if err := TarDir(tw, "/nonexistent/dir"); err == nil {
 		t.Fatal("expected error for nonexistent dir")
 	}
@@ -207,13 +188,8 @@ func TestExtractTar_SkipsDirectories(t *testing.T) {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != "file.txt" {
-		names := make([]string, len(entries))
-		for i, e := range entries {
-			names[i] = e.Name()
-		}
-		t.Errorf("expected only file.txt, got %v", names)
+	if got := dirNames(t, dir); !slices.Equal(got, []string{"file.txt"}) {
+		t.Errorf("expected only file.txt, got %v", got)
 	}
 }
 
@@ -254,9 +230,8 @@ func TestExtractTar_SkipsDotNames(t *testing.T) {
 	if err := ExtractTar(dir, &buf); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != "ok.txt" {
-		t.Errorf("unexpected entries: %v", entries)
+	if got := dirNames(t, dir); !slices.Equal(got, []string{"ok.txt"}) {
+		t.Errorf("unexpected entries: %v", got)
 	}
 }
 
@@ -266,9 +241,8 @@ func TestExtractTar_Empty(t *testing.T) {
 	if err := ExtractTar(dir, buf); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
-		t.Errorf("expected empty dir, got %d entries", len(entries))
+	if got := dirNames(t, dir); len(got) != 0 {
+		t.Errorf("expected empty dir, got %d entries", len(got))
 	}
 }
 
@@ -284,6 +258,8 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 		"config.json":   []byte(`{"key":"value"}`),
 		"state.json":    []byte(`{"state":"paused"}`),
 		"memory-ranges": bytes.Repeat([]byte{0xAB}, 1024),
+		"large.bin":     bytes.Repeat([]byte{0xFE}, 128*1024),
+		"small.txt":     []byte("tiny config"),
 	}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(srcDir, name), data, 0o644); err != nil {
@@ -315,140 +291,70 @@ func TestExtractTar_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestExtractTar_Sparse_SingleSegment(t *testing.T) {
-	const realSize = 1024 * 1024
-	dataContent := bytes.Repeat([]byte{0xAA}, 4096)
-	segments := []sparseSegment{{Offset: 8192, Length: 4096}}
-
-	buf := makeTarSparse(t, "sparse.bin", realSize, segments, dataContent)
-	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(filepath.Join(dir, "sparse.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if int64(len(got)) != realSize {
-		t.Fatalf("logical size: got %d, want %d", len(got), realSize)
-	}
-
-	if !isAllZero(got[:8192]) {
-		t.Fatal("leading hole not zero")
-	}
-	if !bytes.Equal(got[8192:8192+4096], dataContent) {
-		t.Error("data segment content mismatch")
-	}
-	if !isAllZero(got[8192+4096:]) {
-		t.Fatal("trailing hole not zero")
-	}
-}
-
-func TestExtractTar_Sparse_MultipleSegments(t *testing.T) {
-	const realSize = 64 * 1024
-	seg1 := bytes.Repeat([]byte{0x11}, 4096)
-	seg2 := bytes.Repeat([]byte{0x22}, 4096)
-	seg3 := bytes.Repeat([]byte{0x33}, 8192)
-	segments := []sparseSegment{
-		{Offset: 0, Length: 4096},
-		{Offset: 16384, Length: 4096},
-		{Offset: 49152, Length: 8192},
-	}
-	data := slices.Concat(seg1, seg2, seg3)
-
-	buf := makeTarSparse(t, "multi.bin", realSize, segments, data)
-	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(filepath.Join(dir, "multi.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if int64(len(got)) != realSize {
-		t.Fatalf("size: got %d, want %d", len(got), realSize)
-	}
-
-	if !bytes.Equal(got[0:4096], seg1) {
-		t.Error("segment 1 mismatch")
-	}
-	if !isAllZero(got[4096:16384]) {
-		t.Error("hole between seg1 and seg2 not zero")
-	}
-	if !bytes.Equal(got[16384:16384+4096], seg2) {
-		t.Error("segment 2 mismatch")
-	}
-	if !isAllZero(got[16384+4096 : 49152]) {
-		t.Error("hole between seg2 and seg3 not zero")
-	}
-	if !bytes.Equal(got[49152:49152+8192], seg3) {
-		t.Error("segment 3 mismatch")
-	}
-	if !isAllZero(got[49152+8192:]) {
-		t.Error("trailing hole not zero")
-	}
-}
-
-func TestExtractTar_Sparse_EntireFileIsHole(t *testing.T) {
-	const realSize = 32 * 1024
-	buf := makeTarSparse(t, "allhole.bin", realSize, nil, nil)
-	dir := t.TempDir()
-	if err := ExtractTar(dir, buf); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(filepath.Join(dir, "allhole.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if int64(len(got)) != realSize {
-		t.Fatalf("size: got %d, want %d", len(got), realSize)
-	}
-	if !isAllZero(got) {
-		t.Error("expected all zeros")
-	}
-}
-
-func TestExtractTar_Sparse_InvalidMapJSON(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	tw.WriteHeader(&tar.Header{
-		Name:     "bad.bin",
-		Size:     0,
-		Mode:     0o644,
-		Typeflag: tar.TypeReg,
-		PAXRecords: map[string]string{
-			paxSparseMap:  "not valid json",
-			paxSparseSize: "1024",
+func TestExtractTar_Sparse(t *testing.T) {
+	tests := []struct {
+		name     string
+		realSize int64
+		segments []sparseSegment
+		data     []byte
+	}{
+		{
+			name:     "single segment",
+			realSize: 1024 * 1024,
+			segments: []sparseSegment{{Offset: 8192, Length: 4096}},
+			data:     bytes.Repeat([]byte{0xAA}, 4096),
 		},
-	})
-	tw.Close()
+		{
+			name:     "multiple segments",
+			realSize: 64 * 1024,
+			segments: []sparseSegment{{Offset: 0, Length: 4096}, {Offset: 16384, Length: 4096}, {Offset: 49152, Length: 8192}},
+			data:     slices.Concat(bytes.Repeat([]byte{0x11}, 4096), bytes.Repeat([]byte{0x22}, 4096), bytes.Repeat([]byte{0x33}, 8192)),
+		},
+		{
+			name:     "entire file is hole",
+			realSize: 32 * 1024,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := ExtractTar(dir, makeTarSparse(t, "sparse.bin", tt.realSize, tt.segments, tt.data)); err != nil {
+				t.Fatal(err)
+			}
 
-	if err := ExtractTar(t.TempDir(), &buf); err == nil {
-		t.Fatal("expected error for invalid sparse map JSON")
+			got := readFull(t, filepath.Join(dir, "sparse.bin"))
+			if want := expandSparse(tt.realSize, tt.segments, tt.data); !bytes.Equal(got, want) {
+				t.Errorf("content differs from the expanded sparse map (len got=%d want=%d)", len(got), len(want))
+			}
+		})
 	}
 }
 
-func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
-	mapJSON, _ := json.Marshal([]sparseSegment{})
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	tw.WriteHeader(&tar.Header{
-		Name:     "bad.bin",
-		Size:     0,
-		Mode:     0o644,
-		Typeflag: tar.TypeReg,
-		PAXRecords: map[string]string{
-			paxSparseMap:  string(mapJSON),
-			paxSparseSize: "not-a-number",
-		},
-	})
-	tw.Close()
+func TestExtractTar_Sparse_InvalidPAXRecords(t *testing.T) {
+	tests := []struct {
+		name string
+		pax  map[string]string
+	}{
+		{"map json", map[string]string{paxSparseMap: "not valid json", paxSparseSize: "1024"}},
+		{"size string", map[string]string{paxSparseMap: "[]", paxSparseSize: "not-a-number"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			tw.WriteHeader(&tar.Header{
+				Name:       "bad.bin",
+				Size:       0,
+				Mode:       0o644,
+				Typeflag:   tar.TypeReg,
+				PAXRecords: tt.pax,
+			})
+			tw.Close()
 
-	if err := ExtractTar(t.TempDir(), &buf); err == nil {
-		t.Fatal("expected error for invalid sparse size")
+			if err := ExtractTar(t.TempDir(), &buf); err == nil {
+				t.Fatalf("expected error for invalid sparse %s", tt.name)
+			}
+		})
 	}
 }
 
@@ -522,18 +428,12 @@ func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "regular.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readFull(t, filepath.Join(dir, "regular.txt"))
 	if string(got) != "hello" {
 		t.Errorf("regular.txt: got %q", got)
 	}
 
-	got, err = os.ReadFile(filepath.Join(dir, "sparse.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	got = readFull(t, filepath.Join(dir, "sparse.bin"))
 	if int64(len(got)) != realSize {
 		t.Fatalf("sparse.bin size: got %d, want %d", len(got), realSize)
 	}
@@ -569,181 +469,38 @@ func TestExtractFile_RunsAcrossReadBuffer(t *testing.T) {
 	if err := ExtractTar(dir, &buf); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "memory"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readFull(t, filepath.Join(dir, "memory"))
 	if !bytes.Equal(got, data) {
 		t.Fatalf("extracted %d bytes differ from the %d-byte source (zero run across the read buffer, trailing hole)", len(got), len(data))
 	}
 }
 
-func TestExtractFile_AllZeroBlocks(t *testing.T) {
-	data := make([]byte, 12*1024)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "zeros.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != len(data) {
-		t.Fatalf("size: got %d, want %d", len(got), len(data))
-	}
-	if !isAllZero(got) {
-		t.Error("expected all zeros")
-	}
-}
-
-func TestExtractFile_NoZeroBlocks(t *testing.T) {
-	data := bytes.Repeat([]byte{0xBB}, 3*sparseBlockSize)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dense.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Error("content mismatch")
-	}
-}
-
-func TestExtractFile_MixedZeroAndData(t *testing.T) {
+func TestExtractFile(t *testing.T) {
 	dataBlock := bytes.Repeat([]byte{0xCC}, sparseBlockSize)
-	data := slices.Concat(zeroBlock[:], dataBlock, zeroBlock[:], dataBlock)
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mixed.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{"all zero blocks", make([]byte, 12*1024)},
+		{"no zero blocks", bytes.Repeat([]byte{0xBB}, 3*sparseBlockSize)},
+		{"mixed zero and data", slices.Concat(zeroBlock[:], dataBlock, zeroBlock[:], dataBlock)},
+		{"ends with hole", slices.Concat(bytes.Repeat([]byte{0xDD}, sparseBlockSize), zeroBlock[:])},
+		{"partial block", bytes.Repeat([]byte{0xEE}, sparseBlockSize+100)},
+		{"partial zero block", make([]byte, sparseBlockSize+500)},
+		{"empty input", nil},
+		{"single byte", []byte{0x42}},
+		{"single zero byte", []byte{0x00}},
 	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Error("content mismatch")
-	}
-}
-
-func TestExtractFile_EndsWithHole(t *testing.T) {
-	dataBlock := bytes.Repeat([]byte{0xDD}, sparseBlockSize)
-	data := slices.Concat(dataBlock, zeroBlock[:])
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "endhole.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("content mismatch: len got %d, want %d", len(got), len(data))
-	}
-}
-
-func TestExtractFile_PartialBlock(t *testing.T) {
-	data := bytes.Repeat([]byte{0xEE}, sparseBlockSize+100)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "partial.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Error("content mismatch for partial block")
-	}
-}
-
-func TestExtractFile_PartialZeroBlock(t *testing.T) {
-	data := make([]byte, sparseBlockSize+500)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "pzero.bin")
-
-	if err := extractFile(path, bytes.NewReader(data), 0o644, int64(len(data))); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != len(data) {
-		t.Fatalf("size: got %d, want %d", len(got), len(data))
-	}
-	if !isAllZero(got) {
-		t.Error("expected all zeros")
-	}
-}
-
-func TestExtractFile_EmptyInput(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "empty.bin")
-
-	if err := extractFile(path, bytes.NewReader(nil), 0o644, 0); err != nil {
-		t.Fatal(err)
-	}
-
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Size() != 0 {
-		t.Errorf("expected empty file, got size %d", fi.Size())
-	}
-}
-
-func TestExtractFile_SingleByte(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "single.bin")
-
-	if err := extractFile(path, bytes.NewReader([]byte{0x42}), 0o644, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, []byte{0x42}) {
-		t.Errorf("got %v", got)
-	}
-}
-
-func TestExtractFile_SingleZeroByte(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "onezero.bin")
-
-	if err := extractFile(path, bytes.NewReader([]byte{0x00}), 0o644, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0] != 0 {
-		t.Errorf("expected [0x00], got %v", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "out.bin")
+			if err := extractFile(path, bytes.NewReader(tt.data), 0o644, int64(len(tt.data))); err != nil {
+				t.Fatal(err)
+			}
+			if got := readFull(t, path); !bytes.Equal(got, tt.data) {
+				t.Errorf("content mismatch: got %d bytes, want %d bytes", len(got), len(tt.data))
+			}
+		})
 	}
 }
 
@@ -772,47 +529,6 @@ func TestIsAllZero(t *testing.T) {
 				t.Errorf("isAllZero: got %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestExtractTar_RoundTrip_LargeFile(t *testing.T) {
-	srcDir := t.TempDir()
-
-	large := bytes.Repeat([]byte{0xFE}, 128*1024)
-	small := []byte("tiny config")
-	if err := os.WriteFile(filepath.Join(srcDir, "large.bin"), large, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "small.txt"), small, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := TarDir(tw, srcDir); err != nil {
-		t.Fatal(err)
-	}
-	tw.Close()
-
-	dstDir := t.TempDir()
-	if err := ExtractTar(dstDir, &buf); err != nil {
-		t.Fatal(err)
-	}
-
-	gotLarge, err := os.ReadFile(filepath.Join(dstDir, "large.bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(gotLarge, large) {
-		t.Error("large.bin mismatch")
-	}
-
-	gotSmall, err := os.ReadFile(filepath.Join(dstDir, "small.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(gotSmall, small) {
-		t.Error("small.txt mismatch")
 	}
 }
 
@@ -883,4 +599,13 @@ func makeTarSparse(t *testing.T, name string, realSize int64, segments []sparseS
 	}
 	tw.Close()
 	return &buf
+}
+
+func expandSparse(realSize int64, segments []sparseSegment, data []byte) []byte {
+	want := make([]byte, realSize)
+	for _, seg := range segments {
+		copy(want[seg.Offset:], data[:seg.Length])
+		data = data[seg.Length:]
+	}
+	return want
 }

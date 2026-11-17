@@ -19,12 +19,6 @@ func TestContract(t *testing.T) {
 	})
 }
 
-func TestContractForcedRetryEngine(t *testing.T) {
-	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
-		return contracttest.ForcedRetry(newStore(t, t.TempDir(), nss...))
-	})
-}
-
 func TestCommitAtomicityUnderCrash(t *testing.T) {
 	steps := []string{"prev-linked", "prev-rotated", "main-renamed", "main-synced", "prev-synced", "dir-synced"}
 	for _, step := range steps {
@@ -34,9 +28,8 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 			s := newStore(t, dir, "alpha")
 			c := meta.NewCollection[map[string]int]("alpha", "records")
 
-			seed := map[string]int{"v": 1}
 			if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-				return c.Insert(ctx, w, "a", &seed)
+				return c.Insert(ctx, w, "a", new(map[string]int{"v": 1}))
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -45,12 +38,10 @@ func TestCommitAtomicityUnderCrash(t *testing.T) {
 			testCrashStep = (&crashPoint{step: step, err: errCrash}).hook
 			defer func() { testCrashStep = nil }()
 			err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-				next := map[string]int{"v": 2}
-				if err := c.Replace(ctx, w, "a", &next); err != nil {
+				if err := c.Replace(ctx, w, "a", new(map[string]int{"v": 2})); err != nil {
 					return err
 				}
-				fresh := map[string]int{"v": 2}
-				return c.Insert(ctx, w, "b", &fresh)
+				return c.Insert(ctx, w, "b", new(map[string]int{"v": 2}))
 			})
 			if !errors.Is(err, errCrash) {
 				t.Fatalf("crash injection: %v", err)
@@ -105,9 +96,8 @@ func TestPrevRecovery(t *testing.T) {
 		t.Fatalf("recovered generation: %v, %v", got, err)
 	}
 
-	v3 := map[string]int{"gen": 3}
 	if err := s2.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return c2.Replace(ctx, w, "a", &v3)
+		return c2.Replace(ctx, w, "a", new(map[string]int{"gen": 3}))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -221,9 +211,8 @@ func TestCleanUpdateSkipsCommit(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir, "alpha")
 	c := meta.NewCollection[map[string]int]("alpha", "records")
-	v := map[string]int{"n": 1}
 	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return c.Insert(ctx, w, "a", &v)
+		return c.Insert(ctx, w, "a", new(map[string]int{"n": 1}))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -289,9 +278,8 @@ func writeTwoGenerations(t *testing.T, s *Store) {
 	ctx := t.Context()
 	c := meta.NewCollection[map[string]int]("alpha", "records")
 	for gen := 1; gen <= 2; gen++ {
-		v := map[string]int{"gen": gen}
 		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-			return c.Upsert(ctx, w, "a", &v)
+			return c.Upsert(ctx, w, "a", new(map[string]int{"gen": gen}))
 		}); err != nil {
 			t.Fatal(err)
 		}

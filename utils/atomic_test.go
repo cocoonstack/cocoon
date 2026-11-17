@@ -8,18 +8,14 @@ import (
 )
 
 func TestAtomicWriteFile_Basic(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.dat")
+	path := filepath.Join(t.TempDir(), "test.dat")
 	data := []byte("hello atomic")
 
 	if err := AtomicWriteFile(path, data, 0o644, Sync); err != nil {
 		t.Fatalf("AtomicWriteFile: %v", err)
 	}
 
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readFull(t, path)
 	if string(got) != "hello atomic" {
 		t.Errorf("got %q, want %q", got, "hello atomic")
 	}
@@ -34,8 +30,7 @@ func TestAtomicWriteFile_Basic(t *testing.T) {
 }
 
 func TestAtomicWriteFile_Overwrite(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "overwrite.dat")
+	path := filepath.Join(t.TempDir(), "overwrite.dat")
 
 	if err := AtomicWriteFile(path, []byte("old"), 0o644, Sync); err != nil {
 		t.Fatal(err)
@@ -44,10 +39,7 @@ func TestAtomicWriteFile_Overwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readFull(t, path)
 	if string(got) != "new" {
 		t.Errorf("got %q, want %q", got, "new")
 	}
@@ -81,8 +73,7 @@ func TestSyncTree(t *testing.T) {
 }
 
 func TestAtomicWriteFile_EmptyData(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "empty.dat")
+	path := filepath.Join(t.TempDir(), "empty.dat")
 
 	if err := AtomicWriteFile(path, nil, 0o644, Sync); err != nil {
 		t.Fatal(err)
@@ -119,18 +110,14 @@ func TestAtomicWriteFile_NoTempLeftBehind(t *testing.T) {
 }
 
 func TestAtomicWriteJSON_Basic(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "data.json")
+	path := filepath.Join(t.TempDir(), "data.json")
 
 	input := map[string]string{"key": "value"}
 	if err := AtomicWriteJSON(path, input, Sync); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := readFull(t, path)
 
 	var got map[string]string
 	if err := json.Unmarshal(data, &got); err != nil {
@@ -150,17 +137,13 @@ func TestAtomicWriteJSON_Struct(t *testing.T) {
 		Name  string `json:"name"`
 		Count int    `json:"count"`
 	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
+	path := filepath.Join(t.TempDir(), "config.json")
 
 	if err := AtomicWriteJSON(path, Config{Name: "test", Count: 42}, Sync); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := readFull(t, path)
 
 	var got Config
 	if err := json.Unmarshal(data, &got); err != nil {
@@ -172,8 +155,7 @@ func TestAtomicWriteJSON_Struct(t *testing.T) {
 }
 
 func TestAtomicWriteJSON_Unmarshalable(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "bad.json")
+	path := filepath.Join(t.TempDir(), "bad.json")
 
 	err := AtomicWriteJSON(path, make(chan int), Sync)
 	if err == nil {
@@ -182,8 +164,7 @@ func TestAtomicWriteJSON_Unmarshalable(t *testing.T) {
 }
 
 func TestAtomicWriteJSON_Permissions(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "perm.json")
+	path := filepath.Join(t.TempDir(), "perm.json")
 
 	if err := AtomicWriteJSON(path, "hello", Sync); err != nil {
 		t.Fatal(err)

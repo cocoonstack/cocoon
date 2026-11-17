@@ -73,26 +73,29 @@ func TestNetnsNameHonorsScope(t *testing.T) {
 }
 
 func TestLoadConfLists(t *testing.T) {
-	t.Run("empty dir errors", func(t *testing.T) {
-		dir := t.TempDir()
-		_, _, err := loadConfLists(dir)
-		if err == nil {
-			t.Fatal("expected error on empty dir, got nil")
-		}
-		if !strings.Contains(err.Error(), "no .conflist files") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("non-conflist files ignored", func(t *testing.T) {
-		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "10-something.conf"), bridgeConflist)
-		writeFile(t, filepath.Join(dir, "20-readme.txt"), "ignored")
-		_, _, err := loadConfLists(dir)
-		if err == nil {
-			t.Fatal("expected error when only non-.conflist files present")
-		}
-	})
+	for _, tt := range []struct {
+		name    string
+		files   map[string]string
+		wantErr string
+	}{
+		{"empty dir errors", nil, "no .conflist files"},
+		{"non-conflist files ignored", map[string]string{"10-something.conf": bridgeConflist, "20-readme.txt": "ignored"}, ""},
+		{"bad conflist surfaces parse error", map[string]string{"bad.conflist": "{not json"}, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, content := range tt.files {
+				writeFile(t, filepath.Join(dir, name), content)
+			}
+			_, _, err := loadConfLists(dir)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
 
 	t.Run("single conflist becomes default", func(t *testing.T) {
 		dir := t.TempDir()
@@ -130,15 +133,6 @@ func TestLoadConfLists(t *testing.T) {
 		}
 		if len(lists) != 3 {
 			t.Errorf("got %d conflists, want 3", len(lists))
-		}
-	})
-
-	t.Run("bad conflist surfaces parse error", func(t *testing.T) {
-		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "bad.conflist"), "{not json")
-		_, _, err := loadConfLists(dir)
-		if err == nil {
-			t.Fatal("expected parse error, got nil")
 		}
 	})
 }
@@ -192,16 +186,8 @@ func TestExtractNetworkInfoGatewayFallsBackToTheDefaultRoute(t *testing.T) {
 }
 
 func TestTearDownNICsAttemptsAllRecords(t *testing.T) {
-	cl, err := libcni.ConfListFromBytes([]byte(bridgeConflist))
-	if err != nil {
-		t.Fatal(err)
-	}
-	exec := &recordingExec{failIf: "eth1"}
-	c := &CNI{
-		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
-		defaultName: "cni-bridge",
-		cniConf:     libcni.NewCNIConfig([]string{"/nonexistent"}, exec),
-	}
+	c, exec := newTestCNIWithStore(t)
+	exec.failIf = "eth1"
 	records := []networkRecord{
 		{ID: "n0", Type: "cni-bridge", VMID: "vm1", IfName: "eth0"},
 		{ID: "n1", Type: "cni-bridge", VMID: "vm1", IfName: "eth1"},
@@ -293,10 +279,8 @@ func TestDeleteVMZeroNICsWithoutConflist(t *testing.T) {
 
 func TestVerifyDetectsMissingTAP(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
-	origStat, origTap := statNetnsFn, tapProvisionedFn
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
-	tapProvisionedFn = func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) }
-	t.Cleanup(func() { statNetnsFn, tapProvisionedFn = origStat, origTap })
+	swap(t, &statNetnsFn, func(string) (os.FileInfo, error) { return nil, nil })
+	swap(t, &tapProvisionedFn, func(_, tap string) error { return fmt.Errorf("tap %s: not found", tap) })
 
 	expected := []*types.NetworkConfig{{TAP: "tap-vm1-0"}}
 	if err := c.Verify(t.Context(), "vm1", expected); err == nil {
@@ -311,9 +295,7 @@ func TestVerifyDetectsMissingTAP(t *testing.T) {
 func TestVerifyFailsWhileATeardownIsPending(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	stubLifecycleSeams(t)
-	origTap := tapProvisionedFn
-	tapProvisionedFn = func(_, _ string) error { return nil }
-	t.Cleanup(func() { tapProvisionedFn = origTap })
+	swap(t, &tapProvisionedFn, func(_, _ string) error { return nil })
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
 	markDeleting(t, c, "vm1", tombstone.ModeSubset, netCleanup{Records: []netCleanupRecord{{ID: "n-eth1", Type: "cni-bridge", IfName: "eth1"}}})
@@ -379,12 +361,8 @@ func TestAddFailsClosedOnStaleReclaim(t *testing.T) {
 	if len(configs) != 1 {
 		t.Fatalf("got %d configs, want 1", len(configs))
 	}
-	var got []networkRecord
-	if err := c.view(ctx, func(tx *netTx) error {
-		var err error
-		got, err = tx.byVMID("vm1")
-		return err
-	}); err != nil {
+	got, err := c.recordsOf(ctx, "vm1")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].ID == "n-eth0" || got[0].IfName != "eth0" {
@@ -411,12 +389,8 @@ func TestAddRollsBackTheNICsItAttemptedOnAPartialFailure(t *testing.T) {
 	if want := []string{tapNameForVM("vm1", 0)}; !slices.Equal(deletedTAPs, want) {
 		t.Fatalf("deleted TAPs = %v, want %v", deletedTAPs, want)
 	}
-	var got []networkRecord
-	if err := c.view(t.Context(), func(tx *netTx) error {
-		var err error
-		got, err = tx.byVMID("vm1")
-		return err
-	}); err != nil {
+	got, err := c.recordsOf(t.Context(), "vm1")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].IfName != "eth1" {
@@ -441,11 +415,8 @@ func TestAddCarriesTAPMTU(t *testing.T) {
 func TestQuiesceSkipsMissingNetns(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	called := false
-	origSet := setLinkStateFn
-	setLinkStateFn = func(string, []string, bool) error { called = true; return nil }
-	origStat := statNetnsFn
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
-	t.Cleanup(func() { setLinkStateFn, statNetnsFn = origSet, origStat })
+	swap(t, &setLinkStateFn, func(string, []string, bool) error { called = true; return nil })
+	swap(t, &statNetnsFn, func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist })
 
 	seedRecords(t, c, "vm1", "eth0")
 
@@ -532,12 +503,8 @@ func TestAddRecoveryRecordsAnUnrecordedNIC(t *testing.T) {
 		if _, err := c.Add(t.Context(), "vm1", testVMCfg(), network.AddRecover(existing)...); err != nil {
 			t.Fatalf("recover Add: %v", err)
 		}
-		var got []networkRecord
-		if err := c.view(t.Context(), func(tx *netTx) error {
-			var err error
-			got, err = tx.byVMID("vm1")
-			return err
-		}); err != nil {
+		got, err := c.recordsOf(t.Context(), "vm1")
+		if err != nil {
 			t.Fatal(err)
 		}
 		slices.SortFunc(got, func(a, b networkRecord) int { return cmp.Compare(a.IfName, b.IfName) })
@@ -568,16 +535,12 @@ func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 	var gotNS string
 	var gotIfs []string
 	var gotUp []bool
-	origSet := setLinkStateFn
-	setLinkStateFn = func(nsPath string, ifNames []string, up bool) error {
+	swap(t, &setLinkStateFn, func(nsPath string, ifNames []string, up bool) error {
 		gotNS, gotIfs = nsPath, ifNames
 		gotUp = append(gotUp, up)
 		return nil
-	}
-	t.Cleanup(func() { setLinkStateFn = origSet })
-	origStat := statNetnsFn
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
-	t.Cleanup(func() { statNetnsFn = origStat })
+	})
+	swap(t, &statNetnsFn, func(string) (os.FileInfo, error) { return nil, nil })
 
 	ctx := t.Context()
 	seedRecords(t, c, "vm1", "eth0", "eth1")
@@ -603,9 +566,7 @@ func TestQuiesceUnquiesceTogglesEveryNIC(t *testing.T) {
 func TestQuiesceNoRecordsSkipsNetns(t *testing.T) {
 	c, _ := newTestCNIWithStore(t)
 	called := false
-	origSet := setLinkStateFn
-	setLinkStateFn = func(string, []string, bool) error { called = true; return nil }
-	t.Cleanup(func() { setLinkStateFn = origSet })
+	swap(t, &setLinkStateFn, func(string, []string, bool) error { called = true; return nil })
 
 	if err := c.Quiesce(t.Context(), "ghost"); err != nil {
 		t.Fatalf("Quiesce: %v", err)
@@ -657,19 +618,9 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 	}
 	exec := &recordingExec{}
 	dir := t.TempDir()
-	store, err := metajson.Open(metajson.Namespace{
-		Name:     NamespaceName,
-		FilePath: filepath.Join(dir, "net.json"),
-		LockPath: filepath.Join(dir, "net.lock"),
-		Codec:    testNetTables,
-	})
-	if err != nil {
-		t.Fatalf("open meta store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
 	return &CNI{
 		conf:        NewConfig(&config.Config{RootDir: dir}),
-		meta:        store,
+		meta:        openNetStore(t, dir, "net"),
 		confLists:   map[string]*libcni.NetworkConfigList{"cni-bridge": cl},
 		defaultName: "cni-bridge",
 		cniConf:     libcni.NewCNIConfigWithCacheDir([]string{"/nonexistent"}, filepath.Join(dir, "cache"), exec),
@@ -678,18 +629,19 @@ func newTestCNIWithStore(t *testing.T) (*CNI, *recordingExec) {
 
 func stubLifecycleSeams(t *testing.T) {
 	t.Helper()
-	origTAP, origNetns, origEnsure, origTC := deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn
-	origSet, origStat := setLinkStateFn, statNetnsFn
-	statNetnsFn = func(string) (os.FileInfo, error) { return nil, nil }
-	deleteTAPFn = func(string, string) error { return nil }
-	deleteNetnsFn = func(context.Context, string) error { return nil }
-	ensureNetnsFn = func(string, string) error { return nil }
-	setupTCRedirectFn = func(_, _, _ string, _ int, _ string) (string, int, error) { return "aa:bb:cc:dd:ee:01", 0, nil }
-	setLinkStateFn = func(string, []string, bool) error { return nil }
-	t.Cleanup(func() {
-		deleteTAPFn, deleteNetnsFn, ensureNetnsFn, setupTCRedirectFn = origTAP, origNetns, origEnsure, origTC
-		setLinkStateFn, statNetnsFn = origSet, origStat
-	})
+	swap(t, &statNetnsFn, func(string) (os.FileInfo, error) { return nil, nil })
+	swap(t, &deleteTAPFn, func(string, string) error { return nil })
+	swap(t, &deleteNetnsFn, func(context.Context, string) error { return nil })
+	swap(t, &ensureNetnsFn, func(string, string) error { return nil })
+	swap(t, &setupTCRedirectFn, func(_, _, _ string, _ int, _ string) (string, int, error) { return "aa:bb:cc:dd:ee:01", 0, nil })
+	swap(t, &setLinkStateFn, func(string, []string, bool) error { return nil })
+}
+
+func swap[T any](t *testing.T, p *T, v T) {
+	t.Helper()
+	old := *p
+	*p = v
+	t.Cleanup(func() { *p = old })
 }
 
 func testVMCfg() *types.VMConfig {
@@ -733,4 +685,19 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func openNetStore(t *testing.T, dir, base string) *metajson.Store {
+	t.Helper()
+	store, err := metajson.Open(metajson.Namespace{
+		Name:     NamespaceName,
+		FilePath: filepath.Join(dir, base+".json"),
+		LockPath: filepath.Join(dir, base+".lock"),
+		Codec:    testNetTables,
+	})
+	if err != nil {
+		t.Fatalf("open meta store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
 }

@@ -5,14 +5,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/cocoonstack/cocoon/snapshot/localfile"
 )
 
 func TestParseSnapshotPolicy_Defaults(t *testing.T) {
-	cmd := gcCommand()
-	if err := cmd.ParseFlags(nil); err != nil {
-		t.Fatal(err)
-	}
-	p, err := parseSnapshotPolicy(cmd)
+	p, err := parsePolicy(t)
 	if err != nil {
 		t.Fatalf("default flags: %v", err)
 	}
@@ -33,11 +31,7 @@ func TestParseSnapshotPolicy_NegativeRejected(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := gcCommand()
-			if err := cmd.ParseFlags(tt.args); err != nil {
-				t.Fatal(err)
-			}
-			_, err := parseSnapshotPolicy(cmd)
+			_, err := parsePolicy(t, tt.args...)
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -57,11 +51,7 @@ func TestParseSnapshotPolicy_SubFlagRequiresSnapshot(t *testing.T) {
 	}
 	for _, args := range cases {
 		t.Run(args[0], func(t *testing.T) {
-			cmd := gcCommand()
-			if err := cmd.ParseFlags(args); err != nil {
-				t.Fatal(err)
-			}
-			_, err := parseSnapshotPolicy(cmd)
+			_, err := parsePolicy(t, args...)
 			if err == nil || !strings.Contains(err.Error(), "requires --snapshot") {
 				t.Errorf("want 'requires --snapshot' error, got %v", err)
 			}
@@ -70,23 +60,28 @@ func TestParseSnapshotPolicy_SubFlagRequiresSnapshot(t *testing.T) {
 }
 
 func TestParseSnapshotPolicy_HappyPath(t *testing.T) {
-	cmd := gcCommand()
-	if err := cmd.ParseFlags([]string{
+	p, err := parsePolicy(t,
 		"--snapshot",
 		"--snapshot-keep=10",
 		"--snapshot-age=720h",
 		"--snapshot-size=100GB",
 		"--snapshot-dry-run",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	p, err := parseSnapshotPolicy(cmd)
+	)
 	if err != nil {
 		t.Fatalf("happy path: %v", err)
 	}
 	if !p.Enabled || !p.DryRun || p.KeepLast != 10 || p.MaxAge == 0 || p.MaxSize == 0 {
 		t.Errorf("policy not populated: %+v", p)
 	}
+}
+
+func parsePolicy(t *testing.T, args ...string) (localfile.EvictionPolicy, error) {
+	t.Helper()
+	cmd := gcCommand()
+	if err := cmd.ParseFlags(args); err != nil {
+		t.Fatal(err)
+	}
+	return parseSnapshotPolicy(cmd)
 }
 
 func gcCommand() *cobra.Command {

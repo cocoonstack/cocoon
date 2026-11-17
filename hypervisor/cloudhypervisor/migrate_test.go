@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
@@ -72,23 +71,13 @@ func TestRestoreAndResumeCloneKeepPausedSkipsResume(t *testing.T) {
 		mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	scopeParent := t.TempDir()
-	if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	ch := &CloudHypervisor{
-		Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
-		conf:    NewConfig(&config.Config{}),
-	}
-	if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+	restoreTestClone(t, sock, &cloneResumeOpts{
 		vmID:        "T",
 		vmCfg:       &types.VMConfig{CPU: 2},
 		directBoot:  true,
 		snapshotCfg: &chVMConfig{},
 		keepPaused:  true,
-	}); err != nil {
-		t.Fatalf("restoreAndResumeClone: %v", err)
-	}
+	})
 	mu.Lock()
 	defer mu.Unlock()
 	if slices.Contains(paths, "vm.resume") {
@@ -143,16 +132,13 @@ func TestCloneSeriesFilesRefusesASeriesWithoutItsFinalRound(t *testing.T) {
 func TestAFinalRoundSourceStaysPaused(t *testing.T) {
 	runDir := t.TempDir()
 	writeMigrateFile(t, runDir, filepath.Join(seriesDirName, seriesFinalFile), "")
-	var mu sync.Mutex
 	var calls []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.MarshalWrite(w, chVMInfoResponse{State: chStatePaused})
 	})
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
 		calls = append(calls, r.URL.Path)
-		mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
 	hc := &http.Client{Transport: handlerTransport{mux}}
@@ -164,8 +150,6 @@ func TestAFinalRoundSourceStaysPaused(t *testing.T) {
 	if err := pause(&hypervisor.VMRecord{RunDir: runDir}, hc); err == nil || !strings.Contains(err.Error(), "took its final round") {
 		t.Errorf("snapshot Pause = %v, want the final-round refusal", err)
 	}
-	mu.Lock()
-	defer mu.Unlock()
 	if len(calls) != 0 {
 		t.Errorf("calls = %v, want the paused guest left alone", calls)
 	}

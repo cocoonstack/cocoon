@@ -32,9 +32,7 @@ func TestDeleteNetnsCollectsAnUnmountedEntry(t *testing.T) {
 }
 
 func TestTCRedirectConvergesOnPartialPlumbing(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("needs root for netns and netlink")
-	}
+	requireNetnsAdmin(t)
 	name := "cocoon-tc-" + strconv.Itoa(os.Getpid())
 	if err := createNetns(name); err != nil {
 		t.Skipf("create netns: %v", err)

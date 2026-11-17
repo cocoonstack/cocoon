@@ -1,9 +1,6 @@
 package hypervisor
 
 import (
-	"context"
-	"encoding/json/jsontext"
-	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -114,33 +111,6 @@ func TestCrossComponentVMLockPath(t *testing.T) {
 	}
 }
 
-type VMIndex struct {
-	VMs   map[string]*VMRecord `json:"vms"`
-	Names map[string]string    `json:"names"`
-}
-
-func (idx *VMIndex) Init() {
-	if idx.VMs == nil {
-		idx.VMs = map[string]*VMRecord{}
-	}
-	if idx.Names == nil {
-		idx.Names = map[string]string{}
-	}
-}
-
-func (b *Backend) dbUpdate(ctx context.Context, fn func(*VMIndex) error) error {
-	return b.update(ctx, func(t *vmTx) error {
-		before, idx, err := materialize(ctx, b.NS, t)
-		if err != nil {
-			return err
-		}
-		if err := fn(idx); err != nil {
-			return err
-		}
-		return writeBack(t, before, idx)
-	})
-}
-
 func newTestMetaStore(t *testing.T, typ, indexFile, lockPath string) *metajson.Store {
 	t.Helper()
 	store, err := metajson.Open(metajson.Namespace{Name: VMNamespaceName(typ), FilePath: indexFile, LockPath: lockPath, Codec: testVMTables})
@@ -169,56 +139,4 @@ func testSQLiteNamespace(t *testing.T, typ, dir string) meta.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
-}
-
-func materialize(ctx context.Context, ns string, t *vmTx) (*VMIndex, *VMIndex, error) {
-	idx := &VMIndex{}
-	idx.Init()
-	var err error
-	if idx.VMs, err = t.All(); err != nil {
-		return nil, nil, err
-	}
-	if err := t.r.ScanRaw(ctx, ns, TableNames, func(name string, _ jsontext.Value) error {
-		id, ok, err := t.NameGet(name)
-		if err != nil || !ok {
-			return err
-		}
-		idx.Names[name] = id
-		return nil
-	}); err != nil {
-		return nil, nil, err
-	}
-	snapshot := &VMIndex{VMs: maps.Clone(idx.VMs), Names: maps.Clone(idx.Names)}
-	return snapshot, idx, nil
-}
-
-func writeBack(t *vmTx, before, after *VMIndex) error {
-	for id := range before.VMs {
-		if after.VMs[id] == nil {
-			if err := t.Del(id); err != nil {
-				return err
-			}
-		}
-	}
-	for id, rec := range after.VMs {
-		if rec == nil {
-			continue
-		}
-		if err := t.Put(id, rec); err != nil {
-			return err
-		}
-	}
-	for name := range before.Names {
-		if _, ok := after.Names[name]; !ok {
-			if err := t.NameDel(name); err != nil {
-				return err
-			}
-		}
-	}
-	for name, id := range after.Names {
-		if err := t.NameSet(name, id); err != nil {
-			return err
-		}
-	}
-	return nil
 }

@@ -4,63 +4,26 @@ import (
 	"testing"
 )
 
-func TestValidate_OK(t *testing.T) {
-	c := &Config{
-		RootDir:            "/var/lib/cocoon",
-		RunDir:             "/var/lib/cocoon/run",
-		LogDir:             "/var/log/cocoon",
-		StopTimeoutSeconds: 30,
-		DNS:                "8.8.8.8,1.1.1.1",
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{"ok with dns", func(c *Config) { c.DNS = "8.8.8.8,1.1.1.1" }, false},
+		{"empty dns", func(*Config) {}, false},
+		{"invalid dns", func(c *Config) { c.DNS = "not-an-ip" }, true},
+		{"missing root_dir", func(c *Config) { c.RootDir = "" }, true},
+		{"bad timeout", func(c *Config) { c.StopTimeoutSeconds = 0 }, true},
 	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidate_EmptyDNS(t *testing.T) {
-	c := &Config{
-		RootDir:            "/var/lib/cocoon",
-		RunDir:             "/var/lib/cocoon/run",
-		LogDir:             "/var/log/cocoon",
-		StopTimeoutSeconds: 30,
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("empty DNS should be valid: %v", err)
-	}
-}
-
-func TestValidate_InvalidDNS(t *testing.T) {
-	c := &Config{
-		RootDir:            "/var/lib/cocoon",
-		RunDir:             "/var/lib/cocoon/run",
-		LogDir:             "/var/log/cocoon",
-		StopTimeoutSeconds: 30,
-		DNS:                "not-an-ip",
-	}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for invalid DNS")
-	}
-}
-
-func TestValidate_MissingRootDir(t *testing.T) {
-	c := &Config{
-		RunDir:             "/var/lib/cocoon/run",
-		LogDir:             "/var/log/cocoon",
-		StopTimeoutSeconds: 30,
-	}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for empty root_dir")
-	}
-}
-
-func TestValidate_BadTimeout(t *testing.T) {
-	c := &Config{
-		RootDir: "/var/lib/cocoon",
-		RunDir:  "/var/lib/cocoon/run",
-		LogDir:  "/var/log/cocoon",
-	}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for zero stop_timeout_seconds")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validConfig()
+			tt.mutate(&c)
+			if err := c.Validate(); (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -106,10 +69,8 @@ func TestValidate_NetScope(t *testing.T) {
 	}{
 		{"", true}, {"mt", true}, {"A9", true}, {"m", false}, {"mtap", false}, {"m-", false}, {"m/", false}, {"bt", false}, {"rm", false},
 	} {
-		c := &Config{
-			RootDir: "/r", RunDir: "/r/run", LogDir: "/l",
-			StopTimeoutSeconds: 30, NetScope: tt.scope,
-		}
+		c := validConfig()
+		c.NetScope = tt.scope
 		err := c.Validate()
 		if tt.ok && err != nil {
 			t.Fatalf("scope %q: unexpected error %v", tt.scope, err)
@@ -146,10 +107,8 @@ func TestValidate_MetaBackend(t *testing.T) {
 	}{
 		{"", true}, {"json", true}, {"sqlite", true}, {"typo", false},
 	} {
-		c := &Config{
-			RootDir: "/r", RunDir: "/r/run", LogDir: "/l",
-			StopTimeoutSeconds: 30, MetaBackend: tt.backend,
-		}
+		c := validConfig()
+		c.MetaBackend = tt.backend
 		err := c.Validate()
 		if tt.ok && err != nil {
 			t.Fatalf("backend %q: unexpected error %v", tt.backend, err)
@@ -157,5 +116,14 @@ func TestValidate_MetaBackend(t *testing.T) {
 		if !tt.ok && err == nil {
 			t.Fatalf("backend %q: want rejection", tt.backend)
 		}
+	}
+}
+
+func validConfig() Config {
+	return Config{
+		RootDir:            "/var/lib/cocoon",
+		RunDir:             "/var/lib/cocoon/run",
+		LogDir:             "/var/log/cocoon",
+		StopTimeoutSeconds: 30,
 	}
 }

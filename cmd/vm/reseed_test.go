@@ -52,12 +52,7 @@ func TestReseedVM_CtxCanceled(t *testing.T) {
 }
 
 func TestReseedVM_AgentRejectionNotRetried(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rsd")
-	if err != nil {
-		t.Fatalf("temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	sock := filepath.Join(dir, "s.sock")
+	sock := shortSockPath(t, "s.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatalf("listen: %v", err)

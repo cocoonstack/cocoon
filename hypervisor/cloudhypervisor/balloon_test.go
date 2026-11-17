@@ -4,7 +4,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -12,7 +11,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/balloon"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
@@ -98,12 +96,8 @@ func TestSnapshotPauseWaitsForTheResizedBalloonTarget(t *testing.T) {
 						t.Fatalf("resizeBalloon: %v", err)
 					}
 				}
-				start := time.Now()
 
-				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc); err != nil {
-					t.Fatalf("pause: %v", err)
-				}
-				if elapsed := time.Since(start); elapsed != tt.wait {
+				if elapsed := pauseElapsed(t, hc, &hypervisor.VMRecord{}); elapsed != tt.wait {
 					t.Fatalf("waited %s, want %s", elapsed, tt.wait)
 				}
 			})
@@ -115,12 +109,7 @@ func TestPatchCHConfigKeepsAnInflatedBalloonTarget(t *testing.T) {
 	cfg := baseCHConfig()
 	inflated := int64(512 << 20)
 	cfg["balloon"].(map[string]any)["size"] = inflated
-	path := writeCHConfig(t, t.TempDir(), cfg)
-
-	if err := patchCHConfig(path, basePatchOpts()); err != nil {
-		t.Fatalf("patchCHConfig: %v", err)
-	}
-	got := readRawJSON(t, path)["balloon"].(map[string]any)["size"]
+	got := patchAndRead(t, cfg, basePatchOpts())["balloon"].(map[string]any)["size"]
 	if got != float64(inflated) {
 		t.Errorf("balloon.size = %v, want %d", got, inflated)
 	}
@@ -164,23 +153,13 @@ func TestRestoreAndResumeCloneResetsTheBalloonTarget(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusNoContent)
 			}))
-			scopeParent := t.TempDir()
-			if err := os.Mkdir(filepath.Join(scopeParent, "vm-T.scope"), 0o755); err != nil {
-				t.Fatalf("setup: %v", err)
-			}
-			ch := &CloudHypervisor{
-				Backend: &hypervisor.Backend{Conf: tmpScopeConf{Config: NewConfig(&config.Config{}), parent: scopeParent}},
-				conf:    NewConfig(&config.Config{}),
-			}
-			if err := ch.restoreAndResumeClone(t.Context(), 0, sock, t.TempDir(), &cloneResumeOpts{
+			restoreTestClone(t, sock, &cloneResumeOpts{
 				vmID:        "T",
 				vmCfg:       &types.VMConfig{CPU: 2, Memory: balloonTestMem, NoBalloon: tt.noBalloon},
 				directBoot:  true,
 				snapshotCfg: &chVMConfig{Balloon: tt.snap},
 				keepPaused:  tt.keepPaused,
-			}); err != nil {
-				t.Fatalf("restoreAndResumeClone: %v", err)
-			}
+			})
 			mu.Lock()
 			defer mu.Unlock()
 			if !slices.Equal(calls, tt.want) {

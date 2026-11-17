@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -32,16 +31,13 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var mu sync.Mutex
 			pauses := 0
 			mux := http.NewServeMux()
 			mux.HandleFunc("/api/v1/vm.info", func(w http.ResponseWriter, _ *http.Request) {
 				_ = json.MarshalWrite(w, chVMInfoResponse{State: chStateRunning, Config: tt.config})
 			})
 			mux.HandleFunc("/api/v1/vm.pause", func(w http.ResponseWriter, _ *http.Request) {
-				mu.Lock()
 				pauses++
-				mu.Unlock()
 				w.WriteHeader(http.StatusNoContent)
 			})
 			hc := &http.Client{Transport: handlerTransport{mux}}
@@ -51,8 +47,6 @@ func TestSnapshotPauseRefusesHotAttachedBeforePausing(t *testing.T) {
 			if tt.wantErr != errors.Is(err, hypervisor.ErrHotAttached) {
 				t.Fatalf("err = %v, want hot-attached refusal %v", err, tt.wantErr)
 			}
-			mu.Lock()
-			defer mu.Unlock()
 			if tt.wantErr && pauses != 0 {
 				t.Fatalf("pauses = %d, want the VM left running when the capture is refused", pauses)
 			}
@@ -151,12 +145,8 @@ func TestSnapshotPauseWaitsForAPendingNICEject(t *testing.T) {
 				})
 				hc := &http.Client{Transport: handlerTransport{mux}}
 				rec := &hypervisor.VMRecord{NetworkConfigs: []*types.NetworkConfig{{}}}
-				start := time.Now()
 
-				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
-					t.Fatalf("Pause: %v", err)
-				}
-				if got := time.Since(start); got != tt.wait {
+				if got := pauseElapsed(t, hc, rec); got != tt.wait {
 					t.Errorf("paused after %s, want %s", got, tt.wait)
 				}
 				if removes != tt.removes {
@@ -213,12 +203,8 @@ func TestSnapshotPauseWaitsForTheWindowsReplacementNICToStart(t *testing.T) {
 				hc := &http.Client{Transport: handlerTransport{mux}}
 				rec := &hypervisor.VMRecord{NetworkConfigs: []*types.NetworkConfig{{}}}
 				rec.Config.Windows = tt.windows
-				start := time.Now()
 
-				if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
-					t.Fatalf("Pause: %v", err)
-				}
-				if got := time.Since(start); got != tt.wait {
+				if got := pauseElapsed(t, hc, rec); got != tt.wait {
 					t.Errorf("paused after %s, want %s", got, tt.wait)
 				}
 				if (ctrPolls > 0) != tt.counters {
@@ -267,13 +253,8 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 					w.WriteHeader(http.StatusNoContent)
 				})
 				hc := &http.Client{Transport: handlerTransport{mux}}
-				start := time.Now()
 
-				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{RunDir: t.TempDir()}, hc)
-				if err != nil {
-					t.Fatalf("pause: %v", err)
-				}
-				if elapsed := time.Since(start); elapsed != tt.wait {
+				if elapsed := pauseElapsed(t, hc, &hypervisor.VMRecord{RunDir: t.TempDir()}); elapsed != tt.wait {
 					t.Fatalf("waited %s, want %s", elapsed, tt.wait)
 				}
 			})
@@ -319,4 +300,13 @@ func (ht handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	return rec.Result(), nil
+}
+
+func pauseElapsed(t *testing.T, hc *http.Client, rec *hypervisor.VMRecord) time.Duration {
+	t.Helper()
+	start := time.Now()
+	if err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(rec, hc); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+	return time.Since(start)
 }

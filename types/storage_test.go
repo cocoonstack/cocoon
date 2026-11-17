@@ -92,19 +92,7 @@ func TestValidateStorageConfigs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateStorageConfigs(tt.configs)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
-			}
+			assertErrContains(t, ValidateStorageConfigs(tt.configs), tt.wantErr)
 		})
 	}
 }

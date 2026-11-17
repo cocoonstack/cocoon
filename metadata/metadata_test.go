@@ -7,17 +7,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 	"unicode/utf16"
 )
 
 func TestUserData_NonRootPasswordSetOnlyByRuncmd(t *testing.T) {
 	cfg := &Config{Username: "admin", Password: "pw"}
 
-	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, userDataTmpl, cfg)
 
 	if strings.Contains(out, "chpasswd:") {
 		t.Errorf("chpasswd module would run before runcmd creates admin: %s", out)
@@ -35,11 +32,7 @@ func TestUserData_NoBootcmd(t *testing.T) {
 		},
 	}
 
-	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, userDataTmpl, cfg)
 
 	if strings.Contains(out, "bootcmd:") {
 		t.Errorf("bootcmd should not appear: %s", out)
@@ -70,11 +63,7 @@ func TestUserData_MultiNICWriteFiles(t *testing.T) {
 		DNS: []string{"8.8.8.8", "1.1.1.1"},
 	}
 
-	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, userDataTmpl, cfg)
 
 	if !strings.Contains(out, "/etc/systemd/network/15-cocoon-id0.network") {
 		t.Errorf("id0 fallback .network missing: %s", out)
@@ -102,11 +91,7 @@ func TestNetworkConfig_SingleNIC(t *testing.T) {
 		DNS: []string{"8.8.8.8"},
 	}
 
-	var buf bytes.Buffer
-	if err := networkConfigTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, networkConfigTmpl, cfg)
 
 	if !strings.Contains(out, "version: 2") {
 		t.Errorf("version missing: %s", out)
@@ -134,11 +119,7 @@ func TestNetworkConfig_MultiNIC(t *testing.T) {
 		DNS: []string{"8.8.8.8"},
 	}
 
-	var buf bytes.Buffer
-	if err := networkConfigTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, networkConfigTmpl, cfg)
 
 	if !strings.Contains(out, "id0:") {
 		t.Errorf("id0 missing: %s", out)
@@ -167,39 +148,28 @@ func TestNetworkConfig_MultiNIC(t *testing.T) {
 	}
 }
 
-func TestNetworkConfig_GatewayOptional(t *testing.T) {
+func TestNetworkConfig_GatewayAndDNSOptional(t *testing.T) {
 	cfg := &Config{
 		Networks: []NetworkInfo{
 			{IP: "10.0.0.2", Prefix: 24, MAC: "aa:bb:cc:dd:ee:f0"},
 		},
 	}
 
-	var buf bytes.Buffer
-	if err := networkConfigTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, networkConfigTmpl, cfg)
 
-	if strings.Contains(out, "routes:") {
-		t.Errorf("routes should not appear without gateway: %s", out)
+	tests := []struct {
+		name   string
+		absent string
+	}{
+		{"gateway", "routes:"},
+		{"DNS", "nameservers:"},
 	}
-}
-
-func TestNetworkConfig_DNSOptional(t *testing.T) {
-	cfg := &Config{
-		Networks: []NetworkInfo{
-			{IP: "10.0.0.2", Prefix: 24, MAC: "aa:bb:cc:dd:ee:f0"},
-		},
-	}
-
-	var buf bytes.Buffer
-	if err := networkConfigTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-
-	if strings.Contains(out, "nameservers:") {
-		t.Errorf("nameservers should not appear without DNS: %s", out)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if strings.Contains(out, tt.absent) {
+				t.Errorf("%s should not appear without %s: %s", tt.absent, tt.name, out)
+			}
+		})
 	}
 }
 
@@ -271,11 +241,7 @@ func TestUserData_Mounts(t *testing.T) {
 			},
 		},
 	}
-	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
+	out := render(t, userDataTmpl, cfg)
 	if !strings.Contains(out, "mounts:") {
 		t.Fatalf("mounts: section missing\n%s", out)
 	}
@@ -289,11 +255,7 @@ func TestUserData_Mounts(t *testing.T) {
 
 func TestUserData_NoMounts(t *testing.T) {
 	cfg := &Config{Username: "root", Password: "x"}
-	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "mounts:") {
+	if strings.Contains(render(t, userDataTmpl, cfg), "mounts:") {
 		t.Error("mounts: should not appear without Mounts")
 	}
 }
@@ -304,13 +266,18 @@ func TestUserData_MountsYAMLEscape(t *testing.T) {
 			{Device: "/dev/x", MountPoint: "/mnt/it's-here", FSType: "ext4", Options: "defaults"},
 		},
 	}
+	if out := render(t, userDataTmpl, cfg); !strings.Contains(out, "/mnt/it''s-here") {
+		t.Errorf("single quote not escaped: %s", out)
+	}
+}
+
+func render(t *testing.T, tmpl *template.Template, cfg *Config) string {
+	t.Helper()
 	var buf bytes.Buffer
-	if err := userDataTmpl.Execute(&buf, cfg); err != nil {
+	if err := tmpl.Execute(&buf, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "/mnt/it''s-here") {
-		t.Errorf("single quote not escaped: %s", buf.String())
-	}
+	return buf.String()
 }
 
 func readFAT12(t *testing.T, img []byte) (string, map[string][]byte) {

@@ -16,17 +16,8 @@ func TestGCCollectKeepsLockedVM(t *testing.T) {
 	b, _ := newMeteringTestBackend(t)
 	ctx := t.Context()
 	const id = "vm-gc-lock"
-	runDir, logDir := t.TempDir(), t.TempDir()
 	seedVMRecord(t, b, id, 1, 512, 1024, false)
-
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].State = types.VMStateCreating
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].LogDir = logDir
-		return nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	setVMState(t, b, id, types.VMStateCreating)
 
 	lk, err := vmlock.New(b.Conf.RootDirPath(), id)
 	if err != nil {
@@ -63,10 +54,7 @@ func TestQuarantineVMSurvivesCanceledContext(t *testing.T) {
 	cancel()
 	b.quarantineVM(cctx, id, "test-reason")
 
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.Quarantine != "test-reason" || rec.State != types.VMStateError {
 		t.Fatalf("quarantine lost under canceled ctx: quarantine=%q state=%s", rec.Quarantine, rec.State)
 	}

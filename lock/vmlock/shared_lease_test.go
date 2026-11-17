@@ -14,40 +14,27 @@ func TestSharedLeaseInheritanceSurvivesParentDescriptorClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new shared lease: %v", err)
 	}
+	t.Cleanup(func() { _ = lease.Close() })
 
 	cmd := exec.Command("sleep", "30")
 	cmd.ExtraFiles = append(cmd.ExtraFiles, lease.File())
 	if err := cmd.Start(); err != nil {
-		_ = lease.Close()
 		t.Fatalf("start lease holder: %v", err)
 	}
-	if err := lease.Close(); err != nil {
+	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+	})
+	if err := lease.Close(); err != nil {
 		t.Fatalf("close parent descriptor: %v", err)
 	}
 
-	writer, err := New(rootDir, "source")
-	if err != nil {
-		_ = cmd.Process.Kill()
+	assertWriterWaitsFor(t, rootDir, func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Fatalf("kill lease holder: %v", err)
+		}
 		_ = cmd.Wait()
-		t.Fatalf("new writer lock: %v", err)
-	}
-	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || got {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("writer while child holds lease: got=%v err=%v", got, tryErr)
-	}
-	if err := cmd.Process.Kill(); err != nil {
-		t.Fatalf("kill lease holder: %v", err)
-	}
-	_ = cmd.Wait()
-	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || !got {
-		t.Fatalf("writer after child exits: got=%v err=%v", got, tryErr)
-	}
-	if err := writer.Unlock(t.Context()); err != nil {
-		t.Fatalf("unlock writer: %v", err)
-	}
+	})
 }
 
 func TestSharedLeaseInheritanceSurvivesChildExit(t *testing.T) {
@@ -56,32 +43,19 @@ func TestSharedLeaseInheritanceSurvivesChildExit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new shared lease: %v", err)
 	}
+	t.Cleanup(func() { _ = lease.Close() })
 
 	cmd := exec.Command("true")
 	cmd.ExtraFiles = append(cmd.ExtraFiles, lease.File())
 	if err := cmd.Run(); err != nil {
-		_ = lease.Close()
 		t.Fatalf("run lease holder: %v", err)
 	}
 
-	writer, err := New(rootDir, "source")
-	if err != nil {
-		_ = lease.Close()
-		t.Fatalf("new writer lock: %v", err)
-	}
-	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || got {
-		_ = lease.Close()
-		t.Fatalf("writer while parent holds lease: got=%v err=%v", got, tryErr)
-	}
-	if err := lease.Close(); err != nil {
-		t.Fatalf("close parent lease: %v", err)
-	}
-	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || !got {
-		t.Fatalf("writer after parent closes: got=%v err=%v", got, tryErr)
-	}
-	if err := writer.Unlock(t.Context()); err != nil {
-		t.Fatalf("unlock writer: %v", err)
-	}
+	assertWriterWaitsFor(t, rootDir, func() {
+		if err := lease.Close(); err != nil {
+			t.Fatalf("close parent lease: %v", err)
+		}
+	})
 }
 
 func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
@@ -123,5 +97,23 @@ func TestSharedLeaseRebindsAfterExclusiveUnlink(t *testing.T) {
 	}
 	if got, tryErr := probe.TryLock(ctx); tryErr != nil || got {
 		t.Fatalf("exclusive acquired despite a live lease (split lock): got=%v err=%v", got, tryErr)
+	}
+}
+
+func assertWriterWaitsFor(t *testing.T, rootDir string, release func()) {
+	t.Helper()
+	writer, err := New(rootDir, "source")
+	if err != nil {
+		t.Fatalf("new writer lock: %v", err)
+	}
+	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || got {
+		t.Fatalf("writer while lease held: got=%v err=%v", got, tryErr)
+	}
+	release()
+	if got, tryErr := writer.TryLock(t.Context()); tryErr != nil || !got {
+		t.Fatalf("writer after lease released: got=%v err=%v", got, tryErr)
+	}
+	if err := writer.Unlock(t.Context()); err != nil {
+		t.Fatalf("unlock writer: %v", err)
 	}
 }

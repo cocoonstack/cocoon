@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,7 +72,7 @@ func TestReadSnapshotEnvelope_RoundTrip(t *testing.T) {
 	if got.Config.ID != cfg.ID || got.Config.Name != cfg.Name || got.Config.Hypervisor != cfg.Hypervisor || got.Config.NICs != cfg.NICs {
 		t.Errorf("got %+v, want %+v", got.Config, cfg)
 	}
-	if len(got.Files) != 2 || got.Files[0] != "cow.raw" || got.Files[1] != "vmstate" {
+	if !slices.Equal(got.Files, []string{"cow.raw", "vmstate"}) {
 		t.Errorf("files = %v, want [cow.raw vmstate]", got.Files)
 	}
 }
@@ -100,27 +101,25 @@ func TestReadSnapshotEnvelope_Missing(t *testing.T) {
 	}
 }
 
-func TestReadSnapshotEnvelope_BadVersion(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, SnapshotJSONName),
-		[]byte(`{"version": 999, "config": {}}`), 0o600); err != nil {
-		t.Fatal(err)
+func TestReadSnapshotEnvelope_BadVersionAndJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"BadVersion", `{"version": 999, "config": {}}`, "want version error"},
+		{"BadJSON", `{ not json`, "want parse error"},
 	}
-	_, err := ReadSnapshotEnvelope(dir)
-	if err == nil {
-		t.Fatal("want version error")
-	}
-}
-
-func TestReadSnapshotEnvelope_BadJSON(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, SnapshotJSONName),
-		[]byte(`{ not json`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := ReadSnapshotEnvelope(dir)
-	if err == nil {
-		t.Fatal("want parse error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, SnapshotJSONName), []byte(tt.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadSnapshotEnvelope(dir); err == nil {
+				t.Fatal(tt.want)
+			}
+		})
 	}
 }
 

@@ -11,24 +11,12 @@ import (
 )
 
 func TestTarFileMaybeSparse_FallsBackOnLargeMap(t *testing.T) {
-	orig := maxSparseMapJSONSize
-	maxSparseMapJSONSize = 4 * 1024
-	t.Cleanup(func() { maxSparseMapJSONSize = orig })
+	limitSparseMap(t, 4*1024)
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "memory-ranges")
+	path := filepath.Join(t.TempDir(), "memory-ranges")
 	logicalSize := writeSparseFile(t, path, 200, 4096)
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := tarFileMaybeSparse(tw, path, "memory-ranges"); err != nil {
-		t.Fatalf("tarFileMaybeSparse: %v (expected fallback to succeed)", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	tr := tar.NewReader(&buf)
+	tr := tar.NewReader(tarMaybeSparse(t, path, "memory-ranges"))
 	hdr, err := tr.Next()
 	if err != nil {
 		t.Fatal(err)
@@ -45,36 +33,18 @@ func TestTarFileMaybeSparse_FallsBackOnLargeMap(t *testing.T) {
 }
 
 func TestTarFileMaybeSparse_FallbackRoundTrip(t *testing.T) {
-	orig := maxSparseMapJSONSize
-	maxSparseMapJSONSize = 4 * 1024
-	t.Cleanup(func() { maxSparseMapJSONSize = orig })
+	limitSparseMap(t, 4*1024)
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "memory-ranges")
+	path := filepath.Join(t.TempDir(), "memory-ranges")
 	writeSparseFile(t, path, 200, 4096)
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := tarFileMaybeSparse(tw, path, "memory-ranges"); err != nil {
-		t.Fatal(err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
 	dst := t.TempDir()
-	if err := ExtractTar(dst, &buf); err != nil {
+	if err := ExtractTar(dst, tarMaybeSparse(t, path, "memory-ranges")); err != nil {
 		t.Fatalf("ExtractTar: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dst, "memory-ranges"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readFull(t, filepath.Join(dst, "memory-ranges"))
+	want := readFull(t, path)
 	if !bytes.Equal(got, want) {
 		t.Errorf("extracted content differs (len got=%d want=%d)", len(got), len(want))
 	}
@@ -87,26 +57,13 @@ func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteAt(bytes.Repeat([]byte{0xAA}, 4096), 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteAt(bytes.Repeat([]byte{0xBB}, 4096), 1<<20); err != nil {
-		t.Fatal(err)
-	}
+	writeAt(t, f, 0, bytes.Repeat([]byte{0xAA}, 4096))
+	writeAt(t, f, 1<<20, bytes.Repeat([]byte{0xBB}, 4096))
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := tarFileMaybeSparse(tw, path, "small-sparse"); err != nil {
-		t.Fatal(err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	tr := tar.NewReader(&buf)
+	tr := tar.NewReader(tarMaybeSparse(t, path, "small-sparse"))
 	hdr, err := tr.Next()
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +71,26 @@ func TestTarFileMaybeSparse_PreservesSparsePathForSmallMaps(t *testing.T) {
 	if _, ok := hdr.PAXRecords[paxSparseMap]; !ok {
 		t.Error("expected sparse PAX record for small fragmentation, got none")
 	}
+}
+
+func tarMaybeSparse(t *testing.T, path, name string) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tarFileMaybeSparse(tw, path, name); err != nil {
+		t.Fatalf("tarFileMaybeSparse: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf
+}
+
+func limitSparseMap(t *testing.T, n int) {
+	t.Helper()
+	orig := maxSparseMapJSONSize
+	maxSparseMapJSONSize = n
+	t.Cleanup(func() { maxSparseMapJSONSize = orig })
 }
 
 func writeSparseFile(t *testing.T, path string, numSegments, blockSize int) int64 {

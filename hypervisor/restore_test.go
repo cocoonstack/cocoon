@@ -29,19 +29,11 @@ func TestFailRestoreSparesStoppedOrigin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id := "vm-fail-" + string(tt.origin)
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
-			if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
-				return nil
-			}); err != nil {
-				t.Fatalf("seed state: %v", err)
-			}
+			setVMState(t, b, id, tt.origin)
 
 			b.failRestore(t.Context(), id, tt.origin)
 
-			rec, err := b.LoadRecord(t.Context(), id)
-			if err != nil {
-				t.Fatalf("load record: %v", err)
-			}
+			rec := recordOf(t, b, id)
 			if rec.State != tt.want {
 				t.Errorf("state %s, want %s", rec.State, tt.want)
 			}
@@ -74,9 +66,9 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			const id = "vm-direct-fail"
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
 			runDir := t.TempDir()
-			if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
-				idx.VMs[id].RunDir = runDir
+			if err := b.UpdateRecord(t.Context(), id, func(r *VMRecord) error {
+				r.State = tt.origin
+				r.RunDir = runDir
 				return nil
 			}); err != nil {
 				t.Fatalf("seed state: %v", err)
@@ -93,10 +85,7 @@ func TestDirectRestoreFailureKeepsOriginContract(t *testing.T) {
 			if _, err := b.DirectRestoreSequence(t.Context(), id, spec, t.TempDir()); err == nil {
 				t.Fatal("expected restore failure")
 			}
-			rec, err := b.LoadRecord(t.Context(), id)
-			if err != nil {
-				t.Fatalf("load record: %v", err)
-			}
+			rec := recordOf(t, b, id)
 			if rec.State != tt.want {
 				t.Errorf("state %s, want %s", rec.State, tt.want)
 			}
@@ -110,9 +99,9 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 	const id = "vm-restore-network-fail"
 	seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
 	runDir := shortTempDir(t)
-	if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-		idx.VMs[id].RunDir = runDir
-		idx.VMs[id].NetSetup = types.NetSetup{
+	if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		r.RunDir = runDir
+		r.NetSetup = types.NetSetup{
 			NetBackend:     types.BackendCNI,
 			NetworkConfigs: []*types.NetworkConfig{{}},
 		}
@@ -120,11 +109,7 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed network: %v", err)
 	}
-	quiesced := 0
-	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
-		quiesced++
-		return nil
-	}})
+	quiesced := countQuiesces(b)
 
 	_, err := b.DirectRestoreSequence(ctx, id, RestoreSpec{
 		VMCfg:      &types.VMConfig{CPU: 1, Memory: 1 << 30, Storage: 10 << 30},
@@ -147,8 +132,8 @@ func TestRunningRestoreFailureSchedulesNetworkConvergence(t *testing.T) {
 		t.Fatalf("ConvergeDead: %v", err)
 	}
 	after := recordOf(t, b, id)
-	if quiesced != 1 || after.QuiescePending {
-		t.Fatalf("quiesced = %d, pending = %v; want 1/false", quiesced, after.QuiescePending)
+	if *quiesced != 1 || after.QuiescePending {
+		t.Fatalf("quiesced = %d, pending = %v; want 1/false", *quiesced, after.QuiescePending)
 	}
 }
 
@@ -167,15 +152,15 @@ func TestRestoreHasAQuiescePendingBeforeTheVMM(t *testing.T) {
 			ctx := t.Context()
 			const id = "vm-restore-window"
 			seedRunningVM(t, b, id, 1, 1<<30, 10<<30)
-			if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-				idx.VMs[id].RunDir = shortTempDir(t)
-				idx.VMs[id].NetSetup = types.NetSetup{
+			if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+				r.RunDir = shortTempDir(t)
+				r.NetSetup = types.NetSetup{
 					NetBackend:     types.BackendCNI,
 					NetworkConfigs: []*types.NetworkConfig{{}},
 				}
 				if tt.origin == types.VMStateStopped {
-					idx.VMs[id].State = tt.origin
-					idx.VMs[id].StoppedAt = new(timeNow())
+					r.State = tt.origin
+					r.StoppedAt = new(timeNow())
 				}
 				return nil
 			}); err != nil {
@@ -235,10 +220,7 @@ func TestRestorePartialMergeQuarantinesEvenStoppedOrigin(t *testing.T) {
 	if _, err := b.RestoreSequence(t.Context(), id, spec, tarWithFiles(t, "a", "b")); err == nil {
 		t.Fatal("expected merge failure")
 	}
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.State != types.VMStateError {
 		t.Errorf("state %s, want error (mixed run dir must quarantine)", rec.State)
 	}
@@ -264,18 +246,10 @@ func TestRestorableStates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			id := "vm-" + string(tt.state)
 			seedVMRecord(t, b, id, 1, 512, 1024, true)
-			if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.state
-				return nil
-			}); err != nil {
-				t.Fatalf("seed state: %v", err)
-			}
+			setVMState(t, b, id, tt.state)
 
-			rec, err := b.LoadRecord(t.Context(), id)
-			if err != nil {
-				t.Fatalf("load: %v", err)
-			}
-			err = restorableState(id, &rec)
+			rec := recordOf(t, b, id)
+			err := restorableState(id, rec)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("restorableState: %v", err)
@@ -301,26 +275,15 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b, id := newHibernateTestVM(t)
-			if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
-				idx.VMs[id].State = tt.origin
-				return nil
-			}); err != nil {
-				t.Fatalf("seed state: %v", err)
-			}
-			rec, err := b.LoadRecord(t.Context(), id)
-			if err != nil {
-				t.Fatalf("load record: %v", err)
-			}
+			setVMState(t, b, id, tt.origin)
+			rec := recordOf(t, b, id)
 
-			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") })
+			killErr := b.KillForRestore(t.Context(), id, rec, func(int) error { return errors.New("kill refused") })
 			if killErr == nil || !strings.Contains(killErr.Error(), "stop running VM") {
 				t.Fatalf("KillForRestore: %v, want stop running VM error", killErr)
 			}
 
-			got, err := b.LoadRecord(t.Context(), id)
-			if err != nil {
-				t.Fatalf("reload record: %v", err)
-			}
+			got := recordOf(t, b, id)
 			if got.State != tt.want {
 				t.Errorf("state %s, want %s", got.State, tt.want)
 			}
@@ -346,8 +309,8 @@ func TestPrepareRestoreRejectsCorruptRecord(t *testing.T) {
 			ctx := t.Context()
 			const id = "vm-corrupt"
 			seedStoppedVMWithDirs(t, b, id)
-			if err := b.dbUpdate(ctx, func(idx *VMIndex) error {
-				tt.mutate(idx.VMs[id])
+			if err := b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+				tt.mutate(r)
 				return nil
 			}); err != nil {
 				t.Fatalf("seed: %v", err)
@@ -381,10 +344,7 @@ func TestRestoreCleanFailureQuarantines(t *testing.T) {
 	if _, err := b.RestoreSequence(t.Context(), id, spec, tarWithFiles(t, "a")); err == nil {
 		t.Fatal("expected sweep failure")
 	}
-	rec, err := b.LoadRecord(t.Context(), id)
-	if err != nil {
-		t.Fatalf("load record: %v", err)
-	}
+	rec := recordOf(t, b, id)
 	if rec.Quarantine == "" || rec.State != types.VMStateError {
 		t.Errorf("partial cleanup must quarantine even a stopped origin: quarantine=%q state=%s", rec.Quarantine, rec.State)
 	}

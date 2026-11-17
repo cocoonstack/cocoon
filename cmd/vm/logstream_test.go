@@ -39,11 +39,7 @@ func TestStreamLogFollowsAShortHeadWithoutReprinting(t *testing.T) {
 }
 
 func TestWatchFile(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	target := jsonTarget(t)
 
 	ch, err := watchFile(t.Context(), target, 50*time.Millisecond)
 	if err != nil {
@@ -62,11 +58,7 @@ func TestWatchFile(t *testing.T) {
 }
 
 func TestWatchFileDebounce(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	target := jsonTarget(t)
 
 	const debounce = 200 * time.Millisecond
 	ch, err := watchFile(t.Context(), target, debounce)
@@ -98,11 +90,7 @@ func TestWatchFileDebounce(t *testing.T) {
 }
 
 func TestWatchFileCancel(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	target := jsonTarget(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	ch, err := watchFile(ctx, target, 50*time.Millisecond)
@@ -164,4 +152,13 @@ func TestSeekToLastNLines(t *testing.T) {
 			}
 		})
 	}
+}
+
+func jsonTarget(t *testing.T) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "data.json")
+	if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return target
 }

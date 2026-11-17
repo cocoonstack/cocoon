@@ -1,46 +1,22 @@
 package sqlite
 
 import (
-	"encoding/json/jsontext"
 	"fmt"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/cocoonstack/cocoon/meta"
+	"github.com/cocoonstack/cocoon/meta/contracttest"
 )
 
 func TestEventsExternalProcess(t *testing.T) {
-	if testing.Short() {
-		t.Skip("multi-process gate skipped in -short")
-	}
-	dir := t.TempDir()
-	s := newStore(t, dir, "alpha")
-	ch, release, err := s.Events(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer release()
-
-	cmd := exec.Command(os.Args[0], "-test.run=TestEventsWriterWorker$", "-test.count=1")
-	cmd.Env = append(os.Environ(), "META_MP_DIR="+dir)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("external writer: %v", err)
-	}
-	waitEvent(t, ch, 8*time.Second, "external-process commit")
+	contracttest.ExternalProcessEvents(t, func(t *testing.T, dir string) meta.Store { return newStore(t, dir, "alpha") }, "TestEventsWriterWorker")
 }
 
 func TestEventsWriterWorker(t *testing.T) {
-	dir := os.Getenv("META_MP_DIR")
-	if dir == "" {
-		t.Skip("helper process only")
-	}
+	dir, _ := contracttest.HelperEnv(t)
 	s := newStore(t, dir, "alpha")
-	ctx := t.Context()
-	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "alpha", "records", "ext", jsontext.Value(`{}`), false)
-	}); err != nil {
+	if err := putRecord(t.Context(), s, "alpha", "ext", `{}`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -63,12 +39,10 @@ func TestEventsPoolChurn(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-			return w.PutRaw(ctx, "alpha", "records", fmt.Sprintf("churn%d", i), jsontext.Value(`{}`), false)
-		}); err != nil {
+		if err := putRecord(ctx, s, "alpha", fmt.Sprintf("churn%d", i), `{}`); err != nil {
 			t.Fatal(err)
 		}
-		waitEvent(t, ch, 8*time.Second, fmt.Sprintf("commit %d under pool churn", i))
+		contracttest.WaitEvent(t, ch, 8*time.Second, fmt.Sprintf("commit %d under pool churn", i))
 	}
 }
 
@@ -84,19 +58,8 @@ func TestEventsSeveredWatchPollFallback(t *testing.T) {
 		t.Fatalf("sever watch: %v", err)
 	}
 	ctx := t.Context()
-	if err := s.Update(ctx, meta.Scope{Write: "alpha"}, meta.CommitDurable, func(w meta.Writer) error {
-		return w.PutRaw(ctx, "alpha", "records", "silent", jsontext.Value(`{}`), false)
-	}); err != nil {
+	if err := putRecord(ctx, s, "alpha", "silent", `{}`); err != nil {
 		t.Fatal(err)
 	}
-	waitEvent(t, ch, 8*time.Second, "poll fallback after severed watch")
-}
-
-func waitEvent(t *testing.T, ch <-chan struct{}, within time.Duration, what string) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(within):
-		t.Fatalf("no event within %s (%s)", within, what)
-	}
+	contracttest.WaitEvent(t, ch, 8*time.Second, "poll fallback after severed watch")
 }
