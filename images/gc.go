@@ -77,7 +77,14 @@ func BuildGCModule[E any](cfg GCModuleConfig[E]) gc.Module[ImageGCSnapshot] {
 			return slices.Compact(candidates)
 		},
 		Collect: func(ctx context.Context, ids []string, _ ImageGCSnapshot) error {
-			return errors.Join(append(gcStaleTemp(ctx, cfg.TempDir), collectBlobs(ctx, cfg, ids)...)...)
+			errs := gcStaleTemp(ctx, cfg.TempDir)
+			logger := log.WithFunc("gc." + cfg.Name)
+			for _, hex := range ids {
+				if err := collectBlob(ctx, cfg, logger, hex); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			return errors.Join(errs...)
 		},
 	}
 }
@@ -106,53 +113,45 @@ func touchedSince(root string, cutoff time.Time) bool {
 	return touched
 }
 
-func collectBlobs[E any](ctx context.Context, cfg GCModuleConfig[E], ids []string) []error {
-	logger := log.WithFunc("gc." + cfg.Name)
-	var errs []error
-	var locked []string
-	for _, hex := range ids {
-		fl := gofrsflock.New(cfg.LockPath(hex))
-		defer fl.Close() //nolint:errcheck
-		// TryLock: a publish holding it is mid rename-to-index and must not lose its blob.
-		ok, err := fl.TryLock()
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("lock blob %s: %w", hex, err))
-		case !ok:
-			logger.Warnf(ctx, "skip %s: blob lock busy (publish in flight)", hex)
-		default:
-			locked = append(locked, hex)
-		}
+func collectBlob[E any](ctx context.Context, cfg GCModuleConfig[E], logger *log.Fields, hex string) error {
+	fl := gofrsflock.New(cfg.LockPath(hex))
+	defer fl.Close() //nolint:errcheck
+	// TryLock: a publish holding it is mid rename-to-index and must not lose its blob.
+	ok, err := fl.TryLock()
+	if err != nil {
+		return fmt.Errorf("lock blob %s: %w", hex, err)
 	}
-	if len(locked) == 0 {
-		return errs
+	if !ok {
+		logger.Warnf(ctx, "skip %s: blob lock busy (publish in flight)", hex)
+		return nil
 	}
-	// Revalidate under the held locks: a publish that finished after the snapshot may have referenced these digests.
-	var refs map[string]struct{}
+	// Revalidate under the held lock: a publish that finished after the snapshot may have referenced this digest.
+	referenced := false
 	if err := cfg.Store.View(ctx, func(idx *Index[E]) error {
-		refs = cfg.ReadRefs(idx.Images)
+		_, referenced = cfg.ReadRefs(idx.Images)[hex]
 		return nil
 	}); err != nil {
-		return append(errs, fmt.Errorf("revalidate blobs: %w", err))
+		return fmt.Errorf("revalidate blob %s: %w", hex, err)
 	}
-	unreferenced := utils.FilterUnreferenced(locked, refs)
-	if len(unreferenced) > 0 && cfg.PinnedElsewhere != nil {
+	if !referenced && cfg.PinnedElsewhere != nil {
 		pins, err := cfg.PinnedElsewhere(ctx)
 		if err != nil {
-			return append(errs, fmt.Errorf("recheck pins: %w", err))
+			return fmt.Errorf("recheck pins for blob %s: %w", hex, err)
 		}
-		unreferenced = utils.FilterUnreferenced(unreferenced, pins)
+		_, referenced = pins[hex]
 	}
-	for _, hex := range unreferenced {
-		n := len(errs)
-		for _, rm := range cfg.Removers {
-			if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
-			}
-		}
-		if len(errs) == n {
-			logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
+	if referenced {
+		return nil
+	}
+	var errs []error
+	for _, rm := range cfg.Removers {
+		if err := rm(hex); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("remove blob %s: %w", hex, err))
 		}
 	}
-	return errs
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	logger.Infof(ctx, "collected blob=%s reason=unreferenced", hex)
+	return nil
 }
