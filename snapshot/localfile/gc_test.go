@@ -409,7 +409,7 @@ func TestGCModule_OrphanDirCleaned(t *testing.T) {
 	if err := mod.Collect(ctx, ids, snap); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(orphanDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("orphan dir should be removed, stat err: %v", err)
 	}
 }

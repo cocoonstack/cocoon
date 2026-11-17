@@ -37,10 +37,10 @@ const (
 	// VMMemTransferTimeout is the single-shot timeout for snapshot/restore API calls.
 	VMMemTransferTimeout = 10 * time.Minute
 
-	// MinBalloonMemory is the floor below which balloon overhead is not worthwhile.
-	MinBalloonMemory = 256 << 20
+	// minBalloonMemory is the floor below which balloon overhead is not worthwhile.
+	minBalloonMemory = 256 << 20
 
-	DefaultBalloonDiv = 4
+	defaultBalloonDiv = 4
 )
 
 // timeNow is the clock seam tests inject.

@@ -14,7 +14,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 )
 
-const typ = "cloud-hypervisor"
+const typ = string(config.HypervisorCloudHypervisor)
 
 var (
 	_ hypervisor.Hypervisor    = (*CloudHypervisor)(nil)

@@ -128,10 +128,10 @@ func VsockSockPath(runDir string) string { return filepath.Join(runDir, VsockSoc
 
 // BalloonSize returns (bytes, enabled); Windows is always off since the virtio-win driver loops on deflation.
 func BalloonSize(cfg types.Config) (int64, bool) {
-	if cfg.NoBalloon || cfg.Windows || cfg.Memory < MinBalloonMemory {
+	if cfg.NoBalloon || cfg.Windows || cfg.Memory < minBalloonMemory {
 		return 0, false
 	}
-	return cfg.Memory / DefaultBalloonDiv, true
+	return cfg.Memory / defaultBalloonDiv, true
 }
 
 // IsDirectBoot reports whether boot uses a direct kernel (OCI) rather than UEFI firmware (cloudimg).

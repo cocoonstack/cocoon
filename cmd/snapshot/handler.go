@@ -65,7 +65,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	vmRef, _ := cmd.Flags().GetString("vm")
+	vmRef := cliutil.FlagStr(cmd, "vm")
 	var filterIDs map[string]struct{}
 	if vmRef != "" {
 		_, vm, findErr := cmdcore.FindVM(ctx, conf, vmRef)
@@ -130,9 +130,9 @@ func (h Handler) Export(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	ref := args[0]
-	output, _ := cmd.Flags().GetString("output")
-	useGzip, _ := cmd.Flags().GetBool("gzip")
-	toDir, _ := cmd.Flags().GetString("to-dir")
+	output := cliutil.FlagStr(cmd, "output")
+	useGzip := cliutil.FlagBool(cmd, "gzip")
+	toDir := cliutil.FlagStr(cmd, "to-dir")
 
 	if toDir != "" {
 		exporter, ok := snapBackend.(snapshot.DirectoryExporter)

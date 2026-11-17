@@ -24,8 +24,8 @@ const (
 	// healthStaleFactor bounds how many reconcile intervals may elapse before /healthz reports unready.
 	healthStaleFactor = 3
 
-	// DefaultAPISockMode keeps the socket group-accessible; filesystem permissions are the authorization boundary.
-	DefaultAPISockMode = 0o660
+	// defaultAPISockMode keeps the socket group-accessible; filesystem permissions are the authorization boundary.
+	defaultAPISockMode = 0o660
 	apiDirMode         = 0o750
 )
 
@@ -76,7 +76,7 @@ func (d *Daemon) listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	mode := cmp.Or(fs.FileMode(d.conf.APISockMode), DefaultAPISockMode)
+	mode := cmp.Or(fs.FileMode(d.conf.APISockMode), defaultAPISockMode)
 	if err := os.Chmod(d.conf.APIAddr, mode); err != nil {
 		_ = ln.Close()
 		return nil, err

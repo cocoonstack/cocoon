@@ -22,7 +22,7 @@ func (h Handler) Pull(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	force, _ := cmd.Flags().GetBool("force")
+	force := cliutil.FlagBool(cmd, "force")
 
 	for _, image := range args {
 		var pullErr error
