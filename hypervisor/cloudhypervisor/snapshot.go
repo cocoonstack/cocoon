@@ -37,7 +37,6 @@ func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hy
 		Terminate: func(rec *hypervisor.VMRecord, pid int) error {
 			return ch.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
 		},
-		RuntimeFiles: runtimeFiles,
 	}, persist)
 }
 

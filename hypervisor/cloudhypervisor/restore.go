@@ -60,7 +60,7 @@ func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, 
 func (ch *CloudHypervisor) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
 	return ch.KillForRestore(ctx, vmID, rec, func(pid int) error {
 		return ch.forceTerminate(ctx, hypervisor.SocketPath(rec.RunDir), pid)
-	}, runtimeFiles)
+	})
 }
 
 func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord, meta *snapshot.SnapshotMeta) (_ *types.VM, err error) {
@@ -93,7 +93,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	defer func() {
 		if err != nil {
-			ch.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
+			ch.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 		}
 	}()
 

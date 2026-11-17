@@ -33,6 +33,7 @@ func New(conf *config.Config, rec metering.Recorder, store meta.Store) (*Firecra
 	if err != nil {
 		return nil, err
 	}
+	backend.RuntimeFiles = runtimeFiles
 	return &Firecracker{Backend: backend, conf: cfg}, nil
 }
 

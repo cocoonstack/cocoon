@@ -118,7 +118,6 @@ type RestoreSpec struct {
 
 // StartSpec carries StartSequence inputs.
 type StartSpec struct {
-	RuntimeFiles    []string
 	Launch          func(ctx context.Context, rec *VMRecord, sockPath string) (int, error)
 	PostLaunch      ProcessHook
 	ConvergeRunning ProcessHook
@@ -126,8 +125,7 @@ type StartSpec struct {
 
 // StopSpec carries StopOneSequence inputs.
 type StopSpec struct {
-	RuntimeFiles []string
-	Shutdown     ProcessHook
+	Shutdown ProcessHook
 }
 
 // CreateSpec carries CreateSequence inputs.
@@ -148,11 +146,10 @@ type SnapshotSpec struct {
 	BuildMeta    func(rec *VMRecord, tmpDir string) (*snapshot.SnapshotMeta, error)
 }
 
-// HibernateSpec extends SnapshotSpec with the pause-window terminate hook and the backend's runtime files.
+// HibernateSpec extends SnapshotSpec with the pause-window terminate hook.
 type HibernateSpec struct {
 	SnapshotSpec
-	Terminate    func(rec *VMRecord, pid int) error
-	RuntimeFiles []string
+	Terminate func(rec *VMRecord, pid int) error
 }
 
 // Backend provides shared store operations for hypervisor backends.
@@ -166,6 +163,8 @@ type Backend struct {
 	// Net converges host networking inside the VM ops lock; nil disables it.
 	Net VMNetwork
 
+	// RuntimeFiles names the run-dir entries a VMM leaves behind; CleanupRuntimeFiles expands glob patterns.
+	RuntimeFiles []string
 	// PinsQueues marks a backend that pins writable disk queue threads, so launch derives their host cpus.
 	PinsQueues bool
 	// PeerNS lists the other backends' VM namespaces; placement counts their placements too.

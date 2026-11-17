@@ -25,7 +25,6 @@ func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist hyperv
 		Terminate: func(rec *hypervisor.VMRecord, pid int) error {
 			return fc.terminateVMM(ctx, rec, pid)
 		},
-		RuntimeFiles: runtimeFiles,
 	}, persist)
 }
 

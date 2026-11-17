@@ -36,7 +36,6 @@ func (fc *Firecracker) ReconcileToRunning(ctx context.Context, id string) (uint6
 
 func (fc *Firecracker) startOne(ctx context.Context, id string, scan *utils.ProcScan) error {
 	return fc.StartSequence(ctx, id, scan, hypervisor.StartSpec{
-		RuntimeFiles: runtimeFiles,
 		Launch: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string) (int, error) {
 			return fc.launchProcess(ctx, rec, sockPath, rec.ResolvedNetnsPath(), false)
 		},
@@ -178,7 +177,7 @@ func (fc *Firecracker) launchProcessWithLeases(ctx context.Context, rec *hypervi
 	switch {
 	case relayErr == nil:
 	case len(leaseFiles) > 0:
-		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 		_ = fcCmd.Process.Kill()
 		<-exited
 		return 0, nil, fmt.Errorf("start source-lease relay: %w", relayErr)

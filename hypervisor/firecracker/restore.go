@@ -33,7 +33,7 @@ func (fc *Firecracker) restoreSpec(ctx context.Context, vmCfg *types.VMConfig, s
 func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {
 	return fc.KillForRestore(ctx, vmID, rec, func(pid int) error {
 		return fc.terminateVMM(ctx, rec, pid)
-	}, runtimeFiles)
+	})
 }
 
 func (fc *Firecracker) terminateVMM(ctx context.Context, rec *hypervisor.VMRecord, pid int) error {
@@ -54,7 +54,7 @@ func (fc *Firecracker) restoreAfterExtract(ctx context.Context, vmID string, vmC
 
 	defer func() {
 		if err != nil {
-			fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir, runtimeFiles)
+			fc.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 		}
 	}()
 

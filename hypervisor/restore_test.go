@@ -312,7 +312,7 @@ func TestKillForRestoreFailureKeepsOriginContract(t *testing.T) {
 				t.Fatalf("load record: %v", err)
 			}
 
-			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") }, nil)
+			killErr := b.KillForRestore(t.Context(), id, &rec, func(int) error { return errors.New("kill refused") })
 			if killErr == nil || !strings.Contains(killErr.Error(), "stop running VM") {
 				t.Fatalf("KillForRestore: %v, want stop running VM error", killErr)
 			}

@@ -17,7 +17,6 @@ func (fc *Firecracker) stopOneLocked(ctx context.Context, id string) error {
 
 func (fc *Firecracker) stopSpec() hypervisor.StopSpec {
 	return hypervisor.StopSpec{
-		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			if fc.conf.ForceStop() {
 				return fc.forceTerminate(ctx, sockPath, pid)

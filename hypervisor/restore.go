@@ -26,13 +26,13 @@ type restoreRun struct {
 	afterExtract     AfterExtractHook
 }
 
-func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook, runtimeFiles []string) error {
+func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
 		b.failRestore(ctx, vmID, rec.State)
 		return fmt.Errorf("stop running VM: %w", killErr)
 	}
-	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
+	CleanupRuntimeFiles(ctx, rec.RunDir, b.RuntimeFiles)
 	return nil
 }
 

@@ -58,7 +58,7 @@ func (b *Backend) StartSequence(ctx context.Context, id string, scan *utils.Proc
 	}
 	if spec.PostLaunch != nil {
 		if err := spec.PostLaunch(ctx, rec, sockPath, pid); err != nil {
-			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir, spec.RuntimeFiles)
+			b.AbortLaunch(ctx, pid, sockPath, rec.RunDir)
 			b.markFailedOperation(ctx, id, true)
 			return fmt.Errorf("configure VM: %w", err)
 		}
@@ -114,7 +114,7 @@ func (b *Backend) PrepareStart(ctx context.Context, id string, scan *utils.ProcS
 	if err = utils.EnsureDirs(rec.RunDir, rec.LogDir); err != nil {
 		return nil, fmt.Errorf("ensure dirs: %w", err)
 	}
-	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
+	CleanupRuntimeFiles(ctx, rec.RunDir, b.RuntimeFiles)
 	if err = validateRecordInvariants(&rec); err != nil {
 		b.MarkError(ctx, id)
 		return nil, err
@@ -191,9 +191,9 @@ func (b *Backend) ArmCPUQuota(id string, cfg *types.Config) error {
 	return nil
 }
 
-func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string, runtimeFiles []string) {
+func (b *Backend) AbortLaunch(ctx context.Context, pid int, sockPath, runDir string) {
 	_ = utils.TerminateProcess(ctx, pid, sockPath, b.Conf.TerminateGracePeriod())
-	CleanupRuntimeFiles(ctx, runDir, runtimeFiles)
+	CleanupRuntimeFiles(ctx, runDir, b.RuntimeFiles)
 }
 
 func raiseVMMRlimits(ctx context.Context) {

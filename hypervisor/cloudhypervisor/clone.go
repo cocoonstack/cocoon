@@ -150,7 +150,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 		reason = metering.ReasonMigrate
 	}
 	if err := ch.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID, reason); err != nil {
-		ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		ch.AbortLaunch(ctx, pid, sockPath, runDir)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 
@@ -161,7 +161,7 @@ func (ch *CloudHypervisor) cloneAfterExtractParsed(ctx context.Context, rec *hyp
 func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, sockPath, runDir string, opts *cloneResumeOpts) (err error) {
 	defer func() {
 		if err != nil {
-			ch.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+			ch.AbortLaunch(ctx, pid, sockPath, runDir)
 		}
 	}()
 

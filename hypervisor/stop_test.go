@@ -138,8 +138,9 @@ func TestDeleteForceTerminatesACreatingOrphan(t *testing.T) {
 	if err := ln.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
-		return b.StopOneLocked(ctx, id, StopSpec{RuntimeFiles: []string{APISocketName}})
+		return b.StopOneLocked(ctx, id, StopSpec{})
 	}
 
 	deleted, err := b.DeleteAll(ctx, []string{id}, true, stopLocked)
@@ -363,9 +364,9 @@ func TestDeleteAllForceStopsUnderLock(t *testing.T) {
 		t.Fatalf("DeleteAll without force: %v, want running-requires-force error", err)
 	}
 
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
 		return b.StopOneLocked(ctx, id, StopSpec{
-			RuntimeFiles: []string{APISocketName},
 			Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 				return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 			},
@@ -412,10 +413,10 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 		t.Fatalf("MarkStarted: %v", err)
 	}
 
+	b.RuntimeFiles = []string{APISocketName}
 	stopLocked := func(ctx context.Context, id string) error {
 		return b.StopOneLocked(ctx, id, StopSpec{
-			RuntimeFiles: []string{APISocketName},
-			Shutdown:     func(context.Context, *VMRecord, string, int) error { return nil },
+			Shutdown: func(context.Context, *VMRecord, string, int) error { return nil },
 		})
 	}
 	if _, err := b.DeleteAll(ctx, []string{id}, true, stopLocked); err != nil {

@@ -115,7 +115,7 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	info := fc.RunningCloneRecord(rec, vmCfg, storageConfigs, net, pid)
 	if err := fc.FinalizeClone(ctx, vmID, info, bootCfg, blobIDs, sourceSnapshotID, metering.ReasonClone); err != nil {
 		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, sockPath, runDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, sockPath, runDir)
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 	// A delivered commit byte or relay exit releases the leases; an unconfirmed release must not kill a committed VM.
@@ -167,7 +167,7 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 	}
 	fail := func(err error) (int, *cloneLeaseControl, *bindRedirectPlan, error) {
 		leaseControl.close()
-		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir, runtimeFiles)
+		fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir)
 		plan.close()
 		return 0, nil, nil, err
 	}
@@ -183,7 +183,7 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl cloneLaunch) (err error) {
 	defer func() {
 		if err != nil {
-			fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir, runtimeFiles)
+			fc.AbortLaunch(ctx, pid, cl.sockPath, cl.rec.RunDir)
 		}
 	}()
 

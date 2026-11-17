@@ -100,12 +100,12 @@ func (b *Backend) stopOne(ctx context.Context, id string, spec StopSpec) (settle
 		b.MarkError(ctx, id)
 		return nil, shutdownErr
 	}
-	return b.landStopped(ctx, id, &rec, spec.RuntimeFiles, settled), nil
+	return b.landStopped(ctx, id, &rec, settled), nil
 }
 
 // landStopped settles a VM whose VMM is gone, under the caller's ops lock; the quiesce runs even when the flip fails (#130).
-func (b *Backend) landStopped(ctx context.Context, id string, rec *VMRecord, runtimeFiles []string, settled bool) error {
-	CleanupRuntimeFiles(ctx, rec.RunDir, runtimeFiles)
+func (b *Backend) landStopped(ctx context.Context, id string, rec *VMRecord, settled bool) error {
+	CleanupRuntimeFiles(ctx, rec.RunDir, b.RuntimeFiles)
 	b.removeCgroupScope(ctx, id)
 	var flipErr error
 	if !settled {

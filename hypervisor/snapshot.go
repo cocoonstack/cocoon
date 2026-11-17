@@ -138,7 +138,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		return fmt.Errorf("hibernate VM %s: %w", vmID, err)
 	}
 
-	if err = b.landStopped(ctx, vmID, &rec, spec.RuntimeFiles, false); err != nil {
+	if err = b.landStopped(ctx, vmID, &rec, false); err != nil {
 		return fmt.Errorf("hibernate VM %s: snapshot saved and VMM stopped, settle with vm stop: %w", vmID, err)
 	}
 	return nil

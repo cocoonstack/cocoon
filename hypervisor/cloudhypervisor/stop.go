@@ -17,7 +17,6 @@ func (ch *CloudHypervisor) stopOneLocked(ctx context.Context, id string) error {
 
 func (ch *CloudHypervisor) stopSpec() hypervisor.StopSpec {
 	return hypervisor.StopSpec{
-		RuntimeFiles: runtimeFiles,
 		Shutdown: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, pid int) error {
 			if ch.conf.ForceStop() {
 				return ch.forceTerminate(ctx, sockPath, pid)
