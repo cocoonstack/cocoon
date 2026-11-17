@@ -37,6 +37,31 @@ func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 	}
 }
 
+func TestGCReportsAFailedTAPDelete(t *testing.T) {
+	oldList, oldDelete := listLinksFn, deleteLinkFn
+	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
+	listLinksFn = func() ([]netlink.Link, error) {
+		return []netlink.Link{&netlink.Dummy{Name: "btAAAAAAAA-0", Index: 1}, &netlink.Dummy{Name: "btAAAAAAAA-1", Index: 2}}, nil
+	}
+	delErr := errors.New("link busy")
+	var deleted []int
+	deleteLinkFn = func(link netlink.Link) error {
+		deleted = append(deleted, link.Attrs().Index)
+		if link.Attrs().Index == 1 {
+			return delErr
+		}
+		return nil
+	}
+	m := GCModule("bt", func(context.Context, string) (bool, error) { return false, nil })
+	err := m.Collect(t.Context(), []string{"AAAAAAAA"}, bridgeSnapshot{})
+	if !errors.Is(err, delErr) {
+		t.Fatalf("collect error = %v, want the TAP delete failure reported", err)
+	}
+	if len(deleted) != 2 {
+		t.Fatalf("deleted = %v, want every orphan TAP attempted past the failure", deleted)
+	}
+}
+
 func TestGCReadsAnInterruptedLinkDump(t *testing.T) {
 	oldList := listLinksFn
 	t.Cleanup(func() { listLinksFn = oldList })

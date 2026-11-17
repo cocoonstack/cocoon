@@ -84,7 +84,7 @@ func GCModule(tapPrefix string, vmInUse network.VMInUse) gc.Module[bridgeSnapsho
 				for _, l := range orphans[prefix] {
 					name := l.Attrs().Name
 					if err := deleteLinkFn(l); err != nil {
-						logger.Warnf(ctx, "delete orphan TAP %s: %v", name, err)
+						errs = append(errs, fmt.Errorf("delete orphan TAP %s: %w", name, err))
 					} else {
 						logger.Infof(ctx, "collected id=%s iface=%s reason=orphan-tap", prefix, name)
 					}
