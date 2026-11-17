@@ -26,14 +26,36 @@ func TestDownloadBlobParallelRange(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadBlob(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
 	}
 	assertFileContent(t, dst, data)
+}
+
+func TestDownloadBlobUsesTheCallerSuppliedClient(t *testing.T) {
+	data := testPayload(64 * 1024)
+	blob := rangeHandler(data, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		blob.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	dst := createTempFile(t)
+	digest, err := DownloadBlob(t.Context(), bearerDoer{}, server.URL, dst, 4, progress.Nop)
+	if err != nil {
+		t.Fatalf("DownloadBlob(): %v, want every request sent through the caller's client", err)
+	}
+	if want := sha256Hex(data); digest != want {
+		t.Errorf("digest = %s, want %s", digest, want)
+	}
 }
 
 func TestDownloadBlobFallsBackWhenRangeUnsupported(t *testing.T) {
@@ -47,9 +69,9 @@ func TestDownloadBlobFallsBackWhenRangeUnsupported(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadBlob(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -70,8 +92,8 @@ func TestDownloadBlobRejectsNonImageBeforeWriting(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			dst := createTempFile(t)
-			if _, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop); err == nil || !strings.Contains(err.Error(), "HTML") {
-				t.Fatalf("downloadBlob() = %v, want the HTML rejection", err)
+			if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil || !strings.Contains(err.Error(), "HTML") {
+				t.Fatalf("DownloadBlob() = %v, want the HTML rejection", err)
 			}
 			st, err := dst.Stat()
 			if err != nil {
@@ -93,8 +115,8 @@ func TestDownloadBlobOneRangeFailureAbortsWhole(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadBlob(t.Context(), server.URL, dst, 2, progress.Nop); err == nil {
-		t.Fatal("downloadBlob() = nil error, want failure from the broken range")
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 2, progress.Nop); err == nil {
+		t.Fatal("DownloadBlob() = nil error, want failure from the broken range")
 	}
 }
 
@@ -107,8 +129,8 @@ func TestDownloadBlobRejectsOverCapSize(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop); err == nil {
-		t.Fatal("downloadBlob() = nil error, want rejection for exceeding max size")
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
+		t.Fatal("DownloadBlob() = nil error, want rejection for exceeding max size")
 	}
 }
 
@@ -121,8 +143,8 @@ func TestDownloadBlobEmitsFinalProgressEvent(t *testing.T) {
 	tracker := progress.NewTracker(func(e cloudimgProgress.Event) { lastEvent = e })
 
 	dst := createTempFile(t)
-	if _, err := downloadBlob(t.Context(), server.URL, dst, 4, tracker); err != nil {
-		t.Fatalf("downloadBlob(): %v", err)
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, tracker); err != nil {
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if lastEvent.BytesDone != int64(len(data)) || lastEvent.BytesTotal != int64(len(data)) {
 		t.Errorf("final event = %+v, want BytesDone=BytesTotal=%d", lastEvent, len(data))
@@ -135,9 +157,9 @@ func TestDownloadBlobUnevenLastRange(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadBlob(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -158,9 +180,9 @@ func TestDownloadBlobFollowsRedirectForRanges(t *testing.T) {
 	defer front.Close()
 
 	dst := createTempFile(t)
-	digest, err := downloadBlob(t.Context(), front.URL, dst, 4, progress.Nop)
+	digest, err := DownloadBlob(t.Context(), http.DefaultClient, front.URL, dst, 4, progress.Nop)
 	if err != nil {
-		t.Fatalf("downloadBlob(): %v", err)
+		t.Fatalf("DownloadBlob(): %v", err)
 	}
 	if want := sha256Hex(data); digest != want {
 		t.Errorf("digest = %s, want %s", digest, want)
@@ -194,7 +216,7 @@ func TestDownloadBlobShortRangeBodyFails(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop); err == nil {
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
 		t.Fatal("expected error for a short 206 body, got nil (zero-hole corruption)")
 	}
 }
@@ -218,7 +240,7 @@ func TestDownloadBlobMismatchedContentRangeFails(t *testing.T) {
 	defer server.Close()
 
 	dst := createTempFile(t)
-	if _, err := downloadBlob(t.Context(), server.URL, dst, 4, progress.Nop); err == nil {
+	if _, err := DownloadBlob(t.Context(), http.DefaultClient, server.URL, dst, 4, progress.Nop); err == nil {
 		t.Fatal("expected error for mismatched content-range, got nil")
 	}
 }
@@ -372,4 +394,11 @@ func assertFileContent(t *testing.T, f *os.File, want []byte) {
 			t.Fatalf("file content mismatch at byte %d: got %d, want %d", i, got[i], want[i])
 		}
 	}
+}
+
+type bearerDoer struct{}
+
+func (bearerDoer) Do(r *http.Request) (*http.Response, error) {
+	r.Header.Set("Authorization", "Bearer token")
+	return http.DefaultClient.Do(r)
 }

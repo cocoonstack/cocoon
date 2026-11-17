@@ -77,8 +77,8 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
 		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
-		imageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
-		imageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
+		ImageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
+		ImageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
 		{Name: cni.NamespaceName, FilePath: netCfg.IndexFile(), LockPath: netCfg.IndexLock(), Codec: netTables},
 		{
 			Name:     metalog.NamespaceName,
@@ -179,7 +179,8 @@ func CloseMetaStore(ctx context.Context) {
 	}
 }
 
-func imageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
+// ImageJSONNamespace describes an image store's json namespace from its base paths; cocoon-macos opens its store with it.
+func ImageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
 	return metajson.Namespace{
 		Name:     c.Name,
 		FilePath: c.IndexFile(),

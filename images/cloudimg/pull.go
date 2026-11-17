@@ -30,10 +30,14 @@ const (
 	sniffLen                 = 8
 )
 
-// downloadBlob writes url into dst and returns its sha256 hex, using pullConns Range requests when the server honors them.
-func downloadBlob(ctx context.Context, url string, dst *os.File, pullConns int, tracker progress.Tracker) (string, error) {
-	logger := log.WithFunc("cloudimg.downloadBlob")
-	client := &http.Client{Timeout: urlDownloadTimeout}
+// Doer is the client contract DownloadBlob needs; *http.Client satisfies it, and cocoon-macos passes an authenticating registry client.
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// DownloadBlob writes url into dst and returns its sha256 hex, using pullConns Range requests when the server honors them.
+func DownloadBlob(ctx context.Context, client Doer, url string, dst *os.File, pullConns int, tracker progress.Tracker) (string, error) {
+	logger := log.WithFunc("cloudimg.DownloadBlob")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -143,7 +147,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 	}
 	defer cleanup()
 
-	digestHex, err := downloadBlob(ctx, url, tmpFile, conf.PullConns, tracker)
+	digestHex, err := DownloadBlob(ctx, &http.Client{Timeout: urlDownloadTimeout}, url, tmpFile, conf.PullConns, tracker)
 	if err != nil {
 		return err
 	}
@@ -155,7 +159,7 @@ func pull(ctx context.Context, conf *Config, store *images.Store[imageEntry], ur
 }
 
 // downloadSerial re-requests url without a Range header when a partial reply named no total size.
-func downloadSerial(ctx context.Context, client *http.Client, url string, dst *os.File, tracker progress.Tracker) (string, error) {
+func downloadSerial(ctx context.Context, client Doer, url string, dst *os.File, tracker progress.Tracker) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -195,7 +199,7 @@ func streamBody(resp *http.Response, dst *os.File, tracker progress.Tracker) (st
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func downloadRangesParallel(ctx context.Context, client *http.Client, url string, dst *os.File, ver objectVersion, pullConns int, tracker progress.Tracker) error {
+func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *os.File, ver objectVersion, pullConns int, tracker progress.Tracker) error {
 	if err := dst.Truncate(ver.size); err != nil {
 		return fmt.Errorf("truncate temp file: %w", err)
 	}
@@ -214,7 +218,7 @@ func downloadRangesParallel(ctx context.Context, client *http.Client, url string
 	return nil
 }
 
-func downloadRange(ctx context.Context, client *http.Client, url string, dst *os.File, r [2]int64, ver objectVersion, pc *progressCounter) error {
+func downloadRange(ctx context.Context, client Doer, url string, dst *os.File, r [2]int64, ver objectVersion, pc *progressCounter) error {
 	start, end := r[0], r[1]
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
