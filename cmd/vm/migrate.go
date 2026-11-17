@@ -46,6 +46,9 @@ func (h Handler) MigrateReceive(cmd *cobra.Command, _ []string) error {
 	if !ok {
 		return fmt.Errorf("migrate receive: backend %s: %w", hyper.Type(), hypervisor.ErrMigrateUnsupported)
 	}
+	if err = hypervisor.RequireFinalSeries(dir); err != nil {
+		return fmt.Errorf("migrate receive: %w", err)
+	}
 	// A receive killed mid-flight leaves its placeholder and maybe a VMM under this ID.
 	if id != "" {
 		outcome, reclaimErr := hyper.ReconcileStaleCreate(ctx, id)
