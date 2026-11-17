@@ -101,7 +101,6 @@ type fcNetworkOverride struct {
 	HostDevName string `json:"host_dev_name"`
 }
 
-// A nil override keeps the field off the wire for FC < v1.16.
 type fcVsockOverride struct {
 	UDSPath string `json:"uds_path"`
 }

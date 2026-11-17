@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/projecteru2/core/log"
+
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -42,6 +44,8 @@ func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types
 }
 
 func InitCOWFilesystem(ctx context.Context, path string) error {
+	// Shell out: no Go ext4 formatter writes a lazy-init, discard-ready filesystem.
+	log.WithFunc("hypervisor.InitCOWFilesystem").Debugf(ctx, "exec mkfs.ext4 %s", path)
 	out, err := exec.CommandContext( //nolint:gosec
 		ctx,
 		"mkfs.ext4", "-F", "-m", "0", "-q",

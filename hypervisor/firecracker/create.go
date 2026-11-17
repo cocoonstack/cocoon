@@ -140,9 +140,9 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func buildCmdline(storageConfigs []*types.StorageConfig, networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
-	// Boot flags skip probes for hardware Firecracker lacks.
 	layerDevs := hypervisor.ReverseLayers(storageConfigs, func(idx int, _ *types.StorageConfig) string { return devPath(idx) })
 	return hypervisor.BuildBaseCmdline(
+		// Boot flags skip probes for hardware Firecracker lacks.
 		"console=ttyS0 reboot=k loglevel=3 i8042.noaux 8250.nr_uarts=1",
 		strings.Join(layerDevs, ","),
 		devPath(len(layerDevs)),

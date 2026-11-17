@@ -95,7 +95,7 @@ func (b *Backend) netResizeAdd(ctx context.Context, vmID string, rec *VMRecord, 
 	return res, nil
 }
 
-// resolveFailedPersist tears down a failed NIC persist only on a conclusive lockless re-read miss: fsync can fail after the rename landed, and removing a committed NIC strands record-without-device beyond any retry.
+// resolveFailedPersist tears down only on a re-read miss: fsync can fail after the rename lands.
 func (b *Backend) resolveFailedPersist(ctx context.Context, dev NICDeviceOps, plumbing netresize.Plumbing, vmID string, nc *types.NetworkConfig, devID string, i int) (bool, error) {
 	rec, err := b.PeekRecord(ctx, vmID)
 	if err != nil {
@@ -179,7 +179,7 @@ func reconcileOrphanNICs(ctx context.Context, dev NICDeviceOps, vmID string, liv
 			continue
 		}
 		removeErr := dev.RemoveNIC(ctx, n.ID)
-		// Reclaim the host slot even when the guest never released the device: a late release drops it from the live set, so no later reconcile would see this TAP and retries wedge at CreateTAP.
+		// A late guest release hides this TAP from every later reconcile.
 		if n.Index >= 0 && (removeErr == nil || errors.Is(removeErr, ErrEjectPending)) {
 			if rmErr := plumbing.Remove(ctx, vmID, n.Index); rmErr != nil {
 				logger.Warnf(ctx, "reclaim host slot %d for orphan NIC %s: %v", n.Index, n.ID, rmErr)

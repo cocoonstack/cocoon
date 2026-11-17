@@ -17,9 +17,9 @@ const retryDelay = 2 * time.Millisecond
 // Lock provides in-process (channel) + cross-process (flock) mutual exclusion.
 type Lock struct {
 	path      string
+	transient bool
 	ch        chan struct{}
 	fl        *flock.Flock // active flock fd, non-nil while held
-	transient bool
 }
 
 // New returns a Lock guarding path; the lock file is created on first acquire.

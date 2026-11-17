@@ -53,7 +53,7 @@ func (ch *CloudHypervisor) DiskAttach(ctx context.Context, vmRef string, spec di
 		})
 	}
 	return ch.attachWith(ctx, vmRef, "vm.add-disk", makeBody, func(info *chVMInfoResponse) (string, error) {
-		return diskAttached(info, id, spec.Name, path, spec.ReadOnly)
+		return findAttachedDisk(info, id, spec.Name, path, spec.ReadOnly)
 	})
 }
 
@@ -80,7 +80,7 @@ func (ch *CloudHypervisor) DiskAttachSnapshot(ctx context.Context, vmRef string,
 		return "", "", err
 	}
 	path := snapshotDiskPath(rec.RunDir, src.Name, format)
-	existing, err := diskAttached(info, id, src.Name, path, false)
+	existing, err := findAttachedDisk(info, id, src.Name, path, false)
 	if err != nil || existing != "" {
 		return existing, format, err
 	}
@@ -333,7 +333,7 @@ func hotDisk(rec *hypervisor.VMRecord, id string, sc *types.StorageConfig) chDis
 	return d
 }
 
-func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
+func findAttachedDisk(info *chVMInfoResponse, id, name, path string, readOnly bool) (string, error) {
 	for _, ex := range info.Config.Disks {
 		if ex.ID == id {
 			if ex.Path == path && ex.ReadOnly == readOnly {

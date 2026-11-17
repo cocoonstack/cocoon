@@ -33,7 +33,7 @@ func TestDiskAttached(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := diskAttached(info, disk.DeriveID(tt.diskName), tt.diskName, tt.path, tt.readOnly)
+			got, err := findAttachedDisk(info, disk.DeriveID(tt.diskName), tt.diskName, tt.path, tt.readOnly)
 			if got != tt.want {
 				t.Errorf("existing id = %q, want %q", got, tt.want)
 			}

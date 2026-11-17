@@ -13,6 +13,23 @@ import (
 	"github.com/cocoonstack/cocoon/types"
 )
 
+func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec netresize.Spec, plumbing netresize.Plumbing) (netresize.Result, error) {
+	if err := spec.Normalize(); err != nil {
+		return netresize.Result{}, err
+	}
+	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
+	if err != nil {
+		return netresize.Result{}, err
+	}
+	defer unlock()
+	for _, id := range pendingNICEjects(info) {
+		if rmErr := removeDevicePending(ctx, hc, id); rmErr != nil {
+			log.WithFunc("cloudhypervisor.NetResize").Warnf(ctx, "re-request eject of %s: %v", id, rmErr)
+		}
+	}
+	return ch.NetResizeWith(ctx, rec.ID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
+}
+
 type chNICOps struct {
 	hc *http.Client
 }
@@ -48,20 +65,3 @@ func (o chNICOps) RemoveNIC(ctx context.Context, id string) error {
 }
 
 func (o chNICOps) TAPQueues(cpu int) int { return network.NetNumQueues(cpu) }
-
-func (ch *CloudHypervisor) NetResize(ctx context.Context, vmRef string, spec netresize.Spec, plumbing netresize.Plumbing) (netresize.Result, error) {
-	if err := spec.Normalize(); err != nil {
-		return netresize.Result{}, err
-	}
-	hc, rec, info, unlock, err := ch.lockedDeviceOp(ctx, vmRef)
-	if err != nil {
-		return netresize.Result{}, err
-	}
-	defer unlock()
-	for _, id := range pendingNICEjects(info) {
-		if rmErr := removeDevicePending(ctx, hc, id); rmErr != nil {
-			log.WithFunc("cloudhypervisor.NetResize").Warnf(ctx, "re-request eject of %s: %v", id, rmErr)
-		}
-	}
-	return ch.NetResizeWith(ctx, rec.ID, &rec, chNICOps{hc: hc}, plumbing, spec.Target)
-}

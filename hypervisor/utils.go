@@ -113,7 +113,7 @@ func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn VMO
 	logger := log.WithFunc(b.Typ + "." + op)
 	result := utils.ForEach(ctx, ids, fn, b.Conf.EffectivePoolSize())
 	for _, err := range result.Errors {
-		logger.Warnf(ctx, "%s: %v", op, err)
+		logger.Error(ctx, err, op)
 	}
 	return result.Succeeded, result.Err()
 }

@@ -144,7 +144,7 @@ func (fc *Firecracker) loadCloneSnapshot(ctx context.Context, cl cloneLaunch) (i
 	netOverrides := buildNetworkOverrides(cl.networkConfigs)
 	vsockPath := hypervisor.VsockSockPath(cl.rec.RunDir)
 
-	plan, err := holdBindableRedirects(ctx, fc.Conf.RootDirPath(), fc.Conf.RunDir(), cl.src, cl.dst, func(id string) (bool, error) {
+	plan, err := holdBindableRedirects(ctx, fc.conf.RootDirPath(), fc.conf.RunDir(), cl.src, cl.dst, func(id string) (bool, error) {
 		rec, peekErr := fc.PeekRecord(ctx, id)
 		return rec != nil, peekErr
 	})

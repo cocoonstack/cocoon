@@ -254,7 +254,7 @@ func (fc *Firecracker) startConsoleRelay(runDir string, master *os.File, fcPID i
 	}
 	_ = controlReader.Close()
 	_ = readyWriter.Close()
-	if readyErr := waitRelayLeaseReady(readyReader); readyErr != nil {
+	if readyErr := waitRelayLeaseResponse(readyReader, relayLeaseReadyCommand, "readiness"); readyErr != nil {
 		_ = controlWriter.Close()
 		_ = readyReader.Close()
 		_ = relayCmd.Process.Kill()

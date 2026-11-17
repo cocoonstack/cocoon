@@ -64,7 +64,7 @@ func TestSaveConsolePTYWritesQueriedPath(t *testing.T) {
 func TestSaveConsolePTYSkipsUEFI(t *testing.T) {
 	runDir := t.TempDir()
 
-	saveConsolePTY(t.Context(), "vm1", runDir, filepath.Join(runDir, "api.sock"), false)
+	saveConsolePTY(t.Context(), "vm1", runDir, serveVMInfo(t, "/dev/pts/7"), false)
 
 	if utils.FileExists(hypervisor.ConsolePTYPath(runDir)) {
 		t.Error("console.pty written for a UEFI boot")
