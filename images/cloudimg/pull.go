@@ -73,8 +73,9 @@ func DownloadBlob(ctx context.Context, client Doer, url string, dst *os.File, pu
 	}
 
 	logger.Debugf(ctx, "downloading %s in %d parallel range(s)", url, pullConns)
+	ver := objectVersion{size: size, validator: objectValidator(resp.Header)}
 	// The post-redirect URL spares each range request the redirect chain.
-	if err := downloadRangesParallel(ctx, client, resp.Request.URL.String(), dst, size, pullConns, tracker); err != nil {
+	if err := downloadRangesParallel(ctx, client, resp.Request.URL.String(), dst, ver, pullConns, tracker); err != nil {
 		return "", err
 	}
 	return hashDigest(dst)
@@ -203,26 +204,26 @@ func streamBody(resp *http.Response, dst *os.File, tracker progress.Tracker) (st
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *os.File, size int64, pullConns int, tracker progress.Tracker) error {
-	if err := dst.Truncate(size); err != nil {
+func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *os.File, ver objectVersion, pullConns int, tracker progress.Tracker) error {
+	if err := dst.Truncate(ver.size); err != nil {
 		return fmt.Errorf("truncate temp file: %w", err)
 	}
 
-	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: size})
-	pc := &progressCounter{total: size, tracker: tracker}
+	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: ver.size})
+	pc := &progressCounter{total: ver.size, tracker: tracker}
 
-	ranges := splitRanges(size, pullConns)
+	ranges := splitRanges(ver.size, pullConns)
 	if _, err := utils.Map(ctx, ranges, func(ctx context.Context, _ int, r [2]int64) (struct{}, error) {
-		return struct{}{}, downloadRange(ctx, client, url, dst, r, pc)
+		return struct{}{}, downloadRange(ctx, client, url, dst, r, ver, pc)
 	}, pullConns); err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
 	}
 
-	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: size, BytesDone: size})
+	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: ver.size, BytesDone: ver.size})
 	return nil
 }
 
-func downloadRange(ctx context.Context, client Doer, url string, dst *os.File, r [2]int64, pc *progressCounter) error {
+func downloadRange(ctx context.Context, client Doer, url string, dst *os.File, r [2]int64, ver objectVersion, pc *progressCounter) error {
 	start, end := r[0], r[1]
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -237,7 +238,7 @@ func downloadRange(ctx context.Context, client Doer, url string, dst *os.File, r
 	defer resp.Body.Close() //nolint:errcheck
 
 	w := countingWriter{w: io.NewOffsetWriter(dst, start), pc: pc}
-	return copyRangeBody(resp, w, start, end)
+	return copyRangeBody(resp, w, start, end, ver)
 }
 
 // hashDigest re-reads dst from disk: scattered parallel writes can't feed a streaming hasher, and hashing the file verifies what actually landed.

@@ -1,7 +1,9 @@
 package cloudimg
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/cocoonstack/cocoon/progress"
 	cloudimgProgress "github.com/cocoonstack/cocoon/progress/cloudimg"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestDownloadToFileParallelRange(t *testing.T) {
@@ -239,6 +242,50 @@ func TestParseContentRangeSize(t *testing.T) {
 		if got != tt.want || ok != tt.ok {
 			t.Errorf("parseContentRangeSize(%q) = %d, %v; want %d, %v", tt.in, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+func TestPullRejectsUpstreamChangedMidDownload(t *testing.T) {
+	before := testPayload(64 * 1024)
+	clear(before[:32])
+	copy(before, utils.Qcow2Magic)
+	binary.BigEndian.PutUint32(before[4:8], 3)
+	after := bytes.Clone(before)
+	for i := 4096; i < len(after); i++ {
+		after[i] ^= 0xff
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start, end, ok := parseTestRange(r.Header.Get("Range"), int64(len(before)))
+		if !ok {
+			http.Error(w, "bad range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		data, etag := after, `"after"`
+		if start == 0 {
+			data, etag = before, `"before"`
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(data[start : end+1])
+	}))
+	defer server.Close()
+
+	c := newImportTestBackend(t)
+	c.conf.PullConns = 4
+	err := c.Pull(t.Context(), server.URL, false, progress.Nop)
+	if err == nil || !strings.Contains(err.Error(), "upstream object changed") {
+		t.Fatalf("Pull() = %v, want the upstream-changed rejection", err)
+	}
+	blobs, err := utils.ScanFileStems(c.conf.BlobsDir(), c.conf.BlobExt)
+	if err != nil {
+		t.Fatalf("ScanFileStems(): %v", err)
+	}
+	if len(blobs) != 0 {
+		t.Errorf("spliced download published blobs %v", blobs)
+	}
+	if img, err := c.Inspect(t.Context(), server.URL); err != nil || img != nil {
+		t.Errorf("spliced download indexed: img=%+v err=%v", img, err)
 	}
 }
 
