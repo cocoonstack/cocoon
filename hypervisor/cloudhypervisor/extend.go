@@ -155,10 +155,6 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 	}, nil)
 }
 
-func (ch *CloudHypervisor) FsList(ctx context.Context, vmRef string) ([]fs.Attached, error) {
-	return ch.listWith(ctx, vmRef, fsAttached)
-}
-
 func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec vfio.Spec) (string, error) {
 	path, err := spec.NormalizedPath()
 	if err != nil {
@@ -196,10 +192,6 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 		}
 		return "", fmt.Errorf("device id %q not attached", id)
 	}, nil)
-}
-
-func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio.Attached, error) {
-	return ch.listWith(ctx, vmRef, devicesAttached)
 }
 
 func (ch *CloudHypervisor) RunningView(ctx context.Context, vmRef string) (*hypervisor.RunningView, error) {

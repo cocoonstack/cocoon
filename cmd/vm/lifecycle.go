@@ -232,31 +232,13 @@ func collectRunningView(ctx context.Context, v hypervisor.RunningViewer, ref str
 	return &attachedDevices{Fs: view.Fs, Devices: view.Devices, Disks: view.Disks}, view.Balloon
 }
 
-// collectAttachedDevices logs and drops errors so inspect tolerates a flaky vm.info.
 func collectAttachedDevices(ctx context.Context, hyper hypervisor.Hypervisor, ref string) *attachedDevices {
-	logger := log.WithFunc("cmd.vm.inspect")
-	out := &attachedDevices{}
-	if l, ok := hyper.(fs.Lister); ok {
-		if devs, err := l.FsList(ctx, ref); err != nil {
-			logger.Warnf(ctx, "list fs devices for %s: %v", ref, err)
-		} else {
-			out.Fs = devs
-		}
+	devs, err := hyper.DiskList(ctx, ref)
+	if err != nil {
+		log.WithFunc("cmd.vm.inspect").Warnf(ctx, "list hot-attached disks for %s: %v", ref, err)
 	}
-	if l, ok := hyper.(vfio.Lister); ok {
-		if devs, err := l.DeviceList(ctx, ref); err != nil {
-			logger.Warnf(ctx, "list vfio devices for %s: %v", ref, err)
-		} else {
-			out.Devices = devs
-		}
-	}
-	if devs, err := hyper.DiskList(ctx, ref); err != nil {
-		logger.Warnf(ctx, "list hot-attached disks for %s: %v", ref, err)
-	} else {
-		out.Disks = devs
-	}
-	if len(out.Fs) == 0 && len(out.Devices) == 0 && len(out.Disks) == 0 {
+	if len(devs) == 0 {
 		return nil
 	}
-	return out
+	return &attachedDevices{Disks: devs}
 }

@@ -70,11 +70,6 @@ type Attacher interface {
 	FsDetach(ctx context.Context, vmRef, tag string) error
 }
 
-// Lister enumerates currently-attached fs devices from running VM state.
-type Lister interface {
-	FsList(ctx context.Context, vmRef string) ([]Attached, error)
-}
-
 // DeriveID returns the deterministic CH device id for a tag (used by attach + detach so concurrent attaches collide on CH's id check).
 func DeriveID(tag string) string {
 	return fsIDPrefix + tag

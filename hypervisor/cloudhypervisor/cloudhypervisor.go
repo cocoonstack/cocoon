@@ -22,11 +22,9 @@ var (
 	_ disk.Attacher            = (*CloudHypervisor)(nil)
 	_ disk.SnapshotAttacher    = (*CloudHypervisor)(nil)
 	_ fs.Attacher              = (*CloudHypervisor)(nil)
-	_ fs.Lister                = (*CloudHypervisor)(nil)
 	_ hypervisor.Migrator      = (*CloudHypervisor)(nil)
 	_ hypervisor.RunningViewer = (*CloudHypervisor)(nil)
 	_ vfio.Attacher            = (*CloudHypervisor)(nil)
-	_ vfio.Lister              = (*CloudHypervisor)(nil)
 )
 
 type CloudHypervisor struct {
