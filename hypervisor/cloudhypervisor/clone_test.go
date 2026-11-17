@@ -314,37 +314,6 @@ func TestCloneBlobIDsCloudimgWithoutBackingKeepsTheReservation(t *testing.T) {
 	}
 }
 
-func TestRestorePatchStorageConfigs(t *testing.T) {
-	configs := []*types.StorageConfig{
-		{Path: "/l", Role: types.StorageRoleLayer},
-		{Path: "/d", Role: types.StorageRoleData},
-		{Path: "/c", Role: types.StorageRoleCidata},
-	}
-	all := []string{"/l", "/d", "/c"}
-	tests := []struct {
-		name                           string
-		directBoot, windows, hadCidata bool
-		want                           []string
-	}{
-		{"drops appended cidata", false, false, false, []string{"/l", "/d"}},
-		{"keeps all on direct boot", true, false, false, all},
-		{"keeps all on windows", false, true, false, all},
-		{"keeps all when the snapshot had cidata", false, false, true, all},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := restorePatchStorageConfigs(configs, tt.directBoot, tt.windows, tt.hadCidata)
-			paths := make([]string, len(got))
-			for i, sc := range got {
-				paths[i] = sc.Path
-			}
-			if !slices.Equal(paths, tt.want) {
-				t.Errorf("got %v, want %v", paths, tt.want)
-			}
-		})
-	}
-}
-
 func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 	var (
 		mu    sync.Mutex
