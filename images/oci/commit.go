@@ -21,9 +21,6 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	if err := os.MkdirAll(bootDir, 0o750); err != nil {
 		return fmt.Errorf("create boot dir for layer %d: %w", layerIdx, err)
 	}
-	if err := utils.SyncFile(src); err != nil {
-		return fmt.Errorf("sync layer %d %s: %w", layerIdx, name, err)
-	}
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("move layer %d %s: %w", layerIdx, name, err)
 	}
@@ -39,6 +36,10 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 	lockPaths := make([]string, 0, len(results))
 	for i := range results {
 		lockPaths = append(lockPaths, conf.BlobLockPath(results[i].digest.Hex()))
+	}
+	// File fsyncs run before the locks: vm create and clone pin the same digests.
+	if err := syncStaged(conf, results); err != nil {
+		return err
 	}
 	if err := locks.Lock(lockPaths...); err != nil {
 		return err
@@ -61,6 +62,22 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 	return nil
 }
 
+func syncStaged(conf *Config, results []pullLayerResult) error {
+	for i := range results {
+		r := &results[i]
+		hex := r.digest.Hex()
+		for _, f := range [][2]string{{r.erofsPath, conf.BlobPath(hex)}, {r.kernelPath, conf.KernelPath(hex)}, {r.initrdPath, conf.InitrdPath(hex)}} {
+			if f[0] == "" || f[0] == f[1] {
+				continue
+			}
+			if err := utils.SyncFile(f[0]); err != nil {
+				return fmt.Errorf("sync layer %d: %w", r.index, err)
+			}
+		}
+	}
+	return nil
+}
+
 // commitBlobs moves blobs and boot files into place under per-digest locks so GC cannot delete a not-yet-indexed blob.
 func commitBlobs(conf *Config, results []pullLayerResult) error {
 	for i := range results {
@@ -68,9 +85,6 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 		layerDigestHex := r.digest.Hex()
 
 		if r.erofsPath != conf.BlobPath(layerDigestHex) && !utils.ValidFile(conf.BlobPath(layerDigestHex)) {
-			if err := utils.SyncFile(r.erofsPath); err != nil {
-				return fmt.Errorf("sync layer %d erofs: %w", r.index, err)
-			}
 			if err := os.Rename(r.erofsPath, conf.BlobPath(layerDigestHex)); err != nil {
 				return fmt.Errorf("move layer %d erofs: %w", r.index, err)
 			}
