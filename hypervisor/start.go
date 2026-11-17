@@ -167,10 +167,11 @@ func (b *Backend) prepareStart(ctx context.Context, id string, scan *utils.ProcS
 		if convergeErr := spec.ConvergeRunning(ctx, &rec, SocketPath(rec.RunDir), pid); convergeErr != nil {
 			return convergeErr
 		}
-		if rec.State != types.VMStateRunning {
-			_, _ = b.ReconcileToRunning(ctx, id)
+		if rec.State == types.VMStateRunning {
+			return nil
 		}
-		return nil
+		_, reconcileErr := b.ReconcileToRunning(ctx, id)
+		return reconcileErr
 	})
 	switch {
 	case runErr == nil:

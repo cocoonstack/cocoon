@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocoonstack/cocoon/meta"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -195,6 +196,27 @@ func TestStartSequenceConvergesALiveVMMInsteadOfLaunching(t *testing.T) {
 		if rec := recordOf(t, b, id); rec.State != state {
 			t.Errorf("state after convergence = %s, want %s", rec.State, state)
 		}
+	}
+}
+
+func TestStartSequenceFailsWhenAdoptingALiveVMMFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	if err := b.UpdateRecord(t.Context(), id, func(rec *VMRecord) error {
+		rec.State = types.VMStateCreated
+		return nil
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	store := b.Meta
+	err := b.StartSequence(t.Context(), id, nil, StartSpec{
+		ConvergeRunning: func(context.Context, *VMRecord, string, int) error {
+			b.Meta = busyStore{store}
+			return nil
+		},
+	})
+	b.Meta = store
+	if !errors.Is(err, meta.ErrBusy) {
+		t.Fatalf("StartSequence = %v, want the failed record flip: the record is still %s", err, recordOf(t, b, id).State)
 	}
 }
 
