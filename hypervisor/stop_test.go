@@ -257,15 +257,15 @@ func TestStopSequenceFailsWhenTheStoppedFlipFails(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	store := b.Meta
 
-	err := b.StopOneSequence(t.Context(), id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+	err := b.stopOneSequence(t.Context(), id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
 		b.Meta = busyStore{store}
 		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 	}})
 	b.Meta = store
 	if err == nil || !strings.Contains(err.Error(), "mark stopped") {
-		t.Fatalf("StopOneSequence = %v, want the failed flip reported", err)
+		t.Fatalf("stopOneSequence = %v, want the failed flip reported", err)
 	}
-	if err := b.StopOneSequence(t.Context(), id, StopSpec{}); err != nil {
+	if err := b.stopOneSequence(t.Context(), id, StopSpec{}); err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
 	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped {
@@ -295,14 +295,14 @@ func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
 		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
 	}}
 
-	if err := b.StopOneSequence(t.Context(), id, shutdown); err == nil || !strings.Contains(err.Error(), "quiesce network") {
-		t.Fatalf("StopOneSequence = %v, want the failed quiesce reported", err)
+	if err := b.stopOneSequence(t.Context(), id, shutdown); err == nil || !strings.Contains(err.Error(), "quiesce network") {
+		t.Fatalf("stopOneSequence = %v, want the failed quiesce reported", err)
 	}
 	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped || !rec.QuiescePending {
 		t.Fatalf("state = %s pending = %v, want stopped with the quiesce still pending", rec.State, rec.QuiescePending)
 	}
 	fail = false
-	if err := b.StopOneSequence(t.Context(), id, shutdown); err != nil {
+	if err := b.stopOneSequence(t.Context(), id, shutdown); err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
 	if rec := recordOf(t, b, id); rec.QuiescePending {
@@ -409,8 +409,8 @@ func TestDeleteForceEmitsOneComputeStop(t *testing.T) {
 	ctx := t.Context()
 	rec := meteringcapture.New()
 	b.Metering = rec
-	if err := b.MarkStarted(ctx, id); err != nil {
-		t.Fatalf("MarkStarted: %v", err)
+	if err := b.markStarted(ctx, id); err != nil {
+		t.Fatalf("markStarted: %v", err)
 	}
 
 	b.RuntimeFiles = []string{APISocketName}

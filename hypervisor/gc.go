@@ -141,7 +141,7 @@ func (b *Backend) gcCollect(ctx context.Context, ids []string, snap VMGCSnapshot
 					errs = append(errs, fmt.Errorf("orphan vmm for %s: %w (dirs kept)", id, err))
 					return
 				}
-				if err := RemoveVMDirs(runDir, logDir); err != nil {
+				if err := removeVMDirs(runDir, logDir); err != nil {
 					errs = append(errs, fmt.Errorf("remove vm %s: %w", id, err))
 					return
 				}

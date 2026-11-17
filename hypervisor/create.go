@@ -60,30 +60,6 @@ func (b *Backend) RollbackCreate(ctx context.Context, id, name string) {
 	}
 }
 
-// FinalizeCreate persists the populated VM record (replacing the placeholder) and emits metering vm.storage.start.
-func (b *Backend) FinalizeCreate(ctx context.Context, id string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
-	if err := b.update(ctx, func(t *vmTx) error {
-		existing, err := t.getRecord(id)
-		if err != nil {
-			return err
-		}
-		rec := &VMRecord{
-			VM:           *info,
-			BootConfig:   bootCfg,
-			ImageBlobIDs: blobIDs,
-			RunDir:       existing.RunDir,
-			LogDir:       existing.LogDir,
-		}
-		// Without this the placeholder and the created record share generation zero.
-		markTransition(rec, info.State, types.TransitionCreate, timeNow())
-		return t.Put(id, rec)
-	}); err != nil {
-		return err
-	}
-	b.Metering.Emit(ctx, b.makeEntry(metering.KindVMStorageStart, id, metering.ReasonBoot, shapeFromConfig(info.Config), timeNow()))
-	return nil
-}
-
 // CreateSequence is the shared placeholder→finalize create skeleton.
 func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec) (_ *types.VM, err error) {
 	blobIDs := ExtractBlobIDs(spec.StorageConfigs, spec.BootConfig)
@@ -117,15 +93,39 @@ func (b *Backend) CreateSequence(ctx context.Context, id string, spec CreateSpec
 		NetSetup:  spec.Net,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = b.FinalizeCreate(ctx, id, info, bootCopy, blobIDs); err != nil {
+	if err = b.finalizeCreate(ctx, id, info, bootCopy, blobIDs); err != nil {
 		return nil, fmt.Errorf("finalize VM record: %w", err)
 	}
 	return info, nil
 }
 
+// finalizeCreate persists the populated VM record (replacing the placeholder) and emits metering vm.storage.start.
+func (b *Backend) finalizeCreate(ctx context.Context, id string, info *types.VM, bootCfg *types.BootConfig, blobIDs map[string]struct{}) error {
+	if err := b.update(ctx, func(t *vmTx) error {
+		existing, err := t.getRecord(id)
+		if err != nil {
+			return err
+		}
+		rec := &VMRecord{
+			VM:           *info,
+			BootConfig:   bootCfg,
+			ImageBlobIDs: blobIDs,
+			RunDir:       existing.RunDir,
+			LogDir:       existing.LogDir,
+		}
+		// Without this the placeholder and the created record share generation zero.
+		markTransition(rec, info.State, types.TransitionCreate, timeNow())
+		return t.Put(id, rec)
+	}); err != nil {
+		return err
+	}
+	b.Metering.Emit(ctx, b.makeEntry(metering.KindVMStorageStart, id, metering.ReasonBoot, shapeFromConfig(info.Config), timeNow()))
+	return nil
+}
+
 // prepareVMDirs creates id's run and log dirs; it returns a nil cleanup on failure, and on success the caller decides when to run it.
 func (b *Backend) prepareVMDirs(ctx context.Context, id string, vmCfg *types.VMConfig) (runDir string, cleanup func(), err error) {
-	if err = ValidateHostCPU(vmCfg.CPU); err != nil {
+	if err = validateHostCPU(vmCfg.CPU); err != nil {
 		return "", nil, err
 	}
 	runDir = b.Conf.VMRunDir(id)
@@ -134,7 +134,7 @@ func (b *Backend) prepareVMDirs(ctx context.Context, id string, vmCfg *types.VMC
 	cleanup = func() {
 		// Record first: a concurrent rm must not find a live placeholder after the dir is gone.
 		b.RollbackCreate(ctx, id, vmCfg.Name)
-		_ = RemoveVMDirs(runDir, logDir)
+		_ = removeVMDirs(runDir, logDir)
 	}
 
 	if err = utils.EnsureDirs(runDir, logDir); err != nil {

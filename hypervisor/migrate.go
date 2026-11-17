@@ -224,7 +224,7 @@ func (b *Backend) captureRound(ctx context.Context, rec *VMRecord, spec MigrateS
 }
 
 func (b *Backend) writeSeriesEnvelope(rec *VMRecord, series, dir string) error {
-	return snapshot.WriteSnapshotEnvelope(dir, *b.BuildSnapshotConfig(series, rec), nil, nil)
+	return snapshot.WriteSnapshotEnvelope(dir, *b.buildSnapshotConfig(series, rec), nil, nil)
 }
 
 // IsMigrateDeltaFile reports a series file a clone must leave behind.

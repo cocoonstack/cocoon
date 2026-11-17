@@ -108,8 +108,8 @@ func (b *Backend) LogPath(ctx context.Context, ref string) (string, error) {
 	return b.LogFilePath(cmp.Or(rec.LogDir, b.Conf.VMLogDir(id))), nil
 }
 
-// ForEachVM runs fn over ids in parallel up to EffectivePoolSize, logging per-id failures.
-func (b *Backend) ForEachVM(ctx context.Context, ids []string, op string, fn VMOp) ([]string, error) {
+// forEachVM runs fn over ids in parallel up to EffectivePoolSize, logging per-id failures.
+func (b *Backend) forEachVM(ctx context.Context, ids []string, op string, fn VMOp) ([]string, error) {
 	logger := log.WithFunc(b.Typ + "." + op)
 	result := utils.ForEach(ctx, ids, fn, b.Conf.EffectivePoolSize())
 	for _, err := range result.Errors {
@@ -137,13 +137,6 @@ func BalloonSize(cfg types.Config) (int64, bool) {
 // IsDirectBoot reports whether boot uses a direct kernel (OCI) rather than UEFI firmware (cloudimg).
 func IsDirectBoot(boot *types.BootConfig) bool {
 	return boot != nil && boot.KernelPath != ""
-}
-
-func RemoveVMDirs(runDir, logDir string) error {
-	return errors.Join(
-		os.RemoveAll(runDir),
-		os.RemoveAll(logDir),
-	)
 }
 
 // CleanupRuntimeFiles removes runDir entries by name; a name with glob metacharacters matches entries of runDir only.
@@ -193,70 +186,13 @@ func BuildBaseCmdline(prefix, layers, cow string, networkConfigs []*types.Networ
 	fmt.Fprintf(&b, "%s boot=cocoon-overlay cocoon.layers=%s cocoon.cow=%s clocksource=kvm-clock rw", prefix, layers, cow)
 	if len(networkConfigs) > 0 {
 		b.WriteString(" net.ifnames=0")
-		b.WriteString(BuildIPParams(networkConfigs, vmName, dnsServers))
+		b.WriteString(buildIPParams(networkConfigs, vmName, dnsServers))
 	}
 	return b.String()
 }
 
-func BuildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
-	var params strings.Builder
-	fmt.Fprintf(&params, " cocoon.hostname=%s", vmName)
-	dns := strings.Join(dnsServers[:min(len(dnsServers), 2)], ":")
-	for i, n := range networkConfigs {
-		if n.Network == nil || n.Network.IP == "" {
-			continue
-		}
-		fmt.Fprintf(&params, " ip=%s::%s:%s::eth%d:off",
-			n.Network.IP, n.Network.Gateway,
-			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), i)
-		if dns != "" {
-			params.WriteString(":" + dns)
-		}
-	}
-	return params.String()
-}
-
-func CopyFile(dst, src string) error {
-	return utils.CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
-		fi, err := srcFile.Stat()
-		if err != nil {
-			return err
-		}
-		if err = dstFile.Chmod(fi.Mode()); err != nil {
-			return err
-		}
-		_, err = io.Copy(dstFile, srcFile)
-		return err
-	})
-}
-
-// MergeDirInto renames entries from src to dst, overwriting existing files.
-func MergeDirInto(src, dst string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return fmt.Errorf("read staging dir: %w", err)
-	}
-	for _, e := range entries {
-		srcPath := filepath.Join(src, e.Name())
-		dstPath := filepath.Join(dst, e.Name())
-		if err := os.Rename(srcPath, dstPath); err != nil {
-			return fmt.Errorf("rename %s to %s: %w", srcPath, dstPath, err)
-		}
-	}
-	return nil
-}
-
 // HostCPUCount returns the online CPU count; runtime.NumCPU honors the affinity mask and undersizes guests.
 func HostCPUCount() int { return hostCPUCount() }
-
-// ValidateHostCPU rejects vCPU counts beyond the host's online cores.
-func ValidateHostCPU(cpu int) error {
-	maxCPU := HostCPUCount()
-	if cpu > maxCPU {
-		return fmt.Errorf("requested %d vCPUs exceeds host cores (%d)", cpu, maxCPU)
-	}
-	return nil
-}
 
 // QueueCPUs parses the host cpus the record's writable disk queues pin to; nil leaves the scheduler in charge.
 func QueueCPUs(rec *VMRecord) []int {
@@ -281,28 +217,6 @@ func ValidateSnapshotIntegrity(srcDir string, sidecar []*types.StorageConfig) er
 	return nil
 }
 
-// ValidateRoleSequence checks sidecar is a role+serial prefix of rec; cidata is the only disk rec may add.
-func ValidateRoleSequence(sidecar, rec []*types.StorageConfig) error {
-	rec = RecordDisksForSidecar(sidecar, rec)
-	if len(sidecar) > len(rec) {
-		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
-	}
-	for i, sc := range sidecar {
-		if rec[i].Role != sc.Role {
-			return fmt.Errorf("disk[%d] role mismatch: snapshot=%s record=%s", i, sc.Role, rec[i].Role)
-		}
-		if rec[i].Serial != sc.Serial {
-			return fmt.Errorf("disk[%d] serial mismatch: snapshot=%q record=%q", i, sc.Serial, rec[i].Serial)
-		}
-	}
-	for i := len(sidecar); i < len(rec); i++ {
-		if rec[i].Role != types.StorageRoleCidata {
-			return fmt.Errorf("disk[%d] only present in record must be cidata, got %s", i, rec[i].Role)
-		}
-	}
-	return nil
-}
-
 func RecordDisksForSidecar(sidecar, rec []*types.StorageConfig) []*types.StorageConfig {
 	isCidata := func(sc *types.StorageConfig) bool { return sc.Role == types.StorageRoleCidata }
 	if slices.ContainsFunc(sidecar, isCidata) {
@@ -311,7 +225,7 @@ func RecordDisksForSidecar(sidecar, rec []*types.StorageConfig) []*types.Storage
 	return slices.DeleteFunc(slices.Clone(rec), isCidata)
 }
 
-// ValidateResidentPaths runs after ValidateRoleSequence, which bounds sidecar by rec.
+// ValidateResidentPaths runs after validateRoleSequence, which bounds sidecar by rec.
 func ValidateResidentPaths(sidecar, rec []*types.StorageConfig) error {
 	for i, sc := range sidecar {
 		if snapshotResidentBasename(sc) == "" || sc.Path == rec[i].Path {
@@ -390,7 +304,7 @@ func CloneSnapshotFiles(ctx context.Context, dstDir, srcDir string, classify fun
 		case SnapshotFileCOW:
 			cowPairs = append(cowPairs, [2]string{dst, src})
 		case SnapshotFileMeta:
-			if err := CopyFile(dst, src); err != nil {
+			if err := copyFile(dst, src); err != nil {
 				return fmt.Errorf("copy %s: %w", name, err)
 			}
 		}
@@ -430,7 +344,93 @@ func WaitForSocket(ctx context.Context, socketPath string, pid int, timeout time
 	})
 }
 
-func EnterNetns(nsPath string) (restore func(), err error) {
+func removeVMDirs(runDir, logDir string) error {
+	return errors.Join(
+		os.RemoveAll(runDir),
+		os.RemoveAll(logDir),
+	)
+}
+
+func buildIPParams(networkConfigs []*types.NetworkConfig, vmName string, dnsServers []string) string {
+	var params strings.Builder
+	fmt.Fprintf(&params, " cocoon.hostname=%s", vmName)
+	dns := strings.Join(dnsServers[:min(len(dnsServers), 2)], ":")
+	for i, n := range networkConfigs {
+		if n.Network == nil || n.Network.IP == "" {
+			continue
+		}
+		fmt.Fprintf(&params, " ip=%s::%s:%s::eth%d:off",
+			n.Network.IP, n.Network.Gateway,
+			net.IP(net.CIDRMask(n.Network.Prefix, 32)).String(), i)
+		if dns != "" {
+			params.WriteString(":" + dns)
+		}
+	}
+	return params.String()
+}
+
+func copyFile(dst, src string) error {
+	return utils.CopyWithCleanup(dst, src, func(srcFile, dstFile *os.File) error {
+		fi, err := srcFile.Stat()
+		if err != nil {
+			return err
+		}
+		if err = dstFile.Chmod(fi.Mode()); err != nil {
+			return err
+		}
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
+}
+
+// mergeDirInto renames entries from src to dst, overwriting existing files.
+func mergeDirInto(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("read staging dir: %w", err)
+	}
+	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			return fmt.Errorf("rename %s to %s: %w", srcPath, dstPath, err)
+		}
+	}
+	return nil
+}
+
+// validateHostCPU rejects vCPU counts beyond the host's online cores.
+func validateHostCPU(cpu int) error {
+	maxCPU := HostCPUCount()
+	if cpu > maxCPU {
+		return fmt.Errorf("requested %d vCPUs exceeds host cores (%d)", cpu, maxCPU)
+	}
+	return nil
+}
+
+// validateRoleSequence checks sidecar is a role+serial prefix of rec; cidata is the only disk rec may add.
+func validateRoleSequence(sidecar, rec []*types.StorageConfig) error {
+	rec = RecordDisksForSidecar(sidecar, rec)
+	if len(sidecar) > len(rec) {
+		return fmt.Errorf("snapshot has %d disks, record only %d", len(sidecar), len(rec))
+	}
+	for i, sc := range sidecar {
+		if rec[i].Role != sc.Role {
+			return fmt.Errorf("disk[%d] role mismatch: snapshot=%s record=%s", i, sc.Role, rec[i].Role)
+		}
+		if rec[i].Serial != sc.Serial {
+			return fmt.Errorf("disk[%d] serial mismatch: snapshot=%q record=%q", i, sc.Serial, rec[i].Serial)
+		}
+	}
+	for i := len(sidecar); i < len(rec); i++ {
+		if rec[i].Role != types.StorageRoleCidata {
+			return fmt.Errorf("disk[%d] only present in record must be cidata, got %s", i, rec[i].Role)
+		}
+	}
+	return nil
+}
+
+func enterNetns(nsPath string) (restore func(), err error) {
 	runtime.LockOSThread()
 
 	orig, err := netns.Get()

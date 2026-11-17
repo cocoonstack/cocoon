@@ -42,34 +42,13 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 	// Clear first: clone/restore persist boot-time runtime fields into the record, which would leak as stale values once the VM stops.
 	info.PID, info.SocketPath, info.VsockSocket, info.ConsolePath = 0, "", "", ""
 	if info.State == types.VMStateRunning {
-		SetRunningSockets(&info, rec.RunDir)
+		setRunningSockets(&info, rec.RunDir)
 		info.PID, _ = utils.ReadPIDFile(b.PIDFilePath(rec.RunDir))
 		if !utils.VerifyProcessCmdline(info.PID, info.SocketPath) {
 			info.PID = 0
 		}
 	}
 	return &info
-}
-
-func (b *Backend) ResolveRef(ctx context.Context, ref string) (string, error) {
-	var id string
-	err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		id, err = t.resolve(ref)
-		return err
-	})
-	return id, err
-}
-
-// ResolveRefs batch-resolves under a single transaction.
-func (b *Backend) ResolveRefs(ctx context.Context, refs []string) ([]string, error) {
-	var ids []string
-	err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		ids, err = t.ResolveMany(refs, ErrNotFound)
-		return err
-	})
-	return ids, err
 }
 
 // LoadRecord returns a detached copy of the record.
@@ -83,7 +62,7 @@ func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
 	return rec, err
 }
 
-// ResolveAndLoad combines ResolveRef + LoadRecord in a single transaction.
+// ResolveAndLoad combines resolveRef + LoadRecord in a single transaction.
 func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRecord, error) {
 	var (
 		id  string
@@ -114,8 +93,29 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate RecordHo
 	})
 }
 
-// SetRunningSockets serves clone/restore records that skip ToVM.
-func SetRunningSockets(info *types.VM, runDir string) {
+func (b *Backend) resolveRef(ctx context.Context, ref string) (string, error) {
+	var id string
+	err := b.view(ctx, func(t *vmTx) error {
+		var err error
+		id, err = t.resolve(ref)
+		return err
+	})
+	return id, err
+}
+
+// resolveRefs batch-resolves under a single transaction.
+func (b *Backend) resolveRefs(ctx context.Context, refs []string) ([]string, error) {
+	var ids []string
+	err := b.view(ctx, func(t *vmTx) error {
+		var err error
+		ids, err = t.ResolveMany(refs, ErrNotFound)
+		return err
+	})
+	return ids, err
+}
+
+// setRunningSockets serves clone/restore records that skip ToVM.
+func setRunningSockets(info *types.VM, runDir string) {
 	info.SocketPath = SocketPath(runDir)
 	if p := VsockSockPath(runDir); utils.FileExists(p) {
 		info.VsockSocket = p

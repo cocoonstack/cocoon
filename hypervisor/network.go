@@ -18,8 +18,8 @@ type VMNetwork interface {
 
 func (b *Backend) SetNetwork(n VMNetwork) { b.Net = n }
 
-// RecoverNetwork rebuilds and un-quiesces a VM's plumbing before launch; the caller holds the VM ops lock.
-func (b *Backend) RecoverNetwork(ctx context.Context, rec *VMRecord) error {
+// recoverNetwork rebuilds and un-quiesces a VM's plumbing before launch; the caller holds the VM ops lock.
+func (b *Backend) recoverNetwork(ctx context.Context, rec *VMRecord) error {
 	if b.Net == nil {
 		return nil
 	}

@@ -205,7 +205,7 @@ func TestValidateRoleSequence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateRoleSequence(tt.sidecar, tt.rec)
+			err := validateRoleSequence(tt.sidecar, tt.rec)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
@@ -375,7 +375,7 @@ func TestBuildIPParams(t *testing.T) {
 		{[]string{"1.1.1.1", "8.8.8.8"}, " cocoon.hostname=vm" + eth0 + ":1.1.1.1:8.8.8.8" + eth2 + ":1.1.1.1:8.8.8.8"},
 		{[]string{"1.1.1.1", "8.8.8.8", "9.9.9.9"}, " cocoon.hostname=vm" + eth0 + ":1.1.1.1:8.8.8.8" + eth2 + ":1.1.1.1:8.8.8.8"},
 	} {
-		if got := BuildIPParams(nics, "vm", tt.dns); got != tt.want {
+		if got := buildIPParams(nics, "vm", tt.dns); got != tt.want {
 			t.Errorf("dns %v:\n got: %q\nwant: %q", tt.dns, got, tt.want)
 		}
 	}

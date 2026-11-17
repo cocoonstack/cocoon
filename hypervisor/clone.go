@@ -53,7 +53,7 @@ func (b *Backend) RunningCloneRecord(rec *VMRecord, vmCfg *types.VMConfig, stora
 		NetSetup:  net,
 		CreatedAt: rec.CreatedAt, UpdatedAt: now, StartedAt: &now,
 	}
-	SetRunningSockets(info, rec.RunDir)
+	setRunningSockets(info, rec.RunDir)
 	return info
 }
 

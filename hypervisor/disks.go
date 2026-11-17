@@ -32,7 +32,7 @@ func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types
 	if err := createSparseFile(cowPath, vmCfg.Storage); err != nil {
 		return nil, err
 	}
-	if err := InitCOWFilesystem(ctx, cowPath); err != nil {
+	if err := initCOWFilesystem(ctx, cowPath); err != nil {
 		return nil, err
 	}
 	dataDisks, err := PrepareDataDisks(ctx, runDir, vmCfg.DataDisks)
@@ -41,21 +41,6 @@ func (b *Backend) PrepareOCIDisks(ctx context.Context, vmID string, vmCfg *types
 	}
 	storageConfigs = append(storageConfigs, &types.StorageConfig{Path: cowPath, Serial: CowSerial, Role: types.StorageRoleCOW})
 	return append(storageConfigs, dataDisks...), nil
-}
-
-func InitCOWFilesystem(ctx context.Context, path string) error {
-	// Shell out: no Go ext4 formatter writes a lazy-init, discard-ready filesystem.
-	log.WithFunc("hypervisor.InitCOWFilesystem").Debugf(ctx, "exec mkfs.ext4 %s", path)
-	out, err := exec.CommandContext( //nolint:gosec
-		ctx,
-		"mkfs.ext4", "-F", "-m", "0", "-q",
-		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
-		path,
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("mkfs.ext4: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
 }
 
 // DataDiskBaseName returns the canonical data disk file name.
@@ -75,15 +60,6 @@ func DiskPathByRole(configs []*types.StorageConfig, role types.StorageRole) stri
 		}
 	}
 	return ""
-}
-
-// RecordedCOWPath reads the recorded path, not a conf-derived one: after a --run-dir change the disks stay where the record says.
-func RecordedCOWPath(rec *VMRecord) (string, error) {
-	cowPath := DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
-	if cowPath == "" {
-		return "", fmt.Errorf("no COW disk recorded for %s", rec.ID)
-	}
-	return cowPath, nil
 }
 
 // CopyWritableDisks copies concurrently; durability is paid at persist.
@@ -113,7 +89,7 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 			return struct{}{}, fmt.Errorf("data disk %s: %w", spec.Name, err)
 		}
 		if spec.FSType == types.FSTypeExt4 {
-			if err := InitCOWFilesystem(ctx, out[i].Path); err != nil {
+			if err := initCOWFilesystem(ctx, out[i].Path); err != nil {
 				return struct{}{}, fmt.Errorf("data disk %s: mkfs: %w", spec.Name, err)
 			}
 		}
@@ -124,9 +100,33 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 	return out, nil
 }
 
+func initCOWFilesystem(ctx context.Context, path string) error {
+	// Shell out: no Go ext4 formatter writes a lazy-init, discard-ready filesystem.
+	log.WithFunc("hypervisor.initCOWFilesystem").Debugf(ctx, "exec mkfs.ext4 %s", path)
+	out, err := exec.CommandContext( //nolint:gosec
+		ctx,
+		"mkfs.ext4", "-F", "-m", "0", "-q",
+		"-E", "lazy_itable_init=1,lazy_journal_init=1,discard",
+		path,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mkfs.ext4: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// recordedCOWPath reads the recorded path, not a conf-derived one: after a --run-dir change the disks stay where the record says.
+func recordedCOWPath(rec *VMRecord) (string, error) {
+	cowPath := DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+	if cowPath == "" {
+		return "", fmt.Errorf("no COW disk recorded for %s", rec.ID)
+	}
+	return cowPath, nil
+}
+
 // writableDiskPairs returns {copy under dstDir, live disk} for the COW and every data disk.
 func writableDiskPairs(dstDir string, rec *VMRecord) ([][2]string, error) {
-	cowPath, err := RecordedCOWPath(rec)
+	cowPath, err := recordedCOWPath(rec)
 	if err != nil {
 		return nil, err
 	}

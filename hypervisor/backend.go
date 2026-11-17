@@ -75,7 +75,7 @@ type LaunchSpec struct {
 	DeferCPUQuota bool
 }
 
-// VMOp is one backend's per-VM lifecycle step, run by ForEachVM under the batch fan-out.
+// VMOp is one backend's per-VM lifecycle step, run by forEachVM under the batch fan-out.
 type VMOp func(context.Context, string) error
 
 // StartOp is a backend's per-VM start, handed the batch's one /proc scan for its liveness check.
@@ -123,7 +123,7 @@ type StartSpec struct {
 	ConvergeRunning ProcessHook
 }
 
-// StopSpec carries StopOneSequence inputs.
+// StopSpec carries stopOneSequence inputs.
 type StopSpec struct {
 	Shutdown ProcessHook
 }

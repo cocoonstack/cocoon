@@ -61,7 +61,7 @@ func TestQuarantineVMSurvivesCanceledContext(t *testing.T) {
 
 	cctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	b.QuarantineVM(cctx, id, "test-reason")
+	b.quarantineVM(cctx, id, "test-reason")
 
 	rec, err := b.LoadRecord(t.Context(), id)
 	if err != nil {
