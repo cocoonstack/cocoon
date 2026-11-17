@@ -238,6 +238,31 @@ func TestInitIfMissingWaitsOutABusyBootstrap(t *testing.T) {
 	}
 }
 
+func TestInitWaitsForTheInitLock(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), DBFileName)
+	initLock := flock.NewTransient(filepath.Join(filepath.Dir(path), initLockName))
+	if err := initLock.Lock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- Init(ctx, path, testDecls()...) }()
+	select {
+	case err := <-done:
+		t.Fatalf("Init ran while a bootstrap held the init lock: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := initLock.Unlock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Init after the bootstrap released the lock: %v", err)
+	}
+	if _, err := Open(path, testDecls()...); err != nil {
+		t.Fatalf("open initialized store: %v", err)
+	}
+}
+
 func testDecls() []Namespace {
 	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
 }
