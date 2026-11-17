@@ -263,6 +263,36 @@ func TestInitWaitsForTheInitLock(t *testing.T) {
 	}
 }
 
+func TestInitIfMissingRetriesABusyLockedRecheck(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), DBFileName)
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := raw.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- InitIfMissing(ctx, path, testDecls()...) }()
+	time.Sleep(300 * time.Millisecond)
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	_ = raw.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("bootstrap whose locked recheck met a busy database: %v", err)
+	}
+	if _, err := Open(path, testDecls()...); err != nil {
+		t.Fatalf("open bootstrapped store: %v", err)
+	}
+}
+
 func testDecls() []Namespace {
 	return []Namespace{{Name: "vms", Tables: []string{"records", "names"}}}
 }

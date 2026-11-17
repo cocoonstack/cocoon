@@ -28,11 +28,13 @@ func InitIfMissing(ctx context.Context, dbPath string, namespaces ...Namespace) 
 		return nil
 	}
 	return withInitLock(ctx, dbPath, func() error {
-		need, err := initNeeded(ctx, dbPath)
-		if err != nil || !need {
-			return err
-		}
-		return initStore(ctx, dbPath, namespaces)
+		return retryBusy(ctx, func() error {
+			need, err := initNeeded(ctx, dbPath)
+			if err != nil || !need {
+				return err
+			}
+			return initStore(ctx, dbPath, namespaces)
+		})
 	})
 }
 

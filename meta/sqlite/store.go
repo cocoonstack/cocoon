@@ -159,8 +159,11 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		return err
 	}
 	start := time.Now()
-	tx, err := s.beginImmediate(ctx, writer)
-	if err != nil {
+	var tx *sql.Tx
+	if err := retryBusy(ctx, func() (err error) {
+		tx, err = writer.BeginTx(ctx, nil)
+		return err
+	}); err != nil {
 		return err
 	}
 	wait := time.Since(start)
@@ -197,32 +200,6 @@ func (s *Store) Close() error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// beginImmediate retries BEGIN IMMEDIATE under a ctx-bounded loop; the in-driver busy_timeout does the real waiting, so the pause between attempts is a tiny jitter.
-func (s *Store) beginImmediate(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
-	deadline := time.Now().Add(busyRetryCeiling)
-	for {
-		tx, err := db.BeginTx(ctx, nil)
-		if err == nil {
-			return tx, nil
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if err = mapErr(err); !errors.Is(err, meta.ErrBusy) {
-			return nil, err
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("writer contended past retry ceiling: %w", meta.ErrBusy)
-		}
-		pause := rand.N(busyRetryPause) //nolint:gosec // retry jitter, not cryptographic
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pause):
-		}
-	}
 }
 
 func (s *Store) checkScope(nss []string) error {
@@ -499,6 +476,32 @@ func checkpointLoop(db *sql.DB, dbPath string, done <-chan struct{}) {
 				walBytes = st.Size()
 			}
 			logger.Debugf(ctx, "passive checkpoint: %d/%d frames, wal %dB, %s", moved, frames, walBytes, time.Since(start))
+		}
+	}
+}
+
+// retryBusy reruns fn on ErrBusy until a ceiling; the in-driver busy_timeout does the real waiting, so the pause between attempts is a tiny jitter.
+func retryBusy(ctx context.Context, fn func() error) error {
+	deadline := time.Now().Add(busyRetryCeiling)
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err = mapErr(err); !errors.Is(err, meta.ErrBusy) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("contended past retry ceiling: %w", err)
+		}
+		pause := rand.N(busyRetryPause) //nolint:gosec // retry jitter, not cryptographic
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pause):
 		}
 	}
 }
