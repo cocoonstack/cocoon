@@ -150,7 +150,7 @@ func (c *CNI) recoverTombstone(ctx context.Context, vmID string) (rolledForward 
 	if rec == nil {
 		return false, nil
 	}
-	// Subset teardown (vm net remove) creates its TAPs independently of the netns lifetime, so recovery restores Remove's deleteTAP; an aggregate's TAPs die with the netns.
+	// Only subset TAPs outlive the netns, so only subset recovery deletes them.
 	deleteTAP := rec.Payload.Mode == tombstone.ModeSubset
 	if err := c.finishTeardown(ctx, vmID, rec.LeaseID, cl, deleteTAP); err != nil {
 		return false, err

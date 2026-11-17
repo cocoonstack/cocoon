@@ -14,7 +14,7 @@ type bridgeSnapshot struct{}
 // GCModule returns a no-op GC module on non-Linux — bridge TAPs don't exist.
 func GCModule(_ string, _ network.VMInUse) gc.Module[bridgeSnapshot] {
 	return gc.Module[bridgeSnapshot]{
-		Name: "bridge",
+		Name: typ,
 		ReadDB: func(_ context.Context) (bridgeSnapshot, error) {
 			return bridgeSnapshot{}, nil
 		},

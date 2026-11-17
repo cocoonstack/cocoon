@@ -15,8 +15,8 @@ import (
 
 const (
 	HTTPTimeout = 30 * time.Second
-	MaxRetries  = 3
-	BaseBackoff = 100 * time.Millisecond
+	maxRetries  = 3
+	baseBackoff = 100 * time.Millisecond
 )
 
 // APIError carries the HTTP status code from a REST API response.
@@ -90,32 +90,24 @@ func CheckSocket(socketPath string) error {
 func DoWithRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 	var zero T
 	var lastErr error
-	for i := range MaxRetries + 1 {
+	for i := range maxRetries + 1 {
 		result, err := fn()
 		if err == nil {
 			return result, nil
 		}
 		lastErr = err
-		if !IsRetryable(err) {
+		if !isRetryable(err) {
 			return zero, err
 		}
-		if i < MaxRetries {
+		if i < maxRetries {
 			select {
 			case <-ctx.Done():
 				return zero, ctx.Err()
-			case <-time.After(BaseBackoff * time.Duration(1<<i)):
+			case <-time.After(baseBackoff * time.Duration(1<<i)):
 			}
 		}
 	}
 	return zero, lastErr
-}
-
-// IsRetryable returns true for transient errors (connection failures, 5xx, 429).
-func IsRetryable(err error) bool {
-	if ae, ok := errors.AsType[*APIError](err); ok {
-		return ae.Code >= 500 || ae.Code == http.StatusTooManyRequests
-	}
-	return true
 }
 
 // DoAPIOnce sends one non-retried request; successCodes defaults to 204 and codes[1:] are tolerated alternatives.
@@ -141,4 +133,12 @@ func DoJSONOnce(ctx context.Context, hc *http.Client, method, url, kind string, 
 		return nil, fmt.Errorf("marshal %s: %w", kind, err)
 	}
 	return DoAPIOnce(ctx, hc, method, url, body, successCodes...)
+}
+
+// isRetryable returns true for transient errors (connection failures, 5xx, 429).
+func isRetryable(err error) bool {
+	if ae, ok := errors.AsType[*APIError](err); ok {
+		return ae.Code >= 500 || ae.Code == http.StatusTooManyRequests
+	}
+	return true
 }

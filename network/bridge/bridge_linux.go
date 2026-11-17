@@ -1,6 +1,5 @@
 //go:build linux
 
-// Package bridge attaches VM TAP devices to an existing host bridge.
 package bridge
 
 import (
@@ -19,8 +18,6 @@ import (
 	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
-
-const typ = "bridge"
 
 var _ network.Network = (*Bridge)(nil)
 

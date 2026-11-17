@@ -276,8 +276,8 @@ func TestDoWithRetry_ExhaustedRetries(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error after exhausted retries")
 	}
-	if calls != MaxRetries+1 {
-		t.Errorf("expected %d calls, got %d", MaxRetries+1, calls)
+	if calls != maxRetries+1 {
+		t.Errorf("expected %d calls, got %d", maxRetries+1, calls)
 	}
 }
 
@@ -352,7 +352,7 @@ func TestDoWithRetry_ContextCanceled_DuringBackoff(t *testing.T) {
 func TestIsRetryable_APIError_4xx_NotRetryable(t *testing.T) {
 	cases := []int{400, 401, 403, 404, 409, 422}
 	for _, code := range cases {
-		if IsRetryable(&APIError{Code: code}) {
+		if isRetryable(&APIError{Code: code}) {
 			t.Errorf("expected %d to be non-retryable", code)
 		}
 	}
@@ -361,27 +361,27 @@ func TestIsRetryable_APIError_4xx_NotRetryable(t *testing.T) {
 func TestIsRetryable_APIError_5xx_Retryable(t *testing.T) {
 	cases := []int{500, 502, 503, 504}
 	for _, code := range cases {
-		if !IsRetryable(&APIError{Code: code}) {
+		if !isRetryable(&APIError{Code: code}) {
 			t.Errorf("expected %d to be retryable", code)
 		}
 	}
 }
 
 func TestIsRetryable_APIError_429_Retryable(t *testing.T) {
-	if !IsRetryable(&APIError{Code: 429}) {
+	if !isRetryable(&APIError{Code: 429}) {
 		t.Error("expected 429 to be retryable")
 	}
 }
 
 func TestIsRetryable_NonAPIError_Retryable(t *testing.T) {
-	if !IsRetryable(fmt.Errorf("connection refused")) {
+	if !isRetryable(fmt.Errorf("connection refused")) {
 		t.Error("expected non-APIError to be retryable")
 	}
 }
 
 func TestIsRetryable_WrappedAPIError(t *testing.T) {
 	wrapped := fmt.Errorf("outer: %w", &APIError{Code: 404})
-	if IsRetryable(wrapped) {
+	if isRetryable(wrapped) {
 		t.Error("expected wrapped 404 APIError to be non-retryable")
 	}
 }
