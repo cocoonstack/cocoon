@@ -140,8 +140,8 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 		return os.RemoveAll(srcDir)
 	})
 	b.Meta = store
-	if err != nil {
-		t.Fatalf("HibernateSequence: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "mark stopped") {
+		t.Fatalf("HibernateSequence = %v, want the failed flip reported", err)
 	}
 	if quiesced != 1 {
 		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)

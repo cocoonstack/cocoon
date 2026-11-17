@@ -103,7 +103,6 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		}
 	}()
 
-	logger := log.WithFunc(b.Typ + ".HibernateSequence")
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
 	var killFailed bool
 	err = b.WithRunningVM(ctx, &rec, func(pid int) error {
@@ -135,14 +134,9 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 		return fmt.Errorf("hibernate VM %s: %w", vmID, err)
 	}
 
-	CleanupRuntimeFiles(ctx, rec.RunDir, spec.RuntimeFiles)
-	b.removeCgroupScope(ctx, vmID)
-	// Warn-and-continue like StopOneLocked: the VMM is dead and the flip self-heals; the snapshot is already durable.
-	uErr := b.UpdateState(ctx, vmID, types.VMStateStopped)
-	if uErr != nil {
-		logger.Warnf(ctx, "mark stopped %s: %v", vmID, uErr)
+	if err = b.landStopped(ctx, vmID, &rec, spec.RuntimeFiles, false); err != nil {
+		return fmt.Errorf("hibernate VM %s: snapshot saved and VMM stopped, settle with vm stop: %w", vmID, err)
 	}
-	b.quiesceAfterStop(ctx, vmID, &rec, true, uErr == nil)
 	return nil
 }
 

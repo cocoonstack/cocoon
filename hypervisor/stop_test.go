@@ -252,6 +252,63 @@ func TestStopQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	}
 }
 
+func TestStopSequenceFailsWhenTheStoppedFlipFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	store := b.Meta
+
+	err := b.StopOneSequence(t.Context(), id, StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+		b.Meta = busyStore{store}
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
+	}})
+	b.Meta = store
+	if err == nil || !strings.Contains(err.Error(), "mark stopped") {
+		t.Fatalf("StopOneSequence = %v, want the failed flip reported", err)
+	}
+	if err := b.StopOneSequence(t.Context(), id, StopSpec{}); err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped {
+		t.Fatalf("state = %s, want the rerun to settle it stopped", rec.State)
+	}
+}
+
+func TestStopSequenceFailsWhenTheQuiesceFails(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	if err := b.dbUpdate(t.Context(), func(idx *VMIndex) error {
+		idx.VMs[id].NetSetup = types.NetSetup{
+			NetBackend:     types.BackendCNI,
+			NetworkConfigs: []*types.NetworkConfig{{}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	fail := true
+	b.SetNetwork(stubNetwork{quiesce: func(context.Context, *types.VM) error {
+		if fail {
+			return errors.New("netlink down")
+		}
+		return nil
+	}})
+	shutdown := StopSpec{Shutdown: func(ctx context.Context, _ *VMRecord, sockPath string, pid int) error {
+		return utils.TerminateProcess(ctx, pid, sockPath, time.Second)
+	}}
+
+	if err := b.StopOneSequence(t.Context(), id, shutdown); err == nil || !strings.Contains(err.Error(), "quiesce network") {
+		t.Fatalf("StopOneSequence = %v, want the failed quiesce reported", err)
+	}
+	if rec := recordOf(t, b, id); rec.State != types.VMStateStopped || !rec.QuiescePending {
+		t.Fatalf("state = %s pending = %v, want stopped with the quiesce still pending", rec.State, rec.QuiescePending)
+	}
+	fail = false
+	if err := b.StopOneSequence(t.Context(), id, shutdown); err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if rec := recordOf(t, b, id); rec.QuiescePending {
+		t.Fatal("the rerun must clear the pending quiesce")
+	}
+}
+
 func TestStopFailureKeepsThePlacementOfALiveVMM(t *testing.T) {
 	b, id := newHibernateTestVM(t)
 	ctx := t.Context()
