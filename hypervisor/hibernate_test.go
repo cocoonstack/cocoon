@@ -136,12 +136,14 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 		return nil
 	}
 
-	err := b.HibernateSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, srcDir string) error {
+	var snapID string
+	err := b.HibernateSequence(t.Context(), id, spec, func(cfg *types.SnapshotConfig, srcDir string) error {
+		snapID = cfg.ID
 		return os.RemoveAll(srcDir)
 	})
 	b.Meta = store
-	if err == nil || !strings.Contains(err.Error(), "mark stopped") {
-		t.Fatalf("HibernateSequence = %v, want the failed flip reported", err)
+	if err == nil || !strings.Contains(err.Error(), "mark stopped") || !strings.Contains(err.Error(), snapID) {
+		t.Fatalf("HibernateSequence = %v, want the failed flip reported with snapshot %s", err, snapID)
 	}
 	if quiesced != 1 {
 		t.Fatalf("quiesced = %d, want 1 after the stopped flip failed", quiesced)

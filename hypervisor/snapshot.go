@@ -69,7 +69,10 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	}()
 
 	hc := utils.NewSocketHTTPClient(SocketPath(rec.RunDir))
-	var killFailed bool
+	var (
+		killFailed bool
+		snapID     string
+	)
 	err = b.WithRunningVM(ctx, &rec, func(pid int) error {
 		if pErr := spec.Pause(&rec, hc); pErr != nil {
 			return fmt.Errorf("pause: %w", pErr)
@@ -86,6 +89,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 			b.unrecordSnapshot(ctx, vmID, cfg.ID)
 			return failResume(fmt.Errorf("persist snapshot: %w", pErr))
 		}
+		snapID = cfg.ID
 		if kErr := spec.Terminate(&rec, pid); kErr != nil {
 			killFailed = true
 			return fmt.Errorf("terminate: %w", kErr)
@@ -100,7 +104,7 @@ func (b *Backend) HibernateSequence(ctx context.Context, ref string, spec Hibern
 	}
 
 	if err = b.landStopped(ctx, vmID, &rec, false); err != nil {
-		return fmt.Errorf("hibernate VM %s: snapshot saved and VMM stopped, settle with vm stop: %w", vmID, err)
+		return fmt.Errorf("hibernate VM %s: snapshot %s is saved and the VMM stopped, settle with vm stop: %w", vmID, snapID, err)
 	}
 	return nil
 }
