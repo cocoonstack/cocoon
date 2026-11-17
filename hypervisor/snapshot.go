@@ -60,11 +60,11 @@ func (b *Backend) BuildSnapshotConfig(snapID string, rec *VMRecord) *types.Snaps
 	}
 }
 
-// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window.
-func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec) (_ *types.SnapshotConfig, _ string, err error) {
+// SnapshotSequence is the shared capture skeleton; only capture runs in the pause window, and persist runs under the ops lock because the capture dir lives in the run dir a vm rm deletes.
+func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec SnapshotSpec, persist PersistFunc) (err error) {
 	vmID, rec, tmpDir, unlock, err := b.prepareSnapshot(ctx, ref)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 	defer unlock()
 	defer func() {
@@ -81,13 +81,17 @@ func (b *Backend) SnapshotSequence(ctx context.Context, ref string, spec Snapsho
 		defer func() { captureErr = errors.Join(captureErr, resumeAfterCapture(spec.Resume, &rec, hc)) }()
 		return spec.Capture(&rec, hc, tmpDir)
 	}); err != nil {
-		return nil, "", fmt.Errorf("snapshot VM %s: %w", vmID, err)
+		return fmt.Errorf("snapshot VM %s: %w", vmID, err)
 	}
 	cfg, err := b.finalizeSnapshot(ctx, vmID, &rec, spec, tmpDir)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
-	return cfg, tmpDir, nil
+	if err = persist(cfg, tmpDir); err != nil {
+		b.UnrecordSnapshot(ctx, vmID, cfg.ID)
+		return fmt.Errorf("persist snapshot: %w", err)
+	}
+	return nil
 }
 
 // HibernateSequence persists inside the pause window and terminates instead of resuming.

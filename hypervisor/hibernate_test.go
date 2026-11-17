@@ -148,6 +148,36 @@ func TestHibernateSequenceQuiescesWhenTheStoppedFlipFails(t *testing.T) {
 	}
 }
 
+func TestSnapshotSequencePersistsUnderTheOpsLock(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
+
+	err := b.SnapshotSequence(t.Context(), id, spec, func(_ *types.SnapshotConfig, srcDir string) error {
+		if _, ok, lockErr := b.TryLockVMOps(t.Context(), id); lockErr != nil || ok {
+			t.Errorf("ops lock free during persist (err=%v): a vm rm could empty %s", lockErr, srcDir)
+		}
+		return os.RemoveAll(srcDir)
+	})
+	if err != nil {
+		t.Fatalf("SnapshotSequence: %v", err)
+	}
+}
+
+func TestSnapshotSequencePersistFailureRollsBackTheRecord(t *testing.T) {
+	b, id := newHibernateTestVM(t)
+	spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
+
+	err := b.SnapshotSequence(t.Context(), id, spec, func(*types.SnapshotConfig, string) error {
+		return errors.New("store full")
+	})
+	if err == nil || !strings.Contains(err.Error(), "persist snapshot") {
+		t.Fatalf("SnapshotSequence = %v, want the persist failure", err)
+	}
+	if rec := recordOf(t, b, id); len(rec.SnapshotIDs) != 0 {
+		t.Fatalf("snapshot ids = %v, want the failed capture unrecorded", rec.SnapshotIDs)
+	}
+}
+
 func TestCaptureSequencesResumeWithTheDumpTimeoutAndReportFailure(t *testing.T) {
 	captureErr, resumeErr := errors.New("dump canceled"), errors.New("api gone")
 	failedCapture := func(*VMRecord, *http.Client, string) error { return captureErr }
@@ -173,7 +203,7 @@ func TestCaptureSequencesResumeWithTheDumpTimeoutAndReportFailure(t *testing.T) 
 		b, id := newHibernateTestVM(t)
 		spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
 		spec.Capture, spec.Resume = failedCapture, failedResume
-		_, _, err := b.SnapshotSequence(t.Context(), id, spec)
+		err := b.SnapshotSequence(t.Context(), id, spec, func(*types.SnapshotConfig, string) error { return nil })
 		if !errors.Is(err, captureErr) || !errors.Is(err, resumeErr) {
 			t.Errorf("err = %v, want both the capture and the resume failure", err)
 		}
@@ -185,7 +215,7 @@ func TestCaptureSequencesResumeWithTheDumpTimeoutAndReportFailure(t *testing.T) 
 		b, id := newHibernateTestVM(t)
 		spec := hibernateStubSpec(&hibernateCalls{}).SnapshotSpec
 		spec.Resume = failedResume
-		_, _, err := b.SnapshotSequence(t.Context(), id, spec)
+		err := b.SnapshotSequence(t.Context(), id, spec, func(*types.SnapshotConfig, string) error { return nil })
 		if !errors.Is(err, resumeErr) {
 			t.Errorf("err = %v, want the resume failure", err)
 		}

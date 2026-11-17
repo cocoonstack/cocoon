@@ -27,8 +27,8 @@ const (
 	ejectRenotifyInterval = 5 * time.Second
 )
 
-func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
-	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx))
+func (ch *CloudHypervisor) Snapshot(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
+	return ch.SnapshotSequence(ctx, ref, ch.snapshotSpec(ctx), persist)
 }
 
 func (ch *CloudHypervisor) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {

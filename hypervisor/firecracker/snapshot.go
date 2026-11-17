@@ -8,7 +8,6 @@ import (
 
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/snapshot"
-	"github.com/cocoonstack/cocoon/types"
 )
 
 const (
@@ -16,8 +15,8 @@ const (
 	snapshotMemFile     = "mem"
 )
 
-func (fc *Firecracker) Snapshot(ctx context.Context, ref string) (*types.SnapshotConfig, string, error) {
-	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx))
+func (fc *Firecracker) Snapshot(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
+	return fc.SnapshotSequence(ctx, ref, fc.snapshotSpec(ctx), persist)
 }
 
 func (fc *Firecracker) Hibernate(ctx context.Context, ref string, persist hypervisor.PersistFunc) error {
