@@ -229,7 +229,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 		return err
 	}
 	if dstDigest != rec.SHA256 || dstCount != rec.Records {
-		if err := copyAndVerify(ctx, src, dst, spec, ns, rec); err != nil {
+		if err := copyAndVerify(ctx, src, dst, ns, rec, partialTarget(spec, m.Target)); err != nil {
 			return err
 		}
 	}
@@ -281,13 +281,20 @@ func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
 	return spec.JSON[i], true
 }
 
-func copyAndVerify(ctx context.Context, src, dst meta.Store, spec Spec, ns metasqlite.Namespace, rec *NSRecord) error {
+func partialTarget(spec Spec, target string) string {
+	if target == config.MetaBackendJSON {
+		return "the json namespace files it wrote"
+	}
+	return spec.DBPath + " with its -wal and -shm"
+}
+
+func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, partial string) error {
 	srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
 	if err != nil {
 		return err
 	}
 	if srcDigest != rec.SHA256 || srcCount != rec.Records {
-		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and the partial target (%s with its -wal and -shm, or the json namespace files), then restart", rec.Records, srcCount, spec.DBPath)
+		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and the partial target (%s), then restart", rec.Records, srcCount, partial)
 	}
 	if verr := verifyNames(ctx, src, ns); verr != nil {
 		return verr
