@@ -123,10 +123,11 @@ func TestConvertRefusesWhileMetaStoreOpen(t *testing.T) {
 	}
 	dbPath := MetaDBPath(conf)
 	spec := convert.Spec{
-		MetaRoot: filepath.Dir(dbPath),
-		DBPath:   dbPath,
-		Decls:    MetaNamespaces(),
-		JSON:     MetaJSONNamespaces(conf),
+		MetaRoot:   filepath.Dir(dbPath),
+		DBPath:     dbPath,
+		DaemonLock: filepath.Join(conf.RootDir, "locks", "daemon.lock"),
+		Decls:      MetaNamespaces(),
+		JSON:       MetaJSONNamespaces(conf),
 	}
 	err := convert.Run(t.Context(), spec, config.MetaBackendSQLite)
 	if err == nil || !strings.Contains(err.Error(), "hold the meta store") {

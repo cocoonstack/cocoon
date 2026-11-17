@@ -30,10 +30,11 @@ var testCrashStep func(step string) error
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
-	MetaRoot string // manifest directory (parent of the sqlite DB)
-	DBPath   string
-	Decls    []metasqlite.Namespace
-	JSON     []metajson.Namespace
+	MetaRoot   string // manifest directory (parent of the sqlite DB)
+	DBPath     string
+	DaemonLock string
+	Decls      []metasqlite.Namespace
+	JSON       []metajson.Namespace
 }
 
 // Manifest is the crash-recovery authority for one conversion run.
@@ -56,7 +57,7 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
-	unlock, err := lockStore(ctx, spec.MetaRoot)
+	unlock, err := lockStore(ctx, spec)
 	if err != nil {
 		return err
 	}
@@ -79,19 +80,30 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	return finishManifest(spec.MetaRoot)
 }
 
-func lockStore(ctx context.Context, root string) (func(), error) {
-	if err := utils.EnsureDirs(root); err != nil {
+// lockStore takes the lock every store opener shares, then the instance lock, which is all a daemon from an older binary holds.
+func lockStore(ctx context.Context, spec Spec) (func(), error) {
+	if err := utils.EnsureDirs(spec.MetaRoot, filepath.Dir(spec.DaemonLock)); err != nil {
 		return nil, err
 	}
-	l := flock.New(filepath.Join(root, metasqlite.StoreLockName))
-	ok, err := l.TryLock(ctx)
-	if err != nil {
-		return nil, err
+	var held []*flock.Lock
+	unlock := func() {
+		for _, l := range held {
+			_ = l.Unlock(ctx)
+		}
 	}
-	if !ok {
-		return nil, errors.New("cocoon processes hold the meta store; stop the daemon, any gc timer and running commands")
+	for _, path := range []string{filepath.Join(spec.MetaRoot, metasqlite.StoreLockName), spec.DaemonLock} {
+		l := flock.New(path)
+		ok, err := l.TryLock(ctx)
+		if err == nil && !ok {
+			err = errors.New("cocoon processes hold the meta store; stop the daemon, any gc timer and running commands")
+		}
+		if err != nil {
+			unlock()
+			return nil, err
+		}
+		held = append(held, l)
 	}
-	return func() { _ = l.Unlock(ctx) }, nil
+	return unlock, nil
 }
 
 func crashStep(step string) error {
