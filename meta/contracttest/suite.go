@@ -52,6 +52,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("CRUD", func(t *testing.T) { testCRUD(t, factory) })
 	t.Run("DetachedValues", func(t *testing.T) { testDetached(t, factory) })
 	t.Run("Scope", func(t *testing.T) { testScope(t, factory) })
+	t.Run("UndeclaredTable", func(t *testing.T) { testUndeclaredTable(t, factory) })
 	t.Run("DurabilityContract", func(t *testing.T) { testDurability(t, factory) })
 	t.Run("ForcedRetry", func(t *testing.T) { testForcedRetry(t, factory) })
 	t.Run("CtxVsHeldWriter", func(t *testing.T) { testCtxVsHeldWriter(t, factory) })
@@ -189,6 +190,26 @@ func testScope(t *testing.T, factory Factory) {
 		return alpha.Insert(ctx, w, "copy", got)
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func testUndeclaredTable(t *testing.T, factory Factory) {
+	ctx := t.Context()
+	s := factory(t, []string{nsAlpha})
+	c := meta.NewCollection[record](nsAlpha, "undeclared")
+
+	for op, fn := range map[string]meta.UpdateFunc{
+		"get": func(w meta.Writer) error {
+			_, err := c.Get(ctx, w, "x")
+			return err
+		},
+		"scan":   func(w meta.Writer) error { return c.Scan(ctx, w, func(string, *record) error { return nil }) },
+		"upsert": func(w meta.Writer) error { return c.Upsert(ctx, w, "x", &record{}) },
+		"delete": func(w meta.Writer) error { return c.Delete(ctx, w, "x") },
+	} {
+		if err := s.Update(ctx, meta.Scope{Write: nsAlpha}, meta.CommitDurable, fn); !errors.Is(err, meta.ErrScope) {
+			t.Fatalf("%s on an undeclared table: got %v, want ErrScope", op, err)
+		}
 	}
 }
 

@@ -373,6 +373,7 @@ func newTestFC(t *testing.T) *Firecracker {
 			{Key: "vms", Table: hypervisor.TableRecords},
 			{Key: "names", Table: hypervisor.TableNames},
 			{Key: "tombstones", Table: tombstone.TableName, Optional: true},
+			{Key: "placements", Table: hypervisor.TablePlacements, Optional: true},
 		}},
 	})
 	if err != nil {

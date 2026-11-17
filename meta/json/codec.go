@@ -12,6 +12,7 @@ import (
 type Codec interface {
 	Decode(data []byte) (*Model, error)
 	Encode(m *Model) ([]byte, error)
+	Declares(table string) bool
 }
 
 type genericFile struct {
@@ -37,6 +38,8 @@ func (GenericCodec) Decode(data []byte) (*Model, error) {
 	}
 	return m, nil
 }
+
+func (GenericCodec) Declares(string) bool { return true }
 
 func (GenericCodec) Encode(m *Model) ([]byte, error) {
 	file := genericFile{Tables: map[string]map[string]jsontext.Value{}}

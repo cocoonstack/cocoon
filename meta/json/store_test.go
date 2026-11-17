@@ -11,6 +11,8 @@ import (
 	"github.com/cocoonstack/cocoon/meta/contracttest"
 )
 
+var testTables = TableCodec{Specs: []TableSpec{{Key: "records", Table: "records"}, {Key: "names", Table: "names"}, {Key: "tombstones", Table: "tombstones"}}}
+
 func TestContract(t *testing.T) {
 	contracttest.Run(t, func(t *testing.T, nss []string) meta.Store {
 		return newStore(t, t.TempDir(), nss...)
@@ -113,7 +115,7 @@ func TestPrevRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := GenericCodec{}.Decode(prev)
+	m, err := testTables.Decode(prev)
 	if err != nil {
 		t.Fatalf(".prev rotated in the torn generation: %v", err)
 	}
@@ -316,7 +318,7 @@ func newStore(t *testing.T, dir string, nss ...string) *Store {
 			Name:     ns,
 			FilePath: filepath.Join(dir, ns+".json"),
 			LockPath: filepath.Join(dir, ns+".lock"),
-			Codec:    GenericCodec{},
+			Codec:    testTables,
 		})
 	}
 	s, err := Open(defs...)
