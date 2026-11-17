@@ -128,7 +128,7 @@ func planLocalImport(files []string) (importSourceKind, error) {
 		return 0, err
 	}
 	if kind == importSourceStream && len(files) > 1 {
-		return 0, fmt.Errorf("stream imports accept exactly one file, got %d", len(files))
+		return 0, fmt.Errorf("gzip-wrapped imports accept exactly one file, got %d: gunzip split parts and tar layers first", len(files))
 	}
 	return kind, nil
 }

@@ -29,7 +29,7 @@ Type is auto-detected from magic bytes (supports gzip-wrapped input):
 
 When FILE is omitted, data is read from stdin.
 A qcow2 file whose content is already stored is matched by hash without a temp copy.
-Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers.`,
+Multiple FILE arguments are treated as split qcow2 parts or multiple tar layers; they must be uncompressed.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: h.Import,
 	}
