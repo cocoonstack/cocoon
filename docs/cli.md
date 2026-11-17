@@ -292,7 +292,7 @@ Applies to `cocoon vm status`:
 | `--interval`, `-n` | `5`     | Poll interval in seconds (only with `--watch` or `--event`) |
 | `--watch`, `-w`    | `false` | Refresh-loop mode (full-screen redraw each tick); omit for a one-shot snapshot |
 | `--event`          | `false` | Event stream mode (append changes instead of refreshing) |
-| `--format`, `-o`   | `table` | Output format: `table` or `json` (one-shot and event modes; `--watch` always renders a table) |
+| `--format`, `-o`   | `table` | Output format: `table` or `json` (one-shot and event modes; `--watch` with `json` is rejected, use `--event` for a JSON stream) |
 
 `--event` and `--watch` are mutually exclusive; passing both fails with
 `--event and --watch are mutually exclusive`. With neither, `status` prints a

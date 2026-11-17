@@ -69,6 +69,9 @@ func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if watchMode && format == cliutil.FormatJSON {
+		return fmt.Errorf("--watch redraws a table; use --event for a JSON stream")
+	}
 
 	hypers, hyperErr := cmdcore.InitAllHypervisors(ctx, conf)
 	if hyperErr != nil {
