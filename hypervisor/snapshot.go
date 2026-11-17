@@ -188,16 +188,6 @@ func (b *Backend) finalizeSnapshot(ctx context.Context, vmID string, rec *VMReco
 	return b.BuildSnapshotConfig(snapID, rec), nil
 }
 
-func PopulateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
-	if err := clean(runDir); err != nil {
-		return fmt.Errorf("clean old snapshot files: %w", err)
-	}
-	if err := clone(runDir, srcDir); err != nil {
-		return fmt.Errorf("clone snapshot files: %w", err)
-	}
-	return nil
-}
-
 func CloneStorageConfigs(storageConfigs []*types.StorageConfig) []*types.StorageConfig {
 	out := make([]*types.StorageConfig, 0, len(storageConfigs))
 	for _, sc := range storageConfigs {
@@ -253,6 +243,16 @@ func ReverseLayers[T any](storageConfigs []*types.StorageConfig, project func(id
 	}
 	slices.Reverse(out)
 	return out
+}
+
+func populateFromSrc(runDir, srcDir string, clean RunDirHook, clone CloneFilesFunc) error {
+	if err := clean(runDir); err != nil {
+		return fmt.Errorf("clean old snapshot files: %w", err)
+	}
+	if err := clone(runDir, srcDir); err != nil {
+		return fmt.Errorf("clone snapshot files: %w", err)
+	}
+	return nil
 }
 
 func saveCaptureMeta(rec *VMRecord, spec SnapshotSpec, tmpDir string) error {

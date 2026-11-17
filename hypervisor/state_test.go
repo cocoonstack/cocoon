@@ -242,18 +242,18 @@ func TestDirectRestoreSequenceEmitsComputeStopThenTransition(t *testing.T) {
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
 	newCfg := &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30}
-	spec := DirectRestoreSpec{
+	spec := RestoreSpec{
 		VMCfg:            newCfg,
-		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
 		Kill:             func(context.Context, string, *VMRecord) error { return nil },
-		Populate:         func(*VMRecord, string) error { return nil },
+		Clean:            func(string) error { return nil },
+		CloneFiles:       func(string, string) error { return nil },
 		AfterExtract: func(_ context.Context, vmID string, vmCfg *types.VMConfig, _ *VMRecord) (*types.VM, error) {
 			return &types.VM{ID: vmID, Hypervisor: b.Typ, State: types.VMStateRunning, Config: *vmCfg}, nil
 		},
 	}
-	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec); err != nil {
+	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec, t.TempDir()); err != nil {
 		t.Fatalf("DirectRestoreSequence: %v", err)
 	}
 
@@ -295,19 +295,19 @@ func TestDirectRestoreSequenceEmitsOnlyComputeStopOnPopulateFailure(t *testing.T
 	ctx := t.Context()
 	seedRunningVM(t, b, "vm1", 2, 2<<30, 20<<30)
 
-	spec := DirectRestoreSpec{
+	spec := RestoreSpec{
 		VMCfg:            &types.VMConfig{CPU: 4, Memory: 4 << 30, Storage: 30 << 30},
-		SrcDir:           t.TempDir(),
 		SourceSnapshotID: "snap-src",
 		Preflight:        func(string, *VMRecord) error { return nil },
 		Kill:             func(context.Context, string, *VMRecord) error { return nil },
-		Populate:         func(*VMRecord, string) error { return errors.New("populate boom") },
+		Clean:            func(string) error { return nil },
+		CloneFiles:       func(string, string) error { return errors.New("populate boom") },
 		AfterExtract: func(_ context.Context, _ string, _ *types.VMConfig, _ *VMRecord) (*types.VM, error) {
 			t.Fatal("AfterExtract should not run when Populate fails")
 			return nil, nil
 		},
 	}
-	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec); err == nil {
+	if _, err := b.DirectRestoreSequence(ctx, "vm1", spec, t.TempDir()); err == nil {
 		t.Fatal("expected error from populate failure")
 	}
 	entries := rec.Entries()

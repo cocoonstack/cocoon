@@ -64,14 +64,14 @@ func (b *Backend) FinalizeRestore(ctx context.Context, vmID string, vmCfg *types
 }
 
 // RestoreSequence is the shared restore skeleton (preflight before kill).
-func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec) (*types.VM, error) {
+func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec, snapshot io.Reader) (*types.VM, error) {
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 
-	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, spec.Snapshot)
+	stagingDir, cleanupStaging, err := PrepareStagingDir(rec.RunDir, snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -95,18 +95,18 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
-func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec DirectRestoreSpec) (*types.VM, error) {
+func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec RestoreSpec, srcDir string) (*types.VM, error) {
 	vmID, rec, unlock, err := b.prepareRestore(ctx, vmRef, spec.VMCfg)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 
-	if preflightErr := spec.Preflight(spec.SrcDir, rec); preflightErr != nil {
+	if preflightErr := spec.Preflight(srcDir, rec); preflightErr != nil {
 		return nil, fmt.Errorf("snapshot preflight: %w", preflightErr)
 	}
 	apply := func(rec *VMRecord) error {
-		if populateErr := spec.Populate(rec, spec.SrcDir); populateErr != nil {
+		if populateErr := populateFromSrc(rec.RunDir, srcDir, spec.Clean, spec.CloneFiles); populateErr != nil {
 			// Populate has no rollback; quarantine any origin on a partial run dir.
 			b.QuarantineVM(ctx, vmID, "partial restore populate")
 			return populateErr

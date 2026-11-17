@@ -3,7 +3,6 @@ package hypervisor
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os/exec"
 	"sync"
@@ -106,25 +105,14 @@ type ProcessHook func(ctx context.Context, rec *VMRecord, sockPath string, pid i
 
 type TransitionHook func(rec *VMRecord, hc *http.Client) error
 
-// RestoreSpec carries backend hooks for Backend.RestoreSequence.
+// RestoreSpec carries backend hooks for RestoreSequence and DirectRestoreSequence; only the direct form calls CloneFiles.
 type RestoreSpec struct {
 	VMCfg            *types.VMConfig
-	Snapshot         io.Reader
 	SourceSnapshotID string
 	Preflight        PreflightHook
 	Kill             KillHook
 	Clean            RunDirHook
-	AfterExtract     AfterExtractHook
-}
-
-// DirectRestoreSpec is RestoreSpec for a local srcDir; Populate replaces staging+merge.
-type DirectRestoreSpec struct {
-	VMCfg            *types.VMConfig
-	SrcDir           string
-	SourceSnapshotID string
-	Preflight        PreflightHook
-	Kill             KillHook
-	Populate         DirHook
+	CloneFiles       CloneFilesFunc
 	AfterExtract     AfterExtractHook
 }
 

@@ -13,15 +13,21 @@ import (
 )
 
 func (fc *Firecracker) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader, sourceSnapshotID string) (*types.VM, error) {
-	return fc.RestoreSequence(ctx, vmRef, hypervisor.RestoreSpec{
+	return fc.RestoreSequence(ctx, vmRef, fc.restoreSpec(ctx, vmCfg, sourceSnapshotID), snapshot)
+}
+
+func (fc *Firecracker) restoreSpec(ctx context.Context, vmCfg *types.VMConfig, sourceSnapshotID string) hypervisor.RestoreSpec {
+	return hypervisor.RestoreSpec{
 		VMCfg:            vmCfg,
-		Snapshot:         snapshot,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight:        fc.preflightRestore,
 		Kill:             fc.killForRestore,
 		Clean:            cleanSnapshotFiles,
-		AfterExtract:     fc.restoreAfterExtract,
-	})
+		CloneFiles: func(dstDir, srcDir string) error {
+			return cloneSnapshotFiles(ctx, dstDir, srcDir)
+		},
+		AfterExtract: fc.restoreAfterExtract,
+	}
 }
 
 func (fc *Firecracker) killForRestore(ctx context.Context, vmID string, rec *hypervisor.VMRecord) error {

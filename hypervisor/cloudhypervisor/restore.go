@@ -16,11 +16,14 @@ import (
 )
 
 func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, stream io.Reader, sourceSnapshotID string) (*types.VM, error) {
+	return ch.RestoreSequence(ctx, vmRef, ch.restoreSpec(ctx, vmCfg, sourceSnapshotID), stream)
+}
+
+func (ch *CloudHypervisor) restoreSpec(ctx context.Context, vmCfg *types.VMConfig, sourceSnapshotID string) hypervisor.RestoreSpec {
 	// Preflight's meta feeds AfterExtract; cocoon.json is merged verbatim.
 	var meta *snapshot.SnapshotMeta
-	return ch.RestoreSequence(ctx, vmRef, hypervisor.RestoreSpec{
+	return hypervisor.RestoreSpec{
 		VMCfg:            vmCfg,
-		Snapshot:         stream,
 		SourceSnapshotID: sourceSnapshotID,
 		Preflight: func(srcDir string, rec *hypervisor.VMRecord) error {
 			var err error
@@ -29,10 +32,14 @@ func (ch *CloudHypervisor) Restore(ctx context.Context, vmRef string, vmCfg *typ
 		},
 		Kill:  ch.killForRestore,
 		Clean: cleanSnapshotFiles,
+		CloneFiles: func(dstDir, srcDir string) error {
+			_, err := cloneSnapshotFiles(ctx, dstDir, srcDir)
+			return err
+		},
 		AfterExtract: func(ctx context.Context, vmID string, vmCfg *types.VMConfig, rec *hypervisor.VMRecord) (*types.VM, error) {
 			return ch.restoreAfterExtract(ctx, vmID, vmCfg, rec, meta)
 		},
-	})
+	}
 }
 
 func (ch *CloudHypervisor) preflightRestore(ctx context.Context, srcDir string, rec *hypervisor.VMRecord, vmCfg *types.VMConfig) (*snapshot.SnapshotMeta, error) {
