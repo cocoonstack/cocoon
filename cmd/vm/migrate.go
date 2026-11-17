@@ -52,8 +52,11 @@ func (h Handler) MigrateReceive(cmd *cobra.Command, _ []string) error {
 		if reclaimErr != nil {
 			return fmt.Errorf("reclaim interrupted receive: %w", reclaimErr)
 		}
-		if outcome == hypervisor.StaleCreateBusy {
+		switch outcome {
+		case hypervisor.StaleCreateBusy:
 			return fmt.Errorf("vm %s is busy: another operation owns it", id)
+		case hypervisor.StaleCreateNotCreating:
+			return fmt.Errorf("vm %s already exists", id)
 		}
 	}
 	cs, err := h.prepareClone(ctx, cmd, conf, hyper, cfg)
