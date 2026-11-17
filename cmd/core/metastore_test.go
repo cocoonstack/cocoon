@@ -11,6 +11,7 @@ import (
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
+	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -141,6 +142,20 @@ func TestConvertRefusesWhileMetaStoreOpen(t *testing.T) {
 	if err := convert.Run(t.Context(), spec, config.MetaBackendSQLite); err != nil {
 		t.Fatalf("convert after the store closed: %v", err)
 	}
+}
+
+func TestMetaStoreBlamesConvertOnlyForATimeout(t *testing.T) {
+	resetMetaStore()
+	conf := testConf(t)
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(MetaDBPath(conf)), metasqlite.StoreLockName), 0o750); err != nil {
+		t.Fatalf("block the store lock path: %v", err)
+	}
+	_, err := MetaStore(conf)
+	if err == nil || strings.Contains(err.Error(), "meta convert") {
+		t.Fatalf("MetaStore = %v, want the lock open failure itself", err)
+	}
+	CloseMetaStore(t.Context())
+	resetMetaStore()
 }
 
 func TestResolveMetaBackend(t *testing.T) {

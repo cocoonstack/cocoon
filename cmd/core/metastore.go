@@ -129,7 +129,9 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 			return
 		}
 		if metaLease, metaErr = flock.AcquireShared(ctx, filepath.Join(filepath.Dir(dbPath), metasqlite.StoreLockName)); metaErr != nil {
-			metaErr = fmt.Errorf("a running `cocoon meta convert` holds the meta store: %w", metaErr)
+			if errors.Is(metaErr, context.DeadlineExceeded) {
+				metaErr = fmt.Errorf("a running `cocoon meta convert` holds the meta store: %w", metaErr)
+			}
 			return
 		}
 		// Ordinary opens of EITHER engine refuse while a conversion is in flight; the json engine cannot see the manifest itself.
