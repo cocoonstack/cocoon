@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/cocoonstack/cocoon/images"
 	"github.com/cocoonstack/cocoon/images/cloudimg"
 	"github.com/cocoonstack/cocoon/images/oci"
+	"github.com/cocoonstack/cocoon/lock/flock"
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
 	metasqlite "github.com/cocoonstack/cocoon/meta/sqlite"
@@ -36,6 +38,7 @@ const (
 var (
 	metaOnce  sync.Once
 	metaStore meta.Store
+	metaLease *flock.SharedLease
 	metaErr   error
 
 	// vmTables maps legacy vms.json fields onto the vms-namespace tables.
@@ -125,6 +128,13 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		defer cancel()
 		// Ordinary opens of EITHER engine refuse while a conversion is in flight; the json engine cannot see the manifest itself.
 		dbPath := MetaDBPath(conf)
+		if metaErr = utils.EnsureDirs(filepath.Dir(dbPath)); metaErr != nil {
+			return
+		}
+		if metaLease, metaErr = flock.AcquireShared(ctx, filepath.Join(filepath.Dir(dbPath), metasqlite.StoreLockName)); metaErr != nil {
+			metaErr = fmt.Errorf("a running `cocoon meta convert` holds the meta store: %w", metaErr)
+			return
+		}
 		if err := metasqlite.RefuseManifest(dbPath); err != nil {
 			metaErr = err
 			return
@@ -159,10 +169,14 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 
 // CloseMetaStore closes the process-wide store at command teardown.
 func CloseMetaStore(ctx context.Context) {
-	if metaStore == nil {
-		return
+	var err error
+	if metaStore != nil {
+		err = metaStore.Close()
 	}
-	if err := metaStore.Close(); err != nil {
+	if metaLease != nil {
+		err = errors.Join(err, metaLease.Close())
+	}
+	if err != nil {
 		log.WithFunc("core.CloseMetaStore").Warnf(ctx, "close meta store: %v", err)
 	}
 }

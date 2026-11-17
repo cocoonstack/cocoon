@@ -32,9 +32,10 @@ const (
 	// UserVersion is the schema generation, verified on every open and written only at init; scripts/meta-upgrade.py moves a store between generations.
 	UserVersion = 2
 
-	// DBFileName is the single database under the meta root; ManifestName beside it marks an in-flight conversion, which ordinary opens refuse.
-	DBFileName   = "meta.db"
-	ManifestName = "meta-convert.manifest"
+	// DBFileName, ManifestName (an in-flight conversion) and StoreLockName (shared by every open, exclusive to convert) sit under the meta root.
+	DBFileName    = "meta.db"
+	ManifestName  = "meta-convert.manifest"
+	StoreLockName = "store.lock"
 
 	busyRetryCeiling   = 30 * time.Second
 	busyRetryPause     = 2 * time.Millisecond

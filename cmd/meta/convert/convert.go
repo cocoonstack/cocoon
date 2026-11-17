@@ -30,11 +30,10 @@ var testCrashStep func(step string) error
 
 // Spec carries both engines' declarations from the composition root.
 type Spec struct {
-	MetaRoot   string // manifest directory (parent of the sqlite DB)
-	DBPath     string
-	DaemonLock string
-	Decls      []metasqlite.Namespace
-	JSON       []metajson.Namespace
+	MetaRoot string // manifest directory (parent of the sqlite DB)
+	DBPath   string
+	Decls    []metasqlite.Namespace
+	JSON     []metajson.Namespace
 }
 
 // Manifest is the crash-recovery authority for one conversion run.
@@ -57,7 +56,7 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	if target != config.MetaBackendSQLite && target != config.MetaBackendJSON {
 		return fmt.Errorf("unknown target engine %q", target)
 	}
-	unlock, err := lockOutDaemon(ctx, spec.DaemonLock)
+	unlock, err := lockStore(ctx, spec.MetaRoot)
 	if err != nil {
 		return err
 	}
@@ -80,17 +79,17 @@ func Run(ctx context.Context, spec Spec, target string) error {
 	return finishManifest(spec.MetaRoot)
 }
 
-func lockOutDaemon(ctx context.Context, path string) (func(), error) {
-	if err := utils.EnsureDirs(filepath.Dir(path)); err != nil {
+func lockStore(ctx context.Context, root string) (func(), error) {
+	if err := utils.EnsureDirs(root); err != nil {
 		return nil, err
 	}
-	l := flock.New(path)
+	l := flock.New(filepath.Join(root, metasqlite.StoreLockName))
 	ok, err := l.TryLock(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, errors.New("a cocoon daemon is running; stop it before converting")
+		return nil, errors.New("cocoon processes hold the meta store; stop the daemon, any gc timer and running commands")
 	}
 	return func() { _ = l.Unlock(ctx) }, nil
 }
@@ -111,9 +110,6 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 		return err
 	}
 	defer src.Close() //nolint:errcheck
-	if qerr := checkQuiesced(ctx, spec, target, src); qerr != nil {
-		return qerr
-	}
 	if m == nil {
 		if ferr := checkTargetFS(spec, target); ferr != nil {
 			return ferr
@@ -172,35 +168,6 @@ func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) 
 		m.Namespaces[ns.Name] = &NSRecord{Files: sourceFiles(spec, target, ns.Name), SHA256: digest, Records: count}
 	}
 	return m, nil
-}
-
-// checkQuiesced refuses conversion while a live process holds the source.
-func checkQuiesced(ctx context.Context, spec Spec, target string, src meta.Store) error {
-	if target == config.MetaBackendJSON {
-		// sqlite source: an empty durable transaction fails ErrBusy while a writer is mid-flight.
-		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		err := src.Update(probeCtx, meta.Scope{Write: spec.Decls[0].Name}, meta.CommitDurable, func(meta.Writer) error { return nil })
-		if err != nil {
-			return fmt.Errorf("sqlite store busy; stop cocoon activity before converting: %w", err)
-		}
-		return nil
-	}
-	for _, jns := range spec.JSON {
-		// Persistent form: the engine's own locks are persistent, and a transient probe would delete the shared lock file on release.
-		l := flock.New(jns.LockPath)
-		ok, err := l.TryLock(ctx)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("namespace %s lock is held; stop cocoon activity before converting", jns.Name)
-		}
-		if err := l.Unlock(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // ensureJSONDirs creates namespace dirs for subsystems that never ran; flock needs them.
