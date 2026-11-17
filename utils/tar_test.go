@@ -452,6 +452,46 @@ func TestExtractTar_Sparse_InvalidSizeString(t *testing.T) {
 	}
 }
 
+func TestExtractFileSparse_RejectsInvalidMap(t *testing.T) {
+	const realSize = 4096
+	tests := []struct {
+		name     string
+		segments []sparseSegment
+		dataSize int64
+		wantErr  string
+	}{
+		{
+			name:     "offset past real size",
+			segments: []sparseSegment{{Offset: realSize + 1, Length: 0}},
+			wantErr:  "sparse map segment 4097+0 exceeds the 4096-byte file",
+		},
+		{
+			name:     "negative length",
+			segments: []sparseSegment{{Offset: 0, Length: -1}},
+			wantErr:  "sparse map segment 0+-1 exceeds the 4096-byte file",
+		},
+		{
+			name:     "data sum differs from entry size",
+			segments: []sparseSegment{{Offset: 0, Length: 100}, {Offset: 1024, Length: 28}},
+			dataSize: 64,
+			wantErr:  "sparse map describes 128 data bytes, entry holds 64",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapJSON, err := json.Marshal(tt.segments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "disk.raw")
+			err = extractFileSparse(path, bytes.NewReader(make([]byte, tt.dataSize)), 0o644, realSize, tt.dataSize, string(mapJSON))
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("err = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestExtractTar_Sparse_MixedWithRegularEntries(t *testing.T) {
 	const realSize = 8192
 	dataContent := []byte("hello sparse")
