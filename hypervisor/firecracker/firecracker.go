@@ -12,7 +12,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 )
 
-const typ = "firecracker"
+const typ = string(config.HypervisorFirecracker)
 
 var (
 	_ hypervisor.Hypervisor = (*Firecracker)(nil)

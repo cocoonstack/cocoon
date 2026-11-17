@@ -116,7 +116,11 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 }
 
 func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
-	return ch.listWith(ctx, vmRef, disksAttached)
+	info, _, err := ch.runningInfo(ctx, vmRef)
+	if info == nil {
+		return nil, err
+	}
+	return disksAttached(info), nil
 }
 
 func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.Spec) (string, error) {
@@ -153,10 +157,6 @@ func (ch *CloudHypervisor) FsDetach(ctx context.Context, vmRef, tag string) erro
 		}
 		return "", fmt.Errorf("fs tag %q not attached", tag)
 	}, nil)
-}
-
-func (ch *CloudHypervisor) FsList(ctx context.Context, vmRef string) ([]fs.Attached, error) {
-	return ch.listWith(ctx, vmRef, fsAttached)
 }
 
 func (ch *CloudHypervisor) DeviceAttach(ctx context.Context, vmRef string, spec vfio.Spec) (string, error) {
@@ -196,10 +196,6 @@ func (ch *CloudHypervisor) DeviceDetach(ctx context.Context, vmRef, id string) e
 		}
 		return "", fmt.Errorf("device id %q not attached", id)
 	}, nil)
-}
-
-func (ch *CloudHypervisor) DeviceList(ctx context.Context, vmRef string) ([]vfio.Attached, error) {
-	return ch.listWith(ctx, vmRef, devicesAttached)
 }
 
 func (ch *CloudHypervisor) RunningView(ctx context.Context, vmRef string) (*hypervisor.RunningView, error) {
@@ -265,14 +261,6 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 		return nil
 	}
 	return afterEject(&rec)
-}
-
-func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
-	info, _, err := ch.runningInfo(ctx, vmRef)
-	if info == nil {
-		return nil, err
-	}
-	return extract(info), nil
 }
 
 // runningInfo returns a nil info (not error) for a stopped VM so inspect can omit the field.

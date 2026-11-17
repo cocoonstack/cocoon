@@ -37,15 +37,15 @@ type Spec struct {
 	JSON       []metajson.Namespace
 }
 
-// Manifest is the crash-recovery authority for one conversion run.
-type Manifest struct {
+// manifest is the crash-recovery authority for one conversion run.
+type manifest struct {
 	Target     string               `json:"target"`
-	Namespaces map[string]*NSRecord `json:"namespaces"`
+	Namespaces map[string]*nsRecord `json:"namespaces"`
 	StartedAt  time.Time            `json:"started_at"`
 }
 
-// NSRecord pins one namespace's source identity and completion.
-type NSRecord struct {
+// nsRecord pins one namespace's source identity and completion.
+type nsRecord struct {
 	Files   []string `json:"files"` // json source: main+.prev; sqlite source: db path
 	SHA256  string   `json:"sha256"`
 	Records int      `json:"records"`
@@ -113,7 +113,7 @@ func crashStep(step string) error {
 	return testCrashStep(step)
 }
 
-func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) error {
+func convertAll(ctx context.Context, spec Spec, target string, m *manifest) error {
 	if err := ensureJSONDirs(spec); err != nil {
 		return err
 	}
@@ -176,14 +176,14 @@ func checkFreshTarget(spec Spec, target string) error {
 	return metasqlite.CheckFS(spec.DBPath)
 }
 
-func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) (*Manifest, error) {
-	m := &Manifest{Target: target, Namespaces: map[string]*NSRecord{}, StartedAt: time.Now()}
+func newManifest(ctx context.Context, spec Spec, target string, src meta.Store) (*manifest, error) {
+	m := &manifest{Target: target, Namespaces: map[string]*nsRecord{}, StartedAt: time.Now()}
 	for _, ns := range spec.Decls {
 		digest, count, err := canonicalDigest(ctx, src, ns)
 		if err != nil {
 			return nil, err
 		}
-		m.Namespaces[ns.Name] = &NSRecord{Files: sourceFiles(spec, target, ns.Name), SHA256: digest, Records: count}
+		m.Namespaces[ns.Name] = &nsRecord{Files: sourceFiles(spec, target, ns.Name), SHA256: digest, Records: count}
 	}
 	return m, nil
 }
@@ -222,7 +222,7 @@ func openTarget(ctx context.Context, spec Spec, target string) (meta.Store, erro
 	return metasqlite.OpenForRecovery(spec.DBPath, spec.Decls...)
 }
 
-func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, m *Manifest, spec Spec) error {
+func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *nsRecord, m *manifest, spec Spec) error {
 	// A committed-but-unmarked target (crash window) is re-verified and claimed, never redone.
 	dstDigest, dstCount, err := canonicalDigest(ctx, dst, ns)
 	if err != nil {
@@ -288,7 +288,7 @@ func partialTarget(spec Spec, target string) string {
 	return spec.DBPath + " with its -wal and -shm"
 }
 
-func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord, partial string) error {
+func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *nsRecord, partial string) error {
 	srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
 	if err != nil {
 		return err
@@ -433,7 +433,7 @@ func sourceFiles(spec Spec, target, nsName string) []string {
 	return nil
 }
 
-func allDone(m *Manifest) bool {
+func allDone(m *manifest) bool {
 	for _, rec := range m.Namespaces {
 		if !rec.Done {
 			return false
@@ -446,7 +446,7 @@ func manifestPath(root string) string {
 	return filepath.Join(root, metasqlite.ManifestName)
 }
 
-func loadManifest(root string) (*Manifest, error) {
+func loadManifest(root string) (*manifest, error) {
 	raw, err := os.ReadFile(manifestPath(root))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -454,14 +454,14 @@ func loadManifest(root string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	var m Manifest
+	var m manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("manifest corrupt: %w", err)
 	}
 	return &m, nil
 }
 
-func saveManifest(root string, m *Manifest) error {
+func saveManifest(root string, m *manifest) error {
 	raw, err := json.Marshal(m, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err

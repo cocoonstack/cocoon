@@ -158,8 +158,7 @@ func CloseOnCancel(ctx context.Context, c io.Closer) func() bool {
 
 // SnapshotNameFlags reads the --name/--description pair and rejects a taken name; an empty name passes.
 func SnapshotNameFlags(ctx context.Context, cmd *cobra.Command, snapBackend snapshot.Snapshot) (snapName, description string, err error) {
-	snapName, _ = cmd.Flags().GetString("name")
-	description, _ = cmd.Flags().GetString("description")
+	snapName, description = cliutil.FlagStr(cmd, "name"), cliutil.FlagStr(cmd, "description")
 	if err = (&types.SnapshotConfig{Name: snapName}).Validate(); err != nil {
 		return "", "", err
 	}

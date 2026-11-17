@@ -18,7 +18,6 @@ type BaseConfig struct {
 }
 
 func (c *BaseConfig) BackendDir() string { return filepath.Join(c.RootDir, c.Subdir) }
-func (c *BaseConfig) DBDir() string      { return filepath.Join(c.BackendDir(), "db") }
 func (c *BaseConfig) TempDir() string    { return filepath.Join(c.BackendDir(), "temp") }
 func (c *BaseConfig) BlobsDir() string   { return filepath.Join(c.BackendDir(), "blobs") }
 
@@ -27,8 +26,8 @@ func (c *BaseConfig) BlobLockPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+".lock")
 }
 
-func (c *BaseConfig) IndexFile() string { return filepath.Join(c.DBDir(), "images.json") }
-func (c *BaseConfig) IndexLock() string { return filepath.Join(c.DBDir(), "images.lock") }
+func (c *BaseConfig) IndexFile() string { return filepath.Join(c.dbDir(), "images.json") }
+func (c *BaseConfig) IndexLock() string { return filepath.Join(c.dbDir(), "images.lock") }
 
 func (c *BaseConfig) BlobPath(hex string) string {
 	return filepath.Join(c.BlobsDir(), hex+c.BlobExt)
@@ -64,8 +63,10 @@ func (c *BaseConfig) EnsureDirs() error {
 	if c.RootDir == "" {
 		return errors.New("root dir must not be empty")
 	}
-	return utils.EnsureDirs(c.DBDir(), c.TempDir(), c.BlobsDir())
+	return utils.EnsureDirs(c.dbDir(), c.TempDir(), c.BlobsDir())
 }
+
+func (c *BaseConfig) dbDir() string { return filepath.Join(c.BackendDir(), "db") }
 
 // FirmwarePath returns the UEFI firmware blob (CLOUDHV.fd) under rootDir/firmware.
 func FirmwarePath(rootDir string) string {

@@ -115,19 +115,13 @@ func (l *Lock) pathBound() bool {
 	if err != nil {
 		return false
 	}
-	return BoundToPath(held, l.path)
+	return boundToPath(held, l.path)
 }
 
 // dropFlock releases the kernel lock while keeping the in-process token, for requeueing on a fresh inode.
 func (l *Lock) dropFlock() {
 	_ = l.fl.Close()
 	l.fl = nil
-}
-
-// BoundToPath reports whether held still describes the inode bound to path.
-func BoundToPath(held fs.FileInfo, path string) bool {
-	cur, err := os.Stat(path)
-	return err == nil && os.SameFile(held, cur)
 }
 
 // ReclaimTransient removes path's transient lock file when nobody holds it; false with a nil error means busy or already gone, since TryLock would otherwise create the file it is about to unlink.
@@ -144,4 +138,10 @@ func ReclaimTransient(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// boundToPath reports whether held still describes the inode bound to path.
+func boundToPath(held fs.FileInfo, path string) bool {
+	cur, err := os.Stat(path)
+	return err == nil && os.SameFile(held, cur)
 }

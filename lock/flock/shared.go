@@ -60,7 +60,7 @@ func sharedBound(ctx context.Context, f *os.File, path string) (*SharedLease, er
 			if statErr != nil {
 				return nil, statErr
 			}
-			if BoundToPath(held, path) {
+			if boundToPath(held, path) {
 				return &SharedLease{file: f}, nil
 			}
 			return nil, nil

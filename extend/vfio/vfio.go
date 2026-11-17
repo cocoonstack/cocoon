@@ -54,11 +54,6 @@ type Attacher interface {
 	DeviceDetach(ctx context.Context, vmRef, id string) error
 }
 
-// Lister enumerates VFIO devices from running VM state.
-type Lister interface {
-	DeviceList(ctx context.Context, vmRef string) ([]Attached, error)
-}
-
 // normalizePath maps {short BDF, full BDF, sysfs path} → canonical /sys/bus/pci/devices/<bdf>; rejects paths outside that root.
 func normalizePath(input string) (string, error) {
 	in := strings.TrimSpace(input)
