@@ -180,6 +180,7 @@ Requirements:
 
 Rules for the caller:
 
+- Copy the files before the source host can lose power: a capture does not fsync its disk deltas, so a copy taken after a source crash or reboot can carry a stale delta that `vm migrate receive` accepts.
 - Copy every file a round lists, in the listed round order. `vm migrate receive` refuses a directory without `series.final`: the source could still resume that guest. `state.json` and `config.json` are replaced each round. A `.ref` file never leaves the source. A short or missing disk delta fails the receive.
 - A VM has one series. A new baseline ends the previous one and deletes its directory; the directory of a series nobody continues stays until `gc` removes it after 24 hours. A delta with an old series ID fails and leaves the guest alone.
 - A failed round ends the series, resumes the guest and deletes its directory; start again with a new baseline. A capture killed mid-round makes the next round fail the same way; a gap in `round` means a capture died after it finished, so copy every non-`.ref` file of the directory or start again. `snapshot save`, removing a NIC, a device detach, a reboot or a stop ends the series too, and the next delta fails.
