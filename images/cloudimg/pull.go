@@ -200,9 +200,6 @@ func streamBody(resp *http.Response, dst *os.File, tracker progress.Tracker) (st
 	if written > maxDownloadBytes {
 		return "", fmt.Errorf("download %s: exceeded max size (%d bytes)", url, maxDownloadBytes)
 	}
-	if err := dst.Sync(); err != nil {
-		return "", fmt.Errorf("sync temp file: %w", err)
-	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
@@ -219,10 +216,6 @@ func downloadRangesParallel(ctx context.Context, client Doer, url string, dst *o
 		return struct{}{}, downloadRange(ctx, client, url, dst, r, pc)
 	}, pullConns); err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
-	}
-
-	if err := dst.Sync(); err != nil {
-		return fmt.Errorf("sync temp file: %w", err)
 	}
 
 	tracker.OnEvent(cloudimgProgress.Event{Phase: cloudimgProgress.PhaseDownload, BytesTotal: size, BytesDone: size})

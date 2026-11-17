@@ -21,10 +21,13 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	if err := os.MkdirAll(bootDir, 0o750); err != nil {
 		return fmt.Errorf("create boot dir for layer %d: %w", layerIdx, err)
 	}
+	if err := utils.SyncFile(src); err != nil {
+		return fmt.Errorf("sync layer %d %s: %w", layerIdx, name, err)
+	}
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("move layer %d %s: %w", layerIdx, name, err)
 	}
-	return nil
+	return utils.SyncParentDir(bootDir)
 }
 
 func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
@@ -65,6 +68,9 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 		layerDigestHex := r.digest.Hex()
 
 		if r.erofsPath != conf.BlobPath(layerDigestHex) && !utils.ValidFile(conf.BlobPath(layerDigestHex)) {
+			if err := utils.SyncFile(r.erofsPath); err != nil {
+				return fmt.Errorf("sync layer %d erofs: %w", r.index, err)
+			}
 			if err := os.Rename(r.erofsPath, conf.BlobPath(layerDigestHex)); err != nil {
 				return fmt.Errorf("move layer %d erofs: %w", r.index, err)
 			}
@@ -77,7 +83,10 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 			return err
 		}
 	}
-	return nil
+	if err := utils.SyncParentDir(conf.BlobsDir()); err != nil {
+		return err
+	}
+	return utils.SyncParentDir(conf.BootBaseDir())
 }
 
 // buildEntry assembles the index entry from the committed blobs and boot files.
