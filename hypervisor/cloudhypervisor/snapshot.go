@@ -60,7 +60,7 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err := waitBalloonSettled(ctx, hc, rec.ID, info); err != nil {
 				return err
 			}
-			return pauseVM(ctx, hc)
+			return pauseVM(context.WithoutCancel(ctx), hc)
 		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		Capture: func(rec *hypervisor.VMRecord, hc *http.Client, tmpDir string) error {

@@ -38,7 +38,7 @@ func (fc *Firecracker) snapshotSpec(ctx context.Context) hypervisor.SnapshotSpec
 					return err
 				}
 			}
-			return pauseVM(ctx, hc)
+			return pauseVM(context.WithoutCancel(ctx), hc)
 		},
 		Resume: func(_ *hypervisor.VMRecord, hc *http.Client) error { return resumeVM(context.WithoutCancel(ctx), hc) },
 		// createSnapshotFC builds its own client with VMMemTransferTimeout (multi-GiB memory transfer); it cannot share hc.
