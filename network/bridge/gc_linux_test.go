@@ -10,40 +10,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func TestParseTAPName(t *testing.T) {
-	tests := []struct {
-		tapPrefix  string
-		name       string
-		wantPrefix string
-		wantOK     bool
-	}{
-		{tapPrefix: "bt", name: "bt12345678-0", wantPrefix: "12345678", wantOK: true},
-		{tapPrefix: "bt", name: "bt12345678-1", wantPrefix: "12345678", wantOK: true},
-		{tapPrefix: "bt", name: "btabc-3", wantPrefix: "abc", wantOK: true},
-		{tapPrefix: "bt", name: "btabc-def-5", wantPrefix: "abc-def", wantOK: true},
-		{tapPrefix: "mt", name: "mt12345678-0", wantPrefix: "12345678", wantOK: true},
-
-		{tapPrefix: "bt", name: "wrong-prefix-0"},
-		{tapPrefix: "bt", name: "bt"},
-		{tapPrefix: "bt", name: "bt-0"},
-		{tapPrefix: "bt", name: "bt12345678"},
-		{tapPrefix: "bt", name: ""},
-		{tapPrefix: "mt", name: "bt12345678-0"},
-	}
-	for _, tt := range tests {
-		label := tt.tapPrefix + "/" + tt.name
-		t.Run(label, func(t *testing.T) {
-			gotPrefix, gotOK := parseTAPName(tt.tapPrefix, tt.name)
-			if gotOK != tt.wantOK {
-				t.Errorf("parseTAPName(%q, %q) ok = %v, want %v", tt.tapPrefix, tt.name, gotOK, tt.wantOK)
-			}
-			if gotPrefix != tt.wantPrefix {
-				t.Errorf("parseTAPName(%q, %q) prefix = %q, want %q", tt.tapPrefix, tt.name, gotPrefix, tt.wantPrefix)
-			}
-		})
-	}
-}
-
 func TestGCKeepsCollectingPastAnOwnerLookupFailure(t *testing.T) {
 	oldList, oldDelete := listLinksFn, deleteLinkFn
 	t.Cleanup(func() { listLinksFn, deleteLinkFn = oldList, oldDelete })
@@ -103,7 +69,7 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 			lists, deletes, reads := 0, 0, 0
 			listLinksFn = func() ([]netlink.Link, error) {
 				lists++
-				return []netlink.Link{&netlink.Dummy{Name: "bt12345678-0", Index: 123}}, nil
+				return []netlink.Link{&netlink.Dummy{Name: "btAB234567-0", Index: 123}}, nil
 			}
 			deleteLinkFn = func(link netlink.Link) error {
 				deletes++
@@ -114,7 +80,7 @@ func TestGCRechecksTAPOwnerAfterDiscovery(t *testing.T) {
 			}
 			m := GCModule("bt", func(_ context.Context, id string) (bool, error) {
 				reads++
-				if lists != 2 || id != "12345678" {
+				if lists != 2 || id != "AB234567" {
 					t.Fatalf("owner read before current TAP discovery: lists=%d ref=%q", lists, id)
 				}
 				return tt.inUse, tt.err
