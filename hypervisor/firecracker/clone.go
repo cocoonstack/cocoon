@@ -74,6 +74,9 @@ func (fc *Firecracker) cloneAfterExtract(ctx context.Context, rec *hypervisor.VM
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot metadata: %w", err)
 	}
+	if err = snapshotIntegrity(runDir, meta.StorageConfigs); err != nil {
+		return nil, fmt.Errorf("snapshot integrity check: %w", err)
+	}
 
 	cowPath := fc.conf.COWRawPath(vmID)
 
@@ -213,10 +216,12 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 func rebuildCloneStorage(meta *snapshot.SnapshotMeta, cowPath string) ([]*types.StorageConfig, error) {
 	runDir := filepath.Dir(cowPath)
 	configs := hypervisor.CloneStorageConfigs(meta.StorageConfigs)
+	cows := 0
 	for i, sc := range configs {
 		switch sc.Role {
 		case types.StorageRoleLayer:
 		case types.StorageRoleCOW:
+			cows++
 			sc.Path = cowPath
 		case types.StorageRoleData:
 			sc.Path = filepath.Join(runDir, hypervisor.DataDiskBaseName(sc.Serial))
@@ -225,6 +230,9 @@ func rebuildCloneStorage(meta *snapshot.SnapshotMeta, cowPath string) ([]*types.
 		default:
 			return nil, fmt.Errorf("snapshot disk[%d] has unknown role %q", i, sc.Role)
 		}
+	}
+	if cows != 1 {
+		return nil, fmt.Errorf("snapshot records %d COW disks, want 1: the VMM would reopen the source's own", cows)
 	}
 	return configs, nil
 }
