@@ -22,6 +22,20 @@ const (
 // TableFunc renders the table body; the writer is flushed by the caller.
 type TableFunc func(w *tabwriter.Writer)
 
+type outputFlag string
+
+func (o *outputFlag) String() string { return string(*o) }
+
+func (o *outputFlag) Set(v string) error {
+	if v != "" && v != FormatJSON {
+		return fmt.Errorf("want %q", FormatJSON)
+	}
+	*o = outputFlag(v)
+	return nil
+}
+
+func (o *outputFlag) Type() string { return "string" }
+
 func CommandContext(cmd *cobra.Command) context.Context {
 	if cmd != nil && cmd.Context() != nil {
 		return cmd.Context()
@@ -46,7 +60,7 @@ func Format(cmd *cobra.Command) (string, error) {
 }
 
 func AddOutputFlag(cmd *cobra.Command) {
-	cmd.Flags().StringP("output", "o", "", `emit "json" for machine-readable output`)
+	cmd.Flags().VarP(new(outputFlag), "output", "o", `emit "json" for machine-readable output`)
 }
 
 // AddSnapshotNameFlags registers the --name/--description pair shared by snapshot-creating commands.
