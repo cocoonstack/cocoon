@@ -45,9 +45,7 @@ func processLayer(ctx context.Context, j layerJob) error {
 		return nil
 	}
 
-	logger.Debugf(ctx, "Layer %d: sha256:%s -> erofs (single-pass)", j.idx, digestHex[:12])
-
-	// Hoisted out of the retried region: a too-old mkfs.erofs is permanent — retrying burns attempts, backoff sleeps, and aborted blob GETs.
+	// A too-old mkfs.erofs is permanent and must not be retried.
 	if err := checkErofsVersion(ctx); err != nil {
 		return err
 	}
