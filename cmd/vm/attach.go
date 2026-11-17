@@ -7,6 +7,7 @@ import (
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/extend/fs"
@@ -19,10 +20,10 @@ func (h Handler) FsAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	socket, _ := cmd.Flags().GetString("socket")
-	tag, _ := cmd.Flags().GetString("tag")
-	numQ, _ := cmd.Flags().GetInt("num-queues")
-	qSize, _ := cmd.Flags().GetInt("queue-size")
+	socket := cliutil.FlagStr(cmd, "socket")
+	tag := cliutil.FlagStr(cmd, "tag")
+	numQ := cliutil.FlagInt(cmd, "num-queues")
+	qSize := cliutil.FlagInt(cmd, "queue-size")
 	id, err := a.FsAttach(ctx, args[0], fs.Spec{Socket: socket, Tag: tag, NumQueues: numQ, QueueSize: qSize})
 	if err != nil {
 		return err
@@ -37,7 +38,7 @@ func (h Handler) FsDetach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	tag, _ := cmd.Flags().GetString("tag")
+	tag := cliutil.FlagStr(cmd, "tag")
 	if err := a.FsDetach(ctx, args[0], tag); err != nil {
 		return err
 	}
@@ -51,8 +52,8 @@ func (h Handler) DeviceAttach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	pci, _ := cmd.Flags().GetString("pci")
-	id, _ := cmd.Flags().GetString("id")
+	pci := cliutil.FlagStr(cmd, "pci")
+	id := cliutil.FlagStr(cmd, "id")
 	deviceID, err := a.DeviceAttach(ctx, args[0], vfio.Spec{PCI: pci, ID: id})
 	if err != nil {
 		return err
@@ -67,7 +68,7 @@ func (h Handler) DeviceDetach(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	id, _ := cmd.Flags().GetString("id")
+	id := cliutil.FlagStr(cmd, "id")
 	if err := a.DeviceDetach(ctx, args[0], id); err != nil {
 		return err
 	}

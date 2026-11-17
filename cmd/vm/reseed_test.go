@@ -37,8 +37,8 @@ func TestSignalReseed_SkipsNoVsock(t *testing.T) {
 func TestReseedVM_NoVsock(t *testing.T) {
 	vm := &types.VM{ID: "vm1"}
 	err := reseedVM(t.Context(), vm, false)
-	if !errors.Is(err, ErrVsockNotConfigured) {
-		t.Fatalf("got err=%v, want ErrVsockNotConfigured", err)
+	if !errors.Is(err, errVsockNotConfigured) {
+		t.Fatalf("got err=%v, want errVsockNotConfigured", err)
 	}
 }
 

@@ -52,7 +52,7 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 
 func (h Handler) RM(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
-	logger := log.WithFunc("cmd.images.RM")
+	logger := log.WithFunc("cmd.images.rm")
 	backends, err := cmdcore.InitImageBackends(ctx, conf)
 	if err != nil {
 		return err

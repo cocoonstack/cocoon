@@ -43,10 +43,8 @@ func CommandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
-func ShowHelp(cmd *cobra.Command, _ []string) error { return cmd.Help() }
-
 func GroupCommand(use, short string) *cobra.Command {
-	return &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: ShowHelp}
+	return &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 }
 
 func AddFormatFlag(cmd *cobra.Command) {
@@ -106,7 +104,6 @@ func FormatSize(bytes int64) string {
 	return units.BytesSize(float64(bytes))
 }
 
-// A flag absent on this command reads as its zero value.
 func FlagBool(cmd *cobra.Command, name string) bool { v, _ := cmd.Flags().GetBool(name); return v }
 
 func FlagInt(cmd *cobra.Command, name string) int { v, _ := cmd.Flags().GetInt(name); return v }

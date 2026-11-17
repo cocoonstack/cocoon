@@ -58,10 +58,9 @@ func (h Handler) List(cmd *cobra.Command, _ []string) error {
 func (h Handler) Status(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 
-	interval, _ := cmd.Flags().GetInt("interval")
-	interval = utils.OrDefault(interval, 5)
-	eventMode, _ := cmd.Flags().GetBool("event")
-	watchMode, _ := cmd.Flags().GetBool("watch")
+	interval := utils.OrDefault(cliutil.FlagInt(cmd, "interval"), 5)
+	eventMode := cliutil.FlagBool(cmd, "event")
+	watchMode := cliutil.FlagBool(cmd, "watch")
 	if eventMode && watchMode {
 		return fmt.Errorf("--event and --watch are mutually exclusive")
 	}
@@ -108,7 +107,6 @@ func statusOnce(ctx context.Context, hypers []hypervisor.Hypervisor, filters []s
 	return renderVMList(vms, format, scopeDir, reconcileVMStates(vms))
 }
 
-// Stale marks records whose VMM is gone: a flag in JSON, a state suffix in the table.
 func renderVMList(vms []*types.VM, format, scopeDir string, stale map[string]bool) error {
 	if format == cliutil.FormatJSON {
 		items := make([]vmOutput, len(vms))

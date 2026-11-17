@@ -12,14 +12,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 )
 
 const hybridVsockReplyMax = 256
 
-// ErrVsockNotConfigured is returned for VMs predating vsock support (e.g. restored from a legacy snapshot).
-var ErrVsockNotConfigured = errors.New("vsock not configured for this VM")
+// errVsockNotConfigured is returned for VMs predating vsock support (e.g. restored from a legacy snapshot).
+var errVsockNotConfigured = errors.New("vsock not configured for this VM")
 
 // ExecExitError carries the agent child's exit code for host-shell propagation.
 type ExecExitError struct{ Code int }
@@ -35,10 +36,10 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if info.VsockSocket == "" {
-		return fmt.Errorf("exec: %w (recreate the VM to enable agent exec)", ErrVsockNotConfigured)
+		return fmt.Errorf("exec: %w (recreate the VM to enable agent exec)", errVsockNotConfigured)
 	}
 
-	envPairs, _ := cmd.Flags().GetStringArray("env")
+	envPairs := cliutil.FlagStrings(cmd, "env")
 	env, err := parseExecEnv(envPairs)
 	if err != nil {
 		return err
@@ -52,7 +53,7 @@ func (h Handler) Exec(cmd *cobra.Command, args []string) error {
 
 	// Stdin is opt-in: a nil reader keeps the pump from swallowing a scripted caller's remaining script.
 	var stdin io.Reader
-	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
+	if cliutil.FlagBool(cmd, "interactive") {
 		stdin = os.Stdin
 	}
 	code, err := client.Run(ctx, conn, argv, env, stdin, os.Stdout, os.Stderr)

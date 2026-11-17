@@ -60,8 +60,7 @@ func Command(h Handler) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  h.Import,
 	}
-	importCmd.Flags().String("name", "", "override snapshot name")
-	importCmd.Flags().String("description", "", "override snapshot description")
+	cliutil.AddSnapshotNameFlags(importCmd)
 
 	snapshotCmd.AddCommand(saveCmd, listCmd, inspectCmd, rmCmd, exportCmd, importCmd)
 	return snapshotCmd

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon-agent/client"
+	"github.com/cocoonstack/cocoon/cmd/cliutil"
 	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/config"
 	"github.com/cocoonstack/cocoon/hypervisor"
@@ -29,7 +30,7 @@ const (
 func (h Handler) Reseed(cmd *cobra.Command, args []string) error {
 	ctx, conf := h.Init(cmd)
 	ref := args[0]
-	regenMachineID, _ := cmd.Flags().GetBool("machine-id")
+	regenMachineID := cliutil.FlagBool(cmd, "machine-id")
 
 	vm, err := h.resolveRunningVM(ctx, conf, "reseed", ref)
 	if err != nil {
@@ -48,7 +49,7 @@ func (h Handler) reseedAfterResume(ctx context.Context, conf *config.Config, hyp
 // reseedVM retries only a failed dial: the agent re-listens shortly after resume.
 func reseedVM(ctx context.Context, vm *types.VM, regenMachineID bool) error {
 	if vm.VsockSocket == "" {
-		return fmt.Errorf("reseed: %w (recreate the VM to enable agent reseed)", ErrVsockNotConfigured)
+		return fmt.Errorf("reseed: %w (recreate the VM to enable agent reseed)", errVsockNotConfigured)
 	}
 	entropy := make([]byte, reseedEntropyBytes)
 	if _, err := rand.Read(entropy); err != nil {
