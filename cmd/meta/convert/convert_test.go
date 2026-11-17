@@ -154,8 +154,8 @@ func TestSourceChangedRefused(t *testing.T) {
 	_ = src.Close()
 
 	err = Run(ctx, spec, "sqlite")
-	if err == nil || !strings.Contains(err.Error(), "source changed") {
-		t.Fatalf("want source-changed refusal, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "source changed") || !strings.Contains(err.Error(), spec.DBPath) {
+		t.Fatalf("want source-changed refusal naming the partial target, got %v", err)
 	}
 }
 
@@ -194,8 +194,36 @@ func TestTargetNotFreshRefused(t *testing.T) {
 	_ = sq.Close()
 
 	err = Run(ctx, spec, "sqlite")
-	if err == nil || !strings.Contains(err.Error(), "target was not fresh") {
-		t.Fatalf("want not-fresh refusal, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want existing-target refusal, got %v", err)
+	}
+	if utils.FileExists(filepath.Join(spec.MetaRoot, metasqlite.ManifestName)) {
+		t.Fatal("manifest written for a refused target")
+	}
+	sq, err = metasqlite.Open(spec.DBPath, spec.Decls...)
+	if err != nil {
+		t.Fatalf("reopen target: %v", err)
+	}
+	defer sq.Close()
+	if got := scanAll(t, sq, "vms"); len(got) != 1 || got["records/foreign"] != `{}` {
+		t.Fatalf("refused convert wrote into the target: %v", got)
+	}
+}
+
+func TestJSONTargetNotFreshRefused(t *testing.T) {
+	spec := testSpec(t, "vms")
+	seedJSON(t, spec, "vms")
+	if err := Run(t.Context(), spec, "sqlite"); err != nil {
+		t.Fatalf("forward convert: %v", err)
+	}
+	seedJSON(t, spec, "vms")
+
+	err := Run(t.Context(), spec, "json")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want existing-target refusal, got %v", err)
+	}
+	if utils.FileExists(filepath.Join(spec.MetaRoot, metasqlite.ManifestName)) {
+		t.Fatal("manifest written for a refused target")
 	}
 }
 

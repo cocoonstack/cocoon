@@ -111,7 +111,7 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 	}
 	defer src.Close() //nolint:errcheck
 	if m == nil {
-		if ferr := checkTargetFS(spec, target); ferr != nil {
+		if ferr := checkFreshTarget(spec, target); ferr != nil {
 			return ferr
 		}
 		if m, err = newManifest(ctx, spec, target, src); err != nil {
@@ -148,9 +148,15 @@ func convertAll(ctx context.Context, spec Spec, target string, m *Manifest) erro
 	return nil
 }
 
-func checkTargetFS(spec Spec, target string) error {
-	if target != config.MetaBackendSQLite {
+func checkFreshTarget(spec Spec, target string) error {
+	if target == config.MetaBackendJSON {
+		if jsonPresent(spec) {
+			return errors.New("json target already exists; move its namespace files aside before converting")
+		}
 		return nil
+	}
+	if utils.FileExists(spec.DBPath) {
+		return fmt.Errorf("%s already exists; move it aside with its -wal and -shm before converting", spec.DBPath)
 	}
 	if err := utils.EnsureDirs(filepath.Dir(spec.DBPath)); err != nil {
 		return err
@@ -182,7 +188,7 @@ func ensureJSONDirs(spec Spec) error {
 // openSource opens the engine being converted FROM (the opposite of target).
 func openSource(spec Spec, target string) (meta.Store, error) {
 	if target == config.MetaBackendSQLite {
-		if !slices.ContainsFunc(spec.JSON, func(ns metajson.Namespace) bool { return utils.FileExists(ns.FilePath) }) {
+		if !jsonPresent(spec) {
 			return nil, fmt.Errorf("no json store under %s to convert from", spec.MetaRoot)
 		}
 		return metajson.Open(spec.JSON...)
@@ -211,7 +217,7 @@ func convertNamespace(ctx context.Context, src, dst meta.Store, ns metasqlite.Na
 		return err
 	}
 	if dstDigest != rec.SHA256 || dstCount != rec.Records {
-		if err := copyAndVerify(ctx, src, dst, ns, rec); err != nil {
+		if err := copyAndVerify(ctx, src, dst, spec, ns, rec); err != nil {
 			return err
 		}
 	}
@@ -251,6 +257,10 @@ func duplicateGeneration(spec Spec, nsName string) error {
 	return utils.AtomicWriteFile(jns.FilePath+".prev", data, 0o644, utils.Sync)
 }
 
+func jsonPresent(spec Spec) bool {
+	return slices.ContainsFunc(spec.JSON, func(ns metajson.Namespace) bool { return utils.FileExists(ns.FilePath) })
+}
+
 func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
 	i := slices.IndexFunc(spec.JSON, func(j metajson.Namespace) bool { return j.Name == nsName })
 	if i < 0 {
@@ -259,13 +269,13 @@ func findJSON(spec Spec, nsName string) (metajson.Namespace, bool) {
 	return spec.JSON[i], true
 }
 
-func copyAndVerify(ctx context.Context, src, dst meta.Store, ns metasqlite.Namespace, rec *NSRecord) error {
+func copyAndVerify(ctx context.Context, src, dst meta.Store, spec Spec, ns metasqlite.Namespace, rec *NSRecord) error {
 	srcDigest, srcCount, err := canonicalDigest(ctx, src, ns)
 	if err != nil {
 		return err
 	}
 	if srcDigest != rec.SHA256 || srcCount != rec.Records {
-		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and restart", rec.Records, srcCount)
+		return fmt.Errorf("source changed since the manifest was written (records %d→%d); remove the manifest and the partial target (%s with its -wal and -shm, or the json namespace files), then restart", rec.Records, srcCount, spec.DBPath)
 	}
 	if verr := verifyNames(ctx, src, ns); verr != nil {
 		return verr
