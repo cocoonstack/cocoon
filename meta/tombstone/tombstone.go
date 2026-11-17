@@ -42,9 +42,9 @@ type Payload struct {
 // Record is one tombstone row.
 type Record struct {
 	LeaseID  string    `json:"lease_id"`
+	Payload  Payload   `json:"payload"`
 	Phase    Phase     `json:"phase"`
 	LeasedAt time.Time `json:"leased_at"`
-	Payload  Payload   `json:"payload"`
 }
 
 // Table binds one namespace's tombstone satellite set.

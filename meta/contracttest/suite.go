@@ -22,7 +22,7 @@ const (
 
 var errForcedRollback = errors.New("forced rollback")
 
-// Factory returns a fresh Store serving the given namespaces; the suite owns its lifetime.
+// Factory returns a fresh Store serving the given namespaces with a records table; the factory closes it via t.Cleanup.
 type Factory func(t *testing.T, namespaces []string) meta.Store
 
 type record struct {

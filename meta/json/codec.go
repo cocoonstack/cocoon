@@ -39,8 +39,6 @@ func (GenericCodec) Decode(data []byte) (*Model, error) {
 	return m, nil
 }
 
-func (GenericCodec) Declares(string) bool { return true }
-
 func (GenericCodec) Encode(m *Model) ([]byte, error) {
 	file := genericFile{Tables: map[string]map[string]jsontext.Value{}}
 	for _, tbl := range m.TableNames() {
@@ -59,3 +57,5 @@ func (GenericCodec) Encode(m *Model) ([]byte, error) {
 	}
 	return append(data, '\n'), nil
 }
+
+func (GenericCodec) Declares(string) bool { return true }

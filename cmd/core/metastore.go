@@ -29,11 +29,7 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-const (
-	keyTombstones = "tombstones"
-
-	metaBootstrapTimeout = 10 * time.Second
-)
+const metaBootstrapTimeout = 10 * time.Second
 
 var (
 	metaOnce  sync.Once
@@ -45,16 +41,16 @@ var (
 		{Key: "vms", Table: hypervisor.TableRecords},
 		{Key: "names", Table: hypervisor.TableNames},
 		{Key: "placements", Table: hypervisor.TablePlacements, Optional: true},
-		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
+		{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
 	}}
 	snapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "snapshots", Table: localfile.TableRecords},
 		{Key: "names", Table: localfile.TableNames},
-		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
+		{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
 	}}
 	netTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "networks", Table: cni.TableRecords},
-		{Key: keyTombstones, Table: tombstone.TableName, Optional: true},
+		{Key: tombstone.TableName, Table: tombstone.TableName, Optional: true},
 	}}
 )
 
@@ -81,8 +77,8 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorCloudHypervisor)), FilePath: chCfg.IndexFile(), LockPath: chCfg.IndexLock(), Codec: vmTables},
 		{Name: hypervisor.VMNamespaceName(string(config.HypervisorFirecracker)), FilePath: fcCfg.IndexFile(), LockPath: fcCfg.IndexLock(), Codec: vmTables},
 		{Name: localfile.NamespaceName, FilePath: snapCfg.IndexFile(), LockPath: snapCfg.IndexLock(), Codec: snapTables},
-		ImageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
-		ImageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
+		imageJSONNamespace(&oci.NewConfig(conf.RootDir, 0).BaseConfig),
+		imageJSONNamespace(&cloudimg.NewConfig(conf.RootDir, 0).BaseConfig),
 		{Name: cni.NamespaceName, FilePath: netCfg.IndexFile(), LockPath: netCfg.IndexLock(), Codec: netTables},
 		{
 			Name:     metalog.NamespaceName,
@@ -128,7 +124,6 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 		// Bootstrap owns its context: the store outlives any single caller, and a canceled first caller must not poison the Once for everyone.
 		ctx, cancel := context.WithTimeout(context.Background(), metaBootstrapTimeout)
 		defer cancel()
-		// Ordinary opens of EITHER engine refuse while a conversion is in flight; the json engine cannot see the manifest itself.
 		dbPath := MetaDBPath(conf)
 		if metaErr = utils.EnsureDirs(filepath.Dir(dbPath)); metaErr != nil {
 			return
@@ -137,6 +132,7 @@ func MetaStore(conf *config.Config) (meta.Store, error) {
 			metaErr = fmt.Errorf("a running `cocoon meta convert` holds the meta store: %w", metaErr)
 			return
 		}
+		// Ordinary opens of EITHER engine refuse while a conversion is in flight; the json engine cannot see the manifest itself.
 		if err := metasqlite.RefuseManifest(dbPath); err != nil {
 			metaErr = err
 			return
@@ -183,8 +179,7 @@ func CloseMetaStore(ctx context.Context) {
 	}
 }
 
-// ImageJSONNamespace describes an image store's json namespace from its base paths.
-func ImageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
+func imageJSONNamespace(c *images.BaseConfig) metajson.Namespace {
 	return metajson.Namespace{
 		Name:     c.Name,
 		FilePath: c.IndexFile(),

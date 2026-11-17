@@ -14,7 +14,7 @@ type table struct {
 	recs map[string]jsontext.Value
 }
 
-// Model is one namespace's decoded state: named tables preserving insertion order (file order first, new ids appended).
+// Model is one namespace's decoded state: named tables in insertion order; codecs load ids sorted and new ids append.
 type Model struct {
 	tables map[string]*table
 	dirty  bool

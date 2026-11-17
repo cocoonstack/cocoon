@@ -58,7 +58,7 @@ type Store interface {
 // Reader is the raw read SPI transactions hand to Collection; values returned are detached from engine state.
 type Reader interface {
 	GetRaw(ctx context.Context, ns, table, id string) (jsontext.Value, bool, error)
-	// ScanRaw yields records in the engine's stable order (json: insertion).
+	// ScanRaw yields records in an engine-defined order; callers that need an order sort.
 	ScanRaw(ctx context.Context, ns, table string, fn RawScanFunc) error
 }
 
