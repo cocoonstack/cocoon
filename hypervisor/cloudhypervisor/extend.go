@@ -116,7 +116,11 @@ func (ch *CloudHypervisor) DiskDetach(ctx context.Context, vmRef, name string) e
 }
 
 func (ch *CloudHypervisor) DiskList(ctx context.Context, vmRef string) ([]disk.Attached, error) {
-	return ch.listWith(ctx, vmRef, disksAttached)
+	info, _, err := ch.runningInfo(ctx, vmRef)
+	if info == nil {
+		return nil, err
+	}
+	return disksAttached(info), nil
 }
 
 func (ch *CloudHypervisor) FsAttach(ctx context.Context, vmRef string, spec fs.Spec) (string, error) {
@@ -257,14 +261,6 @@ func (ch *CloudHypervisor) detachWith(ctx context.Context, vmRef string, findID 
 		return nil
 	}
 	return afterEject(&rec)
-}
-
-func (ch *CloudHypervisor) listWith[A any](ctx context.Context, vmRef string, extract func(*chVMInfoResponse) []A) ([]A, error) {
-	info, _, err := ch.runningInfo(ctx, vmRef)
-	if info == nil {
-		return nil, err
-	}
-	return extract(info), nil
 }
 
 // runningInfo returns a nil info (not error) for a stopped VM so inspect can omit the field.
