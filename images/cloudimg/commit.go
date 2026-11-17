@@ -51,18 +51,12 @@ func commit(ctx context.Context, conf *Config, store *images.Store[imageEntry], 
 			return err
 		}
 		tmpBlobPath = path
-		if err = utils.SyncFile(tmpBlobPath); err != nil {
-			return fmt.Errorf("sync blob: %w", err)
-		}
 		if renameErr := os.Rename(tmpBlobPath, blobPath); renameErr != nil {
 			return fmt.Errorf("rename blob: %w", renameErr)
 		}
 		if chmodErr := os.Chmod(blobPath, 0o444); chmodErr != nil { //nolint:gosec // G302: intentionally world-readable
 			logger.Warnf(ctx, "chmod blob %s: %v", blobPath, chmodErr)
 		}
-	}
-	if err := utils.SyncParentDir(conf.BlobsDir()); err != nil {
-		return fmt.Errorf("sync blobs dir: %w", err)
 	}
 	if err := store.Update(ctx, func(idx *imageIndex) error {
 		return writeIndexEntry(idx, conf, ref, digestHex)

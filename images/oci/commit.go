@@ -24,7 +24,7 @@ func moveBootFile(src, dst, bootDir string, layerIdx int, name string) error {
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("move layer %d %s: %w", layerIdx, name, err)
 	}
-	return utils.SyncParentDir(bootDir)
+	return nil
 }
 
 func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEntry], name string, manifestDigest images.Digest, results []pullLayerResult, tracker progress.Tracker, verb string) error {
@@ -36,10 +36,6 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 	lockPaths := make([]string, 0, len(results))
 	for i := range results {
 		lockPaths = append(lockPaths, conf.BlobLockPath(results[i].digest.Hex()))
-	}
-	// File fsyncs run before the locks: vm create and clone pin the same digests.
-	if err := syncStaged(conf, results); err != nil {
-		return err
 	}
 	if err := locks.Lock(lockPaths...); err != nil {
 		return err
@@ -62,22 +58,6 @@ func finishImport(ctx context.Context, conf *Config, store *images.Store[imageEn
 	return nil
 }
 
-func syncStaged(conf *Config, results []pullLayerResult) error {
-	for i := range results {
-		r := &results[i]
-		hex := r.digest.Hex()
-		for _, f := range [][2]string{{r.erofsPath, conf.BlobPath(hex)}, {r.kernelPath, conf.KernelPath(hex)}, {r.initrdPath, conf.InitrdPath(hex)}} {
-			if f[0] == "" || f[0] == f[1] {
-				continue
-			}
-			if err := utils.SyncFile(f[0]); err != nil {
-				return fmt.Errorf("sync layer %d: %w", r.index, err)
-			}
-		}
-	}
-	return nil
-}
-
 // commitBlobs moves blobs and boot files into place under per-digest locks so GC cannot delete a not-yet-indexed blob.
 func commitBlobs(conf *Config, results []pullLayerResult) error {
 	for i := range results {
@@ -97,10 +77,7 @@ func commitBlobs(conf *Config, results []pullLayerResult) error {
 			return err
 		}
 	}
-	if err := utils.SyncParentDir(conf.BlobsDir()); err != nil {
-		return err
-	}
-	return utils.SyncParentDir(conf.BootBaseDir())
+	return nil
 }
 
 func buildEntry(conf *Config, ref string, manifestDigest images.Digest, results []pullLayerResult) (*imageEntry, error) {
