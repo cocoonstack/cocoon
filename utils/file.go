@@ -92,7 +92,7 @@ func ScanSubdirs(dir string) ([]string, error) {
 	})
 }
 
-// DirSize sums regular file sizes under dir (recursive). Missing dir → 0.
+// DirSize sums the allocated bytes of regular files under dir (recursive), so holes count as zero. Missing dir → 0.
 func DirSize(dir string) (int64, error) {
 	var total int64
 	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, walkErr error) error {
@@ -106,7 +106,7 @@ func DirSize(dir string) (int64, error) {
 		if err != nil {
 			return err
 		}
-		total += info.Size()
+		total += info.Sys().(*syscall.Stat_t).Blocks * 512
 		return nil
 	})
 	if errors.Is(err, fs.ErrNotExist) {

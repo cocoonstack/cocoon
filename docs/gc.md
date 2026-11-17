@@ -52,7 +52,7 @@ Bare `cocoon gc` only reclaims **orphans** (on-disk data with no DB record), **m
 | `--snapshot`           | Enable LRU eviction. Bare flag = evict **every** non-pending snapshot.                          |
 | `--snapshot-keep N`    | Keep at most N most-recently-accessed snapshots.                                                |
 | `--snapshot-age DUR`   | Evict snapshots last accessed before this duration (e.g. `720h` for 30d).                       |
-| `--snapshot-size SZ`   | Evict oldest snapshots until total size ≤ this (e.g. `100GiB`; suffixes are binary, `GB` = `GiB`). |
+| `--snapshot-size SZ`   | Evict oldest snapshots until total size ≤ this (e.g. `100GiB`; suffixes are binary, `GB` = `GiB`). Size is allocated bytes, so the holes of a sparse disk do not count. |
 | `--snapshot-dry-run`   | Log which snapshots would be LRU-evicted; act on nothing. **Snapshot-only — orphans and other GC modules still execute.** |
 
 Sub-flags combine as union of evictions (intersection of kept) — a snapshot is kept only if it passes **every** active criterion. All sub-flags require `--snapshot`; negative values are rejected.

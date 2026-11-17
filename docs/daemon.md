@@ -56,6 +56,9 @@ The `file` backend writes one JSON object per line to
 `hypervisor` are omitted when empty, as are the `shape` members `cpu`,
 `mem_bytes`, and `storage_bytes`.
 
+A snapshot's `storage_bytes` is the space its files allocate on disk, so the
+holes of a sparse disk do not count. A VM's is its configured disk size.
+
 ```json
 {"kind":"vm.compute.start","vm_id":"ABC123","reason":"boot","hypervisor":"cloud-hypervisor","shape":{"cpu":4,"mem_bytes":1073741824,"storage_bytes":10737418240},"emitted_at":"2026-05-20T01:02:03Z"}
 ```

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
 )
 
@@ -342,5 +343,40 @@ func TestRemoveMatching_RemovesSubdirs(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Errorf("expected empty dir, got %d entries", len(entries))
+	}
+}
+
+func TestDirSize_CountsAllocatedBytes(t *testing.T) {
+	const apparent = 64 << 20
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cow.raw")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(apparent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt(make([]byte, 4096), 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allocated := fi.Sys().(*syscall.Stat_t).Blocks * 512
+	if allocated >= apparent/2 {
+		t.Skipf("filesystem allocated %d of %d bytes, no hole support", allocated, apparent)
+	}
+
+	got, err := DirSize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != allocated {
+		t.Errorf("DirSize = %d, want the %d allocated bytes, not the %d apparent", got, allocated, int64(apparent))
 	}
 }

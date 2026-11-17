@@ -17,6 +17,7 @@ import (
 	"github.com/cocoonstack/cocoon/metering"
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestPickLRU_NoCriteriaEvictsAll(t *testing.T) {
@@ -295,7 +296,10 @@ func TestSizeAndLastAccessedAtPopulated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSize := int64(len("hello") + len("world!!"))
+	wantSize, err := utils.DirSize(lf.conf.SnapshotDataDir(id))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rec.SizeBytes != wantSize {
 		t.Errorf("SizeBytes=%d, want %d", rec.SizeBytes, wantSize)
 	}
