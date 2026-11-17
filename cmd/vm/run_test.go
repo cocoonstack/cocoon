@@ -1,10 +1,16 @@
 package vm
 
 import (
+	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cocoonstack/cocoon/config"
+	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -82,13 +88,64 @@ func TestCloneNICPlan(t *testing.T) {
 	}
 }
 
-func TestInitNetworkRejectsNegativeNICs(t *testing.T) {
-	_, _, err := initNetwork(t.Context(), &config.Config{}, "vm1", -1, &types.VMConfig{}, "")
+func TestCreateRejectsNegativeNICsBeforeResolvingTheImage(t *testing.T) {
+	dir := t.TempDir()
+	conf := &config.Config{RootDir: dir, RunDir: filepath.Join(dir, "run"), LogDir: filepath.Join(dir, "log")}
+	h := Handler{ConfProvider: func() *config.Config { return conf }}
+	create := vmSubcommand(t, h, "create", "--nics", "-1")
 
-	if err == nil {
-		t.Fatal("initNetwork accepted a negative --nics instead of rejecting it")
+	_, _, _, err := h.createVM(create, "no-such-image")
+
+	if err == nil || !strings.Contains(err.Error(), "--nics must be non-negative, got -1") {
+		t.Fatalf("err = %v, want the same rejection the clone path gives", err)
 	}
-	if !strings.Contains(err.Error(), "--nics must be non-negative, got -1") {
-		t.Errorf("err = %v, want the same rejection the clone path gives", err)
+}
+
+func TestPrepareCloneRejectsFlagsBeforeReserving(t *testing.T) {
+	mmio := types.SnapshotConfig{CPU: 1, Memory: 512 << 20, Storage: 10 << 30, NICs: 1}
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "nics on a firecracker mmio snapshot", args: []string{"--nics", "2"}, want: "--nics override"},
+		{name: "data disk on a firecracker mmio snapshot", args: []string{"--data-disk", "size=1G"}, want: "--data-disk on clone"},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hyper := &reserveSpyHypervisor{}
+			clone := vmSubcommand(t, Handler{}, "clone", tt.args...)
+
+			_, err := Handler{}.prepareClone(t.Context(), clone, &config.Config{UseFirecracker: true}, hyper, mmio)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want a %q rejection", err, tt.want)
+			}
+			if hyper.locked {
+				t.Error("prepareClone took the reservation lock before rejecting the flags")
+			}
+		})
+	}
+}
+
+type reserveSpyHypervisor struct {
+	hypervisor.Hypervisor
+	locked bool
+}
+
+func (h *reserveSpyHypervisor) LockVMOps(context.Context, string) (func(), error) {
+	h.locked = true
+	return nil, errors.New("reservation attempted")
+}
+
+func vmSubcommand(t *testing.T, h Handler, name string, args ...string) *cobra.Command {
+	t.Helper()
+	sub, _, err := Command(h).Find([]string{name})
+	if err != nil {
+		t.Fatalf("find %s: %v", name, err)
+	}
+	if err := sub.ParseFlags(args); err != nil {
+		t.Fatalf("parse %v: %v", args, err)
+	}
+	return sub
 }

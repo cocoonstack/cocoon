@@ -284,6 +284,14 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	if err = vmCfg.Validate(); err != nil {
 		return cloneSetup{}, err
 	}
+	flagNICs, _ := cmd.Flags().GetInt("nics")
+	nics, resizeTo, err := cloneNICPlan(conf.UseFirecracker, cfg, cmd.Flags().Changed("nics"), flagNICs)
+	if err != nil {
+		return cloneSetup{}, err
+	}
+	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
+		return cloneSetup{}, fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend)
+	}
 	// Envelope pins share create's digest-lock window, which image GC's VM-then-snapshot recheck needs even for a record-backed clone.
 	releasePins, err := cmdcore.PinEnvelopeBlobs(ctx, conf, cfg.ImageBlobIDs)
 	if err != nil {
@@ -309,14 +317,6 @@ func (h Handler) prepareClone(ctx context.Context, cmd *cobra.Command, conf *con
 	}
 
 	bridgeDev, _ := cmd.Flags().GetString("bridge")
-	flagNICs, _ := cmd.Flags().GetInt("nics")
-	nics, resizeTo, err := cloneNICPlan(conf.UseFirecracker, cfg, cmd.Flags().Changed("nics"), flagNICs)
-	if err != nil {
-		return fail(err)
-	}
-	if len(vmCfg.DataDisks) > 0 && conf.UseFirecracker && !cfg.PCI {
-		return fail(fmt.Errorf("--data-disk on clone needs a --pci snapshot on Firecracker (MMIO cannot hot-plug): %w", disk.ErrUnsupportedBackend))
-	}
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
 		return fail(err)
@@ -366,6 +366,10 @@ func (h Handler) runDirectRestore(ctx context.Context, cmd *cobra.Command, conf 
 }
 
 func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *types.VM, hypervisor.Hypervisor, error) {
+	nics, _ := cmd.Flags().GetInt("nics")
+	if nics < 0 {
+		return nil, nil, nil, fmt.Errorf("--nics must be non-negative, got %d", nics)
+	}
 	ctx, conf := h.Init(cmd)
 
 	owner, vmCfg, storageConfigs, bootCfg, err := resolveCreateImage(ctx, cmd, conf, image)
@@ -391,7 +395,6 @@ func (h Handler) createVM(cmd *cobra.Command, image string) (context.Context, *t
 	}
 	defer unlock()
 
-	nics, _ := cmd.Flags().GetInt("nics")
 	bridgeDev, _ := cmd.Flags().GetString("bridge")
 	netProvider, netSetup, err := initNetwork(ctx, conf, vmID, nics, vmCfg, bridgeDev)
 	if err != nil {
@@ -543,9 +546,6 @@ func tapQueues(cpu int, useFC bool) int {
 }
 
 func initNetwork(ctx context.Context, conf *config.Config, vmID string, nics int, vmCfg *types.VMConfig, bridgeDev string) (network.Network, types.NetSetup, error) {
-	if nics < 0 {
-		return nil, types.NetSetup{}, fmt.Errorf("--nics must be non-negative, got %d", nics)
-	}
 	var netProvider network.Network
 	var err error
 	if bridgeDev != "" {
