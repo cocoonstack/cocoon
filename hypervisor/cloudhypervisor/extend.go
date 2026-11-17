@@ -220,7 +220,7 @@ func (ch *CloudHypervisor) lockedDeviceOp(ctx context.Context, vmRef string) (*h
 	if err != nil {
 		return nil, hypervisor.VMRecord{}, nil, nil, err
 	}
-	info, err := convergeOrphanedPause(ctx, hc, rec.ID)
+	info, err := convergeOrphanedPause(ctx, hc, rec.ID, rec.RunDir)
 	if err != nil {
 		unlock()
 		return nil, hypervisor.VMRecord{}, nil, nil, err
@@ -352,14 +352,17 @@ func diskAttached(info *chVMInfoResponse, id, name, path string, readOnly bool) 
 	return "", nil
 }
 
-// convergeOrphanedPause resumes a pause no capture holds, including a final-round or received migration.
-func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID string) (*chVMInfoResponse, error) {
+// convergeOrphanedPause resumes a pause no capture holds, including a received migration; a final-round source stays paused.
+func convergeOrphanedPause(ctx context.Context, hc *http.Client, vmID, runDir string) (*chVMInfoResponse, error) {
 	info, err := getVMInfo(ctx, hc)
 	if err != nil {
 		return nil, err
 	}
 	if info.State != chStatePaused {
 		return info, nil
+	}
+	if err := hypervisor.RefuseFinalSeries(runDir); err != nil {
+		return nil, err
 	}
 	log.WithFunc("cloudhypervisor.convergeOrphanedPause").
 		Warnf(ctx, "vm %s is paused with no capture in flight, resuming", vmID)

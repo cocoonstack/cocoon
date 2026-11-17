@@ -20,6 +20,7 @@ const (
 	diskRefSuffix = ".ref"
 
 	seriesDirPrefix = captureDirPrefix + "migrate-"
+	seriesFinalFile = "series.final"
 )
 
 // Migrator captures a running VM in rounds and restores the result on another node.
@@ -75,6 +76,9 @@ func (b *Backend) MigrateCaptureSequence(ctx context.Context, ref string, req Mi
 		return nil, err
 	}
 	defer unlock()
+	if err = RefuseFinalSeries(rec.RunDir); err != nil {
+		return nil, fmt.Errorf("migrate capture VM %s: %w", vmID, err)
+	}
 	var round *MigrateRound
 	if req.Series == "" {
 		round, err = b.captureBaseline(ctx, &rec, spec)
@@ -169,7 +173,10 @@ func (b *Backend) captureDelta(ctx context.Context, rec *VMRecord, req MigrateRe
 			_, mapErr := utils.Map(ctx, pairs, func(_ context.Context, _ int, p [2]string) (struct{}, error) {
 				return struct{}{}, writeRoundDelta(p, number, req.Final)
 			})
-			return mapErr
+			if mapErr != nil || !req.Final {
+				return mapErr
+			}
+			return utils.AtomicWriteFile(filepath.Join(dir, seriesFinalFile), nil, 0o600, utils.Sync)
 		},
 	}
 	return b.captureRound(ctx, rec, spec, dir, steps)
@@ -220,9 +227,31 @@ func (b *Backend) writeSeriesEnvelope(rec *VMRecord, series, dir string) error {
 	return snapshot.WriteSnapshotEnvelope(dir, *b.BuildSnapshotConfig(series, rec), nil, nil)
 }
 
-// IsMigrateDeltaFile reports a disk delta or reference a clone of a series must leave behind.
+// IsMigrateDeltaFile reports a series file a clone must leave behind.
 func IsMigrateDeltaFile(name string) bool {
-	return strings.HasSuffix(name, diskRefSuffix) || strings.Contains(name, diskDeltaInfix)
+	return strings.HasSuffix(name, diskRefSuffix) || strings.Contains(name, diskDeltaInfix) || name == seriesFinalFile
+}
+
+func RefuseFinalSeries(runDir string) error {
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		return fmt.Errorf("read run dir: %w", err)
+	}
+	for _, e := range entries {
+		if !isSeriesDir(e) || !utils.FileExists(filepath.Join(runDir, e.Name(), seriesFinalFile)) {
+			continue
+		}
+		series := strings.TrimPrefix(e.Name(), seriesDirPrefix)
+		return fmt.Errorf("series %s took its final round and the guest stays paused for the target: vm migrate abort --series %s resumes it here, vm rm --force removes it once the target runs", series, series)
+	}
+	return nil
+}
+
+func RequireFinalSeries(srcDir string) error {
+	if utils.FileExists(filepath.Join(srcDir, seriesFinalFile)) {
+		return nil
+	}
+	return errors.New("the series has no final round: run vm migrate capture --final on the source and copy the files it lists")
 }
 
 func seriesDir(rec *VMRecord, series string) (string, error) {

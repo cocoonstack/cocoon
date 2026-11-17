@@ -269,7 +269,7 @@ func TestSnapshotPauseWaitsForBalloonToSettle(t *testing.T) {
 				hc := &http.Client{Transport: handlerTransport{mux}}
 				start := time.Now()
 
-				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{}, hc)
+				err := (&CloudHypervisor{}).snapshotSpec(t.Context()).Pause(&hypervisor.VMRecord{RunDir: t.TempDir()}, hc)
 				if err != nil {
 					t.Fatalf("pause: %v", err)
 				}

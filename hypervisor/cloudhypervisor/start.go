@@ -41,7 +41,7 @@ func (ch *CloudHypervisor) startOne(ctx context.Context, id string, scan *utils.
 			return nil
 		},
 		ConvergeRunning: func(ctx context.Context, rec *hypervisor.VMRecord, sockPath string, _ int) error {
-			_, err := convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID)
+			_, err := convergeOrphanedPause(ctx, utils.NewSocketHTTPClient(sockPath), rec.ID, rec.RunDir)
 			return err
 		},
 	})

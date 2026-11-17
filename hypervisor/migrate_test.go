@@ -74,6 +74,43 @@ func TestMigrateFinalRoundLeavesTheGuestPaused(t *testing.T) {
 	if utils.FileExists(nextRefPath(filepath.Join(dir, types.COWRawFileName))) {
 		t.Error("the final round reflinked a reference inside the pause")
 	}
+	if !slices.Contains(fileNames(round), seriesFinalFile) {
+		t.Errorf("files = %v, want the final marker listed for the transfer", fileNames(round))
+	}
+}
+
+func TestMigrateCaptureRefusesARoundAfterTheFinal(t *testing.T) {
+	b, id, rec := newMigrateTestVM(t)
+	dir := seedSeries(t, rec)
+	if err := os.WriteFile(filepath.Join(dir, seriesFinalFile), nil, 0o600); err != nil {
+		t.Fatalf("seed final marker: %v", err)
+	}
+	for _, req := range []MigrateRequest{{}, {Series: "s1"}, {Series: "s1", Final: true}} {
+		calls := &migrateCalls{}
+		_, err := b.MigrateCaptureSequence(t.Context(), id, req, migrateStubSpec(calls))
+		if err == nil || !strings.Contains(err.Error(), "took its final round") {
+			t.Fatalf("capture %+v: %v, want the final-round refusal", req, err)
+		}
+		if calls.paused != 0 || calls.resumed != 0 || calls.ended != 0 {
+			t.Errorf("capture %+v touched the paused guest: %+v", req, calls)
+		}
+	}
+	if !utils.FileExists(dir) {
+		t.Error("a refused capture deleted the final series")
+	}
+}
+
+func TestRequireFinalSeries(t *testing.T) {
+	dir := t.TempDir()
+	if err := RequireFinalSeries(dir); err == nil {
+		t.Fatal("a series without its final round was accepted")
+	}
+	if err := os.WriteFile(filepath.Join(dir, seriesFinalFile), nil, 0o600); err != nil {
+		t.Fatalf("seed final marker: %v", err)
+	}
+	if err := RequireFinalSeries(dir); err != nil {
+		t.Fatalf("RequireFinalSeries: %v", err)
+	}
 }
 
 func TestMigrateFailedRoundResumesAndDiscardsTheSeries(t *testing.T) {
@@ -294,6 +331,7 @@ func TestIsMigrateDeltaFile(t *testing.T) {
 		"data-x.raw.delta.12":  true,
 		"cow.raw.ref":          true,
 		"cow.raw.next.ref":     true,
+		"series.final":         true,
 		"cow.raw":              false,
 		"memory-ranges.diff.1": false,
 		"state.json":           false,

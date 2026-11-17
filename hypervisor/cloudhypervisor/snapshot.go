@@ -48,6 +48,11 @@ func (ch *CloudHypervisor) snapshotSpec(ctx context.Context) hypervisor.Snapshot
 			if err != nil {
 				return err
 			}
+			if info.State == chStatePaused {
+				if err := hypervisor.RefuseFinalSeries(rec.RunDir); err != nil {
+					return err
+				}
+			}
 			if err := hotAttachedError(info.Config.Fs, info.Config.Devices, info.Config.Disks); err != nil {
 				return err
 			}

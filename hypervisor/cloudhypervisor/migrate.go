@@ -48,6 +48,9 @@ func (ch *CloudHypervisor) migrateSpec(ctx context.Context) hypervisor.MigrateSp
 }
 
 func cloneSeriesFiles(ctx context.Context, dstDir, srcDir string) (*chVMConfig, error) {
+	if err := hypervisor.RequireFinalSeries(srcDir); err != nil {
+		return nil, err
+	}
 	chCfg, err := cloneSnapshotFiles(ctx, dstDir, srcDir)
 	if err != nil {
 		return nil, err
