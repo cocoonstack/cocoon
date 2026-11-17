@@ -46,13 +46,11 @@ func (h Handler) importLocalFiles(ctx context.Context, conf *config.Config, name
 
 	switch kind {
 	case importSourceQcow2:
+		msg := "hashing " + files[0]
 		if len(files) == 1 {
 			logger.Infof(ctx, "importing qcow2 file %s ...", files[0])
 		} else {
 			logger.Infof(ctx, "importing split qcow2 parts (%d files) ...", len(files))
-		}
-		msg := "hashing " + files[0]
-		if len(files) > 1 {
 			msg = fmt.Sprintf("hashing split qcow2 parts (%d files)", len(files))
 		}
 		return importCloudimg(ctx, conf, name, msg, func(store *cloudimg.CloudImg, tracker progress.Tracker) error {

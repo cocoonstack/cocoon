@@ -20,15 +20,11 @@ func (b *Backend) Inspect(ctx context.Context, ref string) (*types.VM, error) {
 }
 
 func (b *Backend) List(ctx context.Context) ([]*types.VM, error) {
-	var recs []*VMRecord
-	if err := b.view(ctx, func(t *vmTx) error {
+	recs, err := b.viewValue(ctx, func(t *vmTx) ([]*VMRecord, error) {
 		all, err := t.All()
-		if err != nil {
-			return err
-		}
-		recs = slices.Collect(maps.Values(all))
-		return nil
-	}); err != nil {
+		return slices.Collect(maps.Values(all)), err
+	})
+	if err != nil {
 		return nil, err
 	}
 	return utils.Map(ctx, recs, func(_ context.Context, _ int, r *VMRecord) (*types.VM, error) {
@@ -53,13 +49,7 @@ func (b *Backend) ToVM(rec *VMRecord) *types.VM {
 
 // LoadRecord returns a detached copy of the record.
 func (b *Backend) LoadRecord(ctx context.Context, id string) (VMRecord, error) {
-	var rec VMRecord
-	err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		rec, err = t.loadDetached(id)
-		return err
-	})
-	return rec, err
+	return b.viewValue(ctx, func(t *vmTx) (VMRecord, error) { return t.loadDetached(id) })
 }
 
 // ResolveAndLoad combines resolveRef + LoadRecord in a single transaction.
@@ -94,24 +84,12 @@ func (b *Backend) UpdateRecord(ctx context.Context, vmID string, mutate RecordHo
 }
 
 func (b *Backend) resolveRef(ctx context.Context, ref string) (string, error) {
-	var id string
-	err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		id, err = t.resolve(ref)
-		return err
-	})
-	return id, err
+	return b.viewValue(ctx, func(t *vmTx) (string, error) { return t.resolve(ref) })
 }
 
 // resolveRefs batch-resolves under a single transaction.
 func (b *Backend) resolveRefs(ctx context.Context, refs []string) ([]string, error) {
-	var ids []string
-	err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		ids, err = t.ResolveMany(refs, ErrNotFound)
-		return err
-	})
-	return ids, err
+	return b.viewValue(ctx, func(t *vmTx) ([]string, error) { return t.ResolveMany(refs, ErrNotFound) })
 }
 
 // setRunningSockets serves clone/restore records that skip ToVM.

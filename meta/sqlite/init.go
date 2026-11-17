@@ -63,14 +63,12 @@ func initStore(ctx context.Context, dbPath string, namespaces []Namespace) (err 
 	if ferr := CheckFS(dbPath); ferr != nil {
 		return ferr
 	}
-	if utils.FileExists(dbPath) {
-		partial, perr := failedInit(ctx, dbPath)
-		if perr != nil {
-			return perr
-		}
-		if !partial {
-			return fmt.Errorf("%s already exists; refusing to reinitialize", dbPath)
-		}
+	need, nerr := initNeeded(ctx, dbPath)
+	if nerr != nil {
+		return nerr
+	}
+	if !need {
+		return fmt.Errorf("%s already exists; refusing to reinitialize", dbPath)
 	}
 	db, err := open(dbPath, "FULL", true)
 	if err != nil {

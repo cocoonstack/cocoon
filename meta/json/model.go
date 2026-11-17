@@ -3,7 +3,6 @@ package json
 
 import (
 	"encoding/json/jsontext"
-	"maps"
 	"slices"
 
 	"github.com/cocoonstack/cocoon/meta"
@@ -83,11 +82,6 @@ func (m *Model) Len(tbl string) int {
 		return 0
 	}
 	return len(t.ids)
-}
-
-// TableNames returns all table names sorted.
-func (m *Model) TableNames() []string {
-	return slices.Sorted(maps.Keys(m.tables))
 }
 
 // markClean resets Dirty after decode — loading populates via Put.

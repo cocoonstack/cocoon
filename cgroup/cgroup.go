@@ -336,10 +336,8 @@ func checkSubset(cpuset, dir, what string) error {
 	if err != nil {
 		return fmt.Errorf("parse %s: %w", filepath.Join(dir, cpusetEffName), err)
 	}
-	for _, c := range want {
-		if !slices.Contains(eff, c) {
-			return fmt.Errorf("%s %q: cpu %d not in %s effective set %q", what, cpuset, c, dir, effRaw)
-		}
+	if i := slices.IndexFunc(want, func(c int) bool { return !slices.Contains(eff, c) }); i >= 0 {
+		return fmt.Errorf("%s %q: cpu %d not in %s effective set %q", what, cpuset, want[i], dir, effRaw)
 	}
 	return nil
 }
@@ -360,10 +358,8 @@ func checkScopePlacements(parentDir, fence string) error {
 		if err != nil {
 			continue
 		}
-		for _, c := range cpus {
-			if !slices.Contains(fenceCPUs, c) {
-				return fmt.Errorf("fence %q excludes cpu %d used by vm %s placement %q; stop that VM or widen the fence", fence, c, id, placement)
-			}
+		if i := slices.IndexFunc(cpus, func(c int) bool { return !slices.Contains(fenceCPUs, c) }); i >= 0 {
+			return fmt.Errorf("fence %q excludes cpu %d used by vm %s placement %q; stop that VM or widen the fence", fence, cpus[i], id, placement)
 		}
 	}
 	return nil

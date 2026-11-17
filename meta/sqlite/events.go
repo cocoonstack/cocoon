@@ -21,9 +21,8 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 		}
 		s.notifier = n
 	}
-	ch, release := s.notifier.b.Subscribe()
-	stop := context.AfterFunc(ctx, release)
-	return ch, func() { stop(); release() }, nil
+	ch, release := s.notifier.b.Subscribe(ctx)
+	return ch, release, nil
 }
 
 // Version is touched only by the init call and the Run goroutine.

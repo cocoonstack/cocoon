@@ -43,9 +43,8 @@ func (h Handler) Save(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var snapID string
-	if err := hyper.Snapshot(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
-		id, pErr := cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
-		snapID = id
+	if err := hyper.Snapshot(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) (pErr error) {
+		snapID, pErr = cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 		return pErr
 	}); err != nil {
 		return err

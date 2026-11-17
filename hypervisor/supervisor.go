@@ -86,17 +86,8 @@ func (b *Backend) ObserveVMMIn(ctx context.Context, rec *VMRecord, scan utils.Pr
 	return b.observe(ctx, rec, &scan)
 }
 
-// TryLockVMOps takes the VM ops lock without blocking; ok=false with a nil error means another operation owns it.
 func (b *Backend) TryLockVMOps(ctx context.Context, vmID string) (unlock func(), ok bool, err error) {
-	l, err := vmlock.New(b.Conf.RootDirPath(), vmID)
-	if err != nil {
-		return nil, false, err
-	}
-	locked, err := l.TryLock(ctx)
-	if err != nil || !locked {
-		return nil, false, err
-	}
-	return func() { _ = l.Unlock(ctx) }, true, nil
+	return vmlock.TryLock(ctx, b.Conf.RootDirPath(), vmID)
 }
 
 // ConvergeDead lands the stop transition for a VMM that exited outside cocoon; gen fences a stale observation.

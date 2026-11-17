@@ -139,7 +139,7 @@ func (s *Store) View(ctx context.Context, nss []string, fn meta.ViewFunc) error 
 		return mapErr(err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	return fn(&txHandle{tx: tx, sm: sm, scope: scopeSet(nss)})
+	return fn(&txHandle{tx: tx, sm: sm, scope: nss})
 }
 
 func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode, fn meta.UpdateFunc) error {
@@ -167,7 +167,7 @@ func (s *Store) Update(ctx context.Context, sc meta.Scope, mode meta.CommitMode,
 		return err
 	}
 	wait := time.Since(start)
-	h := &txHandle{tx: tx, sm: sm, scope: scopeSet(nss), write: sc.Write, mode: mode}
+	h := &txHandle{tx: tx, sm: sm, scope: nss, write: sc.Write, mode: mode}
 	if err := fn(h); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -251,7 +251,7 @@ var (
 type txHandle struct {
 	tx    *sql.Tx
 	sm    stmtSet
-	scope map[string]struct{}
+	scope []string
 	write string
 	mode  meta.CommitMode
 }
@@ -334,7 +334,7 @@ func (h *txHandle) stmts(ns, table string) (tableStmts, error) {
 }
 
 func (h *txHandle) checkRead(ns string) error {
-	if _, ok := h.scope[ns]; !ok {
+	if !slices.Contains(h.scope, ns) {
 		return fmt.Errorf("read %s: %w", ns, meta.ErrScope)
 	}
 	return nil
@@ -404,14 +404,6 @@ func tableName(ns, table string) string {
 // quoteIdent keeps root-declared identifiers inert in SQL text.
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
-func scopeSet(nss []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(nss))
-	for _, ns := range nss {
-		set[ns] = struct{}{}
-	}
-	return set
 }
 
 // open applies the per-connection runtime contract; cache_size is KB (negative form) and mmap_size covers the whole file at meta scale.

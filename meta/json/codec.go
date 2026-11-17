@@ -40,16 +40,9 @@ func (GenericCodec) Decode(data []byte) (*Model, error) {
 }
 
 func (GenericCodec) Encode(m *Model) ([]byte, error) {
-	file := genericFile{Tables: map[string]map[string]jsontext.Value{}}
-	for _, tbl := range m.TableNames() {
-		recs := map[string]jsontext.Value{}
-		if err := m.Scan(tbl, func(id string, raw jsontext.Value) error {
-			recs[id] = raw
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-		file.Tables[tbl] = recs
+	file := genericFile{Tables: make(map[string]map[string]jsontext.Value, len(m.tables))}
+	for name, t := range m.tables {
+		file.Tables[name] = t.recs
 	}
 	data, err := json.Marshal(file, json.Deterministic(true))
 	if err != nil {

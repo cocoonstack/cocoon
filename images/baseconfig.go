@@ -35,8 +35,7 @@ func (c *BaseConfig) BlobPath(hex string) string {
 
 // OwnsBlob reports whether this backend holds hex's blob file.
 func (c *BaseConfig) OwnsBlob(hex string) bool {
-	_, err := os.Stat(c.BlobPath(hex))
-	return err == nil
+	return utils.FileExists(c.BlobPath(hex))
 }
 
 func (c *BaseConfig) TempFile(pattern string) (f *os.File, path string, cleanup func(), err error) {

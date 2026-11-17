@@ -89,12 +89,12 @@ func (b *Bridge) Add(ctx context.Context, vmID string, vmCfg *types.VMConfig, sp
 	configs = make([]*types.NetworkConfig, 0, len(specs))
 	for _, spec := range specs {
 		name := network.TAPName(b.tapPrefix, vmID, spec.Index)
-		mac := generateMAC()
+		var mac string
 		if spec.Existing != nil {
 			mac = spec.Existing.MAC
-		}
-		// Fresh adds reclaim a same-name stale TAP; recovery specs re-attach the existing one.
-		if spec.Existing == nil {
+		} else {
+			// Fresh adds reclaim a same-name stale TAP; recovery specs re-attach the existing one.
+			mac = generateMAC()
 			if old, lErr := netlink.LinkByName(name); lErr == nil {
 				if delErr := netlink.LinkDel(old); delErr != nil {
 					return nil, fmt.Errorf("reclaim stale tap %s: %w", name, delErr)

@@ -16,16 +16,6 @@ import (
 	"github.com/cocoonstack/cocoon/utils"
 )
 
-type restoreRun struct {
-	vmID             string
-	rec              *VMRecord
-	vmCfg            *types.VMConfig
-	sourceSnapshotID string
-	kill             KillHook
-	apply            RecordHook
-	afterExtract     AfterExtractHook
-}
-
 func (b *Backend) KillForRestore(ctx context.Context, vmID string, rec *VMRecord, terminate PIDHook) error {
 	killErr := b.WithRunningVM(ctx, rec, terminate)
 	if killErr != nil && !errors.Is(killErr, ErrNotRunning) {
@@ -91,7 +81,7 @@ func (b *Backend) RestoreSequence(ctx context.Context, vmRef string, spec Restor
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
+	return b.restoreCore(ctx, vmID, rec, spec, apply)
 }
 
 // DirectRestoreSequence restores from a local snapshot directory.
@@ -113,7 +103,7 @@ func (b *Backend) DirectRestoreSequence(ctx context.Context, vmRef string, spec 
 		}
 		return nil
 	}
-	return b.restoreCore(ctx, restoreRun{vmID: vmID, rec: rec, vmCfg: spec.VMCfg, sourceSnapshotID: spec.SourceSnapshotID, kill: spec.Kill, apply: apply, afterExtract: spec.AfterExtract})
+	return b.restoreCore(ctx, vmID, rec, spec, apply)
 }
 
 // failRestore spares a stopped origin so hibernate wake stays retryable.
@@ -124,42 +114,42 @@ func (b *Backend) failRestore(ctx context.Context, vmID string, origin types.VMS
 	b.markError(ctx, vmID)
 }
 
-func (b *Backend) restoreCore(ctx context.Context, run restoreRun) (*types.VM, error) {
-	oldShape := shapeFromConfig(run.rec.Config)
-	if killErr := run.kill(ctx, run.vmID, run.rec); killErr != nil {
+func (b *Backend) restoreCore(ctx context.Context, vmID string, rec *VMRecord, spec RestoreSpec, apply RecordHook) (*types.VM, error) {
+	oldShape := shapeFromConfig(rec.Config)
+	if killErr := spec.Kill(ctx, vmID, rec); killErr != nil {
 		return nil, killErr
 	}
-	b.emitRestoreComputeStop(ctx, run.vmID, oldShape, run.sourceSnapshotID)
+	b.emitRestoreComputeStop(ctx, vmID, oldShape, spec.SourceSnapshotID)
 
 	var result *types.VM
 	inner := func() error {
-		if err := os.WriteFile(filepath.Join(run.rec.RunDir, restoreDirtyName), nil, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(rec.RunDir, restoreDirtyName), nil, 0o600); err != nil {
 			return fmt.Errorf("mark restore dirty: %w", err)
 		}
-		if err := run.apply(run.rec); err != nil {
+		if err := apply(rec); err != nil {
 			return err
 		}
 		// Inside the ops lock, like StartSequence: a hibernate resume after a host reboot finds no plumbing left to un-quiesce.
-		if err := b.recoverNetwork(ctx, run.rec); err != nil {
+		if err := b.recoverNetwork(ctx, rec); err != nil {
 			return fmt.Errorf("recover network: %w", err)
 		}
-		placed, err := b.placeRecord(ctx, run.vmID, &run.vmCfg.Config)
+		placed, err := b.placeRecord(ctx, vmID, &spec.VMCfg.Config)
 		if err != nil {
 			return fmt.Errorf("place VM: %w", err)
 		}
-		run.rec.CPUSet, run.rec.QueueCPUs = placed.CPUSet, placed.QueueCPUs
+		rec.CPUSet, rec.QueueCPUs = placed.CPUSet, placed.QueueCPUs
 		var afterErr error
-		result, afterErr = run.afterExtract(ctx, run.vmID, run.vmCfg, run.rec)
+		result, afterErr = spec.AfterExtract(ctx, vmID, spec.VMCfg, rec)
 		return afterErr
 	}
 	if err := inner(); err != nil {
 		// The kill already ran, so networking left up stays durable retry work even for a retryable stopped origin.
-		b.markFailedOperation(ctx, run.vmID, run.rec.State != types.VMStateStopped)
+		b.markFailedOperation(ctx, vmID, rec.State != types.VMStateStopped)
 		return nil, err
 	}
 	now := timeNow()
-	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, result.ID, run.sourceSnapshotID, metering.ReasonRestore, oldShape, now))
-	b.emitOpenInterval(ctx, result, metering.ReasonRestore, run.sourceSnapshotID, now)
+	b.Metering.Emit(ctx, b.makeSourceEntry(metering.KindVMStorageStop, result.ID, spec.SourceSnapshotID, metering.ReasonRestore, oldShape, now))
+	b.emitOpenInterval(ctx, result, metering.ReasonRestore, spec.SourceSnapshotID, now)
 	return result, nil
 }
 

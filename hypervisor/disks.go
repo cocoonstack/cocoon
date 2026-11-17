@@ -115,20 +115,12 @@ func initCOWFilesystem(ctx context.Context, path string) error {
 	return nil
 }
 
-// recordedCOWPath reads the recorded path, not a conf-derived one: after a --run-dir change the disks stay where the record says.
-func recordedCOWPath(rec *VMRecord) (string, error) {
-	cowPath := DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
-	if cowPath == "" {
-		return "", fmt.Errorf("no COW disk recorded for %s", rec.ID)
-	}
-	return cowPath, nil
-}
-
 // writableDiskPairs returns {copy under dstDir, live disk} for the COW and every data disk.
 func writableDiskPairs(dstDir string, rec *VMRecord) ([][2]string, error) {
-	cowPath, err := recordedCOWPath(rec)
-	if err != nil {
-		return nil, err
+	// The recorded path, not a conf-derived one: after a --run-dir change the disks stay where the record says.
+	cowPath := DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW)
+	if cowPath == "" {
+		return nil, fmt.Errorf("no COW disk recorded for %s", rec.ID)
 	}
 	pairs := [][2]string{{filepath.Join(dstDir, filepath.Base(cowPath)), cowPath}}
 	for _, sc := range rec.StorageConfigs {

@@ -90,11 +90,7 @@ func (fc *Firecracker) DiskAttach(ctx context.Context, vmRef string, spec disk.S
 	if spec.DirectIO != nil {
 		log.WithFunc("firecracker.DiskAttach").Warnf(ctx, directIOIgnoredMsg, spec.Name)
 	}
-	d := fcDrive{DriveID: id, PathOnHost: path, IsReadOnly: spec.ReadOnly}
-	if !spec.ReadOnly {
-		d.IoEngine = ioEngineAsync
-	}
-	if err := hotplugDevice(ctx, hc, "/drives/"+id, d, "drive"); err != nil {
+	if err := hotplugDevice(ctx, hc, "/drives/"+id, newDrive(id, path, spec.ReadOnly), "drive"); err != nil {
 		return "", fmt.Errorf("vm %s hot-plug drive %s: %w", rec.ID, id, err)
 	}
 	return id, nil

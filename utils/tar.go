@@ -93,10 +93,8 @@ func ExtractTar(dir string, r io.Reader) error {
 			if err := extractFileSparse(outPath, tr, hdr.FileInfo().Mode().Perm(), realSize, hdr.Size, mapJSON); err != nil {
 				return fmt.Errorf("extract sparse %s: %w", name, err)
 			}
-		} else {
-			if err := extractFile(outPath, tr, hdr.FileInfo().Mode().Perm(), hdr.Size); err != nil {
-				return fmt.Errorf("extract %s: %w", name, err)
-			}
+		} else if err := extractFile(outPath, tr, hdr.FileInfo().Mode().Perm(), hdr.Size); err != nil {
+			return fmt.Errorf("extract %s: %w", name, err)
 		}
 	}
 }

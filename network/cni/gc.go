@@ -61,12 +61,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 			var errs []error
 			for _, vmID := range ids {
 				// The owning VM's lock covers network teardown; a held lock means an in-flight lifecycle operation — skip.
-				lk, lockErr := vmlock.New(c.conf.RootDir, vmID)
-				if lockErr != nil {
-					errs = append(errs, lockErr)
-					continue
-				}
-				ok, lockErr := lk.TryLock(ctx)
+				unlock, ok, lockErr := vmlock.TryLock(ctx, c.conf.RootDir, vmID)
 				if lockErr != nil {
 					errs = append(errs, fmt.Errorf("lock %s: %w", vmID, lockErr))
 					continue
@@ -79,7 +74,7 @@ func (c *CNI) GCModule(vmInUse network.VMInUse) gc.Module[cniSnapshot] {
 				if tdErr == nil && !inUse {
 					tdErr = c.teardownProtocol(ctx, vmID, nil, false)
 				}
-				_ = lk.Unlock(ctx)
+				unlock()
 				if tdErr != nil {
 					errs = append(errs, fmt.Errorf("collect network %s: %w", vmID, tdErr))
 					continue
@@ -106,12 +101,7 @@ func (c *CNI) gcRecover(ctx context.Context) []error {
 	}
 	var errs []error
 	for _, vmID := range ids {
-		lk, err := vmlock.New(c.conf.RootDir, vmID)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		ok, err := lk.TryLock(ctx)
+		unlock, ok, err := vmlock.TryLock(ctx, c.conf.RootDir, vmID)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("lock %s: %w", vmID, err))
 			continue
@@ -122,7 +112,7 @@ func (c *CNI) gcRecover(ctx context.Context) []error {
 		if _, err := c.recoverTombstone(ctx, vmID); err != nil {
 			errs = append(errs, fmt.Errorf("recover %s: %w", vmID, err))
 		}
-		_ = lk.Unlock(ctx)
+		unlock()
 	}
 	return errs
 }

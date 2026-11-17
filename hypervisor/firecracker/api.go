@@ -56,6 +56,14 @@ type fcDrive struct {
 	IoEngine     string `json:"io_engine,omitempty"`
 }
 
+func newDrive(id, path string, readOnly bool) fcDrive {
+	d := fcDrive{DriveID: id, PathOnHost: path, IsReadOnly: readOnly}
+	if !readOnly {
+		d.IoEngine = ioEngineAsync
+	}
+	return d
+}
+
 type fcNetworkInterface struct {
 	IfaceID     string `json:"iface_id"`
 	HostDevName string `json:"host_dev_name"`

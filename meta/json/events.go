@@ -23,9 +23,8 @@ func (s *Store) Events(ctx context.Context) (<-chan struct{}, func(), error) {
 		}
 		s.events = n
 	}
-	ch, release := s.events.b.Subscribe()
-	stop := context.AfterFunc(ctx, release)
-	return ch, func() { stop(); release() }, nil
+	ch, release := s.events.b.Subscribe(ctx)
+	return ch, release, nil
 }
 
 type fileToken struct {

@@ -100,12 +100,8 @@ func (b *Backend) RegisterGC(orch *gc.Orchestrator) {
 }
 
 func (b *Backend) gcRecover(ctx context.Context) []error {
-	var ids []string
-	if err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		ids, err = b.tombstones().PendingIDs(ctx, t.r)
-		return err
-	}); err != nil {
+	ids, err := b.viewValue(ctx, func(t *vmTx) ([]string, error) { return b.tombstones().PendingIDs(ctx, t.r) })
+	if err != nil {
 		return []error{err}
 	}
 	var errs []error
@@ -212,10 +208,9 @@ func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 			errs = append(errs, reclaimErr)
 			continue
 		}
-		if !ok {
-			continue
+		if ok {
+			logger.Infof(ctx, "collected lock=%s reason=stale-clone-lock", e.Name())
 		}
-		logger.Infof(ctx, "collected lock=%s reason=stale-clone-lock", e.Name())
 	}
 	return errs
 }

@@ -205,11 +205,9 @@ func storageConfigToDisk(storageConfig *types.StorageConfig, cpuCount, diskQueue
 	case filepath.Ext(storageConfig.Path) == ".qcow2":
 		d.ImageType = "Qcow2"
 		d.BackingFiles = isQcow2Overlay(storageConfig)
-	case storageConfig.RO:
-		d.ImageType = "Raw"
 	default:
 		d.ImageType = "Raw"
-		d.Sparse = true
+		d.Sparse = !storageConfig.RO
 	}
 
 	if !storageConfig.RO {

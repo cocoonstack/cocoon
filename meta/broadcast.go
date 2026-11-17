@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -27,16 +28,18 @@ func NewBroadcaster(watcher *fsnotify.Watcher) *Broadcaster {
 }
 
 // Subscribe registers a coalescing signal channel; release is idempotent.
-func (b *Broadcaster) Subscribe() (chan struct{}, func()) {
+func (b *Broadcaster) Subscribe(ctx context.Context) (chan struct{}, func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ch := make(chan struct{}, 1)
 	b.subs[ch] = struct{}{}
-	return ch, sync.OnceFunc(func() {
+	release := sync.OnceFunc(func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		delete(b.subs, ch)
 	})
+	stop := context.AfterFunc(ctx, release)
+	return ch, func() { stop(); release() }
 }
 
 // Broadcast signals every subscriber without blocking.

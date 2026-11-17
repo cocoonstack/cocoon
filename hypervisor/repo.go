@@ -67,6 +67,16 @@ func (b *Backend) view(ctx context.Context, fn vmTxFunc) error {
 	})
 }
 
+func (b *Backend) viewValue[T any](ctx context.Context, fn func(*vmTx) (T, error)) (T, error) {
+	var v T
+	err := b.view(ctx, func(t *vmTx) error {
+		var err error
+		v, err = fn(t)
+		return err
+	})
+	return v, err
+}
+
 func (b *Backend) update(ctx context.Context, fn vmTxFunc) error {
 	return b.Meta.Update(ctx, meta.Scope{Write: b.NS}, meta.CommitDurable, func(w meta.Writer) error {
 		return fn(b.tx(ctx, w, w))

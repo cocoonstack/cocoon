@@ -205,7 +205,7 @@ func (fc *Firecracker) resumeAndReanchorClone(ctx context.Context, pid int, cl c
 	}
 	// Clone data disks take the next drive slots so a later snapshot sees them as ordinary sidecar entries.
 	for i, sc := range cl.dataDisks {
-		d := fcDrive{DriveID: fmt.Sprintf(driveIDFmt, len(cl.dst)+i), PathOnHost: sc.Path, IoEngine: ioEngineAsync}
+		d := newDrive(fmt.Sprintf(driveIDFmt, len(cl.dst)+i), sc.Path, false)
 		if err = hotplugDevice(ctx, hc, "/drives/"+d.DriveID, d, "drive"); err != nil {
 			return fmt.Errorf("hot-plug data disk %s: %w", sc.Serial, err)
 		}

@@ -33,9 +33,8 @@ func (h Handler) Hibernate(cmd *cobra.Command, args []string) error {
 	logger.Infof(ctx, "hibernating VM %s ...", vmRef)
 	// persist runs inside the pause window; the VMM dies only after it succeeds.
 	var snapID string
-	if err := hyper.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) error {
-		id, pErr := cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
-		snapID = id
+	if err := hyper.Hibernate(ctx, vm.ID, func(cfg *types.SnapshotConfig, srcDir string) (pErr error) {
+		snapID, pErr = cmdcore.PersistSnapshotDir(ctx, snapBackend, cfg, srcDir, name, description)
 		return pErr
 	}); err != nil {
 		return err

@@ -103,11 +103,10 @@ func appendTable(dst []byte, m *Model, tbl string) ([]byte, error) {
 			if i > 0 {
 				dst = append(dst, ',')
 			}
-			kb, err := json.Marshal(k)
-			if err != nil {
+			var err error
+			if dst, err = jsontext.AppendQuote(dst, k); err != nil {
 				return nil, err
 			}
-			dst = append(dst, kb...)
 			dst = append(dst, ':')
 			dst = append(dst, t.recs[k]...)
 		}

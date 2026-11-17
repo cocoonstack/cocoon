@@ -66,15 +66,7 @@ func (b *Backend) LockVMOps(ctx context.Context, vmID string) (func(), error) {
 
 // PeekRecord reads the record via a plain self-locking view (nil when absent).
 func (b *Backend) PeekRecord(ctx context.Context, vmID string) (*VMRecord, error) {
-	var rec *VMRecord
-	if err := b.view(ctx, func(t *vmTx) error {
-		var err error
-		rec, err = t.Get(vmID)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	return rec, nil
+	return b.viewValue(ctx, func(t *vmTx) (*VMRecord, error) { return t.Get(vmID) })
 }
 
 // PinnedBlobIDs reports every image blob pinned by a VM record — image GC's under-digest-lock recheck source.

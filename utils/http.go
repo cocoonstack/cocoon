@@ -89,25 +89,20 @@ func CheckSocket(socketPath string) error {
 // DoWithRetry retries fn with exponential backoff for transient errors.
 func DoWithRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 	var zero T
-	var lastErr error
-	for i := range maxRetries + 1 {
+	for i := 0; ; i++ {
 		result, err := fn()
 		if err == nil {
 			return result, nil
 		}
-		lastErr = err
-		if !isRetryable(err) {
+		if !isRetryable(err) || i == maxRetries {
 			return zero, err
 		}
-		if i < maxRetries {
-			select {
-			case <-ctx.Done():
-				return zero, ctx.Err()
-			case <-time.After(baseBackoff * time.Duration(1<<i)):
-			}
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(baseBackoff * time.Duration(1<<i)):
 		}
 	}
-	return zero, lastErr
 }
 
 // DoAPIOnce sends one non-retried request; successCodes defaults to 204 and codes[1:] are tolerated alternatives.

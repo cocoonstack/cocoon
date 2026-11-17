@@ -79,15 +79,7 @@ func (fc *Firecracker) configureVM(ctx context.Context, hc *http.Client, rec *hy
 		if sc.Role == types.StorageRoleData && sc.DirectIO != nil {
 			logger.Warnf(ctx, directIOIgnoredMsg, sc.Serial)
 		}
-		d := fcDrive{
-			DriveID:    driveID,
-			PathOnHost: sc.Path,
-			IsReadOnly: sc.RO,
-		}
-		if !sc.RO {
-			d.IoEngine = ioEngineAsync
-		}
-		if err := putJSON(ctx, hc, "/drives/"+driveID, d, "drive"); err != nil {
+		if err := putJSON(ctx, hc, "/drives/"+driveID, newDrive(driveID, sc.Path, sc.RO), "drive"); err != nil {
 			return fmt.Errorf("drive %s: %w", driveID, err)
 		}
 	}
