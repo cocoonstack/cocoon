@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -192,8 +193,11 @@ func (b *Backend) sweepStaleCaptureDirs(ctx context.Context, runDirs []string) [
 func (b *Backend) sweepStaleCloneLocks(ctx context.Context) []error {
 	dir := filepath.Join(b.Conf.RunDir(), CloneLocksDirName)
 	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
+	}
+	if err != nil {
+		return []error{fmt.Errorf("read clone locks: %w", err)}
 	}
 	logger := log.WithFunc("gc." + b.Typ)
 	cutoff := timeNow().Add(-StaleArtifactGCGrace)

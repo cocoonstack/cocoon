@@ -92,6 +92,19 @@ func TestSweepStaleCaptureDirsReclaimsAgedStaging(t *testing.T) {
 	}
 }
 
+func TestSweepStaleCloneLocksReportsAnUnreadableDir(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	if errs := b.sweepStaleCloneLocks(t.Context()); len(errs) != 0 {
+		t.Fatalf("missing clone-locks dir: %v, want no error", errs)
+	}
+	if err := os.WriteFile(filepath.Join(b.Conf.RunDir(), CloneLocksDirName), nil, 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if errs := b.sweepStaleCloneLocks(t.Context()); len(errs) != 1 {
+		t.Fatalf("errs = %v, want the read failure", errs)
+	}
+}
+
 func TestSweepDirsSkipsReservedNames(t *testing.T) {
 	snap := VMGCSnapshot{runDirs: []string{"db", CloneLocksDirName, "SOMEVM"}}
 	got := snap.sweepDirs("/root")
