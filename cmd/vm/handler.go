@@ -22,7 +22,7 @@ func (h Handler) resolveRunningVM(ctx context.Context, conf *config.Config, op, 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	if info.State != types.VMStateRunning {
+	if state, _ := cmdcore.ReconcileState(info); state != types.VMStateRunning {
 		return nil, fmt.Errorf("%s: %w", op, hypervisor.ErrNotRunning)
 	}
 	return info, nil
