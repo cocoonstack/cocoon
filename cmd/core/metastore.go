@@ -41,7 +41,6 @@ var (
 	metaLease *flock.SharedLease
 	metaErr   error
 
-	// vmTables maps legacy vms.json fields onto the vms-namespace tables.
 	vmTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 		{Key: "vms", Table: hypervisor.TableRecords},
 		{Key: "names", Table: hypervisor.TableNames},
@@ -93,6 +92,9 @@ func MetaJSONNamespaces(conf *config.Config) []metajson.Namespace {
 		},
 	}
 }
+
+// VMJSONTables maps legacy vms.json fields onto the tables of every VM namespace.
+func VMJSONTables() metajson.TableCodec { return vmTables }
 
 // MetaDBPath is the sqlite engine's database under the meta root.
 func MetaDBPath(conf *config.Config) string {

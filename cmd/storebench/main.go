@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/meta"
 	metajson "github.com/cocoonstack/cocoon/meta/json"
@@ -245,8 +246,12 @@ func openBackend(ctx context.Context, engine, dir string) (*hypervisor.Backend, 
 
 func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 	ns := hypervisor.VMNamespaceName("bench")
+	codec := cmdcore.VMJSONTables()
 	if engine == "sqlite" {
-		decl := metasqlite.Namespace{Name: ns, Tables: []string{hypervisor.TableRecords, hypervisor.TableNames, hypervisor.TablePlacements}}
+		decl := metasqlite.Namespace{Name: ns}
+		for _, sp := range codec.Specs {
+			decl.Tables = append(decl.Tables, sp.Table)
+		}
 		path := filepath.Join(dir, metasqlite.DBFileName)
 		if err := metasqlite.InitIfMissing(ctx, path, decl); err != nil {
 			return nil, err
@@ -257,11 +262,7 @@ func openStore(ctx context.Context, engine, dir string) (meta.Store, error) {
 		Name:     ns,
 		FilePath: filepath.Join(dir, "vms.json"),
 		LockPath: filepath.Join(dir, "vms.lock"),
-		Codec: metajson.TableCodec{Specs: []metajson.TableSpec{
-			{Key: "vms", Table: hypervisor.TableRecords},
-			{Key: "names", Table: hypervisor.TableNames},
-			{Key: "placements", Table: hypervisor.TablePlacements, Optional: true},
-		}},
+		Codec:    codec,
 	})
 }
 
