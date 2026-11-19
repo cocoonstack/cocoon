@@ -32,4 +32,8 @@ Pre-built images are published as split OCI artifacts and imported with `oras pu
 - **DHCP networks**: the clone comes up on hot-swapped NICs with new MACs; if a NIC is left without IPv4, run the `Get-PnpDevice` rebind that `cocoon vm clone` prints
 - **Static IP**: after the rebind, run the printed `netsh interface ipv4 set address ...` inside the guest (SAC serial console via `cocoon vm console`). Windows keeps a static IPv4 setting per PCI slot, so a clone NIC that lands in the source's slot re-applies the source's address and collides with any running VM that holds it; prefer DHCP for clone sources, or reset the adapter's settings in the clone
 
+### Clock After Clone and Restore
+
+`cocoon vm clone` and `cocoon vm restore` resume a Windows guest from the snapshot's clock (`clock_catchup=false` on Cloud Hypervisor's restore): the guest's uptime continues from the snapshot, and its date and time are behind by the snapshot's age until something sets them in the guest (for example `Set-Date` over `cocoon vm exec`). Advancing the clock instead moves the guest's uptime forward by the snapshot's age, and a Windows guest whose uptime jumps by 2^31 to 2^32 ms (24.9 to 49.7 days) can stop retransmitting TCP ([cloud-hypervisor#9](https://github.com/cocoonstack/cloud-hypervisor/issues/9)). A Cloud Hypervisor without the option ignores it and advances the clock. A `vm migrate` receive still advances the clock, by the seconds the handoff took.
+
 For more details, see the [Cloud Hypervisor Windows documentation](https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/docs/windows.md).

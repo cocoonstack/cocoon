@@ -167,7 +167,9 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 
 	hc := utils.NewSocketHTTPClient(sockPath)
 
-	if err = restoreVM(ctx, hc, runDir, opts.vmCfg.RestoreMode); err != nil {
+	// A migration receive resumes seconds after the source paused, so the catch-up keeps its wall clock right.
+	keepGuestClock := keepsGuestClockOnRestore(opts.vmCfg) && !opts.keepPaused
+	if err = restoreVM(ctx, hc, runDir, opts.vmCfg.RestoreMode, keepGuestClock); err != nil {
 		return fmt.Errorf("vm.restore: %w", err)
 	}
 
