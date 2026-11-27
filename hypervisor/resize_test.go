@@ -135,13 +135,32 @@ func TestGrowCOWGrowsAQcow2ByVirtualSize(t *testing.T) {
 	if err := utils.RunQemuImg(t.Context(), "create", "-f", "qcow2", overlay, "10G"); err != nil {
 		t.Fatalf("create qcow2: %v", err)
 	}
-	for _, tt := range []struct{ ask, want int64 }{{20 * gib, 20 * gib}, {15 * gib, 20 * gib}} {
-		if err := growCOW(t.Context(), overlay, tt.ask); err != nil {
-			t.Fatalf("growCOW to %d: %v", tt.ask, err)
+	for _, run := range []string{"first", "repeated"} {
+		if err := growCOW(t.Context(), overlay, 20*gib); err != nil {
+			t.Fatalf("%s growCOW to 20G: %v", run, err)
 		}
 		hdr, ok, err := utils.ReadQcow2Header(overlay)
-		if err != nil || !ok || hdr.VirtualSize != tt.want {
-			t.Errorf("after growCOW to %d: header %+v, %v, %v; want virtual size %d", tt.ask, hdr, ok, err, tt.want)
+		if err != nil || !ok || hdr.VirtualSize != 20*gib {
+			t.Errorf("%s growCOW to 20G: header %+v, %v, %v; want virtual size %d", run, hdr, ok, err, 20*gib)
+		}
+	}
+	if err := growCOW(t.Context(), overlay, 15*gib); err == nil || !strings.Contains(err.Error(), "is already") {
+		t.Errorf("growCOW to 15G under a 20G disk: %v; want a refusal", err)
+	}
+}
+
+func TestResizeRefusesAVMWhoseDeleteHasBegun(t *testing.T) {
+	b, ledger := newMeteringTestBackend(t)
+	seedVMRecord(t, b, "vm1", 2, 4<<30, 20<<30, true)
+	markDeleting(t, b, "vm1", leaseTombstone(t, b, recordOf(t, b, "vm1")))
+	ledger.Reset()
+
+	if _, err := b.Resize(t.Context(), "vm1", ResizeSpec{CPU: 4}); err == nil {
+		t.Fatal("resized a VM that is being deleted")
+	}
+	for _, e := range ledger.Entries() {
+		if e.Reason == metering.ReasonResize {
+			t.Errorf("ledger has %+v for a VM that is being deleted", e)
 		}
 	}
 }

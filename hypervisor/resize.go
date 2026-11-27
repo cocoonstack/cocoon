@@ -30,7 +30,7 @@ func (b *Backend) Resize(ctx context.Context, ref string, spec ResizeSpec) (*typ
 		return nil, err
 	}
 	defer unlock()
-	rec, err := b.LoadRecord(ctx, id)
+	rec, err := b.entryGuardLoad(ctx, id)
 	if err != nil {
 		return nil, err
 	}

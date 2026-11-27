@@ -116,7 +116,7 @@ The VM must be stopped: a running VM, one still being created, and one whose las
 
 `--storage` grows the COW disk and never shrinks it. On an OCI VM cocoon grows the disk file and its ext4 filesystem (`e2fsck`, then `resize2fs`), so the guest sees the space at boot. On a cloud-image VM cocoon grows the qcow2's virtual size only, and the partition and filesystem are grown inside the guest: `growpart /dev/vda 1 && resize2fs /dev/vda1` on an Ubuntu image, Disk Management on Windows. cloud-init does not do it, because the cidata disk is gone after the first boot. Data disks keep their size.
 
-The disk grows before the record changes, so a resize that fails or is killed part-way leaves the old size recorded and is safe to run again. Metering closes the VM's storage interval at the old shape and opens one at the new shape, both with reason `resize`.
+The disk grows before the record changes, so a resize that fails or is killed part-way leaves the old size recorded and is safe to run again. A disk that is already larger than the request is refused, so ask for at least its size. A cancel (Ctrl-C, SIGTERM) waits for `e2fsck` and `resize2fs` to finish instead of stopping them part-way. A CLI killed with SIGKILL can leave one of them running for a moment without the VM's lock: let it exit before the next `vm start` or `vm resize`. Metering closes the VM's storage interval at the old shape and opens one at the new shape, both with reason `resize`.
 
 ## PCI Transport (Firecracker)
 

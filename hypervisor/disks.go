@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/projecteru2/core/log"
 
@@ -163,29 +164,43 @@ func copyPairs(ctx context.Context, pairs [][2]string) error {
 
 // growCOW grows a stopped VM's COW disk to size: a qcow2 by virtual size, a raw disk together with the ext4 cocoon formatted it with.
 func growCOW(ctx context.Context, path string, size int64) error {
-	if filepath.Ext(path) == ".qcow2" {
-		return ExpandQcow2(ctx, path, size)
-	}
-	st, err := os.Stat(path)
+	hdr, qcow2, err := utils.ReadQcow2Header(path)
 	if err != nil {
 		return err
 	}
-	if st.Size() > size {
-		return fmt.Errorf("%s is already %d bytes; ask for at least that", path, st.Size())
+	cur := hdr.VirtualSize
+	if !qcow2 {
+		st, statErr := os.Stat(path)
+		if statErr != nil {
+			return statErr
+		}
+		cur = st.Size()
+	}
+	if cur > size {
+		return fmt.Errorf("%s is already %d bytes; ask for at least that", path, cur)
+	}
+	if qcow2 {
+		return ExpandQcow2(ctx, path, size)
 	}
 	if err = os.Truncate(path, size); err != nil {
 		return fmt.Errorf("truncate %s: %w", path, err)
 	}
 	// Shell out: e2fsprogs is the reference ext4 implementation. resize2fs wants a checked filesystem, and e2fsck exits 1 after a repair.
 	log.WithFunc("hypervisor.growCOW").Debugf(ctx, "exec e2fsck, resize2fs %s", path)
-	out, err := exec.CommandContext(ctx, "e2fsck", "-f", "-p", path).CombinedOutput() //nolint:gosec
+	out, err := runUninterrupted(ctx, "e2fsck", "-f", "-p", path)
 	if ee, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || ee.ExitCode() > 1) {
 		return fmt.Errorf("e2fsck: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	if out, err = exec.CommandContext(ctx, "resize2fs", path).CombinedOutput(); err != nil { //nolint:gosec
+	if out, err = runUninterrupted(ctx, "resize2fs", path); err != nil {
 		return fmt.Errorf("resize2fs: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+func runUninterrupted(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), name, args...) //nolint:gosec
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd.CombinedOutput()
 }
 
 // createSparseFile creates path truncated to size; os.Truncate alone won't create a missing file.
