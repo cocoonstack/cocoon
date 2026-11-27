@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -289,21 +288,4 @@ func saveConsolePTY(ctx context.Context, vmID, runDir, sockPath string, directBo
 	if err := utils.AtomicWriteFile(hypervisor.ConsolePTYPath(runDir), []byte(pty), 0o600, utils.NoSync); err != nil {
 		log.WithFunc("cloudhypervisor.saveConsolePTY").Warnf(ctx, "save console PTY for %s: %v", vmID, err)
 	}
-}
-
-func qemuExpandImage(ctx context.Context, path string, targetSize int64) error {
-	hdr, ok, err := utils.ReadQcow2Header(path)
-	if err != nil {
-		return fmt.Errorf("read qcow2 header %s: %w", path, err)
-	}
-	if !ok {
-		return fmt.Errorf("%s is not a qcow2 image", path)
-	}
-	if targetSize <= hdr.VirtualSize {
-		return nil
-	}
-	if err := utils.RunQemuImg(ctx, "resize", path, strconv.FormatInt(targetSize, 10)); err != nil {
-		return fmt.Errorf("resize %s: %w", path, err)
-	}
-	return nil
 }

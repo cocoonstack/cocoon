@@ -31,11 +31,6 @@ type RunningViewer interface {
 	RunningView(ctx context.Context, ref string) (*RunningView, error)
 }
 
-// Sizer sets a stopped VM's vCPUs and memory; its next start cold-boots at that size.
-type Sizer interface {
-	SetSize(ctx context.Context, ref string, cpu int, memory int64) error
-}
-
 type RunningView struct {
 	Fs      []fs.Attached
 	Devices []vfio.Attached
@@ -60,6 +55,9 @@ type Hypervisor interface {
 	Snapshot(ctx context.Context, ref string, persist PersistFunc) error
 	Clone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, snapshot io.Reader) (*types.VM, error)
 	Restore(ctx context.Context, vmRef string, vmCfg *types.VMConfig, snapshot io.Reader, sourceSnapshotID string) (*types.VM, error)
+
+	// Resize sets a stopped VM's size for its next cold boot.
+	Resize(ctx context.Context, ref string, spec ResizeSpec) (*types.VM, error)
 
 	// DirectClone and DirectRestore read a local snapshot directory.
 	DirectClone(ctx context.Context, vmID string, vmCfg *types.VMConfig, net types.NetSetup, snapshotConfig *types.SnapshotConfig, srcDir string) (*types.VM, error)

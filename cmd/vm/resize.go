@@ -1,33 +1,40 @@
 package vm
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/projecteru2/core/log"
 	"github.com/spf13/cobra"
 
 	"github.com/cocoonstack/cocoon/cmd/cliutil"
+	cmdcore "github.com/cocoonstack/cocoon/cmd/core"
 	"github.com/cocoonstack/cocoon/hypervisor"
 	"github.com/cocoonstack/cocoon/types"
 )
 
 func (h Handler) Resize(cmd *cobra.Command, args []string) error {
-	cpu, memStr := cliutil.FlagInt(cmd, "cpu"), cliutil.FlagStr(cmd, "memory")
-	mem, err := types.ParseSize(memStr)
-	if err != nil {
-		return fmt.Errorf("invalid --memory %q: %w", memStr, err)
-	}
-	if cpu < 1 || mem < 512<<20 {
-		return fmt.Errorf("vm resize: need --cpu >= 1 and --memory >= 512M, got %d and %s", cpu, memStr)
-	}
-	ctx, _, _, s, err := h.resolveAttacher[hypervisor.Sizer](cmd, args, "vm resize", errors.ErrUnsupported)
-	if err != nil {
+	ctx, conf := h.Init(cmd)
+	logger := log.WithFunc("cmd.vm.resize")
+	spec := hypervisor.ResizeSpec{CPU: cliutil.FlagInt(cmd, "cpu")}
+	var err error
+	if spec.Memory, err = cliutil.FlagSize(cmd, "memory"); err != nil {
 		return err
 	}
-	if err := s.SetSize(ctx, args[0], cpu, mem); err != nil {
+	if spec.Storage, err = cliutil.FlagSize(cmd, "storage"); err != nil {
+		return err
+	}
+	hyper, before, err := cmdcore.FindVM(ctx, conf, args[0])
+	if err != nil {
 		return fmt.Errorf("vm resize: %w", err)
 	}
-	log.WithFunc("cmd.vm.resize").Infof(ctx, "resized vm=%s cpu=%d memory=%d", args[0], cpu, mem)
+	vm, err := hyper.Resize(ctx, before.ID, spec)
+	if err != nil {
+		return fmt.Errorf("vm resize: %w", err)
+	}
+	logger.Infof(ctx, "resized vm=%s cpu=%d memory=%s storage=%s; the next vm start cold-boots at this size",
+		args[0], vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory), cliutil.FormatSize(vm.Config.Storage))
+	if vm.Config.Storage > before.Config.Storage && vm.Config.ImageType == types.ImageTypeCloudImg {
+		logger.Warnf(ctx, "%s boots a cloud image: the guest grows its own partition and filesystem (cloud-init does on Linux images)", args[0])
+	}
 	return nil
 }

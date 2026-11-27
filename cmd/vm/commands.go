@@ -105,14 +105,14 @@ func Command(h Handler) *cobra.Command {
 
 	resizeCmd := &cobra.Command{
 		Use:   "resize VM",
-		Short: "Set a stopped VM's vCPUs and memory; its next start cold-boots at that size",
+		Short: "Set a stopped VM's vCPUs, memory and COW disk size; its next start cold-boots at that size",
 		Args:  cobra.ExactArgs(1),
 		RunE:  h.Resize,
 	}
-	resizeCmd.Flags().Int("cpu", 0, "boot CPUs")
-	resizeCmd.Flags().String("memory", "", "memory size")
-	_ = resizeCmd.MarkFlagRequired("cpu")
-	_ = resizeCmd.MarkFlagRequired("memory")
+	resizeCmd.Flags().Int("cpu", 0, "boot CPUs (default: keep)")
+	resizeCmd.Flags().String("memory", "", "memory size (default: keep)")
+	resizeCmd.Flags().String("storage", "", "COW disk size; it only grows (default: keep)")
+	resizeCmd.MarkFlagsOneRequired("cpu", "memory", "storage")
 
 	logsCmd := &cobra.Command{
 		Use:   "logs [flags] VM",

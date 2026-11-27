@@ -108,6 +108,16 @@ Firecracker takes the target in MiB, so cocoon rounds it down, and Firecracker r
 
 A VM without a balloon device (`--no-balloon` or `--windows`) refuses with `balloon resize unsupported`; a VM that is not running, or whose guest is paused (a migration or an interrupted capture), refuses with `vm not running` and stays paused. The target is runtime state: snapshots capture it, so `vm restore` and `vm migrate receive` come back with it, while `vm clone` starts the new VM at the create-time target, as a cold `vm stop` + `vm start` does.
 
+## Resizing a Stopped VM
+
+`cocoon vm resize VM [--cpu N] [--memory SIZE] [--storage SIZE]` changes the size a stopped VM boots at. Clone and restore cannot do this: they rebuild the guest from a snapshot's memory image, which fixes its vCPUs and memory. The new size takes effect at the next `vm start`, a cold boot from the VM's own disks, so guest memory is not kept. A restore from a snapshot taken before the resize brings that snapshot's size and disks back.
+
+The VM must be stopped: a running VM, one still being created, and one whose last run has not settled (a record or a live VMM that still claims it as up) are refused, and `vm stop` settles the last two. The limits of `vm create` apply: at least 1 vCPU and no more than the host has, at least 512M of memory, and a `--cpu-burst-us` the VM keeps must still fit under the quota of the new vCPU count.
+
+`--storage` grows the COW disk and never shrinks it. On an OCI VM cocoon grows the disk file and its ext4 filesystem (`e2fsck`, then `resize2fs`), so the guest sees the space at boot. On a cloud-image VM cocoon grows the qcow2's virtual size and the guest grows its own partition and filesystem: cloud-init does on Linux images, a Windows guest needs it done in Disk Management. Data disks keep their size.
+
+The disk grows before the record changes, so a resize that fails or is killed part-way leaves the old size recorded and is safe to run again. Metering closes the VM's storage interval at the old shape and opens one at the new shape, both with reason `resize`.
+
 ## PCI Transport (Firecracker)
 
 Firecracker attaches virtio devices over MMIO by default (and adds `pci=off` to the guest command line itself). `--pci` on `vm run`/`vm create` starts Firecracker with `--enable-pci`, so the guest enumerates virtio-pci devices instead; this is the prerequisite for Firecracker device hot-plug (Developer Preview upstream). The transport is fixed for the VM's lifetime and travels with its snapshots: clones and restores relaunch on the transport the snapshot was taken with, and a snapshot cannot move between transports. The guest kernel needs `CONFIG_PCI`, `CONFIG_VIRTIO_PCI` and `CONFIG_ACPI`; distro kernels have both transports, while the sandbox guest kernel is built without `CONFIG_VIRTIO_MMIO`, so sandbox images can never use the MMIO transport (booting them on Firecracker at all is not validated yet). Cloud Hypervisor is always virtio-pci, so `--pci` is rejected there.
