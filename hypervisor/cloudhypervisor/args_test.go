@@ -150,7 +150,7 @@ func TestNICQueuesFollowTheVCPUs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &hypervisor.VMRecord{
-				Config:         types.VMConfig{Config: types.Config{CPU: tt.cpu, Memory: 1 << 30}},
+				Config:         types.VMConfig{CPU: tt.cpu, Memory: 1 << 30},
 				NetworkConfigs: []*types.NetworkConfig{{TAP: "tapvm1-0", NumQueues: tt.made}},
 			}
 			if got := buildVMConfig(rec, "", nil).Nets[0].NumQueues; got != tt.want {
