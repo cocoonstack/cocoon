@@ -114,7 +114,7 @@ A VM without a balloon device (`--no-balloon` or `--windows`) refuses with `ball
 
 The VM must be stopped: a running VM, one still being created, and one whose last run has not settled (a record or a live VMM that still claims it as up) are refused, and `vm stop` settles the last two. The limits of `vm create` apply: at least 1 vCPU and no more than the host has, at least 512M of memory, and a `--cpu-burst-us` the VM keeps must still fit under the quota of the new vCPU count.
 
-`--storage` grows the COW disk and never shrinks it. On an OCI VM cocoon grows the disk file and its ext4 filesystem (`e2fsck`, then `resize2fs`), so the guest sees the space at boot. On a cloud-image VM cocoon grows the qcow2's virtual size and the guest grows its own partition and filesystem: cloud-init does on Linux images, a Windows guest needs it done in Disk Management. Data disks keep their size.
+`--storage` grows the COW disk and never shrinks it. On an OCI VM cocoon grows the disk file and its ext4 filesystem (`e2fsck`, then `resize2fs`), so the guest sees the space at boot. On a cloud-image VM cocoon grows the qcow2's virtual size only, and the partition and filesystem are grown inside the guest: `growpart /dev/vda 1 && resize2fs /dev/vda1` on an Ubuntu image, Disk Management on Windows. cloud-init does not do it, because the cidata disk is gone after the first boot. Data disks keep their size.
 
 The disk grows before the record changes, so a resize that fails or is killed part-way leaves the old size recorded and is safe to run again. Metering closes the VM's storage interval at the old shape and opens one at the new shape, both with reason `resize`.
 

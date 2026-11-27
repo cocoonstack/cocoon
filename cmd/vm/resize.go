@@ -34,7 +34,7 @@ func (h Handler) Resize(cmd *cobra.Command, args []string) error {
 	logger.Infof(ctx, "resized vm=%s cpu=%d memory=%s storage=%s; the next vm start cold-boots at this size",
 		args[0], vm.Config.CPU, cliutil.FormatSize(vm.Config.Memory), cliutil.FormatSize(vm.Config.Storage))
 	if vm.Config.Storage > before.Config.Storage && vm.Config.ImageType == types.ImageTypeCloudImg {
-		logger.Warnf(ctx, "%s boots a cloud image: the guest grows its own partition and filesystem (cloud-init does on Linux images)", args[0])
+		logger.Warnf(ctx, "%s boots a cloud image: grow the partition and filesystem inside the guest, e.g. growpart /dev/vda 1 && resize2fs /dev/vda1", args[0])
 	}
 	return nil
 }
