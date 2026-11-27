@@ -188,7 +188,7 @@ func growCOW(ctx context.Context, path string, size int64) error {
 	// Shell out: e2fsprogs is the reference ext4 implementation. resize2fs wants a checked filesystem, and e2fsck exits 1 after a repair.
 	log.WithFunc("hypervisor.growCOW").Debugf(ctx, "exec e2fsck, resize2fs %s", path)
 	out, err := runUninterrupted(ctx, "e2fsck", "-f", "-p", path)
-	if ee, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || ee.ExitCode() > 1) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || ee.ExitCode() != 1) {
 		return fmt.Errorf("e2fsck: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	if out, err = runUninterrupted(ctx, "resize2fs", path); err != nil {

@@ -149,6 +149,40 @@ func TestGrowCOWGrowsAQcow2ByVirtualSize(t *testing.T) {
 	}
 }
 
+func TestGrowCOWRunsResize2fsOnlyAfterACheckedFilesystem(t *testing.T) {
+	tests := []struct {
+		name, e2fsck string
+		wantResize   bool
+	}{
+		{name: "clean", e2fsck: "exit 0", wantResize: true},
+		{name: "repaired", e2fsck: "exit 1", wantResize: true},
+		{name: "errors left", e2fsck: "exit 4"},
+		{name: "killed by a signal", e2fsck: "kill -9 $$"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bin := t.TempDir()
+			ran := filepath.Join(bin, "resize2fs-ran")
+			for tool, script := range map[string]string{"e2fsck": tt.e2fsck, "resize2fs": ": > " + ran} {
+				if err := os.WriteFile(filepath.Join(bin, tool), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
+					t.Fatalf("write %s: %v", tool, err)
+				}
+			}
+			t.Setenv("PATH", bin)
+			cow := filepath.Join(t.TempDir(), types.COWRawFileName)
+			if err := createSparseFile(cow, 1<<20); err != nil {
+				t.Fatalf("create cow: %v", err)
+			}
+
+			err := growCOW(t.Context(), cow, 2<<20)
+
+			if _, statErr := os.Stat(ran); (statErr == nil) != tt.wantResize || (err == nil) != tt.wantResize {
+				t.Errorf("growCOW = %v, resize2fs ran = %v; want resize2fs to run = %v", err, statErr == nil, tt.wantResize)
+			}
+		})
+	}
+}
+
 func TestResizeRefusesAVMWhoseDeleteHasBegun(t *testing.T) {
 	b, ledger := newMeteringTestBackend(t)
 	seedVMRecord(t, b, "vm1", 2, 4<<30, 20<<30, true)
