@@ -34,6 +34,10 @@ Pre-built images are published as split OCI artifacts and imported with `oras pu
 
 ### Clock After Clone and Restore
 
-`cocoon vm clone` and `cocoon vm restore` resume a Windows guest from the snapshot's clock (`clock_catchup=false` on Cloud Hypervisor's restore): the guest's uptime continues from the snapshot, and its date and time are behind by the snapshot's age until something sets them in the guest (for example `Set-Date` over `cocoon vm exec`). Advancing the clock instead moves the guest's uptime forward by the snapshot's age, and a Windows guest whose uptime jumps by 2^31 to 2^32 ms (24.9 to 49.7 days) can stop retransmitting TCP ([cloud-hypervisor#9](https://github.com/cocoonstack/cloud-hypervisor/issues/9)). A Cloud Hypervisor without the option ignores it and advances the clock. A `vm migrate` receive still advances the clock, by the seconds the handoff took.
+`cocoon vm clone` and `cocoon vm restore` resume a Windows guest from the snapshot's clock (`clock_restore_mode=Preserve` on Cloud Hypervisor's restore). The guest's uptime continues from the snapshot, and its date and time are behind by the snapshot's age until something sets them in the guest, for example `Set-Date` over `cocoon vm exec`; `vm clone` prints the command. A hibernated Windows VM wakes the same way, behind by the time it slept.
+
+Cloud Hypervisor's default advances the clock by the snapshot's age, which moves a Windows guest's uptime forward by as much. A jump of 2^31 to 2^32 ms (24.9 to 49.7 days) can leave the guest unable to retransmit TCP ([cloud-hypervisor#9](https://github.com/cocoonstack/cloud-hypervisor/issues/9)), and a snapshot taken from such a guest hands the fault to its clones. Linux guests keep the default, and so does a `vm migrate` receive, where the gap is the seconds the handoff took.
+
+This needs a Cloud Hypervisor that knows `clock_restore_mode`: upstream from 2026-11-23, the cocoonstack `dev` build from v56.0.0-dev-5fd961f7. An older one ignores the field and advances the clock.
 
 For more details, see the [Cloud Hypervisor Windows documentation](https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/docs/windows.md).

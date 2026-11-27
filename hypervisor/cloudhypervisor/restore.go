@@ -99,7 +99,7 @@ func (ch *CloudHypervisor) restoreAfterExtract(ctx context.Context, vmID string,
 
 	hc := utils.NewSocketHTTPClient(sockPath)
 
-	if err = restoreVM(ctx, hc, rec.RunDir, vmCfg.RestoreMode, keepsGuestClockOnRestore(vmCfg)); err != nil {
+	if err = restoreVM(ctx, hc, rec.RunDir, vmCfg.RestoreMode, restoreClockMode(vmCfg, false)); err != nil {
 		return nil, fmt.Errorf("vm.restore: %w", err)
 	}
 	if err = ch.ArmCPUQuota(vmID, &vmCfg.Config); err != nil {

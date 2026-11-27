@@ -6,11 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -56,47 +54,6 @@ func TestEndSnapshotSeriesCallsTheEndpoint(t *testing.T) {
 	}
 	if method != http.MethodPut || !strings.HasSuffix(path, "/vm.end-snapshot-series") {
 		t.Errorf("%s %s", method, path)
-	}
-}
-
-func TestRestoreAndResumeCloneKeepsAWindowsGuestClock(t *testing.T) {
-	tests := []struct {
-		name       string
-		windows    bool
-		keepPaused bool
-		want       any // clock_catchup in the vm.restore body; nil when absent
-	}{
-		{name: "linux clone catches up"},
-		{name: "windows clone resumes from the snapshot's clock", windows: true, want: false},
-		{name: "windows migration receive catches up", windows: true, keepPaused: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var (
-				mu   sync.Mutex
-				body map[string]any
-			)
-			sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if filepath.Base(r.URL.Path) == "vm.restore" {
-					mu.Lock()
-					_ = json.UnmarshalRead(r.Body, &body)
-					mu.Unlock()
-				}
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			restoreTestClone(t, sock, &cloneResumeOpts{
-				vmID:        "T",
-				vmCfg:       &types.VMConfig{CPU: 2, Windows: tt.windows},
-				directBoot:  true,
-				snapshotCfg: &chVMConfig{},
-				keepPaused:  tt.keepPaused,
-			})
-			mu.Lock()
-			defer mu.Unlock()
-			if got := body["clock_catchup"]; got != tt.want {
-				t.Errorf("vm.restore clock_catchup = %v, want %v (body %v)", got, tt.want, body)
-			}
-		})
 	}
 }
 

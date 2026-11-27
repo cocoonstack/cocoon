@@ -42,11 +42,16 @@ const (
 	chMemoryRestoreOnDemand chMemoryRestoreMode = "OnDemand"
 	// chMemoryRestoreMmap maps the snapshot file copy-on-write, sharing page cache across clones of one snapshot.
 	chMemoryRestoreMmap chMemoryRestoreMode = "CopyOnWrite"
+
+	// chClockPreserve resumes the guest from the snapshot's clock; CH's default advances it by the snapshot's age.
+	chClockPreserve chClockRestoreMode = "Preserve"
 )
 
 var runtimeFiles = []string{hypervisor.APISocketName, pidFileName, hypervisor.ConsoleSockName, hypervisor.ConsolePTYName, cmdlineFileName, hypervisor.VsockSockName, snapDiskPrefix + "*"}
 
 type chMemoryRestoreMode string
+
+type chClockRestoreMode string
 
 type chSnapshotConfig struct {
 	DestinationURL string `json:"destination_url"`
@@ -56,8 +61,7 @@ type chSnapshotConfig struct {
 type chRestoreConfig struct {
 	SourceURL         string              `json:"source_url"`
 	MemoryRestoreMode chMemoryRestoreMode `json:"memory_restore_mode,omitempty"`
-	// ClockCatchup unset keeps CH's default: advance the guest clock by the snapshot's age.
-	ClockCatchup *bool `json:"clock_catchup,omitzero"`
+	ClockRestoreMode  chClockRestoreMode  `json:"clock_restore_mode,omitempty"`
 }
 
 func (ch *CloudHypervisor) saveCmdline(ctx context.Context, rec *hypervisor.VMRecord, args []string) {
@@ -148,15 +152,12 @@ func endSnapshotSeries(ctx context.Context, hc *http.Client) error {
 	return err
 }
 
-// restoreVM with keepGuestClock resumes the guest from the snapshot's clock; a CH without clock_catchup ignores the field and catches up.
-func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string, keepGuestClock bool) error {
+func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode string, clock chClockRestoreMode) error {
 	hc.Timeout = hypervisor.VMMemTransferTimeout
 	defer func() { hc.Timeout = utils.HTTPTimeout }()
 	cfg := chRestoreConfig{
-		SourceURL: "file://" + sourceDir,
-	}
-	if keepGuestClock {
-		cfg.ClockCatchup = new(false)
+		SourceURL:        "file://" + sourceDir,
+		ClockRestoreMode: clock,
 	}
 	switch restoreMode {
 	case "", restoreModeCopy: // eager copy is CH's default; leave MemoryRestoreMode unset
@@ -170,9 +171,12 @@ func restoreVM(ctx context.Context, hc *http.Client, sourceDir, restoreMode stri
 	return vmPutJSON(ctx, hc, "vm.restore", "restore request", cfg, http.StatusNoContent)
 }
 
-// keepsGuestClockOnRestore: a Windows guest whose uptime jumps 2^31 to 2^32 ms (24.9 to 49.7 days) can stop retransmitting TCP, so it resumes from the snapshot's clock and its wall clock is stale until set in the guest.
-func keepsGuestClockOnRestore(vmCfg *types.VMConfig) bool {
-	return vmCfg.Windows
+// restoreClockMode keeps a Windows guest on the snapshot's clock: an uptime jump of 2^31 to 2^32 ms can stop its TCP retransmits. A migration receive resumes seconds after the pause, so it advances.
+func restoreClockMode(vmCfg *types.VMConfig, migrationReceive bool) chClockRestoreMode {
+	if vmCfg.Windows && !migrationReceive {
+		return chClockPreserve
+	}
+	return ""
 }
 
 func addDiskVM(ctx context.Context, hc *http.Client, disk chDisk) error {
