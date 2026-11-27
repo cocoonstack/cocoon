@@ -21,6 +21,7 @@ func TestVerifyCOWSizeRejectsAShortRawDisk(t *testing.T) {
 		{"standard tar rebuilt a short cow", 78 << 20, 10 << 30, true},
 		{"cocoon export keeps the apparent size", 10 << 30, 10 << 30, false},
 		{"envelope records no storage", 78 << 20, 0, false},
+		{"an interrupted resize left the file ahead of the record", 20 << 30, 10 << 30, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
