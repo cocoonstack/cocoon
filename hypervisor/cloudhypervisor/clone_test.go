@@ -275,6 +275,47 @@ func TestCloneBlobIDsCloudimgWithoutBackingKeepsTheReservation(t *testing.T) {
 	}
 }
 
+func TestRestoreAndResumeCloneKeepsAWindowsGuestOnTheSnapshotClock(t *testing.T) {
+	tests := []struct {
+		name       string
+		windows    bool
+		keepPaused bool
+		want       any
+	}{
+		{name: "a linux clone advances"},
+		{name: "a windows clone preserves", windows: true, want: "Preserve"},
+		{name: "a windows migration receive advances", windows: true, keepPaused: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				mu   sync.Mutex
+				body map[string]any
+			)
+			sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if filepath.Base(r.URL.Path) == "vm.restore" {
+					mu.Lock()
+					_ = json.UnmarshalRead(r.Body, &body)
+					mu.Unlock()
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			restoreTestClone(t, sock, &cloneResumeOpts{
+				vmID:        "T",
+				vmCfg:       &types.VMConfig{CPU: 2, Windows: tt.windows},
+				directBoot:  true,
+				snapshotCfg: &chVMConfig{},
+				keepPaused:  tt.keepPaused,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if got := body["clock_restore_mode"]; got != tt.want {
+				t.Errorf("vm.restore clock_restore_mode = %v, want %v (body %v)", got, tt.want, body)
+			}
+		})
+	}
+}
+
 func TestRestoreAndResumeCloneHotplugsByRoleWithQueueCPUs(t *testing.T) {
 	var (
 		mu    sync.Mutex

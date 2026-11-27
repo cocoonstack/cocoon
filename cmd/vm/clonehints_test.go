@@ -31,3 +31,13 @@ func TestPostCloneHintsGateBalloonRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestPostCloneHintsTellAWindowsGuestToSetItsClock(t *testing.T) {
+	for _, windows := range []bool{true, false} {
+		vm := &types.VM{Hypervisor: "cloud-hypervisor", Config: types.VMConfig{Name: "c", Memory: 4 << 30, Windows: windows, ImageType: types.ImageTypeCloudImg}}
+		out := clitest.CaptureStdout(t, func() { printPostCloneHints(vm) })
+		if got := strings.Contains(out, "Set-Date"); got != windows {
+			t.Errorf("windows=%v: Set-Date hint = %v (output: %q)", windows, got, out)
+		}
+	}
+}

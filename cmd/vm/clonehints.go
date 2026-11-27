@@ -26,6 +26,10 @@ func printPostCloneHints(vm *types.VM) {
 		fmt.Println()
 		fmt.Println(`  netsh interface ipv4 set address name="<ADAPTER>" static <IP> <MASK> <GATEWAY>`)
 		fmt.Println()
+		fmt.Println("The guest resumes at the snapshot's date and time. Set them inside the guest:")
+		fmt.Println()
+		fmt.Println(`  powershell -nop -c "Set-Date '<DATE TIME>'"`)
+		fmt.Println()
 		return
 	}
 

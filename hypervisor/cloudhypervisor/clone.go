@@ -167,7 +167,7 @@ func (ch *CloudHypervisor) restoreAndResumeClone(ctx context.Context, pid int, s
 
 	hc := utils.NewSocketHTTPClient(sockPath)
 
-	if err = restoreVM(ctx, hc, runDir, opts.vmCfg.RestoreMode); err != nil {
+	if err = restoreVM(ctx, hc, runDir, opts.vmCfg.RestoreMode, restoreClockMode(opts.vmCfg, opts.keepPaused)); err != nil {
 		return fmt.Errorf("vm.restore: %w", err)
 	}
 
