@@ -137,6 +137,29 @@ func TestCmdlineFollowsTheLiveNICs(t *testing.T) {
 	}
 }
 
+func TestNICQueuesFollowTheVCPUs(t *testing.T) {
+	tests := []struct {
+		name            string
+		cpu, made, want int
+	}{
+		{name: "as created", cpu: 2, made: 4, want: 4},
+		{name: "grown from 2 to 4 vCPUs", cpu: 4, made: 4, want: 8},
+		{name: "shrunk from 4 to 2 vCPUs", cpu: 2, made: 8, want: 4},
+		{name: "a single-queue TAP stays single", cpu: 4, made: 2, want: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &hypervisor.VMRecord{
+				Config:         types.VMConfig{Config: types.Config{CPU: tt.cpu, Memory: 1 << 30}},
+				NetworkConfigs: []*types.NetworkConfig{{TAP: "tapvm1-0", NumQueues: tt.made}},
+			}
+			if got := buildVMConfig(rec, "", nil).Nets[0].NumQueues; got != tt.want {
+				t.Errorf("num_queues = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPayloadFollowsBootShape(t *testing.T) {
 	storageConfigs := []*types.StorageConfig{
 		{Path: "/run/layer0.erofs", RO: true, Role: types.StorageRoleLayer, Serial: "l0"},

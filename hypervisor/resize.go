@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/cocoonstack/cocoon/cgroup"
 	"github.com/cocoonstack/cocoon/metering"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 )
 
@@ -40,6 +42,11 @@ func (b *Backend) Resize(ctx context.Context, ref string, spec ResizeSpec) (*typ
 	cfg.CPU, cfg.Memory, cfg.Storage = cmp.Or(spec.CPU, old.CPU), cmp.Or(spec.Memory, old.Memory), cmp.Or(spec.Storage, old.Storage)
 	if err = validateResize(&old, cfg); err != nil {
 		return nil, err
+	}
+	if cfg.CPU == 1 && slices.ContainsFunc(rec.NetworkConfigs, func(nc *types.NetworkConfig) bool {
+		return nc != nil && nc.NumQueues > network.NetNumQueues(1)
+	}) {
+		return nil, fmt.Errorf("vm %s has a multi-queue NIC, which needs 2 vCPUs or more", id)
 	}
 	if cfg.Storage > old.Storage {
 		if err = growCOW(ctx, DiskPathByRole(rec.StorageConfigs, types.StorageRoleCOW), cfg.Storage); err != nil {

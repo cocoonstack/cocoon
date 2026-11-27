@@ -31,6 +31,8 @@ func TestResize(t *testing.T) {
 		{name: "a smaller disk", spec: ResizeSpec{Storage: 10 * gib}, wantErr: "only grows"},
 		{name: "memory under the floor", spec: ResizeSpec{Memory: 256 << 20}, wantErr: "--memory must be at least 512M"},
 		{name: "more vCPUs than the host", spec: ResizeSpec{CPU: HostCPUCount() + 1}, wantErr: "exceeds host cores"},
+		{name: "one vCPU under a multi-queue NIC", prepare: func(r *VMRecord) { r.NetworkConfigs = []*types.NetworkConfig{{TAP: "tap0", NumQueues: 4}} }, spec: ResizeSpec{CPU: 1}, wantErr: "multi-queue NIC"},
+		{name: "one vCPU under a single-queue NIC", prepare: func(r *VMRecord) { r.NetworkConfigs = []*types.NetworkConfig{{TAP: "tap0", NumQueues: 2}} }, spec: ResizeSpec{CPU: 1}, want: metering.Shape{CPU: 1, MemBytes: 4 * gib, StorageBytes: 20 * gib}},
 		{name: "a kept burst above the new quota", prepare: func(r *VMRecord) { r.Config.CPUBurstUs = 150000 }, spec: ResizeSpec{CPU: 1}, wantErr: "--cpu-burst-us"},
 	}
 	for _, tt := range tests {
