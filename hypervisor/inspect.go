@@ -2,6 +2,7 @@ package hypervisor
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"slices"
@@ -67,6 +68,25 @@ func (b *Backend) ResolveAndLoad(ctx context.Context, ref string) (string, VMRec
 		return err
 	})
 	return id, rec, err
+}
+
+func (b *Backend) SetSize(ctx context.Context, ref string, cpu int, memory int64) error {
+	id, err := b.resolveRef(ctx, ref)
+	if err != nil {
+		return err
+	}
+	unlock, err := b.LockVMOps(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return b.UpdateRecord(ctx, id, func(r *VMRecord) error {
+		if r.State == types.VMStateRunning || r.State == types.VMStateCreating {
+			return fmt.Errorf("vm %s is %s; stop it first", id, r.State)
+		}
+		r.Config.CPU, r.Config.Memory = cpu, memory
+		return nil
+	})
 }
 
 // UpdateRecord runs mutate on the VM's record inside one transaction and persists the result.

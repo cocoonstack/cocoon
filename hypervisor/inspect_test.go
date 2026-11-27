@@ -29,6 +29,26 @@ func TestToVMClearsPersistedRuntimeFieldsWhenStopped(t *testing.T) {
 	}
 }
 
+func TestSetSize(t *testing.T) {
+	b, _ := newMeteringTestBackend(t)
+	seedVMRecord(t, b, "stopped", 2, 4<<30, 20<<30, true)
+	seedRunningVM(t, b, "running", 2, 4<<30, 20<<30)
+
+	if err := b.SetSize(t.Context(), "stopped", 4, 8<<30); err != nil {
+		t.Fatalf("SetSize stopped: %v", err)
+	}
+	if rec := recordOf(t, b, "stopped"); rec.Config.CPU != 4 || rec.Config.Memory != 8<<30 {
+		t.Errorf("stopped VM size = %d/%d, want 4/%d", rec.Config.CPU, rec.Config.Memory, int64(8<<30))
+	}
+
+	if err := b.SetSize(t.Context(), "running", 4, 8<<30); err == nil {
+		t.Error("SetSize on a running VM succeeded")
+	}
+	if rec := recordOf(t, b, "running"); rec.Config.CPU != 2 || rec.Config.Memory != 4<<30 {
+		t.Errorf("running VM size = %d/%d, want unchanged 2/%d", rec.Config.CPU, rec.Config.Memory, int64(4<<30))
+	}
+}
+
 func TestToVMRunningConsolePath(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -31,6 +31,11 @@ type RunningViewer interface {
 	RunningView(ctx context.Context, ref string) (*RunningView, error)
 }
 
+// Sizer sets a stopped VM's vCPUs and memory; its next start cold-boots at that size.
+type Sizer interface {
+	SetSize(ctx context.Context, ref string, cpu int, memory int64) error
+}
+
 type RunningView struct {
 	Fs      []fs.Attached
 	Devices []vfio.Attached
