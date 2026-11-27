@@ -21,6 +21,7 @@ const (
 	ReasonClone      Reason = "clone"
 	ReasonRestore    Reason = "restore"
 	ReasonMigrate    Reason = "migrate"
+	ReasonResize     Reason = "resize"
 	ReasonStopUser   Reason = "stop-user"
 	ReasonStopCrash  Reason = "stop-crash"
 	ReasonVMRemove   Reason = "vm-rm"

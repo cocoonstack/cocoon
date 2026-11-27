@@ -81,7 +81,7 @@ func VerifyCOWSize(dir string, cfg types.SnapshotConfig) error {
 	if err != nil || cfg.Storage <= 0 {
 		return nil
 	}
-	if st.Size() != cfg.Storage {
+	if st.Size() < cfg.Storage {
 		return fmt.Errorf("%s in %s is %d bytes but the envelope records %d: a third-party tar drops cocoon's sparse records and rebuilds a short, shifted disk; use the export tar as cocoon wrote it, or `snapshot export --to-dir`",
 			types.COWRawFileName, dir, st.Size(), cfg.Storage)
 	}

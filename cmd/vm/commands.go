@@ -103,6 +103,17 @@ func Command(h Handler) *cobra.Command {
 	}
 	reseedCmd.Flags().Bool("machine-id", false, "also regenerate /etc/machine-id (use after clone, not restore)")
 
+	resizeCmd := &cobra.Command{
+		Use:   "resize VM",
+		Short: "Set a stopped VM's vCPUs, memory and COW disk size; its next start cold-boots at that size",
+		Args:  cobra.ExactArgs(1),
+		RunE:  h.Resize,
+	}
+	resizeCmd.Flags().Int("cpu", 0, "boot CPUs (default: keep)")
+	resizeCmd.Flags().String("memory", "", "memory size (default: keep)")
+	resizeCmd.Flags().String("storage", "", "COW disk size; it only grows (default: keep)")
+	resizeCmd.MarkFlagsOneRequired("cpu", "memory", "storage")
+
 	logsCmd := &cobra.Command{
 		Use:   "logs [flags] VM",
 		Short: "Print the per-VM hypervisor log file",
@@ -187,6 +198,7 @@ func Command(h Handler) *cobra.Command {
 		consoleCmd,
 		execCmd,
 		reseedCmd,
+		resizeCmd,
 		logsCmd,
 		rmCmd,
 		reconcileStaleCreateCmd,

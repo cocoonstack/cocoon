@@ -2,12 +2,15 @@ package hypervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/projecteru2/core/log"
 
@@ -100,6 +103,24 @@ func PrepareDataDisks(ctx context.Context, baseDir string, specs []types.DataDis
 	return out, nil
 }
 
+// ExpandQcow2 grows the qcow2 at path to targetSize of virtual disk; a smaller target is a no-op.
+func ExpandQcow2(ctx context.Context, path string, targetSize int64) error {
+	hdr, ok, err := utils.ReadQcow2Header(path)
+	if err != nil {
+		return fmt.Errorf("read qcow2 header %s: %w", path, err)
+	}
+	if !ok {
+		return fmt.Errorf("%s is not a qcow2 image", path)
+	}
+	if targetSize <= hdr.VirtualSize {
+		return nil
+	}
+	if err := utils.RunQemuImg(ctx, "resize", path, strconv.FormatInt(targetSize, 10)); err != nil {
+		return fmt.Errorf("resize %s: %w", path, err)
+	}
+	return nil
+}
+
 func initCOWFilesystem(ctx context.Context, path string) error {
 	// Shell out: no Go ext4 formatter writes a lazy-init, discard-ready filesystem.
 	log.WithFunc("hypervisor.initCOWFilesystem").Debugf(ctx, "exec mkfs.ext4 %s", path)
@@ -139,6 +160,47 @@ func copyPairs(ctx context.Context, pairs [][2]string) error {
 		return struct{}{}, nil
 	})
 	return err
+}
+
+// growCOW grows a stopped VM's COW disk to size: a qcow2 by virtual size, a raw disk together with the ext4 cocoon formatted it with.
+func growCOW(ctx context.Context, path string, size int64) error {
+	hdr, qcow2, err := utils.ReadQcow2Header(path)
+	if err != nil {
+		return err
+	}
+	cur := hdr.VirtualSize
+	if !qcow2 {
+		st, statErr := os.Stat(path)
+		if statErr != nil {
+			return statErr
+		}
+		cur = st.Size()
+	}
+	if cur > size {
+		return fmt.Errorf("%s is already %d bytes; ask for at least that", path, cur)
+	}
+	if qcow2 {
+		return ExpandQcow2(ctx, path, size)
+	}
+	if err = os.Truncate(path, size); err != nil {
+		return fmt.Errorf("truncate %s: %w", path, err)
+	}
+	// Shell out: e2fsprogs is the reference ext4 implementation. resize2fs wants a checked filesystem, and e2fsck exits 1 after a repair.
+	log.WithFunc("hypervisor.growCOW").Debugf(ctx, "exec e2fsck, resize2fs %s", path)
+	out, err := runUninterrupted(ctx, "e2fsck", "-f", "-p", path)
+	if ee, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || ee.ExitCode() != 1) {
+		return fmt.Errorf("e2fsck: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	if out, err = runUninterrupted(ctx, "resize2fs", path); err != nil {
+		return fmt.Errorf("resize2fs: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func runUninterrupted(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), name, args...) //nolint:gosec
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd.CombinedOutput()
 }
 
 // createSparseFile creates path truncated to size; os.Truncate alone won't create a missing file.

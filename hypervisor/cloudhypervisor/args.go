@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
+	"github.com/cocoonstack/cocoon/network"
 	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
@@ -78,7 +79,11 @@ func buildVMConfig(rec *hypervisor.VMRecord, consoleSockPath string, dnsServers 
 	}
 
 	for _, nc := range rec.NetworkConfigs {
-		cfg.Nets = append(cfg.Nets, networkConfigToNet(nc))
+		n := networkConfigToNet(nc)
+		if n.NumQueues > network.NetNumQueues(1) {
+			n.NumQueues = network.NetNumQueues(cpu)
+		}
+		cfg.Nets = append(cfg.Nets, n)
 	}
 
 	if boot := rec.BootConfig; boot != nil {

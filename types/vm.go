@@ -60,14 +60,8 @@ func (cfg *VMConfig) Validate() error {
 	if !validName.MatchString(cfg.Name) {
 		return fmt.Errorf("vm name %q is invalid: must match %s (max 63 chars)", cfg.Name, validName.String())
 	}
-	if cfg.CPU <= 0 {
-		return fmt.Errorf("--cpu must be at least 1, got %d", cfg.CPU)
-	}
-	if cfg.Memory < 512<<20 {
-		return fmt.Errorf("--memory must be at least 512M, got %d", cfg.Memory)
-	}
-	if cfg.Storage < 10<<30 {
-		return fmt.Errorf("--storage must be at least 10G, got %d", cfg.Storage)
+	if err := cfg.ValidateSize(); err != nil {
+		return err
 	}
 	if err := validateQueueSize("--queue-size", cfg.QueueSize); err != nil {
 		return err
@@ -83,6 +77,20 @@ func (cfg *VMConfig) Validate() error {
 	}
 	if cfg.Password != "" && shellUnsafe.MatchString(cfg.Password) {
 		return fmt.Errorf("--password contains unsafe shell or YAML characters")
+	}
+	return nil
+}
+
+// ValidateSize checks the vCPU, memory and COW disk floors.
+func (cfg *VMConfig) ValidateSize() error {
+	if cfg.CPU <= 0 {
+		return fmt.Errorf("--cpu must be at least 1, got %d", cfg.CPU)
+	}
+	if cfg.Memory < 512<<20 {
+		return fmt.Errorf("--memory must be at least 512M, got %d", cfg.Memory)
+	}
+	if cfg.Storage < 10<<30 {
+		return fmt.Errorf("--storage must be at least 10G, got %d", cfg.Storage)
 	}
 	return nil
 }

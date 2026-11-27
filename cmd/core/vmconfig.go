@@ -21,14 +21,13 @@ import (
 var kernelViaFirmware = runtime.GOARCH == "arm64"
 
 func VMConfigFromFlags(cmd *cobra.Command, image string) (*types.VMConfig, error) {
-	memStr, storStr := cliutil.FlagStr(cmd, "memory"), cliutil.FlagStr(cmd, "storage")
-	memBytes, err := types.ParseSize(memStr)
+	memBytes, err := cliutil.FlagSize(cmd, "memory")
 	if err != nil {
-		return nil, fmt.Errorf("invalid --memory %q: %w", memStr, err)
+		return nil, err
 	}
-	storBytes, err := types.ParseSize(storStr)
+	storBytes, err := cliutil.FlagSize(cmd, "storage")
 	if err != nil {
-		return nil, fmt.Errorf("invalid --storage %q: %w", storStr, err)
+		return nil, err
 	}
 
 	dataDisks, err := parseDataDiskFlags(cliutil.FlagStrings(cmd, "data-disk"))

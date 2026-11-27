@@ -12,6 +12,8 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/spf13/cobra"
+
+	"github.com/cocoonstack/cocoon/types"
 )
 
 const (
@@ -111,6 +113,19 @@ func FlagInt(cmd *cobra.Command, name string) int { v, _ := cmd.Flags().GetInt(n
 func FlagInt64(cmd *cobra.Command, name string) int64 { v, _ := cmd.Flags().GetInt64(name); return v }
 
 func FlagStr(cmd *cobra.Command, name string) string { v, _ := cmd.Flags().GetString(name); return v }
+
+// FlagSize reads a byte-size flag ("512M", "20G"); an empty value is 0.
+func FlagSize(cmd *cobra.Command, name string) (int64, error) {
+	s := FlagStr(cmd, name)
+	if s == "" {
+		return 0, nil
+	}
+	n, err := types.ParseSize(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --%s %q: %w", name, s, err)
+	}
+	return n, nil
+}
 
 func FlagStrings(cmd *cobra.Command, name string) []string {
 	v, _ := cmd.Flags().GetStringArray(name)

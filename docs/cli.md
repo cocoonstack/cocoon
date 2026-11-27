@@ -2,7 +2,7 @@
 
 Every command and flag. Concept guides: [VM lifecycle](vm.md), [networking](networking.md), [snapshots](snapshots.md), [devices](devices.md), [GC](gc.md).
 
-Guides that document specific verbs and flags: `vm stop`/`vm rm` in [Shutdown Behavior](vm.md#shutdown-behavior), `vm net` in [NIC hot-resize](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci), `vm balloon` in [Runtime Balloon Target](vm.md#runtime-balloon-target), `vm fs`/`device`/`disk` in [Runtime Device Attach](devices.md), `gc` flags in [GC](gc.md), and `daemon` flags in [Daemon](daemon.md#running-it).
+Guides that document specific verbs and flags: `vm stop`/`vm rm` in [Shutdown Behavior](vm.md#shutdown-behavior), `vm net` in [NIC hot-resize](networking.md#nic-hot-resize-cloud-hypervisor-or-firecracker-with---pci), `vm balloon` in [Runtime Balloon Target](vm.md#runtime-balloon-target), `vm resize` in [Resizing a Stopped VM](vm.md#resizing-a-stopped-vm), `vm fs`/`device`/`disk` in [Runtime Device Attach](devices.md), `gc` flags in [GC](gc.md), and `daemon` flags in [Daemon](daemon.md#running-it).
 
 ## CLI Commands
 
@@ -25,6 +25,7 @@ cocoon
 │   ├── console [flags] VM         Attach interactive console
 │   ├── exec [flags] VM -- CMD     Run a command in a running VM via cocoon-agent (vsock)
 │   ├── reseed [--machine-id] VM   Force a CRNG reseed inside the guest (fresh entropy over vsock)
+│   ├── resize [flags] VM          Set a stopped VM's vCPUs, memory and disk size for its next cold boot
 │   ├── logs [-f] [--tail N] VM    Print the per-VM hypervisor log file
 │   ├── rm [flags] VM [VM...]      Delete VM(s) (--force kills running VMs immediately)
 │   ├── reconcile-stale-create VM  Reclaim an ownerless creating placeholder (JSON outcome)
@@ -282,6 +283,16 @@ Applies to `cocoon vm reseed` (forces fresh guest entropy over vsock; runs autom
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--machine-id` | `false` | Also regenerate `/etc/machine-id` (use after clone, not restore) |
+
+### Resize Flags
+
+Applies to `cocoon vm resize`; at least one flag is required, and an omitted one keeps the VM's current value:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--cpu` | keep | Boot vCPUs |
+| `--memory` | keep | Memory size |
+| `--storage` | keep | COW disk size; it only grows |
 
 ### Status Flags
 

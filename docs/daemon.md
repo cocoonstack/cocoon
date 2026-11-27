@@ -66,7 +66,7 @@ holes of a sparse disk do not count. A VM's is its configured disk size.
 `kind` is one of `vm.compute.start`, `vm.compute.stop`, `vm.storage.start`,
 `vm.storage.stop`, `snap.storage.start`, `snap.storage.stop` — downstream pairs
 each `*.start` with its `*.stop` by id. `reason` is one of `boot`, `restart`,
-`clone`, `restore`, `migrate`, `stop-user`, `stop-crash`, `vm-rm`, `snap-rm`.
+`clone`, `restore`, `migrate`, `resize`, `stop-user`, `stop-crash`, `vm-rm`, `snap-rm`.
 
 One operational note: the daemon is the first long-lived writer of the metering
 ledger, and the `file` backend holds that file open for its whole lifetime. If
