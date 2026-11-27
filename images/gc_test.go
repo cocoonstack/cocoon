@@ -89,14 +89,7 @@ func TestLegacyDifferentialTrace(t *testing.T) {
 	if err := os.WriteFile(path, baseline, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	engine, err := metajson.Open(metajson.Namespace{
-		Name: "images_test", FilePath: path, LockPath: filepath.Join(dir, "images.lock"), Codec: testImageTables,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = engine.Close() })
-	store := NewMetaStore[fixtureEntry](engine, "images_test")
+	store := NewMetaStore[fixtureEntry](openTestEngine(t, dir, "images_test"), "images_test")
 
 	if err := store.Update(ctx, func(*Index[fixtureEntry]) error { return nil }); err != nil {
 		t.Fatal(err)

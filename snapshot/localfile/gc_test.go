@@ -209,7 +209,7 @@ func TestSizeAndLastAccessedAtPopulated(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	id := testID(t)
+	id := utils.GenerateID()
 	before := time.Now()
 	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "sized"},
 		makeTar(t, map[string][]byte{"a": []byte("hello"), "b": []byte("world!!")})); err != nil {
@@ -236,7 +236,7 @@ func TestRestoreUpdatesLastAccessedAt(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "touched"},
 		makeTar(t, map[string][]byte{"x": []byte("x")})); err != nil {
 		t.Fatal(err)
@@ -319,7 +319,7 @@ func TestGCModule_EvictRealRecordEmitsSnapStorageStop(t *testing.T) {
 	ctx := t.Context()
 
 	for _, name := range []string{"snap-a", "snap-b"} {
-		id := testID(t)
+		id := utils.GenerateID()
 		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: name, Hypervisor: "cloud-hypervisor"},
 			makeTar(t, map[string][]byte{"cow.raw": []byte("x")})); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
@@ -356,7 +356,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 	if err := os.MkdirAll(orphanDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	stalePendingID := testID(t)
+	stalePendingID := utils.GenerateID()
 	if err := lf.update(ctx, func(tx *snapTx) error {
 		return tx.Put(stalePendingID, &snapshotRecord{
 			ID:        stalePendingID,
@@ -380,7 +380,7 @@ func TestGCModule_OrphanAndStalePendingDoNotEmit(t *testing.T) {
 func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "fresh-pending"}); err != nil {
 		t.Fatalf("beginCreate: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestGCCollectsFreshPendingWithFreeLease(t *testing.T) {
 func TestGCSkipsPendingHeldByLiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	release, err := lf.acquireBuildLease(ctx, id)
 	if err != nil {
 		t.Fatalf("acquireBuildLease: %v", err)
@@ -423,7 +423,7 @@ func TestDeleteReclaimsTheLeaseFile(t *testing.T) {
 	ctx := t.Context()
 
 	id, err := lf.Create(ctx, &types.SnapshotConfig{
-		ID: testID(t), Name: "leased", Hypervisor: "cloud-hypervisor",
+		ID: utils.GenerateID(), Name: "leased", Hypervisor: "cloud-hypervisor",
 	}, makeTar(t, map[string][]byte{"cow.raw": []byte("x")}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -451,7 +451,7 @@ func TestGCSweepsALeaseWithNoRecordOrDataDir(t *testing.T) {
 
 func TestGCCollectsACrashedBuildAndItsLeaseInOnePass(t *testing.T) {
 	lf := newTestLF(t)
-	id := testID(t)
+	id := utils.GenerateID()
 	dataDir := lf.conf.SnapshotDataDir(id)
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		t.Fatal(err)
@@ -475,7 +475,7 @@ func TestGCCollectsACrashedBuildAndItsLeaseInOnePass(t *testing.T) {
 func TestGCKeepsALeaseHeldByALiveBuild(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	release, err := lf.acquireBuildLease(ctx, id)
 	if err != nil {
 		t.Fatalf("acquireBuildLease: %v", err)
@@ -565,7 +565,7 @@ func createSnaps(t *testing.T, lf *LocalFile, files map[string][]byte, names ...
 	t.Helper()
 	ids := make([]string, 0, len(names))
 	for _, name := range names {
-		id, err := lf.Create(t.Context(), &types.SnapshotConfig{ID: testID(t), Name: name}, makeTar(t, files))
+		id, err := lf.Create(t.Context(), &types.SnapshotConfig{ID: utils.GenerateID(), Name: name}, makeTar(t, files))
 		if err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
