@@ -13,6 +13,7 @@ import (
 	meteringcapture "github.com/cocoonstack/cocoon/metering/capture"
 	"github.com/cocoonstack/cocoon/snapshot"
 	"github.com/cocoonstack/cocoon/types"
+	"github.com/cocoonstack/cocoon/utils"
 )
 
 func TestSharedLeaseEscalationLeasedRollsBack(t *testing.T) {
@@ -74,7 +75,7 @@ func TestSharedLeaseEscalationDeletingRollsForward(t *testing.T) {
 func TestDeletingPendingRecoverySkipsSnapStorageStop(t *testing.T) {
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.beginCreate(t.Context(), &types.SnapshotConfig{ID: id, Name: "pending", Hypervisor: "cloud-hypervisor"}); err != nil {
 		t.Fatalf("beginCreate: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestDeletingPendingRecoverySkipsSnapStorageStop(t *testing.T) {
 func TestDeletePendingSkipsSnapStorageStop(t *testing.T) {
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.beginCreate(t.Context(), &types.SnapshotConfig{ID: id, Name: "pending", Hypervisor: "cloud-hypervisor"}); err != nil {
 		t.Fatalf("beginCreate: %v", err)
 	}

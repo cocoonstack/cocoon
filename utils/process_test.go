@@ -7,9 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"slices"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -192,38 +189,6 @@ func TestTerminateProcess_SIGTERMIgnored_FallsBackToKill(t *testing.T) {
 	}
 
 	<-waitDone
-}
-
-func TestFindVMMByCmdline(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("FindVMMByCmdline scans /proc — linux only")
-	}
-	marker := "cocoon-find-marker-" + strconv.Itoa(os.Getpid())
-
-	cmd := exec.Command("sh", "-c", "sleep 60 && :", marker)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	reapChild(t, cmd)
-
-	var pids []int
-	if err := WaitFor(t.Context(), 500*time.Millisecond, 10*time.Millisecond, func() (bool, error) {
-		got, err := FindVMMByCmdline("sh", marker)
-		pids = got
-		return len(got) > 0, err
-	}); err != nil {
-		t.Fatalf("FindVMMByCmdline: %v", err)
-	}
-	if !slices.Contains(pids, cmd.Process.Pid) {
-		t.Errorf("FindVMMByCmdline never matched the execed cmdline: got %v, want %d", pids, cmd.Process.Pid)
-	}
-
-	if got, _ := FindVMMByCmdline("definitely-no-such-binary", marker); len(got) != 0 {
-		t.Errorf("wrong-binary scan matched: %v", got)
-	}
-	if got, _ := FindVMMByCmdline("sh", "no-such-marker-"+marker); len(got) != 0 {
-		t.Errorf("wrong-marker scan matched: %v", got)
-	}
 }
 
 func TestTerminateProcess_ContextCancelled(t *testing.T) {

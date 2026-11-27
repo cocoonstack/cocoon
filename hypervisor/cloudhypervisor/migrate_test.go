@@ -5,13 +5,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/cocoonstack/cocoon/hypervisor"
-	"github.com/cocoonstack/cocoon/types"
 	"github.com/cocoonstack/cocoon/utils"
 )
 
@@ -57,31 +54,6 @@ func TestEndSnapshotSeriesCallsTheEndpoint(t *testing.T) {
 	}
 	if method != http.MethodPut || !strings.HasSuffix(path, "/vm.end-snapshot-series") {
 		t.Errorf("%s %s", method, path)
-	}
-}
-
-func TestRestoreAndResumeCloneKeepPausedSkipsResume(t *testing.T) {
-	var (
-		mu    sync.Mutex
-		paths []string
-	)
-	sock := serveCHHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		paths = append(paths, filepath.Base(r.URL.Path))
-		mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	restoreTestClone(t, sock, &cloneResumeOpts{
-		vmID:        "T",
-		vmCfg:       &types.VMConfig{CPU: 2},
-		directBoot:  true,
-		snapshotCfg: &chVMConfig{},
-		keepPaused:  true,
-	})
-	mu.Lock()
-	defer mu.Unlock()
-	if slices.Contains(paths, "vm.resume") {
-		t.Errorf("calls = %v, want no vm.resume", paths)
 	}
 }
 

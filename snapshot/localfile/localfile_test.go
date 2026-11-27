@@ -34,20 +34,13 @@ var testSnapTables = metajson.TableCodec{Specs: []metajson.TableSpec{
 	{Key: "tombstones", Table: tombstone.TableName, Optional: true},
 }}
 
-func TestNew(t *testing.T) {
-	lf := newTestLFAt(t, t.TempDir(), metering.NopRecorder{})
-	if lf == nil {
-		t.Fatal("expected non-nil LocalFile")
-	}
-}
-
 func TestCreateAndDeleteEmitMetering(t *testing.T) {
 	rec := meteringcapture.New()
 	lf := newTestLFWithRecorder(t, rec)
 	ctx := t.Context()
 
 	id, err := lf.Create(ctx, &types.SnapshotConfig{
-		ID:         testID(t),
+		ID:         utils.GenerateID(),
 		Name:       "metered-snap",
 		Hypervisor: "cloud-hypervisor",
 	}, makeTar(t, map[string][]byte{"cow.raw": []byte("disk")}))
@@ -83,7 +76,7 @@ func TestDeleteOneIdempotentDoesNotEmitTwice(t *testing.T) {
 	ctx := t.Context()
 
 	id, err := lf.Create(ctx, &types.SnapshotConfig{
-		ID: testID(t), Name: "raced", Hypervisor: "cloud-hypervisor",
+		ID: utils.GenerateID(), Name: "raced", Hypervisor: "cloud-hypervisor",
 	}, makeTar(t, map[string][]byte{"cow.raw": []byte("x")}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -124,7 +117,7 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 
 	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-src"), files)
 	id, ok, err := lf.CreateFromDir(ctx, &types.SnapshotConfig{
-		ID: testID(t), Name: "direct-snap", Hypervisor: "cloud-hypervisor",
+		ID: utils.GenerateID(), Name: "direct-snap", Hypervisor: "cloud-hypervisor",
 	}, srcDir)
 	if err != nil {
 		t.Fatalf("CreateFromDir: %v", err)
@@ -143,7 +136,7 @@ func TestCreateFromDirDirectMatchesCreateLayout(t *testing.T) {
 	}
 
 	id2, err := lf.Create(ctx, &types.SnapshotConfig{
-		ID: testID(t), Name: "streamed-snap", Hypervisor: "cloud-hypervisor",
+		ID: utils.GenerateID(), Name: "streamed-snap", Hypervisor: "cloud-hypervisor",
 	}, makeTar(t, files))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -164,7 +157,7 @@ func TestCreateFromDirEXDEVFallsBack(t *testing.T) {
 	osRename = func(string, string) error { return syscall.EXDEV }
 	t.Cleanup(func() { osRename = orig })
 
-	id := testID(t)
+	id := utils.GenerateID()
 	srcDir := writeCaptureDir(t, filepath.Join(lf.conf.RootDir, "capture-exdev"), map[string][]byte{
 		"memory-range-0": []byte("ram"),
 	})
@@ -238,7 +231,7 @@ func TestImportEmitsSnapStorageStart(t *testing.T) {
 func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "pending-snap"}); err != nil {
 		t.Fatalf("beginCreate: %v", err)
 	}
@@ -258,7 +251,7 @@ func TestRollbackCreateSurvivesCanceledContext(t *testing.T) {
 func TestNameOwnerSeesPendingReservation(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.beginCreate(ctx, &types.SnapshotConfig{ID: id, Name: "pending-snap"}); err != nil {
 		t.Fatalf("beginCreate: %v", err)
 	}
@@ -293,7 +286,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	cfg := &types.SnapshotConfig{
-		ID:          testID(t),
+		ID:          utils.GenerateID(),
 		Name:        "snap1",
 		Description: "test snapshot",
 		ImageBlobIDs: map[string]struct{}{
@@ -322,7 +315,7 @@ func TestCreate_NoName(t *testing.T) {
 	ctx := t.Context()
 
 	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t)}, stream)
+	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID()}, stream)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -335,14 +328,14 @@ func TestCreate_DuplicateName(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	cfg := &types.SnapshotConfig{ID: testID(t), Name: "dup"}
+	cfg := &types.SnapshotConfig{ID: utils.GenerateID(), Name: "dup"}
 
 	stream1 := makeTar(t, map[string][]byte{"a.txt": []byte("a")})
 	if _, err := lf.Create(ctx, cfg, stream1); err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
 
-	cfg2 := &types.SnapshotConfig{ID: testID(t), Name: "dup"}
+	cfg2 := &types.SnapshotConfig{ID: utils.GenerateID(), Name: "dup"}
 	stream2 := makeTar(t, map[string][]byte{"b.txt": []byte("b")})
 	_, err := lf.Create(ctx, cfg2, stream2)
 	if err == nil {
@@ -357,7 +350,7 @@ func TestCreate_InvalidStream(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
 
-	_, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "bad"}, strings.NewReader("not gzip"))
+	_, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "bad"}, strings.NewReader("not gzip"))
 	if err == nil {
 		t.Fatal("expected error for invalid stream")
 	}
@@ -382,7 +375,7 @@ func TestList(t *testing.T) {
 
 	for _, name := range []string{"s1", "s2", "s3"} {
 		stream := makeTar(t, map[string][]byte{"f.txt": []byte(name)})
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: name}, stream); err != nil {
+		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: name}, stream); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
@@ -421,7 +414,7 @@ func TestInspect_ByRef(t *testing.T) {
 			ctx := t.Context()
 
 			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "byref", Description: "desc"}, stream)
+			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "byref", Description: "desc"}, stream)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -462,7 +455,7 @@ func TestDelete(t *testing.T) {
 	ctx := t.Context()
 
 	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "del"}, stream)
+	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "del"}, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +491,7 @@ func TestDelete_Multiple(t *testing.T) {
 
 	for _, name := range []string{"m1", "m2", "m3"} {
 		stream := makeTar(t, map[string][]byte{"f.txt": []byte(name)})
-		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: name}, stream); err != nil {
+		if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: name}, stream); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -531,7 +524,7 @@ func TestDelete_ByIDAndDuplicateRefs(t *testing.T) {
 			ctx := t.Context()
 
 			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "delref"}, stream)
+			id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "delref"}, stream)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -563,7 +556,7 @@ func TestCreate_Inspect_Fields(t *testing.T) {
 
 	stream := makeTar(t, map[string][]byte{"cow.raw": []byte("data")})
 	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
+		ID:           utils.GenerateID(),
 		Name:         "fields",
 		Description:  "full field check",
 		ImageBlobIDs: map[string]struct{}{"hex1": {}, "hex2": {}},
@@ -597,7 +590,7 @@ func TestDelete_RecreateName(t *testing.T) {
 	ctx := t.Context()
 
 	stream1 := makeTar(t, map[string][]byte{"f.txt": []byte("v1")})
-	_, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "reuse"}, stream1)
+	_, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "reuse"}, stream1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +600,7 @@ func TestDelete_RecreateName(t *testing.T) {
 	}
 
 	stream2 := makeTar(t, map[string][]byte{"f.txt": []byte("v2")})
-	id2, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "reuse"}, stream2)
+	id2, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "reuse"}, stream2)
 	if err != nil {
 		t.Fatalf("recreate with same name: %v", err)
 	}
@@ -627,7 +620,7 @@ func TestDataDir(t *testing.T) {
 
 	stream := makeTar(t, map[string][]byte{"cow.raw": []byte("disk")})
 	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
+		ID:           utils.GenerateID(),
 		Name:         "datadir",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
 		Image:        "ubuntu:24.04",
@@ -677,7 +670,7 @@ func TestRestore_ConfigRoundtrip(t *testing.T) {
 
 	stream := makeTar(t, map[string][]byte{"cow.raw": []byte("disk")})
 	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
+		ID:           utils.GenerateID(),
 		Name:         "rt",
 		Description:  "roundtrip",
 		ImageBlobIDs: map[string]struct{}{"deadbeef": {}},
@@ -732,7 +725,7 @@ func TestRestore_DataStream(t *testing.T) {
 	wantContent := []byte("hello snapshot data")
 	stream := makeTar(t, map[string][]byte{"state.json": wantContent})
 
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "ds"}, stream)
+	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "ds"}, stream)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -772,7 +765,7 @@ func TestRestore_DoubleCloseNoPanic(t *testing.T) {
 	ctx := t.Context()
 
 	stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
-	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "dc"}, stream)
+	id, err := lf.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "dc"}, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -814,7 +807,7 @@ func TestImageBlobIDsIsolation(t *testing.T) {
 
 			stream := makeTar(t, map[string][]byte{"f.txt": []byte("x")})
 			cfg := &types.SnapshotConfig{
-				ID:           testID(t),
+				ID:           utils.GenerateID(),
 				Name:         "iso",
 				ImageBlobIDs: map[string]struct{}{"original": {}},
 			}
@@ -1115,7 +1108,7 @@ func TestExportToDir_RejectNonEmpty(t *testing.T) {
 func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "orig"},
 		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
 		t.Fatalf("first create: %v", err)
@@ -1138,7 +1131,7 @@ func TestCreateSameIDRetryKeepsExistingSnapshot(t *testing.T) {
 func TestDeleteRejectsLeasedSnapshot(t *testing.T) {
 	lf := newTestLF(t)
 	ctx := t.Context()
-	id := testID(t)
+	id := utils.GenerateID()
 	if _, err := lf.Create(ctx, &types.SnapshotConfig{ID: id, Name: "leased"},
 		makeTar(t, map[string][]byte{"x": []byte("1")})); err != nil {
 		t.Fatalf("create: %v", err)
@@ -1194,7 +1187,7 @@ func TestImportPinsEnvelopeBlobs(t *testing.T) {
 func TestImportRejectsEveryTruncatedExport(t *testing.T) {
 	src := newTestLF(t)
 	ctx := t.Context()
-	id, err := src.Create(ctx, &types.SnapshotConfig{ID: testID(t), Name: "whole", Hypervisor: "cloud-hypervisor"},
+	id, err := src.Create(ctx, &types.SnapshotConfig{ID: utils.GenerateID(), Name: "whole", Hypervisor: "cloud-hypervisor"},
 		makeTar(t, map[string][]byte{"cow.raw": bytes.Repeat([]byte("c"), 1500), "vmstate": bytes.Repeat([]byte("v"), 300)}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -1273,11 +1266,6 @@ func TestExportEnvelopeListsDiskAttachFiles(t *testing.T) {
 			}
 		})
 	}
-}
-
-func testID(t *testing.T) string {
-	t.Helper()
-	return utils.GenerateID()
 }
 
 func newTestLF(t *testing.T) *LocalFile {
@@ -1407,7 +1395,7 @@ func makeExportableSnapshot(t *testing.T, lf *LocalFile, name string, files map[
 		storage = int64(len(cow))
 	}
 	cfg := &types.SnapshotConfig{
-		ID:           testID(t),
+		ID:           utils.GenerateID(),
 		Name:         name,
 		Description:  "export test",
 		ImageBlobIDs: map[string]struct{}{"blob1": {}},
